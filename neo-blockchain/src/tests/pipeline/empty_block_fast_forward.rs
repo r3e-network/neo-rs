@@ -352,6 +352,22 @@ fn standard_natives_explicitly_opt_in_to_empty_block_fast_forward() {
 }
 
 #[test]
+fn stage_empty_block_fast_forward_reuses_last_hash_from_ledger_loop() {
+    let source = include_str!("../../pipeline/empty_block_fast_forward.rs");
+    let stage = source
+        .split("pub fn stage_empty_block_fast_forward")
+        .nth(1)
+        .and_then(|tail| tail.split("#[cfg(test)]").next())
+        .expect("stage_empty_block_fast_forward source");
+
+    assert_eq!(
+        stage.matches(".try_hash()").count(),
+        1,
+        "empty-block fast-forward should not hash the final block twice"
+    );
+}
+
+#[test]
 fn fast_forward_empty_blocks_matches_normal_persist_store_dump_between_refreshes() {
     let _guard = lock_provider();
     let resources = install_resources();

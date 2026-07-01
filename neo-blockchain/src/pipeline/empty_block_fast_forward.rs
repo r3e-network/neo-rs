@@ -300,6 +300,7 @@ where
         ));
     }
     let block_cache = Arc::new(snapshot.clone_cache());
+    let mut last_persisted = None;
     for block in blocks {
         let block = block.borrow();
         let block_hash = block
@@ -310,19 +311,15 @@ where
             block,
             &block_hash,
         )?;
+        last_persisted = Some((block_hash, block.index()));
     }
 
-    let last_block = blocks
-        .last()
+    let (last_hash, last_index) = last_persisted
         .ok_or_else(|| CoreError::invalid_operation("empty fast-forward candidate is empty"))?;
-    let last_block = last_block.borrow();
-    let last_hash = last_block
-        .try_hash()
-        .map_err(|e| CoreError::invalid_operation(format!("empty fast-forward hash: {e}")))?;
     crate::ledger_records::LedgerRecords::write_post_persist_record(
         &block_cache,
         &last_hash,
-        last_block.index(),
+        last_index,
     )?;
     neo_native_contracts::NeoToken::new().fast_forward_empty_block_rewards(
         &block_cache,
