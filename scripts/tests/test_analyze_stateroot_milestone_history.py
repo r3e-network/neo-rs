@@ -903,6 +903,8 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
                     "checkpoint_created": True,
                     "local_root": f"0x{height}",
                     "reference_matches_local": True,
+                    "successful_reference_samples": 5,
+                    "reference_sample_count": 5,
                     "stateroot_matches_chain": True,
                     "speed_proof_source": "fast-sync-transaction-blocks",
                     "import_window_blocks_per_second": bps,
@@ -943,6 +945,58 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
         self.assertTrue(readiness["transaction_import_sample_size_met"])
         self.assertTrue(readiness["restore_verified_checkpoint_floor_met"])
         self.assertEqual(readiness["restore_verified_checkpoint_count"], 3)
+
+    def test_analyze_history_requires_reference_sample_evidence_for_production_proof(self):
+        module = load_module()
+        milestones = []
+        for height, bps, tx_blocks in (
+            (100, 1800.0, 1100),
+            (200, 1900.0, 1200),
+            (300, 1750.0, 1300),
+        ):
+            milestones.append(
+                {
+                    "height": height,
+                    "last_height": height,
+                    "blocks_per_second": 20000.0,
+                    "checkpoint_created": True,
+                    "local_root": f"0x{height}",
+                    "reference_matches_local": True,
+                    "stateroot_matches_chain": True,
+                    "speed_proof_source": "fast-sync-transaction-blocks",
+                    "import_window_blocks_per_second": bps,
+                    "sync_proof": {
+                        "fast_sync_import": {
+                            "transaction_blocks": tx_blocks,
+                            "transactions": tx_blocks * 3,
+                            "transaction_block_import_seconds": tx_blocks / bps,
+                            "transaction_blocks_per_second": bps,
+                        }
+                    },
+                }
+            )
+        records = [record("2026-01-01T00:00:00+00:00", milestones)]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint_root = Path(tmp) / "checkpoints"
+            for height in (100, 200, 300):
+                create_restore_verified_checkpoint(checkpoint_root, height)
+
+            report = module.analyze_history(
+                records,
+                slowest_limit=5,
+                fastest_limit=5,
+                checkpoint_root=checkpoint_root,
+            )
+
+        readiness = report["production_proof_readiness"]
+        self.assertFalse(readiness["ready"])
+        self.assertEqual(readiness["reference_sample_size_violation_count"], 3)
+        self.assertFalse(readiness["reference_sample_size_met"])
+        self.assertIn(
+            "reference state root proof has fewer than 5 successful samples",
+            readiness["blocking_reasons"],
+        )
 
     def test_main_require_production_proof_exits_nonzero_when_gate_is_not_ready(self):
         module = load_module()
@@ -1008,6 +1062,8 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
                     "checkpoint_created": True,
                     "local_root": f"0x{height}",
                     "reference_matches_local": True,
+                    "successful_reference_samples": 5,
+                    "reference_sample_count": 5,
                     "stateroot_matches_chain": True,
                     "speed_proof_source": "fast-sync-transaction-blocks",
                     "import_window_blocks_per_second": bps,

@@ -3,10 +3,10 @@ set -euo pipefail
 
 # Restore live mainnet chain DB + StateRoot DB from a previously-taken
 # checkpoint. Chain-only checkpoints created for bounded replay DBs are also
-# supported when CHECKPOINT_INFO records state_root_included=false. Hardlinks
-# the SST files back into place, which is cheap on the same filesystem (the
-# source checkpoint files are not touched — they remain the canonical copies if
-# you ever need to re-restore).
+# supported when CHECKPOINT_INFO records state_root_included=false. RocksDB
+# restores hardlink immutable SST files when possible. MDBX restores must not
+# hardlink mutable environment files, so they use provider-aware copy/reflink
+# semantics.
 #
 # Usage:
 #   scripts/restore-checkpoint.sh <height|latest|--at-or-below N> [options]
@@ -14,8 +14,8 @@ set -euo pipefail
 # Options:
 #   --root <path>           checkpoint root (default <data-dir>/checkpoints)
 #   --data-dir <path>       neo-rs data root (default ./data)
-#   --chain-db <path>       explicit chain RocksDB target (default <data-dir>/mainnet)
-#   --stateroot-db <path>   explicit StateRoot target (default <data-dir>/Plugins/mainnet/StateRoot)
+#   --chain-db <path>       explicit chain store target (default <data-dir>/mainnet)
+#   --stateroot-db <path>   explicit StateRoot store target (default <data-dir>/Plugins/mainnet/StateRoot)
 #   --keep-current          keep current data/mainnet & StateRoot as
 #                           data/mainnet.prerestore-<TS> instead of deleting
 #   --dry-run               print what would happen, do nothing
@@ -207,6 +207,9 @@ SOURCE_HEIGHT=$(printf '%s' "$SOURCE_BASENAME" | sed -n 's/^h\([0-9][0-9]*\)$/\1
 if [[ -z "$SOURCE_HEIGHT" ]]; then
   SOURCE_HEIGHT=$(metadata_value height || true)
 fi
+
+SOURCE_STORAGE_PROVIDER=$(metadata_value storage_provider || true)
+SOURCE_STORAGE_PROVIDER="${SOURCE_STORAGE_PROVIDER:-mdbx}"
 if [[ -z "$SOURCE_HEIGHT" ]]; then
   echo "checkpoint $SOURCE is missing a numeric height in its name or CHECKPOINT_INFO" >&2; exit 1
 fi
@@ -332,11 +335,28 @@ stash_or_rm() {
 stash_or_rm "$CHAIN_DB"
 stash_or_rm "$STATEROOT_DB"
 
+copy_store_dir() {
+  local src="$1"
+  local dst="$2"
+  case "${SOURCE_STORAGE_PROVIDER,,}" in
+    rocksdb)
+      cp -al "$src" "$dst" 2>/dev/null || cp -a "$src" "$dst"
+      ;;
+    mdbx)
+      cp -a --reflink=auto "$src" "$dst" 2>/dev/null || cp -a "$src" "$dst"
+      ;;
+    *)
+      echo "unsupported storage provider for restore copy: ${SOURCE_STORAGE_PROVIDER}" >&2
+      return 1
+      ;;
+  esac
+}
+
 mkdir -p "$(dirname "$CHAIN_DB")"
-cp -al "$SOURCE_CHAIN_DIR" "$CHAIN_DB"     2>/dev/null || cp -a "$SOURCE_CHAIN_DIR" "$CHAIN_DB"
+copy_store_dir "$SOURCE_CHAIN_DIR" "$CHAIN_DB"
 if [[ "$SOURCE_HAS_STATEROOT" -eq 1 ]]; then
   mkdir -p "$(dirname "$STATEROOT_DB")"
-  cp -al "$SOURCE/StateRoot" "$STATEROOT_DB" 2>/dev/null || cp -a "$SOURCE/StateRoot" "$STATEROOT_DB"
+  copy_store_dir "$SOURCE/StateRoot" "$STATEROOT_DB"
 fi
 
 if [[ "$SOURCE_HAS_STATEROOT" -eq 1 ]]; then

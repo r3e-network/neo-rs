@@ -144,6 +144,65 @@ class RestoreCheckpointTests(unittest.TestCase):
                 "MANIFEST-state-source\n",
             )
 
+    def test_restore_mdbx_checkpoint_does_not_hardlink_checkpoint_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_root = root / "checkpoints"
+            checkpoint = checkpoint_root / "h700000"
+            source_chain = checkpoint / "mainnet"
+            source_stateroot = checkpoint / "StateRoot"
+            target_chain = root / "restore" / "mainnet"
+            target_stateroot = root / "restore" / "StateRoot"
+
+            source_chain.mkdir(parents=True)
+            source_stateroot.mkdir()
+            (source_chain / "data.mdbx").write_text("chain", encoding="utf-8")
+            (source_stateroot / "data.mdbx").write_text("state", encoding="utf-8")
+            (checkpoint / "CHECKPOINT_INFO").write_text(
+                "\n".join(
+                    [
+                        "height=700000",
+                        "storage_provider=mdbx",
+                        "restore_verified=true",
+                        "verified_height=700000",
+                        "verified_stateroot_root=0xroot700000",
+                        "verified_against_reference=true",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    str(SCRIPT),
+                    "700000",
+                    "--root",
+                    str(checkpoint_root),
+                    "--chain-db",
+                    str(target_chain),
+                    "--stateroot-db",
+                    str(target_stateroot),
+                    "--yes",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertNotEqual(
+                (source_chain / "data.mdbx").stat().st_ino,
+                (target_chain / "data.mdbx").stat().st_ino,
+                "MDBX restore must not share checkpoint DB inodes",
+            )
+            self.assertNotEqual(
+                (source_stateroot / "data.mdbx").stat().st_ino,
+                (target_stateroot / "data.mdbx").stat().st_ino,
+                "MDBX StateRoot restore must not share checkpoint DB inodes",
+            )
+
     def test_restore_rejects_non_height_label_checkpoint(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

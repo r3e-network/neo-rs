@@ -661,10 +661,11 @@ Use `production_proof_readiness` as the top-level release gate summary. It is
 `ready=true` only when the history has no StateRoot/reference mismatch, at
 least one transaction-bearing fast-sync proof meets the configured BPS floor,
 each counted transaction proof has at least the minimum transaction-bearing
-block sample size, and the retained checkpoint inventory includes at least
-three restore-verified full-state checkpoints. Empty-block speed never satisfies
-this readiness gate by itself. Add `--require-production-proof` to make the
-analyzer exit with status `2` when that readiness gate is false:
+block sample size, each counted proof has enough successful reference RPC
+samples, and the retained checkpoint inventory includes at least three
+restore-verified full-state checkpoints. Empty-block speed never satisfies this
+readiness gate by itself. Add `--require-production-proof` to make the analyzer
+exit with status `2` when that readiness gate is false:
 
 ```bash
 python3 scripts/analyze-stateroot-milestone-history.py \

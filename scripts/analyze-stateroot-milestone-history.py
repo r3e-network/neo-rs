@@ -12,6 +12,7 @@ from typing import Any
 DEFAULT_SYNC_SPEED_FLOOR_BPS = 1500.0
 DEFAULT_MIN_FULL_STATE_CHECKPOINTS = 3
 DEFAULT_MIN_TRANSACTION_BLOCKS = 1000
+DEFAULT_MIN_REFERENCE_SAMPLES = 5
 
 
 def load_history(path: Path) -> list[dict[str, Any]]:
@@ -109,6 +110,9 @@ def flatten_milestones(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "checkpoint_created": milestone.get("checkpoint_created"),
                     "successful_reference_samples": milestone.get(
                         "successful_reference_samples", 0
+                    ),
+                    "reference_sample_count": milestone.get(
+                        "reference_sample_count", 0
                     ),
                     "height_sample_rate_summary": milestone.get(
                         "height_sample_rate_summary"
@@ -418,6 +422,8 @@ def transaction_import_proof_milestones(
             "transaction_block_import_seconds": import_report.get(
                 "transaction_block_import_seconds"
             ),
+            "successful_reference_samples": item.get("successful_reference_samples", 0),
+            "reference_sample_count": item.get("reference_sample_count", 0),
             "replay_window_blocks_per_second": item.get("replay_window_blocks_per_second"),
         }
         proofs.append(proof)
@@ -581,6 +587,38 @@ def transaction_import_sample_size_violations(
     return violations
 
 
+def reference_sample_size_violations(
+    proofs: list[dict[str, Any]],
+    *,
+    minimum_reference_samples: int,
+) -> list[dict[str, Any]]:
+    violations: list[dict[str, Any]] = []
+    for proof in proofs:
+        try:
+            successful_samples = int(proof.get("successful_reference_samples") or 0)
+            sample_count = int(proof.get("reference_sample_count") or 0)
+        except (TypeError, ValueError):
+            successful_samples = 0
+            sample_count = 0
+        if (
+            successful_samples >= minimum_reference_samples
+            and sample_count >= minimum_reference_samples
+        ):
+            continue
+        violation = dict(proof)
+        violation["minimum_reference_samples"] = minimum_reference_samples
+        violation["missing_successful_reference_samples"] = max(
+            minimum_reference_samples - successful_samples,
+            0,
+        )
+        violation["missing_reference_samples"] = max(
+            minimum_reference_samples - sample_count,
+            0,
+        )
+        violations.append(violation)
+    return violations
+
+
 def production_proof_readiness(
     *,
     reference_mismatch_count: int,
@@ -590,10 +628,15 @@ def production_proof_readiness(
     checkpoint_inventory: dict[str, Any] | None,
     minimum_transaction_blocks: int = DEFAULT_MIN_TRANSACTION_BLOCKS,
     minimum_full_state_checkpoints: int = DEFAULT_MIN_FULL_STATE_CHECKPOINTS,
+    minimum_reference_samples: int = DEFAULT_MIN_REFERENCE_SAMPLES,
 ) -> dict[str, Any]:
     sample_size_violations = transaction_import_sample_size_violations(
         transaction_import_proofs,
         minimum_transaction_blocks=minimum_transaction_blocks,
+    )
+    reference_sample_violations = reference_sample_size_violations(
+        transaction_import_proofs,
+        minimum_reference_samples=minimum_reference_samples,
     )
     full_state_checkpoint_count = (
         int(checkpoint_inventory.get("full_state_count") or 0)
@@ -608,6 +651,11 @@ def production_proof_readiness(
         blocking_reasons.append("state root mismatch exists")
     if reference_mismatch_count:
         blocking_reasons.append("reference state root mismatch exists")
+    if reference_sample_violations:
+        blocking_reasons.append(
+            f"reference state root proof has fewer than {minimum_reference_samples} "
+            "successful samples"
+        )
     if not transaction_import_proofs:
         blocking_reasons.append("missing transaction-bearing import speed proof")
     if transaction_import_floor_violations:
@@ -630,8 +678,13 @@ def production_proof_readiness(
         "blocking_reasons": blocking_reasons,
         "minimum_transaction_blocks": minimum_transaction_blocks,
         "minimum_full_state_checkpoints": minimum_full_state_checkpoints,
+        "minimum_reference_samples": minimum_reference_samples,
         "state_roots_match_chain": state_mismatch_count == 0,
         "references_match_local": reference_mismatch_count == 0,
+        "reference_sample_size_met": not reference_sample_violations
+        and bool(transaction_import_proofs),
+        "reference_sample_size_violation_count": len(reference_sample_violations),
+        "reference_sample_size_violations": reference_sample_violations,
         "transaction_import_proof_count": len(transaction_import_proofs),
         "transaction_import_speed_floor_met": not transaction_import_floor_violations
         and bool(transaction_import_proofs),
@@ -747,6 +800,7 @@ def analyze_history(
     sync_speed_floor_bps: float = DEFAULT_SYNC_SPEED_FLOOR_BPS,
     empty_block_speed_floor_bps: float | None = None,
     minimum_transaction_blocks: int = DEFAULT_MIN_TRANSACTION_BLOCKS,
+    minimum_reference_samples: int = DEFAULT_MIN_REFERENCE_SAMPLES,
 ) -> dict:
     milestones = flatten_milestones(records)
     completed = completed_milestones_in_history_order(milestones)
@@ -873,6 +927,7 @@ def analyze_history(
         transaction_import_floor_violations=transaction_import_floor_shortfalls,
         checkpoint_inventory=checkpoint_inventory_report,
         minimum_transaction_blocks=minimum_transaction_blocks,
+        minimum_reference_samples=minimum_reference_samples,
     )
     return report
 
@@ -922,6 +977,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--minimum-reference-samples",
+        type=int,
+        default=DEFAULT_MIN_REFERENCE_SAMPLES,
+        help=(
+            "Minimum successful reference RPC state-root samples required before "
+            "a transaction import proof can satisfy production readiness."
+        ),
+    )
+    parser.add_argument(
         "--require-production-proof",
         action="store_true",
         help=(
@@ -945,6 +1009,7 @@ def main() -> int:
             sync_speed_floor_bps=args.sync_speed_floor_bps,
             empty_block_speed_floor_bps=args.empty_block_speed_floor_bps,
             minimum_transaction_blocks=args.minimum_transaction_blocks,
+            minimum_reference_samples=args.minimum_reference_samples,
         )
     except Exception as exc:  # pylint: disable=broad-except
         print(f"ERROR: {exc}", file=sys.stderr)

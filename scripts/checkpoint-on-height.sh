@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Hardlink-snapshot the live mainnet chain DB + StateRoot DB every <interval>
+# Snapshot the live mainnet chain DB + StateRoot DB every <interval>
 # blocks. Polls block height via JSON-RPC (default http://localhost:10332/).
 #
 # Snapshots are stored as:
 #   <checkpoint_root>/h<height>/mainnet/
 #   <checkpoint_root>/h<height>/StateRoot/
 #
-# Hardlink copies cost ~zero disk for SST files (immutable, shared inodes) and
-# negligible time, so the writer pause window is sub-second. Hardlinks require
-# the checkpoint dir to live on the same filesystem as the data dirs.
+# RocksDB snapshots use hardlinks for immutable SST files when possible. MDBX
+# snapshots must not hardlink the mutable environment files, so they use
+# provider-aware copy/reflink semantics.
 #
 # Usage:
 #   scripts/checkpoint-on-height.sh <writer_pid|none> [options]
@@ -20,8 +20,8 @@ set -euo pipefail
 #   --max <K>               retain at most K checkpoints (default 10)
 #   --rpc <url>             RPC endpoint (default http://localhost:10332/)
 #   --data-dir <path>       neo-rs data root (default ./data)
-#   --chain-db <path>       explicit chain RocksDB path (default <data-dir>/mainnet)
-#   --stateroot-db <path>   explicit StateRoot RocksDB path (default <data-dir>/Plugins/mainnet/StateRoot)
+#   --chain-db <path>       explicit chain store path (default <data-dir>/mainnet)
+#   --stateroot-db <path>   explicit StateRoot store path (default <data-dir>/Plugins/mainnet/StateRoot)
 #   --storage-provider <P>  storage backend encoded in the snapshot (default mdbx)
 #   --chain-only            snapshot only the chain DB (for bounded replay DBs without StateService)
 #   --root <path>           checkpoint root (default <data-dir>/checkpoints)
@@ -39,7 +39,7 @@ set -euo pipefail
 #   NEO_DATA_DIR, NEO_CHECKPOINT_ROOT
 #
 # Pass `none` (or 0) as writer_pid when no live writer is running — STOP/CONT
-# is skipped. Otherwise the writer is paused around each hardlink copy.
+# is skipped. Otherwise the writer is paused around each snapshot copy.
 
 WRITER_PID="${1:-}"
 shift || true
@@ -159,6 +159,23 @@ fetch_height() {
 }
 
 # ----- snapshot operation -----
+copy_store_dir() {
+  local src="$1"
+  local dst="$2"
+  case "${STORAGE_PROVIDER,,}" in
+    rocksdb)
+      cp -al "$src" "$dst" 2>/dev/null || cp -a "$src" "$dst"
+      ;;
+    mdbx)
+      cp -a --reflink=auto "$src" "$dst" 2>/dev/null || cp -a "$src" "$dst"
+      ;;
+    *)
+      echo "unsupported storage provider for checkpoint copy: ${STORAGE_PROVIDER}" >&2
+      return 1
+      ;;
+  esac
+}
+
 take_snapshot() {
   local height="$1"
   local target="${CHECKPOINT_ROOT}/h${height}"
@@ -217,10 +234,9 @@ take_snapshot() {
     sleep 0.2
   fi
 
-  # cp -al = archive + hardlink. Falls back to copy if cross-FS.
-  cp -al "$CHAIN_DB" "${tmp}/mainnet" 2>/dev/null || cp -a "$CHAIN_DB" "${tmp}/mainnet"
+  copy_store_dir "$CHAIN_DB" "${tmp}/mainnet"
   if [[ "$CHAIN_ONLY" -eq 0 ]]; then
-    cp -al "$STATEROOT_DB" "${tmp}/StateRoot" 2>/dev/null || cp -a "$STATEROOT_DB" "${tmp}/StateRoot"
+    copy_store_dir "$STATEROOT_DB" "${tmp}/StateRoot"
   fi
 
   if has_writer; then
