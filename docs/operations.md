@@ -641,6 +641,11 @@ python3 scripts/analyze-stateroot-milestone-history.py \
   --checkpoint-root data/mainnet-stateroot-clean/checkpoints
 ```
 
+Do not pass a bounded replay progress log such as `bounded-report.jsonl` to the
+milestone analyzer. Those files contain per-poll progress samples plus the final
+bounded replay JSON object; the analyzer expects the compact history emitted by
+`run-stateroot-milestones.py --summary-jsonl`.
+
 When `--checkpoint-root` is provided, the report includes the retained
 full-state checkpoint inventory, the latest on-disk recovery height, and any
 successful milestone checkpoints that have since been rotated out. A checkpoint

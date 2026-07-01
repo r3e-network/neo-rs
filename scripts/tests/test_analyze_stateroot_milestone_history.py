@@ -73,6 +73,30 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["mode"], "completed")
 
+    def test_load_history_rejects_bounded_replay_progress_with_actionable_message(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bounded-report.jsonl"
+            path.write_text(
+                "\n".join(
+                    [
+                        '{"elapsed_seconds": 1.0, "height": 10}',
+                        "{",
+                        '  "status": "target-reached",',
+                        '  "last_height": 10',
+                        "}",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "bounded replay output, not milestone summary history",
+            ):
+                module.load_history(path)
+
     def test_analyze_history_reports_perf_and_consistency_summary(self):
         module = load_module()
         records = [

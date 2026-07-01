@@ -16,6 +16,7 @@ DEFAULT_MIN_TRANSACTION_BLOCKS = 1000
 
 def load_history(path: Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
+    saw_bounded_replay_shape = False
     with path.open("r", encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, start=1):
             line = line.strip()
@@ -24,10 +25,38 @@ def load_history(path: Path) -> list[dict[str, Any]]:
             try:
                 record = json.loads(line)
             except json.JSONDecodeError as exc:
+                if saw_bounded_replay_shape or path.name.startswith("bounded-report"):
+                    raise ValueError(
+                        f"{path}:{line_number}: appears to be bounded replay output, "
+                        "not milestone summary history. Analyze the file written by "
+                        "`scripts/run-stateroot-milestones.py --summary-jsonl <path>`."
+                    ) from exc
                 raise ValueError(f"{path}:{line_number}: invalid JSON: {exc}") from exc
             if not isinstance(record, dict):
                 raise ValueError(f"{path}:{line_number}: expected JSON object")
+            if "summary" not in record and (
+                "elapsed_seconds" in record
+                or "height" in record
+                or "status" in record
+                or "last_height" in record
+            ):
+                saw_bounded_replay_shape = True
             records.append(record)
+    for index, record in enumerate(records, start=1):
+        summary = record.get("summary")
+        if not isinstance(summary, dict) or not isinstance(
+            summary.get("milestones"), list
+        ):
+            if saw_bounded_replay_shape or path.name.startswith("bounded-report"):
+                raise ValueError(
+                    f"{path}:{index}: appears to be bounded replay output, not "
+                    "milestone summary history. Analyze the file written by "
+                    "`scripts/run-stateroot-milestones.py --summary-jsonl <path>`."
+                )
+            raise ValueError(
+                f"{path}:{index}: expected milestone summary history record with "
+                "`summary.milestones`"
+            )
     return records
 
 
