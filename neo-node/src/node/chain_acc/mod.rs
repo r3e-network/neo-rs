@@ -477,7 +477,6 @@ where
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct PendingChainAccBatch {
-    has_transactions: bool,
     len: usize,
     composition: ChainAccImportComposition,
 }
@@ -493,14 +492,13 @@ impl PendingChainAccBatch {
         if tx_count == 0 {
             self.composition.empty_blocks += 1;
         } else {
-            self.has_transactions = true;
             self.composition.transaction_blocks += 1;
             self.composition.transactions += tx_count;
         }
     }
 
     fn is_empty_only(&self) -> bool {
-        self.len > 0 && !self.has_transactions
+        self.len > 0 && self.composition.is_empty_only()
     }
 
     fn should_flush_before_push(&self, next: &Block) -> bool {
@@ -509,7 +507,7 @@ impl PendingChainAccBatch {
 
     fn should_flush(&self, batch_len: usize) -> bool {
         debug_assert_eq!(self.len, batch_len);
-        if !self.has_transactions {
+        if self.composition.is_empty_only() {
             batch_len >= MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS
         } else {
             batch_len >= IMPORT_BATCH_SIZE
@@ -565,6 +563,14 @@ struct ChainAccImportComposition {
 }
 
 impl ChainAccImportComposition {
+    fn has_transaction_blocks(&self) -> bool {
+        self.transaction_blocks > 0
+    }
+
+    fn is_empty_only(&self) -> bool {
+        self.empty_blocks > 0 && !self.has_transaction_blocks()
+    }
+
     fn record_imported(&mut self, batch: Self, imported: usize, elapsed: std::time::Duration) {
         if imported == 0 {
             return;
@@ -1915,6 +1921,21 @@ mod tests {
         assert!(
             !batch_import.contains("ChainAccImportComposition::from_blocks(&batch_blocks)"),
             "chain.acc import should reuse composition tracked while reading, not rescan every batch before dispatch"
+        );
+    }
+
+    #[test]
+    fn pending_chain_acc_batch_derives_transaction_presence_from_composition() {
+        let source = include_str!("mod.rs");
+        let pending_batch = source
+            .split("struct PendingChainAccBatch")
+            .nth(1)
+            .and_then(|tail| tail.split("struct ChainAccBatchImportResult").next())
+            .expect("PendingChainAccBatch source");
+
+        assert!(
+            !pending_batch.contains("has_transactions"),
+            "pending chain.acc batch should not duplicate transaction-presence state once composition is tracked"
         );
     }
 
