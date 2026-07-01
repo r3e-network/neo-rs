@@ -19,7 +19,11 @@ use crate::native_persist::{NativePersistOptions, NativePersistResources};
 use crate::service_context::BlockPersistContext;
 
 /// Upper bound for a single empty-block fast-forward batch.
-pub const MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS: usize = 4096;
+///
+/// This is a memory/fairness guard, not a throughput target. Empty blocks skip
+/// VM execution but still write per-height ledger history, so very long runs are
+/// chunked before the staged cache grows without bound.
+pub const MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS: usize = 65_536;
 
 /// Eligible contiguous empty-block interval.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

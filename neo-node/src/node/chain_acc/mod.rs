@@ -1887,6 +1887,21 @@ mod tests {
         assert!(pending.should_flush(IMPORT_BATCH_SIZE));
     }
 
+    #[test]
+    fn empty_only_chain_acc_batches_do_not_flush_at_ten_thousand_blocks() {
+        let mut pending = PendingChainAccBatch::default();
+        let empty = empty_block(0);
+
+        for _ in 0..10_000 {
+            pending.record_pushed(&empty);
+        }
+
+        assert!(
+            !pending.should_flush(10_000),
+            "10k empty blocks should remain a single fast-forward batch; the guard is a memory boundary, not a throughput target"
+        );
+    }
+
     #[tokio::test]
     async fn import_chain_acc_report_uses_zero_bps_for_noop_resume() {
         let (handle, mut commands, _events) = BlockchainHandle::channel(1, 1);

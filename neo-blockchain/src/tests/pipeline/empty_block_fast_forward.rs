@@ -100,6 +100,33 @@ fn planner_accepts_contiguous_empty_bulk_sync_range_between_cut_points() {
 }
 
 #[test]
+fn planner_accepts_ten_thousand_empty_blocks_as_one_batch() {
+    let _guard = lock_provider();
+    let resources = install_resources();
+    let settings = ProtocolSettings::default();
+    let blocks = (1..=10_000).map(empty_block).collect::<Vec<_>>();
+
+    let plan = plan_empty_block_fast_forward(EmptyBlockFastForwardRequest {
+        current_height: 0,
+        blocks: &blocks,
+        settings: &settings,
+        resources: &resources,
+        persist_options: bulk_options(),
+        persist_context: bulk_context(),
+    })
+    .expect("10k empty bulk-sync range should be one eligible fast-forward batch");
+
+    assert_eq!(
+        plan,
+        EmptyBlockFastForwardPlan {
+            start: 1,
+            end: 10_000,
+            block_count: 10_000,
+        }
+    );
+}
+
+#[test]
 fn planner_rejects_replay_artifact_paths() {
     let _guard = lock_provider();
     let resources = install_resources();
