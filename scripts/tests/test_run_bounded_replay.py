@@ -605,6 +605,8 @@ class RunBoundedReplayTests(unittest.TestCase):
             clock=clock,
             min_blocks_per_second=0.5,
             max_blocks_per_second=2.0,
+            metrics_url="http://127.0.0.1:21990/metrics",
+            metrics_fetcher=lambda _url: {"neo_sync_native_persist_avg_tx_count": 1.0},
         )
 
         self.assertEqual(report["status"], "target-reached")
@@ -614,6 +616,35 @@ class RunBoundedReplayTests(unittest.TestCase):
         self.assertTrue(report["sync_speed_band_met"])
         self.assertEqual(report["height_sample_rate_summary"]["min_blocks_per_second"], 1.0)
         self.assertEqual(report["height_sample_rate_summary"]["max_blocks_per_second"], 1.0)
+        self.assertTrue(report["transaction_work_summary"]["observed_transaction_work"])
+
+    def test_run_until_target_rejects_speed_proof_without_transaction_work(self):
+        module = load_module()
+        clock = FakeClock()
+        process = FakeProcess()
+        heights = iter([0, 10])
+
+        report = module.run_until_target(
+            command=["neo-node"],
+            rpc_url="http://127.0.0.1:21332",
+            target_height=10,
+            poll_interval=10,
+            max_seconds=100,
+            spawner=lambda command, **kwargs: process,
+            rpc=lambda *args, **kwargs: next(heights) + 1,
+            clock=clock,
+            min_blocks_per_second=0.5,
+            metrics_url="http://127.0.0.1:21990/metrics",
+            metrics_fetcher=lambda _url: {"neo_sync_native_persist_avg_tx_count": 0.0},
+        )
+
+        self.assertEqual(report["status"], "transaction-work-unproven")
+        self.assertTrue(report["sync_speed_band_met"])
+        self.assertFalse(report["transaction_work_summary"]["observed_transaction_work"])
+        self.assertEqual(
+            report["sync_proof"]["transaction_work_summary"],
+            report["transaction_work_summary"],
+        )
 
     def test_run_until_target_rejects_stale_rpc_when_local_db_height_is_behind(self):
         module = load_module()
@@ -1192,6 +1223,8 @@ class RunBoundedReplayTests(unittest.TestCase):
             rpc=lambda *args, **kwargs: next(heights) + 1,
             clock=clock,
             sync_source="fast-sync",
+            metrics_url="http://127.0.0.1:21990/metrics",
+            metrics_fetcher=lambda _url: {"neo_sync_native_persist_avg_tx_count": 1.0},
             progress_reader=lambda: {
                 "fast_sync_stage": "extracted",
                 "fast_sync_package_path": "chain.0.acc.zip",

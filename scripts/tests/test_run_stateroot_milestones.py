@@ -576,6 +576,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                                         "metrics": {
                                             "neo_sync_avg_persist_us": 100.0,
                                             "neo_state_service_mpt_apply_avg_total_us": 10.0,
+                                            "neo_sync_native_persist_avg_tx_count": 0.0,
                                         },
                                     },
                                     {
@@ -584,6 +585,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                                         "metrics": {
                                             "neo_sync_avg_persist_us": 200.0,
                                             "neo_state_service_mpt_apply_avg_total_us": 20.0,
+                                            "neo_sync_native_persist_avg_tx_count": 1.0,
                                         },
                                     },
                                     {
@@ -955,6 +957,76 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         self.assertIn("missing node metrics proof", result["results"][0]["speed_proof_error"])
         self.assertEqual(len(calls), 1)
 
+    def test_run_milestones_rejects_empty_only_speed_claim_without_transaction_work(self):
+        module = load_module()
+        plan = module.build_plan(
+            config=Path("clean/neo_mainnet_validate.toml"),
+            node_bin=Path("target/debug/neo-node"),
+            rpc_url="http://127.0.0.1:21332",
+            milestones=[10],
+            poll_interval=5.0,
+            max_seconds=120.0,
+            chain_db=Path("clean/chain"),
+            stateroot_db=Path("clean/state-root-334F454E"),
+            probe_bin=Path("target/debug/neo-db-probe"),
+            references=["http://seed1.neo.org:10332"],
+            data_dir=Path("clean"),
+            checkpoint_root=Path("clean/checkpoints"),
+            checkpoint_script=Path("scripts/checkpoint-on-height.sh"),
+            log_dir=Path("clean/logs"),
+            sync_speed_floor_bps=500.0,
+        )
+
+        def fake_run(command, **kwargs):
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "status": "target-reached",
+                        "target_height": 10,
+                        "last_height": 10,
+                        "height_samples": [
+                            {
+                                "elapsed_seconds": 0.0,
+                                "height": 0,
+                                "metrics": {
+                                    "neo_sync_native_persist_avg_tx_count": 0.0,
+                                },
+                            },
+                            {
+                                "elapsed_seconds": 0.01,
+                                "height": 10,
+                                "metrics": {
+                                    "neo_sync_native_persist_avg_tx_count": 0.0,
+                                },
+                            },
+                        ],
+                        "post_probe": {
+                            "chain_height": {"ok": True, "height": 10},
+                            "stateroot_matches_chain": True,
+                            "stateroot_height": {"ok": True, "height": 10},
+                            "stateroot_root": {"root": "0xroot10"},
+                            "reference_stateroot": {
+                                "index": 10,
+                                "matches_local": True,
+                                "successful_samples": 1,
+                                "sample_count": 1,
+                            },
+                        },
+                    }
+                ),
+                stderr="",
+            )
+
+        result = module.run_milestones(plan, runner=fake_run)
+
+        self.assertEqual(result["mode"], "failed")
+        self.assertEqual(result["failure"], "speed-proof")
+        self.assertIn(
+            "missing transaction-bearing replay proof",
+            result["results"][0]["speed_proof_error"],
+        )
+
     def test_run_milestones_rejects_fast_sync_speed_claim_without_hot_metrics(self):
         module = load_module()
         plan = module.build_plan(
@@ -1177,8 +1249,20 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                                 "last_height": 100000,
                                 "blocks_per_second": 10.0,
                                 "height_samples": [
-                                    {"elapsed_seconds": 0.0, "height": 0},
-                                    {"elapsed_seconds": 10000.0, "height": 100000},
+                                    {
+                                        "elapsed_seconds": 0.0,
+                                        "height": 0,
+                                        "metrics": {
+                                            "neo_sync_native_persist_avg_tx_count": 0.0,
+                                        },
+                                    },
+                                    {
+                                        "elapsed_seconds": 10000.0,
+                                        "height": 100000,
+                                        "metrics": {
+                                            "neo_sync_native_persist_avg_tx_count": 1.0,
+                                        },
+                                    },
                                 ],
                                 "sync_proof": {
                                     "sync_source": "fast-sync",

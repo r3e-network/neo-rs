@@ -74,6 +74,9 @@ DEFAULT_METRIC_NAMES = [
 DEFAULT_POLL_INTERVAL_SECONDS = 30.0
 DEFAULT_IMPORT_POLL_INTERVAL_SECONDS = 1.0
 DEFAULT_SYNC_SPEED_FLOOR_BPS = 1500.0
+TRANSACTION_WORK_METRIC_NAMES = {
+    "neo_sync_native_persist_avg_tx_count",
+}
 
 
 class SystemClock:
@@ -637,6 +640,42 @@ def summarize_metric_samples(samples: list[dict]) -> dict[str, Any]:
     }
 
 
+def transaction_work_summary(metrics_summary: dict[str, Any]) -> dict[str, Any]:
+    metrics = metrics_summary.get("metrics")
+    if not isinstance(metrics, dict):
+        metrics = {}
+    tx_metrics: list[dict[str, Any]] = []
+    observed_transaction_work = False
+    for name, stats in sorted(metrics.items()):
+        metric_name = str(name).split("{", 1)[0]
+        if metric_name not in TRANSACTION_WORK_METRIC_NAMES or not isinstance(stats, dict):
+            continue
+        try:
+            max_value = float(stats["max"])
+            average_value = float(stats["average"])
+            last_value = float(stats["last"])
+            sample_count = int(stats.get("sample_count", 0))
+        except (KeyError, TypeError, ValueError):
+            continue
+        observed_transaction_work = observed_transaction_work or max_value > 0.0
+        tx_metrics.append(
+            {
+                "name": str(name),
+                "sample_count": sample_count,
+                "average": average_value,
+                "last": last_value,
+                "max": max_value,
+                "observed_transaction_work": max_value > 0.0,
+            }
+        )
+    return {
+        "required_for_speed_proof": True,
+        "observed_transaction_work": observed_transaction_work,
+        "metric_count": len(tx_metrics),
+        "metrics": tx_metrics,
+    }
+
+
 def hot_metrics_by_average_us(metrics: dict[str, dict], limit: int = 8) -> list[dict[str, Any]]:
     hot = []
     for name, stats in metrics.items():
@@ -774,6 +813,7 @@ def build_sync_proof(report: dict) -> dict[str, Any]:
         "height_sample_count": len(height_samples),
         "height_sample_sources": ordered_sample_sources(samples),
         "metrics_sample_count": report.get("metrics_sample_count", 0),
+        "transaction_work_summary": report.get("transaction_work_summary"),
         "sync_speed_floor_blocks_per_second": report.get("sync_speed_floor_blocks_per_second"),
         "sync_speed_ceiling_blocks_per_second": report.get("sync_speed_ceiling_blocks_per_second"),
         "sync_speed_shortfall_blocks_per_second": report.get(
@@ -1090,6 +1130,7 @@ def run_until_target(
 
     metrics_samples = metrics_sample_count(samples)
     metrics_summary = summarize_metric_samples(samples)
+    tx_work_summary = transaction_work_summary(metrics_summary)
     rate_summary = height_sample_rate_summary({"height_samples": samples})
     if require_metrics_samples and metrics_url and status == "target-reached" and metrics_samples == 0:
         status = "metrics-unavailable"
@@ -1120,6 +1161,12 @@ def run_until_target(
         sync_speed_overage = max(speed_ceiling_value - max_blocks_per_second, 0.0)
         if status == "target-reached":
             status = "sync-speed-too-fast"
+    if (
+        min_blocks_per_second is not None
+        and status == "target-reached"
+        and not tx_work_summary["observed_transaction_work"]
+    ):
+        status = "transaction-work-unproven"
 
     report = {
         "command": command,
@@ -1134,6 +1181,7 @@ def run_until_target(
         "height_sample_rate_summary": rate_summary,
         "metrics_sample_count": metrics_samples,
         "metrics_summary": metrics_summary,
+        "transaction_work_summary": tx_work_summary,
         "sync_speed_floor_blocks_per_second": min_blocks_per_second,
         "sync_speed_ceiling_blocks_per_second": max_blocks_per_second,
         "sync_speed_shortfall_blocks_per_second": sync_speed_shortfall,

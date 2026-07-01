@@ -710,6 +710,18 @@ def metrics_sample_summary(report: dict) -> dict:
     )
 
 
+def transaction_work_summary(report: dict) -> dict:
+    summary = report.get("transaction_work_summary")
+    if isinstance(summary, dict):
+        return summary
+    sync_proof = report.get("sync_proof")
+    if isinstance(sync_proof, dict):
+        proof_summary = sync_proof.get("transaction_work_summary")
+        if isinstance(proof_summary, dict):
+            return proof_summary
+    return bounded_replay_module().transaction_work_summary(metrics_sample_summary(report))
+
+
 def milestone_summary(result: dict) -> dict:
     report = result.get("bounded_report") or {}
     post_probe = report.get("post_probe") or {}
@@ -735,6 +747,7 @@ def milestone_summary(result: dict) -> dict:
         "sync_proof": report.get("sync_proof"),
         "height_sample_rate_summary": height_sample_rate_summary(report),
         "metrics_sample_summary": metrics_sample_summary(report),
+        "transaction_work_summary": transaction_work_summary(report),
     }
 
 
@@ -955,6 +968,8 @@ def speed_proof_error(
         reference_error = fast_sync_reference_proof_error()
         if reference_error is not None:
             return reference_error
+        if not transaction_work_summary(report).get("observed_transaction_work"):
+            return "missing transaction-bearing replay proof for speed claim"
         return None
     sample_summary = height_sample_rate_summary(report)
     if sample_summary["interval_count"] <= 0:
@@ -973,6 +988,8 @@ def speed_proof_error(
         )
     if not has_node_metrics_proof():
         return "missing node metrics proof for speed claim"
+    if not transaction_work_summary(report).get("observed_transaction_work"):
+        return "missing transaction-bearing replay proof for speed claim"
     return None
 
 
