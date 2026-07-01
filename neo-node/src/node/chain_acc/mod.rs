@@ -25,6 +25,8 @@ use neo_payloads::block::Block;
 use neo_storage::persistence::store::Store;
 use tracing::info;
 
+use neo_blockchain::empty_block_fast_forward::MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS;
+
 mod format;
 mod metrics;
 use format::{read_chain_acc_header, read_next_chain_acc_block, skip_chain_acc_records};
@@ -284,10 +286,33 @@ where
         }
         let reached_count_only_stop_height =
             count_only_stop_height_reached(expected_range, stop_at_height, block.index());
+        if chain_acc_batch_should_flush_before_push(&batch, &block) {
+            let batch_blocks = take_import_batch(&mut batch, true);
+            let batch_result = import_chain_acc_batch(handle, batch_blocks, verify)
+                .await
+                .map_err(|e| anyhow::anyhow!("import command failed: {e}"))?;
+            progress.record_batch(batch_result.imported, batch_result.elapsed);
+            imported += batch_result.imported as u64;
+            composition.record_imported(
+                batch_result.composition,
+                batch_result.imported,
+                batch_result.elapsed,
+            );
+            if batch_result.fully_imported() {
+                last_imported_tip = batch_result.tip;
+            }
+            if !batch_result.fully_imported() {
+                anyhow::bail!(
+                    "partial chain.acc import before record {record}: imported {} of {} pending empty blocks, {imported} of {import_count} requested blocks imported",
+                    batch_result.imported,
+                    batch_result.len
+                );
+            }
+        }
         previous_hash = Some(block.hash());
         batch.push(block);
 
-        if batch.len() >= IMPORT_BATCH_SIZE
+        if chain_acc_batch_should_flush(&batch)
             || i + 1 == import_count
             || reached_count_only_stop_height
         {
@@ -295,23 +320,18 @@ where
                 &mut batch,
                 i + 1 < import_count && !reached_count_only_stop_height,
             );
-            let batch_len = batch_blocks.len();
-            let batch_composition = ChainAccImportComposition::from_blocks(&batch_blocks);
-            let batch_tip = batch_blocks.last().map(|block| LocalLedgerTip {
-                height: block.index(),
-                hash: block.hash(),
-            });
-            let batch_start = Instant::now();
-            let batch_imported = handle
-                .import_blocks_bulk(batch_blocks, verify)
+            let batch_result = import_chain_acc_batch(handle, batch_blocks, verify)
                 .await
                 .map_err(|e| anyhow::anyhow!("import command failed: {e}"))?;
-            let batch_elapsed = batch_start.elapsed();
-            progress.record_batch(batch_imported, batch_elapsed);
-            imported += batch_imported as u64;
-            composition.record_imported(batch_composition, batch_imported, batch_elapsed);
-            if batch_imported == batch_len {
-                last_imported_tip = batch_tip;
+            progress.record_batch(batch_result.imported, batch_result.elapsed);
+            imported += batch_result.imported as u64;
+            composition.record_imported(
+                batch_result.composition,
+                batch_result.imported,
+                batch_result.elapsed,
+            );
+            if batch_result.fully_imported() {
+                last_imported_tip = batch_result.tip;
             }
             let state_service_metrics = StateServiceMptImportMetrics::current();
             let rocksdb_batch_metrics = storage
@@ -321,12 +341,12 @@ where
                 ImportHotMetrics::from_snapshots(&state_service_metrics, rocksdb_batch_metrics);
             if should_log_import_progress(
                 progress.imported(),
-                batch_imported,
-                batch_len,
+                batch_result.imported,
+                batch_result.len,
                 import_count,
             ) && tracing::enabled!(target: "neo::import", tracing::Level::INFO)
             {
-                let progress_sample = progress.sample(batch_imported, batch_elapsed);
+                let progress_sample = progress.sample(batch_result.imported, batch_result.elapsed);
                 info!(
                     target: "neo::import",
                     imported = progress_sample.imported,
@@ -394,11 +414,13 @@ where
                     "chain.acc import progress"
                 );
             }
-            if batch_imported < batch_len {
-                let batch_start_record = (i + 1).saturating_sub(batch_len);
-                let failed_record = batch_start_record + batch_imported;
+            if !batch_result.fully_imported() {
+                let batch_start_record = (i + 1).saturating_sub(batch_result.len);
+                let failed_record = batch_start_record + batch_result.imported;
                 anyhow::bail!(
-                    "partial chain.acc import at record {failed_record}: imported {batch_imported} of {batch_len} blocks in batch, {imported} of {import_count} requested blocks imported"
+                    "partial chain.acc import at record {failed_record}: imported {} of {} blocks in batch, {imported} of {import_count} requested blocks imported",
+                    batch_result.imported,
+                    batch_result.len
                 );
             }
             if reached_count_only_stop_height {
@@ -442,6 +464,57 @@ where
         transaction_block_import_seconds,
         transaction_blocks_per_second,
         hot_metrics,
+    })
+}
+
+fn chain_acc_batch_should_flush_before_push(batch: &[Block], next: &Block) -> bool {
+    batch.len() >= IMPORT_BATCH_SIZE
+        && !next.transactions.is_empty()
+        && batch.iter().all(|block| block.transactions.is_empty())
+}
+
+fn chain_acc_batch_should_flush(batch: &[Block]) -> bool {
+    if batch.iter().all(|block| block.transactions.is_empty()) {
+        batch.len() >= MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS
+    } else {
+        batch.len() >= IMPORT_BATCH_SIZE
+    }
+}
+
+struct ChainAccBatchImportResult {
+    len: usize,
+    imported: usize,
+    elapsed: std::time::Duration,
+    composition: ChainAccImportComposition,
+    tip: Option<LocalLedgerTip>,
+}
+
+impl ChainAccBatchImportResult {
+    fn fully_imported(&self) -> bool {
+        self.imported == self.len
+    }
+}
+
+async fn import_chain_acc_batch(
+    handle: &BlockchainHandle,
+    batch_blocks: Vec<Block>,
+    verify: bool,
+) -> anyhow::Result<ChainAccBatchImportResult> {
+    let len = batch_blocks.len();
+    let composition = ChainAccImportComposition::from_blocks(&batch_blocks);
+    let tip = batch_blocks.last().map(|block| LocalLedgerTip {
+        height: block.index(),
+        hash: block.hash(),
+    });
+    let start = Instant::now();
+    let imported = handle.import_blocks_bulk(batch_blocks, verify).await?;
+    let elapsed = start.elapsed();
+    Ok(ChainAccBatchImportResult {
+        len,
+        imported,
+        elapsed,
+        composition,
+        tip,
     })
 }
 
@@ -1652,6 +1725,114 @@ mod tests {
         assert!(
             report.transaction_blocks_per_second > total_elapsed_transaction_bps,
             "transaction BPS should use transaction-bearing batch time instead of total import time: {report:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn import_chain_acc_uses_fast_forward_sized_batches_for_empty_runs() {
+        let (handle, mut commands, _events) = BlockchainHandle::channel(2, 2);
+        let empty_run =
+            neo_blockchain::empty_block_fast_forward::MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS;
+        let mut blocks = linked_empty_blocks(0, empty_run);
+        let prev = blocks.last().expect("previous block");
+        blocks.push(non_empty_block_with_prev_hash(
+            empty_run as u32,
+            prev.hash(),
+            vec![signed_test_transaction(1)],
+        ));
+        let bytes = encode_chain_acc(&blocks);
+        let mut cursor = std::io::Cursor::new(bytes);
+        let service = tokio::spawn(async move {
+            let Some(BlockchainCommand::ImportBlocks {
+                import: first,
+                reply: first_reply,
+            }) = commands.recv().await
+            else {
+                panic!("expected first import blocks command");
+            };
+            assert_eq!(first.blocks.len(), empty_run);
+            assert!(
+                first
+                    .blocks
+                    .iter()
+                    .all(|block| block.transactions.is_empty())
+            );
+            first_reply
+                .send(ImportBlocksReply::ok(first.blocks.len()))
+                .expect("reply first import");
+
+            let Some(BlockchainCommand::ImportBlocks {
+                import: second,
+                reply: second_reply,
+            }) = commands.recv().await
+            else {
+                panic!("expected second import blocks command");
+            };
+            assert_eq!(second.blocks.len(), 1);
+            assert_eq!(second.blocks[0].transactions.len(), 1);
+            second_reply
+                .send(ImportBlocksReply::ok(second.blocks.len()))
+                .expect("reply second import");
+        });
+
+        let report = import_chain_acc_from_reader_report(
+            &handle,
+            &mut cursor,
+            None,
+            false,
+            Some(ChainAccExpectedRange {
+                start_height: 0,
+                end_height: empty_run as u32,
+            }),
+            None,
+        )
+        .await
+        .expect("import report");
+
+        service.await.expect("service task");
+        assert_eq!(report.imported, (empty_run + 1) as u64);
+        assert_eq!(report.empty_only_blocks, empty_run as u64);
+        assert_eq!(report.transaction_blocks, 1);
+    }
+
+    #[test]
+    fn chain_acc_batch_splits_normal_sized_empty_prefix_before_transaction_block() {
+        let mut small_empty_prefix = linked_empty_blocks(0, IMPORT_BATCH_SIZE - 1);
+        let prev = small_empty_prefix.last().expect("previous block");
+        let next = non_empty_block_with_prev_hash(
+            (IMPORT_BATCH_SIZE - 1) as u32,
+            prev.hash(),
+            vec![signed_test_transaction(1)],
+        );
+        assert!(
+            !chain_acc_batch_should_flush_before_push(&small_empty_prefix, &next),
+            "small empty prefixes can stay in the normal transaction-bearing batch"
+        );
+        small_empty_prefix.push(next);
+        assert!(
+            chain_acc_batch_should_flush(&small_empty_prefix),
+            "mixed transaction-bearing batches still flush at the normal boundary"
+        );
+
+        let empty_run = IMPORT_BATCH_SIZE;
+        let mut blocks = linked_empty_blocks(0, empty_run);
+        assert!(
+            !chain_acc_batch_should_flush(&blocks),
+            "empty-only batches should be allowed to grow beyond the normal transaction batch"
+        );
+        let prev = blocks.last().expect("previous block");
+        blocks.push(non_empty_block_with_prev_hash(
+            empty_run as u32,
+            prev.hash(),
+            vec![signed_test_transaction(1)],
+        ));
+
+        assert!(
+            chain_acc_batch_should_flush_before_push(
+                &blocks[..empty_run],
+                blocks.last().expect("transaction block")
+            ),
+            "a normal-sized empty run should flush before the transaction block so it remains eligible for empty fast-forward"
         );
     }
 
