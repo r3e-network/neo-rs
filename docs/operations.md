@@ -652,6 +652,12 @@ The report also includes a `throughput_trend` series and
 `throughput_regressions` list. By default, any adjacent milestone drop of 25%
 or more is flagged; adjust that with `--regression-threshold-percent <N>` when
 you are comparing debug, release, or different storage devices.
+Fast-sync runs now produce two distinct throughput views. The analyzer keeps
+`transaction_import_*` fields for the transaction-bearing import proof that
+backs the production BPS gate, and `empty_block_*` fields for the empty-block
+fast-path evaluation. Empty-block rates can legitimately exceed 10,000 BPS, but
+they are reported separately and do not satisfy the transaction-bearing speed
+proof.
 `performance_by_node_bin` groups throughput by the recorded node binary so
 debug and release runs are not averaged together; older JSONL entries without
 that field are reported as `unknown`.

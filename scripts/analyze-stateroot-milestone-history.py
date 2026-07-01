@@ -48,6 +48,31 @@ def flatten_milestones(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "last_height": milestone.get("last_height"),
                     "blocks_per_second": milestone.get("blocks_per_second", 0.0),
                     "elapsed_seconds": milestone.get("elapsed_seconds", 0.0),
+                    "speed_proof_source": milestone.get("speed_proof_source"),
+                    "import_window_blocks_per_second": milestone.get(
+                        "import_window_blocks_per_second"
+                    ),
+                    "replay_window_blocks_per_second": milestone.get(
+                        "replay_window_blocks_per_second"
+                    ),
+                    "empty_block_speed_proof_source": milestone.get(
+                        "empty_block_speed_proof_source"
+                    ),
+                    "empty_block_blocks_per_second": milestone.get(
+                        "empty_block_blocks_per_second"
+                    ),
+                    "empty_only_blocks": milestone.get("empty_only_blocks"),
+                    "empty_block_import_seconds": milestone.get(
+                        "empty_block_import_seconds"
+                    ),
+                    "empty_block_speed_proof_error": milestone.get(
+                        "empty_block_speed_proof_error"
+                    ),
+                    "transaction_work_summary": milestone.get(
+                        "transaction_work_summary"
+                    )
+                    or {},
+                    "sync_proof": milestone.get("sync_proof") or {},
                     "local_root": milestone.get("local_root"),
                     "reference_matches_local": milestone.get("reference_matches_local"),
                     "stateroot_matches_chain": milestone.get("stateroot_matches_chain"),
@@ -290,6 +315,171 @@ def throughput_floor_violations(
     return violations
 
 
+def fast_sync_import_report(item: dict[str, Any]) -> dict[str, Any]:
+    sync_proof = item.get("sync_proof") or {}
+    if not isinstance(sync_proof, dict):
+        return {}
+    import_report = sync_proof.get("fast_sync_import") or {}
+    if not isinstance(import_report, dict):
+        return {}
+    return import_report
+
+
+def transaction_import_proof_milestones(
+    completed: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    proofs: list[dict[str, Any]] = []
+    for item in completed:
+        if item.get("speed_proof_source") != "fast-sync-transaction-blocks":
+            continue
+        if item.get("import_window_blocks_per_second") is None:
+            continue
+        try:
+            bps = float(item["import_window_blocks_per_second"])
+        except (TypeError, ValueError):
+            continue
+        import_report = fast_sync_import_report(item)
+        proof = {
+            "run_index": item.get("run_index"),
+            "timestamp_utc": item.get("timestamp_utc"),
+            "node_bin": item.get("node_bin"),
+            "probe_bin": item.get("probe_bin"),
+            "height": milestone_height(item),
+            "local_root": item.get("local_root"),
+            "transaction_import_blocks_per_second": bps,
+            "transaction_blocks": import_report.get("transaction_blocks"),
+            "transactions": import_report.get("transactions"),
+            "transaction_block_import_seconds": import_report.get(
+                "transaction_block_import_seconds"
+            ),
+            "replay_window_blocks_per_second": item.get("replay_window_blocks_per_second"),
+        }
+        proofs.append(proof)
+    return proofs
+
+
+def transaction_import_floor_violations(
+    proofs: list[dict[str, Any]],
+    *,
+    sync_speed_floor_bps: float,
+) -> list[dict[str, Any]]:
+    violations: list[dict[str, Any]] = []
+    for proof in proofs:
+        bps = float(proof.get("transaction_import_blocks_per_second") or 0.0)
+        if bps >= sync_speed_floor_bps:
+            continue
+        violation = dict(proof)
+        violation["shortfall_blocks_per_second"] = sync_speed_floor_bps - bps
+        violations.append(violation)
+    return violations
+
+
+def summarize_transaction_import_proofs(
+    proofs: list[dict[str, Any]],
+    *,
+    slowest_limit: int,
+    fastest_limit: int,
+    sync_speed_floor_bps: float,
+) -> dict[str, Any]:
+    bps_values = [
+        float(item["transaction_import_blocks_per_second"]) for item in proofs
+    ]
+    violations = transaction_import_floor_violations(
+        proofs,
+        sync_speed_floor_bps=sync_speed_floor_bps,
+    )
+    return {
+        "transaction_import_proof_count": len(proofs),
+        "transaction_import_speed_floor_blocks_per_second": sync_speed_floor_bps,
+        "average_transaction_import_blocks_per_second": (
+            sum(bps_values) / len(bps_values) if bps_values else 0.0
+        ),
+        "min_transaction_import_blocks_per_second": (
+            min(bps_values) if bps_values else 0.0
+        ),
+        "max_transaction_import_blocks_per_second": (
+            max(bps_values) if bps_values else 0.0
+        ),
+        "transaction_import_floor_violation_count": len(violations),
+        "transaction_import_floor_violations": violations,
+        "slowest_transaction_import_milestones": sorted(
+            proofs,
+            key=lambda item: float(item["transaction_import_blocks_per_second"]),
+        )[:slowest_limit],
+        "fastest_transaction_import_milestones": sorted(
+            proofs,
+            key=lambda item: float(item["transaction_import_blocks_per_second"]),
+            reverse=True,
+        )[:fastest_limit],
+    }
+
+
+def empty_block_fast_path_milestones(
+    completed: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    proofs: list[dict[str, Any]] = []
+    for item in completed:
+        if item.get("empty_block_speed_proof_source") != "fast-sync-empty-blocks":
+            continue
+        if item.get("empty_block_blocks_per_second") is None:
+            continue
+        try:
+            bps = float(item["empty_block_blocks_per_second"])
+        except (TypeError, ValueError):
+            continue
+        proofs.append(
+            {
+                "run_index": item.get("run_index"),
+                "timestamp_utc": item.get("timestamp_utc"),
+                "node_bin": item.get("node_bin"),
+                "probe_bin": item.get("probe_bin"),
+                "height": milestone_height(item),
+                "local_root": item.get("local_root"),
+                "empty_block_blocks_per_second": bps,
+                "empty_only_blocks": item.get("empty_only_blocks"),
+                "empty_block_import_seconds": item.get("empty_block_import_seconds"),
+                "empty_block_speed_proof_error": item.get(
+                    "empty_block_speed_proof_error"
+                ),
+                "transaction_import_blocks_per_second": item.get(
+                    "import_window_blocks_per_second"
+                ),
+            }
+        )
+    return proofs
+
+
+def summarize_empty_block_fast_path(
+    proofs: list[dict[str, Any]],
+    *,
+    slowest_limit: int,
+    fastest_limit: int,
+) -> dict[str, Any]:
+    bps_values = [float(item["empty_block_blocks_per_second"]) for item in proofs]
+    proof_errors = [
+        item for item in proofs if item.get("empty_block_speed_proof_error")
+    ]
+    return {
+        "empty_block_fast_path_proof_count": len(proofs),
+        "average_empty_block_blocks_per_second": (
+            sum(bps_values) / len(bps_values) if bps_values else 0.0
+        ),
+        "min_empty_block_blocks_per_second": min(bps_values) if bps_values else 0.0,
+        "max_empty_block_blocks_per_second": max(bps_values) if bps_values else 0.0,
+        "slowest_empty_block_milestones": sorted(
+            proofs,
+            key=lambda item: float(item["empty_block_blocks_per_second"]),
+        )[:slowest_limit],
+        "fastest_empty_block_milestones": sorted(
+            proofs,
+            key=lambda item: float(item["empty_block_blocks_per_second"]),
+            reverse=True,
+        )[:fastest_limit],
+        "empty_block_speed_proof_error_count": len(proof_errors),
+        "empty_block_speed_proof_errors": proof_errors,
+    }
+
+
 def sample_interval_rankings(
     completed: list[dict[str, Any]],
     *,
@@ -418,6 +608,19 @@ def analyze_history(
         completed,
         sync_speed_floor_bps=sync_speed_floor_bps,
     )
+    transaction_import_proofs = transaction_import_proof_milestones(completed)
+    transaction_import_summary = summarize_transaction_import_proofs(
+        transaction_import_proofs,
+        slowest_limit=slowest_limit,
+        fastest_limit=fastest_limit,
+        sync_speed_floor_bps=sync_speed_floor_bps,
+    )
+    empty_block_proofs = empty_block_fast_path_milestones(completed)
+    empty_block_summary = summarize_empty_block_fast_path(
+        empty_block_proofs,
+        slowest_limit=slowest_limit,
+        fastest_limit=fastest_limit,
+    )
     report: dict[str, Any] = {
         "run_count": len(records),
         "milestone_count": len(milestones),
@@ -426,6 +629,10 @@ def analyze_history(
         "latest_root": latest.get("local_root") if latest else None,
         "latest_metrics_sample_summary": (
             latest.get("metrics_sample_summary") if latest else {}
+        )
+        or {},
+        "latest_transaction_work_summary": (
+            latest.get("transaction_work_summary") if latest else {}
         )
         or {},
         "average_blocks_per_second": sum(bps_values) / len(bps_values) if bps_values else 0.0,
@@ -466,6 +673,8 @@ def analyze_history(
         "reference_mismatches": reference_mismatches,
         "state_mismatches": state_mismatches,
     }
+    report.update(transaction_import_summary)
+    report.update(empty_block_summary)
     if checkpoint_root is not None:
         inventory = scan_checkpoint_inventory(checkpoint_root)
         history_heights = sorted(

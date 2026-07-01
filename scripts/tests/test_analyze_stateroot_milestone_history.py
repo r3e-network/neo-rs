@@ -95,6 +95,10 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
                                 }
                             }
                         },
+                        "transaction_work_summary": {
+                            "observed_transaction_work": True,
+                            "max_avg_tx_count": 2.0,
+                        },
                     }
                 ],
             ),
@@ -114,6 +118,9 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
         self.assertEqual(
             report["latest_metrics_sample_summary"]["metrics"]["neo_sync_avg_persist_us"]["last"],
             4406.0,
+        )
+        self.assertTrue(
+            report["latest_transaction_work_summary"]["observed_transaction_work"]
         )
         self.assertEqual(report["average_blocks_per_second"], (10.0 + 2.0 + 20.0) / 3)
         self.assertEqual(report["slowest_milestones"][0]["height"], 200)
@@ -224,6 +231,138 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
             0.01,
             places=6,
         )
+
+    def test_analyze_history_reports_transaction_import_speed_proof_floor_shortfalls(self):
+        module = load_module()
+        records = [
+            record(
+                "2026-01-01T00:00:00+00:00",
+                [
+                    {
+                        "height": 100,
+                        "last_height": 100,
+                        "blocks_per_second": 10000.0,
+                        "checkpoint_created": True,
+                        "local_root": "0x100",
+                        "speed_proof_source": "fast-sync-transaction-blocks",
+                        "import_window_blocks_per_second": 1499.5,
+                        "replay_window_blocks_per_second": 10.0,
+                        "sync_proof": {
+                            "fast_sync_import": {
+                                "transaction_blocks": 2000,
+                                "transactions": 5000,
+                                "transaction_block_import_seconds": 1.333778,
+                                "transaction_blocks_per_second": 1499.5,
+                            }
+                        },
+                    },
+                    {
+                        "height": 200,
+                        "last_height": 200,
+                        "blocks_per_second": 10000.0,
+                        "checkpoint_created": True,
+                        "local_root": "0x200",
+                        "speed_proof_source": "fast-sync-transaction-blocks",
+                        "import_window_blocks_per_second": 1750.0,
+                        "replay_window_blocks_per_second": 10.0,
+                        "sync_proof": {
+                            "fast_sync_import": {
+                                "transaction_blocks": 3000,
+                                "transactions": 6000,
+                                "transaction_block_import_seconds": 1.714286,
+                                "transaction_blocks_per_second": 1750.0,
+                            }
+                        },
+                    },
+                    {
+                        "height": 300,
+                        "last_height": 300,
+                        "blocks_per_second": 50.0,
+                        "checkpoint_created": True,
+                        "local_root": "0x300",
+                        "speed_proof_source": "height-samples",
+                        "import_window_blocks_per_second": None,
+                    },
+                ],
+                node_bin="target/release/neo-node",
+            )
+        ]
+
+        report = module.analyze_history(
+            records,
+            slowest_limit=5,
+            fastest_limit=5,
+        )
+
+        self.assertEqual(report["transaction_import_proof_count"], 2)
+        self.assertEqual(report["transaction_import_speed_floor_blocks_per_second"], 1500.0)
+        self.assertEqual(
+            report["average_transaction_import_blocks_per_second"],
+            (1499.5 + 1750.0) / 2,
+        )
+        self.assertEqual(report["min_transaction_import_blocks_per_second"], 1499.5)
+        self.assertEqual(report["max_transaction_import_blocks_per_second"], 1750.0)
+        self.assertEqual(report["transaction_import_floor_violation_count"], 1)
+        violation = report["transaction_import_floor_violations"][0]
+        self.assertEqual(violation["height"], 100)
+        self.assertEqual(violation["transaction_import_blocks_per_second"], 1499.5)
+        self.assertEqual(violation["transaction_blocks"], 2000)
+        self.assertAlmostEqual(violation["shortfall_blocks_per_second"], 0.5)
+        self.assertEqual(report["slowest_transaction_import_milestones"][0]["height"], 100)
+        self.assertEqual(report["fastest_transaction_import_milestones"][0]["height"], 200)
+
+    def test_analyze_history_reports_empty_block_fast_path_proofs_separately(self):
+        module = load_module()
+        records = [
+            record(
+                "2026-01-01T00:00:00+00:00",
+                [
+                    {
+                        "height": 100,
+                        "last_height": 100,
+                        "blocks_per_second": 10000.0,
+                        "checkpoint_created": True,
+                        "local_root": "0x100",
+                        "speed_proof_source": "fast-sync-transaction-blocks",
+                        "import_window_blocks_per_second": 1600.0,
+                        "empty_block_speed_proof_source": "fast-sync-empty-blocks",
+                        "empty_block_blocks_per_second": 12000.0,
+                        "empty_only_blocks": 96000,
+                        "empty_block_import_seconds": 8.0,
+                    },
+                    {
+                        "height": 200,
+                        "last_height": 200,
+                        "blocks_per_second": 9000.0,
+                        "checkpoint_created": True,
+                        "local_root": "0x200",
+                        "speed_proof_source": "fast-sync-transaction-blocks",
+                        "import_window_blocks_per_second": 1700.0,
+                        "empty_block_speed_proof_source": "fast-sync-empty-blocks",
+                        "empty_block_blocks_per_second": 9000.0,
+                        "empty_only_blocks": 45000,
+                        "empty_block_import_seconds": 5.0,
+                        "empty_block_speed_proof_error": "fast-sync empty-block BPS does not match elapsed proof",
+                    },
+                ],
+            )
+        ]
+
+        report = module.analyze_history(
+            records,
+            slowest_limit=5,
+            fastest_limit=1,
+        )
+
+        self.assertEqual(report["empty_block_fast_path_proof_count"], 2)
+        self.assertEqual(report["average_empty_block_blocks_per_second"], 10500.0)
+        self.assertEqual(report["min_empty_block_blocks_per_second"], 9000.0)
+        self.assertEqual(report["max_empty_block_blocks_per_second"], 12000.0)
+        self.assertEqual(report["slowest_empty_block_milestones"][0]["height"], 200)
+        self.assertEqual(report["fastest_empty_block_milestones"][0]["height"], 100)
+        self.assertEqual(report["fastest_empty_block_milestones"][0]["empty_only_blocks"], 96000)
+        self.assertEqual(report["empty_block_speed_proof_error_count"], 1)
+        self.assertEqual(report["empty_block_speed_proof_errors"][0]["height"], 200)
 
     def test_analyze_history_groups_performance_by_node_binary(self):
         module = load_module()
