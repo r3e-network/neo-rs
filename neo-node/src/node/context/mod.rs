@@ -171,6 +171,13 @@ impl neo_blockchain::service_context::SystemContext for DaemonContext {
             && self.application_logs_service.is_none()
             && self.tokens_tracker().is_none()
     }
+
+    fn allows_empty_block_committing_fast_forward(&self) -> bool {
+        self.state_service.is_some()
+            && self.indexer_service.is_none()
+            && self.application_logs_service.is_none()
+            && self.tokens_tracker().is_none()
+    }
 }
 
 impl DaemonContext {

@@ -171,6 +171,71 @@ where
         Ok(())
     }
 
+    fn persist_empty_block_with_committing_fast_forward(
+        &self,
+        block: &Block,
+        current_height: u32,
+        resources: &BatchPersistResources,
+        persist_options: NativePersistOptions,
+        persist_context: BlockPersistContext,
+    ) -> CoreResult<bool> {
+        if !persist_context.bulk_sync
+            || persist_options.capture_replay_artifacts
+            || !self.system.allows_empty_block_committing_fast_forward()
+            || !block.transactions.is_empty()
+            || block.header.merkle_root() != &neo_primitives::UInt256::zero()
+            || block.index() != current_height.saturating_add(1)
+        {
+            return Ok(false);
+        }
+
+        let single = std::slice::from_ref(block);
+        let staged = match stage_empty_block_fast_forward(
+            Arc::clone(&resources.snapshot),
+            single,
+            resources.settings.as_ref(),
+            persist_options,
+            persist_context,
+            &resources.native_persist,
+            current_height,
+        ) {
+            Ok(staged) => staged,
+            Err(error) => {
+                debug!(
+                    target: "neo::sync",
+                    height = block.index(),
+                    error = %error,
+                    "empty-block committing fast-forward fell back to normal persistence"
+                );
+                return Ok(false);
+            }
+        };
+
+        if !self.system.block_committing_with_context(
+            block,
+            staged.snapshot(),
+            &[],
+            persist_context,
+        ) {
+            return Err(CoreError::other(format!(
+                "block {} committing hook failed",
+                block.index()
+            )));
+        }
+
+        staged.commit();
+        let block = Arc::new(block.clone());
+        if let Err(error) = self.ledger.insert_block_arc(Arc::clone(&block)) {
+            return Err(CoreError::other(format!(
+                "block {} ledger insert: {error}",
+                block.index()
+            )));
+        }
+        self.system
+            .block_committed_with_context(block.as_ref(), persist_context);
+        Ok(true)
+    }
+
     /// Handle a [`BlockchainCommand::PersistCompleted`]: update hot ledger
     /// caches, evict persisted transactions from the mempool cache, flush the
     /// durable store, and broadcast the persistence event.
@@ -433,6 +498,33 @@ where
                         "import aborted: block verification failed"
                     );
                     return ImportBlocksReply::ok(imported);
+                }
+            }
+
+            if bulk_sync && let Some(resources) = &batch_persist_resources {
+                match self.persist_empty_block_with_committing_fast_forward(
+                    block,
+                    current_height,
+                    resources,
+                    persist_options,
+                    persist_context,
+                ) {
+                    Ok(true) => {
+                        imported += 1;
+                        last_imported_height = Some(index);
+                        position += 1;
+                        continue;
+                    }
+                    Ok(false) => {}
+                    Err(error) => {
+                        warn!(
+                            target: "neo",
+                            height = index,
+                            %error,
+                            "import aborted: empty-block committing fast-forward failed"
+                        );
+                        return ImportBlocksReply::ok(imported);
+                    }
                 }
             }
 

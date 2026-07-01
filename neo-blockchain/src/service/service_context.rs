@@ -126,6 +126,22 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
         false
     }
 
+    /// Returns whether a trusted bulk-sync import may replace the native VM
+    /// OnPersist/PostPersist engines for an empty block with the
+    /// state-equivalent empty-block writer while still invoking
+    /// [`SystemContext::block_committing_with_context`] and
+    /// [`SystemContext::block_committed_with_context`] once per block.
+    ///
+    /// This is narrower than [`SystemContext::allows_empty_block_fast_forward`]:
+    /// it keeps the per-block observer stream and is intended for StateService
+    /// catch-up, where each local state root must still be produced but the
+    /// empty native-contract side effects can be written directly. Return
+    /// `false` when any observer needs full replay artifacts or native-engine
+    /// notifications.
+    fn allows_empty_block_committing_fast_forward(&self) -> bool {
+        false
+    }
+
     /// Called after the block's writes have been committed to the canonical
     /// store. This mirrors the C# `ICommittedHandler` plugin hook.
     fn block_committed(&self, _block: &Block) {}

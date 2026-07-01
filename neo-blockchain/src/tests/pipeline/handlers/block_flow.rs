@@ -101,6 +101,71 @@ impl SystemContext for FailingBulkFlushContext {
     }
 }
 
+struct StateServiceEmptyFastPathContext {
+    snapshot: Arc<neo_storage::DataCache>,
+    settings: Arc<neo_config::ProtocolSettings>,
+    state_service: Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers>,
+    fast_path_checks: Arc<AtomicUsize>,
+    committing_heights: Arc<parking_lot::Mutex<Vec<u32>>>,
+}
+
+impl std::fmt::Debug for StateServiceEmptyFastPathContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StateServiceEmptyFastPathContext")
+            .finish_non_exhaustive()
+    }
+}
+
+impl SystemContext for StateServiceEmptyFastPathContext {
+    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
+        Arc::clone(&self.settings)
+    }
+
+    fn current_height(&self) -> u32 {
+        0
+    }
+
+    fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache>> {
+        Some(Arc::clone(&self.snapshot))
+    }
+
+    fn block_committing(
+        &self,
+        block: &Block,
+        snapshot: &neo_storage::DataCache,
+        _application_executed_list: &[neo_payloads::ApplicationExecuted],
+    ) -> bool {
+        self.state_service.on_committing(block.index(), snapshot)
+    }
+
+    fn block_committing_with_context(
+        &self,
+        block: &Block,
+        snapshot: &neo_storage::DataCache,
+        _application_executed_list: &[neo_payloads::ApplicationExecuted],
+        _context: crate::service_context::BlockPersistContext,
+    ) -> bool {
+        self.committing_heights.lock().push(block.index());
+        self.state_service
+            .on_committing_deferred(block.index(), snapshot)
+    }
+
+    fn flush_bulk_sync_commit_handlers(&self) -> Result<(), String> {
+        self.state_service
+            .flush_result()
+            .map_err(|err| err.to_string())
+    }
+
+    fn allows_empty_block_fast_forward(&self) -> bool {
+        false
+    }
+
+    fn allows_empty_block_committing_fast_forward(&self) -> bool {
+        self.fast_path_checks.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+}
+
 #[tokio::test]
 async fn initialize_bootstraps_genesis_once_and_inventory_runs_native_hooks() {
     let (service, _handle, snapshot, state_store) = store_fixture_with_state_service();
@@ -1156,9 +1221,32 @@ async fn bulk_import_falls_back_when_per_block_committing_observer_is_active() {
 }
 
 #[tokio::test]
-async fn bulk_import_falls_back_when_state_service_is_loaded() {
-    let (service, _handle, _snapshot, state_store) = store_fixture_with_state_service();
+async fn bulk_import_uses_empty_fast_path_when_only_state_service_is_loaded() {
+    neo_native_contracts::install();
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let state_store = Arc::new(neo_state_service::StateStore::with_mpt(true));
+    let state_service = Arc::new(
+        neo_state_service::commit_handlers::StateServiceCommitHandlers::new(Arc::clone(
+            &state_store,
+        )),
+    );
+    let fast_path_checks = Arc::new(AtomicUsize::new(0));
+    let committing_heights = Arc::new(parking_lot::Mutex::new(Vec::new()));
+    let system = Arc::new(StateServiceEmptyFastPathContext {
+        snapshot: Arc::clone(&snapshot),
+        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        state_service,
+        fast_path_checks: Arc::clone(&fast_path_checks),
+        committing_heights: Arc::clone(&committing_heights),
+    });
+    let ledger = Arc::new(LedgerContext::default());
+    let header_cache = Arc::new(HeaderCache::default());
+    let mempool = Arc::new(TestMempool);
+    let (service, _handle) =
+        BlockchainService::with_defaults(system, ledger, header_cache, mempool);
     service.initialize().await;
+    fast_path_checks.store(0, Ordering::SeqCst);
+    committing_heights.lock().clear();
 
     let settings = neo_config::ProtocolSettings::default();
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
@@ -1188,15 +1276,78 @@ async fn bulk_import_falls_back_when_state_service_is_loaded() {
         .await;
 
     assert_eq!(imported.imported, 2);
+    assert!(
+        fast_path_checks.load(Ordering::SeqCst) > 0,
+        "bulk import should consult the StateService-compatible empty-block fast path"
+    );
+    assert_eq!(
+        committing_heights.lock().as_slice(),
+        &[1, 2],
+        "StateService-compatible fast path must still run per-block committing hooks"
+    );
     let mpt = state_store.mpt().expect("state store exposes MPT");
     assert!(
         mpt.get_state_root(1).is_some(),
-        "loaded StateService must disable empty-block fast-forward and observe block 1"
+        "loaded StateService must observe block 1 even when empty native persistence is optimized"
     );
     assert!(
         mpt.get_state_root(2).is_some(),
-        "loaded StateService must disable empty-block fast-forward and observe block 2"
+        "loaded StateService must observe block 2 even when empty native persistence is optimized"
     );
+    assert_eq!(service.ledger.current_height(), 2);
+    assert!(
+        service.ledger.block_hash_at(1).is_some(),
+        "StateService-compatible fast path keeps the normal hot ledger cache updates"
+    );
+    assert!(
+        service.ledger.block_hash_at(2).is_some(),
+        "StateService-compatible fast path keeps the normal hot ledger cache updates"
+    );
+
+    let (normal_service, _normal_handle, _normal_snapshot, normal_state_store) =
+        store_fixture_with_state_service();
+    normal_service.initialize().await;
+    let mut normal_header1 = Header::new();
+    normal_header1.set_index(1);
+    normal_header1.set_prev_hash(genesis.hash());
+    normal_header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    normal_header1.set_next_consensus(*genesis.header.next_consensus());
+    let normal_block1 = Block::from_parts(normal_header1, vec![]);
+    let normal_block1_hash =
+        BlockchainService::<StoreContext, TestMempool>::try_block_hash(&normal_block1)
+            .expect("normal block1 hash");
+
+    let mut normal_header2 = Header::new();
+    normal_header2.set_index(2);
+    normal_header2.set_prev_hash(normal_block1_hash);
+    normal_header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    normal_header2.set_next_consensus(*genesis.header.next_consensus());
+    let normal_block2 = Block::from_parts(normal_header2, vec![]);
+
+    let normal_imported = normal_service
+        .handle_import(Import {
+            blocks: vec![normal_block1, normal_block2],
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+    assert_eq!(normal_imported.imported, 2);
+
+    let normal_mpt = normal_state_store.mpt().expect("normal MPT");
+    for height in [1, 2] {
+        let fast_root = mpt
+            .get_state_root(height)
+            .expect("fast-path state root")
+            .root_hash;
+        let normal_root = normal_mpt
+            .get_state_root(height)
+            .expect("normal state root")
+            .root_hash;
+        assert_eq!(
+            fast_root, normal_root,
+            "empty-block fast path must match normal StateService root at height {height}"
+        );
+    }
 }
 
 #[tokio::test]
