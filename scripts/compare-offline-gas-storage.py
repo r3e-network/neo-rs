@@ -26,14 +26,28 @@ from neo_storage_tools import (  # noqa: E402
 
 ProbeRunner = Callable[[Path, list[str]], dict]
 RpcCaller = Callable[[str, str, list, float], Any]
+DEFAULT_STORAGE_PROVIDER = "mdbx"
 
 
 def display_hash_from_le(hash_hex_le: str) -> str:
     return "0x" + bytes.fromhex(hash_hex_le)[::-1].hex()
 
 
-def run_probe(db_path: Path, args: list[str], *, probe_bin: Path) -> dict:
-    command = [str(probe_bin), "--db", str(db_path), *args]
+def run_probe(
+    db_path: Path,
+    args: list[str],
+    *,
+    probe_bin: Path,
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
+) -> dict:
+    command = [
+        str(probe_bin),
+        "--db",
+        str(db_path),
+        "--storage-provider",
+        storage_provider,
+        *args,
+    ]
     completed = subprocess.run(
         command,
         check=True,
@@ -48,12 +62,14 @@ def local_ledger_pointer(
     *,
     db_path: Path,
     probe_bin: Path,
+    storage_provider: str,
     probe_runner: Callable[..., dict],
 ) -> dict:
     payload = probe_runner(
         db_path,
         ["--contract-id", "-4", "--key-hex", "0c", "--decode", "hash-index"],
         probe_bin=probe_bin,
+        storage_provider=storage_provider,
     )
     decoded = payload.get("decoded") or {}
     if not payload.get("found") or decoded.get("format") != "hash-index":
@@ -69,12 +85,14 @@ def local_gas_balance(
     db_path: Path,
     address: str,
     probe_bin: Path,
+    storage_provider: str,
     probe_runner: Callable[..., dict],
 ) -> dict:
     payload = probe_runner(
         db_path,
         ["--gas-address", address, "--decode", "nep17-account"],
         probe_bin=probe_bin,
+        storage_provider=storage_provider,
     )
     decoded = payload.get("decoded") or {}
     if payload.get("found"):
@@ -94,12 +112,14 @@ def compare_gas_accounts(
     addresses: list[str],
     probe_bin: Path,
     reference_rpc: str,
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
     probe_runner: Callable[..., dict] = run_probe,
     rpc: RpcCaller = rpc_call,
 ) -> dict:
     ledger = local_ledger_pointer(
         db_path=db_path,
         probe_bin=probe_bin,
+        storage_provider=storage_provider,
         probe_runner=probe_runner,
     )
     height = ledger["height"]
@@ -113,6 +133,7 @@ def compare_gas_accounts(
             db_path=db_path,
             address=address,
             probe_bin=probe_bin,
+            storage_provider=storage_provider,
             probe_runner=probe_runner,
         )
         reference_value = rpc(
@@ -139,6 +160,7 @@ def compare_gas_accounts(
     all_balances_match = all(item["matches"] for item in balances)
     return {
         "db": str(db_path),
+        "storage_provider": storage_provider,
         "height": height,
         "local_block_hash": ledger["hash"],
         "reference_block_hash": reference_block_hash,
@@ -170,6 +192,12 @@ def parse_args() -> argparse.Namespace:
         help="Path to the built neo-db-probe binary",
     )
     parser.add_argument(
+        "--storage-provider",
+        default=DEFAULT_STORAGE_PROVIDER,
+        choices=["mdbx", "rocksdb"],
+        help="Storage backend used by neo-db-probe for offline reads.",
+    )
+    parser.add_argument(
         "--reference-rpc",
         default=DEFAULT_REFERENCE_RPC,
         help=f"Reference Neo RPC endpoint (default: {DEFAULT_REFERENCE_RPC})",
@@ -188,6 +216,7 @@ def main() -> int:
         db_path=args.db,
         addresses=args.address,
         probe_bin=args.probe_bin,
+        storage_provider=args.storage_provider,
         reference_rpc=args.reference_rpc,
     )
     print(json.dumps(report, indent=2, sort_keys=True))

@@ -23,15 +23,17 @@ def write_checkpoint(
     mpt: bool,
     include_info: bool = True,
     metadata: dict[str, str | None] | None = None,
+    chain_dir: str = "data",
+    state_dir: str = "mpt",
 ) -> None:
-    data = root / "data"
+    data = root / chain_dir
     data.mkdir(parents=True)
     (data / "CURRENT").write_text("MANIFEST-000001\n", encoding="utf-8")
     if mpt:
-        state = root / "mpt"
+        state = root / state_dir
         state.mkdir()
         (state / "CURRENT").write_text("MANIFEST-000001\n", encoding="utf-8")
-        mpt_dir = "mpt"
+        mpt_dir = state_dir
     else:
         mpt_dir = "missing-mpt"
     if not include_info:
@@ -283,6 +285,65 @@ class BoundedMainnetReplayTests(unittest.TestCase):
         self.assertIn("target/release/neo-db-probe", command)
         self.assertIn("--rpc", command)
         self.assertIn("http://127.0.0.1:31332", command)
+
+    def test_plan_uses_real_checkpoint_layout_and_provider_metadata(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "checkpoint"
+            write_checkpoint(
+                checkpoint,
+                mpt=True,
+                chain_dir="mainnet",
+                state_dir="StateRoot",
+                metadata={
+                    "storage_provider": "rocksdb",
+                    "chain_db": "data/mainnet-verified-h511289/chain",
+                    "stateroot_db": "data/mainnet-verified-h511289/state-root-334F454E",
+                    "mpt_dir": None,
+                },
+            )
+
+            plan = module.build_replay_plan(
+                checkpoint=checkpoint,
+                work_root=Path(tmp) / "work",
+                label="rocksdb-real-layout",
+                start_height=511289,
+                target_height=511300,
+                addresses=[],
+            )
+
+        self.assertEqual(
+            plan["chain_checkpoint"]["path"],
+            str((checkpoint / "mainnet").resolve()),
+        )
+        self.assertEqual(
+            plan["state_checkpoint"]["path"],
+            str((checkpoint / "StateRoot").resolve()),
+        )
+        self.assertEqual(plan["storage_provider"], "rocksdb")
+        self.assertIn('backend = "rocksdb"', plan["config_text"])
+        self.assertNotIn("mdbx_geometry_upper_gb", plan["config_text"])
+        self.assertIn("--storage-provider", module.step_by_name(plan, "run-node-with-repairs")["command"])
+        self.assertIn("rocksdb", module.step_by_name(plan, "run-node-with-repairs")["command"])
+
+    def test_plan_keeps_mdbx_default_for_checkpoints_without_provider_metadata(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint = Path(tmp) / "checkpoint"
+            write_checkpoint(checkpoint, mpt=True)
+
+            plan = module.build_replay_plan(
+                checkpoint=checkpoint,
+                work_root=Path(tmp) / "work",
+                label="default-mdbx",
+                start_height=511289,
+                target_height=511300,
+                addresses=[],
+            )
+
+        self.assertEqual(plan["storage_provider"], "mdbx")
+        self.assertIn('backend = "mdbx"', plan["config_text"])
+        self.assertIn("mdbx_geometry_upper_gb = 512", plan["config_text"])
 
 
 if __name__ == "__main__":

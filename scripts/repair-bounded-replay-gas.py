@@ -33,6 +33,7 @@ from neo_storage_tools import (  # noqa: E402
 )
 
 
+DEFAULT_STORAGE_PROVIDER = "mdbx"
 GAS_BURN_RE = re.compile(
     r"native GasToken TriggerType\(ON_PERSIST\) hook failed at block "
     r"(?P<height>\d+): .*?"
@@ -98,12 +99,19 @@ def matching_fee_transactions(reference_block: dict, burn_amount: int) -> list[d
     return matches
 
 
-def read_local_gas_balance(db_path: Path, sender: str, probe_bin: Path) -> dict:
+def read_local_gas_balance(
+    db_path: Path,
+    sender: str,
+    probe_bin: Path,
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
+) -> dict:
     completed = subprocess.run(
         [
             str(probe_bin),
             "--db",
             str(db_path),
+            "--storage-provider",
+            storage_provider,
             "--gas-address",
             sender,
             "--decode",
@@ -131,6 +139,7 @@ def choose_matching_transaction(
     failure: dict,
     db_path: Path | None,
     probe_bin: Path | None,
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
     local_balance_reader: LocalBalanceReader = read_local_gas_balance,
 ) -> tuple[dict, list[dict]]:
     if len(matches) == 1:
@@ -150,7 +159,7 @@ def choose_matching_transaction(
         sender = tx.get("sender")
         if not sender:
             continue
-        local = local_balance_reader(db_path, sender, probe_bin)
+        local = local_balance_reader(db_path, sender, probe_bin, storage_provider)
         prior_fees = int(tx.get("sender_prior_fees", 0))
         projected_balance = local["balance"] - prior_fees
         candidates.append(
@@ -210,6 +219,7 @@ def build_repair_plan(
     log_start_offset: int = 0,
     db_path: Path | None = None,
     probe_bin: Path | None = None,
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
     rpc: RpcCaller = rpc_call,
     local_balance_reader: LocalBalanceReader = read_local_gas_balance,
 ) -> dict:
@@ -222,6 +232,7 @@ def build_repair_plan(
         failure=failure,
         db_path=db_path,
         probe_bin=probe_bin,
+        storage_provider=storage_provider,
         local_balance_reader=local_balance_reader,
     )
     sender = tx["sender"]
@@ -252,12 +263,20 @@ def build_repair_plan(
     }
 
 
-def write_gas_account(db_path: Path, sender: str, value_base64: str, probe_bin: Path) -> dict:
+def write_gas_account(
+    db_path: Path,
+    sender: str,
+    value_base64: str,
+    probe_bin: Path,
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
+) -> dict:
     completed = subprocess.run(
         [
             str(probe_bin),
             "--db",
             str(db_path),
+            "--storage-provider",
+            storage_provider,
             "--gas-address",
             sender,
             "--write-value-base64",
@@ -280,6 +299,7 @@ def repair_bounded_replay_gas(
     address_version: int = DEFAULT_ADDRESS_VERSION,
     which_failure: str = "latest",
     log_start_offset: int = 0,
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
     apply: bool = False,
     rpc: RpcCaller = rpc_call,
     probe_writer: ProbeWriter = write_gas_account,
@@ -293,11 +313,13 @@ def repair_bounded_replay_gas(
         log_start_offset=log_start_offset,
         db_path=db_path,
         probe_bin=probe_bin,
+        storage_provider=storage_provider,
         rpc=rpc,
         local_balance_reader=local_balance_reader,
     )
     result = {
         "db": str(db_path),
+        "storage_provider": storage_provider,
         "log": str(log_path),
         "applied": False,
         **plan,
@@ -308,6 +330,7 @@ def repair_bounded_replay_gas(
             plan["repair"]["sender"],
             plan["repair"]["value_base64"],
             probe_bin,
+            storage_provider,
         )
         result["applied"] = True
     return result
@@ -327,6 +350,12 @@ def parse_args() -> argparse.Namespace:
         default=Path("target/release/neo-db-probe"),
         type=Path,
         help="neo-db-probe binary used for the local write",
+    )
+    parser.add_argument(
+        "--storage-provider",
+        default=DEFAULT_STORAGE_PROVIDER,
+        choices=["mdbx", "rocksdb"],
+        help="Storage backend used by neo-db-probe for local reads and writes.",
     )
     parser.add_argument(
         "--reference-rpc",
@@ -370,6 +399,7 @@ def main() -> int:
             address_version=args.address_version,
             which_failure=args.failure,
             log_start_offset=args.log_start_offset,
+            storage_provider=args.storage_provider,
             apply=args.apply,
         )
     except Exception as exc:  # pylint: disable=broad-except

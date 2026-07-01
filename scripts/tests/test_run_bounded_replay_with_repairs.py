@@ -111,8 +111,12 @@ class RunBoundedReplayWithRepairsTests(unittest.TestCase):
                     height = captured["height_reader"]()
                     return {"status": "target-reached", "last_height": height}
 
-                def fake_read_probe_ledger_height(db_path, probe_bin):
-                    captured["probe_args"] = (db_path, probe_bin)
+                def fake_read_probe_ledger_height(
+                    db_path,
+                    probe_bin,
+                    storage_provider="mdbx",
+                ):
+                    captured["probe_args"] = (db_path, probe_bin, storage_provider)
                     return 677297
 
                 return SimpleNamespace(
@@ -160,8 +164,86 @@ class RunBoundedReplayWithRepairsTests(unittest.TestCase):
                 module.load_script_module = old_loader
 
         self.assertEqual(code, 0)
-        self.assertEqual(captured["probe_args"], (Path("bounded/data"), Path("target/release/neo-db-probe")))
+        self.assertEqual(
+            captured["probe_args"],
+            (Path("bounded/data"), Path("target/release/neo-db-probe"), "mdbx"),
+        )
         self.assertIsNotNone(captured["node_output"])
+
+    def test_cli_passes_storage_provider_to_probe_and_repair(self):
+        module = load_module()
+        captured = {}
+
+        def fake_load_script_module(_filename, module_name):
+            if module_name == "run_bounded_mainnet_replay":
+                def fake_run_until_target(**kwargs):
+                    captured["height_reader"] = kwargs["height_reader"]
+                    captured["height_reader"]()
+                    return {"status": "process-exited", "last_height": 151116}
+
+                def fake_read_probe_ledger_height(db_path, probe_bin, storage_provider):
+                    captured["height_reader_args"] = (db_path, probe_bin, storage_provider)
+                    return 151116
+
+                return SimpleNamespace(
+                    node_command=lambda node_bin, config, target: [
+                        str(node_bin),
+                        str(config),
+                        str(target),
+                    ],
+                    run_until_target=fake_run_until_target,
+                    read_probe_ledger_height=fake_read_probe_ledger_height,
+                )
+
+            def fake_repair(**kwargs):
+                captured["repair_kwargs"] = kwargs
+                return {"applied": True}
+
+            return SimpleNamespace(
+                read_log_text=lambda _path, _offset: (
+                    "native GasToken TriggerType(ON_PERSIST) hook failed at block 151117: "
+                    "Invalid operation: GasToken::burn: insufficient balance 55342295 to burn 91584640\n"
+                ),
+                parse_gas_burn_failures=lambda _text: [{"height": 151117}],
+                repair_bounded_replay_gas=fake_repair,
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "neo-node.log"
+            log.write_text("", encoding="utf-8")
+            old_argv = sys.argv
+            old_loader = module.load_script_module
+            try:
+                module.load_script_module = fake_load_script_module
+                sys.argv = [
+                    "run-bounded-replay-with-repairs.py",
+                    "--config",
+                    "bounded.toml",
+                    "--db",
+                    "bounded/data",
+                    "--log",
+                    str(log),
+                    "--target-height",
+                    "151120",
+                    "--probe-bin",
+                    "target/release/neo-db-probe",
+                    "--storage-provider",
+                    "rocksdb",
+                    "--max-attempts",
+                    "1",
+                ]
+
+                code = module.main()
+            finally:
+                sys.argv = old_argv
+                module.load_script_module = old_loader
+
+        self.assertEqual(code, 124)
+        self.assertEqual(
+            captured["height_reader_args"],
+            (Path("bounded/data"), Path("target/release/neo-db-probe"), "rocksdb"),
+        )
+        self.assertEqual(captured["repair_kwargs"]["storage_provider"], "rocksdb")
 
 
 if __name__ == "__main__":
