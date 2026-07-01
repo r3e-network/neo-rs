@@ -106,6 +106,23 @@ fn decompress_data_empty_returns_error() {
 }
 
 #[test]
+fn compression_wrapper_rejects_declared_size_bomb() {
+    let mut compressed = Vec::new();
+    compressed.extend_from_slice(&1025u32.to_le_bytes());
+    compressed.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+
+    let result = crate::compression::Compression::decompress_lz4(&compressed, 1024);
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds maximum size"),
+        "canonical LZ4 wrapper must reject declared output sizes before decompression"
+    );
+}
+
+#[test]
 fn compress_data_large_input() {
     let data: Vec<u8> = (0..10000).map(|i| (i % 256) as u8).collect();
     let compressed = compress_data(&data).unwrap();

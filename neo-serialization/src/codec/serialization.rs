@@ -11,6 +11,8 @@ use neo_error::CoreError;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
+use crate::compression::{Compression, CompressionAlgorithm};
+
 /// Serializes data to bincode (a Rust-specific format — NOT the C# Neo encoding;
 /// internal/diagnostic only, never for consensus-relevant persisted state).
 pub fn serialize<T: Serialize>(data: &T) -> neo_error::Result<Vec<u8>> {
@@ -111,20 +113,20 @@ pub fn validate_serialization<T: Serialize + for<'de> Deserialize<'de> + Partial
     Ok(true)
 }
 
-/// Compresses serialized data using LZ4 (production implementation matching C# Neo compression)
+/// Compresses serialized data using the canonical Neo LZ4 helper.
 pub fn compress_data(data: &[u8]) -> neo_error::Result<Vec<u8>> {
-    Ok(lz4_flex::compress_prepend_size(data))
+    Compression::compress(data, CompressionAlgorithm::Lz4)
 }
 
-/// Decompresses data using LZ4 (production implementation matching C# Neo compression)
+/// Decompresses serialized data using the canonical Neo LZ4 helper.
 pub fn decompress_data(compressed_data: &[u8]) -> neo_error::Result<Vec<u8>> {
     // Validate input
     if compressed_data.is_empty() {
         return Err(CoreError::deserialization("Cannot decompress empty data"));
     }
 
-    lz4_flex::decompress_size_prepended(compressed_data)
-        .map_err(|e| CoreError::deserialization(format!("Data decompression failed: {}", e)))
+    Compression::decompress(compressed_data, CompressionAlgorithm::Lz4)
+        .map_err(|e| CoreError::deserialization(format!("Data decompression failed: {e}")))
 }
 
 #[cfg(test)]
