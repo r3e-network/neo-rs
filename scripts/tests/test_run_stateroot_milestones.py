@@ -1983,6 +1983,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                             "neo_sync_avg_total_us": 4000,
                             'neo_sync_neotoken_committee_compute_stage_avg_us{stage="candidate_state_decode"}': 2100,
                             "neo_state_service_mpt_apply_avg_changes": 17,
+                            "neo_state_service_mpt_apply_avg_items": 700,
                         }
                     },
                     {
@@ -1990,6 +1991,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                             "neo_sync_avg_total_us": 6000,
                             'neo_sync_neotoken_committee_compute_stage_avg_us{stage="candidate_state_decode"}': 3100,
                             "neo_state_service_mpt_apply_avg_changes": 19,
+                            "neo_state_service_mpt_apply_avg_items": 900,
                         }
                     },
                 ]
@@ -2008,6 +2010,11 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             "neo_state_service_mpt_apply_avg_changes",
             [item["name"] for item in hot],
         )
+        hot_counts = summary["hot_count_metrics_by_average"]
+        self.assertEqual(hot_counts[0]["name"], "neo_state_service_mpt_apply_avg_items")
+        self.assertEqual(hot_counts[0]["average"], 800.0)
+        self.assertEqual(hot_counts[1]["name"], "neo_state_service_mpt_apply_avg_changes")
+        self.assertEqual(hot_counts[1]["average"], 18.0)
 
     def test_milestone_summary_carries_structured_sync_proof(self):
         module = load_module()

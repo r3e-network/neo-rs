@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import subprocess
 import sys
@@ -33,6 +34,25 @@ CHECKPOINT_VERIFICATION_FIELDS = (
     "verified_stateroot_root",
     "verified_against_reference",
 )
+BOUNDED_REPLAY_MODULE_PATH = Path(__file__).resolve().with_name(
+    "run-bounded-mainnet-replay.py"
+)
+_BOUNDED_REPLAY_MODULE = None
+
+
+def bounded_replay_module():
+    global _BOUNDED_REPLAY_MODULE  # pylint: disable=global-statement
+    if _BOUNDED_REPLAY_MODULE is None:
+        spec = importlib.util.spec_from_file_location(
+            "bounded_mainnet_replay_helpers",
+            BOUNDED_REPLAY_MODULE_PATH,
+        )
+        if spec is None or spec.loader is None:
+            raise ImportError(f"unable to load {BOUNDED_REPLAY_MODULE_PATH}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _BOUNDED_REPLAY_MODULE = module
+    return _BOUNDED_REPLAY_MODULE
 
 
 def parse_height_values(values: list[str]) -> list[int]:
@@ -736,64 +756,9 @@ def height_sample_rate_summary(report: dict) -> dict:
 
 
 def metrics_sample_summary(report: dict) -> dict:
-    samples = [sample for sample in report.get("height_samples") or [] if isinstance(sample, dict)]
-    metrics_by_name: dict[str, list[float]] = {}
-    metrics_error_count = 0
-    for sample in samples:
-        if sample.get("metrics_error"):
-            metrics_error_count += 1
-        metrics = sample.get("metrics") or {}
-        if not isinstance(metrics, dict):
-            continue
-        for name, value in metrics.items():
-            try:
-                metrics_by_name.setdefault(str(name), []).append(float(value))
-            except (TypeError, ValueError):
-                continue
-
-    metrics = {
-        name: {
-            "sample_count": len(values),
-            "first": values[0],
-            "last": values[-1],
-            "min": min(values),
-            "max": max(values),
-            "average": sum(values) / len(values),
-        }
-        for name, values in sorted(metrics_by_name.items())
-        if values
-    }
-    return {
-        "sample_count": len(samples),
-        "metrics_error_count": metrics_error_count,
-        "metrics": metrics,
-        "hot_metrics_by_average_us": hot_metrics_by_average_us(metrics),
-    }
-
-
-def hot_metrics_by_average_us(metrics: dict[str, dict], limit: int = 5) -> list[dict[str, Any]]:
-    hot = []
-    for name, stats in metrics.items():
-        metric_name = name.split("{", 1)[0]
-        if not metric_name.endswith("_us"):
-            continue
-        try:
-            average_us = float(stats["average"])
-            last_us = float(stats["last"])
-            max_us = float(stats["max"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        hot.append(
-            {
-                "name": name,
-                "average_us": average_us,
-                "last_us": last_us,
-                "max_us": max_us,
-                "sample_count": int(stats.get("sample_count", 0)),
-            }
-        )
-    hot.sort(key=lambda item: (-item["average_us"], item["name"]))
-    return hot[:limit]
+    return bounded_replay_module().summarize_metric_samples(
+        [sample for sample in report.get("height_samples") or [] if isinstance(sample, dict)]
+    )
 
 
 def milestone_summary(result: dict) -> dict:
