@@ -39,7 +39,9 @@ static NATIVE_PERSIST_AVG_TX_US: AtomicU64 = AtomicU64::new(0);
 static NATIVE_PERSIST_AVG_POSTPERSIST_US: AtomicU64 = AtomicU64::new(0);
 static NATIVE_PERSIST_AVG_COMMIT_US: AtomicU64 = AtomicU64::new(0);
 static NATIVE_PERSIST_AVG_TX_COUNT: AtomicU64 = AtomicU64::new(0);
-static NATIVE_PERSIST_TX_STAGES: [NativeHookMetricSlot; 8] = [
+static NATIVE_PERSIST_TX_STAGES: [NativeHookMetricSlot; 10] = [
+    NativeHookMetricSlot::new(),
+    NativeHookMetricSlot::new(),
     NativeHookMetricSlot::new(),
     NativeHookMetricSlot::new(),
     NativeHookMetricSlot::new(),
@@ -225,12 +227,14 @@ const NEO_TOKEN_COMMITTEE_CANDIDATE_COUNT_ORDER: [NeoTokenCommitteeCandidateCoun
     NeoTokenCommitteeCandidateCount::EligibleCandidates,
     NeoTokenCommitteeCandidateCount::TopCandidates,
 ];
-const NATIVE_PERSIST_TX_STAGE_ORDER: [NativePersistTxStage; 8] = [
+const NATIVE_PERSIST_TX_STAGE_ORDER: [NativePersistTxStage; 10] = [
     NativePersistTxStage::Hash,
     NativePersistTxStage::CloneCache,
     NativePersistTxStage::ContainerClone,
     NativePersistTxStage::EngineCreate,
     NativePersistTxStage::LoadExecute,
+    NativePersistTxStage::LoadScript,
+    NativePersistTxStage::Execute,
     NativePersistTxStage::ApplicationExecuted,
     NativePersistTxStage::TxCacheCommit,
     NativePersistTxStage::LedgerVmState,
@@ -249,6 +253,10 @@ pub enum NativePersistTxStage {
     EngineCreate,
     /// Load and execute the transaction script.
     LoadExecute,
+    /// Load the transaction script into the VM.
+    LoadScript,
+    /// Execute a successfully loaded transaction script.
+    Execute,
     /// Snapshot the `ApplicationExecuted` result.
     ApplicationExecuted,
     /// Commit the per-transaction cache on HALT.
@@ -265,6 +273,8 @@ impl NativePersistTxStage {
             Self::ContainerClone => "container_clone",
             Self::EngineCreate => "engine_create",
             Self::LoadExecute => "load_execute",
+            Self::LoadScript => "load_script",
+            Self::Execute => "execute",
             Self::ApplicationExecuted => "application_executed",
             Self::TxCacheCommit => "tx_cache_commit",
             Self::LedgerVmState => "ledger_vm_state",
@@ -278,9 +288,11 @@ impl NativePersistTxStage {
             Self::ContainerClone => 2,
             Self::EngineCreate => 3,
             Self::LoadExecute => 4,
-            Self::ApplicationExecuted => 5,
-            Self::TxCacheCommit => 6,
-            Self::LedgerVmState => 7,
+            Self::LoadScript => 5,
+            Self::Execute => 6,
+            Self::ApplicationExecuted => 7,
+            Self::TxCacheCommit => 8,
+            Self::LedgerVmState => 9,
         }
     }
 }

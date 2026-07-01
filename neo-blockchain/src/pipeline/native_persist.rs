@@ -633,15 +633,28 @@ fn stage_block_natives_with_resources_inner(
         // C# loads the script unchecked and lets execution FAULT on a
         // bad instruction; a Rust load error therefore faults the
         // transaction, never the block.
+        let load_execute_start = std::time::Instant::now();
         let stage_start = std::time::Instant::now();
-        let (vm_state, load_error) =
-            match tx_engine.load_script(tx.script().to_vec(), CallFlags::ALL, None) {
-                Ok(()) => (tx_engine.execute_allow_fault(), None),
-                Err(error) => (VMState::FAULT, Some(error.to_string())),
-            };
+        let load_result = tx_engine.load_script(tx.script().to_vec(), CallFlags::ALL, None);
+        record_tx_stage(
+            neo_runtime::sync_metrics::NativePersistTxStage::LoadScript,
+            stage_start,
+        );
+        let (vm_state, load_error) = match load_result {
+            Ok(()) => {
+                let stage_start = std::time::Instant::now();
+                let vm_state = tx_engine.execute_allow_fault();
+                record_tx_stage(
+                    neo_runtime::sync_metrics::NativePersistTxStage::Execute,
+                    stage_start,
+                );
+                (vm_state, None)
+            }
+            Err(error) => (VMState::FAULT, Some(error.to_string())),
+        };
         record_tx_stage(
             neo_runtime::sync_metrics::NativePersistTxStage::LoadExecute,
-            stage_start,
+            load_execute_start,
         );
 
         let should_trace_tx = trace_tx_filter.matches(&tx_hash);
