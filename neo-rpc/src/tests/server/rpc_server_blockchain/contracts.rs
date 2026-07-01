@@ -1,4 +1,5 @@
 use super::*;
+use crate::server::rpc_server_blockchain::responses::contract_state_to_json;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_contract_state_roundtrips_hash_and_id() {

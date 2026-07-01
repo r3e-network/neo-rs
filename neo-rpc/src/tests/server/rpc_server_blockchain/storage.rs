@@ -1,4 +1,5 @@
 use super::*;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_storage_roundtrips_value() {

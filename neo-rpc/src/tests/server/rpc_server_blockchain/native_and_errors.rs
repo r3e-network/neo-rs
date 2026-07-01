@@ -1,4 +1,6 @@
 use super::*;
+use crate::server::rpc_server_blockchain::responses::contract_state_to_json;
+use neo_native_contracts::contract_management::ContractManagement;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_committee_returns_snapshot_members() {

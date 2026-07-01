@@ -3,7 +3,7 @@ use neo_primitives::TriggerType;
 use neo_primitives::UnhandledExceptionPolicy;
 use neo_storage::persistence::{
     SeekDirection,
-    read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
+    read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric},
     storage::StorageError,
     store::OnNewSnapshotDelegate,
     write_store::WriteStore,
@@ -44,6 +44,12 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for FailingStore {
 
 impl ReadOnlyStore for FailingStore {}
 
+impl RawReadOnlyStore for FailingStore {
+    fn try_get_bytes(&self, _key: &[u8]) -> Option<Vec<u8>> {
+        None
+    }
+}
+
 impl WriteStore<Vec<u8>, Vec<u8>> for FailingStore {
     fn delete(&mut self, _key: Vec<u8>) -> neo_storage::StorageResult<()> {
         Ok(())
@@ -83,6 +89,12 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingSnapshot {
         _direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
         Box::new(std::iter::empty())
+    }
+}
+
+impl RawReadOnlyStore for FailingSnapshot {
+    fn try_get_bytes(&self, _key: &[u8]) -> Option<Vec<u8>> {
+        None
     }
 }
 
