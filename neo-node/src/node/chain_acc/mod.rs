@@ -255,6 +255,7 @@ where
     }
 
     let mut batch: Vec<Block> = Vec::with_capacity(IMPORT_BATCH_SIZE);
+    let mut pending_batch = PendingChainAccBatch::default();
     let mut block_bytes = Vec::new();
     let mut imported = 0u64;
     let mut progress = ChainAccImportProgress::new(import_count);
@@ -286,8 +287,9 @@ where
         }
         let reached_count_only_stop_height =
             count_only_stop_height_reached(expected_range, stop_at_height, block.index());
-        if chain_acc_batch_should_flush_before_push(&batch, &block) {
+        if pending_batch.should_flush_before_push(&block) {
             let batch_blocks = take_import_batch(&mut batch, true);
+            pending_batch.clear();
             let batch_result = import_chain_acc_batch(handle, batch_blocks, verify)
                 .await
                 .map_err(|e| anyhow::anyhow!("import command failed: {e}"))?;
@@ -310,9 +312,10 @@ where
             }
         }
         previous_hash = Some(block.hash());
+        pending_batch.record_pushed(&block);
         batch.push(block);
 
-        if chain_acc_batch_should_flush(&batch)
+        if pending_batch.should_flush(batch.len())
             || i + 1 == import_count
             || reached_count_only_stop_height
         {
@@ -320,6 +323,7 @@ where
                 &mut batch,
                 i + 1 < import_count && !reached_count_only_stop_height,
             );
+            pending_batch.clear();
             let batch_result = import_chain_acc_batch(handle, batch_blocks, verify)
                 .await
                 .map_err(|e| anyhow::anyhow!("import command failed: {e}"))?;
@@ -467,17 +471,37 @@ where
     })
 }
 
-fn chain_acc_batch_should_flush_before_push(batch: &[Block], next: &Block) -> bool {
-    batch.len() >= IMPORT_BATCH_SIZE
-        && !next.transactions.is_empty()
-        && batch.iter().all(|block| block.transactions.is_empty())
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct PendingChainAccBatch {
+    has_transactions: bool,
+    len: usize,
 }
 
-fn chain_acc_batch_should_flush(batch: &[Block]) -> bool {
-    if batch.iter().all(|block| block.transactions.is_empty()) {
-        batch.len() >= MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS
-    } else {
-        batch.len() >= IMPORT_BATCH_SIZE
+impl PendingChainAccBatch {
+    fn clear(&mut self) {
+        *self = Self::default();
+    }
+
+    fn record_pushed(&mut self, block: &Block) {
+        self.len += 1;
+        self.has_transactions |= !block.transactions.is_empty();
+    }
+
+    fn is_empty_only(&self) -> bool {
+        self.len > 0 && !self.has_transactions
+    }
+
+    fn should_flush_before_push(&self, next: &Block) -> bool {
+        self.len >= IMPORT_BATCH_SIZE && self.is_empty_only() && !next.transactions.is_empty()
+    }
+
+    fn should_flush(&self, batch_len: usize) -> bool {
+        debug_assert_eq!(self.len, batch_len);
+        if !self.has_transactions {
+            batch_len >= MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS
+        } else {
+            batch_len >= IMPORT_BATCH_SIZE
+        }
     }
 }
 
@@ -1798,6 +1822,10 @@ mod tests {
     #[test]
     fn chain_acc_batch_splits_normal_sized_empty_prefix_before_transaction_block() {
         let mut small_empty_prefix = linked_empty_blocks(0, IMPORT_BATCH_SIZE - 1);
+        let mut pending = PendingChainAccBatch::default();
+        for block in &small_empty_prefix {
+            pending.record_pushed(block);
+        }
         let prev = small_empty_prefix.last().expect("previous block");
         let next = non_empty_block_with_prev_hash(
             (IMPORT_BATCH_SIZE - 1) as u32,
@@ -1805,19 +1833,24 @@ mod tests {
             vec![signed_test_transaction(1)],
         );
         assert!(
-            !chain_acc_batch_should_flush_before_push(&small_empty_prefix, &next),
+            !pending.should_flush_before_push(&next),
             "small empty prefixes can stay in the normal transaction-bearing batch"
         );
+        pending.record_pushed(&next);
         small_empty_prefix.push(next);
         assert!(
-            chain_acc_batch_should_flush(&small_empty_prefix),
+            pending.should_flush(small_empty_prefix.len()),
             "mixed transaction-bearing batches still flush at the normal boundary"
         );
 
         let empty_run = IMPORT_BATCH_SIZE;
         let mut blocks = linked_empty_blocks(0, empty_run);
+        let mut pending = PendingChainAccBatch::default();
+        for block in &blocks {
+            pending.record_pushed(block);
+        }
         assert!(
-            !chain_acc_batch_should_flush(&blocks),
+            !pending.should_flush(blocks.len()),
             "empty-only batches should be allowed to grow beyond the normal transaction batch"
         );
         let prev = blocks.last().expect("previous block");
@@ -1828,12 +1861,30 @@ mod tests {
         ));
 
         assert!(
-            chain_acc_batch_should_flush_before_push(
-                &blocks[..empty_run],
-                blocks.last().expect("transaction block")
-            ),
+            pending.should_flush_before_push(blocks.last().expect("transaction block")),
             "a normal-sized empty run should flush before the transaction block so it remains eligible for empty fast-forward"
         );
+    }
+
+    #[test]
+    fn pending_chain_acc_batch_tracks_transaction_presence_without_scanning_blocks() {
+        let mut pending = PendingChainAccBatch::default();
+        let empty = empty_block(0);
+        pending.record_pushed(&empty);
+
+        assert!(pending.is_empty_only());
+        assert!(!pending.should_flush_before_push(&empty));
+
+        let tx = non_empty_block_with_prev_hash(1, empty.hash(), vec![signed_test_transaction(1)]);
+        pending.record_pushed(&tx);
+
+        assert!(!pending.is_empty_only());
+        assert!(!pending.should_flush(2));
+        for index in 2..IMPORT_BATCH_SIZE {
+            pending.record_pushed(&empty_block(index as u32));
+        }
+        assert!(!pending.is_empty_only());
+        assert!(pending.should_flush(IMPORT_BATCH_SIZE));
     }
 
     #[tokio::test]
