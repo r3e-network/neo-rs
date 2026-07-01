@@ -631,3 +631,27 @@ fn empty_fast_forward_run_collection_borrows_import_batch_blocks() {
         "empty-block fast-forward run collection must not clone full blocks from the import batch"
     );
 }
+
+#[test]
+fn bulk_import_clones_blocks_only_after_empty_fast_forward_attempt() {
+    let source = include_str!("../../pipeline/handlers.rs");
+    let handle_import = source
+        .split("pub(crate) async fn handle_import")
+        .nth(1)
+        .and_then(|tail| {
+            tail.split("/// Handle a [`BlockchainCommand::Reverify`]")
+                .next()
+        })
+        .expect("handle_import source");
+    let fast_forward_branch = handle_import
+        .find("stage_empty_block_fast_forward")
+        .expect("bulk import attempts empty-block fast-forward");
+    let block_clone = handle_import
+        .find("blocks[position].clone()")
+        .expect("normal persistence still needs an owned block");
+
+    assert!(
+        fast_forward_branch < block_clone,
+        "bulk import should not clone a block before the empty-block fast-forward path can consume it by borrow"
+    );
+}

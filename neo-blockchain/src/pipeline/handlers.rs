@@ -332,7 +332,7 @@ where
         let mut last_imported_height = None;
         let mut position = 0usize;
         while position < blocks.len() {
-            let block = blocks[position].clone();
+            let block = &blocks[position];
             let index = block.index();
             let current_height = self.ledger.current_height();
             match ImportDisposition::classify_import_block(current_height, index) {
@@ -438,7 +438,7 @@ where
 
             // C# Blockchain.OnImport runs `Persist(block)` — the state
             // transition — before the block becomes the new tip.
-            let block = Arc::new(block);
+            let block = Arc::new(blocks[position].clone());
             let persisted = if bulk_sync {
                 if let Some(resources) = &batch_persist_resources {
                     self.persist_block_sequence_with_resources(
