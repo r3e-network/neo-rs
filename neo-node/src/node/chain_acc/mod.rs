@@ -289,10 +289,12 @@ where
             count_only_stop_height_reached(expected_range, stop_at_height, block.index());
         if pending_batch.should_flush_before_push(&block) {
             let batch_blocks = take_import_batch(&mut batch, true);
+            let batch_composition = pending_batch.composition;
             pending_batch.clear();
-            let batch_result = import_chain_acc_batch(handle, batch_blocks, verify)
-                .await
-                .map_err(|e| anyhow::anyhow!("import command failed: {e}"))?;
+            let batch_result =
+                import_chain_acc_batch(handle, batch_blocks, batch_composition, verify)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("import command failed: {e}"))?;
             progress.record_batch(batch_result.imported, batch_result.elapsed);
             imported += batch_result.imported as u64;
             composition.record_imported(
@@ -323,10 +325,12 @@ where
                 &mut batch,
                 i + 1 < import_count && !reached_count_only_stop_height,
             );
+            let batch_composition = pending_batch.composition;
             pending_batch.clear();
-            let batch_result = import_chain_acc_batch(handle, batch_blocks, verify)
-                .await
-                .map_err(|e| anyhow::anyhow!("import command failed: {e}"))?;
+            let batch_result =
+                import_chain_acc_batch(handle, batch_blocks, batch_composition, verify)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("import command failed: {e}"))?;
             progress.record_batch(batch_result.imported, batch_result.elapsed);
             imported += batch_result.imported as u64;
             composition.record_imported(
@@ -475,6 +479,7 @@ where
 struct PendingChainAccBatch {
     has_transactions: bool,
     len: usize,
+    composition: ChainAccImportComposition,
 }
 
 impl PendingChainAccBatch {
@@ -484,7 +489,14 @@ impl PendingChainAccBatch {
 
     fn record_pushed(&mut self, block: &Block) {
         self.len += 1;
-        self.has_transactions |= !block.transactions.is_empty();
+        let tx_count = block.transactions.len() as u64;
+        if tx_count == 0 {
+            self.composition.empty_blocks += 1;
+        } else {
+            self.has_transactions = true;
+            self.composition.transaction_blocks += 1;
+            self.composition.transactions += tx_count;
+        }
     }
 
     fn is_empty_only(&self) -> bool {
@@ -522,10 +534,10 @@ impl ChainAccBatchImportResult {
 async fn import_chain_acc_batch(
     handle: &BlockchainHandle,
     batch_blocks: Vec<Block>,
+    composition: ChainAccImportComposition,
     verify: bool,
 ) -> anyhow::Result<ChainAccBatchImportResult> {
     let len = batch_blocks.len();
-    let composition = ChainAccImportComposition::from_blocks(&batch_blocks);
     let tip = batch_blocks.last().map(|block| LocalLedgerTip {
         height: block.index(),
         hash: block.hash(),
@@ -553,20 +565,6 @@ struct ChainAccImportComposition {
 }
 
 impl ChainAccImportComposition {
-    fn from_blocks(blocks: &[Block]) -> Self {
-        let mut composition = Self::default();
-        for block in blocks {
-            let tx_count = block.transactions.len() as u64;
-            if tx_count == 0 {
-                composition.empty_blocks += 1;
-            } else {
-                composition.transaction_blocks += 1;
-                composition.transactions += tx_count;
-            }
-        }
-        composition
-    }
-
     fn record_imported(&mut self, batch: Self, imported: usize, elapsed: std::time::Duration) {
         if imported == 0 {
             return;
@@ -1899,6 +1897,24 @@ mod tests {
         assert!(
             !pending.should_flush(10_000),
             "10k empty blocks should remain a single fast-forward batch; the guard is a memory boundary, not a throughput target"
+        );
+    }
+
+    #[test]
+    fn chain_acc_batch_import_uses_tracked_composition_without_rescanning_blocks() {
+        let source = include_str!("mod.rs");
+        let batch_import = source
+            .split("async fn import_chain_acc_batch")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]")
+                    .next()
+            })
+            .expect("import_chain_acc_batch source");
+
+        assert!(
+            !batch_import.contains("ChainAccImportComposition::from_blocks(&batch_blocks)"),
+            "chain.acc import should reuse composition tracked while reading, not rescan every batch before dispatch"
         );
     }
 
