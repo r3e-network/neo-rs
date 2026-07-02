@@ -10,6 +10,7 @@
 //!
 //! ## Contents
 //!
+//! - `activation_semantics`: hardfork activation and manifest-refresh coverage.
 //! - `contract_manifests`: native manifest pinning coverage.
 //! - `fungible_and_policy`: fungible token and policy manifest coverage.
 //! - `handles_and_catalog`: native handles and catalog coverage.
@@ -150,6 +151,7 @@ use ContractParameterType::{
     Any, Array, Boolean, Hash160, Hash256, Integer, PublicKey, String as StringT,
 };
 
+mod activation_semantics;
 mod contract_manifests;
 mod fungible_and_policy;
 mod handles_and_catalog;
