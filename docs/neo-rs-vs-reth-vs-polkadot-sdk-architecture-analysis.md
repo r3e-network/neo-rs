@@ -175,7 +175,8 @@ let import_chain = Box::new(NeoHeaderVerifier)
 Current status: the shared trait, bounded queue, and import-stage sync driver
 exist. `neo-network::BlockDownloadBatch` converts into
 `neo_runtime::SyncBlockBatch`, preserving the single ordered import path. The
-remaining work is the concrete peer scheduler and broader staged pipeline.
+per-peer request scheduler and cross-peer range scheduler now exist. The
+remaining work is the async peer transport stream and broader staged pipeline.
 
 ---
 
@@ -250,9 +251,10 @@ records now exist, with a channel-backed adapter for tests/composition roots.
 runtime sync driver can feed into the import queue. The per-peer
 `BlockRequestScheduler` now owns the `GetBlockByIndex` request-window policy
 used by `PeerSession` (`500` blocks per request, `1000` blocks in flight,
-stall rewind). The remaining work is the cross-peer stream downloader that
-assigns/retries ranges across peers and yields `BlockDownloadBatch` values
-directly.
+stall rewind). `CrossPeerBlockRangeScheduler` owns cross-peer peer selection,
+peer bias, bounded in-flight range assignment, and retry accounting. The
+remaining work is the async stream executor that sends those assignments to
+peers and yields `BlockDownloadBatch` values directly.
 
 ### Reth innovations
 
@@ -283,8 +285,9 @@ pub trait BlockDownloader:
 {
     fn config(&self) -> &BlockDownloadConfig;
 }
-// Per-peer request policy is implemented by BlockRequestScheduler; a
-// cross-peer stream downloader remains the next implementation step.
+// Per-peer request policy is implemented by BlockRequestScheduler.
+// Cross-peer range policy is implemented by CrossPeerBlockRangeScheduler.
+// The async transport stream remains the next implementation step.
 ```
 
 ---
@@ -368,7 +371,7 @@ pub struct TransactionState {
 | Stage commit policy + checkpoints | ★★★ | - | ★★★★ | ★★ | Import-stage driver done |
 | Compact derive macro | ★★ | ★★★★ | - | ★★ | Small |
 | Task supervision | - | - | ★★★★★ | ★★ | Done |
-| BlockDownloader as Stream | ★★★ | - | ★★ | ★★★ | Boundary + per-peer scheduler done; cross-peer downloader medium |
+| BlockDownloader as Stream | ★★★ | - | ★★ | ★★★ | Boundary + per-peer scheduler + cross-peer range scheduler done; async transport stream medium |
 | Essential task monitoring | - | - | ★★★★★ | ★ | Small |
 | Metrics infrastructure | - | - | ★★★★ | ★★ | Medium |
 
@@ -380,7 +383,7 @@ pub struct TransactionState {
 2. **Typed table boundary** — implemented in `neo-storage`; compact derive is still future work.
 3. **Block import queue with concurrent verification** — reusable runtime boundary implemented.
 4. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`.
-5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; per-peer `BlockRequestScheduler` is wired into `PeerSession`; cross-peer stream downloader remains next.
+5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; per-peer `BlockRequestScheduler` is wired into `PeerSession`; `CrossPeerBlockRangeScheduler` covers cross-peer assignment and retry policy; async peer transport stream remains next.
 6. **Hot/Cold/Static tiering integration** (medium, big storage win)
 7. **Staged sync pipeline integration** (large, biggest overall impact)
 

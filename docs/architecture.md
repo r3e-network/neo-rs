@@ -211,9 +211,11 @@ The detailed rules for this style live in
   checkpointed when policy fires. `neo_network::BlockDownloader` is the
   stream-shaped download boundary; its `BlockDownloadBatch` converts into the
   runtime batch type. `BlockRequestScheduler` owns the per-peer
-  `GetBlockByIndex` request-window policy used by `PeerSession`; the remaining
-  integration layer is a cross-peer stream downloader that assigns and retries
-  ranges across peers.
+  `GetBlockByIndex` request-window policy used by `PeerSession`.
+  `CrossPeerBlockRangeScheduler` owns peer selection, bias, bounded in-flight
+  range assignment, and retry accounting. The remaining integration layer is the
+  async stream downloader that executes those assignments and yields
+  `BlockDownloadBatch` values.
 
 - **Native dispatch is explicit at composition.** `neo-execution` still owns the
   low-level `NativeContractProvider` lookup seam so the engine does not depend

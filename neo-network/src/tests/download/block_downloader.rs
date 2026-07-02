@@ -1,5 +1,8 @@
 use super::*;
 use futures::StreamExt;
+use neo_payloads::Block;
+
+use crate::PeerId;
 
 fn block(index: u32) -> Block {
     let mut header = neo_payloads::Header::new();
@@ -98,6 +101,70 @@ fn block_request_scheduler_rewinds_after_stall_limit() {
 
     let retry = scheduler.next_request(0, 5_000).expect("retry after stall");
     assert_eq!(retry, BlockRequest::new(1, 500));
+}
+
+#[test]
+fn block_range_scheduler_bounds_cross_peer_in_flight_requests() {
+    let peer = PeerId::from_raw(1);
+    let config = BlockDownloadConfig::new(2, 128);
+    let mut scheduler = CrossPeerBlockRangeScheduler::new(0, 1_000, config);
+    let peers = [BlockDownloadPeer::new(peer, 1_000)];
+
+    let first = scheduler.next_assignment(&peers).expect("first range");
+    let second = scheduler.next_assignment(&peers).expect("second range");
+    let third = scheduler.next_assignment(&peers);
+
+    assert_eq!(
+        first,
+        BlockRangeAssignment::new(peer, BlockRequest::new(1, 128), 0)
+    );
+    assert_eq!(
+        second,
+        BlockRangeAssignment::new(peer, BlockRequest::new(129, 128), 0)
+    );
+    assert!(third.is_none());
+    assert_eq!(scheduler.in_flight_len(), 2);
+}
+
+#[test]
+fn block_range_scheduler_prefers_biased_peer_when_eligible() {
+    let slow = PeerId::from_raw(1);
+    let biased = PeerId::from_raw(2);
+    let config = BlockDownloadConfig::new(4, 500).with_peer_bias(biased);
+    let mut scheduler = CrossPeerBlockRangeScheduler::new(0, 500, config);
+    let peers = [
+        BlockDownloadPeer::new(slow, 500),
+        BlockDownloadPeer::new(biased, 500),
+    ];
+
+    let assignment = scheduler.next_assignment(&peers).expect("biased range");
+
+    assert_eq!(
+        assignment,
+        BlockRangeAssignment::new(biased, BlockRequest::new(1, 500), 0)
+    );
+}
+
+#[test]
+fn block_range_scheduler_retries_failed_range_on_another_peer() {
+    let first_peer = PeerId::from_raw(1);
+    let second_peer = PeerId::from_raw(2);
+    let config = BlockDownloadConfig::new(1, 64).with_retry_limit(1);
+    let mut scheduler = CrossPeerBlockRangeScheduler::new(0, 128, config);
+    let peers = [
+        BlockDownloadPeer::new(first_peer, 128),
+        BlockDownloadPeer::new(second_peer, 128),
+    ];
+
+    let first = scheduler.next_assignment(&peers).expect("first assignment");
+    scheduler
+        .record_failure(first)
+        .expect("failure below retry limit");
+    let retry = scheduler.next_assignment(&peers).expect("retry assignment");
+
+    assert_eq!(retry.request, first.request);
+    assert_eq!(retry.peer_id, second_peer);
+    assert_eq!(retry.attempt, 1);
 }
 
 #[tokio::test]

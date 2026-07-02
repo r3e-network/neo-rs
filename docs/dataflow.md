@@ -65,8 +65,11 @@ contiguous heights, pushes those batches through the import queue, and persists
 import-stage checkpoints through
 `neo_runtime::sync_pipeline::{CommitPolicy, SyncStageCheckpointStore}`. The
 per-peer `GetBlockByIndex` request window is planned by
-`neo_network::BlockRequestScheduler` and sent by `PeerSession`; the remaining
-download integration is a cross-peer stream that yields those batches directly.
+`neo_network::BlockRequestScheduler` and sent by `PeerSession`. Cross-peer range
+assignment, peer bias, and retry accounting are now owned by
+`neo_network::CrossPeerBlockRangeScheduler`; the remaining download integration
+is the async stream executor that sends those assignments to peers and yields
+`BlockDownloadBatch` values directly.
 The canonical execution/persist path remains the `neo-blockchain` service loop.
 
 ```mermaid

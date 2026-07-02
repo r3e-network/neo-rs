@@ -251,7 +251,9 @@ Priority order for crate refactors:
    SyncStageCheckpointStore}` instead of ad hoc thresholds inside service loops.
    Per-peer request-window decisions belong in
    `neo_network::BlockRequestScheduler`; session code should only serialize and
-   send the planned wire request.
+   send the planned wire request. Cross-peer range assignment, peer bias, and
+   retry accounting belong in `neo_network::CrossPeerBlockRangeScheduler` so the
+   future async downloader can stay focused on transport and block validation.
 2. **One reorg-aware chain event stream.** Indexers, RPC application logs,
    token trackers, oracle services, and plugins should derive from a single
    bounded stream of chain outcomes. Because Neo committed blocks are final,
