@@ -64,7 +64,10 @@ converts into `neo_runtime::SyncBlockBatch`. `SyncPipelineDriver` validates
 contiguous heights, pushes those batches through the import queue, and persists
 import-stage checkpoints through
 `neo_runtime::sync_pipeline::{CommitPolicy, SyncStageCheckpointStore}`. The
-canonical execution/persist path remains the `neo-blockchain` service loop.
+per-peer `GetBlockByIndex` request window is planned by
+`neo_network::BlockRequestScheduler` and sent by `PeerSession`; the remaining
+download integration is a cross-peer stream that yields those batches directly.
+The canonical execution/persist path remains the `neo-blockchain` service loop.
 
 ```mermaid
 sequenceDiagram

@@ -51,6 +51,7 @@ use tokio_util::codec::Framed;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
+use crate::download::BlockRequestScheduler;
 use crate::wire::MessageCodec;
 use neo_payloads::{Block, ExtensiblePayload, Header, Transaction};
 use neo_primitives::UInt256;
@@ -461,9 +462,7 @@ impl RemoteNodeService {
             listener_port: 0,
             peer_is_full_node: false,
             peer_last_block_index: 0,
-            sync_requested_to: 0,
-            sync_last_local_height: 0,
-            sync_stall_ticks: 0,
+            sync_scheduler: BlockRequestScheduler::default(),
             peer_allows_compression: false,
             pending_outbound: Vec::new(),
             inbound_tx,

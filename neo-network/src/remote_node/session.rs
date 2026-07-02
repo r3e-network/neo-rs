@@ -14,6 +14,7 @@ use super::{
 };
 use crate::MessageCommand;
 use crate::connection_timeouts::ConnectionTimeouts;
+use crate::download::BlockRequestScheduler;
 use crate::event::NetworkEvent;
 use crate::local_identity::LocalIdentity;
 use crate::peer_id::PeerId;
@@ -88,17 +89,8 @@ pub(super) struct PeerSession {
     /// by each `ping`/`pong` exchange. Drives the block-sync gate
     /// (`block.Index > LastBlockIndex`) once sync is wired.
     pub(super) peer_last_block_index: u32,
-    /// Highest block index already requested from this peer (the in-flight
-    /// high-water mark, C# `TaskSession` assigned tasks). `0` = nothing
-    /// requested yet. Lets sync pipeline forward without re-requesting the
-    /// same range each tick.
-    pub(super) sync_requested_to: u32,
-    /// Persisted height observed at the last sync tick, for stall detection.
-    pub(super) sync_last_local_height: u32,
-    /// Consecutive sync ticks with no persisted-height progress while still
-    /// trailing the peer; a run of these rewinds the in-flight cursor so a
-    /// dropped batch is re-requested (C# `TaskManager` task-timeout reassign).
-    pub(super) sync_stall_ticks: u32,
+    /// Per-peer block-sync request planner.
+    pub(super) sync_scheduler: BlockRequestScheduler,
     /// Whether outbound frames to this peer may be compressed
     /// (C# `VersionPayload.AllowCompression`: no `DisableCompression`
     /// capability present).
@@ -262,52 +254,12 @@ impl PeerSession {
         // Caught up: reset the in-flight cursor + stall tracker so a future
         // divergence restarts the pipeline cleanly.
         if peer_height <= local_height {
-            self.sync_requested_to = local_height;
-            self.sync_last_local_height = local_height;
-            self.sync_stall_ticks = 0;
+            self.sync_scheduler.record_tick(local_height, peer_height);
+            let _ = self.sync_scheduler.next_request(local_height, peer_height);
             return Ok(());
         }
 
-        // MAX_HASHES=500 matches the C# protocol limit (MaxHashesCount);
-        // requesting more in one message causes peers to reset the connection.
-        const MAX_HASHES: u32 = 500;
-        /// How far ahead of local_height the sync cursor can be before we
-        /// reset it. Keep two protocol-sized request windows in flight so the
-        /// peer and transport do not sit idle while the first window is being
-        /// persisted.
-        const MAX_HASHES_AHEAD: u32 = 1000;
-
-        // Stall detection: if the persisted height has not advanced across
-        // several ticks while we still trail the peer, the in-flight batch was
-        // lost — rewind the cursor to re-request the gap (C# `TaskManager`
-        // reassigns a timed-out task to another peer).
-        if local_height == self.sync_last_local_height {
-            self.sync_stall_ticks = self.sync_stall_ticks.saturating_add(1);
-        } else {
-            self.sync_stall_ticks = 0;
-            self.sync_last_local_height = local_height;
-        }
-        // After STALL_LIMIT ticks with no progress, reset the high-water mark
-        // to the current tip so missing blocks get re-requested. Also reset
-        // when the back-pressure window is exhausted (sync_requested_to is far
-        // ahead of local_height but no new blocks have arrived — the requested
-        // range was lost or evicted from the cache).
-        const STALL_LIMIT: u32 = 15;
-        if self.sync_stall_ticks >= STALL_LIMIT
-            || self.sync_requested_to > local_height + MAX_HASHES_AHEAD
-        {
-            if self.sync_requested_to > local_height {
-                debug!(
-                    target: "neo_network",
-                    local_height,
-                    requested_to = self.sync_requested_to,
-                    stall_ticks = self.sync_stall_ticks,
-                    "resetting sync cursor to re-request missing blocks"
-                );
-            }
-            self.sync_requested_to = local_height;
-            self.sync_stall_ticks = 0;
-        }
+        self.sync_scheduler.record_tick(local_height, peer_height);
 
         // Pipeline forward from the in-flight high-water mark (C# `TaskManager.
         // RequestTasks`, TaskManager.cs:400-409): request the next contiguous
@@ -315,14 +267,12 @@ impl PeerSession {
         // The ahead window keeps two batches queued per peer, so aggregate
         // throughput can reach N_peers x 1000 blocks of in-flight work without
         // sending an invalid over-sized request.
-        let start = (local_height + 1).max(self.sync_requested_to + 1);
-        let request_window_end = local_height.saturating_add(MAX_HASHES_AHEAD);
-        if start > peer_height || start > request_window_end {
+        let Some(request) = self.sync_scheduler.next_request(local_height, peer_height) else {
             return Ok(());
-        }
-        let upper = peer_height.min(request_window_end);
-        let count = (upper - start + 1).min(MAX_HASHES);
-        let payload = GetBlockByIndexPayload::create(start, count as i16);
+        };
+        let count = i16::try_from(request.count)
+            .expect("BlockRequestScheduler never exceeds i16 request counts");
+        let payload = GetBlockByIndexPayload::create(request.start, count);
         let message = Message::create(
             MessageCommand::GetBlockByIndex,
             Some(&payload),
@@ -333,12 +283,11 @@ impl PeerSession {
             .send(message)
             .await
             .map_err(|err| CloseReason::Transport(format!("send getblockbyindex: {err}")))?;
-        self.sync_requested_to = start + count - 1;
         debug!(
             target: "neo_network",
             peer_id = %self.peer_id,
-            from = start,
-            count,
+            from = request.start,
+            count = request.count,
             peer_height,
             "requesting block batch from peer"
         );

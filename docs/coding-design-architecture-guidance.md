@@ -249,6 +249,9 @@ Priority order for crate refactors:
    into ordered import-queue submissions. Stage flushing and crash-resume
    markers belong in `neo_runtime::sync_pipeline::{CommitPolicy,
    SyncStageCheckpointStore}` instead of ad hoc thresholds inside service loops.
+   Per-peer request-window decisions belong in
+   `neo_network::BlockRequestScheduler`; session code should only serialize and
+   send the planned wire request.
 2. **One reorg-aware chain event stream.** Indexers, RPC application logs,
    token trackers, oracle services, and plugins should derive from a single
    bounded stream of chain outcomes. Because Neo committed blocks are final,
