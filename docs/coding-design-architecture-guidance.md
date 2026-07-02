@@ -254,6 +254,9 @@ Priority order for crate refactors:
    send the planned wire request. Cross-peer range assignment, peer bias, and
    retry accounting belong in `neo_network::CrossPeerBlockRangeScheduler` so the
    future async downloader can stay focused on transport and block validation.
+   Out-of-order peer responses must pass through
+   `neo_network::OrderedBlockBatchBuffer` before they reach the runtime import
+   queue.
 2. **One reorg-aware chain event stream.** Indexers, RPC application logs,
    token trackers, oracle services, and plugins should derive from a single
    bounded stream of chain outcomes. Because Neo committed blocks are final,

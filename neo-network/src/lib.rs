@@ -36,7 +36,7 @@ pub mod wire;
 pub use download::{
     BlockDownloadBatch, BlockDownloadConfig, BlockDownloadPeer, BlockDownloader,
     BlockRangeAssignment, BlockRequest, BlockRequestScheduler, ChannelBlockDownloader,
-    CrossPeerBlockRangeScheduler,
+    CrossPeerBlockRangeScheduler, OrderedBlockBatchBuffer,
 };
 pub use errors::{NetworkError, NetworkResult, error};
 pub use identity::{LocalIdentity, local_identity};

@@ -167,6 +167,58 @@ fn block_range_scheduler_retries_failed_range_on_another_peer() {
     assert_eq!(retry.attempt, 1);
 }
 
+#[test]
+fn ordered_block_batch_buffer_holds_out_of_order_until_gap_fills() {
+    let mut buffer = OrderedBlockBatchBuffer::new(1);
+
+    buffer
+        .insert(BlockDownloadBatch::new(None, 3, vec![block(3), block(4)]))
+        .expect("insert out-of-order batch");
+    assert!(buffer.pop_ready().is_none());
+
+    buffer
+        .insert(BlockDownloadBatch::new(None, 1, vec![block(1), block(2)]))
+        .expect("insert first batch");
+    let first = buffer.pop_ready().expect("first ready batch");
+    let second = buffer.pop_ready().expect("second ready batch");
+
+    assert_eq!(first.start_height, 1);
+    assert_eq!(first.next_height(), 3);
+    assert_eq!(second.start_height, 3);
+    assert_eq!(second.next_height(), 5);
+    assert_eq!(buffer.next_height(), 5);
+}
+
+#[test]
+fn ordered_block_batch_buffer_rejects_duplicate_or_stale_ranges() {
+    let mut buffer = OrderedBlockBatchBuffer::new(10);
+
+    buffer
+        .insert(BlockDownloadBatch::new(None, 10, vec![block(10)]))
+        .expect("insert first batch");
+    assert!(
+        buffer
+            .insert(BlockDownloadBatch::new(None, 10, vec![block(10)]))
+            .is_err()
+    );
+    assert!(buffer.pop_ready().is_some());
+    assert!(
+        buffer
+            .insert(BlockDownloadBatch::new(None, 10, vec![block(10)]))
+            .is_err()
+    );
+}
+
+#[test]
+fn ordered_block_batch_buffer_rejects_misaligned_block_indices() {
+    let mut buffer = OrderedBlockBatchBuffer::new(1);
+
+    let result = buffer.insert(BlockDownloadBatch::new(None, 1, vec![block(2)]));
+
+    assert!(result.is_err());
+    assert!(buffer.pop_ready().is_none());
+}
+
 #[tokio::test]
 async fn channel_block_downloader_streams_batches_in_send_order() {
     let config = BlockDownloadConfig::new(2, 3);
