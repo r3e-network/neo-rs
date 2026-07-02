@@ -1,6 +1,6 @@
 #![allow(missing_docs)] // benchmark/integration-test harness: not public API
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use neo_state_service::StateStore;
+use neo_state_service::{StateStore, commit_handlers::StateServiceCommitHandlers};
 use neo_storage::{
     DataCache, StorageItem, StorageKey,
     mdbx::MdbxStoreProvider,
@@ -130,5 +130,96 @@ fn bench_state_service_apply_snapshot_changes(c: &mut Criterion) {
     mdbx_group.finish();
 }
 
-criterion_group!(benches, bench_state_service_apply_snapshot_changes,);
+fn bench_state_service_empty_continuation_batches(c: &mut Criterion) {
+    let mut group = c.benchmark_group("state_service/empty_continuation_batches");
+    for &batch_len in &[10usize, 100, 1000, 4096] {
+        group.bench_function(format!("memory_{batch_len}_blocks"), |b| {
+            let store = Arc::new(StateStore::with_mpt(false));
+            let handlers = StateServiceCommitHandlers::new_async_with_capacity(
+                Arc::clone(&store),
+                batch_len.max(1),
+            );
+            let seed = make_snapshot(1);
+            let empty = DataCache::new(false);
+            let mut next_index = 1u32;
+            store
+                .apply_snapshot_changes(0, &seed)
+                .expect("seed root applies");
+            b.iter(|| {
+                let start = next_index;
+                next_index = next_index.wrapping_add(batch_len as u32);
+                black_box(apply_empty_batch(&handlers, &empty, start, batch_len));
+            });
+        });
+    }
+    group.finish();
+
+    let mut rocksdb_group = c.benchmark_group("state_service/empty_continuation_batches_rocksdb");
+    for &batch_len in &[10usize, 100, 1000, 4096] {
+        rocksdb_group.bench_function(format!("{batch_len}_blocks"), |b| {
+            let (store, _tempdir) = make_rocksdb_state_store();
+            let store = Arc::new(store);
+            let handlers = StateServiceCommitHandlers::new_async_with_capacity(
+                Arc::clone(&store),
+                batch_len.max(1),
+            );
+            let seed = make_snapshot(1);
+            let empty = DataCache::new(false);
+            let mut next_index = 1u32;
+            store
+                .apply_snapshot_changes(0, &seed)
+                .expect("seed root applies");
+            b.iter(|| {
+                let start = next_index;
+                next_index = next_index.wrapping_add(batch_len as u32);
+                black_box(apply_empty_batch(&handlers, &empty, start, batch_len));
+            });
+        });
+    }
+    rocksdb_group.finish();
+
+    let mut mdbx_group = c.benchmark_group("state_service/empty_continuation_batches_mdbx");
+    for &batch_len in &[10usize, 100, 1000, 4096] {
+        mdbx_group.bench_function(format!("{batch_len}_blocks"), |b| {
+            let (store, _tempdir) = make_mdbx_state_store();
+            let store = Arc::new(store);
+            let handlers = StateServiceCommitHandlers::new_async_with_capacity(
+                Arc::clone(&store),
+                batch_len.max(1),
+            );
+            let seed = make_snapshot(1);
+            let empty = DataCache::new(false);
+            let mut next_index = 1u32;
+            store
+                .apply_snapshot_changes(0, &seed)
+                .expect("seed root applies");
+            b.iter(|| {
+                let start = next_index;
+                next_index = next_index.wrapping_add(batch_len as u32);
+                black_box(apply_empty_batch(&handlers, &empty, start, batch_len));
+            });
+        });
+    }
+    mdbx_group.finish();
+}
+
+fn apply_empty_batch(
+    handlers: &StateServiceCommitHandlers,
+    empty: &DataCache,
+    start_index: u32,
+    batch_len: usize,
+) -> bool {
+    for offset in 0..batch_len {
+        if !handlers.on_committing_deferred(start_index + offset as u32, empty) {
+            return false;
+        }
+    }
+    handlers.flush_result().is_ok()
+}
+
+criterion_group!(
+    benches,
+    bench_state_service_apply_snapshot_changes,
+    bench_state_service_empty_continuation_batches,
+);
 criterion_main!(benches);

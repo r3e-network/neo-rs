@@ -54,7 +54,7 @@
 
 use crate::Keys;
 use crate::metrics::{StateRootApplyCountKind, StateRootApplyMetrics, StateRootApplyStage};
-use crate::state_root::StateRoot;
+use crate::state_root::{CURRENT_VERSION, StateRoot};
 use neo_crypto::mpt_trie::{MptError, MptResult, MptStoreSnapshot, Node, Trie};
 use neo_io::SerializableExtensions;
 use neo_primitives::{UINT256_SIZE, UInt256};
@@ -166,10 +166,18 @@ struct OverlayCounts {
 impl OverlayCounts {
     fn record(&mut self, value: Option<&Vec<u8>>) {
         if value.is_some() {
-            self.puts += 1;
+            self.record_put();
         } else {
-            self.deletes += 1;
+            self.record_delete();
         }
+    }
+
+    fn record_put(&mut self) {
+        self.puts += 1;
+    }
+
+    fn record_delete(&mut self) {
+        self.deletes += 1;
     }
 
     fn entries(self) -> u64 {
@@ -688,24 +696,7 @@ impl MptStore {
             Self::record_stage_samples(StateRootApplyStage::MutateChanges, 0, samples);
             Self::record_stage_samples(StateRootApplyStage::RootHash, 0, samples);
 
-            let stage_start = Instant::now();
-            let mut overlay = HashMap::with_capacity(blocks.len() + 1);
-            for block in blocks {
-                Self::insert_local_root_records(&mut overlay, block.block_index, root_before);
-            }
-            Self::ensure_empty_root_record(&mut overlay, root_before)?;
-            Self::record_stage_samples(
-                StateRootApplyStage::OverlayPrepare,
-                elapsed_us(stage_start),
-                samples,
-            );
-
-            self.publish_overlay_with_samples(
-                blocks.last().expect("non-empty batch").block_index,
-                root_before,
-                overlay,
-                blocks.len(),
-            )?;
+            self.publish_empty_root_batch(blocks, root_before)?;
             return Ok(vec![root_before; blocks.len()]);
         }
 
@@ -892,6 +883,170 @@ impl MptStore {
         Ok(new_root)
     }
 
+    fn publish_empty_root_batch(
+        &self,
+        blocks: &[MptBlockChanges<'_>],
+        root_hash: UInt256,
+    ) -> MptResult<UInt256> {
+        let last_index = blocks
+            .last()
+            .expect("empty-root batch is only called for non-empty batches")
+            .block_index;
+        let samples = blocks.len().max(1) as u64;
+
+        let stage_start = Instant::now();
+        let empty_root = Node::new();
+        let empty_root_record = if root_hash == empty_root.try_hash()? {
+            Some((
+                Self::mpt_node_key_bytes(root_hash),
+                empty_root.to_array().map_err(MptError::from)?,
+            ))
+        } else {
+            None
+        };
+        Self::record_stage_samples(
+            StateRootApplyStage::OverlayPrepare,
+            elapsed_us(stage_start),
+            samples,
+        );
+
+        let stage_start = Instant::now();
+        let backing_counts =
+            self.commit_empty_root_batch_to_backing(blocks, root_hash, empty_root_record.as_ref())?;
+        Self::record_stage_samples(
+            StateRootApplyStage::BackingCommit,
+            elapsed_us(stage_start),
+            samples,
+        );
+
+        let stage_start = Instant::now();
+        let overlay_counts = if self.should_publish_live_overlay() {
+            let mut counts = OverlayCounts::default();
+            let mut kv = self.kv.write();
+            let map = Arc::make_mut(&mut *kv);
+            for block in blocks {
+                map.insert(
+                    Keys::state_root(block.block_index),
+                    Some(Self::encode_state_root_fields(block.block_index, root_hash)),
+                );
+                counts.record_put();
+            }
+            map.insert(
+                Keys::CURRENT_LOCAL_ROOT_INDEX.to_vec(),
+                Some(last_index.to_le_bytes().to_vec()),
+            );
+            counts.record_put();
+            if let Some((key, value)) = empty_root_record {
+                map.insert(key.to_vec(), Some(value));
+                counts.record_put();
+            }
+            counts
+        } else {
+            self.clear_live_overlay_if_needed();
+            backing_counts
+        };
+        Self::record_overlay_counts(overlay_counts, samples);
+        *self.latest_local_root.write() = Some((last_index, root_hash));
+        Self::record_stage_samples(
+            StateRootApplyStage::PublishGeneration,
+            elapsed_us(stage_start),
+            samples,
+        );
+        Ok(root_hash)
+    }
+
+    fn commit_empty_root_batch_to_backing(
+        &self,
+        blocks: &[MptBlockChanges<'_>],
+        root_hash: UInt256,
+        empty_root_record: Option<&([u8; 1 + UINT256_SIZE], Vec<u8>)>,
+    ) -> MptResult<OverlayCounts> {
+        match self.backing.as_ref() {
+            None => Ok(OverlayCounts::default()),
+            Some(backing) => {
+                let current_index = blocks
+                    .last()
+                    .expect("empty-root backing commit requires non-empty blocks")
+                    .block_index;
+                let current_index_value = current_index.to_le_bytes();
+                let mut counts = OverlayCounts::default();
+                let mut visit = |sink: &mut dyn FnMut(&[u8], Option<&[u8]>)| {
+                    for block in blocks {
+                        let key = Self::state_root_key_bytes(block.block_index);
+                        let value = Self::encode_state_root_fields(block.block_index, root_hash);
+                        counts.record_put();
+                        sink(&key, Some(&value));
+                    }
+                    counts.record_put();
+                    sink(
+                        Keys::CURRENT_LOCAL_ROOT_INDEX,
+                        Some(current_index_value.as_slice()),
+                    );
+                    if let Some((key, value)) = empty_root_record {
+                        counts.record_put();
+                        sink(key.as_slice(), Some(value.as_slice()));
+                    }
+                };
+                let committed = backing
+                    .try_commit_borrowed_raw_overlay(&mut visit)
+                    .map_err(|err| {
+                        MptError::storage(format!(
+                            "state-service empty-batch backing commit failed: {err}"
+                        ))
+                    })?;
+                if committed {
+                    return Ok(counts);
+                }
+
+                let mut counts = OverlayCounts::default();
+                let mut snapshot = backing.snapshot();
+                let writer = Arc::get_mut(&mut snapshot).ok_or_else(|| {
+                    MptError::storage(
+                        "unable to obtain mutable state-service backing snapshot for empty-batch commit",
+                    )
+                })?;
+                for block in blocks {
+                    counts.record_put();
+                    writer
+                        .put(
+                            Keys::state_root(block.block_index),
+                            Self::encode_state_root_fields(block.block_index, root_hash),
+                        )
+                        .map_err(|err| {
+                            MptError::storage(format!(
+                                "state-service empty-batch backing write failed: {err}"
+                            ))
+                        })?;
+                }
+                counts.record_put();
+                writer
+                    .put(
+                        Keys::CURRENT_LOCAL_ROOT_INDEX.to_vec(),
+                        current_index_value.to_vec(),
+                    )
+                    .map_err(|err| {
+                        MptError::storage(format!(
+                            "state-service empty-batch backing write failed: {err}"
+                        ))
+                    })?;
+                if let Some((key, value)) = empty_root_record {
+                    counts.record_put();
+                    writer.put(key.to_vec(), value.clone()).map_err(|err| {
+                        MptError::storage(format!(
+                            "state-service empty-batch backing write failed: {err}"
+                        ))
+                    })?;
+                }
+                writer.try_commit().map_err(|err| {
+                    MptError::storage(format!(
+                        "state-service empty-batch backing commit failed: {err}"
+                    ))
+                })?;
+                Ok(counts)
+            }
+        }
+    }
+
     fn clear_live_overlay_if_needed(&self) {
         if self.kv.read().is_empty() {
             return;
@@ -925,10 +1080,9 @@ impl MptStore {
         block_index: u32,
         root_hash: UInt256,
     ) {
-        let root_record = StateRoot::new_current(block_index, root_hash);
         overlay.insert(
             Keys::state_root(block_index),
-            Some(Self::encode_state_root(&root_record)),
+            Some(Self::encode_state_root_fields(block_index, root_hash)),
         );
         overlay.insert(
             Keys::CURRENT_LOCAL_ROOT_INDEX.to_vec(),
@@ -952,10 +1106,34 @@ impl MptStore {
     }
 
     fn mpt_node_key(root_hash: UInt256) -> Vec<u8> {
-        let mut key = Vec::with_capacity(1 + UINT256_SIZE);
-        key.push(MPT_NODE_PREFIX);
-        key.extend_from_slice(&root_hash.to_array());
+        Self::mpt_node_key_bytes(root_hash).to_vec()
+    }
+
+    fn mpt_node_key_bytes(root_hash: UInt256) -> [u8; 1 + UINT256_SIZE] {
+        let mut key = [0u8; 1 + UINT256_SIZE];
+        key[0] = MPT_NODE_PREFIX;
+        key[1..].copy_from_slice(&root_hash.to_array());
         key
+    }
+
+    fn state_root_key_bytes(index: u32) -> [u8; 5] {
+        let mut key = [0u8; 5];
+        key[0] = 0x01;
+        key[1..].copy_from_slice(&index.to_be_bytes());
+        key
+    }
+
+    fn state_root_record_len() -> usize {
+        STATE_ROOT_UNSIGNED_LEN + 1
+    }
+
+    fn encode_state_root_fields(index: u32, root_hash: UInt256) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(Self::state_root_record_len());
+        bytes.push(CURRENT_VERSION);
+        bytes.extend_from_slice(&index.to_le_bytes());
+        bytes.extend_from_slice(&root_hash.to_bytes());
+        bytes.push(0x00);
+        bytes
     }
 
     fn record_overlay_counts(counts: OverlayCounts, samples: u64) {
@@ -1183,12 +1361,6 @@ impl MptStore {
     /// unsigned fields (`version u8 + index u32 LE + root_hash`)
     /// followed by a var-int witness count of `0` (local roots carry
     /// no witness; C# writes `WriteVarInt(0)` for a null witness).
-    fn encode_state_root(root: &StateRoot) -> Vec<u8> {
-        let mut bytes = root.unsigned_bytes();
-        bytes.push(0x00);
-        bytes
-    }
-
     /// Decodes the unsigned prefix of a C#-format `StateRoot` record;
     /// the trailing witness array (if any) is ignored because the
     /// state service only needs `(version, index, root_hash)` here.

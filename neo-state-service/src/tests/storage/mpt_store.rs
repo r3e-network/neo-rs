@@ -1029,6 +1029,7 @@ fn all_empty_batch_after_known_root_bypasses_trie_read_snapshot() {
     let root1 = store
         .apply_block_changes(1, None, &[put(5, &[0xAA, 0x01], b"v1")])
         .expect("block 1 applies");
+    let previous_entry_count = backing.entries().len();
 
     let blocks = [
         MptBlockChanges {
@@ -1060,6 +1061,33 @@ fn all_empty_batch_after_known_root_bypasses_trie_read_snapshot() {
         backing.commit_count(),
         2,
         "initial non-empty block and empty batch should commit through raw overlay"
+    );
+    let entries = backing.entries();
+    let empty_batch_entries = &entries[previous_entry_count..];
+    assert_eq!(
+        empty_batch_entries.len(),
+        4,
+        "three empty state-root records plus one current-index record should be committed"
+    );
+    assert_eq!(empty_batch_entries[0].0, Keys::state_root(2));
+    assert_eq!(empty_batch_entries[1].0, Keys::state_root(3));
+    assert_eq!(empty_batch_entries[2].0, Keys::state_root(4));
+    assert_eq!(
+        empty_batch_entries[3].0,
+        Keys::CURRENT_LOCAL_ROOT_INDEX.to_vec()
+    );
+    let mut sorted = empty_batch_entries
+        .iter()
+        .map(|(key, _)| key.clone())
+        .collect::<Vec<_>>();
+    sorted.sort();
+    assert_eq!(
+        empty_batch_entries
+            .iter()
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>(),
+        sorted,
+        "empty continuation batches should visit durable backing keys in byte order without a sort pass"
     );
     assert_eq!(store.current_local_root(), Some((4, root1)));
     for index in 2..=4 {
