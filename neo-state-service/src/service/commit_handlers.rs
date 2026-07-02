@@ -24,11 +24,13 @@ use neo_storage::DataCache;
 use std::any::Any;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Receiver, SyncSender, TryRecvError};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TryRecvError};
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 use tracing::{debug, warn};
 
 const DEFAULT_ASYNC_QUEUE_CAPACITY: usize = 256;
+const ASYNC_BATCH_COALESCE_WAIT: Duration = Duration::from_millis(10);
 
 /// Handlers for wiring state-root MPT persistence into block persistence.
 pub struct StateServiceCommitHandlers {
@@ -87,6 +89,14 @@ impl StateServiceCommitHandlers {
         self.worker
             .as_ref()
             .map_or(0, AsyncStateRootWorker::recycled_change_buffer_count)
+    }
+
+    /// Worker batch sizes observed by the async MPT apply path.
+    #[cfg(test)]
+    pub(crate) fn applied_batch_sizes(&self) -> Vec<usize> {
+        self.worker
+            .as_ref()
+            .map_or_else(Vec::new, AsyncStateRootWorker::applied_batch_sizes)
     }
 
     /// Blocks until all queued async MPT work has completed.
@@ -264,6 +274,8 @@ struct AsyncStateRootWorker {
     queue_capacity: usize,
     failed: Arc<AtomicBool>,
     recycled_change_buffers: Arc<parking_lot::Mutex<Vec<Vec<crate::mpt_store::MptChange>>>>,
+    #[cfg(test)]
+    applied_batch_sizes: Arc<parking_lot::Mutex<Vec<usize>>>,
     handle: parking_lot::Mutex<Option<JoinHandle<()>>>,
 }
 
@@ -275,14 +287,21 @@ impl AsyncStateRootWorker {
         let worker_failed = Arc::clone(&failed);
         let recycled_change_buffers = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let worker_recycled_change_buffers = Arc::clone(&recycled_change_buffers);
+        #[cfg(test)]
+        let applied_batch_sizes = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        #[cfg(test)]
+        let worker_applied_batch_sizes = Arc::clone(&applied_batch_sizes);
         let handle = thread::Builder::new()
             .name("neo-state-root-mpt".to_string())
             .spawn(move || {
                 worker_loop(
                     state_store,
                     rx,
+                    capacity,
                     worker_failed,
                     worker_recycled_change_buffers,
+                    #[cfg(test)]
+                    worker_applied_batch_sizes,
                 )
             })
             .expect("spawn StateService MPT worker");
@@ -292,6 +311,8 @@ impl AsyncStateRootWorker {
             queue_capacity: capacity,
             failed,
             recycled_change_buffers,
+            #[cfg(test)]
+            applied_batch_sizes,
             handle: parking_lot::Mutex::new(Some(handle)),
         }
     }
@@ -318,6 +339,11 @@ impl AsyncStateRootWorker {
     #[cfg(test)]
     fn recycled_change_buffer_count(&self) -> usize {
         self.recycled_change_buffers.lock().len()
+    }
+
+    #[cfg(test)]
+    fn applied_batch_sizes(&self) -> Vec<usize> {
+        self.applied_batch_sizes.lock().clone()
     }
 
     fn enqueue(&self, request: AsyncApplyRequest) -> bool {
@@ -392,8 +418,10 @@ impl Drop for AsyncStateRootWorker {
 fn worker_loop(
     state_store: Arc<StateStore>,
     rx: Receiver<AsyncCommand>,
+    max_batch_blocks: usize,
     failed: Arc<AtomicBool>,
     recycled_change_buffers: Arc<parking_lot::Mutex<Vec<Vec<crate::mpt_store::MptChange>>>>,
+    #[cfg(test)] applied_batch_sizes: Arc<parking_lot::Mutex<Vec<usize>>>,
 ) {
     let mut pending_command = None;
     loop {
@@ -407,18 +435,15 @@ fn worker_loop(
         match command {
             AsyncCommand::Apply(request) => {
                 let mut batch = vec![request];
-                loop {
-                    match rx.try_recv() {
-                        Ok(AsyncCommand::Apply(next)) => batch.push(next),
-                        Ok(other) => {
-                            pending_command = Some(other);
-                            break;
-                        }
-                        Err(TryRecvError::Empty) => break,
-                        Err(TryRecvError::Disconnected) => break,
-                    }
-                }
-                apply_request_batch(&state_store, batch, &failed, &recycled_change_buffers);
+                collect_apply_batch(&rx, &mut pending_command, &mut batch, max_batch_blocks);
+                apply_request_batch(
+                    &state_store,
+                    batch,
+                    &failed,
+                    &recycled_change_buffers,
+                    #[cfg(test)]
+                    &applied_batch_sizes,
+                );
             }
             AsyncCommand::Revert {
                 from_index,
@@ -443,13 +468,44 @@ fn worker_loop(
     }
 }
 
+fn collect_apply_batch(
+    rx: &Receiver<AsyncCommand>,
+    pending_command: &mut Option<AsyncCommand>,
+    batch: &mut Vec<AsyncApplyRequest>,
+    max_batch_blocks: usize,
+) {
+    while batch.len() < max_batch_blocks.max(1) {
+        match rx.try_recv() {
+            Ok(AsyncCommand::Apply(next)) => {
+                batch.push(next);
+            }
+            Ok(other) => {
+                *pending_command = Some(other);
+                return;
+            }
+            Err(TryRecvError::Disconnected) => return,
+            Err(TryRecvError::Empty) => match rx.recv_timeout(ASYNC_BATCH_COALESCE_WAIT) {
+                Ok(AsyncCommand::Apply(next)) => batch.push(next),
+                Ok(other) => {
+                    *pending_command = Some(other);
+                    return;
+                }
+                Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => return,
+            },
+        }
+    }
+}
+
 fn apply_request_batch(
     state_store: &StateStore,
     mut batch: Vec<AsyncApplyRequest>,
     failed: &AtomicBool,
     recycled_change_buffers: &parking_lot::Mutex<Vec<Vec<crate::mpt_store::MptChange>>>,
+    #[cfg(test)] applied_batch_sizes: &parking_lot::Mutex<Vec<usize>>,
 ) {
     StateRootApplyMetrics::record_count(StateRootApplyCountKind::BatchBlocks, batch.len() as u64);
+    #[cfg(test)]
+    applied_batch_sizes.lock().push(batch.len());
 
     for request in &batch {
         StateRootApplyMetrics::record_stage(

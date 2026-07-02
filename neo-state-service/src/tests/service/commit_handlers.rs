@@ -75,6 +75,29 @@ fn async_committing_flush_applies_queued_mpt_roots_in_order() {
 }
 
 #[test]
+fn async_deferred_committing_coalesces_short_gap_applies() {
+    let store = Arc::new(StateStore::with_mpt(false));
+    let handlers = StateServiceCommitHandlers::new_async_with_capacity(Arc::clone(&store), 8);
+    let snapshot0 = DataCache::new(false);
+    let snapshot1 = DataCache::new(false);
+
+    assert!(handlers.on_committing_deferred(0, &snapshot0));
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    assert!(handlers.on_committing_deferred(1, &snapshot1));
+    assert!(handlers.flush());
+
+    assert_eq!(
+        handlers.applied_batch_sizes(),
+        vec![2],
+        "deferred bulk-sync applies separated by a tiny scheduler gap should still use one explicit MPT batch"
+    );
+    let mpt = store.mpt().expect("mpt backend");
+    assert_eq!(mpt.current_local_root_index(), Some(1));
+    assert!(mpt.get_state_root(0).is_some());
+    assert!(mpt.get_state_root(1).is_some());
+}
+
+#[test]
 fn async_live_committing_waits_for_mpt_apply_before_returning() {
     let store = Arc::new(StateStore::with_mpt(false));
     let handlers = StateServiceCommitHandlers::new_async_with_capacity(Arc::clone(&store), 4);
