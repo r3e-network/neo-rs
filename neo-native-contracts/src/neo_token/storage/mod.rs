@@ -23,7 +23,7 @@ use std::time::Instant;
 mod candidates;
 mod views;
 
-pub(in crate::neo_token) use candidates::candidate_signature_account;
+pub(crate) use candidates::candidate_signature_account;
 use candidates::{
     CandidateScanCounts, candidate_is_blocked, candidate_is_blocked_in, elapsed_us,
     push_top_committee_candidate,
@@ -37,6 +37,22 @@ pub(super) use views::{CandidateState, NeoAccountStateView};
 /// heights, and reverts. Eliminates the per-block EC-point decompression of the
 /// committee pubkeys on the hot path. See [`NeoToken::read_committee_with_votes`].
 static COMMITTEE_DESERIALIZE_CACHE: std::sync::Mutex<Option<(Vec<u8>, Vec<(ECPoint, BigInt)>)>> =
+    std::sync::Mutex::new(None);
+
+/// Process-global memoization for `GetCommitteeAddress`, keyed by the exact
+/// `Prefix_Committee` storage bytes. The multisig address is a pure function of
+/// those bytes; a committee refresh changes the bytes and therefore misses this
+/// cache without any explicit invalidation hook.
+static COMMITTEE_ADDRESS_CACHE: std::sync::Mutex<Option<(Vec<u8>, UInt160)>> =
+    std::sync::Mutex::new(None);
+
+/// Cache for the sorted next-block validator signature accounts.
+///
+/// `GasToken::on_persist` needs only the primary validator's account. This
+/// cache avoids cloning/sorting the same committee and re-reading the same
+/// signature accounts on every block while the `Prefix_Committee` bytes stay
+/// unchanged.
+static NEXT_VALIDATOR_ACCOUNTS_CACHE: std::sync::Mutex<Option<(Vec<u8>, usize, Vec<UInt160>)>> =
     std::sync::Mutex::new(None);
 
 impl NeoToken {
@@ -324,6 +340,53 @@ impl NeoToken {
             .into_iter()
             .map(|(point, _)| point)
             .collect())
+    }
+
+    pub(crate) fn next_block_validator_account(
+        &self,
+        snapshot: &DataCache,
+        validators_count: usize,
+        primary_index: usize,
+    ) -> CoreResult<UInt160> {
+        let key = Self::committee_key();
+        let item = snapshot.get(&key).ok_or_else(|| {
+            CoreError::invalid_operation("NeoToken committee cache is not initialized")
+        })?;
+        let raw = item.value_bytes();
+
+        {
+            let cache = NEXT_VALIDATOR_ACCOUNTS_CACHE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if let Some((cached_bytes, cached_count, cached_accounts)) = cache.as_ref() {
+                if *cached_count == validators_count && cached_bytes.as_slice() == raw.as_ref() {
+                    return cached_accounts.get(primary_index).copied().ok_or_else(|| {
+                        CoreError::invalid_operation(format!(
+                            "NeoToken next-block validator primary index {primary_index} outside the validator set"
+                        ))
+                    });
+                }
+            }
+        }
+
+        let mut points = self.read_committee_points(snapshot)?;
+        points.truncate(validators_count);
+        points.sort();
+        let accounts = points
+            .iter()
+            .map(candidate_signature_account)
+            .collect::<Vec<_>>();
+        let account = accounts.get(primary_index).copied().ok_or_else(|| {
+            CoreError::invalid_operation(format!(
+                "NeoToken next-block validator primary index {primary_index} outside the validator set"
+            ))
+        })?;
+
+        let mut cache = NEXT_VALIDATOR_ACCOUNTS_CACHE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        *cache = Some((raw.into_owned(), validators_count, accounts));
+        Ok(account)
     }
 
     /// Reads a single cached committee member by stored index.
@@ -751,14 +814,25 @@ impl NeoToken {
             if key_bytes.len() < 34 {
                 continue;
             }
+            // Decode state before pubkey decompression so unregistered rows stay
+            // cheap, then carry the decoded pubkey/votes through to avoid a
+            // second EC-point decompression in read_registered_candidates.
+            let (registered, votes) = match Self::decode_candidate_state(&item.value_bytes()) {
+                Ok(state) => state,
+                Err(error) => {
+                    if ECPoint::from_bytes(&key_bytes[1..34]).is_err() {
+                        continue;
+                    }
+                    return Err(error);
+                }
+            };
+            if !registered {
+                continue;
+            }
             let Ok(pubkey) = ECPoint::from_bytes(&key_bytes[1..34]) else {
                 continue;
             };
-            // Decode the pubkey + votes ONCE here and carry them through, so
-            // `read_registered_candidates` (the committee/getCandidates path) does
-            // not EC-point-decompress every candidate a second time.
-            let (registered, votes) = Self::decode_candidate_state(&item.value_bytes())?;
-            if registered && !candidate_is_blocked_in(&blocked_accounts, &pubkey) {
+            if !candidate_is_blocked_in(&blocked_accounts, &pubkey) {
                 out.push((pubkey, votes, key, item));
             }
         }
@@ -904,6 +978,23 @@ impl NeoToken {
     /// committee public keys, where `m = n - (n - 1) / 2`. The multisig builder sorts
     /// the keys ascending exactly as C# `Contract.CreateMultiSigRedeemScript` does.
     pub(super) fn compute_committee_address(&self, snapshot: &DataCache) -> CoreResult<UInt160> {
+        let key = Self::committee_key();
+        let item = snapshot.get(&key).ok_or_else(|| {
+            CoreError::invalid_operation("NeoToken committee cache is not initialized")
+        })?;
+        let raw = item.value_bytes();
+
+        {
+            let cache = COMMITTEE_ADDRESS_CACHE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if let Some((cached_bytes, cached_address)) = cache.as_ref() {
+                if cached_bytes.as_slice() == raw.as_ref() {
+                    return Ok(*cached_address);
+                }
+            }
+        }
+
         let points = self.read_committee_points(snapshot)?;
         if points.is_empty() {
             return Err(CoreError::invalid_operation("committee is empty"));
@@ -914,7 +1005,13 @@ impl NeoToken {
                 m, &points,
             )
                 .map_err(|e| CoreError::invalid_operation(format!("committee multisig script: {e}")))?;
-        Ok(UInt160::from_script(&script))
+        let address = UInt160::from_script(&script);
+
+        let mut cache = COMMITTEE_ADDRESS_CACHE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        *cache = Some((raw.into_owned(), address));
+        Ok(address)
     }
 
     /// C# `GetAccountState`: the stored `NeoAccountState` struct bytes under

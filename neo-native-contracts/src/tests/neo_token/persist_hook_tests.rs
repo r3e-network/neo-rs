@@ -55,6 +55,13 @@ fn signature_address(pubkey: &ECPoint) -> UInt160 {
     UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()))
 }
 
+fn visible_store_dump(snapshot: &DataCache) -> Vec<(Vec<u8>, Vec<u8>)> {
+    snapshot
+        .find(None, SeekDirection::Forward)
+        .map(|(key, item)| (key.to_array(), item.value_bytes().into_owned()))
+        .collect()
+}
+
 fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     let start_idx = source.find(start).expect("start marker exists");
     let tail = &source[start_idx..];
@@ -339,6 +346,99 @@ fn post_persist_off_refresh_blocks_only_mints_the_rotating_reward() {
         None,
         "no accrual off refresh blocks"
     );
+}
+
+#[test]
+fn fast_forward_empty_block_rewards_matches_normal_hooks_across_multiple_nonzero_refreshes() {
+    let all = ProtocolSettings::default().standby_committee;
+    let standby = all[..3].to_vec();
+    let settings = ProtocolSettings {
+        standby_committee: standby.clone(),
+        validators_count: 1,
+        ..ProtocolSettings::default()
+    };
+    let seeded_committee = standby
+        .iter()
+        .enumerate()
+        .map(|(index, point)| {
+            let votes = match index {
+                0 => 1000,
+                1 => 700,
+                _ => 300,
+            };
+            (point.clone(), BigInt::from(votes))
+        })
+        .collect::<Vec<_>>();
+
+    let seed = |cache: &DataCache| {
+        seed_committee_cache(cache, &seeded_committee);
+        NeoToken::new().put_gas_per_block(cache, 0, &BigInt::from(DEFAULT_GAS_PER_BLOCK));
+        cache.add(
+            NeoToken::voters_count_key(),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(20_000_000))),
+        );
+        for (index, candidate) in standby.iter().enumerate() {
+            let votes = match index {
+                0 => 1000,
+                1 => 700,
+                _ => 300,
+            };
+            cache.add(
+                NeoToken::candidate_key(candidate),
+                StorageItem::from_bytes(
+                    NeoToken::encode_candidate_state(true, &BigInt::from(votes)).unwrap(),
+                ),
+            );
+        }
+    };
+
+    let normal = Arc::new(DataCache::new(false));
+    let fast = Arc::new(DataCache::new(false));
+    seed(&normal);
+    seed(&fast);
+
+    for height in 1..=6 {
+        let mut on_persist = engine_for(
+            TriggerType::OnPersist,
+            Arc::clone(&normal),
+            height,
+            settings.clone(),
+        );
+        NeoToken
+            .on_persist(&mut on_persist)
+            .expect("normal on_persist");
+        let mut post_persist = engine_for(
+            TriggerType::PostPersist,
+            Arc::clone(&normal),
+            height,
+            settings.clone(),
+        );
+        NeoToken
+            .post_persist(&mut post_persist)
+            .expect("normal post_persist");
+    }
+
+    NeoToken::new()
+        .fast_forward_empty_block_rewards(&fast, &settings, 1, 6)
+        .expect("fast-forward rewards");
+
+    assert_eq!(
+        visible_store_dump(&fast),
+        visible_store_dump(&normal),
+        "fast-forward must match normal hooks across multiple nonzero-vote refreshes"
+    );
+    for (member, _) in &seeded_committee {
+        assert!(
+            read_voter_reward(&fast, member).is_some(),
+            "nonzero-vote committee members should have voter reward accumulators"
+        );
+    }
+    for point in &standby {
+        assert!(
+            gas_balance(&fast, &signature_address(point)).is_some(),
+            "rotating committee reward should mint GAS to each seeded member"
+        );
+    }
 }
 
 #[test]

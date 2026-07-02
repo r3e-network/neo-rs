@@ -297,6 +297,16 @@ fn neo_storage_codecs_use_stack_value_projection() {
     assert!(!committee_encoder.contains("StackItem::from_array"));
     assert!(!committee_encoder.contains("BinarySerializer::serialize("));
 
+    let committee_address = slice_between(
+        source,
+        "fn compute_committee_address",
+        "/// C# `GetAccountState`",
+    );
+    assert!(
+        committee_address.contains("COMMITTEE_ADDRESS_CACHE"),
+        "committee witness checks should reuse the byte-keyed committee address cache"
+    );
+
     let candidate_decoder = slice_between(
         source,
         "fn decode_candidate_state",
@@ -364,6 +374,36 @@ fn neo_storage_codecs_use_stack_value_projection() {
     assert!(
         state_decode < blocked_lookup,
         "candidate state should gate blocked-account lookup"
+    );
+
+    let registered_candidate_entries = slice_between(
+        source,
+        "fn registered_candidate_entries",
+        "/// [`registered_candidate_entries`] projected",
+    );
+    let registered_key_length_guard = registered_candidate_entries
+        .find("key_bytes.len() < 34")
+        .expect("registered candidate scan keeps malformed-key length guard");
+    let registered_state_decode = registered_candidate_entries
+        .find("Self::decode_candidate_state")
+        .expect("registered candidate scan decodes CandidateState");
+    let registered_pubkey_decode = registered_candidate_entries
+        .find("ECPoint::from_bytes")
+        .expect("registered candidate scan decodes candidate public keys");
+    let registered_blocked_lookup = registered_candidate_entries
+        .find("candidate_is_blocked_in")
+        .expect("registered candidate scan checks blocked accounts");
+    assert!(
+        registered_key_length_guard < registered_state_decode,
+        "short malformed candidate keys should skip registered-candidate state decoding"
+    );
+    assert!(
+        registered_state_decode < registered_pubkey_decode,
+        "unregistered candidate rows should skip ECPoint decompression in registered candidate scans"
+    );
+    assert!(
+        registered_state_decode < registered_blocked_lookup,
+        "registered candidate state should gate blocked-account lookup"
     );
 }
 
@@ -520,6 +560,44 @@ fn committee_address_matches_multisig_script_hash() {
         NeoToken::new().compute_committee_address(&cache).unwrap(),
         UInt160::from_script(&script)
     );
+}
+
+#[test]
+fn committee_address_cache_tracks_changed_committee_bytes() {
+    let cache = DataCache::new(false);
+    let points = sample_committee();
+    seed_committee(&cache, &points);
+    let first = NeoToken::new().compute_committee_address(&cache).unwrap();
+
+    let replacement = &points[..2];
+    let replacement_item = StackItem::from_array(
+        replacement
+            .iter()
+            .map(|point| {
+                StackItem::from_struct(vec![
+                    StackItem::from_byte_string(point.to_bytes()),
+                    StackItem::from_int(BigInt::from(0)),
+                ])
+            })
+            .collect::<Vec<_>>(),
+    );
+    let replacement_bytes =
+        BinarySerializer::serialize(&replacement_item, &ExecutionEngineLimits::default()).unwrap();
+    cache.update(
+        NeoToken::committee_key(),
+        StorageItem::from_bytes(replacement_bytes),
+    );
+
+    let second = NeoToken::new().compute_committee_address(&cache).unwrap();
+    let replacement_script =
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            NeoToken::committee_threshold(replacement.len()),
+            replacement,
+        )
+        .unwrap();
+
+    assert_ne!(first, second, "changed committee bytes must miss the cache");
+    assert_eq!(second, UInt160::from_script(&replacement_script));
 }
 
 #[test]

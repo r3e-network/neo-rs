@@ -15,7 +15,7 @@
 
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::{ApplicationEngine, Contract, NativeContract, NativeEvent, NativeMethod};
+use neo_execution::{ApplicationEngine, NativeContract, NativeEvent, NativeMethod};
 use neo_payloads::TransactionAttribute;
 use neo_primitives::{TransactionAttributeType, UInt160};
 use neo_storage::persistence::DataCache;
@@ -545,16 +545,11 @@ impl NativeContract for GasToken {
         let validators_count =
             usize::try_from(engine.protocol_settings().validators_count).unwrap_or(0);
         let snapshot = engine.snapshot_cache();
-        let validators =
-            crate::NeoToken::new().next_block_validators(&snapshot, validators_count)?;
-        let primary_key = validators.get(primary_index).ok_or_else(|| {
-            CoreError::invalid_operation(format!(
-                "GasToken::on_persist: primary index {primary_index} outside the validator set"
-            ))
-        })?;
-        let primary = UInt160::from_script(&Contract::create_signature_redeem_script(
-            primary_key.clone(),
-        ));
+        let primary = crate::NeoToken::new().next_block_validator_account(
+            &snapshot,
+            validators_count,
+            primary_index,
+        )?;
         self.gas_mint(engine, &primary, &BigInt::from(total_network_fee), false)
     }
 }

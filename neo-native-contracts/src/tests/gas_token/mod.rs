@@ -13,9 +13,17 @@
 //! - Test modules and fixtures: grouped coverage for the surrounding domain.
 
 use super::*;
+use neo_execution::Contract;
 use neo_primitives::{CallFlags, ContractParameterType};
 use neo_serialization::BinarySerializer;
 use neo_vm_rs::ExecutionEngineLimits;
+
+fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+    let start_idx = source.find(start).expect("start marker");
+    let tail = &source[start_idx..];
+    let end_idx = tail.find(end).expect("end marker");
+    &tail[..end_idx]
+}
 
 #[test]
 fn gas_transfer_from_calling_contract_uses_contract_as_witness() {
@@ -580,6 +588,25 @@ mod persist_tests {
                 (false, true, BigInt::from(2_5000_0000i64)),
                 (true, false, BigInt::from(1_5000_0000i64)),
             ]
+        );
+    }
+
+    #[test]
+    fn on_persist_uses_cached_signature_account_for_primary_reward() {
+        let source = include_str!("../../gas_token/mod.rs");
+        let on_persist = slice_between(source, "fn on_persist", "\n}");
+
+        assert!(
+            on_persist.contains("next_block_validator_account"),
+            "per-block primary reward should reuse cached validator accounts"
+        );
+        assert!(
+            !on_persist.contains("next_block_validators"),
+            "GasToken::on_persist should use the cached primary-validator account path"
+        );
+        assert!(
+            !on_persist.contains("create_signature_redeem_script(primary_key.clone())"),
+            "GasToken::on_persist should not rebuild the primary validator redeem script"
         );
     }
 

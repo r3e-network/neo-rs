@@ -247,6 +247,21 @@ fn next_block_validators_takes_count_then_sorts() {
 }
 
 #[test]
+fn next_block_validator_account_matches_sorted_validator_account() {
+    let cache = DataCache::new(false);
+    let points = sample_committee();
+    seed_committee(&cache, &points);
+    let neo = NeoToken::new();
+    let validators = neo.next_block_validators(&cache, 2).unwrap();
+
+    assert_eq!(
+        neo.next_block_validator_account(&cache, 2, 1).unwrap(),
+        crate::neo_token::candidate_signature_account(&validators[1])
+    );
+    assert!(neo.next_block_validator_account(&cache, 2, 2).is_err());
+}
+
+#[test]
 fn candidates_filters_registered_and_decodes_votes() {
     use neo_storage::StorageItem;
     let cache = DataCache::new(false);

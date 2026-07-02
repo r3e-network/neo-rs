@@ -17,7 +17,7 @@ fn lock_provider() -> MutexGuard<'static, ()> {
 }
 
 fn install_resources() -> NativePersistResources {
-    let _ = neo_native_contracts::install();
+    neo_native_contracts::install();
     NativePersistResources::from_installed_provider().expect("native resources")
 }
 
@@ -457,6 +457,73 @@ fn fast_forward_empty_blocks_matches_normal_persist_store_dump_between_refreshes
             .current_index(&fast)
             .expect("current index"),
         3
+    );
+}
+
+#[test]
+fn fast_forward_empty_blocks_matches_normal_persist_across_multiple_gas_changes() {
+    let _guard = lock_provider();
+    let resources = install_resources();
+    let settings = ProtocolSettings::default();
+
+    let normal = Arc::new(neo_storage::DataCache::new(false));
+    let fast = Arc::new(neo_storage::DataCache::new(false));
+    let genesis = Arc::new(crate::native_persist::genesis_block(&settings).expect("genesis"));
+    crate::native_persist::persist_block_natives(
+        Arc::clone(&normal),
+        Arc::clone(&genesis),
+        &settings,
+    )
+    .expect("normal genesis");
+    crate::native_persist::persist_block_natives(
+        Arc::clone(&fast),
+        Arc::clone(&genesis),
+        &settings,
+    )
+    .expect("fast genesis baseline");
+
+    for (index, gas_per_block) in [(3, 7), (5, 11), (7, 13)] {
+        let key = neo_gas_per_block_key(index);
+        let value = neo_storage::StorageItem::from_bytes(
+            num_bigint::BigInt::from(gas_per_block * 100_000_000i64).to_signed_bytes_le(),
+        );
+        normal.update(key.clone(), value.clone());
+        fast.update(key, value);
+    }
+
+    let mut prev = genesis;
+    let mut blocks = Vec::new();
+    for height in 1..=8 {
+        let block = empty_child(&prev, height);
+        prev = Arc::clone(&block);
+        blocks.push(block);
+    }
+
+    for block in &blocks {
+        crate::native_persist::persist_block_natives(
+            Arc::clone(&normal),
+            Arc::clone(block),
+            &settings,
+        )
+        .expect("normal empty block across gas changes");
+    }
+
+    let staged = stage_empty_block_fast_forward(
+        Arc::clone(&fast),
+        &blocks,
+        &settings,
+        bulk_options(),
+        bulk_context(),
+        &resources,
+        0,
+    )
+    .expect("fast-forward across multiple gas changes");
+    staged.commit();
+
+    assert_eq!(
+        visible_store_dump(&fast),
+        visible_store_dump(&normal),
+        "fast-forward must be byte-equivalent across multiple gas-per-block records"
     );
 }
 

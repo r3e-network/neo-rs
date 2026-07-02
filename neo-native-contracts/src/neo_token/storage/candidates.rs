@@ -76,7 +76,7 @@ pub(super) fn candidate_is_blocked_in(
     blocked_accounts.contains(&candidate_signature_account(pubkey))
 }
 
-pub(in crate::neo_token) fn candidate_signature_account(pubkey: &ECPoint) -> UInt160 {
+pub(crate) fn candidate_signature_account(pubkey: &ECPoint) -> UInt160 {
     let cache = CANDIDATE_SIGNATURE_ACCOUNT_CACHE.get_or_init(|| RwLock::new(HashMap::new()));
     if let Some(account) = cache.read().unwrap_or_else(|e| e.into_inner()).get(pubkey) {
         return *account;
