@@ -107,8 +107,9 @@ max_transactions_per_block = 200
 
 [state_service]
 enabled = true
-path = "Data_MPT_{0}"
+path = "StateRoot_{0}"
 full_state = true
+track_during_catchup = true
 
 [mempool]
 max_transactions = 50000
