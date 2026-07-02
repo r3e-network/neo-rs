@@ -58,8 +58,13 @@ parked and drained when their parent lands.
 Downloaded block batches may first pass through `neo_runtime::BlockImportQueue`:
 the queue runs `BlockImport::check` with bounded concurrency and then calls
 `BlockImport::import_many` in the original order. That queue is a preflight
-boundary only. The canonical execution/persist path remains the
-`neo-blockchain` service loop.
+boundary, not a second import path. `neo_network::BlockDownloader` is the
+stream-shaped source boundary for peer schedulers; its `BlockDownloadBatch`
+converts into `neo_runtime::SyncBlockBatch`. `SyncPipelineDriver` validates
+contiguous heights, pushes those batches through the import queue, and persists
+import-stage checkpoints through
+`neo_runtime::sync_pipeline::{CommitPolicy, SyncStageCheckpointStore}`. The
+canonical execution/persist path remains the `neo-blockchain` service loop.
 
 ```mermaid
 sequenceDiagram

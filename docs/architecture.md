@@ -203,6 +203,23 @@ The detailed rules for this style live in
   state-root updates, and durable storage still happen only inside
   `neo-blockchain`.
 
+- **Staged-sync policies are shared runtime contracts.**
+  `neo_runtime::sync_pipeline` defines stable stage identifiers,
+  `CommitPolicy` thresholds, `SyncStageCheckpointStore`, and
+  `SyncPipelineDriver`. Downloaded `SyncBlockBatch` values are checked for
+  contiguous heights, imported through the canonical `ImportQueue`, and
+  checkpointed when policy fires. `neo_network::BlockDownloader` is the
+  stream-shaped download boundary; its `BlockDownloadBatch` converts into the
+  runtime batch type, while the concrete peer request scheduler remains the next
+  integration layer.
+
+- **Native dispatch is explicit at composition.** `neo-execution` still owns the
+  low-level `NativeContractProvider` lookup seam so the engine does not depend
+  on `neo-native-contracts`, but `neo-system::NodeBuilder` now accepts and stores
+  the provider as an explicit dependency. The standard Neo N3 provider is
+  installed by default only after required services validate, so failed
+  composition does not mutate native dispatch state.
+
 - **Single authoritative error type.** `neo-error` is the *only* crate that owns
   `CoreError` / `CoreResult`. Every higher-layer crate returns and accepts
   `CoreError`, so error handling is uniform across the workspace and the error

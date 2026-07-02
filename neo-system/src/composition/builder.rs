@@ -16,6 +16,7 @@ use tracing::debug;
 
 use neo_blockchain::{BlockchainHandle, HeaderCache};
 use neo_config::ProtocolSettings;
+use neo_execution::native_contract_provider::{NativeContractLookup, NativeContractProvider};
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
 use neo_runtime::{BlockExecutor, ConsensusService, NeoEngine};
@@ -37,6 +38,7 @@ pub struct NodeBuilder {
     mempool: Option<Arc<MemoryPool>>,
     header_cache: Option<Arc<HeaderCache>>,
     services: Option<ServiceRegistry>,
+    native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
     block_executor: Option<Arc<dyn BlockExecutor>>,
     consensus: Option<Arc<dyn ConsensusService>>,
     engine: Option<Arc<dyn NeoEngine>>,
@@ -53,6 +55,10 @@ impl std::fmt::Debug for NodeBuilder {
             .field("mempool", &self.mempool.is_some())
             .field("header_cache", &self.header_cache.is_some())
             .field("services", &self.services.is_some())
+            .field(
+                "native_contract_provider",
+                &self.native_contract_provider.is_some(),
+            )
             .field(
                 "block_executor",
                 &self.block_executor.as_ref().map(|s| s.name()),
@@ -120,6 +126,20 @@ impl NodeBuilder {
         self
     }
 
+    /// Install the native-contract provider used by NeoVM host calls.
+    ///
+    /// When unset, [`Self::build`] installs the standard Neo N3 provider from
+    /// `neo-native-contracts`. Supplying a provider here makes native dispatch
+    /// an explicit composition-root dependency instead of a hidden global side
+    /// effect.
+    pub fn with_native_contract_provider(
+        mut self,
+        provider: Arc<dyn NativeContractProvider>,
+    ) -> Self {
+        self.native_contract_provider = Some(provider);
+        self
+    }
+
     /// Install a block executor service.
     pub fn with_block_executor(mut self, executor: Arc<dyn BlockExecutor>) -> Self {
         self.block_executor = Some(executor);
@@ -140,11 +160,6 @@ impl NodeBuilder {
 
     /// Finalise the builder.
     pub fn build(self) -> NodeResult<Node> {
-        // Install the standard native-contract provider into neo-execution's
-        // global seam before any ApplicationEngine runs, so native-contract
-        // calls (CryptoLib, …) dispatch instead of returning "not found".
-        neo_native_contracts::install();
-
         let settings = self
             .settings
             .ok_or_else(|| crate::error::NodeError::missing_config("settings"))?;
@@ -157,6 +172,18 @@ impl NodeBuilder {
         let network = self
             .network
             .ok_or_else(|| crate::error::NodeError::missing_service("network"))?;
+        let native_contract_provider = match self.native_contract_provider {
+            Some(provider) => {
+                NativeContractLookup::install_provider(Arc::clone(&provider));
+                provider
+            }
+            None => {
+                let provider = Arc::new(neo_native_contracts::StandardNativeProvider::new())
+                    as Arc<dyn NativeContractProvider>;
+                NativeContractLookup::install_provider(Arc::clone(&provider));
+                provider
+            }
+        };
 
         debug!("NodeBuilder::build: composing runtime node");
         let mempool = self
@@ -171,6 +198,7 @@ impl NodeBuilder {
             mempool,
             header_cache: self.header_cache.unwrap_or_default(),
             services: self.services.unwrap_or_default(),
+            native_contract_provider,
             block_executor: self.block_executor,
             consensus: self.consensus,
             engine: self.engine,

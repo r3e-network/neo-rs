@@ -23,6 +23,7 @@ use tracing::info;
 
 use neo_blockchain::{BlockchainHandle, HeaderCache};
 use neo_config::ProtocolSettings;
+use neo_execution::native_contract_provider::{NativeContractLookup, NativeContractProvider};
 use neo_mempool::MemoryPool;
 use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_network::NetworkHandle;
@@ -78,6 +79,13 @@ pub struct Node {
     /// composition root and looked up by type at request time.
     pub services: ServiceRegistry,
 
+    /// Native-contract provider installed for NeoVM host calls.
+    ///
+    /// Stored on the node so the composition-root dependency remains visible
+    /// after `NodeBuilder::build()` instead of disappearing into the global
+    /// `neo-execution` lookup seam.
+    pub native_contract_provider: Arc<dyn NativeContractProvider>,
+
     /// Optional block executor service. Present when a concrete
     /// `impl BlockExecutor` has been wired in by the caller.
     pub block_executor: Option<Arc<dyn BlockExecutor>>,
@@ -108,6 +116,10 @@ impl std::fmt::Debug for Node {
             .field("header_cache", &self.header_cache.count())
             .field("services", &self.services)
             .field(
+                "native_contract_provider_contracts",
+                &self.native_contract_provider.all_native_contracts().len(),
+            )
+            .field(
                 "block_executor",
                 &self.block_executor.as_ref().map(|s| s.name()),
             )
@@ -134,7 +146,9 @@ impl Node {
     ) -> Result<Self, crate::error::NodeError> {
         // Keep this direct constructor aligned with NodeBuilder::build().
         // Services created from a headless node still need native dispatch.
-        neo_native_contracts::install();
+        let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new())
+            as Arc<dyn NativeContractProvider>;
+        NativeContractLookup::install_provider(Arc::clone(&native_contract_provider));
 
         let storage: Arc<dyn neo_storage::persistence::store::Store> =
             neo_storage::persistence::StoreFactory::get_store("memory", "")
@@ -152,6 +166,7 @@ impl Node {
             mempool,
             header_cache: Arc::new(HeaderCache::default()),
             services: ServiceRegistry::new(),
+            native_contract_provider,
             block_executor: None,
             consensus: None,
             engine: None,

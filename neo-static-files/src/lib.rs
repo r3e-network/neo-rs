@@ -18,9 +18,10 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    sync::{Arc, LazyLock, Mutex, RwLock},
+    sync::{Arc, LazyLock},
 };
 
+use parking_lot::{Mutex, RwLock};
 use thiserror::Error;
 
 const RECORD_MAGIC: [u8; 4] = *b"NSF1";
@@ -124,9 +125,6 @@ pub enum StaticFileError {
         /// Segment file path.
         path: PathBuf,
     },
-    /// Internal mutex was poisoned by a previous panic.
-    #[error("static-file writer lock poisoned")]
-    LockPoisoned,
     /// Named static-file provider was not registered.
     #[error("static-file provider {provider:?} not found; available providers: {available:?}")]
     UnknownProvider {
@@ -305,16 +303,14 @@ pub struct StaticFileFactory;
 impl StaticFileFactory {
     /// Register a static-file provider by its canonical provider name.
     pub fn register_provider(provider: Arc<dyn StaticFileProvider>) -> StaticFileResult<()> {
-        let mut providers = STATIC_FILE_PROVIDERS
-            .write()
-            .map_err(|_| StaticFileError::LockPoisoned)?;
+        let mut providers = STATIC_FILE_PROVIDERS.write();
         providers.insert(static_file_provider_key(provider.name()), provider);
         Ok(())
     }
 
     /// Return a registered provider by name or alias.
     pub fn get_static_file_provider(name: &str) -> Option<Arc<dyn StaticFileProvider>> {
-        let providers = STATIC_FILE_PROVIDERS.read().ok()?;
+        let providers = STATIC_FILE_PROVIDERS.read();
         providers.get(&static_file_provider_key(name)).cloned()
     }
 
@@ -332,9 +328,7 @@ impl StaticFileFactory {
         config: StaticFileConfig,
     ) -> StaticFileResult<Arc<dyn StaticFiles>> {
         let key = static_file_provider_key(static_file_provider);
-        let providers = STATIC_FILE_PROVIDERS
-            .read()
-            .map_err(|_| StaticFileError::LockPoisoned)?;
+        let providers = STATIC_FILE_PROVIDERS.read();
         let provider = providers
             .get(&key)
             .cloned()
@@ -435,10 +429,7 @@ impl StaticFiles for FileStaticFiles {
             });
         }
 
-        let _guard = self
-            .write_lock
-            .lock()
-            .map_err(|_| StaticFileError::LockPoisoned)?;
+        let _guard = self.write_lock.lock();
         let path = self.segment_path(segment);
         let mut file = self.open_for_append(&path)?;
         let offset = file
@@ -534,10 +525,7 @@ impl StaticFiles for FileStaticFiles {
     }
 
     fn truncate_to(&self, segment: Segment, offset: Offset) -> StaticFileResult<()> {
-        let _guard = self
-            .write_lock
-            .lock()
-            .map_err(|_| StaticFileError::LockPoisoned)?;
+        let _guard = self.write_lock.lock();
         let path = self.segment_path(segment);
         let file = self.open_for_append(&path)?;
         let len = file

@@ -26,6 +26,7 @@ neo-state-service = { workspace = true }
 neo-network = { workspace = true }
 neo-wallets = { workspace = true }
 neo-native-contracts = { workspace = true }
+neo-execution = { workspace = true }
 neo-config = { workspace = true }
 
 # Runtime service traits

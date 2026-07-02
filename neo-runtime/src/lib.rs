@@ -26,8 +26,13 @@ mod service;
 pub use errors::{ServiceError, ServiceResult, error};
 pub use service::{
     BlockBatchImportOutcome, BlockExecutor, BlockImport, BlockImportOutcome, BlockImportQueue,
-    BlockOrigin, BlockchainEvent, ConsensusService, DEFAULT_COMMAND_CAPACITY,
-    DEFAULT_EVENT_CAPACITY, ExecutionOutcome, ExecutionPayload, ImportQueue, ImportedTip,
-    NeoEngine, NetworkEvent, NetworkService, Service, TxHash, ValidationResult,
+    BlockOrigin, BlockchainEvent, CommitDecision, CommitPolicy, CommitTrigger, ConsensusService,
+    DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, ExecutionOutcome, ExecutionPayload,
+    ImportQueue, ImportedTip, InMemorySyncStageCheckpointStore, NeoEngine, NetworkEvent,
+    NetworkService, Service, StageProgress, SyncBlockBatch, SyncPipelineDriver,
+    SyncPipelineImportOutcome, SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind,
+    TxHash, ValidationResult,
 };
-pub use service::{block_import, blockchain, import_queue, outcome, services, sync_metrics};
+pub use service::{
+    block_import, blockchain, import_queue, outcome, services, sync_metrics, sync_pipeline,
+};

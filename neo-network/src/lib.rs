@@ -9,6 +9,7 @@
 //!
 //! ## Contents
 //!
+//! - `download`: Stream-shaped block download contracts for sync drivers.
 //! - `errors`: Typed errors and result aliases for this crate boundary.
 //! - `identity`: Peer identity, node keys, and advertised endpoint helpers.
 //! - `peers`: Peer registry, scoring, and connection tracking logic.
@@ -20,6 +21,7 @@
 
 #![doc(html_root_url = "https://docs.rs/neo-network/0.9.0")]
 
+mod download;
 mod errors;
 mod identity;
 mod peers;
@@ -31,6 +33,9 @@ pub mod wire;
 // Public re-exports
 // -----------------------------------------------------------------------------
 
+pub use download::{
+    BlockDownloadBatch, BlockDownloadConfig, BlockDownloader, ChannelBlockDownloader,
+};
 pub use errors::{NetworkError, NetworkResult, error};
 pub use identity::{LocalIdentity, local_identity};
 pub use peers::{

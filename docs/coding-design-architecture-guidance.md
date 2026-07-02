@@ -244,6 +244,11 @@ Priority order for crate refactors:
    implementation behind that trait. Use `neo_runtime::BlockImportQueue` for
    bounded concurrent preverification, but keep ordered import in
    `BlockImport::import_many`.
+   Downloader code should expose `neo_network::BlockDownloader` streams and use
+   `neo_runtime::SyncPipelineDriver` to convert contiguous downloaded batches
+   into ordered import-queue submissions. Stage flushing and crash-resume
+   markers belong in `neo_runtime::sync_pipeline::{CommitPolicy,
+   SyncStageCheckpointStore}` instead of ad hoc thresholds inside service loops.
 2. **One reorg-aware chain event stream.** Indexers, RPC application logs,
    token trackers, oracle services, and plugins should derive from a single
    bounded stream of chain outcomes. Because Neo committed blocks are final,

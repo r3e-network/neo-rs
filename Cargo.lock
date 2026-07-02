@@ -2872,6 +2872,7 @@ dependencies = [
 name = "neo-static-files"
 version = "0.9.0"
 dependencies = [
+ "parking_lot",
  "tempfile",
  "thiserror 2.0.18",
 ]
@@ -2906,6 +2907,7 @@ dependencies = [
  "neo-blockchain",
  "neo-config",
  "neo-error",
+ "neo-execution",
  "neo-mempool",
  "neo-native-contracts",
  "neo-network",
