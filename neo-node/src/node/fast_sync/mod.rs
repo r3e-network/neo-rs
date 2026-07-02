@@ -145,6 +145,9 @@ impl FastSyncReport {
                 final_height: import.last_imported_tip.map(|tip| tip.height),
                 final_hash: import.last_imported_tip.map(|tip| tip.hash.to_string()),
                 elapsed_seconds: import.elapsed_seconds,
+                driver_elapsed_seconds: import.driver_elapsed_seconds,
+                chain_acc_read_seconds: import.chain_acc_read_seconds,
+                chain_acc_validate_seconds: import.chain_acc_validate_seconds,
                 average_blocks_per_second: import.average_blocks_per_second,
                 empty_blocks: import.empty_blocks,
                 empty_only_blocks: import.empty_only_blocks,
@@ -153,16 +156,48 @@ impl FastSyncReport {
                 transaction_blocks: import.transaction_blocks,
                 transactions: import.transactions,
                 transaction_block_import_seconds: import.transaction_block_import_seconds,
+                transaction_block_clone_seconds: import.transaction_block_clone_seconds,
+                transaction_ledger_insert_seconds: import.transaction_ledger_insert_seconds,
+                transaction_committed_hook_seconds: import.transaction_committed_hook_seconds,
                 transaction_blocks_per_second: import.transaction_blocks_per_second,
+                finalization_seconds: import.finalization_seconds,
+                finalization_commit_handlers_seconds: import.finalization_commit_handlers_seconds,
+                finalization_store_commit_seconds: import.finalization_store_commit_seconds,
+                unclassified_import_seconds: import.unclassified_import_seconds,
                 throughput_status: fast_sync_throughput_status(&import),
             },
             hot_metrics: FastSyncHotMetricsReport {
+                state_service_mpt_apply_attempts: hot_metrics.state_service_mpt_apply_attempts,
+                state_service_mpt_apply_failures: hot_metrics.state_service_mpt_apply_failures,
+                state_service_mpt_apply_height: hot_metrics.state_service_mpt_apply_height,
                 state_service_mpt_avg_total_us: hot_metrics.state_service_mpt_avg_total_us,
+                state_service_mpt_avg_project_us: hot_metrics.state_service_mpt_avg_project_us,
+                state_service_mpt_avg_trie_us: hot_metrics.state_service_mpt_avg_trie_us,
+                state_service_mpt_avg_changes: hot_metrics.state_service_mpt_avg_changes,
+                state_service_mpt_enqueue_blocking_avg_us: hot_metrics
+                    .state_service_mpt_enqueue_blocking_avg_us,
+                state_service_mpt_queue_wait_avg_us: hot_metrics
+                    .state_service_mpt_queue_wait_avg_us,
+                state_service_mpt_mutate_changes_avg_us: hot_metrics
+                    .state_service_mpt_mutate_changes_avg_us,
+                state_service_mpt_root_hash_avg_us: hot_metrics.state_service_mpt_root_hash_avg_us,
                 state_service_mpt_trie_commit_avg_us: hot_metrics
                     .state_service_mpt_trie_commit_avg_us,
+                state_service_mpt_backing_commit_avg_us: hot_metrics
+                    .state_service_mpt_backing_commit_avg_us,
+                state_service_mpt_publish_generation_avg_us: hot_metrics
+                    .state_service_mpt_publish_generation_avg_us,
+                state_service_mpt_overlay_entries_avg: hot_metrics
+                    .state_service_mpt_overlay_entries_avg,
+                state_service_mpt_batch_blocks_avg: hot_metrics.state_service_mpt_batch_blocks_avg,
                 native_persist_avg_total_us: hot_metrics.native_persist_avg_total_us,
                 native_persist_tx_hot_stage: hot_metrics.native_persist_tx_hot_stage.to_string(),
                 native_persist_tx_hot_stage_avg_us: hot_metrics.native_persist_tx_hot_stage_avg_us,
+                native_persist_tx_stages: neo_runtime::sync_metrics::native_persist_tx_stage_stats(
+                )
+                .into_iter()
+                .map(FastSyncStageMetricReport::from_native_tx_stage)
+                .collect(),
                 rocksdb_batch_avg_flush_duration_ms: hot_metrics
                     .rocksdb_batch_avg_flush_duration_ms,
                 rocksdb_batch_pending_operations: hot_metrics.rocksdb_batch_pending_operations,
@@ -190,6 +225,9 @@ pub(super) struct FastSyncImportReport {
     pub(super) final_height: Option<u32>,
     pub(super) final_hash: Option<String>,
     pub(super) elapsed_seconds: f64,
+    pub(super) driver_elapsed_seconds: f64,
+    pub(super) chain_acc_read_seconds: f64,
+    pub(super) chain_acc_validate_seconds: f64,
     pub(super) average_blocks_per_second: f64,
     pub(super) empty_blocks: u64,
     pub(super) empty_only_blocks: u64,
@@ -198,19 +236,58 @@ pub(super) struct FastSyncImportReport {
     pub(super) transaction_blocks: u64,
     pub(super) transactions: u64,
     pub(super) transaction_block_import_seconds: f64,
+    pub(super) transaction_block_clone_seconds: f64,
+    pub(super) transaction_ledger_insert_seconds: f64,
+    pub(super) transaction_committed_hook_seconds: f64,
     pub(super) transaction_blocks_per_second: f64,
+    pub(super) finalization_seconds: f64,
+    pub(super) finalization_commit_handlers_seconds: f64,
+    pub(super) finalization_store_commit_seconds: f64,
+    pub(super) unclassified_import_seconds: f64,
     pub(super) throughput_status: FastSyncThroughputStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(super) struct FastSyncHotMetricsReport {
+    pub(super) state_service_mpt_apply_attempts: u64,
+    pub(super) state_service_mpt_apply_failures: u64,
+    pub(super) state_service_mpt_apply_height: u64,
     pub(super) state_service_mpt_avg_total_us: u64,
+    pub(super) state_service_mpt_avg_project_us: u64,
+    pub(super) state_service_mpt_avg_trie_us: u64,
+    pub(super) state_service_mpt_avg_changes: u64,
+    pub(super) state_service_mpt_enqueue_blocking_avg_us: u64,
+    pub(super) state_service_mpt_queue_wait_avg_us: u64,
+    pub(super) state_service_mpt_mutate_changes_avg_us: u64,
+    pub(super) state_service_mpt_root_hash_avg_us: u64,
     pub(super) state_service_mpt_trie_commit_avg_us: u64,
+    pub(super) state_service_mpt_backing_commit_avg_us: u64,
+    pub(super) state_service_mpt_publish_generation_avg_us: u64,
+    pub(super) state_service_mpt_overlay_entries_avg: u64,
+    pub(super) state_service_mpt_batch_blocks_avg: u64,
     pub(super) native_persist_avg_total_us: u64,
     pub(super) native_persist_tx_hot_stage: String,
     pub(super) native_persist_tx_hot_stage_avg_us: u64,
+    pub(super) native_persist_tx_stages: Vec<FastSyncStageMetricReport>,
     pub(super) rocksdb_batch_avg_flush_duration_ms: u64,
     pub(super) rocksdb_batch_pending_operations: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(super) struct FastSyncStageMetricReport {
+    pub(super) stage: String,
+    pub(super) calls: u64,
+    pub(super) avg_us: u64,
+}
+
+impl FastSyncStageMetricReport {
+    fn from_native_tx_stage(stat: neo_runtime::sync_metrics::NativePersistTxStageStats) -> Self {
+        Self {
+            stage: stat.stage.to_string(),
+            calls: stat.calls,
+            avg_us: stat.avg_us,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -627,6 +704,9 @@ data_dir = "/var/lib/neo/mainnet"
             imported,
             last_imported_tip,
             elapsed_seconds,
+            driver_elapsed_seconds: elapsed_seconds,
+            chain_acc_read_seconds: 0.0,
+            chain_acc_validate_seconds: 0.0,
             average_blocks_per_second,
             empty_blocks: imported,
             empty_only_blocks: imported,
@@ -635,7 +715,14 @@ data_dir = "/var/lib/neo/mainnet"
             transaction_blocks: 0,
             transactions: 0,
             transaction_block_import_seconds: 0.0,
+            transaction_block_clone_seconds: 0.0,
+            transaction_ledger_insert_seconds: 0.0,
+            transaction_committed_hook_seconds: 0.0,
             transaction_blocks_per_second: 0.0,
+            finalization_seconds: 0.0,
+            finalization_commit_handlers_seconds: 0.0,
+            finalization_store_commit_seconds: 0.0,
+            unclassified_import_seconds: 0.0,
             hot_metrics: chain_acc::ImportHotMetrics::default(),
         }
     }
@@ -653,6 +740,9 @@ data_dir = "/var/lib/neo/mainnet"
             imported,
             last_imported_tip,
             elapsed_seconds,
+            driver_elapsed_seconds: elapsed_seconds,
+            chain_acc_read_seconds: 0.0,
+            chain_acc_validate_seconds: 0.0,
             average_blocks_per_second,
             empty_blocks,
             empty_only_blocks: if transaction_blocks > 0 {
@@ -677,11 +767,18 @@ data_dir = "/var/lib/neo/mainnet"
             } else {
                 0.0
             },
+            transaction_block_clone_seconds: 0.0,
+            transaction_ledger_insert_seconds: 0.0,
+            transaction_committed_hook_seconds: 0.0,
             transaction_blocks_per_second: if elapsed_seconds > 0.0 {
                 transaction_blocks as f64 / elapsed_seconds
             } else {
                 0.0
             },
+            finalization_seconds: 0.0,
+            finalization_commit_handlers_seconds: 0.0,
+            finalization_store_commit_seconds: 0.0,
+            unclassified_import_seconds: 0.0,
             hot_metrics: chain_acc::ImportHotMetrics::default(),
         }
     }
@@ -914,8 +1011,22 @@ data_dir = "/var/lib/neo/mainnet"
             Path::new("/cache/chain.0.acc.zip"),
             Path::new("/cache/chain.0.acc/chain.0.acc"),
             import.with_hot_metrics(chain_acc::ImportHotMetrics {
+                state_service_mpt_apply_attempts: 101,
+                state_service_mpt_apply_failures: 1,
+                state_service_mpt_apply_height: 100,
                 state_service_mpt_avg_total_us: 2_000,
+                state_service_mpt_avg_project_us: 210,
+                state_service_mpt_avg_trie_us: 2_100,
+                state_service_mpt_avg_changes: 12,
+                state_service_mpt_enqueue_blocking_avg_us: 99,
+                state_service_mpt_queue_wait_avg_us: 111,
+                state_service_mpt_mutate_changes_avg_us: 310,
+                state_service_mpt_root_hash_avg_us: 410,
                 state_service_mpt_trie_commit_avg_us: 1_200,
+                state_service_mpt_backing_commit_avg_us: 1_300,
+                state_service_mpt_publish_generation_avg_us: 140,
+                state_service_mpt_overlay_entries_avg: 22,
+                state_service_mpt_batch_blocks_avg: 7,
                 native_persist_avg_total_us: 3_000,
                 native_persist_tx_hot_stage: "application",
                 native_persist_tx_hot_stage_avg_us: 1_700,
@@ -935,6 +1046,9 @@ data_dir = "/var/lib/neo/mainnet"
         assert_eq!(report.import.imported_blocks, 101);
         assert_eq!(report.import.final_height, Some(100));
         assert_eq!(report.import.elapsed_seconds, 0.0505);
+        assert_eq!(report.import.driver_elapsed_seconds, 0.0505);
+        assert_eq!(report.import.chain_acc_read_seconds, 0.0);
+        assert_eq!(report.import.chain_acc_validate_seconds, 0.0);
         assert_eq!(report.import.average_blocks_per_second, 2000.0);
         assert_eq!(report.import.empty_blocks, 101);
         assert_eq!(report.import.empty_only_blocks, 101);
@@ -948,17 +1062,53 @@ data_dir = "/var/lib/neo/mainnet"
             report.import.throughput_status,
             FastSyncThroughputStatus::NoTransactionProof
         );
+        assert_eq!(report.hot_metrics.state_service_mpt_apply_attempts, 101);
+        assert_eq!(report.hot_metrics.state_service_mpt_apply_failures, 1);
+        assert_eq!(report.hot_metrics.state_service_mpt_apply_height, 100);
         assert_eq!(report.hot_metrics.state_service_mpt_avg_total_us, 2_000);
+        assert_eq!(report.hot_metrics.state_service_mpt_avg_project_us, 210);
+        assert_eq!(report.hot_metrics.state_service_mpt_avg_trie_us, 2_100);
+        assert_eq!(report.hot_metrics.state_service_mpt_avg_changes, 12);
+        assert_eq!(
+            report.hot_metrics.state_service_mpt_enqueue_blocking_avg_us,
+            99
+        );
+        assert_eq!(report.hot_metrics.state_service_mpt_queue_wait_avg_us, 111);
+        assert_eq!(
+            report.hot_metrics.state_service_mpt_mutate_changes_avg_us,
+            310
+        );
+        assert_eq!(report.hot_metrics.state_service_mpt_root_hash_avg_us, 410);
         assert_eq!(
             report.hot_metrics.state_service_mpt_trie_commit_avg_us,
             1_200
         );
+        assert_eq!(
+            report.hot_metrics.state_service_mpt_backing_commit_avg_us,
+            1_300
+        );
+        assert_eq!(
+            report
+                .hot_metrics
+                .state_service_mpt_publish_generation_avg_us,
+            140
+        );
+        assert_eq!(report.hot_metrics.state_service_mpt_overlay_entries_avg, 22);
+        assert_eq!(report.hot_metrics.state_service_mpt_batch_blocks_avg, 7);
         assert_eq!(report.hot_metrics.native_persist_avg_total_us, 3_000);
         assert_eq!(
             report.hot_metrics.native_persist_tx_hot_stage,
             "application"
         );
         assert_eq!(report.hot_metrics.native_persist_tx_hot_stage_avg_us, 1_700);
+        assert!(
+            report
+                .hot_metrics
+                .native_persist_tx_stages
+                .iter()
+                .any(|stage| stage.stage == "load_execute"),
+            "fast-sync hot metrics should preserve the native transaction stage series"
+        );
         assert_eq!(report.hot_metrics.rocksdb_batch_avg_flush_duration_ms, 11);
         assert_eq!(report.hot_metrics.rocksdb_batch_pending_operations, 19);
     }
@@ -977,8 +1127,22 @@ data_dir = "/var/lib/neo/mainnet"
             &temp.path().join("chain.0.acc/chain.0.acc"),
             import_report(101, Some(import_tip), 0.0505, 2000.0).with_hot_metrics(
                 chain_acc::ImportHotMetrics {
+                    state_service_mpt_apply_attempts: 101,
+                    state_service_mpt_apply_failures: 1,
+                    state_service_mpt_apply_height: 100,
                     state_service_mpt_avg_total_us: 2_000,
+                    state_service_mpt_avg_project_us: 210,
+                    state_service_mpt_avg_trie_us: 2_100,
+                    state_service_mpt_avg_changes: 12,
+                    state_service_mpt_enqueue_blocking_avg_us: 99,
+                    state_service_mpt_queue_wait_avg_us: 111,
+                    state_service_mpt_mutate_changes_avg_us: 310,
+                    state_service_mpt_root_hash_avg_us: 410,
                     state_service_mpt_trie_commit_avg_us: 1_200,
+                    state_service_mpt_backing_commit_avg_us: 1_300,
+                    state_service_mpt_publish_generation_avg_us: 140,
+                    state_service_mpt_overlay_entries_avg: 22,
+                    state_service_mpt_batch_blocks_avg: 7,
                     native_persist_avg_total_us: 3_000,
                     native_persist_tx_hot_stage: "application",
                     native_persist_tx_hot_stage_avg_us: 1_700,
@@ -999,6 +1163,9 @@ data_dir = "/var/lib/neo/mainnet"
         assert_eq!(payload["package"]["end_height"], 100);
         assert_eq!(payload["import"]["imported_blocks"], 101);
         assert_eq!(payload["import"]["final_height"], 100);
+        assert_eq!(payload["import"]["driver_elapsed_seconds"], 0.0505);
+        assert_eq!(payload["import"]["chain_acc_read_seconds"], 0.0);
+        assert_eq!(payload["import"]["chain_acc_validate_seconds"], 0.0);
         assert_eq!(payload["import"]["empty_blocks"], 101);
         assert_eq!(payload["import"]["empty_only_blocks"], 101);
         assert_eq!(payload["import"]["empty_block_import_seconds"], 0.0505);
@@ -1006,7 +1173,17 @@ data_dir = "/var/lib/neo/mainnet"
         assert_eq!(payload["import"]["transaction_blocks"], 0);
         assert_eq!(payload["import"]["transactions"], 0);
         assert_eq!(payload["import"]["transaction_block_import_seconds"], 0.0);
+        assert_eq!(payload["import"]["transaction_block_clone_seconds"], 0.0);
+        assert_eq!(payload["import"]["transaction_ledger_insert_seconds"], 0.0);
+        assert_eq!(payload["import"]["transaction_committed_hook_seconds"], 0.0);
         assert_eq!(payload["import"]["transaction_blocks_per_second"], 0.0);
+        assert_eq!(payload["import"]["finalization_seconds"], 0.0);
+        assert_eq!(
+            payload["import"]["finalization_commit_handlers_seconds"],
+            0.0
+        );
+        assert_eq!(payload["import"]["finalization_store_commit_seconds"], 0.0);
+        assert_eq!(payload["import"]["unclassified_import_seconds"], 0.0);
         assert_eq!(
             payload["import"]["throughput_status"],
             "no-transaction-proof"
@@ -1015,9 +1192,69 @@ data_dir = "/var/lib/neo/mainnet"
             payload["hot_metrics"]["state_service_mpt_avg_total_us"],
             2000
         );
+        assert!(
+            payload["hot_metrics"]["native_persist_tx_stages"]
+                .as_array()
+                .expect("native tx stage metrics")
+                .iter()
+                .any(|stage| stage["stage"] == "load_execute")
+        );
+        assert_eq!(
+            payload["hot_metrics"]["state_service_mpt_apply_attempts"],
+            101
+        );
+        assert_eq!(
+            payload["hot_metrics"]["state_service_mpt_apply_failures"],
+            1
+        );
+        assert_eq!(
+            payload["hot_metrics"]["state_service_mpt_apply_height"],
+            100
+        );
+        assert_eq!(
+            payload["hot_metrics"]["state_service_mpt_avg_project_us"],
+            210
+        );
+        assert_eq!(
+            payload["hot_metrics"]["state_service_mpt_avg_trie_us"],
+            2100
+        );
+        assert_eq!(payload["hot_metrics"]["state_service_mpt_avg_changes"], 12);
+        assert_eq!(
+            payload["hot_metrics"]["state_service_mpt_enqueue_blocking_avg_us"],
+            99
+        );
+        assert_eq!(
+            payload["hot_metrics"]["state_service_mpt_queue_wait_avg_us"],
+            111
+        );
+        assert_eq!(
+            payload["hot_metrics"]["state_service_mpt_mutate_changes_avg_us"],
+            310
+        );
+        assert_eq!(
+            payload["hot_metrics"]["state_service_mpt_root_hash_avg_us"],
+            410
+        );
         assert_eq!(
             payload["hot_metrics"]["state_service_mpt_trie_commit_avg_us"],
             1200
+        );
+        assert_eq!(
+            payload["hot_metrics"]["state_service_mpt_backing_commit_avg_us"],
+            1300
+        );
+        assert_eq!(
+            payload["hot_metrics"]["state_service_mpt_publish_generation_avg_us"],
+            140
+        );
+        assert_eq!(
+            payload["hot_metrics"]["state_service_mpt_overlay_entries_avg"],
+            22
+        );
+        assert_eq!(
+            payload["hot_metrics"]["state_service_mpt_batch_blocks_avg"],
+            7
         );
         assert_eq!(payload["hot_metrics"]["native_persist_avg_total_us"], 3000);
         assert_eq!(
@@ -1061,7 +1298,14 @@ data_dir = "/var/lib/neo/mainnet"
         assert_eq!(report.import.transaction_blocks, 20);
         assert_eq!(report.import.transactions, 45);
         assert_eq!(report.import.transaction_block_import_seconds, 0.25);
+        assert_eq!(report.import.transaction_block_clone_seconds, 0.0);
+        assert_eq!(report.import.transaction_ledger_insert_seconds, 0.0);
+        assert_eq!(report.import.transaction_committed_hook_seconds, 0.0);
         assert_eq!(report.import.transaction_blocks_per_second, 80.0);
+        assert_eq!(report.import.finalization_seconds, 0.0);
+        assert_eq!(report.import.finalization_commit_handlers_seconds, 0.0);
+        assert_eq!(report.import.finalization_store_commit_seconds, 0.0);
+        assert_eq!(report.import.unclassified_import_seconds, 0.0);
         assert_eq!(
             report.import.throughput_status,
             FastSyncThroughputStatus::BelowTarget

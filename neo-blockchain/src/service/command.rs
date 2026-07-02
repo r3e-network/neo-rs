@@ -13,6 +13,7 @@
 //! and its handle are owned here.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use neo_payloads::{Block, Transaction, extensible_payload::ExtensiblePayload, header::Header};
 
@@ -45,8 +46,46 @@ pub struct ImportBlocksReply {
     /// Number of input blocks accepted or already processed before completion
     /// or first failure.
     pub imported: usize,
+    /// Service-side timing and composition for accepted blocks.
+    pub stats: ImportBlocksStats,
     /// Late finalization error after the accepted prefix was processed.
     pub error: Option<String>,
+}
+
+/// Service-side import composition and timing for an accepted block batch.
+///
+/// Callers use this to separate real transaction-bearing work from empty-block
+/// fast-forward work without forcing extra command boundaries only for metrics.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ImportBlocksStats {
+    /// Empty blocks accepted through the service's empty-block fast path.
+    pub empty_blocks: usize,
+    /// Elapsed time spent in empty-block fast paths.
+    pub empty_elapsed: Duration,
+    /// Transaction-bearing blocks accepted through normal persistence.
+    pub transaction_blocks: usize,
+    /// Elapsed time spent in native/state persistence for transaction-bearing blocks.
+    pub transaction_elapsed: Duration,
+    /// Elapsed time spent cloning transaction-bearing block payloads for service ownership.
+    pub transaction_block_clone_elapsed: Duration,
+    /// Elapsed time spent inserting transaction-bearing blocks into the hot ledger cache.
+    pub transaction_ledger_insert_elapsed: Duration,
+    /// Elapsed time spent running committed hooks for transaction-bearing blocks.
+    pub transaction_committed_hook_elapsed: Duration,
+    /// Elapsed time spent flushing bulk-sync commit handlers and durable store.
+    pub finalization_elapsed: Duration,
+    /// Elapsed time spent waiting for bulk-sync commit handlers, including StateService workers.
+    pub finalization_commit_handlers_elapsed: Duration,
+    /// Elapsed time spent flushing the shared snapshot to the durable store.
+    pub finalization_store_commit_elapsed: Duration,
+}
+
+impl ImportBlocksStats {
+    /// Returns `true` when the reply contains service-side composition data.
+    #[must_use]
+    pub const fn has_composition(self) -> bool {
+        self.empty_blocks > 0 || self.transaction_blocks > 0
+    }
 }
 
 impl ImportBlocksReply {
@@ -55,6 +94,17 @@ impl ImportBlocksReply {
     pub fn ok(imported: usize) -> Self {
         Self {
             imported,
+            stats: ImportBlocksStats::default(),
+            error: None,
+        }
+    }
+
+    /// Successful import reply with service-side import statistics.
+    #[must_use]
+    pub fn ok_with_stats(imported: usize, stats: ImportBlocksStats) -> Self {
+        Self {
+            imported,
+            stats,
             error: None,
         }
     }
@@ -64,6 +114,21 @@ impl ImportBlocksReply {
     pub fn failed(imported: usize, error: impl Into<String>) -> Self {
         Self {
             imported,
+            stats: ImportBlocksStats::default(),
+            error: Some(error.into()),
+        }
+    }
+
+    /// Failed import reply with service-side import statistics.
+    #[must_use]
+    pub fn failed_with_stats(
+        imported: usize,
+        stats: ImportBlocksStats,
+        error: impl Into<String>,
+    ) -> Self {
+        Self {
+            imported,
+            stats,
             error: Some(error.into()),
         }
     }

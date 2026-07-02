@@ -100,6 +100,8 @@ pub(super) struct ChainAccImportReport {
     pub(super) transaction_committed_hook_seconds: f64,
     pub(super) transaction_blocks_per_second: f64,
     pub(super) finalization_seconds: f64,
+    pub(super) finalization_commit_handlers_seconds: f64,
+    pub(super) finalization_store_commit_seconds: f64,
     pub(super) unclassified_import_seconds: f64,
     pub(super) hot_metrics: ImportHotMetrics,
 }
@@ -475,6 +477,8 @@ where
     let transaction_committed_hook_seconds = composition.transaction_committed_hook_seconds();
     let transaction_blocks_per_second = composition.transaction_blocks_per_second();
     let finalization_seconds = composition.finalization_seconds();
+    let finalization_commit_handlers_seconds = composition.finalization_commit_handlers_seconds();
+    let finalization_store_commit_seconds = composition.finalization_store_commit_seconds();
     let unclassified_import_seconds = composition.unclassified_import_seconds(progress.elapsed());
     info!(
         target: "neo::import",
@@ -496,6 +500,8 @@ where
         transaction_committed_hook_seconds,
         transaction_blocks_per_second,
         finalization_seconds,
+        finalization_commit_handlers_seconds,
+        finalization_store_commit_seconds,
         unclassified_import_seconds,
         "chain.acc import complete"
     );
@@ -519,6 +525,8 @@ where
         transaction_committed_hook_seconds,
         transaction_blocks_per_second,
         finalization_seconds,
+        finalization_commit_handlers_seconds,
+        finalization_store_commit_seconds,
         unclassified_import_seconds,
         hot_metrics,
     })
@@ -610,6 +618,7 @@ async fn import_chain_acc_batch(
 struct ChainAccImportComposition {
     empty_blocks: u64,
     empty_only_blocks: u64,
+    empty_fast_path_blocks: u64,
     transaction_blocks: u64,
     transactions: u64,
     empty_elapsed: std::time::Duration,
@@ -618,6 +627,8 @@ struct ChainAccImportComposition {
     transaction_ledger_insert_elapsed: std::time::Duration,
     transaction_committed_hook_elapsed: std::time::Duration,
     finalization_elapsed: std::time::Duration,
+    finalization_commit_handlers_elapsed: std::time::Duration,
+    finalization_store_commit_elapsed: std::time::Duration,
 }
 
 impl ChainAccImportComposition {
@@ -649,7 +660,11 @@ impl ChainAccImportComposition {
             self.transactions += batch.transactions;
             if stats.has_composition() {
                 if stats.empty_blocks > 0 {
-                    self.empty_only_blocks += stats.empty_blocks as u64;
+                    let empty_blocks = stats.empty_blocks as u64;
+                    self.empty_fast_path_blocks += empty_blocks;
+                    if stats.transaction_blocks == 0 {
+                        self.empty_only_blocks += empty_blocks;
+                    }
                     self.empty_elapsed += stats.empty_elapsed;
                 }
                 if stats.transaction_blocks > 0 {
@@ -661,10 +676,14 @@ impl ChainAccImportComposition {
                         stats.transaction_committed_hook_elapsed;
                 }
                 self.finalization_elapsed += stats.finalization_elapsed;
+                self.finalization_commit_handlers_elapsed +=
+                    stats.finalization_commit_handlers_elapsed;
+                self.finalization_store_commit_elapsed += stats.finalization_store_commit_elapsed;
             } else if batch.transaction_blocks > 0 {
                 self.transaction_elapsed += elapsed;
             } else if batch.empty_blocks > 0 {
                 self.empty_only_blocks += batch.empty_blocks;
+                self.empty_fast_path_blocks += batch.empty_blocks;
                 self.empty_elapsed += elapsed;
             }
         }
@@ -677,7 +696,7 @@ impl ChainAccImportComposition {
     fn empty_blocks_per_second(&self) -> f64 {
         let elapsed = self.empty_block_import_seconds();
         if elapsed > 0.0 {
-            self.empty_only_blocks as f64 / elapsed
+            self.empty_fast_path_blocks as f64 / elapsed
         } else {
             0.0
         }
@@ -710,6 +729,14 @@ impl ChainAccImportComposition {
 
     fn finalization_seconds(&self) -> f64 {
         self.finalization_elapsed.as_secs_f64()
+    }
+
+    fn finalization_commit_handlers_seconds(&self) -> f64 {
+        self.finalization_commit_handlers_elapsed.as_secs_f64()
+    }
+
+    fn finalization_store_commit_seconds(&self) -> f64 {
+        self.finalization_store_commit_elapsed.as_secs_f64()
     }
 
     fn accounted_elapsed(&self) -> std::time::Duration {
@@ -1774,6 +1801,8 @@ mod tests {
                         transaction_ledger_insert_elapsed: std::time::Duration::from_millis(4),
                         transaction_committed_hook_elapsed: std::time::Duration::from_millis(5),
                         finalization_elapsed: std::time::Duration::from_millis(1),
+                        finalization_commit_handlers_elapsed: std::time::Duration::from_micros(600),
+                        finalization_store_commit_elapsed: std::time::Duration::from_micros(400),
                     },
                 ))
                 .expect("reply import");
@@ -1796,7 +1825,7 @@ mod tests {
         service.await.expect("service task");
         assert_eq!(report.imported, 3);
         assert_eq!(report.empty_blocks, 2);
-        assert_eq!(report.empty_only_blocks, 2);
+        assert_eq!(report.empty_only_blocks, 0);
         assert!(report.empty_blocks_per_second > 0.0);
         assert_eq!(report.transaction_blocks, 1);
         assert_eq!(report.transactions, 1);
@@ -1804,6 +1833,8 @@ mod tests {
         assert_eq!(report.transaction_ledger_insert_seconds, 0.004);
         assert_eq!(report.transaction_committed_hook_seconds, 0.005);
         assert_eq!(report.finalization_seconds, 0.001);
+        assert_eq!(report.finalization_commit_handlers_seconds, 0.0006);
+        assert_eq!(report.finalization_store_commit_seconds, 0.0004);
         assert!(
             report.transaction_blocks_per_second > 0.0,
             "transaction-bearing BPS must be reported independently from empty-block throughput"
@@ -1848,6 +1879,8 @@ mod tests {
                         transaction_ledger_insert_elapsed: std::time::Duration::ZERO,
                         transaction_committed_hook_elapsed: std::time::Duration::ZERO,
                         finalization_elapsed: std::time::Duration::from_millis(1),
+                        finalization_commit_handlers_elapsed: std::time::Duration::ZERO,
+                        finalization_store_commit_elapsed: std::time::Duration::ZERO,
                     },
                 ))
                 .expect("reply import");
@@ -1870,7 +1903,7 @@ mod tests {
         service.await.expect("service task");
         assert_eq!(report.imported, (empty_run + 1) as u64);
         assert_eq!(report.empty_blocks, empty_run as u64);
-        assert_eq!(report.empty_only_blocks, empty_run as u64);
+        assert_eq!(report.empty_only_blocks, 0);
         assert!(
             report.empty_block_import_seconds >= 0.02,
             "empty-block elapsed should include the empty-only batch time: {report:?}"
@@ -1930,6 +1963,8 @@ mod tests {
                         transaction_ledger_insert_elapsed: std::time::Duration::ZERO,
                         transaction_committed_hook_elapsed: std::time::Duration::ZERO,
                         finalization_elapsed: std::time::Duration::from_millis(1),
+                        finalization_commit_handlers_elapsed: std::time::Duration::ZERO,
+                        finalization_store_commit_elapsed: std::time::Duration::ZERO,
                     },
                 ))
                 .expect("reply import");
@@ -1951,7 +1986,7 @@ mod tests {
 
         service.await.expect("service task");
         assert_eq!(report.imported, (empty_run + 1) as u64);
-        assert_eq!(report.empty_only_blocks, empty_run as u64);
+        assert_eq!(report.empty_only_blocks, 0);
         assert_eq!(report.transaction_blocks, 1);
     }
 
@@ -1987,6 +2022,8 @@ mod tests {
                         transaction_ledger_insert_elapsed: std::time::Duration::ZERO,
                         transaction_committed_hook_elapsed: std::time::Duration::ZERO,
                         finalization_elapsed: std::time::Duration::from_millis(1),
+                        finalization_commit_handlers_elapsed: std::time::Duration::ZERO,
+                        finalization_store_commit_elapsed: std::time::Duration::ZERO,
                     },
                 ))
                 .expect("reply import");
@@ -2009,7 +2046,7 @@ mod tests {
         service.await.expect("service task");
         assert_eq!(report.imported, (empty_run + 1) as u64);
         assert_eq!(report.empty_blocks, empty_run as u64);
-        assert_eq!(report.empty_only_blocks, empty_run as u64);
+        assert_eq!(report.empty_only_blocks, 0);
         assert!(
             report.empty_block_import_seconds >= 0.02,
             "short empty-prefix elapsed should come from service-side empty timing: {report:?}"
@@ -2054,6 +2091,8 @@ mod tests {
                         transaction_ledger_insert_elapsed: std::time::Duration::ZERO,
                         transaction_committed_hook_elapsed: std::time::Duration::ZERO,
                         finalization_elapsed: std::time::Duration::from_millis(1),
+                        finalization_commit_handlers_elapsed: std::time::Duration::ZERO,
+                        finalization_store_commit_elapsed: std::time::Duration::ZERO,
                     },
                 ))
                 .expect("reply import");
@@ -2076,7 +2115,7 @@ mod tests {
         service.await.expect("service task");
         assert_eq!(report.imported, 26);
         assert_eq!(report.empty_blocks, 25);
-        assert_eq!(report.empty_only_blocks, 25);
+        assert_eq!(report.empty_only_blocks, 0);
         assert!(
             report.empty_block_import_seconds >= 0.02,
             "short empty suffix elapsed should come from service-side empty timing: {report:?}"
@@ -2124,6 +2163,8 @@ mod tests {
                         transaction_ledger_insert_elapsed: std::time::Duration::ZERO,
                         transaction_committed_hook_elapsed: std::time::Duration::ZERO,
                         finalization_elapsed: std::time::Duration::from_millis(2),
+                        finalization_commit_handlers_elapsed: std::time::Duration::ZERO,
+                        finalization_store_commit_elapsed: std::time::Duration::ZERO,
                     },
                 ))
                 .expect("reply import");
@@ -2146,7 +2187,7 @@ mod tests {
         service.await.expect("service task");
         assert_eq!(report.imported, 26);
         assert_eq!(report.empty_blocks, 25);
-        assert_eq!(report.empty_only_blocks, 25);
+        assert_eq!(report.empty_only_blocks, 0);
         assert_eq!(report.transaction_blocks, 1);
         assert_eq!(report.transactions, 1);
         assert!(

@@ -36,12 +36,15 @@ pub(super) struct StateServiceMptImportMetrics {
     pub(super) avg_project_us: u64,
     pub(super) avg_trie_us: u64,
     pub(super) avg_changes: u64,
+    pub(super) enqueue_blocking_avg_us: u64,
+    pub(super) queue_wait_avg_us: u64,
     pub(super) mutate_changes_avg_us: u64,
     pub(super) root_hash_avg_us: u64,
     pub(super) trie_commit_avg_us: u64,
     pub(super) backing_commit_avg_us: u64,
     pub(super) publish_generation_avg_us: u64,
     pub(super) overlay_entries_avg: u64,
+    pub(super) batch_blocks_avg: u64,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -136,12 +139,15 @@ impl StateServiceMptImportMetrics {
             avg_project_us: apply.avg_project_us,
             avg_trie_us: apply.avg_apply_us,
             avg_changes: apply.avg_changes,
+            enqueue_blocking_avg_us: apply_hot.enqueue_blocking_avg_us,
+            queue_wait_avg_us: apply_hot.queue_wait_avg_us,
             mutate_changes_avg_us: apply_hot.mutate_changes_avg_us,
             root_hash_avg_us: apply_hot.root_hash_avg_us,
             trie_commit_avg_us: apply_hot.trie_commit_avg_us,
             backing_commit_avg_us: apply_hot.backing_commit_avg_us,
             publish_generation_avg_us: apply_hot.publish_generation_avg_us,
             overlay_entries_avg: apply_hot.overlay_entries_avg,
+            batch_blocks_avg: apply_hot.batch_blocks_avg,
         }
     }
 
@@ -194,12 +200,15 @@ impl StateServiceMptImportMetrics {
             sync,
             apply,
             neo_state_service::metrics::StateRootApplyHotStats {
+                enqueue_blocking_avg_us: stage_avg("enqueue_blocking"),
+                queue_wait_avg_us: stage_avg("queue_wait"),
                 mutate_changes_avg_us: stage_avg("mutate_changes"),
                 root_hash_avg_us: stage_avg("root_hash"),
                 trie_commit_avg_us: stage_avg("trie_commit"),
                 backing_commit_avg_us: stage_avg("backing_commit"),
                 publish_generation_avg_us: stage_avg("publish_generation"),
                 overlay_entries_avg: count_avg("overlay_entries"),
+                batch_blocks_avg: count_avg("batch_blocks"),
             },
             native_hook_hot.copied(),
             native_tx_hot.copied(),
@@ -331,6 +340,10 @@ impl ChainAccImportProgress {
         self.elapsed.as_secs_f64()
     }
 
+    pub(super) fn elapsed(&self) -> Duration {
+        self.elapsed
+    }
+
     pub(super) fn average_blocks_per_second(&self) -> f64 {
         blocks_per_second(self.imported, self.elapsed)
     }
@@ -368,9 +381,11 @@ pub(super) fn should_log_import_progress(
     batch_len: usize,
     total: usize,
 ) -> bool {
+    let previous_imported = imported.saturating_sub(batch_imported as u64);
     batch_imported < batch_len
         || imported as usize >= total
-        || (imported > 0 && imported % IMPORT_PROGRESS_LOG_INTERVAL == 0)
+        || (previous_imported / IMPORT_PROGRESS_LOG_INTERVAL
+            < imported / IMPORT_PROGRESS_LOG_INTERVAL)
 }
 
 #[cfg(test)]
@@ -409,6 +424,7 @@ mod tests {
     fn import_progress_logging_is_limited_to_boundaries_failures_and_final_batch() {
         assert!(!should_log_import_progress(9_500, 500, 500, 20_000));
         assert!(should_log_import_progress(10_000, 500, 500, 20_000));
+        assert!(should_log_import_progress(10_112, 128, 128, 20_000));
         assert!(should_log_import_progress(10_500, 499, 500, 20_000));
         assert!(should_log_import_progress(20_000, 500, 500, 20_000));
     }
@@ -471,6 +487,16 @@ mod tests {
         };
         let stages = vec![
             neo_state_service::metrics::StateRootApplyStageStats {
+                stage: "enqueue_blocking",
+                calls: 12,
+                avg_us: 800,
+            },
+            neo_state_service::metrics::StateRootApplyStageStats {
+                stage: "queue_wait",
+                calls: 12,
+                avg_us: 1_900,
+            },
+            neo_state_service::metrics::StateRootApplyStageStats {
                 stage: "mutate_changes",
                 calls: 12,
                 avg_us: 2_000,
@@ -491,12 +517,20 @@ mod tests {
                 avg_us: 5_000,
             },
         ];
-        let counts = vec![neo_state_service::metrics::StateRootApplyCountStats {
-            kind: "overlay_entries",
-            samples: 12,
-            total: 240,
-            avg: 20,
-        }];
+        let counts = vec![
+            neo_state_service::metrics::StateRootApplyCountStats {
+                kind: "overlay_entries",
+                samples: 12,
+                total: 240,
+                avg: 20,
+            },
+            neo_state_service::metrics::StateRootApplyCountStats {
+                kind: "batch_blocks",
+                samples: 6,
+                total: 30,
+                avg: 5,
+            },
+        ];
         let native_hooks = vec![
             neo_runtime::sync_metrics::NativeContractHookStats {
                 trigger: "onpersist",
@@ -594,11 +628,14 @@ mod tests {
         assert_eq!(metrics.avg_project_us, 700);
         assert_eq!(metrics.avg_trie_us, 8_200);
         assert_eq!(metrics.avg_changes, 17);
+        assert_eq!(metrics.enqueue_blocking_avg_us, 800);
+        assert_eq!(metrics.queue_wait_avg_us, 1_900);
         assert_eq!(metrics.mutate_changes_avg_us, 2_000);
         assert_eq!(metrics.trie_commit_avg_us, 3_000);
         assert_eq!(metrics.backing_commit_avg_us, 4_000);
         assert_eq!(metrics.publish_generation_avg_us, 5_000);
         assert_eq!(metrics.overlay_entries_avg, 20);
+        assert_eq!(metrics.batch_blocks_avg, 5);
         assert_eq!(metrics.native_contract_hook_hot_trigger, "onpersist");
         assert_eq!(metrics.native_contract_hook_hot_contract, "GasToken");
         assert_eq!(metrics.native_contract_hook_hot_contract_id, -6);
@@ -644,12 +681,15 @@ mod tests {
             avg_changes: 17,
         };
         let apply_hot = neo_state_service::metrics::StateRootApplyHotStats {
+            enqueue_blocking_avg_us: 800,
+            queue_wait_avg_us: 1_900,
             mutate_changes_avg_us: 2_000,
             root_hash_avg_us: 2_500,
             trie_commit_avg_us: 3_000,
             backing_commit_avg_us: 4_000,
             publish_generation_avg_us: 5_000,
             overlay_entries_avg: 20,
+            batch_blocks_avg: 5,
         };
         let native_hook_hot = Some(neo_runtime::sync_metrics::NativeContractHookStats {
             trigger: "onpersist",
@@ -697,10 +737,13 @@ mod tests {
 
         assert_eq!(metrics.sync_blocks_persisted, 11);
         assert_eq!(metrics.apply_attempts, 12);
+        assert_eq!(metrics.enqueue_blocking_avg_us, 800);
+        assert_eq!(metrics.queue_wait_avg_us, 1_900);
         assert_eq!(metrics.mutate_changes_avg_us, 2_000);
         assert_eq!(metrics.root_hash_avg_us, 2_500);
         assert_eq!(metrics.trie_commit_avg_us, 3_000);
         assert_eq!(metrics.overlay_entries_avg, 20);
+        assert_eq!(metrics.batch_blocks_avg, 5);
         assert_eq!(metrics.native_contract_hook_hot_contract, "GasToken");
         assert_eq!(metrics.native_persist_tx_hot_stage, "execute");
         assert_eq!(metrics.neotoken_onpersist_hot_stage, "compute_committee");

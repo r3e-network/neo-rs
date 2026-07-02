@@ -364,6 +364,19 @@ async fn bulk_import_flush_failure_aborts_batch_before_durable_store_commit() {
         0,
         "durable chain store must not commit after StateService MPT flush failure"
     );
+    assert!(
+        imported.stats.finalization_commit_handlers_elapsed > std::time::Duration::ZERO,
+        "failed bulk finalization should attribute time to commit-handler flush"
+    );
+    assert_eq!(
+        imported.stats.finalization_store_commit_elapsed,
+        std::time::Duration::ZERO,
+        "failed bulk finalization must not report durable-store commit time"
+    );
+    assert!(
+        imported.stats.finalization_elapsed >= imported.stats.finalization_commit_handlers_elapsed,
+        "aggregate finalization must cover commit-handler flush time"
+    );
 }
 
 #[tokio::test]
@@ -1032,6 +1045,26 @@ async fn bulk_import_fast_forwards_short_empty_bursts_around_transaction_blocks(
         .await;
 
     assert_eq!(imported.imported, 65);
+    assert_eq!(imported.stats.empty_blocks, 64);
+    assert!(
+        imported.stats.empty_elapsed > std::time::Duration::ZERO,
+        "empty fast-forward timing should be reported for mixed bulk imports"
+    );
+    assert_eq!(imported.stats.transaction_blocks, 1);
+    assert!(
+        imported.stats.transaction_elapsed > std::time::Duration::ZERO,
+        "transaction timing should be reported independently from empty fast-forward timing"
+    );
+    assert!(
+        imported.stats.finalization_elapsed > std::time::Duration::ZERO,
+        "bulk finalization timing should be reported separately"
+    );
+    assert!(
+        imported.stats.finalization_commit_handlers_elapsed
+            + imported.stats.finalization_store_commit_elapsed
+            <= imported.stats.finalization_elapsed,
+        "bulk finalization components must fit inside aggregate timing"
+    );
     assert_eq!(
         snapshot_calls.load(Ordering::SeqCst),
         1,

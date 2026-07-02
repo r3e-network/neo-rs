@@ -175,9 +175,11 @@ fn renders_node_metrics_payload() {
     assert!(text.contains("neo_state_service_mpt_apply_avg_changes"));
     assert!(text.contains("neo_state_service_mpt_apply_stage_calls_total"));
     assert!(text.contains("neo_state_service_mpt_apply_stage_avg_us{stage=\"queue_wait\"}"));
+    assert!(text.contains("neo_state_service_mpt_apply_stage_avg_us{stage=\"enqueue_blocking\"}"));
     assert!(text.contains("neo_state_service_mpt_apply_stage_avg_us{stage=\"trie_commit\"}"));
     assert!(text.contains("neo_state_service_mpt_apply_items_total"));
     assert!(text.contains("neo_state_service_mpt_apply_avg_items{kind=\"overlay_entries\"}"));
+    assert!(text.contains("neo_state_service_mpt_apply_avg_items{kind=\"batch_blocks\"}"));
 }
 
 #[test]

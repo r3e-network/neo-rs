@@ -32,7 +32,7 @@ use neo_runtime::{
 };
 use tokio::sync::{broadcast, mpsc};
 
-use crate::command::{AddTransactionReply, BlockchainCommand};
+use crate::command::{AddTransactionReply, BlockchainCommand, ImportBlocksReply};
 use crate::import::Import;
 
 /// Cheap-to-clone handle to a blockchain service.
@@ -164,12 +164,41 @@ impl BlockchainHandle {
         self.import_blocks_with_mode(blocks, verify, true).await
     }
 
+    /// Import a trusted bulk-sync batch and return the detailed service-side
+    /// timing/composition reply.
+    pub async fn import_blocks_bulk_detailed(
+        &self,
+        blocks: Vec<Block>,
+        verify: bool,
+    ) -> Result<ImportBlocksReply, ServiceError> {
+        self.import_blocks_reply_with_mode(blocks, verify, true)
+            .await
+    }
+
     async fn import_blocks_with_mode(
         &self,
         blocks: Vec<Block>,
         verify: bool,
         bulk_sync: bool,
     ) -> Result<usize, ServiceError> {
+        let reply = self
+            .import_blocks_reply_with_mode(blocks, verify, bulk_sync)
+            .await?;
+        if let Some(error) = reply.error {
+            return Err(ServiceError::InvalidState(format!(
+                "block import finalization failed after importing {} blocks: {error}",
+                reply.imported
+            )));
+        }
+        Ok(reply.imported)
+    }
+
+    async fn import_blocks_reply_with_mode(
+        &self,
+        blocks: Vec<Block>,
+        verify: bool,
+        bulk_sync: bool,
+    ) -> Result<ImportBlocksReply, ServiceError> {
         let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
         self.cmd_tx
             .send(BlockchainCommand::ImportBlocks {
@@ -187,13 +216,7 @@ impl BlockchainHandle {
         let reply = reply_rx.await.map_err(|_| {
             ServiceError::ServiceUnavailable("blockchain command reply dropped".to_string())
         })?;
-        if let Some(error) = reply.error {
-            return Err(ServiceError::InvalidState(format!(
-                "block import finalization failed after importing {} blocks: {error}",
-                reply.imported
-            )));
-        }
-        Ok(reply.imported)
+        Ok(reply)
     }
 
     /// Fetch a block by hash.

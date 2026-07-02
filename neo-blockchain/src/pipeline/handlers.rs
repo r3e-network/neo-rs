@@ -10,6 +10,7 @@
 //! verification, and cache maintenance.
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::{block::Block, extensible_payload::ExtensiblePayload, header::Header};
@@ -18,7 +19,7 @@ use tracing::{debug, warn};
 
 use crate::PreverifyCompleted;
 use crate::block_processing::BatchPersistResources;
-use crate::command::ImportBlocksReply;
+use crate::command::{ImportBlocksReply, ImportBlocksStats};
 use crate::empty_block_fast_forward::{
     MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS, stage_empty_block_fast_forward,
 };
@@ -378,6 +379,7 @@ where
     /// Handle a [`BlockchainCommand::Import`] request.
     pub(crate) async fn handle_import(&self, import: Import) -> ImportBlocksReply {
         let mut imported = 0usize;
+        let mut stats = ImportBlocksStats::default();
         let bulk_sync = import.bulk_sync;
         let persist_options = if bulk_sync {
             NativePersistOptions {
@@ -413,7 +415,7 @@ where
                         actual = index,
                         "import block out of sequence"
                     );
-                    return ImportBlocksReply::ok(imported);
+                    return ImportBlocksReply::ok_with_stats(imported, stats);
                 }
                 ImportDisposition::NextExpected => {}
             }
@@ -430,7 +432,7 @@ where
                             height = index,
                             "import aborted: native persistence resource setup failed"
                         );
-                        return ImportBlocksReply::ok(imported);
+                        return ImportBlocksReply::ok_with_stats(imported, stats);
                     }
                 }
                 batch_persist_resources_loaded = true;
@@ -449,6 +451,7 @@ where
                     &resources.native_persist,
                 );
                 if !run.is_empty() {
+                    let empty_start = Instant::now();
                     match stage_empty_block_fast_forward(
                         Arc::clone(&resources.snapshot),
                         &run,
@@ -460,6 +463,8 @@ where
                     ) {
                         Ok(staged) => {
                             staged.commit();
+                            stats.empty_blocks += run.len();
+                            stats.empty_elapsed += empty_start.elapsed();
                             if let Some(last_block) = run.last() {
                                 // Fast-forward is only enabled when no component
                                 // needs the per-block observer stream. Keep
@@ -486,9 +491,9 @@ where
 
             if import.verify {
                 let verify_result = if let Some(resources) = &batch_persist_resources {
-                    self.verify_header_with_batch_resources(&block, resources)
+                    self.verify_header_with_batch_resources(block, resources)
                 } else {
-                    self.verify_header_against_store(&block)
+                    self.verify_header_against_store(block)
                 };
                 if let Err(error) = verify_result {
                     warn!(
@@ -497,11 +502,12 @@ where
                         height = index,
                         "import aborted: block verification failed"
                     );
-                    return ImportBlocksReply::ok(imported);
+                    return ImportBlocksReply::ok_with_stats(imported, stats);
                 }
             }
 
             if bulk_sync && let Some(resources) = &batch_persist_resources {
+                let empty_start = Instant::now();
                 match self.persist_empty_block_with_committing_fast_forward(
                     block,
                     current_height,
@@ -510,6 +516,8 @@ where
                     persist_context,
                 ) {
                     Ok(true) => {
+                        stats.empty_blocks += 1;
+                        stats.empty_elapsed += empty_start.elapsed();
                         imported += 1;
                         last_imported_height = Some(index);
                         position += 1;
@@ -523,14 +531,21 @@ where
                             %error,
                             "import aborted: empty-block committing fast-forward failed"
                         );
-                        return ImportBlocksReply::ok(imported);
+                        return ImportBlocksReply::ok_with_stats(imported, stats);
                     }
                 }
             }
 
             // C# Blockchain.OnImport runs `Persist(block)` — the state
             // transition — before the block becomes the new tip.
+            let transaction_block = !blocks[position].transactions.is_empty();
+            let clone_start = transaction_block.then(Instant::now);
             let block = Arc::new(blocks[position].clone());
+            if let Some(start) = clone_start {
+                stats.transaction_block_clone_elapsed += start.elapsed();
+            }
+            let transaction_block = !block.transactions.is_empty();
+            let transaction_start = transaction_block.then(Instant::now);
             let persisted = if bulk_sync {
                 if let Some(resources) = &batch_persist_resources {
                     self.persist_block_sequence_with_resources(
@@ -552,9 +567,14 @@ where
                     height = index,
                     "import aborted: native persistence pipeline failed"
                 );
-                return ImportBlocksReply::ok(imported);
+                return ImportBlocksReply::ok_with_stats(imported, stats);
+            }
+            if let Some(start) = transaction_start {
+                stats.transaction_blocks += 1;
+                stats.transaction_elapsed += start.elapsed();
             }
 
+            let ledger_insert_start = transaction_block.then(Instant::now);
             if let Err(error) = self.ledger.insert_block_arc(Arc::clone(&block)) {
                 warn!(
                     target: "neo",
@@ -562,7 +582,10 @@ where
                     height = index,
                     "failed to import block into ledger cache"
                 );
-                return ImportBlocksReply::ok(imported);
+                return ImportBlocksReply::ok_with_stats(imported, stats);
+            }
+            if let Some(start) = ledger_insert_start {
+                stats.transaction_ledger_insert_elapsed += start.elapsed();
             }
 
             // Normal live imports flush each block immediately. Trusted
@@ -572,8 +595,12 @@ where
             if !bulk_sync {
                 self.system.commit_to_store();
             }
+            let committed_hook_start = transaction_block.then(Instant::now);
             self.system
                 .block_committed_with_context(block.as_ref(), persist_context);
+            if let Some(start) = committed_hook_start {
+                stats.transaction_committed_hook_elapsed += start.elapsed();
+            }
 
             // Cold-start bulk sync imports a trusted local chain.acc package,
             // so it stays on canonical state transitions only. Live import and
@@ -602,6 +629,8 @@ where
         }
         if bulk_sync {
             if imported > 0 {
+                let finalization_start = Instant::now();
+                let commit_handlers_start = Instant::now();
                 if let Err(error) = self.system.flush_bulk_sync_commit_handlers() {
                     warn!(
                         target: "neo",
@@ -609,9 +638,15 @@ where
                         error = %error,
                         "bulk import finalization failed before durable store commit"
                     );
-                    return ImportBlocksReply::failed(imported, error);
+                    stats.finalization_commit_handlers_elapsed += commit_handlers_start.elapsed();
+                    stats.finalization_elapsed += finalization_start.elapsed();
+                    return ImportBlocksReply::failed_with_stats(imported, stats, error);
                 }
+                stats.finalization_commit_handlers_elapsed += commit_handlers_start.elapsed();
+                let store_commit_start = Instant::now();
                 self.system.commit_to_store();
+                stats.finalization_store_commit_elapsed += store_commit_start.elapsed();
+                stats.finalization_elapsed += finalization_start.elapsed();
             }
             if let Some(height) = last_imported_height {
                 self.header_cache.remove_up_to(height);
@@ -630,7 +665,7 @@ where
                 debug!(target: "neo", drained, "drained parked unverified blocks after bulk import");
             }
         }
-        ImportBlocksReply::ok(imported)
+        ImportBlocksReply::ok_with_stats(imported, stats)
     }
 
     /// Handle a [`BlockchainCommand::Reverify`] request.

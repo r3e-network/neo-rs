@@ -31,6 +31,8 @@ pub struct StateRootApplyStats {
 /// Fine-grained timing stage inside local StateService MPT application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StateRootApplyStage {
+    /// Time the producer spends sending into the bounded async MPT queue.
+    EnqueueBlocking,
     /// Time spent queued before the async MPT worker begins applying a block.
     QueueWait,
     /// Apply the projected storage changes to the in-memory trie.
@@ -50,6 +52,7 @@ pub enum StateRootApplyStage {
 impl StateRootApplyStage {
     fn label(self) -> &'static str {
         match self {
+            Self::EnqueueBlocking => "enqueue_blocking",
             Self::QueueWait => "queue_wait",
             Self::MutateChanges => "mutate_changes",
             Self::RootHash => "root_hash",
@@ -62,13 +65,14 @@ impl StateRootApplyStage {
 
     fn slot_index(self) -> usize {
         match self {
-            Self::QueueWait => 0,
-            Self::MutateChanges => 1,
-            Self::RootHash => 2,
-            Self::TrieCommit => 3,
-            Self::OverlayPrepare => 4,
-            Self::BackingCommit => 5,
-            Self::PublishGeneration => 6,
+            Self::EnqueueBlocking => 0,
+            Self::QueueWait => 1,
+            Self::MutateChanges => 2,
+            Self::RootHash => 3,
+            Self::TrieCommit => 4,
+            Self::OverlayPrepare => 5,
+            Self::BackingCommit => 6,
+            Self::PublishGeneration => 7,
         }
     }
 }
@@ -76,6 +80,8 @@ impl StateRootApplyStage {
 /// Item counts observed inside local StateService MPT application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StateRootApplyCountKind {
+    /// Blocks drained and applied by one async MPT worker batch.
+    BatchBlocks,
     /// Projected block storage changes supplied to the trie.
     Changes,
     /// All write-batch entries produced by trie commit plus local root records.
@@ -89,6 +95,7 @@ pub enum StateRootApplyCountKind {
 impl StateRootApplyCountKind {
     fn label(self) -> &'static str {
         match self {
+            Self::BatchBlocks => "batch_blocks",
             Self::Changes => "changes",
             Self::OverlayEntries => "overlay_entries",
             Self::OverlayPuts => "overlay_puts",
@@ -98,10 +105,11 @@ impl StateRootApplyCountKind {
 
     fn slot_index(self) -> usize {
         match self {
-            Self::Changes => 0,
-            Self::OverlayEntries => 1,
-            Self::OverlayPuts => 2,
-            Self::OverlayDeletes => 3,
+            Self::BatchBlocks => 0,
+            Self::Changes => 1,
+            Self::OverlayEntries => 2,
+            Self::OverlayPuts => 3,
+            Self::OverlayDeletes => 4,
         }
     }
 }
@@ -133,6 +141,10 @@ pub struct StateRootApplyCountStats {
 /// Direct snapshot of the MPT apply fields used by hot import progress logs.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StateRootApplyHotStats {
+    /// EWMA producer send duration for the bounded async MPT queue, in microseconds.
+    pub enqueue_blocking_avg_us: u64,
+    /// EWMA queue-wait duration before the async MPT worker starts a block, in microseconds.
+    pub queue_wait_avg_us: u64,
     /// EWMA mutation stage duration in microseconds.
     pub mutate_changes_avg_us: u64,
     /// EWMA root-hash stage duration in microseconds.
@@ -145,6 +157,8 @@ pub struct StateRootApplyHotStats {
     pub publish_generation_avg_us: u64,
     /// EWMA number of overlay entries per apply.
     pub overlay_entries_avg: u64,
+    /// EWMA number of blocks drained by one async worker batch.
+    pub batch_blocks_avg: u64,
 }
 
 #[derive(Debug)]
@@ -188,7 +202,8 @@ static APPLY_AVG_TOTAL_US: AtomicU64 = AtomicU64::new(0);
 static APPLY_AVG_PROJECT_US: AtomicU64 = AtomicU64::new(0);
 static APPLY_AVG_APPLY_US: AtomicU64 = AtomicU64::new(0);
 static APPLY_AVG_CHANGES: AtomicU64 = AtomicU64::new(0);
-static APPLY_STAGE_ORDER: [StateRootApplyStage; 7] = [
+static APPLY_STAGE_ORDER: [StateRootApplyStage; 8] = [
+    StateRootApplyStage::EnqueueBlocking,
     StateRootApplyStage::QueueWait,
     StateRootApplyStage::MutateChanges,
     StateRootApplyStage::RootHash,
@@ -197,7 +212,8 @@ static APPLY_STAGE_ORDER: [StateRootApplyStage; 7] = [
     StateRootApplyStage::BackingCommit,
     StateRootApplyStage::PublishGeneration,
 ];
-static APPLY_STAGES: [TimingMetricSlot; 7] = [
+static APPLY_STAGES: [TimingMetricSlot; 8] = [
+    TimingMetricSlot::new(),
     TimingMetricSlot::new(),
     TimingMetricSlot::new(),
     TimingMetricSlot::new(),
@@ -206,13 +222,15 @@ static APPLY_STAGES: [TimingMetricSlot; 7] = [
     TimingMetricSlot::new(),
     TimingMetricSlot::new(),
 ];
-static APPLY_COUNT_ORDER: [StateRootApplyCountKind; 4] = [
+static APPLY_COUNT_ORDER: [StateRootApplyCountKind; 5] = [
+    StateRootApplyCountKind::BatchBlocks,
     StateRootApplyCountKind::Changes,
     StateRootApplyCountKind::OverlayEntries,
     StateRootApplyCountKind::OverlayPuts,
     StateRootApplyCountKind::OverlayDeletes,
 ];
-static APPLY_COUNTS: [CountMetricSlot; 4] = [
+static APPLY_COUNTS: [CountMetricSlot; 5] = [
+    CountMetricSlot::new(),
     CountMetricSlot::new(),
     CountMetricSlot::new(),
     CountMetricSlot::new(),
@@ -297,12 +315,15 @@ impl StateRootApplyMetrics {
     /// without allocating the full telemetry vectors.
     pub fn state_root_apply_hot_stats() -> StateRootApplyHotStats {
         StateRootApplyHotStats {
+            enqueue_blocking_avg_us: stage_avg(StateRootApplyStage::EnqueueBlocking),
+            queue_wait_avg_us: stage_avg(StateRootApplyStage::QueueWait),
             mutate_changes_avg_us: stage_avg(StateRootApplyStage::MutateChanges),
             root_hash_avg_us: stage_avg(StateRootApplyStage::RootHash),
             trie_commit_avg_us: stage_avg(StateRootApplyStage::TrieCommit),
             backing_commit_avg_us: stage_avg(StateRootApplyStage::BackingCommit),
             publish_generation_avg_us: stage_avg(StateRootApplyStage::PublishGeneration),
             overlay_entries_avg: count_avg(StateRootApplyCountKind::OverlayEntries),
+            batch_blocks_avg: count_avg(StateRootApplyCountKind::BatchBlocks),
         }
     }
 
