@@ -498,3 +498,69 @@ fn test_nibbles_conversion() {
     let result = trie.get(&key).unwrap();
     assert_eq!(result, Some(value.to_vec()));
 }
+
+#[test]
+fn scratch_mutation_api_matches_standard_mutation_roots_and_reads() {
+    let entries: &[(&[u8], &[u8])] = &[
+        (&[0x12], b"prefix"),
+        (&[0x12, 0x30], b"left"),
+        (&[0x12, 0x34], b"middle"),
+        (&[0x12, 0x35], b"right"),
+        (&[0x12, 0x35, 0x01], b"deeper"),
+    ];
+
+    let standard_store = Arc::new(MockStore::new());
+    let scratch_store = Arc::new(MockStore::new());
+    let mut standard = Trie::new(standard_store, None, false);
+    let mut scratch = Trie::new(scratch_store, None, false);
+    let mut path_scratch = Vec::new();
+
+    for (key, value) in entries {
+        standard.put(key, value).unwrap();
+        scratch
+            .put_with_scratch(key, value, &mut path_scratch)
+            .unwrap();
+    }
+
+    assert_eq!(scratch.root_hash(), standard.root_hash());
+    assert_trie_contains(&mut scratch, entries);
+
+    assert!(standard.delete(&[0x12, 0x34]).unwrap());
+    assert!(
+        scratch
+            .delete_with_scratch(&[0x12, 0x34], &mut path_scratch)
+            .unwrap()
+    );
+    standard.put(&[0x12, 0x35], b"right-updated").unwrap();
+    scratch
+        .put_with_scratch(&[0x12, 0x35], b"right-updated", &mut path_scratch)
+        .unwrap();
+
+    let remaining_entries: &[(&[u8], &[u8])] = &[
+        (&[0x12], b"prefix"),
+        (&[0x12, 0x30], b"left"),
+        (&[0x12, 0x35], b"right-updated"),
+        (&[0x12, 0x35, 0x01], b"deeper"),
+    ];
+    assert_eq!(scratch.root_hash(), standard.root_hash());
+    assert_trie_contains(&mut scratch, remaining_entries);
+}
+
+#[test]
+fn scratch_mutation_api_preserves_key_and_value_validation() {
+    let store = Arc::new(MockStore::new());
+    let mut trie = Trie::new(store, None, false);
+    let mut path_scratch = Vec::new();
+
+    assert!(
+        trie.put_with_scratch(&[], b"value", &mut path_scratch)
+            .is_err()
+    );
+    assert!(trie.delete_with_scratch(&[], &mut path_scratch).is_err());
+
+    let large_value = vec![0u8; 70000];
+    assert!(
+        trie.put_with_scratch(b"key", &large_value, &mut path_scratch)
+            .is_err()
+    );
+}

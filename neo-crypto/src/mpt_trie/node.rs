@@ -211,6 +211,10 @@ impl Node {
         cloned
     }
 
+    pub(crate) fn set_cached_hash(&self, hash: UInt256) {
+        *self.hash.write() = Some(hash);
+    }
+
     /// Computes the node hash (Hash256 of the serialized payload without the reference).
     pub fn hash(&self) -> UInt256 {
         match self.try_hash() {
@@ -271,6 +275,29 @@ impl Node {
     pub fn to_array_without_reference(&self) -> MptResult<Vec<u8>> {
         let mut writer = BinaryWriter::with_capacity(self.byte_size_without_reference());
         self.serialize_without_reference(&mut writer)?;
+        Ok(writer.into_bytes())
+    }
+
+    /// Serializes a previously computed no-reference payload with this node's
+    /// current reference count appended when the node kind stores references.
+    ///
+    /// The no-reference payload is also the hash preimage. MPT cache commit can
+    /// reuse it after staging a dirty node instead of walking the same subtree
+    /// again only to write identical node bytes.
+    pub(crate) fn array_from_payload_without_reference(
+        &self,
+        payload_without_reference: &[u8],
+    ) -> MptResult<Vec<u8>> {
+        let mut writer = BinaryWriter::with_capacity(self.byte_size());
+        writer
+            .write_bytes(payload_without_reference)
+            .map_err(MptError::from)?;
+        match self.node_type {
+            NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => writer
+                .write_var_uint(u64::from(self.reference))
+                .map_err(MptError::from)?,
+            NodeType::HashNode | NodeType::Empty => {}
+        }
         Ok(writer.into_bytes())
     }
 

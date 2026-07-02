@@ -1,6 +1,13 @@
 //! # neo-crypto::mpt_trie
 //!
-//! Merkle Patricia Trie nodes, cache logic, and trie operations.
+//! Neo-compatible Merkle Patricia Trie nodes, cache logic, and state-root
+//! operations.
+//!
+//! This module is intentionally local even though generic MPT crates exist.
+//! Neo state roots depend on the C# `Neo.Cryptography.MPTTrie` node types,
+//! serialization, hashing, proof shape, empty-node behavior, and cache-prefix
+//! storage layout. Ethereum/Substrate trie crates are useful references, but
+//! their encodings and hash domains are consensus-incompatible with Neo.
 //!
 //! ## Boundary
 //!
@@ -10,9 +17,9 @@
 //!
 //! ## Contents
 //!
-//! - `cache`: Cache state and mutation helpers.
+//! - `cache`: Store snapshot trait and write-through cache helpers.
 //! - `error`: Typed error definitions and conversions.
-//! - `node`: Daemon composition, CLI modes, and long-running node startup.
+//! - `node`: Neo MPT node representation and C#-compatible serialization.
 //! - `node_type`: MPT node type identifiers.
 //! - `trie`: MPT trie operations and state-root helpers.
 //! - `tests`: Module-local tests and regression coverage.

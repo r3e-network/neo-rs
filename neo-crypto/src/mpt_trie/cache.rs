@@ -1,6 +1,6 @@
 use super::error::{MptError, MptResult};
 use super::node::Node;
-use neo_io::{MemoryReader, Serializable, SerializableExtensions};
+use neo_io::{MemoryReader, Serializable};
 use neo_primitives::UINT256_SIZE;
 use neo_primitives::UInt256;
 use std::collections::HashMap;
@@ -43,6 +43,7 @@ pub trait MptStoreSnapshot: Send + Sync {
 
 struct MptTrackable {
     node: Option<Node>,
+    payload_without_reference: Option<Vec<u8>>,
     state: TrackState,
 }
 
@@ -50,6 +51,7 @@ impl MptTrackable {
     const fn new(node: Option<Node>) -> Self {
         Self {
             node,
+            payload_without_reference: None,
             state: TrackState::None,
         }
     }
@@ -90,28 +92,44 @@ where
 
     /// Adds or updates the supplied node inside the cache.
     pub fn put_node(&mut self, node: Node) -> MptResult<()> {
-        let hash = node.try_hash()?;
-        self.put_node_with_hash(node, hash)
+        let payload_without_reference = node.to_array_without_reference()?;
+        let hash_bytes = crate::Crypto::hash256(&payload_without_reference);
+        let hash = UInt256::from_bytes(&hash_bytes).map_err(MptError::from)?;
+        self.put_node_with_payload(node, hash, payload_without_reference)
     }
 
     /// Adds or updates the supplied node inside the cache while keeping the
     /// caller's node hash cached.
     pub(crate) fn put_node_cached(&mut self, node: &mut Node) -> MptResult<()> {
         node.set_dirty();
-        let hash = node.try_hash()?;
-        self.put_node_with_hash(node.clone_with_cached_hash(), hash)
+        let payload_without_reference = node.to_array_without_reference()?;
+        let hash_bytes = crate::Crypto::hash256(&payload_without_reference);
+        let hash = UInt256::from_bytes(&hash_bytes).map_err(MptError::from)?;
+        node.set_cached_hash(hash);
+        self.put_node_with_payload(
+            node.clone_with_cached_hash(),
+            hash,
+            payload_without_reference,
+        )
     }
 
-    fn put_node_with_hash(&mut self, node: Node, hash: UInt256) -> MptResult<()> {
+    fn put_node_with_payload(
+        &mut self,
+        node: Node,
+        hash: UInt256,
+        payload_without_reference: Vec<u8>,
+    ) -> MptResult<()> {
         let entry = self.resolve_internal(&hash)?;
 
         if let Some(ref mut existing) = entry.node {
             existing.reference = existing.reference.saturating_add(1);
+            entry.payload_without_reference = Some(payload_without_reference);
             entry.state = TrackState::Changed;
         } else {
             let mut stored = node;
             stored.reference = 1;
             entry.node = Some(stored);
+            entry.payload_without_reference = Some(payload_without_reference);
             entry.state = TrackState::Added;
         }
         Ok(())
@@ -126,9 +144,11 @@ where
         };
         if node.reference > 1 {
             node.reference -= 1;
+            entry.payload_without_reference = Some(node.to_array_without_reference()?);
             entry.state = TrackState::Changed;
         } else {
             entry.node = None;
+            entry.payload_without_reference = None;
             entry.state = TrackState::Deleted;
         }
         Ok(())
@@ -145,7 +165,12 @@ where
                         .node
                         .as_ref()
                         .ok_or_else(|| MptError::invalid("cache entry missing node"))?;
-                    let data = node.to_array().map_err(MptError::from)?;
+                    let payload_without_reference =
+                        entry.payload_without_reference.as_ref().ok_or_else(|| {
+                            MptError::invalid("cache entry missing serialized node payload")
+                        })?;
+                    let data =
+                        node.array_from_payload_without_reference(payload_without_reference)?;
                     overlay.push((self.key(hash), Some(data)));
                 }
                 TrackState::Deleted => {

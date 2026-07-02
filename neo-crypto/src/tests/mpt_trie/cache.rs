@@ -305,6 +305,17 @@ fn cache_commit_builds_overlay_in_one_dirty_entry_pass() {
     );
 }
 
+#[test]
+fn cache_commit_reuses_cached_serialized_payloads_for_dirty_nodes() {
+    let source = include_str!("../../mpt_trie/cache.rs");
+    let commit = slice_between(source, "pub fn commit(&mut self)", "fn resolve_internal");
+
+    assert!(
+        !commit.contains("node.to_array()"),
+        "dirty nodes are hashed before staging; commit should append references to cached payload bytes instead of reserializing whole nodes"
+    );
+}
+
 fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     let start_idx = source.find(start).expect("start marker exists");
     let tail = &source[start_idx..];

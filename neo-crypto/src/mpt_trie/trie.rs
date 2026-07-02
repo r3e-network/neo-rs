@@ -58,7 +58,11 @@ where
     /// Retrieves the value associated with the supplied key (if present).
     pub fn get(&mut self, key: &[u8]) -> MptResult<Option<Vec<u8>>> {
         let path = Self::ensure_lookup_key(key)?;
-        Self::try_get_node(&mut self.cache, self.full_state, &mut self.root, &path)
+        self.get_with_nibble_path(&path)
+    }
+
+    fn get_with_nibble_path(&mut self, path: &[u8]) -> MptResult<Option<Vec<u8>>> {
+        Self::try_get_node(&mut self.cache, self.full_state, &mut self.root, path)
     }
 
     /// Retrieves the value associated with the key, returning an error if it does not exist.
@@ -77,21 +81,51 @@ where
     /// Inserts or updates the value stored under `key`.
     pub fn put(&mut self, key: &[u8], value: &[u8]) -> MptResult<()> {
         let path = Self::ensure_lookup_key(key)?;
+        self.put_with_nibble_path(&path, value)
+    }
+
+    /// Inserts or updates `value` under `key`, reusing `path_scratch` for
+    /// byte-to-nibble expansion.
+    ///
+    /// This is the hot StateService path: callers that apply many changes to
+    /// one trie can keep a single scratch buffer and avoid allocating a fresh
+    /// path vector per item while preserving the same MPT node bytes and root.
+    pub fn put_with_scratch(
+        &mut self,
+        key: &[u8],
+        value: &[u8],
+        path_scratch: &mut Vec<u8>,
+    ) -> MptResult<()> {
+        Self::fill_lookup_key(key, path_scratch)?;
+        self.put_with_nibble_path(path_scratch, value)
+    }
+
+    fn put_with_nibble_path(&mut self, path: &[u8], value: &[u8]) -> MptResult<()> {
         Self::ensure_value_length(value)?;
         let leaf = Node::new_leaf(value.to_vec());
-        Self::put_internal(
-            &mut self.cache,
-            self.full_state,
-            &mut self.root,
-            &path,
-            leaf,
-        )
+        Self::put_internal(&mut self.cache, self.full_state, &mut self.root, path, leaf)
     }
 
     /// Deletes the entry stored under `key`. Returns `true` if an entry was removed.
     pub fn delete(&mut self, key: &[u8]) -> MptResult<bool> {
         let path = Self::ensure_lookup_key(key)?;
-        Self::try_delete_node(&mut self.cache, self.full_state, &mut self.root, &path)
+        self.delete_with_nibble_path(&path)
+    }
+
+    /// Deletes `key`, reusing `path_scratch` for byte-to-nibble expansion.
+    ///
+    /// See [`Trie::put_with_scratch`] for the motivation and parity boundary.
+    pub fn delete_with_scratch(
+        &mut self,
+        key: &[u8],
+        path_scratch: &mut Vec<u8>,
+    ) -> MptResult<bool> {
+        Self::fill_lookup_key(key, path_scratch)?;
+        self.delete_with_nibble_path(path_scratch)
+    }
+
+    fn delete_with_nibble_path(&mut self, path: &[u8]) -> MptResult<bool> {
+        Self::try_delete_node(&mut self.cache, self.full_state, &mut self.root, path)
     }
 
     /// Enumerates key/value pairs under the supplied prefix, optionally resuming from `from`.
@@ -725,6 +759,16 @@ where
 
     fn ensure_lookup_key(key: &[u8]) -> MptResult<Vec<u8>> {
         let path = Self::to_nibbles(key);
+        Self::validate_lookup_path(&path)?;
+        Ok(path)
+    }
+
+    fn fill_lookup_key(key: &[u8], path: &mut Vec<u8>) -> MptResult<()> {
+        Self::to_nibbles_into(key, path);
+        Self::validate_lookup_path(path)
+    }
+
+    fn validate_lookup_path(path: &[u8]) -> MptResult<()> {
         if path.is_empty() {
             return Err(MptError::key(
                 "the key cannot be empty; at least one nibble is required",
@@ -737,7 +781,7 @@ where
                 MAX_KEY_LENGTH
             )));
         }
-        Ok(path)
+        Ok(())
     }
 
     fn ensure_prefix(key: &[u8]) -> MptResult<Vec<u8>> {
@@ -766,11 +810,17 @@ where
     /// Optimized nibble conversion with pre-allocated capacity.
     fn to_nibbles(bytes: &[u8]) -> Vec<u8> {
         let mut result = Vec::with_capacity(bytes.len() * 2);
-        for byte in bytes {
-            result.push(byte >> 4);
-            result.push(byte & 0x0F);
-        }
+        Self::to_nibbles_into(bytes, &mut result);
         result
+    }
+
+    fn to_nibbles_into(bytes: &[u8], out: &mut Vec<u8>) {
+        out.clear();
+        out.reserve(bytes.len().saturating_mul(2));
+        for byte in bytes {
+            out.push(byte >> 4);
+            out.push(byte & 0x0F);
+        }
     }
 
     fn from_nibbles(path: &[u8]) -> MptResult<Vec<u8>> {
