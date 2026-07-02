@@ -1,8 +1,122 @@
 use super::*;
+use neo_storage::persistence::{
+    RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, Store, StoreSnapshot,
+    WriteStore,
+};
+use neo_storage::persistence::{
+    providers::memory_store::MemoryStore, store::OnNewSnapshotDelegate,
+};
 use neo_storage::{StorageItem, StorageKey};
+use parking_lot::Mutex as ParkingMutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn root(index: u32, byte: u8) -> StateRoot {
     StateRoot::new_current(index, UInt256::from([byte; 32]))
+}
+
+struct SnapshotCountingRawOverlayStore {
+    inner: MemoryStore,
+    snapshot_count: AtomicUsize,
+    commit_count: AtomicUsize,
+    on_new_snapshot: ParkingMutex<Vec<OnNewSnapshotDelegate>>,
+}
+
+impl SnapshotCountingRawOverlayStore {
+    fn new() -> Self {
+        Self {
+            inner: MemoryStore::new(),
+            snapshot_count: AtomicUsize::new(0),
+            commit_count: AtomicUsize::new(0),
+            on_new_snapshot: ParkingMutex::new(Vec::new()),
+        }
+    }
+
+    fn snapshot_count(&self) -> usize {
+        self.snapshot_count.load(Ordering::Relaxed)
+    }
+
+    fn reset_snapshot_count(&self) {
+        self.snapshot_count.store(0, Ordering::Relaxed);
+    }
+}
+
+impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for SnapshotCountingRawOverlayStore {
+    fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
+        self.inner.try_get(key)
+    }
+
+    fn find(
+        &self,
+        key_prefix: Option<&Vec<u8>>,
+        direction: SeekDirection,
+    ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+        self.inner.find(key_prefix, direction)
+    }
+}
+
+impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for SnapshotCountingRawOverlayStore {
+    fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
+        self.inner.try_get(key)
+    }
+
+    fn find(
+        &self,
+        key_prefix: Option<&StorageKey>,
+        direction: SeekDirection,
+    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+        self.inner.find(key_prefix, direction)
+    }
+}
+
+impl RawReadOnlyStore for SnapshotCountingRawOverlayStore {
+    fn try_get_bytes(&self, key: &[u8]) -> Option<Vec<u8>> {
+        self.inner.try_get_bytes(key)
+    }
+}
+
+impl WriteStore<Vec<u8>, Vec<u8>> for SnapshotCountingRawOverlayStore {
+    fn delete(&mut self, key: Vec<u8>) -> neo_storage::StorageResult<()> {
+        self.inner.delete(key)
+    }
+
+    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> neo_storage::StorageResult<()> {
+        self.inner.put(key, value)
+    }
+}
+
+impl ReadOnlyStore for SnapshotCountingRawOverlayStore {}
+
+impl Store for SnapshotCountingRawOverlayStore {
+    fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
+        self.snapshot_count.fetch_add(1, Ordering::Relaxed);
+        let snapshot = self.inner.snapshot();
+        for handler in self.on_new_snapshot.lock().iter() {
+            handler(self, snapshot.clone());
+        }
+        snapshot
+    }
+
+    fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate) {
+        self.on_new_snapshot.lock().push(handler);
+    }
+
+    fn try_commit_borrowed_raw_overlay(
+        &self,
+        visit: &mut dyn FnMut(&mut dyn FnMut(&[u8], Option<&[u8]>)),
+    ) -> neo_storage::StorageResult<bool> {
+        self.commit_count.fetch_add(1, Ordering::Relaxed);
+        let mut batch = std::collections::BTreeMap::new();
+        let mut sink = |key: &[u8], value: Option<&[u8]>| {
+            batch.insert(key.to_vec(), value.map(<[u8]>::to_vec));
+        };
+        visit(&mut sink);
+        self.inner.apply_batch(&batch);
+        Ok(true)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[test]
@@ -229,6 +343,50 @@ fn apply_snapshot_changes_advances_root_record_for_ledger_only_block() {
     assert_eq!(
         trie.get(&user_key.to_array()).expect("read user key"),
         Some(vec![0x01])
+    );
+}
+
+#[test]
+fn apply_snapshot_changes_reuses_previous_root_for_ledger_only_block_without_opening_trie_snapshot()
+{
+    let backing = Arc::new(SnapshotCountingRawOverlayStore::new());
+    let store = StateStore::with_mpt_store(true, backing.clone()).expect("state store");
+
+    let block0 = DataCache::new(false);
+    block0.add(
+        StorageKey::new(5, vec![0xAA]),
+        StorageItem::from_bytes(vec![0x01]),
+    );
+    let root0 = store
+        .apply_snapshot_changes(0, &block0)
+        .expect("block 0 applies")
+        .expect("MPT backend returns a root");
+
+    let ledger_only = DataCache::new(false);
+    ledger_only.add(
+        StorageKey::new(LEDGER_CONTRACT_ID, vec![0xCC]),
+        StorageItem::from_bytes(vec![0x02]),
+    );
+
+    backing.reset_snapshot_count();
+    let root1 = store
+        .apply_snapshot_changes(1, &ledger_only)
+        .expect("ledger-only block applies")
+        .expect("MPT backend returns a root");
+
+    assert_eq!(root1, root0);
+    assert_eq!(
+        backing.snapshot_count(),
+        0,
+        "ledger-only continuation blocks should not open an MPT backing snapshot"
+    );
+    let mpt = store.mpt().expect("MPT backend");
+    assert_eq!(mpt.current_local_root(), Some((1, root0)));
+    assert_eq!(
+        mpt.get_state_root(1)
+            .expect("ledger-only state root record")
+            .root_hash(),
+        &root0
     );
 }
 

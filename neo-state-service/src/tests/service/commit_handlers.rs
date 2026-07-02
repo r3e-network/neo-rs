@@ -60,6 +60,18 @@ fn async_committing_flush_applies_queued_mpt_roots_in_order() {
             .any(|stat| stat.stage == "queue_wait" && stat.calls > 0),
         "async StateService MPT apply should expose queue wait as a hotspot stage"
     );
+    assert!(
+        crate::StateRootApplyMetrics::state_root_apply_stage_stats()
+            .iter()
+            .any(|stat| stat.stage == "enqueue_blocking" && stat.calls > 0),
+        "async StateService MPT apply should expose producer enqueue blocking separately"
+    );
+    assert!(
+        crate::StateRootApplyMetrics::state_root_apply_count_stats()
+            .iter()
+            .any(|stat| stat.kind == "batch_blocks" && stat.samples > 0 && stat.total >= 1),
+        "async StateService MPT apply should expose worker batch size"
+    );
 }
 
 #[test]

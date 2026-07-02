@@ -55,6 +55,7 @@ impl StoreSnapshot for BorrowOnlySnapshot {
 struct RecordingRawOverlayStore {
     inner: MemoryStore,
     entries: ParkingMutex<Vec<(Vec<u8>, Option<Vec<u8>>)>>,
+    commit_count: ParkingMutex<usize>,
 }
 
 impl RecordingRawOverlayStore {
@@ -62,11 +63,16 @@ impl RecordingRawOverlayStore {
         Self {
             inner: MemoryStore::new(),
             entries: ParkingMutex::new(Vec::new()),
+            commit_count: ParkingMutex::new(0),
         }
     }
 
     fn entries(&self) -> Vec<(Vec<u8>, Option<Vec<u8>>)> {
         self.entries.lock().clone()
+    }
+
+    fn commit_count(&self) -> usize {
+        *self.commit_count.lock()
     }
 }
 
@@ -129,11 +135,16 @@ impl Store for RecordingRawOverlayStore {
         &self,
         visit: &mut dyn FnMut(&mut dyn FnMut(&[u8], Option<&[u8]>)),
     ) -> neo_storage::StorageResult<bool> {
-        let mut entries = self.entries.lock();
+        *self.commit_count.lock() += 1;
+        let mut batch = std::collections::BTreeMap::new();
+        let mut entries = Vec::new();
         let mut sink = |key: &[u8], value: Option<&[u8]>| {
+            batch.insert(key.to_vec(), value.map(<[u8]>::to_vec));
             entries.push((key.to_vec(), value.map(<[u8]>::to_vec)));
         };
         visit(&mut sink);
+        self.inner.apply_batch(&batch);
+        self.entries.lock().extend(entries);
         Ok(true)
     }
 
@@ -609,6 +620,10 @@ fn publish_overlay_does_not_rescan_overlay_for_metrics() {
         !publish_body.contains("overlay.values()"),
         "MPT publish should count overlay metrics while consuming the overlay, not with a separate values scan"
     );
+    assert!(
+        !publish_body.contains("for (_, value) in overlay"),
+        "durable-backed MPT publish must reuse backing-commit counts instead of scanning the overlay again"
+    );
 }
 
 #[test]
@@ -640,6 +655,422 @@ fn durable_backing_overlay_is_committed_in_key_order() {
         keys, sorted,
         "StateService MPT durable backing commits must visit raw keys in byte order"
     );
+}
+
+#[test]
+fn batch_apply_commits_multiple_state_roots_with_one_backing_overlay() {
+    let backing = Arc::new(RecordingRawOverlayStore::new());
+    let store = MptStore::from_store(backing.clone(), true).expect("mpt store");
+    let blocks = [
+        MptBlockChanges {
+            block_index: 0,
+            changes: &[put(5, &[0xA0], b"v0")],
+        },
+        MptBlockChanges {
+            block_index: 1,
+            changes: &[put(5, &[0xA1], b"v1")],
+        },
+        MptBlockChanges {
+            block_index: 2,
+            changes: &[put(5, &[0xA2], b"v2")],
+        },
+    ];
+
+    let roots = store
+        .apply_block_changes_batch(None, &blocks)
+        .expect("batch applies");
+
+    assert_eq!(roots.len(), 3);
+    assert_eq!(
+        backing.commit_count(),
+        1,
+        "queued StateService MPT blocks should share one durable overlay commit"
+    );
+    assert_eq!(store.current_local_root(), Some((2, roots[2])));
+    for (index, root) in roots.iter().enumerate() {
+        assert_eq!(
+            store
+                .get_state_root(index as u32)
+                .expect("state root record")
+                .root_hash(),
+            root
+        );
+    }
+}
+
+#[test]
+fn batch_apply_matches_sequential_roots_and_reads() {
+    let sequential = MptStore::new(true);
+    let batched = MptStore::new(true);
+    let changes0 = vec![
+        put(5, &[0xA0], b"v0"),
+        put(5, &[0xA1], b"v1"),
+        put(7, &[0xB0], b"other"),
+    ];
+    let changes1 = vec![
+        put(5, &[0xA0], b"v0-updated"),
+        delete(5, &[0xA1]),
+        put(5, &[0xA2], b"v2"),
+    ];
+    let changes2 = Vec::new();
+    let changes3 = vec![put(7, &[0xB0], b"other-updated")];
+    let block_changes = [
+        (0, changes0.as_slice()),
+        (1, changes1.as_slice()),
+        (2, changes2.as_slice()),
+        (3, changes3.as_slice()),
+    ];
+
+    let mut sequential_roots = Vec::new();
+    let mut previous = None;
+    for (index, changes) in block_changes {
+        let root = sequential
+            .apply_block_changes(index, previous, changes)
+            .expect("sequential block applies");
+        previous = Some(root);
+        sequential_roots.push(root);
+    }
+
+    let batched_roots = batched
+        .apply_block_changes_batch(
+            None,
+            &[
+                MptBlockChanges {
+                    block_index: 0,
+                    changes: &changes0,
+                },
+                MptBlockChanges {
+                    block_index: 1,
+                    changes: &changes1,
+                },
+                MptBlockChanges {
+                    block_index: 2,
+                    changes: &changes2,
+                },
+                MptBlockChanges {
+                    block_index: 3,
+                    changes: &changes3,
+                },
+            ],
+        )
+        .expect("batch applies");
+
+    assert_eq!(batched_roots, sequential_roots);
+    assert_eq!(
+        batched.current_local_root(),
+        sequential.current_local_root()
+    );
+    for (index, expected_root) in sequential_roots.iter().enumerate() {
+        assert_eq!(
+            batched
+                .get_state_root(index as u32)
+                .expect("batched state root record")
+                .root_hash(),
+            expected_root
+        );
+    }
+
+    let final_root = *batched_roots.last().expect("final root");
+    let mut trie = batched.open_trie(Some(final_root));
+    assert_eq!(
+        trie.get(&storage_key(5, &[0xA0])).expect("read updated"),
+        Some(b"v0-updated".to_vec())
+    );
+    assert_eq!(
+        trie.get(&storage_key(5, &[0xA1])).expect("read deleted"),
+        None
+    );
+    assert_eq!(
+        trie.get(&storage_key(5, &[0xA2])).expect("read inserted"),
+        Some(b"v2".to_vec())
+    );
+    assert_eq!(
+        trie.get(&storage_key(7, &[0xB0]))
+            .expect("read updated other"),
+        Some(b"other-updated".to_vec())
+    );
+}
+
+#[test]
+fn batch_apply_rejects_non_contiguous_or_invalid_start_without_advancing_root() {
+    let missing_genesis = MptStore::new(true);
+    let err = missing_genesis
+        .apply_block_changes_batch(
+            None,
+            &[MptBlockChanges {
+                block_index: 5,
+                changes: &[put(5, &[0xA0], b"v0")],
+            }],
+        )
+        .expect_err("empty store cannot batch-start after genesis");
+    assert!(err.to_string().contains("non-contiguous"));
+    assert_eq!(missing_genesis.current_local_root(), None);
+
+    let skipped = MptStore::new(true);
+    let err = skipped
+        .apply_block_changes_batch(
+            None,
+            &[
+                MptBlockChanges {
+                    block_index: 0,
+                    changes: &[put(5, &[0xA0], b"v0")],
+                },
+                MptBlockChanges {
+                    block_index: 2,
+                    changes: &[put(5, &[0xA2], b"v2")],
+                },
+            ],
+        )
+        .expect_err("batch cannot skip a block height");
+    assert!(err.to_string().contains("non-contiguous"));
+    assert_eq!(skipped.current_local_root(), None);
+
+    let reversed = MptStore::new(true);
+    let err = reversed
+        .apply_block_changes_batch(
+            None,
+            &[
+                MptBlockChanges {
+                    block_index: 2,
+                    changes: &[put(5, &[0xA2], b"v2")],
+                },
+                MptBlockChanges {
+                    block_index: 1,
+                    changes: &[put(5, &[0xA1], b"v1")],
+                },
+            ],
+        )
+        .expect_err("batch cannot move backward");
+    assert!(err.to_string().contains("non-contiguous"));
+    assert_eq!(reversed.current_local_root(), None);
+}
+
+#[test]
+fn batch_apply_pruning_mode_matches_sequential_current_root_and_pruning() {
+    let sequential = MptStore::new(false);
+    let batched = MptStore::new(false);
+    let changes0 = vec![
+        put(5, &[0xA0], b"v0"),
+        put(5, &[0xA1], b"v1"),
+        put(7, &[0xB0], b"other"),
+    ];
+    let changes1 = vec![
+        put(5, &[0xA0], b"v0-updated"),
+        delete(5, &[0xA1]),
+        put(5, &[0xA2], b"v2"),
+    ];
+    let changes2 = Vec::new();
+    let changes3 = vec![put(7, &[0xB0], b"other-updated")];
+
+    let mut sequential_roots = Vec::new();
+    let mut previous = None;
+    for (index, changes) in [
+        (0, changes0.as_slice()),
+        (1, changes1.as_slice()),
+        (2, changes2.as_slice()),
+        (3, changes3.as_slice()),
+    ] {
+        let root = sequential
+            .apply_block_changes(index, previous, changes)
+            .expect("sequential pruning block applies");
+        previous = Some(root);
+        sequential_roots.push(root);
+    }
+
+    let batched_roots = batched
+        .apply_block_changes_batch(
+            None,
+            &[
+                MptBlockChanges {
+                    block_index: 0,
+                    changes: &changes0,
+                },
+                MptBlockChanges {
+                    block_index: 1,
+                    changes: &changes1,
+                },
+                MptBlockChanges {
+                    block_index: 2,
+                    changes: &changes2,
+                },
+                MptBlockChanges {
+                    block_index: 3,
+                    changes: &changes3,
+                },
+            ],
+        )
+        .expect("batched pruning blocks apply");
+
+    assert_eq!(batched_roots, sequential_roots);
+    assert_eq!(
+        batched.current_local_root(),
+        sequential.current_local_root()
+    );
+    let final_root = *batched_roots.last().expect("final root");
+    for store in [&sequential, &batched] {
+        let mut trie = store.open_trie(Some(final_root));
+        assert_eq!(
+            trie.get(&storage_key(5, &[0xA0])).expect("read updated"),
+            Some(b"v0-updated".to_vec())
+        );
+        assert_eq!(
+            trie.get(&storage_key(5, &[0xA1])).expect("read deleted"),
+            None
+        );
+        assert_eq!(
+            trie.get(&storage_key(5, &[0xA2])).expect("read inserted"),
+            Some(b"v2".to_vec())
+        );
+        assert_eq!(
+            trie.get(&storage_key(7, &[0xB0]))
+                .expect("read updated other"),
+            Some(b"other-updated".to_vec())
+        );
+        let old_root = sequential_roots[0];
+        let mut old_trie = store.open_trie(Some(old_root));
+        assert!(
+            old_trie.get(&storage_key(5, &[0xA0])).is_err(),
+            "pruning mode should not keep the first batch root live after later roots"
+        );
+    }
+}
+
+#[test]
+fn batch_apply_durable_full_state_reopens_all_historical_roots() {
+    use neo_storage::persistence::providers::memory_store::MemoryStore;
+
+    let backing = Arc::new(MemoryStore::new());
+    let store =
+        Arc::new(MptStore::from_memory_store(Arc::clone(&backing), true).expect("open store"));
+    let changes0 = vec![put(5, &[0xA0], b"v0"), put(5, &[0xA1], b"v1")];
+    let changes1 = vec![put(5, &[0xA0], b"v0-updated")];
+    let changes2 = vec![delete(5, &[0xA1]), put(7, &[0xB0], b"other")];
+
+    let roots = store
+        .apply_block_changes_batch(
+            None,
+            &[
+                MptBlockChanges {
+                    block_index: 0,
+                    changes: &changes0,
+                },
+                MptBlockChanges {
+                    block_index: 1,
+                    changes: &changes1,
+                },
+                MptBlockChanges {
+                    block_index: 2,
+                    changes: &changes2,
+                },
+            ],
+        )
+        .expect("durable full-state batch applies");
+
+    let reopened = MptStore::from_memory_store(Arc::clone(&backing), true).expect("reopen store");
+    assert_eq!(reopened.current_local_root(), Some((2, roots[2])));
+    for (index, root) in roots.iter().enumerate() {
+        assert_eq!(
+            reopened
+                .get_state_root(index as u32)
+                .expect("reopened state root")
+                .root_hash(),
+            root
+        );
+    }
+
+    let mut trie0 = reopened.open_trie(Some(roots[0]));
+    assert_eq!(
+        trie0.get(&storage_key(5, &[0xA0])).expect("root0 read"),
+        Some(b"v0".to_vec())
+    );
+    assert_eq!(
+        trie0.get(&storage_key(5, &[0xA1])).expect("root0 read"),
+        Some(b"v1".to_vec())
+    );
+
+    let mut trie1 = reopened.open_trie(Some(roots[1]));
+    assert_eq!(
+        trie1.get(&storage_key(5, &[0xA0])).expect("root1 read"),
+        Some(b"v0-updated".to_vec())
+    );
+    assert_eq!(
+        trie1.get(&storage_key(5, &[0xA1])).expect("root1 read"),
+        Some(b"v1".to_vec())
+    );
+
+    let mut trie2 = reopened.open_trie(Some(roots[2]));
+    assert_eq!(
+        trie2.get(&storage_key(5, &[0xA0])).expect("root2 read"),
+        Some(b"v0-updated".to_vec())
+    );
+    assert_eq!(
+        trie2.get(&storage_key(5, &[0xA1])).expect("root2 read"),
+        None
+    );
+    assert_eq!(
+        trie2.get(&storage_key(7, &[0xB0])).expect("root2 read"),
+        Some(b"other".to_vec())
+    );
+}
+
+#[test]
+fn all_empty_batch_after_known_root_bypasses_trie_read_snapshot() {
+    use neo_storage::persistence::Store;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let backing = Arc::new(RecordingRawOverlayStore::new());
+    let snapshots = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::clone(&snapshots);
+    backing.on_new_snapshot(Box::new(move |_, _| {
+        seen.fetch_add(1, Ordering::Relaxed);
+    }));
+
+    let store = MptStore::from_store(backing.clone(), true).expect("open store");
+    let root1 = store
+        .apply_block_changes(1, None, &[put(5, &[0xAA, 0x01], b"v1")])
+        .expect("block 1 applies");
+
+    let blocks = [
+        MptBlockChanges {
+            block_index: 2,
+            changes: &[],
+        },
+        MptBlockChanges {
+            block_index: 3,
+            changes: &[],
+        },
+        MptBlockChanges {
+            block_index: 4,
+            changes: &[],
+        },
+    ];
+
+    snapshots.store(0, Ordering::Relaxed);
+    let roots = store
+        .apply_block_changes_batch(Some(root1), &blocks)
+        .expect("empty batch applies");
+
+    assert_eq!(roots, vec![root1, root1, root1]);
+    assert_eq!(
+        snapshots.load(Ordering::Relaxed),
+        0,
+        "known-empty continuation batches should not open trie/backing snapshots"
+    );
+    assert_eq!(
+        backing.commit_count(),
+        2,
+        "initial non-empty block and empty batch should commit through raw overlay"
+    );
+    assert_eq!(store.current_local_root(), Some((4, root1)));
+    for index in 2..=4 {
+        assert_eq!(
+            store
+                .get_state_root(index)
+                .expect("empty-batch state root record")
+                .root_hash(),
+            &root1
+        );
+    }
 }
 
 #[test]

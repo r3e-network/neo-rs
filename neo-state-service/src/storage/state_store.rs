@@ -15,7 +15,7 @@
 //! Mirrors the C# `StateService.Storage.StateStore` shape.
 
 use crate::StateRootApplyMetrics;
-use crate::mpt_store::{MptChange, MptStore};
+use crate::mpt_store::{MptBlockChanges, MptChange, MptStore};
 use crate::state_root::StateRoot;
 use neo_crypto::mpt_trie::{MptError, MptResult};
 use neo_primitives::UInt256;
@@ -59,6 +59,13 @@ struct StateStoreInner {
     by_root_hash: HashMap<UInt256, StateRoot>,
     /// State roots staged as candidates but not yet validated.
     candidates: HashSet<UInt256>,
+}
+
+pub(crate) struct ProjectedMptBlock<'a> {
+    pub(crate) block_index: u32,
+    pub(crate) changes: &'a [MptChange],
+    pub(crate) project_us: u64,
+    pub(crate) total_start: std::time::Instant,
 }
 
 /// Transactional, read-committed view of the [`StateStore`].
@@ -208,6 +215,92 @@ impl StateStore {
         )
     }
 
+    pub(crate) fn apply_projected_mpt_change_batch(
+        &self,
+        requests: &[ProjectedMptBlock<'_>],
+    ) -> MptResult<Vec<UInt256>> {
+        if requests.is_empty() {
+            return Ok(Vec::new());
+        }
+        if requests.len() == 1 {
+            return Ok(self
+                .apply_projected_mpt_changes(
+                    requests[0].block_index,
+                    requests[0].changes,
+                    requests[0].project_us,
+                    requests[0].total_start,
+                )?
+                .map(|root| vec![root])
+                .unwrap_or_default());
+        }
+
+        let Some(mpt) = self.mpt.as_ref() else {
+            return Ok(Vec::new());
+        };
+        let first = &requests[0];
+        for pair in requests.windows(2) {
+            if pair[0].block_index.checked_add(1) != Some(pair[1].block_index) {
+                return Err(MptError::invalid(format!(
+                    "non-contiguous state-service MPT batch: block {} followed by {}",
+                    pair[0].block_index, pair[1].block_index
+                )));
+            }
+        }
+        let root_before = match Self::contiguous_root_before(mpt, first.block_index) {
+            Ok(root_before) => root_before,
+            Err(err) => {
+                StateRootApplyMetrics::record_apply(
+                    first.block_index,
+                    first.changes.len(),
+                    first.project_us,
+                    0,
+                    elapsed_us(first.total_start),
+                    false,
+                );
+                return Err(err);
+            }
+        };
+
+        let blocks = requests
+            .iter()
+            .map(|request| MptBlockChanges {
+                block_index: request.block_index,
+                changes: request.changes,
+            })
+            .collect::<Vec<_>>();
+        let apply_start = std::time::Instant::now();
+        match mpt.apply_block_changes_batch(root_before, &blocks) {
+            Ok(roots) => {
+                let apply_us = elapsed_us(apply_start) / (requests.len() as u64).max(1);
+                for request in requests {
+                    StateRootApplyMetrics::record_apply(
+                        request.block_index,
+                        request.changes.len(),
+                        request.project_us,
+                        apply_us,
+                        elapsed_us(request.total_start),
+                        true,
+                    );
+                }
+                Ok(roots)
+            }
+            Err(err) => {
+                let apply_us = elapsed_us(apply_start) / (requests.len() as u64).max(1);
+                for request in requests {
+                    StateRootApplyMetrics::record_apply(
+                        request.block_index,
+                        request.changes.len(),
+                        request.project_us,
+                        apply_us,
+                        elapsed_us(request.total_start),
+                        false,
+                    );
+                }
+                Err(err)
+            }
+        }
+    }
+
     fn apply_projected_mpt_changes_with_root(
         &self,
         block_index: u32,
@@ -276,12 +369,13 @@ impl StateStore {
         };
         let apply_start = std::time::Instant::now();
         let mut change_count = 0usize;
-        match mpt.apply_block_changes_with_len(
+        match mpt.apply_block_changes_lazy(
             block_index,
             root_before,
             snapshot.pending_change_count(),
-            |trie| {
+            |changes| {
                 let mut result = Ok(());
+                let mut path_scratch = Vec::new();
                 snapshot.visit_tracked_items(|key, trackable| {
                     if result.is_err() || key.id() == LEDGER_CONTRACT_ID {
                         return;
@@ -291,12 +385,18 @@ impl StateStore {
                             let key_bytes = key.as_bytes();
                             let value = trackable.item.value_bytes();
                             change_count += 1;
-                            trie.put(key_bytes.as_ref(), value.as_ref())
+                            changes.put_with_scratch(
+                                key_bytes.as_ref(),
+                                value.as_ref(),
+                                &mut path_scratch,
+                            )
                         }
                         TrackState::Deleted => {
                             let key_bytes = key.as_bytes();
                             change_count += 1;
-                            trie.delete(key_bytes.as_ref()).map(|_| ())
+                            changes
+                                .delete_with_scratch(key_bytes.as_ref(), &mut path_scratch)
+                                .map(|_| ())
                         }
                         TrackState::None | TrackState::NotFound => Ok(()),
                     };

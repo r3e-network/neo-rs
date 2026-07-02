@@ -18,10 +18,10 @@
 //!   like the C# `BitConverter.GetBytes(uint)` write.
 //!
 //! The C# plugin opens a LevelDB store at `Data_MPT_{network}`; this
-//! build keeps the namespace in process memory (the rest of
-//! `neo-state-service` is in-memory too). The byte layout is the C#
-//! one, so pointing the namespace at a disk-backed store later is a
-//! storage swap, not a format migration.
+//! build can keep the namespace in process memory for tests or place it
+//! behind the workspace [`Store`] provider boundary for production
+//! backends such as MDBX. The byte layout is the C# one, so changing the
+//! physical backend is a storage swap, not a format migration.
 //!
 //! Block-changeset application mirrors the C# commit pipeline:
 //! `Blockchain.Committing` calls `UpdateLocalStateRootSnapshot(height,
@@ -97,6 +97,14 @@ pub enum MptChange {
     },
 }
 
+/// Borrowed storage changes for one block in an ordered MPT batch.
+pub(crate) struct MptBlockChanges<'a> {
+    /// Block height these changes belong to.
+    pub(crate) block_index: u32,
+    /// Projected non-Ledger storage mutations for the block.
+    pub(crate) changes: &'a [MptChange],
+}
+
 /// Persisted MPT-node + state-root store for the state service.
 ///
 /// Thread-safe: readers take a point-in-time [`MptReadSnapshot`] (see
@@ -147,6 +155,26 @@ pub struct MptReadSnapshot {
     backing_snapshot: Option<Arc<dyn StoreSnapshot>>,
     /// Copied [`MptStore::full_state`] flag.
     full_state: bool,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct OverlayCounts {
+    puts: u64,
+    deletes: u64,
+}
+
+impl OverlayCounts {
+    fn record(&mut self, value: Option<&Vec<u8>>) {
+        if value.is_some() {
+            self.puts += 1;
+        } else {
+            self.deletes += 1;
+        }
+    }
+
+    fn entries(self) -> u64 {
+        self.puts + self.deletes
+    }
 }
 
 impl MptReadSnapshot {
@@ -296,6 +324,65 @@ impl MptStoreSnapshot for MptWriteBatch {
     }
 }
 
+/// Lazily opens the write trie only when a block has at least one effective
+/// StateService MPT mutation.
+pub(crate) struct LazyMptChangeSink<'a> {
+    store: &'a MptStore,
+    root_before: Option<UInt256>,
+    overlay_capacity: usize,
+    batch: Option<Arc<MptWriteBatch>>,
+    trie: Option<Trie<MptWriteBatch>>,
+}
+
+impl<'a> LazyMptChangeSink<'a> {
+    fn new(store: &'a MptStore, root_before: Option<UInt256>, overlay_capacity: usize) -> Self {
+        Self {
+            store,
+            root_before,
+            overlay_capacity,
+            batch: None,
+            trie: None,
+        }
+    }
+
+    fn ensure_trie(&mut self) -> &mut Trie<MptWriteBatch> {
+        if self.trie.is_none() {
+            let batch = Arc::new(MptWriteBatch::new(
+                Arc::clone(&self.store.kv.read()),
+                self.store.backing_snapshot(),
+                self.overlay_capacity,
+            ));
+            self.trie = Some(Trie::new(
+                Arc::clone(&batch),
+                self.root_before,
+                self.store.full_state,
+            ));
+            self.batch = Some(batch);
+        }
+        self.trie.as_mut().expect("lazy MPT trie initialized")
+    }
+
+    /// Inserts or updates a key, opening the write trie on first use.
+    pub(crate) fn put_with_scratch(
+        &mut self,
+        key: &[u8],
+        value: &[u8],
+        path_scratch: &mut Vec<u8>,
+    ) -> MptResult<()> {
+        self.ensure_trie()
+            .put_with_scratch(key, value, path_scratch)
+    }
+
+    /// Deletes a key, opening the write trie on first use.
+    pub(crate) fn delete_with_scratch(
+        &mut self,
+        key: &[u8],
+        path_scratch: &mut Vec<u8>,
+    ) -> MptResult<bool> {
+        self.ensure_trie().delete_with_scratch(key, path_scratch)
+    }
+}
+
 impl MptStore {
     /// Constructs an empty store.
     ///
@@ -407,14 +494,17 @@ impl MptStore {
     ) -> MptResult<UInt256> {
         self.apply_block_changes_with_len(block_index, root_before, changes.len(), |trie| {
             let mut effective_change_count = 0usize;
+            let mut path_scratch = Vec::new();
             for change in changes {
                 effective_change_count += 1;
                 match change {
-                    MptChange::Put { key, value } => trie.put(key, value)?,
+                    MptChange::Put { key, value } => {
+                        trie.put_with_scratch(key, value, &mut path_scratch)?
+                    }
                     MptChange::Delete { key } => {
                         // C# ignores the `Trie.Delete` return value: deleting
                         // a key that is already absent is a no-op.
-                        let _ = trie.delete(key)?;
+                        let _ = trie.delete_with_scratch(key, &mut path_scratch)?;
                     }
                 }
             }
@@ -505,54 +595,311 @@ impl MptStore {
         self.publish_overlay(block_index, new_root, overlay)
     }
 
+    pub(crate) fn apply_block_changes_lazy<F>(
+        &self,
+        block_index: u32,
+        root_before: Option<UInt256>,
+        change_capacity_hint: usize,
+        mutate: F,
+    ) -> MptResult<UInt256>
+    where
+        F: FnOnce(&mut LazyMptChangeSink<'_>) -> MptResult<usize>,
+    {
+        let _writer = self.write_gate.lock();
+        let mut sink = LazyMptChangeSink::new(
+            self,
+            root_before,
+            change_capacity_hint.saturating_mul(2).saturating_add(2),
+        );
+
+        let stage_start = Instant::now();
+        let effective_change_count = mutate(&mut sink)?;
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::Changes,
+            effective_change_count as u64,
+        );
+        StateRootApplyMetrics::record_stage(
+            StateRootApplyStage::MutateChanges,
+            elapsed_us(stage_start),
+        );
+
+        let Some(mut trie) = sink.trie.take() else {
+            let stage_start = Instant::now();
+            let new_root = match root_before {
+                Some(root_before) => root_before,
+                None => Node::new().try_hash()?,
+            };
+            StateRootApplyMetrics::record_stage(
+                StateRootApplyStage::RootHash,
+                elapsed_us(stage_start),
+            );
+
+            let mut overlay = Self::local_root_overlay(block_index, new_root);
+            Self::ensure_empty_root_record(&mut overlay, new_root)?;
+            return self.publish_overlay(block_index, new_root, overlay);
+        };
+        let batch = sink.batch.take().expect("lazy MPT trie has a write batch");
+
+        let stage_start = Instant::now();
+        let new_root = trie.root().try_hash()?;
+        StateRootApplyMetrics::record_stage(StateRootApplyStage::RootHash, elapsed_us(stage_start));
+        if !(effective_change_count == 0 && root_before.is_some()) {
+            let stage_start = Instant::now();
+            trie.commit()?;
+            StateRootApplyMetrics::record_stage(
+                StateRootApplyStage::TrieCommit,
+                elapsed_us(stage_start),
+            );
+        }
+        drop(trie);
+
+        let stage_start = Instant::now();
+        let overlay = {
+            let mut overlay = batch.overlay.lock();
+            Self::insert_local_root_records(&mut overlay, block_index, new_root);
+            Self::ensure_empty_root_record(&mut overlay, new_root)?;
+            std::mem::take(&mut *overlay)
+        };
+        StateRootApplyMetrics::record_stage(
+            StateRootApplyStage::OverlayPrepare,
+            elapsed_us(stage_start),
+        );
+        drop(batch);
+
+        self.publish_overlay(block_index, new_root, overlay)
+    }
+
+    pub(crate) fn apply_block_changes_batch(
+        &self,
+        root_before: Option<UInt256>,
+        blocks: &[MptBlockChanges<'_>],
+    ) -> MptResult<Vec<UInt256>> {
+        if blocks.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let _writer = self.write_gate.lock();
+        self.validate_ordered_batch(root_before, blocks)?;
+        if let Some(root_before) = root_before
+            && blocks.iter().all(|block| block.changes.is_empty())
+        {
+            let samples = blocks.len() as u64;
+            Self::record_count_samples(StateRootApplyCountKind::Changes, 0, samples);
+            Self::record_stage_samples(StateRootApplyStage::MutateChanges, 0, samples);
+            Self::record_stage_samples(StateRootApplyStage::RootHash, 0, samples);
+
+            let stage_start = Instant::now();
+            let mut overlay = HashMap::with_capacity(blocks.len() + 1);
+            for block in blocks {
+                Self::insert_local_root_records(&mut overlay, block.block_index, root_before);
+            }
+            Self::ensure_empty_root_record(&mut overlay, root_before)?;
+            Self::record_stage_samples(
+                StateRootApplyStage::OverlayPrepare,
+                elapsed_us(stage_start),
+                samples,
+            );
+
+            self.publish_overlay_with_samples(
+                blocks.last().expect("non-empty batch").block_index,
+                root_before,
+                overlay,
+                blocks.len(),
+            )?;
+            return Ok(vec![root_before; blocks.len()]);
+        }
+
+        let overlay_capacity = blocks
+            .iter()
+            .map(|block| block.changes.len().saturating_mul(2).saturating_add(2))
+            .sum();
+        let batch = Arc::new(MptWriteBatch::new(
+            Arc::clone(&self.kv.read()),
+            self.backing_snapshot(),
+            overlay_capacity,
+        ));
+        let mut trie = Trie::new(Arc::clone(&batch), root_before, self.full_state);
+        let mut roots = Vec::with_capacity(blocks.len());
+        let mut current_root = root_before;
+        let mut path_scratch = Vec::new();
+
+        for block in blocks {
+            let stage_start = Instant::now();
+            let mut effective_change_count = 0usize;
+            for change in block.changes {
+                effective_change_count += 1;
+                match change {
+                    MptChange::Put { key, value } => {
+                        trie.put_with_scratch(key, value, &mut path_scratch)?
+                    }
+                    MptChange::Delete { key } => {
+                        let _ = trie.delete_with_scratch(key, &mut path_scratch)?;
+                    }
+                }
+            }
+            StateRootApplyMetrics::record_count(
+                StateRootApplyCountKind::Changes,
+                effective_change_count as u64,
+            );
+            StateRootApplyMetrics::record_stage(
+                StateRootApplyStage::MutateChanges,
+                elapsed_us(stage_start),
+            );
+
+            let stage_start = Instant::now();
+            let new_root = trie.root().try_hash()?;
+            StateRootApplyMetrics::record_stage(
+                StateRootApplyStage::RootHash,
+                elapsed_us(stage_start),
+            );
+
+            if !(effective_change_count == 0 && current_root.is_some()) {
+                let stage_start = Instant::now();
+                trie.commit()?;
+                StateRootApplyMetrics::record_stage(
+                    StateRootApplyStage::TrieCommit,
+                    elapsed_us(stage_start),
+                );
+            }
+
+            let stage_start = Instant::now();
+            {
+                let mut overlay = batch.overlay.lock();
+                Self::insert_local_root_records(&mut overlay, block.block_index, new_root);
+                Self::ensure_empty_root_record(&mut overlay, new_root)?;
+            }
+            StateRootApplyMetrics::record_stage(
+                StateRootApplyStage::OverlayPrepare,
+                elapsed_us(stage_start),
+            );
+
+            roots.push(new_root);
+            current_root = Some(new_root);
+        }
+
+        let overlay = {
+            let mut overlay = batch.overlay.lock();
+            std::mem::take(&mut *overlay)
+        };
+        drop(trie);
+        drop(batch);
+
+        self.publish_overlay_with_samples(
+            blocks.last().expect("non-empty batch").block_index,
+            *roots.last().expect("non-empty roots"),
+            overlay,
+            blocks.len(),
+        )?;
+        Ok(roots)
+    }
+
+    fn validate_ordered_batch(
+        &self,
+        root_before: Option<UInt256>,
+        blocks: &[MptBlockChanges<'_>],
+    ) -> MptResult<()> {
+        let first = blocks
+            .first()
+            .expect("batch validation is only called for non-empty batches");
+        match (self.current_local_root(), root_before) {
+            (None, None) if first.block_index == 0 => {}
+            (None, None) => {
+                return Err(MptError::invalid(format!(
+                    "non-contiguous state-service MPT batch: no local root exists before block {}",
+                    first.block_index
+                )));
+            }
+            (Some((previous_index, current_root)), Some(root_before))
+                if previous_index.checked_add(1) == Some(first.block_index)
+                    && current_root == root_before => {}
+            (Some((previous_index, current_root)), Some(root_before)) => {
+                return Err(MptError::invalid(format!(
+                    "non-contiguous state-service MPT batch: current local root is ({previous_index}, {current_root}), requested previous root is {root_before} before block {}",
+                    first.block_index
+                )));
+            }
+            (None, Some(root_before)) => {
+                return Err(MptError::invalid(format!(
+                    "non-contiguous state-service MPT batch: requested previous root {root_before} but no local root exists before block {}",
+                    first.block_index
+                )));
+            }
+            (Some((previous_index, current_root)), None) => {
+                return Err(MptError::invalid(format!(
+                    "non-contiguous state-service MPT batch: current local root is ({previous_index}, {current_root}) but no previous root was supplied before block {}",
+                    first.block_index
+                )));
+            }
+        }
+
+        for pair in blocks.windows(2) {
+            if pair[0].block_index.checked_add(1) != Some(pair[1].block_index) {
+                return Err(MptError::invalid(format!(
+                    "non-contiguous state-service MPT batch: block {} followed by {}",
+                    pair[0].block_index, pair[1].block_index
+                )));
+            }
+        }
+        Ok(())
+    }
+
     fn publish_overlay(
         &self,
         block_index: u32,
         new_root: UInt256,
         overlay: HashMap<Vec<u8>, Option<Vec<u8>>>,
     ) -> MptResult<UInt256> {
+        self.publish_overlay_with_samples(block_index, new_root, overlay, 1)
+    }
+
+    fn publish_overlay_with_samples(
+        &self,
+        block_index: u32,
+        new_root: UInt256,
+        overlay: HashMap<Vec<u8>, Option<Vec<u8>>>,
+        samples: usize,
+    ) -> MptResult<UInt256> {
+        let samples = samples.max(1) as u64;
         let stage_start = Instant::now();
         let backing_result = self.commit_overlay_to_backing(&overlay);
-        StateRootApplyMetrics::record_stage(
+        Self::record_stage_samples(
             StateRootApplyStage::BackingCommit,
             elapsed_us(stage_start),
+            samples,
         );
-        backing_result?;
+        let backing_counts = backing_result?;
 
         let stage_start = Instant::now();
-        let mut kv = self.kv.write();
-        let mut overlay_puts = 0u64;
-        let mut overlay_deletes = 0u64;
+        let mut overlay_counts = OverlayCounts::default();
         if self.should_publish_live_overlay() {
+            let mut kv = self.kv.write();
             let map = Arc::make_mut(&mut *kv);
             for (key, value) in overlay {
-                Self::count_overlay_entry(value.as_ref(), &mut overlay_puts, &mut overlay_deletes);
+                overlay_counts.record(value.as_ref());
                 map.insert(key, value);
             }
         } else {
-            for (_, value) in overlay {
-                Self::count_overlay_entry(value.as_ref(), &mut overlay_puts, &mut overlay_deletes);
-            }
-            *kv = Arc::new(HashMap::new());
+            overlay_counts = backing_counts;
+            self.clear_live_overlay_if_needed();
         }
-        Self::record_overlay_counts(overlay_puts, overlay_deletes);
+        Self::record_overlay_counts(overlay_counts, samples);
         *self.latest_local_root.write() = Some((block_index, new_root));
-        StateRootApplyMetrics::record_stage(
+        Self::record_stage_samples(
             StateRootApplyStage::PublishGeneration,
             elapsed_us(stage_start),
+            samples,
         );
         Ok(new_root)
     }
 
-    fn count_overlay_entry(
-        value: Option<&Vec<u8>>,
-        overlay_puts: &mut u64,
-        overlay_deletes: &mut u64,
-    ) {
-        if value.is_some() {
-            *overlay_puts += 1;
-        } else {
-            *overlay_deletes += 1;
+    fn clear_live_overlay_if_needed(&self) {
+        if self.kv.read().is_empty() {
+            return;
+        }
+
+        let mut kv = self.kv.write();
+        if !kv.is_empty() {
+            *kv = Arc::new(HashMap::new());
         }
     }
 
@@ -611,16 +958,39 @@ impl MptStore {
         key
     }
 
-    fn record_overlay_counts(overlay_puts: u64, overlay_deletes: u64) {
-        StateRootApplyMetrics::record_count(
+    fn record_overlay_counts(counts: OverlayCounts, samples: u64) {
+        let samples = samples.max(1);
+        Self::record_count_samples(
             StateRootApplyCountKind::OverlayEntries,
-            overlay_puts + overlay_deletes,
+            counts.entries(),
+            samples,
         );
-        StateRootApplyMetrics::record_count(StateRootApplyCountKind::OverlayPuts, overlay_puts);
-        StateRootApplyMetrics::record_count(
+        Self::record_count_samples(StateRootApplyCountKind::OverlayPuts, counts.puts, samples);
+        Self::record_count_samples(
             StateRootApplyCountKind::OverlayDeletes,
-            overlay_deletes,
+            counts.deletes,
+            samples,
         );
+    }
+
+    fn record_stage_samples(stage: StateRootApplyStage, elapsed_us: u64, samples: u64) {
+        let samples = samples.max(1);
+        let base = elapsed_us / samples;
+        let remainder = elapsed_us % samples;
+        for index in 0..samples {
+            let sample = base + u64::from(index < remainder);
+            StateRootApplyMetrics::record_stage(stage, sample);
+        }
+    }
+
+    fn record_count_samples(kind: StateRootApplyCountKind, count: u64, samples: u64) {
+        let samples = samples.max(1);
+        let base = count / samples;
+        let remainder = count % samples;
+        for index in 0..samples {
+            let sample = base + u64::from(index < remainder);
+            StateRootApplyMetrics::record_count(kind, sample);
+        }
     }
 
     /// Rewinds local state-root records for an inclusive reverted block range.
@@ -677,12 +1047,12 @@ impl MptStore {
 
         self.commit_overlay_to_backing(&overlay)?;
 
-        let mut kv = self.kv.write();
         if self.should_publish_live_overlay() {
+            let mut kv = self.kv.write();
             let map = Arc::make_mut(&mut *kv);
             map.extend(overlay);
         } else {
-            *kv = Arc::new(HashMap::new());
+            self.clear_live_overlay_if_needed();
         }
         *self.latest_local_root.write() = rewound_latest_root;
         Ok(())
@@ -691,14 +1061,16 @@ impl MptStore {
     fn commit_overlay_to_backing(
         &self,
         overlay: &HashMap<Vec<u8>, Option<Vec<u8>>>,
-    ) -> MptResult<()> {
+    ) -> MptResult<OverlayCounts> {
         match self.backing.as_ref() {
-            None => Ok(()),
+            None => Ok(OverlayCounts::default()),
             Some(backing) => {
                 let mut entries = overlay.iter().collect::<Vec<_>>();
                 entries.sort_unstable_by(|left, right| left.0.cmp(right.0));
+                let mut counts = OverlayCounts::default();
                 let mut visit = |sink: &mut dyn FnMut(&[u8], Option<&[u8]>)| {
                     for (key, value) in &entries {
+                        counts.record(value.as_ref());
                         sink(key, value.as_deref());
                     }
                 };
@@ -708,9 +1080,10 @@ impl MptStore {
                         MptError::storage(format!("state-service backing commit failed: {err}"))
                     })?;
                 if committed {
-                    return Ok(());
+                    return Ok(counts);
                 }
 
+                let mut counts = OverlayCounts::default();
                 let mut snapshot = backing.snapshot();
                 let writer = Arc::get_mut(&mut snapshot).ok_or_else(|| {
                     MptError::storage(
@@ -718,6 +1091,7 @@ impl MptStore {
                     )
                 })?;
                 for (key, value) in entries {
+                    counts.record(value.as_ref());
                     match value {
                         Some(value) => writer.put(key.clone(), value.clone()),
                         None => writer.delete(key.clone()),
@@ -728,7 +1102,8 @@ impl MptStore {
                 }
                 writer.try_commit().map_err(|err| {
                     MptError::storage(format!("state-service backing commit failed: {err}"))
-                })
+                })?;
+                Ok(counts)
             }
         }
     }

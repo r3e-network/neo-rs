@@ -13,7 +13,8 @@
 //! C# `Blockchain_Committing_Handler` filtering rules live in one place.
 
 use crate::StateRootApplyMetrics;
-use crate::metrics::StateRootApplyStage;
+use crate::metrics::{StateRootApplyCountKind, StateRootApplyStage};
+use crate::state_store::ProjectedMptBlock;
 use crate::state_store::StateStore;
 use neo_crypto::mpt_trie::MptResult;
 use neo_payloads::ApplicationExecuted;
@@ -23,7 +24,7 @@ use neo_storage::DataCache;
 use std::any::Any;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Receiver, SyncSender};
+use std::sync::mpsc::{Receiver, SyncSender, TryRecvError};
 use std::thread::{self, JoinHandle};
 use tracing::{debug, warn};
 
@@ -243,7 +244,7 @@ fn elapsed_us(start: std::time::Instant) -> u64 {
     start.elapsed().as_micros().min(u64::MAX as u128) as u64
 }
 
-struct AsyncApplyRequest {
+pub(crate) struct AsyncApplyRequest {
     block_index: u32,
     changes: Vec<crate::mpt_store::MptChange>,
     project_us: u64,
@@ -320,7 +321,13 @@ impl AsyncStateRootWorker {
     }
 
     fn enqueue(&self, request: AsyncApplyRequest) -> bool {
-        self.enqueue_command(AsyncCommand::Apply(request)).is_ok()
+        let enqueue_start = std::time::Instant::now();
+        let result = self.enqueue_command(AsyncCommand::Apply(request));
+        StateRootApplyMetrics::record_stage(
+            StateRootApplyStage::EnqueueBlocking,
+            elapsed_us(enqueue_start),
+        );
+        result.is_ok()
     }
 
     fn enqueue_command(&self, command: AsyncCommand) -> Result<(), &'static str> {
@@ -388,33 +395,30 @@ fn worker_loop(
     failed: Arc<AtomicBool>,
     recycled_change_buffers: Arc<parking_lot::Mutex<Vec<Vec<crate::mpt_store::MptChange>>>>,
 ) {
-    while let Ok(command) = rx.recv() {
+    let mut pending_command = None;
+    loop {
+        let command = match pending_command.take() {
+            Some(command) => command,
+            None => match rx.recv() {
+                Ok(command) => command,
+                Err(_) => break,
+            },
+        };
         match command {
             AsyncCommand::Apply(request) => {
-                StateRootApplyMetrics::record_stage(
-                    StateRootApplyStage::QueueWait,
-                    elapsed_us(request.queued_at),
-                );
-                match state_store.apply_projected_mpt_changes(
-                    request.block_index,
-                    &request.changes,
-                    request.project_us,
-                    request.total_start,
-                ) {
-                    Ok(Some(root_hash)) => {
-                        let _ = log_applied_root(request.block_index, &root_hash);
-                    }
-                    Ok(None) => {
-                        let _ = log_skipped_root(request.block_index);
-                    }
-                    Err(err) => {
-                        failed.store(true, Ordering::Release);
-                        let _ = log_failed_root(request.block_index, &err);
+                let mut batch = vec![request];
+                loop {
+                    match rx.try_recv() {
+                        Ok(AsyncCommand::Apply(next)) => batch.push(next),
+                        Ok(other) => {
+                            pending_command = Some(other);
+                            break;
+                        }
+                        Err(TryRecvError::Empty) => break,
+                        Err(TryRecvError::Disconnected) => break,
                     }
                 }
-                let mut changes = request.changes;
-                changes.clear();
-                recycled_change_buffers.lock().push(changes);
+                apply_request_batch(&state_store, batch, &failed, &recycled_change_buffers);
             }
             AsyncCommand::Revert {
                 from_index,
@@ -436,6 +440,58 @@ fn worker_loop(
             }
             AsyncCommand::Stop => break,
         }
+    }
+}
+
+fn apply_request_batch(
+    state_store: &StateStore,
+    mut batch: Vec<AsyncApplyRequest>,
+    failed: &AtomicBool,
+    recycled_change_buffers: &parking_lot::Mutex<Vec<Vec<crate::mpt_store::MptChange>>>,
+) {
+    StateRootApplyMetrics::record_count(StateRootApplyCountKind::BatchBlocks, batch.len() as u64);
+
+    for request in &batch {
+        StateRootApplyMetrics::record_stage(
+            StateRootApplyStage::QueueWait,
+            elapsed_us(request.queued_at),
+        );
+    }
+
+    let projected = batch
+        .iter()
+        .map(|request| ProjectedMptBlock {
+            block_index: request.block_index,
+            changes: request.changes.as_slice(),
+            project_us: request.project_us,
+            total_start: request.total_start,
+        })
+        .collect::<Vec<_>>();
+    match state_store.apply_projected_mpt_change_batch(&projected) {
+        Ok(roots) => {
+            if roots.is_empty() {
+                for request in &batch {
+                    let _ = log_skipped_root(request.block_index);
+                }
+            } else {
+                for (request, root_hash) in batch.iter().zip(roots.iter()) {
+                    let _ = log_applied_root(request.block_index, root_hash);
+                }
+            }
+        }
+        Err(err) => {
+            failed.store(true, Ordering::Release);
+            if let Some(request) = batch.first() {
+                let _ = log_failed_root(request.block_index, &err);
+            }
+        }
+    }
+
+    let mut recycled = recycled_change_buffers.lock();
+    for request in batch.drain(..) {
+        let mut changes = request.changes;
+        changes.clear();
+        recycled.push(changes);
     }
 }
 
