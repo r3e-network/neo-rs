@@ -13,34 +13,34 @@ const UINT160_SIZE: usize = 20;
 const UINT256_SIZE: usize = 32;
 
 impl Serializable for UInt160 {
-    fn size(&self) -> usize {
-        UINT160_SIZE
-    }
-
-    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        writer.write_bytes(&self.to_bytes())
-    }
-
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
         let bytes = reader.read_bytes(UINT160_SIZE)?;
         Self::from_bytes(&bytes)
             .map_err(|e| crate::IoError::invalid_data(format!("Invalid UInt160: {e}")))
     }
+
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_bytes(&self.to_bytes())
+    }
+
+    fn size(&self) -> usize {
+        UINT160_SIZE
+    }
 }
 
 impl Serializable for UInt256 {
-    fn size(&self) -> usize {
-        UINT256_SIZE
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let bytes = reader.read_bytes(UINT256_SIZE)?;
+        Self::from_bytes(&bytes)
+            .map_err(|e| crate::IoError::invalid_data(format!("Invalid UInt256: {e}")))
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         writer.write_bytes(&self.to_bytes())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let bytes = reader.read_bytes(UINT256_SIZE)?;
-        Self::from_bytes(&bytes)
-            .map_err(|e| crate::IoError::invalid_data(format!("Invalid UInt256: {e}")))
+    fn size(&self) -> usize {
+        UINT256_SIZE
     }
 }
 

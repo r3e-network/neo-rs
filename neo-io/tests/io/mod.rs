@@ -14,7 +14,6 @@
 //! - `memory_reader_tests`: memory reader integration coverage.
 //! - `serialization_tests`: serialization integration coverage.
 //! - `simple_io_tests`: basic IO integration coverage.
-//! - `caching_tests`: cache integration coverage.
 
 mod binary_reader_tests;
 mod binary_writer_tests;
@@ -22,8 +21,6 @@ mod memory_reader_tests;
 mod serialization_tests;
 mod simple_io_tests;
 
-// Disabled tests that don't match current API
-mod caching_tests;
 // mod io_helper_tests;
 
 mod integration_tests {

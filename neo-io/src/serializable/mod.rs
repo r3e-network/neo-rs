@@ -18,6 +18,21 @@ use crate::{BinaryWriter, IoResult, MemoryReader};
 pub mod helper;
 pub mod primitives;
 
+/// Extension helpers for [`Serializable`] values mirroring
+/// `Neo.Extensions.IO.ISerializableExtensions`.
+pub trait SerializableExtensions {
+    /// Serializes this value to a byte vector.
+    fn to_array(&self) -> IoResult<Vec<u8>>;
+}
+
+impl<T: Serializable> SerializableExtensions for T {
+    fn to_array(&self) -> IoResult<Vec<u8>> {
+        let mut writer = BinaryWriter::with_capacity(self.size());
+        self.serialize(&mut writer)?;
+        Ok(writer.into_bytes())
+    }
+}
+
 /// Trait implemented by Neo types that can be serialized and deserialized.
 ///
 /// This follows the behaviour of `Neo.IO.ISerializable` from the C# codebase.
