@@ -18,7 +18,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use tracing::{debug, info};
 
-use super::config::{NodeConfig, network_scoped_path, service_store_provider};
+use super::config::{NodeConfig, StorageSection, network_scoped_path, service_store_provider};
 
 type ServiceStore = Arc<dyn neo_storage::persistence::store::Store>;
 type TokensTrackerRuntime = (
@@ -67,9 +67,10 @@ pub(super) fn build_operational_services(
         build_state_store(config, network, &storage_provider, state_service_fast_sync)?;
     let state_service = state_store.as_ref().map(|state_store| {
         let handlers = if state_service_fast_sync {
-            neo_state_service::commit_handlers::StateServiceCommitHandlers::new_async(Arc::clone(
-                state_store,
-            ))
+            neo_state_service::commit_handlers::StateServiceCommitHandlers::new_async_with_capacity(
+                Arc::clone(state_store),
+                super::FAST_SYNC_BURST_CAPACITY,
+            )
         } else {
             neo_state_service::commit_handlers::StateServiceCommitHandlers::new(Arc::clone(
                 state_store,
@@ -110,8 +111,14 @@ fn build_state_store(
 
     let mut durable_store = None;
     let state_store = if let Some(path) = &config.state_service.path {
-        let backing =
-            open_service_store("StateService", storage_provider, path, network, fast_sync)?;
+        let backing = open_service_store_with_storage_config(
+            "StateService",
+            storage_provider,
+            &config.storage,
+            path,
+            network,
+            fast_sync,
+        )?;
         durable_store = Some(Arc::clone(&backing) as ServiceStore);
         Arc::new(
             neo_state_service::StateStore::with_mpt_store(config.state_service.full_state, backing)
@@ -146,7 +153,14 @@ fn build_indexer_service(
 
     let service = if let Some(path) = &config.indexer.store_path {
         let path = network_scoped_path(path, network);
-        let store = open_service_store("NeoIndexer", storage_provider, &path, network, false)?;
+        let store = open_service_store_with_storage_config(
+            "NeoIndexer",
+            storage_provider,
+            &config.storage,
+            &path,
+            network,
+            false,
+        )?;
         Arc::new(
             neo_indexer::IndexerService::open_store_with_path(store, Some(path.clone()))
                 .with_context(|| format!("opening indexer service store at {}", path.display()))?,
@@ -181,9 +195,10 @@ fn build_application_logs_service(
     }
 
     let logs_settings = config.application_logs.settings(network);
-    let logs_store = open_service_store(
+    let logs_store = open_service_store_with_storage_config(
         "ApplicationLogs",
         storage_provider,
+        &config.storage,
         Path::new(&logs_settings.path),
         network,
         false,
@@ -214,9 +229,10 @@ fn build_tokens_tracker_services(
     }
 
     let tracker_settings = config.tokens_tracker.settings(network);
-    let tracker_store = open_service_store(
+    let tracker_store = open_service_store_with_storage_config(
         "TokensTracker",
         storage_provider,
+        &config.storage,
         Path::new(&tracker_settings.db_path),
         network,
         false,
@@ -236,22 +252,19 @@ fn build_tokens_tracker_services(
     Ok((Some(service), Some((tracker_settings, tracker_store))))
 }
 
-pub(in crate::node) fn open_service_store(
+pub(in crate::node) fn open_service_store_with_storage_config(
     service_name: &'static str,
     storage_provider: &str,
+    storage: &StorageSection,
     path: &Path,
     network: u32,
     fast_sync: bool,
 ) -> anyhow::Result<ServiceStore> {
     use neo_storage::persistence::StoreFactory;
-    use neo_storage::persistence::storage::StorageConfig;
 
     let path = network_scoped_path(path, network);
     info!(target: "neo", service = service_name, backend = storage_provider, path = %path.display(), "opening service store");
-    let cfg = StorageConfig {
-        path,
-        ..Default::default()
-    };
+    let cfg = storage.storage_config_for_path(path);
     let store = StoreFactory::get_store_with_config(storage_provider, cfg).map_err(|err| {
         anyhow::anyhow!("failed to open {service_name} {storage_provider} store: {err}")
     })?;

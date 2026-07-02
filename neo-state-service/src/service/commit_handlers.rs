@@ -73,6 +73,13 @@ impl StateServiceCommitHandlers {
         self.worker.is_some()
     }
 
+    /// Returns the async MPT worker queue capacity when async mode is enabled.
+    pub fn async_queue_capacity(&self) -> Option<usize> {
+        self.worker
+            .as_ref()
+            .map(AsyncStateRootWorker::queue_capacity)
+    }
+
     /// Number of reusable async projection buffers currently parked.
     #[cfg(test)]
     pub(crate) fn recycled_change_buffer_count(&self) -> usize {
@@ -253,6 +260,7 @@ enum AsyncCommand {
 
 struct AsyncStateRootWorker {
     tx: SyncSender<AsyncCommand>,
+    queue_capacity: usize,
     failed: Arc<AtomicBool>,
     recycled_change_buffers: Arc<parking_lot::Mutex<Vec<Vec<crate::mpt_store::MptChange>>>>,
     handle: parking_lot::Mutex<Option<JoinHandle<()>>>,
@@ -280,10 +288,15 @@ impl AsyncStateRootWorker {
 
         Self {
             tx,
+            queue_capacity: capacity,
             failed,
             recycled_change_buffers,
             handle: parking_lot::Mutex::new(Some(handle)),
         }
+    }
+
+    fn queue_capacity(&self) -> usize {
+        self.queue_capacity
     }
 
     fn is_healthy(&self) -> bool {

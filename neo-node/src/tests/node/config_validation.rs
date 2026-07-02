@@ -731,6 +731,52 @@ fn validate_storage_rejects_state_service_mpt_height_mismatch() {
 }
 
 #[test]
+fn validate_storage_reopens_mdbx_state_service_with_storage_config() {
+    use neo_storage::persistence::{StoreFactory, storage::StorageConfig};
+
+    let temp = tempfile::tempdir().expect("temp dir");
+    let chain_path = temp.path().join("chain");
+    let state_path_template = temp.path().join("StateRoot_{0}");
+    let settings = ProtocolSettings::default();
+    seed_store_tip("mdbx", &chain_path, &settings, 1).expect("seed MDBX chain tip");
+
+    let mut config = NodeConfig::default();
+    config.storage.backend = Some("mdbx".to_string());
+    config.storage.data_dir = Some(chain_path);
+    config.storage.mdbx_geometry_upper_gb = Some(1);
+    config.storage.mdbx_geometry_growth_mb = Some(16);
+    config.storage.mdbx_max_readers = Some(128);
+    config.state_service.enabled = true;
+    config.state_service.path = Some(state_path_template);
+
+    let state_path = temp
+        .path()
+        .join(format!("StateRoot_{:08X}", settings.network));
+    {
+        let state_store = StoreFactory::get_store_with_config(
+            "mdbx",
+            StorageConfig {
+                path: state_path,
+                mdbx_geometry_upper_bytes: Some(1024 * 1024 * 1024),
+                mdbx_geometry_growth_bytes: Some(16 * 1024 * 1024),
+                mdbx_max_readers: Some(128),
+                ..StorageConfig::default()
+            },
+        )
+        .expect("open MDBX StateService store");
+        let mut snapshot = state_store.snapshot();
+        let writer = Arc::get_mut(&mut snapshot).expect("exclusive snapshot");
+        writer
+            .put(vec![0x02], 1u32.to_le_bytes().to_vec())
+            .expect("write matching current root index");
+        writer.try_commit().expect("commit state root height");
+    }
+
+    validate_storage(&config, None, settings.network)
+        .expect("matching MDBX StateService MPT height validates");
+}
+
+#[test]
 fn validate_storage_rejects_state_service_without_path_for_populated_chain() {
     let temp = tempfile::tempdir().expect("temp dir");
     let chain_path = temp.path().join("chain");

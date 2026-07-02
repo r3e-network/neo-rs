@@ -90,13 +90,18 @@ fn empty_child_block(parent: &neo_payloads::Block, index: u32) -> neo_payloads::
     neo_payloads::Block::from_parts(header, Vec::new())
 }
 
-fn seed_rocksdb_tip(path: &Path, settings: &ProtocolSettings, tip: u32) -> anyhow::Result<()> {
+fn seed_store_tip(
+    backend: &str,
+    path: &Path,
+    settings: &ProtocolSettings,
+    tip: u32,
+) -> anyhow::Result<()> {
     use neo_storage::persistence::StoreCache;
 
     neo_native_contracts::install();
 
     let mut config = NodeConfig::default();
-    config.storage.backend = Some("rocksdb".to_string());
+    config.storage.backend = Some(backend.to_string());
     let store = open_store(&config, Some(path))?;
     let mut store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
@@ -116,9 +121,13 @@ fn seed_rocksdb_tip(path: &Path, settings: &ProtocolSettings, tip: u32) -> anyho
     assert_eq!(current_index, tip);
     store_cache
         .try_commit()
-        .map_err(|err| anyhow::anyhow!("commit seeded RocksDB store: {err}"))?;
+        .map_err(|err| anyhow::anyhow!("commit seeded {backend} store: {err}"))?;
 
     Ok(())
+}
+
+fn seed_rocksdb_tip(path: &Path, settings: &ProtocolSettings, tip: u32) -> anyhow::Result<()> {
+    seed_store_tip("rocksdb", path, settings, tip)
 }
 
 fn unused_local_rpc_port() -> u16 {

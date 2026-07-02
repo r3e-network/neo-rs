@@ -502,7 +502,7 @@ pub(in crate::node) fn validate_state_service_storage(
         );
     }
 
-    let state_height = read_state_service_mpt_height(storage_provider, &path)?;
+    let state_height = read_state_service_mpt_height(storage_provider, &config.storage, &path)?;
     match state_height {
         Some(height) if height == chain_height => Ok(()),
         Some(height) => anyhow::bail!(
@@ -518,22 +518,16 @@ pub(in crate::node) fn validate_state_service_storage(
 
 fn read_state_service_mpt_height(
     storage_provider: &str,
+    storage: &StorageSection,
     path: &Path,
 ) -> anyhow::Result<Option<u32>> {
     use neo_storage::persistence::StoreFactory;
-    use neo_storage::persistence::storage::StorageConfig;
 
     const CURRENT_LOCAL_ROOT_INDEX_KEY: &[u8] = &[0x02];
 
-    let store = StoreFactory::get_store_with_config(
-        storage_provider,
-        StorageConfig {
-            path: path.to_path_buf(),
-            read_only: true,
-            ..StorageConfig::default()
-        },
-    )
-    .map_err(|err| {
+    let mut cfg = storage.storage_config_for_path(path.to_path_buf());
+    cfg.read_only = true;
+    let store = StoreFactory::get_store_with_config(storage_provider, cfg).map_err(|err| {
         anyhow::anyhow!("failed to open StateService MPT {storage_provider} store: {err}")
     })?;
     let snapshot = store.snapshot();

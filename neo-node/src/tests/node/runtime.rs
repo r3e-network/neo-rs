@@ -158,8 +158,15 @@ fn daemon_context_can_track_state_service_mpt_during_cold_catchup_for_validation
 fn state_service_store_uses_fast_sync_for_validation_import() {
     let temp = tempfile::tempdir().expect("temp StateService root");
     let path = temp.path().join("StateRoot_{0}");
-    let store = services::open_service_store("StateService", "rocksdb", &path, 0x334F_454E, true)
-        .expect("open fast-sync StateService store");
+    let store = services::open_service_store_with_storage_config(
+        "StateService",
+        "rocksdb",
+        &super::config::StorageSection::default(),
+        &path,
+        0x334F_454E,
+        true,
+    )
+    .expect("open fast-sync StateService store");
 
     let rocksdb = store
         .as_any()
@@ -196,6 +203,43 @@ path = "{}"
         .expect("state service durable store");
 
     assert!(state_store.as_any().is::<neo_storage::mdbx::MdbxStore>());
+}
+
+#[test]
+fn service_stores_inherit_primary_mdbx_storage_config() {
+    let temp = tempfile::tempdir().expect("temp service store root");
+    let config: NodeConfig = toml::from_str(&format!(
+        r#"
+[storage]
+backend = "mdbx"
+mdbx_geometry_upper_gb = 1
+mdbx_geometry_growth_mb = 16
+mdbx_max_readers = 128
+
+[state_service]
+enabled = true
+path = "{}"
+"#,
+        temp.path().join("StateRoot_{{0}}").display(),
+    ))
+    .expect("parse mdbx service config");
+
+    let services = services::build_operational_services(&config, 0x334F_454E, true, false)
+        .expect("build services");
+    let service_store = services
+        .durable_stores
+        .first()
+        .expect("state service durable store");
+    let mdbx = service_store
+        .as_any()
+        .downcast_ref::<neo_storage::mdbx::MdbxStore>()
+        .expect("service store uses MDBX");
+
+    assert_eq!(
+        mdbx.info().expect("MDBX info").map_size(),
+        1024 * 1024 * 1024,
+        "service stores must inherit MDBX geometry from [storage]"
+    );
 }
 
 #[test]
@@ -266,6 +310,11 @@ track_during_catchup = true
     assert!(
         state_service.is_async(),
         "fast-sync validation should overlap native persistence with ordered StateService MPT writes"
+    );
+    assert_eq!(
+        state_service.async_queue_capacity(),
+        Some(4096),
+        "fast-sync validation should absorb one burst window of ordered StateService MPT work"
     );
 }
 
@@ -654,9 +703,15 @@ fn restore_durable_store_mode_reenables_wal_for_chain_and_service_stores() {
     let chain_store_trait: Arc<dyn Store> = chain_store.clone();
 
     let state_path = temp.path().join("StateRoot_{0}");
-    let service_store =
-        services::open_service_store("StateService", "rocksdb", &state_path, 0x334F_454E, true)
-            .expect("open fast-sync StateService store");
+    let service_store = services::open_service_store_with_storage_config(
+        "StateService",
+        "rocksdb",
+        &super::config::StorageSection::default(),
+        &state_path,
+        0x334F_454E,
+        true,
+    )
+    .expect("open fast-sync StateService store");
 
     restore_durable_store_mode(chain_store_trait.as_ref(), &[Arc::clone(&service_store)])
         .expect("restore durable mode");
@@ -697,9 +752,15 @@ fn abort_fast_sync_store_mode_discards_pending_chain_and_service_writes() {
     let chain_store_trait: Arc<dyn Store> = chain_store.clone();
 
     let state_path = temp.path().join("StateRoot_{0}");
-    let service_store =
-        services::open_service_store("StateService", "rocksdb", &state_path, 0x334F_454E, true)
-            .expect("open fast-sync StateService store");
+    let service_store = services::open_service_store_with_storage_config(
+        "StateService",
+        "rocksdb",
+        &super::config::StorageSection::default(),
+        &state_path,
+        0x334F_454E,
+        true,
+    )
+    .expect("open fast-sync StateService store");
 
     let chain_key = StorageKey::new(77, b"partial-chain-block".to_vec());
     let service_key = StorageKey::new(88, b"partial-state-root".to_vec());
