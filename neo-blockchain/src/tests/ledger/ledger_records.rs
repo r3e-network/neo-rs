@@ -1,6 +1,50 @@
 use super::*;
 use neo_payloads::Header;
 
+#[test]
+fn optimized_trimmed_block_serializer_matches_canonical_trimmed_block_bytes() {
+    let mut empty_header = Header::new();
+    empty_header.set_index(11);
+    let empty_block = Block::from_parts(empty_header, Vec::new());
+    let expected_empty = {
+        let trimmed = neo_payloads::TrimmedBlock::new(empty_block.header.clone(), Vec::new());
+        let mut writer = neo_io::BinaryWriter::with_capacity(trimmed.size());
+        trimmed.serialize(&mut writer).expect("canonical empty");
+        writer.into_bytes()
+    };
+
+    assert_eq!(
+        LedgerRecords::serialize_trimmed_block(&empty_block, &[])
+            .expect("optimized empty trimmed block"),
+        expected_empty
+    );
+
+    let mut tx_header = Header::new();
+    tx_header.set_index(12);
+    let mut tx = Transaction::new();
+    tx.set_nonce(99);
+    tx.set_script(vec![0x40]); // RET
+    tx.set_signers(vec![neo_payloads::Signer::new(
+        UInt160::from_bytes(&[0x22; 20]).unwrap(),
+        neo_primitives::WitnessScope::NONE,
+    )]);
+    tx.set_witnesses(vec![neo_payloads::Witness::empty()]);
+    let tx_hash = tx.try_hash().expect("tx hash");
+    let tx_block = Block::from_parts(tx_header, vec![tx]);
+    let expected_tx = {
+        let trimmed = neo_payloads::TrimmedBlock::new(tx_block.header.clone(), vec![tx_hash]);
+        let mut writer = neo_io::BinaryWriter::with_capacity(trimmed.size());
+        trimmed.serialize(&mut writer).expect("canonical tx");
+        writer.into_bytes()
+    };
+
+    assert_eq!(
+        LedgerRecords::serialize_trimmed_block(&tx_block, &[tx_hash])
+            .expect("optimized tx trimmed block"),
+        expected_tx
+    );
+}
+
 /// The keys built here must parse through the Rust `LedgerContract`
 /// readers — that is the whole point of writing via its codec.
 #[test]

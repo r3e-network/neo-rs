@@ -44,7 +44,7 @@
 use neo_error::{CoreError, CoreResult};
 use neo_io::Serializable;
 use neo_native_contracts::LedgerContract;
-use neo_payloads::{Block, Transaction, TransactionAttribute, TrimmedBlock};
+use neo_payloads::{Block, Transaction, TransactionAttribute};
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::{DataCache, StorageItem, StorageKey};
 use neo_vm_rs::VmState as VMState;
@@ -118,6 +118,32 @@ impl LedgerRecords {
         StorageKey::new(LedgerContract::ID, vec![PREFIX_CURRENT_BLOCK])
     }
 
+    /// Serializes the `TrimmedBlock` bytes persisted under `Prefix_Block`.
+    ///
+    /// This is intentionally byte-for-byte the same as
+    /// `TrimmedBlock::new(block.header.clone(), hashes.to_vec()).serialize(...)`,
+    /// but it avoids allocating a temporary `TrimmedBlock` and hash vector in
+    /// the empty-block fast-forward path, where the ledger still has to persist
+    /// one trimmed block per height.
+    fn serialize_trimmed_block(block: &Block, hashes: &[UInt256]) -> CoreResult<Vec<u8>> {
+        let mut writer = neo_io::BinaryWriter::with_capacity(
+            <neo_payloads::Header as Serializable>::size(&block.header)
+                + neo_io::serializable::helper::SerializeHelper::get_var_size_serializable_slice(
+                    hashes,
+                ),
+        );
+        <neo_payloads::Header as Serializable>::serialize(&block.header, &mut writer)
+            .map_err(|e| CoreError::serialization(format!("ledger records: block header: {e}")))?;
+        writer
+            .write_var_int(hashes.len() as u64)
+            .map_err(|e| CoreError::serialization(format!("ledger records: hash count: {e}")))?;
+        for hash in hashes {
+            <UInt256 as Serializable>::serialize(hash, &mut writer)
+                .map_err(|e| CoreError::serialization(format!("ledger records: tx hash: {e}")))?;
+        }
+        Ok(writer.into_bytes())
+    }
+
     /// The exact write set of C# `LedgerContract.OnPersistAsync`: the
     /// block-hash index entry, the trimmed block, the per-transaction
     /// records (initial `VMState::NONE`, like C#'s `State = VMState.NONE`),
@@ -144,14 +170,9 @@ impl LedgerRecords {
                 CoreError::invalid_operation(format!("ledger records: tx hash: {e}"))
             })?);
         }
-        let trimmed = TrimmedBlock::new(block.header.clone(), tx_hashes.clone());
-        let mut writer = neo_io::BinaryWriter::new();
-        trimmed
-            .serialize(&mut writer)
-            .map_err(|e| CoreError::serialization(format!("ledger records: trimmed block: {e}")))?;
         cache.add(
             Self::block_key(block_hash),
-            StorageItem::from_bytes(writer.into_bytes()),
+            StorageItem::from_bytes(Self::serialize_trimmed_block(block, &tx_hashes)?),
         );
 
         // Per-transaction records + conflict stubs, in block order (later
