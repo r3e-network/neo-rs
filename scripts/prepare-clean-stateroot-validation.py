@@ -236,6 +236,11 @@ def build_plan(
                 str(log_dir),
                 "--summary-jsonl",
                 str(work_root / "milestone-summary.jsonl"),
+                "--fast-sync",
+                "--fast-sync-cache",
+                str(work_root / "fast-sync-cache"),
+                "--initial-height",
+                "0",
             ],
             "start-stack": [
                 "python3",

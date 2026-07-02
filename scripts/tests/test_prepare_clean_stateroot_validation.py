@@ -134,6 +134,11 @@ class PrepareCleanStateRootValidationTests(unittest.TestCase):
             self.assertIn("--reference", milestone_command)
             self.assertIn("--summary-jsonl", milestone_command)
             self.assertIn(str(work_root / "milestone-summary.jsonl"), milestone_command)
+            self.assertIn("--fast-sync", milestone_command)
+            self.assertIn("--fast-sync-cache", milestone_command)
+            self.assertIn(str(work_root / "fast-sync-cache"), milestone_command)
+            self.assertIn("--initial-height", milestone_command)
+            self.assertIn("0", milestone_command)
             self.assertIn("--checkpoint-execute", plan["commands"]["start-stack"])
 
     def test_prepare_workspace_refuses_existing_work_root_without_force(self):

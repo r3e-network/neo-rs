@@ -19,9 +19,10 @@ DEFAULT_RPC = "http://127.0.0.1:21332"
 DEFAULT_STORAGE_PROVIDER = "mdbx"
 DEFAULT_RESTORE_SCRIPT = "scripts/restore-checkpoint.sh"
 DEFAULT_SYNC_SPEED_FLOOR_BPS = 1500.0
-DEFAULT_SYNC_SPEED_CEILING_BPS = 2000.0
+DEFAULT_SYNC_SPEED_CEILING_BPS = None
 DEFAULT_MINIMUM_CHECKPOINT_COUNT = 3
 DEFAULT_MINIMUM_TRANSACTION_BLOCKS = 1000
+DEFAULT_MINIMUM_REFERENCE_SAMPLES = 5
 DEFAULT_REFERENCE_RPCS = [
     "http://seed1.neo.org:10332",
     "http://seed2.neo.org:10332",
@@ -123,7 +124,7 @@ def bounded_command(
     storage_provider: str = DEFAULT_STORAGE_PROVIDER,
     metrics_url: str | None = None,
     sync_speed_floor_bps: float | None = DEFAULT_SYNC_SPEED_FLOOR_BPS,
-    sync_speed_ceiling_bps: float | None = DEFAULT_SYNC_SPEED_CEILING_BPS,
+    sync_speed_ceiling_bps: float | None = None,
     fast_sync: bool = False,
     fast_sync_cache: Path | None = None,
     initial_height: int | None = None,
@@ -628,6 +629,7 @@ def build_plan(
 ) -> dict:
     steps = []
     for height in milestones:
+        is_fast_sync_step = fast_sync
         is_first_fast_sync_step = fast_sync and height == milestones[0]
         steps.append(
             {
@@ -650,8 +652,8 @@ def build_plan(
                     sync_speed_ceiling_bps=(
                         None if is_first_fast_sync_step else sync_speed_ceiling_bps
                     ),
-                    fast_sync=is_first_fast_sync_step,
-                    fast_sync_cache=(fast_sync_cache if is_first_fast_sync_step else None),
+                    fast_sync=is_fast_sync_step,
+                    fast_sync_cache=(fast_sync_cache if is_fast_sync_step else None),
                     initial_height=initial_height if is_first_fast_sync_step else None,
                     require_metrics_samples=metrics_url is not None,
                 ),
@@ -766,6 +768,211 @@ def milestone_summary(result: dict) -> dict:
         "height_sample_rate_summary": height_sample_rate_summary(report),
         "metrics_sample_summary": metrics_sample_summary(report),
         "transaction_work_summary": transaction_work_summary(report),
+    }
+
+
+def fast_sync_import_report(item: dict[str, Any]) -> dict[str, Any]:
+    sync_proof = item.get("sync_proof") or {}
+    if not isinstance(sync_proof, dict):
+        return {}
+    import_report = sync_proof.get("fast_sync_import") or {}
+    if not isinstance(import_report, dict):
+        return {}
+    return import_report
+
+
+def transaction_import_proof_milestones(
+    completed: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    proofs: list[dict[str, Any]] = []
+    for item in completed:
+        if item.get("speed_proof_source") != "fast-sync-transaction-blocks":
+            continue
+        if item.get("import_window_blocks_per_second") is None:
+            continue
+        try:
+            bps = float(item["import_window_blocks_per_second"])
+        except (TypeError, ValueError):
+            continue
+        import_report = fast_sync_import_report(item)
+        proofs.append(
+            {
+                "height": item.get("height") or item.get("last_height"),
+                "local_root": item.get("local_root"),
+                "transaction_import_blocks_per_second": bps,
+                "transaction_blocks": import_report.get("transaction_blocks"),
+                "transactions": import_report.get("transactions"),
+                "transaction_block_import_seconds": import_report.get(
+                    "transaction_block_import_seconds"
+                ),
+                "successful_reference_samples": item.get(
+                    "successful_reference_samples", 0
+                ),
+                "reference_sample_count": item.get("reference_sample_count", 0),
+                "replay_window_blocks_per_second": item.get(
+                    "replay_window_blocks_per_second"
+                ),
+            }
+        )
+    return proofs
+
+
+def transaction_import_floor_violations(
+    proofs: list[dict[str, Any]],
+    *,
+    sync_speed_floor_bps: float,
+) -> list[dict[str, Any]]:
+    violations: list[dict[str, Any]] = []
+    for proof in proofs:
+        bps = float(proof.get("transaction_import_blocks_per_second") or 0.0)
+        if bps >= sync_speed_floor_bps:
+            continue
+        violation = dict(proof)
+        violation["shortfall_blocks_per_second"] = sync_speed_floor_bps - bps
+        violations.append(violation)
+    return violations
+
+
+def transaction_import_sample_size_violations(
+    proofs: list[dict[str, Any]],
+    *,
+    minimum_transaction_blocks: int,
+) -> list[dict[str, Any]]:
+    violations: list[dict[str, Any]] = []
+    for proof in proofs:
+        try:
+            transaction_blocks = int(proof.get("transaction_blocks") or 0)
+        except (TypeError, ValueError):
+            transaction_blocks = 0
+        if transaction_blocks >= minimum_transaction_blocks:
+            continue
+        violation = dict(proof)
+        violation["minimum_transaction_blocks"] = minimum_transaction_blocks
+        violation["missing_transaction_blocks"] = (
+            minimum_transaction_blocks - transaction_blocks
+        )
+        violations.append(violation)
+    return violations
+
+
+def reference_sample_size_violations(
+    proofs: list[dict[str, Any]],
+    *,
+    minimum_reference_samples: int,
+) -> list[dict[str, Any]]:
+    violations: list[dict[str, Any]] = []
+    for proof in proofs:
+        try:
+            successful_samples = int(proof.get("successful_reference_samples") or 0)
+            sample_count = int(proof.get("reference_sample_count") or 0)
+        except (TypeError, ValueError):
+            successful_samples = 0
+            sample_count = 0
+        if (
+            successful_samples >= minimum_reference_samples
+            and sample_count >= minimum_reference_samples
+        ):
+            continue
+        violation = dict(proof)
+        violation["minimum_reference_samples"] = minimum_reference_samples
+        violation["missing_successful_reference_samples"] = max(
+            minimum_reference_samples - successful_samples,
+            0,
+        )
+        violation["missing_reference_samples"] = max(
+            minimum_reference_samples - sample_count,
+            0,
+        )
+        violations.append(violation)
+    return violations
+
+
+def production_proof_readiness(
+    *,
+    mode: str,
+    milestones: list[dict[str, Any]],
+    completed: list[dict[str, Any]],
+    retained_usable_checkpoint_count: int,
+    sync_speed_floor_bps: float,
+    minimum_transaction_blocks: int,
+    minimum_full_state_checkpoints: int,
+    minimum_reference_samples: int = DEFAULT_MINIMUM_REFERENCE_SAMPLES,
+) -> dict[str, Any]:
+    reference_mismatches = [
+        item for item in milestones if item.get("reference_matches_local") is not True
+    ]
+    state_mismatches = [
+        item for item in milestones if item.get("stateroot_matches_chain") is not True
+    ]
+    transaction_import_proofs = transaction_import_proof_milestones(completed)
+    floor_violations = transaction_import_floor_violations(
+        transaction_import_proofs,
+        sync_speed_floor_bps=sync_speed_floor_bps,
+    )
+    sample_size_violations = transaction_import_sample_size_violations(
+        transaction_import_proofs,
+        minimum_transaction_blocks=minimum_transaction_blocks,
+    )
+    reference_sample_violations = reference_sample_size_violations(
+        transaction_import_proofs,
+        minimum_reference_samples=minimum_reference_samples,
+    )
+    checkpoint_floor_met = (
+        retained_usable_checkpoint_count >= minimum_full_state_checkpoints
+    )
+
+    blocking_reasons: list[str] = []
+    if mode != "completed":
+        blocking_reasons.append("milestone run did not complete")
+    if state_mismatches:
+        blocking_reasons.append("state root mismatch exists")
+    if reference_mismatches:
+        blocking_reasons.append("reference state root mismatch exists")
+    if reference_sample_violations:
+        blocking_reasons.append(
+            f"reference state root proof has fewer than "
+            f"{minimum_reference_samples} successful samples"
+        )
+    if not transaction_import_proofs:
+        blocking_reasons.append("missing transaction-bearing import speed proof")
+    if floor_violations:
+        blocking_reasons.append(
+            "transaction-bearing import speed is below configured floor"
+        )
+    if sample_size_violations:
+        blocking_reasons.append(
+            f"transaction import proof has fewer than {minimum_transaction_blocks} "
+            "transaction-bearing blocks"
+        )
+    if not checkpoint_floor_met:
+        blocking_reasons.append(
+            f"fewer than {minimum_full_state_checkpoints} restore-verified "
+            "full-state checkpoints retained"
+        )
+
+    return {
+        "ready": not blocking_reasons,
+        "blocking_reasons": blocking_reasons,
+        "minimum_transaction_blocks": minimum_transaction_blocks,
+        "minimum_full_state_checkpoints": minimum_full_state_checkpoints,
+        "minimum_reference_samples": minimum_reference_samples,
+        "state_roots_match_chain": not state_mismatches,
+        "references_match_local": not reference_mismatches,
+        "reference_sample_size_met": not reference_sample_violations
+        and bool(transaction_import_proofs),
+        "reference_sample_size_violation_count": len(reference_sample_violations),
+        "reference_sample_size_violations": reference_sample_violations,
+        "transaction_import_proof_count": len(transaction_import_proofs),
+        "transaction_import_speed_floor_met": not floor_violations
+        and bool(transaction_import_proofs),
+        "transaction_import_floor_violation_count": len(floor_violations),
+        "transaction_import_floor_violations": floor_violations,
+        "transaction_import_sample_size_met": not sample_size_violations
+        and bool(transaction_import_proofs),
+        "transaction_import_sample_size_violation_count": len(sample_size_violations),
+        "transaction_import_sample_size_violations": sample_size_violations,
+        "restore_verified_checkpoint_count": retained_usable_checkpoint_count,
+        "restore_verified_checkpoint_floor_met": checkpoint_floor_met,
     }
 
 
@@ -1287,6 +1494,25 @@ def build_run_summary(
         if item.get("blocks_per_second") is not None
     ]
     latest = completed[-1] if completed else (milestones[-1] if milestones else {})
+    sync_speed_floor_bps = float(
+        plan.get("sync_speed_floor_blocks_per_second")
+        or DEFAULT_SYNC_SPEED_FLOOR_BPS
+    )
+    minimum_transaction_blocks = int(
+        plan.get(
+            "minimum_transaction_blocks_for_speed_proof",
+            DEFAULT_MINIMUM_TRANSACTION_BLOCKS,
+        )
+    )
+    readiness = production_proof_readiness(
+        mode=mode,
+        milestones=milestones,
+        completed=completed,
+        retained_usable_checkpoint_count=retained["retained_usable_checkpoint_count"],
+        sync_speed_floor_bps=sync_speed_floor_bps,
+        minimum_transaction_blocks=minimum_transaction_blocks,
+        minimum_full_state_checkpoints=minimum_checkpoint_count,
+    )
     return {
         "mode": mode,
         "requested_milestones": plan["milestones"],
@@ -1307,6 +1533,7 @@ def build_run_summary(
         )
         if completed
         else False,
+        "production_proof_readiness": readiness,
         "milestones": milestones,
     }
 
@@ -1624,7 +1851,10 @@ def parse_args() -> argparse.Namespace:
         "--sync-speed-ceiling-bps",
         default=DEFAULT_SYNC_SPEED_CEILING_BPS,
         type=float,
-        help="Required bounded replay speed ceiling in blocks per second.",
+        help=(
+            "Optional bounded replay speed ceiling in blocks per second. "
+            "Unset by default; production proof is a floor, not a cap."
+        ),
     )
     parser.add_argument(
         "--minimum-checkpoint-count",

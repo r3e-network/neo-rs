@@ -223,7 +223,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         self.assertEqual(plan["storage_provider"], "mdbx")
         self.assertIsNone(plan["metrics_url"])
         self.assertEqual(plan["sync_speed_floor_blocks_per_second"], 1500.0)
-        self.assertEqual(plan["sync_speed_ceiling_blocks_per_second"], 2000.0)
+        self.assertIsNone(plan["sync_speed_ceiling_blocks_per_second"])
         self.assertEqual(plan["minimum_transaction_blocks_for_speed_proof"], 1000)
         self.assertEqual(plan["milestones"], [10, 20])
         self.assertEqual(
@@ -245,8 +245,8 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         self.assertIn("--require-reference-stateroot-match", bounded)
         self.assertIn("--sync-speed-floor-bps", bounded)
         self.assertIn("1500.0", bounded)
-        self.assertIn("--sync-speed-ceiling-bps", bounded)
-        self.assertIn("2000.0", bounded)
+        self.assertNotIn("--sync-speed-ceiling-bps", bounded)
+        self.assertNotIn("2000.0", bounded)
         self.assertIn("clean/logs/neo-node-milestone-h10.log", bounded)
         checkpoint = plan["steps"][1]["checkpoint_command"]
         self.assertEqual(checkpoint[0], "scripts/checkpoint-on-height.sh")
@@ -281,7 +281,41 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         self.assertIn("http://127.0.0.1:21990/metrics", bounded)
         self.assertIn("--require-metrics-samples", bounded)
 
-    def test_build_plan_does_not_cap_first_fast_sync_height_sample_bps(self):
+    def test_build_plan_has_no_default_sync_speed_cap(self):
+        module = load_module()
+
+        plan = module.build_plan(
+            config=Path("clean/neo_mainnet_validate.toml"),
+            node_bin=Path("target/debug/neo-node"),
+            rpc_url="http://127.0.0.1:21332",
+            milestones=[10, 20],
+            poll_interval=5.0,
+            max_seconds=120.0,
+            chain_db=Path("clean/chain"),
+            stateroot_db=Path("clean/state-root-334F454E"),
+            probe_bin=Path("target/debug/neo-db-probe"),
+            references=["http://seed1.neo.org:10332"],
+            data_dir=Path("clean"),
+            checkpoint_root=Path("clean/checkpoints"),
+            checkpoint_script=Path("scripts/checkpoint-on-height.sh"),
+            log_dir=Path("clean/logs"),
+            sync_speed_floor_bps=1500.0,
+            fast_sync=True,
+            minimum_checkpoint_count=2,
+        )
+
+        fast_sync_command = plan["steps"][0]["bounded_command"]
+        replay_command = plan["steps"][1]["bounded_command"]
+
+        self.assertIn("--fast-sync", fast_sync_command)
+        self.assertIn("--sync-speed-floor-bps", fast_sync_command)
+        self.assertNotIn("--sync-speed-ceiling-bps", fast_sync_command)
+        self.assertNotIn("2000.0", fast_sync_command)
+        self.assertIn("--fast-sync", replay_command)
+        self.assertNotIn("--sync-speed-ceiling-bps", replay_command)
+        self.assertNotIn("2000.0", replay_command)
+
+    def test_build_plan_accepts_explicit_sync_speed_cap_for_experiments(self):
         module = load_module()
 
         plan = module.build_plan(
@@ -308,15 +342,11 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         fast_sync_command = plan["steps"][0]["bounded_command"]
         replay_command = plan["steps"][1]["bounded_command"]
 
-        self.assertIn("--fast-sync", fast_sync_command)
-        self.assertIn("--sync-speed-floor-bps", fast_sync_command)
         self.assertNotIn("--sync-speed-ceiling-bps", fast_sync_command)
-        self.assertNotIn("2000.0", fast_sync_command)
-        self.assertNotIn("--fast-sync", replay_command)
         self.assertIn("--sync-speed-ceiling-bps", replay_command)
         self.assertIn("2000.0", replay_command)
 
-    def test_build_plan_uses_builtin_fast_sync_only_for_first_package_validation(self):
+    def test_build_plan_uses_builtin_fast_sync_for_each_milestone(self):
         module = load_module()
 
         plan = module.build_plan(
@@ -350,8 +380,9 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         self.assertEqual(bounded[bounded.index("--poll-interval") + 1], "1.0")
         self.assertIn("--metrics-url", bounded)
         self.assertIn("--require-metrics-samples", bounded)
-        self.assertNotIn("--fast-sync", later)
-        self.assertNotIn("--fast-sync-cache", later)
+        self.assertIn("--fast-sync", later)
+        self.assertIn("--fast-sync-cache", later)
+        self.assertIn("clean/fast-sync-cache", later)
         self.assertNotIn("--initial-height", later)
         self.assertEqual(later[later.index("--poll-interval") + 1], "5.0")
         self.assertIn("--metrics-url", later)
@@ -2646,6 +2677,90 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         self.assertTrue(proof["post_probe"]["stateroot_matches_chain"])
         self.assertEqual(summary["successful_reference_samples"], 5)
         self.assertEqual(summary["reference_sample_count"], 5)
+
+    def test_production_proof_readiness_marks_ready_when_all_gates_pass(self):
+        module = load_module()
+        milestones = []
+        for height, bps, tx_blocks in (
+            (100, 1800.0, 1100),
+            (200, 1900.0, 1200),
+            (300, 1750.0, 1300),
+        ):
+            milestones.append(
+                {
+                    "height": height,
+                    "last_height": height,
+                    "checkpoint_created": True,
+                    "local_root": f"0x{height}",
+                    "reference_matches_local": True,
+                    "successful_reference_samples": 5,
+                    "reference_sample_count": 5,
+                    "stateroot_matches_chain": True,
+                    "speed_proof_source": "fast-sync-transaction-blocks",
+                    "import_window_blocks_per_second": bps,
+                    "sync_proof": {
+                        "fast_sync_import": {
+                            "transaction_blocks": tx_blocks,
+                            "transactions": tx_blocks * 3,
+                            "transaction_block_import_seconds": tx_blocks / bps,
+                            "transaction_blocks_per_second": bps,
+                        }
+                    },
+                }
+            )
+
+        readiness = module.production_proof_readiness(
+            mode="completed",
+            milestones=milestones,
+            completed=milestones,
+            retained_usable_checkpoint_count=3,
+            sync_speed_floor_bps=1500.0,
+            minimum_transaction_blocks=1000,
+            minimum_full_state_checkpoints=3,
+        )
+
+        self.assertTrue(readiness["ready"])
+        self.assertEqual(readiness["blocking_reasons"], [])
+        self.assertTrue(readiness["transaction_import_speed_floor_met"])
+        self.assertTrue(readiness["transaction_import_sample_size_met"])
+        self.assertTrue(readiness["reference_sample_size_met"])
+        self.assertTrue(readiness["restore_verified_checkpoint_floor_met"])
+        self.assertEqual(readiness["transaction_import_proof_count"], 3)
+        self.assertEqual(readiness["restore_verified_checkpoint_count"], 3)
+
+    def test_production_proof_readiness_requires_transaction_import_proof(self):
+        module = load_module()
+        milestones = [
+            {
+                "height": 100,
+                "last_height": 100,
+                "checkpoint_created": True,
+                "local_root": "0x100",
+                "reference_matches_local": True,
+                "successful_reference_samples": 5,
+                "reference_sample_count": 5,
+                "stateroot_matches_chain": True,
+                "speed_proof_source": "height-samples",
+            }
+        ]
+
+        readiness = module.production_proof_readiness(
+            mode="completed",
+            milestones=milestones,
+            completed=milestones,
+            retained_usable_checkpoint_count=3,
+            sync_speed_floor_bps=1500.0,
+            minimum_transaction_blocks=1000,
+            minimum_full_state_checkpoints=3,
+        )
+
+        self.assertFalse(readiness["ready"])
+        self.assertIn(
+            "missing transaction-bearing import speed proof",
+            readiness["blocking_reasons"],
+        )
+        self.assertFalse(readiness["transaction_import_speed_floor_met"])
+        self.assertFalse(readiness["transaction_import_sample_size_met"])
 
     def test_run_milestones_can_include_raw_child_output_on_success(self):
         module = load_module()

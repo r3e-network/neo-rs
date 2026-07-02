@@ -104,8 +104,7 @@ python3 scripts/run-bounded-mainnet-replay.py \
   --stateroot-db data/mainnet-stateroot-clean/StateRoot_334F454E \
   --require-stateroot-height-match \
   --require-reference-stateroot-match \
-  --sync-speed-floor-bps 1500 \
-  --sync-speed-ceiling-bps 2000
+  --sync-speed-floor-bps 1500
 ```
 
 When the imported package already satisfies `--stop-at-height`, `neo-node` can
@@ -114,6 +113,9 @@ bounded proof: rely on the post-run `--db` / `--stateroot-db` probes, reference
 `getstateroot` comparison, and `--initial-height` throughput math. Metrics can
 still be sampled when available, but do not require metrics samples for this
 fast-sync stop-height proof.
+`--sync-speed-ceiling-bps` is available for controlled experiments, but do not
+use it as a production gate: faster-than-2000 transaction-bearing BPS is valid
+evidence, not a failure.
 
 ### RPC-backed ledger mode
 
@@ -1006,13 +1008,13 @@ Helper scripts in `scripts/` automate this:
 | Script | Purpose |
 |--------|---------|
 | `scripts/run-bounded-mainnet-replay.py --config <toml> --target-height <N>` | Runs `neo-node` with `--stop-at-height`; add `--fast-sync` to validate the built-in fast-sync package path or `--import-chain <chain.acc>` to validate an extracted package. With `--db`, `--stateroot-db`, `--require-stateroot-height-match`, `--reference`, and `--require-reference-stateroot-match`, also verifies the post-run chain Ledger height matches the StateService MPT height and the local root matches reference `getstateroot`. |
-| `scripts/run-stateroot-milestones.py --config <toml> --milestone <N>` | Runs multiple reference-checked bounded replay milestones in order and creates a full chain + StateRoot checkpoint after each successful height. Add `--fast-sync --initial-height 0` when the first proof must exercise the built-in package importer. Defaults to compact JSON with a throughput/root summary; use `--summary-jsonl <path>` to append run history and `--include-command-output` for raw child stdout/stderr. |
+| `scripts/run-stateroot-milestones.py --config <toml> --milestone <N>` | Runs multiple reference-checked bounded replay milestones in order and creates a full chain + StateRoot checkpoint after each successful height. Add `--fast-sync --initial-height 0` when the proof must exercise the built-in package importer; each milestone resumes through the cached official package until its target height. Defaults to compact JSON with a throughput/root summary; use `--summary-jsonl <path>` to append run history and `--include-command-output` for raw child stdout/stderr. |
 | `scripts/analyze-stateroot-milestone-history.py <milestone-summary.jsonl>` | Reads milestone history and reports latest root/height, average throughput, slowest/fastest milestones, adjacent throughput trend/regressions, and reference/state mismatch counts. Add `--checkpoint-root <dir>` to include the current on-disk full-state checkpoint inventory and rotated-out history heights. |
 | `scripts/backup-rocksdb.sh <rocksdb_path> [backup_dir]` | One-shot archive of the RocksDB directory (also via `make backup-rocksdb`). |
 | `scripts/maintain-stateroot-checkpoints.py [options]` | Reads the continuous state-root status file and keeps the reported `base`, `mid`, and `latest` checkpoints present; defaults to dry-run, use `--execute` to create missing phases. Use `--node-config` to derive paths, or `--chain-db` / `--stateroot-db` for manual validation/replay layouts. |
 | `scripts/checkpoint-on-height.sh <writer_pid or none> [options]` | Height-labelled chain + StateRoot checkpoint; use `--once --height <height>` for the `base`, `mid`, and `latest` recovery stages reported by continuous state-root validation. Accepts explicit `--chain-db` / `--stateroot-db` paths; pass `--chain-only` for bounded replay checkpoints that do not include a StateRoot DB. |
 | `scripts/restore-checkpoint.sh <height|latest|--at-or-below N> [options]` | Restores a height-labelled `h<height>` checkpoint. Accepts `--chain-db` / `--stateroot-db` targets for validation or bounded replay directories instead of only restoring into `data/mainnet`. |
-| `scripts/compare-offline-gas-storage.py --db <rocksdb_path> --address <ADDR>` | Uses `neo-db-probe` plus official state-root RPCs to compare selected offline GAS AccountState balances before promoting a checkpoint. |
+| `scripts/compare-offline-gas-storage.py --db <store_path> --address <ADDR>` | Uses `neo-db-probe` plus official state-root RPCs to compare selected offline GAS AccountState balances before promoting a checkpoint. Defaults to MDBX; pass `--storage-provider rocksdb` for legacy stores. |
 | `scripts/checkpoint-live-rocksdb.sh <writer_pid> <rocksdb_path> [root]` | Live checkpoint with a short pause, then resume. |
 | `scripts/checkpoint-live-rocksdb-loop.sh <writer_pid> <rocksdb_path> [interval] [max] [root]` | Periodic live checkpoints with rotation (default interval 1800s, retention 8). |
 
