@@ -25,6 +25,7 @@ use crate::error::{TeeError, TeeResult};
 use crate::mempool::TeeMempool;
 use crate::mempool::tee_mempool::OrderingProof as SequencerProof;
 use crate::nitro::vsock::OrderTxEntry;
+use crate::ordering_merkle::ordering_merkle_root;
 use neo_crypto::Secp256r1Crypto;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha384};
@@ -161,7 +162,7 @@ impl OrderingVerification {
 #[must_use]
 pub fn verify_ordering_proof(proof: &OrderingProof) -> OrderingVerification {
     let merkle_root_matches =
-        merkle_root(&proof.ordered_hashes) == proof.sequencer_proof.merkle_root;
+        ordering_merkle_root(&proof.ordered_hashes) == proof.sequencer_proof.merkle_root;
 
     let signature_valid = verify_sequencer_signature(&proof.sequencer_proof);
 
@@ -172,33 +173,6 @@ pub fn verify_ordering_proof(proof: &OrderingProof) -> OrderingVerification {
         signature_valid,
         attestation_verified,
     }
-}
-
-/// Recomputes the merkle root over an ordered hash list using the same scheme
-/// the sequencer uses (`SHA-256(left || right)`, duplicating the last leaf on
-/// an odd level). This MUST stay byte-identical to
-/// `TeeMempool::compute_merkle_root`.
-fn merkle_root(hashes: &[[u8; 32]]) -> [u8; 32] {
-    if hashes.is_empty() {
-        return [0u8; 32];
-    }
-    let mut level: Vec<[u8; 32]> = hashes.to_vec();
-    while level.len() > 1 {
-        let mut next = Vec::with_capacity(level.len().div_ceil(2));
-        for chunk in level.chunks(2) {
-            let right = if chunk.len() > 1 {
-                &chunk[1]
-            } else {
-                &chunk[0]
-            };
-            let mut data = [0u8; 64];
-            data[..32].copy_from_slice(&chunk[0]);
-            data[32..].copy_from_slice(right);
-            next.push(neo_crypto::Crypto::sha256(&data));
-        }
-        level = next;
-    }
-    level[0]
 }
 
 fn verify_sequencer_signature(proof: &SequencerProof) -> bool {

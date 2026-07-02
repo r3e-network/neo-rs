@@ -8,6 +8,7 @@
 use crate::enclave::TeeEnclave;
 use crate::error::{TeeError, TeeResult};
 use crate::mempool::fair_ordering::{FairOrderingPolicy, OrderingKey, TransactionTiming};
+use crate::ordering_merkle::ordering_merkle_root;
 use neo_crypto::Secp256r1Crypto;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -248,7 +249,7 @@ impl TeeMempool {
         let ordered_hashes = self.get_ordered_hashes(usize::MAX);
 
         // Build Merkle tree of ordered transactions
-        let merkle_root = self.compute_merkle_root(&ordered_hashes);
+        let merkle_root = ordering_merkle_root(&ordered_hashes);
 
         // Get enclave counter
         let enclave_counter = self.enclave.current_counter()?;
@@ -330,39 +331,6 @@ impl TeeMempool {
             *last_time = Instant::now();
             debug!("Rotated to batch {}", *batch);
         }
-    }
-
-    /// Compute Merkle root of transaction hashes
-    fn compute_merkle_root(&self, hashes: &[[u8; 32]]) -> [u8; 32] {
-        if hashes.is_empty() {
-            return [0u8; 32];
-        }
-
-        let mut current_level: Vec<[u8; 32]> = hashes.to_vec();
-
-        while current_level.len() > 1 {
-            let mut next_level = Vec::new();
-
-            for chunk in current_level.chunks(2) {
-                // SHA-256(left || right), duplicating the left leaf on an odd
-                // node. This is an internal TEE ordering-proof digest (NOT a Neo
-                // block merkle root, which is double-SHA-256); route it through
-                // the central neo-crypto hasher rather than reimplementing sha2.
-                let right = if chunk.len() > 1 {
-                    &chunk[1]
-                } else {
-                    &chunk[0]
-                };
-                let mut data = [0u8; 64];
-                data[..32].copy_from_slice(&chunk[0]);
-                data[32..].copy_from_slice(right);
-                next_level.push(neo_crypto::Crypto::sha256(&data));
-            }
-
-            current_level = next_level;
-        }
-
-        current_level[0]
     }
 
     /// Hash the current ordering policy

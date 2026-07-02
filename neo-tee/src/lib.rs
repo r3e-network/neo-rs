@@ -26,6 +26,7 @@ pub mod mempool;
 /// AWS Nitro Enclaves backend (EXPERIMENTAL, `nitro` feature, off by default).
 #[cfg(feature = "nitro")]
 pub mod nitro;
+mod ordering_merkle;
 #[cfg(feature = "sgx-hw")]
 #[path = "hardware/sgx.rs"]
 pub(crate) mod sgx;
