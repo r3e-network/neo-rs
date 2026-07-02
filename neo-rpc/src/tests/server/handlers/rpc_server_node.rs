@@ -4,7 +4,7 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_config::ProtocolSettings;
 use neo_execution::Contract;
-use neo_io::extensions::serializable::SerializableExtensions;
+use neo_io::SerializableExtensions;
 use neo_native_contracts::LedgerContract;
 use neo_native_contracts::NativeContract;
 use neo_native_contracts::PolicyContract;

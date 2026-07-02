@@ -5,7 +5,7 @@
 
 use super::token_transfer_key::TokenTransferKey;
 use neo_error::{CoreError, CoreResult};
-use neo_io::extensions::serializable::SerializableExtensions;
+use neo_io::SerializableExtensions;
 use neo_io::{MemoryReader, Serializable};
 use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;

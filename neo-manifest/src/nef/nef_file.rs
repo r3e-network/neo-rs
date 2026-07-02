@@ -13,7 +13,6 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use neo_crypto::Crypto;
 use neo_error::{CoreError, CoreResult};
-use neo_io::extensions::memory_reader::MemoryReaderExtensions;
 use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde_json::{Value, json};
@@ -243,8 +242,7 @@ impl Serializable for NefFile {
         let source = reader.read_var_string(Self::MAX_SOURCE_LENGTH)?;
 
         let _reserved = reader.read_u8()?;
-        let tokens: Vec<MethodToken> = reader
-            .read_serializable_array(Self::MAX_TOKENS)
+        let tokens = SerializeHelper::deserialize_array::<MethodToken>(reader, Self::MAX_TOKENS)
             .map_err(|e| IoError::invalid_data(e.to_string()))?;
         let _reserved2 = reader.read_u16()?;
         // C# NefFile.Deserialize reads the script capped at MaxItemSize and

@@ -10,7 +10,7 @@ use base64::{Engine as _, engine::general_purpose};
 // in-process hyper server now use `mockito` exclusively.
 use mockito::{Matcher, Mock, Server, ServerGuard};
 use neo_config::ProtocolSettings;
-use neo_io::extensions::serializable::SerializableExtensions;
+use neo_io::SerializableExtensions;
 use neo_io::{MemoryReader, Serializable};
 use neo_payloads::Transaction;
 use neo_payloads::block::Block;

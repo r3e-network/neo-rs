@@ -25,8 +25,8 @@ use crate::store::{
 };
 use neo_payloads::{ApplicationExecuted, Block, Header, NotifyEventArgs, Signer, Transaction};
 use neo_primitives::{TriggerType, UInt160, WitnessScope};
+use neo_storage::persistence::SeekDirection;
 use neo_storage::persistence::providers::memory_store_provider::MemoryStoreProvider;
-use neo_storage::persistence::{SeekDirection, StoreProvider};
 use neo_vm::StackItem;
 use neo_vm_rs::VmState as VMState;
 

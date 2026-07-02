@@ -3,7 +3,7 @@ use crate::client::models::RpcRawMemPool;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_config::ProtocolSettings;
 use neo_execution::ContractState;
-use neo_io::extensions::serializable::SerializableExtensions;
+use neo_io::SerializableExtensions;
 use neo_io::{MemoryReader, Serializable};
 use neo_manifest::{ContractManifest, NefFile};
 use neo_native_contracts::LedgerContract;

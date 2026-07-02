@@ -4,7 +4,6 @@ use crate::server::rpc_server::RpcServer;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_config::ProtocolSettings;
 use neo_indexer::IndexerService;
-use neo_storage::persistence::StoreProvider;
 use neo_storage::persistence::providers::memory_store_provider::MemoryStoreProvider;
 use serde_json::Value;
 

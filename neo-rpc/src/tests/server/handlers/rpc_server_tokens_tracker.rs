@@ -17,7 +17,6 @@ use neo_native_contracts::NativeContract;
 use neo_primitives::ContractParameterType;
 use neo_primitives::UInt256;
 use neo_storage::persistence::Store;
-use neo_storage::persistence::StoreProvider;
 use neo_storage::persistence::providers::MemoryStoreProvider;
 use neo_storage::{StorageItem, StorageKey};
 use neo_system::Node;
