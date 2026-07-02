@@ -1,6 +1,7 @@
 //! # neo-storage
 //!
-//! Store traits, cache overlays, storage-domain types, and concrete backends.
+//! Store traits, cache overlays, typed table boundaries, storage-domain types,
+//! and concrete backends.
 //!
 //! ## Boundary
 //!
@@ -11,8 +12,8 @@
 //!
 //! - `core`: Core reader, writer, var-int, and macro helpers for binary IO.
 //! - `errors`: Typed errors and result aliases for this crate boundary.
-//! - `persistence`: Persistence traits, snapshots, transactions, and cache
-//!   overlays.
+//! - `persistence`: Persistence traits, snapshots, typed tables, transactions,
+//!   and cache overlays.
 //! - `mdbx`: Production default MDBX provider and store adapter.
 //! - `rocksdb`: RocksDB provider, store, snapshot, and write-batch adapter.
 //! - `types`: Storage-domain types shared by store implementations.

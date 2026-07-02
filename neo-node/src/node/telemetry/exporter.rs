@@ -180,6 +180,7 @@ impl MetricsExporter {
         // Append the sync-pipeline metrics (lock-free atomics, not Prometheus
         // collectors) so /metrics exposes per-stage timing + throughput.
         buffer.extend_from_slice(crate::node::sync_metrics::render_prometheus().as_bytes());
+        buffer.extend_from_slice(crate::node::tasks::render_prometheus().as_bytes());
         buffer.extend_from_slice(self.render_rocksdb_metrics().as_bytes());
 
         Ok(buffer)

@@ -222,6 +222,10 @@ Rules:
   backends, or replacing a concrete service with a trait boundary.
 - Do not leave stale names such as removed crates, old versions, or old module
   paths in top-level crate/module comments.
+- When adding a provider, queue, factory, table, or service boundary, document
+  both the capability it exposes and the lower-level mechanics it intentionally
+  hides. Call out whether it preserves C# byte formats, store layout, or
+  execution ordering.
 
 ## Reth/Polkadot Layering Priorities for Neo
 
@@ -237,7 +241,9 @@ Priority order for crate refactors:
    `BlockImportOutcome` / `ImportedTip` rather than reaching into
    `neo_blockchain::BlockchainCommand`. `neo-blockchain` owns the concrete
    validation, execution, native-persist, state-root, and durable-store
-   implementation behind that trait.
+   implementation behind that trait. Use `neo_runtime::BlockImportQueue` for
+   bounded concurrent preverification, but keep ordered import in
+   `BlockImport::import_many`.
 2. **One reorg-aware chain event stream.** Indexers, RPC application logs,
    token trackers, oracle services, and plugins should derive from a single
    bounded stream of chain outcomes. Because Neo committed blocks are final,
@@ -246,6 +252,14 @@ Priority order for crate refactors:
    essential node tasks from normal background tasks. Essential task failure
    should trigger graceful node shutdown; normal task failure should be logged,
    metered, and restarted or disabled according to policy.
+4. **One provider/factory pattern for reads.** Storage-backed read APIs should
+   expose capability traits (`BlockProvider`, `TxProvider`, `StateView`) plus
+   factories (`LedgerProviderFactory`, `StateProviderFactory`) rather than
+   leaking concrete caches or backend handles upward.
+5. **Typed tables over existing bytes.** Use
+   `neo_storage::persistence::Table` and `TableCodec` for table-specific
+   storage APIs. These codecs adapt the existing persisted key/value bytes; they
+   are not permission to invent a new consensus serialization format.
 
 Do not copy reth's heavy memory-chain reorg overlay or Polkadot's Wasm
 meta-runtime into Neo just for symmetry. Keep the part that matters here:

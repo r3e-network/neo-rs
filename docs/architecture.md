@@ -9,9 +9,9 @@ bytecode and native contracts, and produces the same state roots. Byte-for-byte
 protocol parity with the C# node is a hard design constraint — a block accepted
 by one node must be accepted by the other, and the two implementations must
 agree on every hash, signature, fee, and storage value. neo-rs is organized as a
-workspace of focused crates arranged in explicit dependency layers, with `tokio`-based
-async services, a `jsonrpsee` JSON-RPC interface, and pluggable RocksDB or
-in-memory storage.
+workspace of focused crates arranged in explicit dependency layers, with
+`tokio`-based async services, a `jsonrpsee` JSON-RPC interface, MDBX as the
+default store, RocksDB as a supported fallback, and in-memory storage for tests.
 
 ## Layered architecture
 
@@ -103,8 +103,8 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-io | Infrastructure | Binary and variable-length integer reader/writer (mirrors `Neo.IO`). |
 | neo-error | Infrastructure | Authoritative `CoreError` / `CoreResult` error types for the workspace. |
 | neo-crypto | Infrastructure | Hashing, secp256r1 ECC, signatures, BLS12-381. |
-| neo-storage | Infrastructure | `Store` traits, `DataCache`, plus RocksDB and in-memory backends. |
-| neo-static-files | Infrastructure | Append-only cold files for finalized block, transaction, receipt, and archived state-root payloads. |
+| neo-storage | Infrastructure | `Store` traits, `DataCache`, typed table codecs, MDBX/RocksDB adapters, and in-memory providers. |
+| neo-static-files | Infrastructure | Append-only cold segment files for finalized block, transaction, receipt, and archived state-root payload bytes. Ledger-specific hot/cold provider scaffolding lives under `neo-blockchain::ledger::static_archive`. |
 | neo-config | Infrastructure | Node and protocol configuration (TOML-backed settings). |
 | neo-vm | Infrastructure | Stateful NeoVM host (execution engine, contexts, reference-counted stack items) over `neo-vm-rs`. |
 | neo-serialization | Infrastructure | Compression, binary and JSON stack-item codecs, JSONPath, in-memory storage providers. |
@@ -112,12 +112,12 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-payloads | Protocol | `Block`, `Header`, `Transaction`, `Signer`, `WitnessRule`, attributes, and verification logic. |
 | neo-consensus | Protocol | dBFT 2.0 consensus engine and consensus payload handling. |
 | neo-hsm | Protocol | Optional HSM-backed consensus signing support. |
-| neo-runtime | Domain service | Reth-style service traits, command channels, and shared service events. |
+| neo-runtime | Domain service | Reth-style service traits, block-import contract, bounded import queue, command channels, and shared service events. |
 | neo-execution | Domain service | `ApplicationEngine` and interop services (runtime, storage, contract, crypto syscalls). |
 | neo-native-contracts | Domain service | NEO, GAS, Policy, Oracle, Notary, StdLib, CryptoLib, RoleManagement, ContractManagement, Ledger, plus shared native infrastructure. |
-| neo-state-service | Domain service | MPT state root, state root cache, state store, block-commit pipeline. |
+| neo-state-service | Domain service | MPT state root, state root cache, state store, immutable state-provider views, block-commit pipeline. |
 | neo-mempool | Domain service | Transaction memory pool, pool items, transaction router, per-block verification context. |
-| neo-blockchain | Node service | `Blockchain` service, `LedgerContext`, `HeaderCache`, block processing. |
+| neo-blockchain | Node service | `Blockchain` service, `LedgerContext`, `HeaderCache`, provider-style ledger reads, cold archive scaffolding, pruning checkpoints, block processing. |
 | neo-network | Node service | P2P host: `LocalNode`, `RemoteNode`, `TaskManager` services. |
 | neo-wallets | Node service | NEP-6 wallets, BIP-32/BIP-39 key derivation, keypairs, accounts, witness scripts. |
 | neo-indexer | Node service | Read-side block, transaction, signer-account, and notification indexing for service-style RPC queries. |
@@ -189,16 +189,42 @@ The detailed rules for this style live in
   services. This gives clear ownership, backpressure, and testable boundaries
   between services.
 
+- **Supervised daemon tasks.** `neo-node` classifies long-running background
+  work as essential or normal. Essential task failure requests node shutdown;
+  normal task failure is reported through bounded-label observability metrics
+  and error endpoints. This follows Substrate's TaskManager discipline without
+  confusing it with the Neo P2P `TaskManager` sync scheduler.
+
+- **Canonical block import plus bounded preverification.**
+  `neo_runtime::BlockImport` is the shared import trait for consensus, sync, RPC,
+  and fast-sync callers. `neo_runtime::BlockImportQueue` runs cheap preflight
+  checks with bounded concurrency and then submits the verified batch to
+  `BlockImport::import_many` in original order. Execution, native persistence,
+  state-root updates, and durable storage still happen only inside
+  `neo-blockchain`.
+
 - **Single authoritative error type.** `neo-error` is the *only* crate that owns
   `CoreError` / `CoreResult`. Every higher-layer crate returns and accepts
   `CoreError`, so error handling is uniform across the workspace and the error
   type sits at the bottom of the dependency graph rather than being duplicated.
 
-- **Pluggable storage behind a `Store` trait.** `neo-storage` exposes a `Store`
-  abstraction with a RocksDB backend (the `rocksdb` feature) and an in-memory
-  backend for tests and ephemeral runs. The rest of the node depends on the
-  trait and on `DataCache`, not on a concrete database, so the backend can be
-  swapped without touching consensus or execution code.
+- **Pluggable storage behind `Store` and provider traits.** `neo-storage`
+  exposes `Store`, `DataCache`, and typed `Table`/`TableCodec`/`TableReader`
+  adapters over the existing raw bytes. MDBX is the production default, RocksDB
+  remains a supported fallback, and memory providers are used for tests. Higher
+  crates read through capability providers: `neo-blockchain` has
+  `BlockProvider`/`TxProvider` plus `LedgerProviderFactory`, and
+  `neo-state-service` has `StateProviderFactory`/`StateView` for immutable MPT
+  views. These provider factories make hot/cold/static routing explicit without
+  changing C#-compatible key/value bytes.
+
+- **Cold ledger scaffold is provider-backed, not implicit.**
+  `StaticLedgerArchive` is an append-only block/transaction body archive used
+  through `BlockProvider`/`TxProvider`. `HotColdLedgerProviderFactory` composes a
+  hot storage provider with a cold archive provider. The current implementation
+  is a scaffold for explicit integration; the block import path does not
+  silently write static files until node configuration and crash-recovery policy
+  opt in.
 
 - **Byte-for-byte C# parity as a hard constraint.** Wire formats, hashing,
   signature schemes, fee formulas, VM opcode pricing, native-contract behavior,

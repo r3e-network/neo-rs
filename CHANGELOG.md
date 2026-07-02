@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Architecture
+- Added supervised daemon task handling in `neo-node`, with essential task failures requesting graceful shutdown and normal task failures reported through bounded observability labels.
+- Added `neo_runtime::BlockImportQueue` for bounded concurrent block preverification before ordered canonical import.
+- Added typed storage table adapters in `neo-storage` and provider factories for hot/cold ledger and immutable state reads.
+- Documented the updated architecture, dataflow, and coding guidance for task supervision, import queues, table codecs, and provider factories.
+
 ## [0.8.0] - 2026-06-14
 
 ### Added

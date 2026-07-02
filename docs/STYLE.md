@@ -1,7 +1,7 @@
 # Neo-rs Code Style Guide
 
 > **Version**: 1.0.0  
-> **Last Updated**: 2026-01-28
+> **Last Updated**: 2026-07-02
 
 This document defines the coding standards and conventions for the neo-rs project.
 
@@ -115,61 +115,51 @@ use crate::types::MyType;
 
 ### Crate-Level Documentation
 
-Every crate must have comprehensive crate-level documentation:
+Every crate must have concise, layer-aware crate-level documentation. Use the
+same standard format across crates:
 
 ```rust
-//! # Neo Crate Name
+//! # neo-crate-name
 //!
 //! One-sentence summary of the crate's purpose.
 //!
-//! ## Features
+//! ## Boundary
 //!
-//! List of key features:
-//! - **Feature 1**: Description
-//! - **Feature 2**: Description
+//! State the layer, the main downward dependencies, and the responsibilities
+//! this crate deliberately does not own.
 //!
-//! ## Architecture
+//! ## Contents
 //!
-//! Brief overview of the internal architecture.
-//!
-//! ## Example
-//!
-//! ```rust
-//! use neo_crate_name::TypeName;
-//!
-//! let instance = TypeName::new();
-//! ```
-//!
-//! ## Feature Flags
-//!
-//! - `feature-a`: Enables functionality A
-//! - `feature-b`: Enables functionality B (disabled by default)
+//! - `module_a`: what it owns.
+//! - `module_b`: what callers use it for.
 ```
+
+Crate docs should describe architecture role, boundary, and contents, not every
+public item. Mention deterministic bytes, C# parity, storage layout, or
+security invariants only where the crate directly owns that contract.
 
 ### Module-Level Documentation
 
 ```rust
-//! # Module Name
+//! # crate::module
 //!
 //! One-line description of the module.
 //!
-//! ## Purpose
+//! ## Boundary
 //!
-//! Detailed explanation of what this module does.
+//! State what this module owns and what it intentionally leaves to sibling or
+//! lower modules.
 //!
-//! ## Types
+//! ## Contents
 //!
 //! - [`TypeA`]: Description of TypeA
 //! - [`TypeB`]: Description of TypeB
-//!
-//! ## Example
-//!
-//! ```rust
-//! use crate::module_name::TypeA;
-//!
-//! let value = TypeA::new();
-//! ```
 ```
+
+When adding provider, queue, factory, table, or service modules, the module
+docs must state the capability boundary. For example, a typed storage table
+codec must say whether it preserves existing C# key/value bytes; an import
+queue must say whether it is preverification-only or owns ordered persistence.
 
 ### Item Documentation
 

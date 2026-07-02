@@ -21,7 +21,7 @@ and RPC services and connects them with channels.
 ```mermaid
 flowchart TD
     A["neo-node: parse CLI + load TOML config"] --> B["derive ProtocolSettings<br/>(MainNet / TestNet preset + overrides)"]
-    B --> C["open Store<br/>RocksDB or in-memory (neo-storage)"]
+    B --> C["open Store<br/>MDBX / RocksDB / in-memory (neo-storage)"]
     C --> D["StoreCache + shared DataCache snapshot"]
     D --> E["read durable tip:<br/>LedgerContract.current_index"]
     E --> F["build BlockchainService<br/>(neo-blockchain) + spawn run loop"]
@@ -55,6 +55,12 @@ blockchain service, structurally and witness-verified, then run through the C#
 `Blockchain.Persist` pipeline and committed durably. Out-of-order blocks are
 parked and drained when their parent lands.
 
+Downloaded block batches may first pass through `neo_runtime::BlockImportQueue`:
+the queue runs `BlockImport::check` with bounded concurrency and then calls
+`BlockImport::import_many` in the original order. That queue is a preflight
+boundary only. The canonical execution/persist path remains the
+`neo-blockchain` service loop.
+
 ```mermaid
 sequenceDiagram
     participant Peer
@@ -67,6 +73,9 @@ sequenceDiagram
 
     Peer->>RN: block message
     RN->>Fwd: InboundInventory::Block
+    opt batch preflight
+        Fwd->>Fwd: BlockImportQueue::push_blocks<br/>(bounded check concurrency)
+    end
     Fwd->>BC: InventoryBlock { relay, pre_verified: false }
     Note over BC: index == height + 1?<br/>else park / ignore
     BC->>BC: structural checks (version, tx count,<br/>merkle root, no duplicate tx)
@@ -245,7 +254,7 @@ flowchart TD
     end
     Child -->|commit on success| Snap["shared DataCache snapshot"]
     Snap -->|commit_to_store| SC["StoreCache"]
-    SC -->|flush| Store["Store backend<br/>RocksDB / in-memory (neo-storage)"]
+    SC -->|flush| Store["Store backend<br/>MDBX / RocksDB / in-memory (neo-storage)"]
 
     Snap -.->|block change set| MPT["MptStore (neo-state-service)<br/>Trie over change set → state root"]
     MPT --> SS["StateStore root records<br/>by index / by hash"]
@@ -260,8 +269,23 @@ Key points:
   child discards its writes. This is the per-block atomicity mechanism
   (`neo-blockchain/src/native_persist.rs`).
 - **Durability.** `commit_to_store()` flushes the snapshot's tracked writes
-  through the `StoreCache` to RocksDB. With the in-memory backend, state is not
-  persisted across restarts.
+  through the `StoreCache` to the configured store backend. MDBX is the
+  production default, RocksDB remains a supported fallback, and the in-memory
+  backend does not persist across restarts.
+- **Typed table boundary.** `neo-storage::persistence::Table`,
+  `TableCodec`, and `TableReader` give storage code a typed table API over the
+  existing raw bytes. `StorageKey` still encodes with `to_array()` and
+  `StorageItem` still encodes with `to_value()`, so this abstraction does not
+  alter C#-compatible state roots.
+- **Ledger provider boundary.** `neo-blockchain` exposes `BlockProvider` and
+  `TxProvider` capability traits. `StorageLedgerProviderFactory` creates hot
+  providers over native Ledger records; `HotColdLedgerProviderFactory` composes
+  hot reads with a `StaticLedgerArchive` cold provider. Static archive writes
+  are explicit integration work, not an implicit side effect of block import.
+- **State provider boundary.** `neo-state-service` exposes
+  `StateProviderFactory` and `StateView` so RPC, VM, and tests can request an
+  immutable MPT view at a specific height instead of holding ad-hoc references
+  to mutable service internals.
 - **State root.** The MPT root is computed from a block's storage change set and
   stored under the C# `StateRoot` wire layout (`neo-state-service/src/mpt_store.rs`),
   with per-block records by index and by hash. `getstateroot`/`getstateheight`

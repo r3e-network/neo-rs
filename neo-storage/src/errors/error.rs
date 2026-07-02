@@ -76,6 +76,13 @@ impl StorageError {
         }
     }
 
+    /// Create an invalid persisted data error.
+    pub fn invalid_data<S: Into<String>>(message: S) -> Self {
+        Self::Serialization {
+            message: message.into(),
+        }
+    }
+
     /// Create a commit failed error.
     pub fn commit_failed<S: Into<String>>(message: S) -> Self {
         Self::CommitFailed(message.into())

@@ -10,8 +10,8 @@
 //! ## Contents
 //!
 //! - `errors`: Typed errors and result aliases for this crate boundary.
-//! - `service`: Service loops, handles, lifecycle helpers, and command
-//!   processing.
+//! - `service`: Service loops, handles, import queues, lifecycle helpers, and
+//!   command processing.
 
 #![doc(html_root_url = "https://docs.rs/neo-runtime/0.9.0")]
 
@@ -25,9 +25,9 @@ mod service;
 // import path resolves.
 pub use errors::{ServiceError, ServiceResult, error};
 pub use service::{
-    BlockBatchImportOutcome, BlockExecutor, BlockImport, BlockImportOutcome, BlockOrigin,
-    BlockchainEvent, ConsensusService, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY,
-    ExecutionOutcome, ExecutionPayload, ImportedTip, NeoEngine, NetworkEvent, NetworkService,
-    Service, TxHash, ValidationResult,
+    BlockBatchImportOutcome, BlockExecutor, BlockImport, BlockImportOutcome, BlockImportQueue,
+    BlockOrigin, BlockchainEvent, ConsensusService, DEFAULT_COMMAND_CAPACITY,
+    DEFAULT_EVENT_CAPACITY, ExecutionOutcome, ExecutionPayload, ImportQueue, ImportedTip,
+    NeoEngine, NetworkEvent, NetworkService, Service, TxHash, ValidationResult,
 };
-pub use service::{block_import, blockchain, outcome, services, sync_metrics};
+pub use service::{block_import, blockchain, import_queue, outcome, services, sync_metrics};

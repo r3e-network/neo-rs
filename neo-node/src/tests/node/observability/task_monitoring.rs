@@ -1,4 +1,8 @@
 use super::super::super::config::{ObservabilityErrorEndpoint, ObservabilitySection};
+use super::super::super::tasks::{
+    TaskKind, render_prometheus, reset_metrics_for_tests, spawn_daemon_task,
+    spawn_daemon_task_result,
+};
 use super::super::ObservabilityRuntime;
 
 use std::time::Duration;
@@ -6,6 +10,7 @@ use std::time::Duration;
 use serde_json::Value;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 
 #[test]
 fn node_long_running_background_tasks_are_spawned_under_observability_monitoring() {
@@ -122,6 +127,116 @@ async fn monitored_background_task_errors_are_reported_to_error_endpoints() {
     assert!(
         message.contains("telemetry_metrics") && message.contains("metrics server exploded"),
         "background task error report should name the task and original error: {message}"
+    );
+}
+
+#[tokio::test]
+async fn essential_daemon_task_exit_requests_node_shutdown() {
+    let shutdown = CancellationToken::new();
+    let mut handles = Vec::new();
+
+    spawn_daemon_task(
+        &mut handles,
+        None,
+        &shutdown,
+        TaskKind::Essential,
+        "blockchain_service",
+        async {},
+    );
+
+    tokio::time::timeout(Duration::from_secs(1), shutdown.cancelled())
+        .await
+        .expect("essential task exit should cancel the node");
+
+    for handle in handles {
+        handle.abort();
+        let _ = handle.await;
+    }
+}
+
+#[tokio::test]
+async fn essential_daemon_task_error_requests_node_shutdown() {
+    let shutdown = CancellationToken::new();
+    let mut handles = Vec::new();
+
+    spawn_daemon_task_result(
+        &mut handles,
+        None,
+        &shutdown,
+        TaskKind::Essential,
+        "p2p_service",
+        async { Err::<(), _>(anyhow::anyhow!("p2p loop stopped")) },
+    );
+
+    tokio::time::timeout(Duration::from_secs(1), shutdown.cancelled())
+        .await
+        .expect("essential task error should cancel the node");
+
+    for handle in handles {
+        handle.abort();
+        let _ = handle.await;
+    }
+}
+
+#[tokio::test]
+async fn normal_daemon_task_error_does_not_request_node_shutdown() {
+    let shutdown = CancellationToken::new();
+    let mut handles = Vec::new();
+
+    spawn_daemon_task_result(
+        &mut handles,
+        None,
+        &shutdown,
+        TaskKind::Normal,
+        "telemetry_metrics",
+        async { Err::<(), _>(anyhow::anyhow!("metrics endpoint stopped")) },
+    );
+
+    let handle = handles.pop().expect("normal task handle");
+    handle.await.expect("normal task wrapper should complete");
+
+    assert!(
+        !shutdown.is_cancelled(),
+        "normal task failures must be reported without stopping the node"
+    );
+}
+
+#[tokio::test]
+async fn daemon_task_metrics_use_bounded_task_kind_and_outcome_labels() {
+    reset_metrics_for_tests();
+    let shutdown = CancellationToken::new();
+    let mut handles = Vec::new();
+
+    spawn_daemon_task_result(
+        &mut handles,
+        None,
+        &shutdown,
+        TaskKind::Normal,
+        "telemetry_metrics",
+        async { Err::<(), _>(anyhow::anyhow!("metrics endpoint stopped")) },
+    );
+
+    let handle = handles.pop().expect("normal task handle");
+    handle.await.expect("normal task wrapper should complete");
+
+    let metrics = render_prometheus();
+    assert!(
+        metrics.contains(
+            r#"neo_node_daemon_task_spawned_total{task="telemetry_metrics",kind="normal"} 1"#
+        ),
+        "spawned metric should use bounded task/kind labels:\n{metrics}"
+    );
+    assert!(
+        metrics.contains(
+            r#"neo_node_daemon_task_events_total{task="telemetry_metrics",kind="normal",outcome="error"} 1"#
+        ),
+        "event metric should count task errors with bounded labels:\n{metrics}"
+    );
+    assert!(
+        metrics.contains(
+            r#"neo_node_daemon_task_events_total{task="telemetry_metrics",kind="normal",outcome="exit"} 0"#
+        ),
+        "event metric should expose zero values for expected bounded outcomes:\n{metrics}"
     );
 }
 

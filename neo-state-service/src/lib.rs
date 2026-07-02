@@ -14,8 +14,8 @@
 //!   constants.
 //! - `service`: Service loops, handles, lifecycle helpers, and command
 //!   processing.
-//! - `storage`: Storage contexts, key builders, and storage item helpers for
-//!   execution.
+//! - `storage`: MPT storage, state-root cache, durable state records, and
+//!   immutable provider views.
 //! - `validation`: Validation routines and typed verdicts for protocol data.
 
 #![doc(html_root_url = "https://docs.rs/neo-state-service/0.9.0")]
@@ -42,6 +42,7 @@ pub use storage::{
 };
 pub use storage::{
     MptChange, MptReadSnapshot, MptStore, StateStore, StateStoreLookup, StateStoreTransaction,
-    mpt_store, root_cache, state_store,
+    mpt_store, root_cache, state_provider, state_store,
 };
+pub use storage::{MptStateProviderFactory, MptStateView, StateProviderFactory, StateView};
 pub use validation::{StateRootCalculator, Verifier, VerifyOutcome, verification};

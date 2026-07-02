@@ -40,7 +40,7 @@ parts (NeoVM, var-int wire format, MPT, dBFT) implemented from the specification
 | **Standards** | NEP-17 (tokens), NEP-11 (NFTs), NEP-6 (wallets), NEP-2 keys |
 | **Hardforks** | Full Neo N3 hardfork schedule through v3.10.0 |
 | **JSON-RPC** | ~55 methods (blockchain, state, invocation, governance, wallet, oracle) |
-| **Storage** | MDBX by default, RocksDB fallback/test backend, or in-memory |
+| **Storage** | MDBX by default, RocksDB fallback, typed table codecs, hot/cold provider boundaries, or in-memory |
 | **Oracle** | HTTPS + NeoFS request fulfilment |
 
 See [docs/protocol-compatibility.md](./docs/protocol-compatibility.md) for the parity details.
@@ -59,7 +59,10 @@ flowchart TD
     APP --> SVC --> MID --> FND
 ```
 
-Full crate map and design decisions: [docs/architecture.md](./docs/architecture.md).
+The runtime layer now includes bounded task supervision, a shared block-import
+contract, a bounded import queue for concurrent preverification, typed storage
+table codecs, and provider factories for hot/cold ledger reads. Full crate map
+and design decisions: [docs/architecture.md](./docs/architecture.md).
 How a block, transaction, and consensus round flow through these crates:
 [docs/dataflow.md](./docs/dataflow.md).
 
@@ -140,8 +143,8 @@ developers → *architecture → dataflow → protocol-compatibility → rpc-api
 
 ```
 neo-rs/
-├── neo-primitives, neo-io, neo-crypto, neo-config,   # Foundation layer
-│   neo-error, neo-serialization, neo-storage
+├── neo-primitives, neo-io, neo-crypto, neo-config,   # Foundation / infrastructure
+│   neo-error, neo-serialization, neo-storage, neo-static-files
 ├── neo-payloads, neo-consensus, neo-manifest,        # Protocol / VM / state
 │   neo-vm, neo-execution, neo-native-contracts,
 │   neo-state-service, neo-mempool

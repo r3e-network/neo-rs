@@ -85,6 +85,7 @@ fn node_runtime_sources_report_seed_connection_failures_to_observability() {
 #[test]
 fn node_runtime_sources_report_shutdown_signal_failures_to_observability() {
     let node_source = include_str!("../../../node/mod.rs");
+    let shutdown_source = include_str!("../../../node/shutdown.rs");
     let shutdown_signal_branch = node_source
         .split("shutdown-signal handler failed")
         .nth(1)
@@ -94,5 +95,9 @@ fn node_runtime_sources_report_shutdown_signal_failures_to_observability() {
         shutdown_signal_branch.contains("report_runtime_error")
             && shutdown_signal_branch.contains("\"shutdown_signal\""),
         "shutdown-signal handler failures should notify configured observability error endpoints"
+    );
+    assert!(
+        shutdown_source.contains("essential_task"),
+        "shutdown helper should treat essential task failure as a first-class graceful shutdown signal"
     );
 }

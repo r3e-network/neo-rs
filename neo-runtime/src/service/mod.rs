@@ -1,6 +1,7 @@
 //! # neo-runtime::service
 //!
-//! Service loops, handles, lifecycle helpers, and command processing.
+//! Service loops, handles, import queues, lifecycle helpers, and command
+//! processing.
 //!
 //! ## Boundary
 //!
@@ -12,6 +13,7 @@
 //!
 //! - `block_import`: Shared block-import trait and outcome records.
 //! - `blockchain`: Blockchain-domain primitive records used across crates.
+//! - `import_queue`: Bounded preverification queue for sync/import callers.
 //! - `outcome`: Runtime outcome records shared across services.
 //! - `services`: Auxiliary service startup and handles used by the daemon.
 //! - `sync_metrics`: Sync-speed counters, summaries, and operator-facing
@@ -19,6 +21,7 @@
 
 pub mod block_import;
 pub mod blockchain;
+pub mod import_queue;
 pub mod outcome;
 pub mod services;
 pub mod sync_metrics;
@@ -27,5 +30,6 @@ pub use block_import::{
     BlockBatchImportOutcome, BlockImport, BlockImportOutcome, BlockOrigin, ImportedTip,
 };
 pub use blockchain::{BlockchainEvent, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY};
+pub use import_queue::{BlockImportQueue, ImportQueue};
 pub use outcome::{ExecutionOutcome, ExecutionPayload, NetworkEvent, ValidationResult};
 pub use services::{BlockExecutor, ConsensusService, NeoEngine, NetworkService, Service, TxHash};

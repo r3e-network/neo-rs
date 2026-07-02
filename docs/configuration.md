@@ -55,16 +55,20 @@ Persistence backend.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
-| `backend` | string | `"memory"` | `"rocksdb"` for a persistent store, `"memory"` for in-memory (state lost on restart). Alias: `Engine`. Any other value is rejected. |
-| `data_dir` | path | none | RocksDB database directory. Required when `backend = "rocksdb"` unless `--storage-path` is passed. |
-| `path` | path | none | Alias for `data_dir`, accepted by the shipped presets. |
-| `read_only` | bool | `false` | Open the primary store as RocksDB read-only. Alias: `ReadOnly`. Use only for offline inspection/query modes; a normal syncing node must write genesis, blocks, headers, indexes, and service state. |
+| `backend` | string | `"memory"` unless a persistent path is supplied | `"mdbx"` for the production persistent store, `"rocksdb"` for the supported fallback/test backend, or `"memory"` for in-memory (state lost on restart). Alias: `Engine`. Any other value is rejected. |
+| `data_dir` | path | none | Database directory for persistent storage. Required when `backend = "mdbx"` or `"rocksdb"` unless `--storage-path` is passed. |
+| `read_only` | bool | `false` | Open the primary store read-only when the selected backend supports it. Alias: `ReadOnly`. Use only for offline inspection/query modes; a normal syncing node must write genesis, blocks, headers, indexes, and service state. |
+| `mdbx_geometry_upper_gb` | integer | backend default | MDBX map upper bound in GiB. Shipped MainNet/TestNet configs pin this so the mmap geometry is explicit. |
+| `mdbx_geometry_growth_mb` | integer | backend default | MDBX map growth step in MiB. |
+| `mdbx_max_readers` | integer | backend default | MDBX reader slot limit for concurrent RPC/service reads. |
 
 Notes:
 
-- The CLI `--storage-path <DIR>` overrides the directory and forces the RocksDB
-  backend regardless of `backend`.
-- A `rocksdb` backend with no directory (and no `--storage-path`) is an error.
+- The CLI `--storage-path <DIR>` overrides the directory and uses the default
+  persistent backend (`mdbx`) unless `[storage].backend` explicitly selects
+  `rocksdb`.
+- A persistent backend (`mdbx` or `rocksdb`) with no directory and no
+  `--storage-path` is an error.
 
 ### `[p2p]`
 
@@ -440,7 +444,7 @@ interval_seconds = 60
 |----------|-------|---------|
 | `RUST_LOG` | daemon | Log filter (e.g. `info`, `debug`, `info,neo=debug`). Default when unset: `info,neo=debug`. |
 | `NEO_NETWORK` | Docker | `testnet` (default) or `mainnet`; selects the bundled config inside the container. |
-| `NEO_STORAGE` | Docker | RocksDB path inside the container. |
+| `NEO_STORAGE` | Docker | Primary storage path inside the container. The backend still comes from the TOML preset, which uses MDBX by default. |
 | `NEO_CONFIG` | Docker | Custom config path for a bind-mounted TOML. |
 | `NEO_PLUGINS_DIR` | Docker | Directory for plugin configs (e.g. `RpcServer.json`). |
 | `NEO_RPC_PORT` | Docker | Health-check RPC port override only; the node's actual RPC port still comes from the TOML `[rpc]` section. |
@@ -455,13 +459,14 @@ the native binary.
 
 ## Storage path alias
 
-The RocksDB directory can be set three ways, in increasing precedence:
+The primary store directory can be set two ways, in increasing precedence:
 
 1. `[storage] data_dir = "..."`
-2. `[storage] path = "..."` (alias for `data_dir`)
-3. `--storage-path <DIR>` on the command line (also forces the RocksDB backend)
+2. `--storage-path <DIR>` on the command line (uses the default persistent backend, MDBX, unless `[storage].backend` explicitly selects RocksDB)
 
-When both `data_dir` and `path` are present, `data_dir` takes precedence.
+Legacy `[storage].path` is not used for the primary chain store. Keep primary
+storage configs canonical with `data_dir`; service-specific stores may still
+use their own `path` / `store_path` keys where documented in their sections.
 
 ## Minimal example
 

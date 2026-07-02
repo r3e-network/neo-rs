@@ -26,6 +26,7 @@
 //! - `rpc_runtime`: RPC server runtime wiring and shutdown handling.
 //! - `seeds`: Seed-node selection and network bootstrap helpers.
 //! - `services`: Auxiliary service startup and handles used by the daemon.
+//! - `shutdown`: OS, stop-height, and essential-task shutdown waiting.
 //! - `sync_metrics`: Sync-speed counters, summaries, and operator-facing
 //!   throughput status.
 //! - `tasks`: Task supervision, shutdown wiring, and background-service
@@ -38,6 +39,7 @@ use neo_config::ProtocolSettings;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 mod chain_acc;
@@ -52,6 +54,7 @@ mod remote_ledger;
 mod rpc_runtime;
 mod seeds;
 mod services;
+mod shutdown;
 mod sync_metrics;
 mod tasks;
 mod telemetry;
@@ -68,7 +71,8 @@ use ledger_source::{LedgerBlockSource, RpcLedgerBlockSource};
 use remote_ledger::RemoteLedgerStatus;
 use rpc_runtime::start_rpc_server;
 use services::OperationalServices;
-use tasks::{spawn_daemon_task, spawn_daemon_task_result};
+use shutdown::wait_for_shutdown_signal;
+use tasks::{TaskKind, spawn_daemon_task, spawn_daemon_task_result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LedgerMode<'a> {
@@ -363,6 +367,7 @@ struct RunningNode {
     node: Arc<neo_system::Node>,
     network: neo_network::NetworkHandle,
     handles: Vec<tokio::task::JoinHandle<()>>,
+    shutdown: CancellationToken,
     durable_service_stores: Vec<Arc<dyn neo_storage::persistence::store::Store>>,
 }
 
@@ -448,6 +453,7 @@ pub async fn run() -> anyhow::Result<()> {
         node,
         network,
         mut handles,
+        shutdown,
         durable_service_stores,
     } = running_node;
     info!(target: "neo", "neo-system Node built; blockchain service running");
@@ -590,6 +596,8 @@ pub async fn run() -> anyhow::Result<()> {
         Ok(Some(task)) => spawn_daemon_task_result(
             &mut handles,
             observability.as_ref(),
+            &shutdown,
+            TaskKind::Normal,
             "telemetry_metrics",
             task,
         ),
@@ -680,7 +688,8 @@ pub async fn run() -> anyhow::Result<()> {
     // so `kill`/`pkill`, Docker, and systemd all stop the node gracefully. The
     // validation stop-height path uses the same shutdown route after observing a
     // committed block event, so the persistent store is dropped cleanly.
-    let shutdown_signalled = wait_for_shutdown_signal(node.blockchain(), cli.stop_at_height).await;
+    let shutdown_signalled =
+        wait_for_shutdown_signal(node.blockchain(), cli.stop_at_height, shutdown).await;
 
     match shutdown_signalled {
         Ok(signal_name) => {
@@ -701,62 +710,6 @@ pub async fn run() -> anyhow::Result<()> {
     flush_state_service_for_shutdown(&node)?;
     restore_durable_store_mode(node.storage().as_ref(), &durable_service_stores)?;
     Ok(())
-}
-
-async fn wait_for_shutdown_signal(
-    blockchain: neo_blockchain::BlockchainHandle,
-    stop_at_height: Option<u32>,
-) -> std::io::Result<String> {
-    if let Some(target_height) = stop_at_height {
-        tokio::select! {
-            res = wait_for_os_shutdown_signal() => res.map(str::to_owned),
-            res = wait_for_stop_height(blockchain.subscribe(), target_height) => res,
-        }
-    } else {
-        wait_for_os_shutdown_signal().await.map(str::to_owned)
-    }
-}
-
-#[cfg(unix)]
-async fn wait_for_os_shutdown_signal() -> std::io::Result<&'static str> {
-    use tokio::signal::unix::{SignalKind, signal};
-    match signal(SignalKind::terminate()) {
-        Ok(mut sigterm) => tokio::select! {
-            res = tokio::signal::ctrl_c() => res.map(|()| "Ctrl-C"),
-            _ = sigterm.recv() => Ok("SIGTERM"),
-        },
-        Err(_) => tokio::signal::ctrl_c().await.map(|()| "Ctrl-C"),
-    }
-}
-
-#[cfg(not(unix))]
-async fn wait_for_os_shutdown_signal() -> std::io::Result<&'static str> {
-    tokio::signal::ctrl_c().await.map(|()| "Ctrl-C")
-}
-
-async fn wait_for_stop_height(
-    mut events: tokio::sync::broadcast::Receiver<neo_blockchain::RuntimeEvent>,
-    target_height: u32,
-) -> std::io::Result<String> {
-    use tokio::sync::broadcast::error::RecvError;
-
-    loop {
-        match events.recv().await {
-            Ok(neo_blockchain::RuntimeEvent::Imported { height, .. })
-                if height >= target_height =>
-            {
-                return Ok(format!("stop-at-height {target_height}"));
-            }
-            Ok(_) => {}
-            Err(RecvError::Lagged(_)) => continue,
-            Err(RecvError::Closed) => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    "blockchain event stream closed before stop height",
-                ));
-            }
-        }
-    }
 }
 
 /// Constructs the [`neo_system::Node`] with a live blockchain service
@@ -910,10 +863,13 @@ async fn build_node(
     );
     service.set_stop_at_height(stop_at_height);
 
+    let shutdown = CancellationToken::new();
     let mut handles = Vec::new();
     spawn_daemon_task(
         &mut handles,
         observability.as_ref(),
+        &shutdown,
+        TaskKind::Essential,
         "blockchain_service",
         service.run(),
     );
@@ -988,6 +944,8 @@ async fn build_node(
     spawn_daemon_task(
         &mut handles,
         observability.as_ref(),
+        &shutdown,
+        TaskKind::Essential,
         "p2p_service",
         net_service.run(),
     );
@@ -1000,6 +958,8 @@ async fn build_node(
         spawn_daemon_task(
             &mut handles,
             observability.as_ref(),
+            &shutdown,
+            TaskKind::Essential,
             "inventory_relay",
             async move {
                 use tokio::time::{Duration, MissedTickBehavior};
@@ -1059,6 +1019,8 @@ async fn build_node(
             spawn_daemon_task(
                 &mut handles,
                 observability.as_ref(),
+                &shutdown,
+                TaskKind::Essential,
                 "consensus_driver",
                 task,
             );
@@ -1082,6 +1044,8 @@ async fn build_node(
         spawn_daemon_task(
             &mut handles,
             observability.as_ref(),
+            &shutdown,
+            TaskKind::Normal,
             "network_height_advertiser",
             async move {
                 use neo_blockchain::RuntimeEvent;
@@ -1155,6 +1119,8 @@ async fn build_node(
         spawn_daemon_task(
             &mut handles,
             observability.as_ref(),
+            &shutdown,
+            TaskKind::Normal,
             "indexer_runtime",
             indexer_runtime::run_live_indexer_when_ready(
                 blockchain.clone(),
@@ -1170,6 +1136,7 @@ async fn build_node(
         node,
         network,
         handles,
+        shutdown,
         durable_service_stores: durable_stores,
     })
 }
