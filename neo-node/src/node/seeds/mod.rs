@@ -13,28 +13,37 @@
 //! - `seeds`: seed-node selection and fallback lists.
 
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use super::observability::ObservabilityRuntime;
+use super::tasks::{TaskKind, spawn_daemon_task_result};
 
 pub(super) fn spawn_seed_dialing(
     seeds: Vec<String>,
     network: neo_network::NetworkHandle,
     observability: Option<ObservabilityRuntime>,
+    shutdown: CancellationToken,
 ) -> Option<JoinHandle<()>> {
     if seeds.is_empty() {
         return None;
     }
 
-    Some(tokio::spawn(async move {
+    let task_shutdown = shutdown.clone();
+    let task_observability = observability.clone();
+    let task = async move {
         for seed in seeds {
+            // Abort early when the node is shutting down.
+            if task_shutdown.is_cancelled() {
+                break;
+            }
             match tokio::net::lookup_host(&seed).await {
                 Ok(addrs) => {
-                    dial_seed_addresses(&seed, addrs, &network, observability.as_ref()).await
+                    dial_seed_addresses(&seed, addrs, &network, task_observability.as_ref()).await
                 }
                 Err(err) => {
                     warn!(target: "neo", seed = %seed, error = %err, "seed DNS resolution failed");
-                    if let Some(observability) = &observability {
+                    if let Some(observability) = &task_observability {
                         observability.report_runtime_error(
                             "seed_dns_resolution",
                             format_args!("{seed}: {err}"),
@@ -43,7 +52,19 @@ pub(super) fn spawn_seed_dialing(
                 }
             }
         }
-    }))
+        Ok(())
+    };
+
+    let mut handles = Vec::new();
+    spawn_daemon_task_result(
+        &mut handles,
+        observability.as_ref(),
+        &shutdown,
+        TaskKind::Normal,
+        "seed_dialer",
+        task,
+    );
+    handles.pop()
 }
 
 async fn dial_seed_addresses(

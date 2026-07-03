@@ -243,8 +243,13 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
         match self.db.get(key) {
             Ok(value) => value,
             Err(err) => {
-                warn!(target: "neo", error = %err, "rocksdb get failed");
-                None
+                error!(target: "neo", error = %err, "RocksDB get failed - this is a critical error that may cause incorrect state");
+                #[cfg(debug_assertions)]
+                panic!(
+                    "RocksDB storage read failed: {err}. This indicates a disk I/O error, corruption, or configuration problem that must be fixed before the node can operate correctly."
+                );
+                #[cfg(not(debug_assertions))]
+                return None;
             }
         }
     }
@@ -318,8 +323,13 @@ impl RawReadOnlyStore for RocksDbStore {
         match self.db.get(key) {
             Ok(value) => value,
             Err(err) => {
-                warn!(target: "neo", error = %err, "rocksdb get failed");
-                None
+                error!(target: "neo", error = %err, "RocksDB get failed - this is a critical error that may cause incorrect state");
+                #[cfg(debug_assertions)]
+                panic!(
+                    "RocksDB storage read failed: {err}. This indicates a disk I/O error, corruption, or configuration problem that must be fixed before the node can operate correctly."
+                );
+                #[cfg(not(debug_assertions))]
+                return None;
             }
         }
     }
@@ -331,7 +341,18 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
         if let Some(value) = self.pending_fast_sync_value(&raw) {
             return value.map(StorageItem::from_bytes);
         }
-        self.db.get(raw).ok().flatten().map(StorageItem::from_bytes)
+        match self.db.get(raw) {
+            Ok(value) => value.map(StorageItem::from_bytes),
+            Err(err) => {
+                error!(target: "neo", error = %err, "RocksDB get failed - this is a critical error that may cause incorrect state");
+                #[cfg(debug_assertions)]
+                panic!(
+                    "RocksDB storage read failed: {err}. This indicates a disk I/O error, corruption, or configuration problem that must be fixed before the node can operate correctly."
+                );
+                #[cfg(not(debug_assertions))]
+                return None;
+            }
+        }
     }
 
     fn find(
@@ -640,7 +661,18 @@ impl RocksDbSnapshot {
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
-        self.db.get_opt(key, &self.read_options()).ok().flatten()
+        match self.db.get_opt(key, &self.read_options()) {
+            Ok(value) => value,
+            Err(err) => {
+                error!(target: "neo", error = %err, "RocksDB snapshot get failed - this is a critical error that may cause incorrect state");
+                #[cfg(debug_assertions)]
+                panic!(
+                    "RocksDB snapshot storage read failed: {err}. This indicates a disk I/O error, corruption, or configuration problem that must be fixed before the node can operate correctly."
+                );
+                #[cfg(not(debug_assertions))]
+                return None;
+            }
+        }
     }
 
     fn find(
@@ -697,7 +729,18 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
 
 impl RawReadOnlyStore for RocksDbSnapshot {
     fn try_get_bytes(&self, key: &[u8]) -> Option<Vec<u8>> {
-        self.db.get_opt(key, &self.read_options()).ok().flatten()
+        match self.db.get_opt(key, &self.read_options()) {
+            Ok(value) => value,
+            Err(err) => {
+                error!(target: "neo", error = %err, "RocksDB snapshot get failed - this is a critical error that may cause incorrect state");
+                #[cfg(debug_assertions)]
+                panic!(
+                    "RocksDB snapshot storage read failed: {err}. This indicates a disk I/O error, corruption, or configuration problem that must be fixed before the node can operate correctly."
+                );
+                #[cfg(not(debug_assertions))]
+                return None;
+            }
+        }
     }
 }
 

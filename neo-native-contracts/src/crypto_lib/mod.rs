@@ -109,40 +109,53 @@ impl CryptoLib {
                 "CryptoLib::verifyWithECDsa: Keccak256 curves require the Cockatrice hardfork",
             ));
         }
-        if signature.len() != 64 {
-            return if gorgon {
-                Err(CoreError::invalid_operation(
-                    "CryptoLib::verifyWithECDsa: signature size should be 64 bytes",
-                ))
-            } else {
-                Ok(false)
-            };
-        }
         if gorgon {
-            // HF_Gorgon switched from `Crypto.VerifySignatureV0` to
-            // `Crypto.VerifySignature`: bad signature length or invalid public
-            // key faults instead of being caught and converted to false.
+            // V2 (HF_Gorgon..), dormant on v3.10.0 mainnet/testnet. C#
+            // `VerifyWithECDsaV2` calls `Crypto.VerifySignature` with no catch, so
+            // a bad signature length or an invalid public key both FAULT.
+            if signature.len() != 64 {
+                return Err(CoreError::invalid_operation(
+                    "CryptoLib::verifyWithECDsa: signature size should be 64 bytes",
+                ));
+            }
             ECPoint::decode(pubkey, named.curve()).map_err(|e| {
                 CoreError::invalid_operation(format!("CryptoLib::verifyWithECDsa: {e}"))
             })?;
-            neo_crypto::ecc::EcdsaVerify::verify_signature_with_hash(
+            return neo_crypto::ecc::EcdsaVerify::verify_signature_with_hash(
                 named.curve(),
                 pubkey,
                 message,
                 signature,
                 named.hash_algorithm(),
             )
-            .map_err(|e| CoreError::invalid_operation(format!("CryptoLib::verifyWithECDsa: {e}")))
-        } else {
-            Ok(neo_crypto::ecc::EcdsaVerify::verify_signature_with_hash(
-                named.curve(),
-                pubkey,
-                message,
-                signature,
-                named.hash_algorithm(),
-            )
-            .unwrap_or(false))
+            .map_err(|e| CoreError::invalid_operation(format!("CryptoLib::verifyWithECDsa: {e}")));
         }
+
+        // V0/V1 (genesis..HF_Gorgon), the ACTIVE v3.10.0 path. C#
+        // `VerifyWithECDsaV0/V1` wrap `Crypto.VerifySignatureV0(msg, sig, pubkey,
+        // curve, hash)` in `catch(ArgumentException)`. That overload decodes the
+        // key via `ECPoint.DecodePoint` FIRST (as the argument to the inner
+        // `VerifySignatureV0`), and only then does the inner method check the
+        // signature length. `DecodePoint` throws `FormatException`/
+        // `ArithmeticException`/`IndexOutOfRangeException` for a malformed/off-curve/
+        // empty key — none are `ArgumentException`, so a bad key is NOT caught and
+        // the VM FAULTS, even when the signature length is also wrong. A good key
+        // with a wrong-length or non-verifying signature returns false. Reproduce
+        // that exact order: decode (fault) before the length check.
+        ECPoint::decode(pubkey, named.curve()).map_err(|e| {
+            CoreError::invalid_operation(format!("CryptoLib::verifyWithECDsa: {e}"))
+        })?;
+        if signature.len() != 64 {
+            return Ok(false);
+        }
+        Ok(neo_crypto::ecc::EcdsaVerify::verify_signature_with_hash(
+            named.curve(),
+            pubkey,
+            message,
+            signature,
+            named.hash_algorithm(),
+        )
+        .unwrap_or(false))
     }
 
     /// Pure secp256k1 public-key recovery with C# `RecoverSecp256K1` semantics:
@@ -150,13 +163,15 @@ impl CryptoLib {
     /// wraps `Crypto.ECRecover` in try/catch and returns `null`). Split out so the
     /// success/null decision can be unit tested without an [`ApplicationEngine`].
     fn recover_secp256k1_method(message_hash: &[u8], signature: &[u8]) -> Option<Vec<u8>> {
-        // C# `Crypto.ECRecover` requires an exactly-65-byte (r‖s‖v) signature and
-        // throws (→ null) otherwise. The 64-byte EIP-2098 compact form is an
-        // Ethereum-specific extension with no place in Neo's consensus surface, so
-        // reject it here to avoid a state divergence where this node returns a key
-        // and a C# node returns null. Length is gated before recovery so the
-        // consensus path never accepts a signature C# would reject.
-        if signature.len() != 65 {
+        // C# `Crypto.ECRecover` accepts BOTH a 65-byte `r‖s‖v` signature AND a
+        // 64-byte EIP-2098 compact `r‖yParityAndS` signature
+        // (`if (signature.Length != 65 && signature.Length != 64) throw`), and
+        // `RecoverSecp256K1` returns the recovered key (null only on a thrown
+        // exception). Rejecting the 64-byte form here would diverge from C# on the
+        // HF_Echidna-active `recoverSecp256K1` path (C# recovers a key, we return
+        // null). `recover_public_key` implements the same yParity/mask logic for
+        // the 64-byte form, so delegate for both lengths.
+        if signature.len() != 65 && signature.len() != 64 {
             return None;
         }
         Secp256k1Crypto::recover_public_key(message_hash, signature).ok()
@@ -206,6 +221,14 @@ impl CryptoLib {
             "bls12381Deserialize" => Self::bls_point(method, args, 0).map(|p| p.serialize()),
             "bls12381Equal" => Self::bls_point(method, args, 0).and_then(|a| {
                 let b = Self::bls_point(method, args, 1)?;
+                // C# `Bls12381Equal` throws `ArgumentException("BLS12-381 type
+                // mismatch")` → VM FAULT for a cross-group comparison (e.g. G1 vs
+                // G2/Gt); only a same-group pair returns a boolean.
+                if !a.same_group(&b) {
+                    return Err(CoreError::invalid_operation(
+                        "CryptoLib::bls12381Equal: BLS12-381 type mismatch",
+                    ));
+                }
                 Ok(vec![u8::from(a.equals(&b))])
             }),
             "bls12381Add" => Self::bls_point(method, args, 0).and_then(|a| {

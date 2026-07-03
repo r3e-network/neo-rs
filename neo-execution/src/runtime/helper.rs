@@ -113,7 +113,10 @@ impl Helper {
     /// Prefer `try_multi_sig_redeem_script` for fallible construction.
     #[inline]
     pub fn multi_sig_redeem_script(m: usize, public_keys: &[Vec<u8>]) -> Vec<u8> {
-        Self::try_multi_sig_redeem_script(m, public_keys).expect("Invalid multi-sig parameters")
+        Self::try_multi_sig_redeem_script(m, public_keys).expect(
+            "multi-sig redeem script construction failed: \
+             m must be in [1, 1024] and m <= public_keys.len()",
+        )
     }
 
     /// Computes the hash of a deployed contract.

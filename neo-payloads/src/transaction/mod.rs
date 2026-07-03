@@ -137,7 +137,23 @@ impl neo_primitives::Verifiable for Transaction {
         self
     }
 
+    /// Lightweight pre-verification that the transaction is structurally valid.
+    ///
+    /// Full signature and state-dependent verification is deferred to
+    /// `TransactionRouter::preverify()` → `verify_state_independent()`. This
+    /// method performs basic structural checks: the version must be valid,
+    /// signers must not be empty, and at least one witness must be present.
+    /// Returns `false` for transactions that are structurally invalid at the
+    /// protocol level.
     fn verify(&self) -> bool {
+        // Reject transactions with an unknown version (C# only supports version 0).
+        if self.version > 0 {
+            return false;
+        }
+        // Every transaction must have at least one signer and at least one witness.
+        if self.signers.is_empty() || self.witnesses.is_empty() {
+            return false;
+        }
         true
     }
 }

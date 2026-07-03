@@ -43,7 +43,7 @@ use num_traits::{One, Pow, Signed, Zero};
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::ops::{Add, Mul};
+use std::ops::{Add, Div, Mul, Neg, Sub};
 use std::str::FromStr;
 
 /// Represents a fixed-point number of arbitrary precision.
@@ -57,9 +57,14 @@ pub struct BigDecimal {
 }
 
 impl Hash for BigDecimal {
+    /// Hashes the normalized representation to ensure `k1 == k2 => hash(k1) == hash(k2)`.
+    ///
+    /// `PartialEq` compares normalized values (e.g. `BigDecimal(100, 2) == BigDecimal(1, 0)`),
+    /// so the hash must also be computed from the normalized canonical form.
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.value.hash(state);
-        self.decimals.hash(state);
+        let canonical = self.normalized_value();
+        canonical.0.hash(state);
+        canonical.1.hash(state);
     }
 }
 
@@ -151,6 +156,22 @@ impl BigDecimal {
     pub fn to_big_integer(&self, decimals: u8) -> PrimitiveResult<BigInt> {
         let scaled = self.change_decimals(decimals)?;
         Ok(scaled.value)
+    }
+
+    /// Returns the normalized canonical representation `(value, decimals)` where
+    /// trailing zeros are removed. This is the form used for hashing, ensuring
+    /// `Hash` is consistent with `Eq`.
+    fn normalized_value(&self) -> (BigInt, u8) {
+        let mut value = self.value.clone();
+        let mut decimals = self.decimals;
+        if decimals > 0 {
+            let ten = BigInt::from(10);
+            while decimals > 0 && (&value % &ten).is_zero() {
+                value /= &ten;
+                decimals -= 1;
+            }
+        }
+        (value, decimals)
     }
 
     /// Try parse a BigDecimal from a string.
@@ -354,6 +375,52 @@ impl Zero for BigDecimal {
 impl One for BigDecimal {
     fn one() -> Self {
         Self::new(BigInt::one(), 0)
+    }
+}
+
+impl Sub for BigDecimal {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self::Output {
+        let max_decimals = self.decimals.max(other.decimals);
+        let self_normalized = self.change_decimals(max_decimals).unwrap_or(self);
+        let other_normalized = other.change_decimals(max_decimals).unwrap_or(other);
+
+        Self {
+            value: self_normalized.value - other_normalized.value,
+            decimals: max_decimals,
+        }
+    }
+}
+
+impl Div for BigDecimal {
+    type Output = Self;
+
+    fn div(self, other: Self) -> Self::Output {
+        let max_decimals = self.decimals.max(other.decimals);
+        let self_normalized = self.change_decimals(max_decimals).unwrap_or(self);
+        let other_normalized = other.change_decimals(max_decimals).unwrap_or(other);
+
+        if other_normalized.value.is_zero() {
+            // Division by zero: return zero (matches Neo C# behavior for BigDecimal)
+            return Self::zero();
+        }
+
+        Self {
+            value: self_normalized.value / other_normalized.value,
+            decimals: max_decimals,
+        }
+    }
+}
+
+impl Neg for BigDecimal {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Self {
+            value: -self.value,
+            decimals: self.decimals,
+        }
     }
 }
 

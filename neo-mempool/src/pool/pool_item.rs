@@ -113,8 +113,22 @@ impl PartialOrd for PoolItem {
 }
 
 impl Ord for PoolItem {
+    /// Orders by priority (HighPriority > fee_per_byte > network_fee > hash).
+    ///
+    /// `PartialEq` and `Eq` compare by transaction hash only, which means two
+    /// `PoolItem`s wrapping the same transaction are considered equal regardless
+    /// of metadata (timestamp, etc.). The `Ord` implementation produces a
+    /// deterministic tiebreaker when hashes are equal by returning `Ordering::Equal`,
+    /// ensuring `Ord` is consistent with `Eq`. Without this, a `BTreeSet<PoolItem>`
+    /// would silently drop transactions when identical hashes are inserted with
+    /// different timestamps.
     fn cmp(&self, other: &Self) -> Ordering {
-        self.compare_to(other)
+        let ordering = self.compare_to(other);
+        if self.hash() == other.hash() {
+            // Same transaction → always equal, regardless of priority comparison.
+            return Ordering::Equal;
+        }
+        ordering
     }
 }
 

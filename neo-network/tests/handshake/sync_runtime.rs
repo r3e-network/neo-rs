@@ -152,6 +152,7 @@ async fn node_requests_blocks_when_peer_is_ahead() {
         network,
         0xfa4e_0004,
         "/fake-peer:0.0.1/".to_string(),
+        0,
         capabilities,
     );
     fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
@@ -216,6 +217,7 @@ async fn seeded_local_height_resumes_block_requests_after_durable_tip() {
         network,
         0xfa4e_000d,
         "/fake-peer:0.0.1/".to_string(),
+        0,
         capabilities,
     );
     fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
@@ -255,6 +257,7 @@ async fn node_pipelines_block_requests_as_height_advances() {
         network,
         0xfa4e_000c,
         "/fake-peer:0.0.1/".to_string(),
+        0,
         capabilities,
     );
     fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
@@ -302,6 +305,7 @@ async fn node_keeps_two_block_request_windows_in_flight() {
         network,
         0xfa4e_000e,
         "/fake-peer:0.0.1/".to_string(),
+        0,
         capabilities,
     );
     fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
@@ -347,6 +351,7 @@ async fn node_requests_second_sync_window_without_half_second_idle() {
         network,
         0xfa4e_000f,
         "/fake-peer:0.0.1/".to_string(),
+        0,
         capabilities,
     );
     fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
@@ -388,6 +393,7 @@ async fn node_does_not_rewind_sync_cursor_before_stall_timeout() {
         network,
         0xfa4e_0010,
         "/fake-peer:0.0.1/".to_string(),
+        0,
         capabilities,
     );
     fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))

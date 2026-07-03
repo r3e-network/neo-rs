@@ -291,12 +291,31 @@ impl DataCache {
                         state.dictionary.remove(key);
                         state.change_set.remove(key);
                     }
-                    TrackState::Changed | TrackState::None | TrackState::NotFound => {
+                    TrackState::Changed | TrackState::None => {
                         state.dictionary.insert(
                             key.clone(),
                             Trackable::new(StorageItem::default(), TrackState::Deleted),
                         );
                         state.change_set.insert(key.clone());
+                    }
+                    TrackState::NotFound => {
+                        // C# `parent.Delete(key)` (invoked by `ClonedCache.Commit`
+                        // via `DeleteInternal`) records a tombstone for a key absent
+                        // from the parent dictionary ONLY if it exists in the parent's
+                        // underlying store (`TryGetInternalWrapper != null`); otherwise
+                        // it is a no-op. Matching that here keeps the fast merge path
+                        // from injecting a spurious `Deleted` into the change set (which
+                        // would perturb the MPT state-root diff) — the same store check
+                        // the per-item slow path (`apply_delete`) already performs.
+                        let exists_in_store =
+                            self.store_get.as_ref().and_then(|get| get(key)).is_some();
+                        if exists_in_store {
+                            state.dictionary.insert(
+                                key.clone(),
+                                Trackable::new(StorageItem::default(), TrackState::Deleted),
+                            );
+                            state.change_set.insert(key.clone());
+                        }
                     }
                     TrackState::Deleted => {}
                 },

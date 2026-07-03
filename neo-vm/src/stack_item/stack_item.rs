@@ -17,7 +17,9 @@ use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::StackItemType;
 use neo_vm_rs::{StackValue, VmOrderedDictionary};
 use num_bigint::BigInt;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use super::vm_integer::VmInteger;
@@ -572,19 +574,25 @@ impl StackItem {
                 hash
             }
             Self::Pointer(pointer) => {
-                let script_ptr = pointer.script() as *const Script as usize as u64;
+                // Use the script's deterministic hash code instead of memory address
+                let script_hash = pointer.script().hash_code();
                 let mut hash = 17;
-                hash = combine_hash(hash, (script_ptr & 0xFFFF_FFFF) as i32);
-                hash = combine_hash(hash, ((script_ptr >> 32) & 0xFFFF_FFFF) as i32);
+                hash = combine_hash(hash, (script_hash & 0xFFFF_FFFF) as i32);
+                hash = combine_hash(hash, ((script_hash >> 32) & 0xFFFF_FFFF) as i32);
                 hash = combine_hash(hash, pointer.position() as i32);
                 hash
             }
             Self::InteropInterface(interface) => {
-                let addr = Arc::as_ptr(interface).cast::<()>() as usize as u64;
-                let mut hash = 17;
-                hash = combine_hash(hash, (addr & 0xFFFF_FFFF) as i32);
-                hash = combine_hash(hash, ((addr >> 32) & 0xFFFF_FFFF) as i32);
-                hash
+                // Use the interface type name's hash for deterministic interop interface hashing.
+                // This ensures that different interop interface types have different hash codes.
+                let type_name = interface.interface_type();
+                let mut hasher = DefaultHasher::new();
+                type_name.hash(&mut hasher);
+                let hash = hasher.finish();
+                let mut h = 17;
+                h = combine_hash(h, (hash & 0xFFFF_FFFF) as i32);
+                h = combine_hash(h, ((hash >> 32) & 0xFFFF_FFFF) as i32);
+                h
             }
         }
     }
@@ -810,19 +818,27 @@ impl Ord for StackItem {
                 }
                 std::cmp::Ordering::Equal
             }
+            (Self::InteropInterface(a), Self::InteropInterface(b)) => {
+                // Compare interop interfaces by their concrete type name.
+                // Without a Comparable trait on InteropInterface, two instances
+                // of the same type cannot be meaningfully ordered — we return
+                // Equal for same-type interops. This is acceptable because
+                // InteropInterface items are never stored in sorted collections
+                // that require total ordering (maps use a different comparison).
+                a.interface_type().cmp(b.interface_type())
+            }
             _ => {
-                // Different variants: order by variant rank.
-                match (self, other) {
-                    (Self::Null, _) => std::cmp::Ordering::Less,
-                    (_, Self::Null) => std::cmp::Ordering::Greater,
-                    (Self::Boolean(_), Self::Integer(_)) => std::cmp::Ordering::Less,
-                    (Self::Integer(_), Self::Boolean(_)) => std::cmp::Ordering::Greater,
-                    (Self::Boolean(_), Self::ByteString(_)) => std::cmp::Ordering::Less,
-                    (Self::ByteString(_), Self::Boolean(_)) => std::cmp::Ordering::Greater,
-                    (Self::Integer(_), Self::ByteString(_)) => std::cmp::Ordering::Less,
-                    (Self::ByteString(_), Self::Integer(_)) => std::cmp::Ordering::Greater,
-                    _ => std::cmp::Ordering::Equal, // Same types that we haven't handled above
-                }
+                // All StackItemType variants have distinct type bytes, so this arm
+                // is unreachable in practice. Use a deterministic fallback based on
+                // variant discriminant rather than incorrectly returning Equal.
+                // debug_assert! would fire here in dev builds to catch missing arms.
+                debug_assert!(
+                    false,
+                    "StackItem::cmp: unhandled variant combination (types {:?} vs {:?})",
+                    self.stack_item_type(),
+                    other.stack_item_type()
+                );
+                variant_discriminant(self).cmp(&variant_discriminant(other))
             }
         }
     }
@@ -848,6 +864,26 @@ fn cmp_stack_item_sequences(
 
 const fn combine_hash(current: i32, value: i32) -> i32 {
     current.wrapping_mul(397).wrapping_add(value)
+}
+
+/// Returns a deterministic ordering index for each `StackItem` variant.
+///
+/// Used as a fallback in `Ord::cmp` when variant combinations are not
+/// explicitly handled. The values correspond to the variant's `StackItemType`
+/// byte, ensuring consistency with the type-based ordering used by `cmp()`.
+const fn variant_discriminant(item: &StackItem) -> u8 {
+    match item {
+        StackItem::Null => 0x00,
+        StackItem::Boolean(_) => 0x01,
+        StackItem::Integer(_) => 0x02,
+        StackItem::ByteString(_) => 0x03,
+        StackItem::Buffer(_) => 0x04,
+        StackItem::Array(_) => 0x05,
+        StackItem::Struct(_) => 0x06,
+        StackItem::Map(_) => 0x07,
+        StackItem::Pointer(_) => 0x08,
+        StackItem::InteropInterface(_) => 0x09,
+    }
 }
 
 fn hash_bytes(bytes: &[u8]) -> i32 {

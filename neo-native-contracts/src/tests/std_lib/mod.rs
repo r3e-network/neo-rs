@@ -679,3 +679,31 @@ fn json_serialize_deserialize_match_csharp_vectors() {
     let item = BinarySerializer::deserialize(&payload, &limits, None).unwrap();
     assert_eq!(ser(&item), r#"{"k":[1,true,null]}"#);
 }
+
+#[test]
+fn int_params_truncate_to_i32_like_dotnet_cast() {
+    // C# `InteropParameterDescriptor` marshals `int` via `(int)GetInteger()` — the
+    // low 32 bits, two's-complement, WRAPPING (never faulting).
+    assert_eq!(
+        StdLib::dotnet_int_cast(&(BigInt::from(1u64 << 32) + BigInt::from(10))),
+        10
+    );
+    assert_eq!(StdLib::dotnet_int_cast(&BigInt::from(-1)), -1);
+    assert_eq!(StdLib::dotnet_int_cast(&BigInt::from(1u64 << 31)), i32::MIN);
+    assert_eq!(StdLib::dotnet_int_cast(&BigInt::from(0)), 0);
+
+    // memorySearch: a `start` of 2^32 wraps to 0 (C# `(int)start`), so the search
+    // runs from index 0 rather than faulting. "bc" first appears at index 1.
+    let start_2e32 = BigInt::from(1u64 << 32).to_signed_bytes_le();
+    let out = StdLib::memory_search_impl(&[b"abcabc".to_vec(), b"bc".to_vec(), start_2e32])
+        .expect("start 2^32 wraps to 0, not a fault");
+    assert_eq!(BigInt::from_signed_bytes_le(&out), BigInt::from(1));
+
+    // itoa: a `base` of 2^32 + 16 wraps to 16 (hex), not a fault.
+    let base_hex = (BigInt::from(1u64 << 32) + BigInt::from(16)).to_signed_bytes_le();
+    let value = BigInt::from(255).to_signed_bytes_le();
+    let out = StdLib::dispatch("itoa", &[value, base_hex])
+        .expect("known method")
+        .expect("base 2^32+16 wraps to 16");
+    assert_eq!(String::from_utf8(out).unwrap(), "0ff");
+}

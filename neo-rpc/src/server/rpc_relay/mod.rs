@@ -53,10 +53,12 @@ pub(super) fn map_relay_result(result: RelayResult) -> Result<Value, RpcExceptio
         VerifyResult::Expired => Err(RpcException::from(
             RpcError::expired_transaction().with_data("Expired"),
         )),
-        // C# `GetRelayResult` has no explicit case for NotYetValid (added in
-        // v3.10.0), so it falls through to the default `VerificationFailed`.
+        // C# `RpcServer.Node` maps NotYetValid to `RpcError.ExpiredTransaction`
+        // (NOT the default VerificationFailed): both Expired and NotYetValid were
+        // reported as ExpiredTransaction before the split, and the code is kept
+        // stable for clients (RpcServer.Node.cs:102-106).
         VerifyResult::NotYetValid => Err(RpcException::from(
-            RpcError::verification_failed().with_data("NotYetValid"),
+            RpcError::expired_transaction().with_data("NotYetValid"),
         )),
         VerifyResult::InsufficientFunds => Err(RpcException::from(
             RpcError::insufficient_funds().with_data("InsufficientFunds"),

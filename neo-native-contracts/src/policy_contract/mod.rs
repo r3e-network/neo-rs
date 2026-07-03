@@ -51,6 +51,8 @@ const PREFIX_MILLISECONDS_PER_BLOCK: u8 = 21;
 const PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT: u8 = 22;
 /// C# `PolicyContract.Prefix_MaxTraceableBlocks` (HF_Echidna).
 const PREFIX_MAX_TRACEABLE_BLOCKS: u8 = 23;
+/// `PolicyContract.Prefix_MaxTransactionsPerBlock` (HF_Gorgon).
+const PREFIX_MAX_TRANSACTIONS_PER_BLOCK: u8 = 24;
 
 /// Default execution fee factor (matches C# `PolicyContract.DefaultExecFeeFactor`).
 pub const DEFAULT_EXEC_FEE_FACTOR: u32 = 30;
@@ -102,6 +104,10 @@ const MAX_MILLISECONDS_PER_BLOCK: i64 = 30_000;
 const MAX_MAX_VALID_UNTIL_BLOCK_INCREMENT: i64 = 86_400;
 /// C# `PolicyContract.MaxMaxTraceableBlocks`.
 const MAX_MAX_TRACEABLE_BLOCKS: i64 = 2_102_400;
+/// Default `MaxTransactionsPerBlock` value (matches C# ProtocolSettings.Default).
+pub const DEFAULT_MAX_TRANSACTIONS_PER_BLOCK: i64 = 512;
+/// Upper bound for committee-adjustable `MaxTransactionsPerBlock` (u16::MAX = 65535).
+const MAX_MAX_TRANSACTIONS_PER_BLOCK: i64 = 65_535;
 pub(crate) const POLICY_MILLISECONDS_PER_BLOCK_CHANGED_EVENT: &str = "MillisecondsPerBlockChanged";
 pub(crate) const POLICY_WHITELIST_FEE_CHANGED_EVENT: &str = "WhitelistFeeChanged";
 pub(crate) const POLICY_RECOVERED_FUND_EVENT: &str = "RecoveredFund";
@@ -383,6 +389,26 @@ impl NativeContract for PolicyContract {
             .to_signed_bytes_le()),
             "getMaxTraceableBlocks" => {
                 Ok(BigInt::from(self.max_traceable_blocks(engine)? as i64).to_signed_bytes_le())
+            }
+            "getMaxTransactionsPerBlock" => {
+                // C#: from HfGorgon this reads Policy storage; before HfGorgon
+                // returns the static ProtocolSettings value.
+                Ok(
+                    BigInt::from(self.read_max_transactions_per_block(engine)?)
+                        .to_signed_bytes_le(),
+                )
+            }
+            "setMaxTransactionsPerBlock" => {
+                // C#: validate range [1, 65535] -> assert committee -> write.
+                let value = crate::args::raw_i64_arg(
+                    args,
+                    0,
+                    "PolicyContract::setMaxTransactionsPerBlock",
+                )?;
+                Self::validate_max_transactions_per_block(value)?;
+                assert_committee(engine, "setMaxTransactionsPerBlock")?;
+                self.put_max_transactions_per_block(&engine.snapshot_cache(), value)?;
+                Ok(Vec::new())
             }
             "blockAccount" => {
                 // C# BlockAccountV0/V1 (identical bodies; only the manifest call

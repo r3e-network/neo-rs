@@ -160,6 +160,14 @@ impl ConsensusService {
             return Ok(());
         }
 
+        // The primary's preparation IS its PrepareRequest, not a PrepareResponse.
+        // C# keys PreparationPayloads by validator index and sets the primary's
+        // slot from the PrepareRequest, so a PrepareResponse from the primary is
+        // ignored. Drop it here so the primary is not double-counted toward M.
+        if payload.validator_index == self.context.primary_index() {
+            return Ok(());
+        }
+
         // Check if we already have this response
         if self
             .context
@@ -267,6 +275,19 @@ impl ConsensusService {
 
     /// Checks if we have enough prepare responses to send commit
     pub(in crate::service) fn check_prepare_responses(&mut self) -> ConsensusResult<()> {
+        // C# calls `CheckPreparations` (→ send Commit) only when
+        // `context.RequestSentOrReceived` — i.e. the PrepareRequest has been sent
+        // (primary) or received (backup). Without this gate, M PrepareResponses
+        // arriving BEFORE the PrepareRequest (network reordering, or a colluding
+        // majority) would pass — `proposed_tx_hashes` is still empty so
+        // `has_missing_proposed_transactions()` is vacuously false — and the node
+        // would commit-sign the DEFAULT (zero) block hash, burning its commit for
+        // the view. `prepare_request_received` is set for both the sending primary
+        // and a receiving backup, matching C# `RequestSentOrReceived`.
+        if !self.context.prepare_request_received {
+            return Ok(());
+        }
+
         if !self.context.has_enough_prepare_responses() {
             return Ok(());
         }

@@ -85,6 +85,7 @@ fn version_message(network: u32, nonce: u32, listener_port: u16) -> Message {
         network,
         nonce,
         "/fake-peer:0.0.1/".to_string(),
+        0,
         capabilities,
     );
     Message::create(MessageCommand::Version, Some(&payload), false).expect("encode version")

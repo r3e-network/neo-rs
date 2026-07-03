@@ -753,6 +753,13 @@ impl MemoryPool {
                 .map(|item| (*item.transaction).clone());
             if let Some(tx) = &removed {
                 guard.context_remove(tx);
+                // Clean up the conflicts index: other transactions that
+                // declared `hash` as a conflict target must be unlinked,
+                // and `hash`'s own conflict targets must also be cleaned.
+                guard.conflicts.remove(hash);
+                for targets in guard.conflicts.values_mut() {
+                    targets.remove(hash);
+                }
             }
             removed
         };

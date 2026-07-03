@@ -197,9 +197,11 @@ fn test_timeout_calculation() {
     ctx.view_number = 2;
     assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 8);
 
-    // View 4+: capped at base << 5 = 480s
+    // View 10: base << 11 = 30720s (C# uses 32-bit shift with 5-bit mask)
+    // In C#, `TimePerBlock << (ViewNumber + 1)` masks the shift amount to 5 bits,
+    // so the timeout grows exponentially until view 30, then wraps at view 31.
     ctx.view_number = 10;
-    assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 32);
+    assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 2048);
 }
 
 #[test]

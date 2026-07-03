@@ -355,8 +355,11 @@ impl Bls12381Point {
         }
     }
 
-    /// Returns `true` only when both points are in the same group and equal,
-    /// matching C# `Bls12381Equal` (a cross-group comparison is never equal).
+    /// Returns `true` when both points are in the same group and equal. A
+    /// cross-group comparison returns `false` here, but callers mirroring C#
+    /// `Bls12381Equal` must first reject a cross-group pair via [`Self::same_group`]
+    /// and FAULT — C# throws `ArgumentException("BLS12-381 type mismatch")` rather
+    /// than returning `false` for e.g. a G1-vs-G2 comparison.
     #[must_use]
     pub fn equals(&self, other: &Self) -> bool {
         match (self, other) {
@@ -370,6 +373,20 @@ impl Bls12381Point {
             (Bls12381Point::Gt(a), Bls12381Point::Gt(b)) => unsafe { blst_fp12_is_equal(a, b) },
             _ => false,
         }
+    }
+
+    /// Whether both operands are in the same BLS12-381 group (G1/G2/Gt). C#
+    /// `Bls12381Equal` throws `ArgumentException` for a cross-group comparison, so
+    /// a `CryptoLib` caller must FAULT on a mismatch rather than treat it as
+    /// "not equal".
+    #[must_use]
+    pub fn same_group(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Bls12381Point::G1(_), Bls12381Point::G1(_))
+                | (Bls12381Point::G2(_), Bls12381Point::G2(_))
+                | (Bls12381Point::Gt(_), Bls12381Point::Gt(_))
+        )
     }
 }
 

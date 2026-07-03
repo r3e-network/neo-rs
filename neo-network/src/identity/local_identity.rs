@@ -133,6 +133,7 @@ impl LocalIdentity {
             self.network,
             self.nonce,
             self.user_agent.clone(),
+            self.block_height(),
             self.capabilities(),
         )
     }

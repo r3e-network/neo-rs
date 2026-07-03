@@ -10,7 +10,7 @@ use crate::persistence::{
 use libmdbx::{NoWriteMap, RO, Transaction};
 use parking_lot::RwLock;
 use std::{collections::BTreeMap, sync::Arc};
-use tracing::warn;
+use tracing::{error, warn};
 
 type WriteBatch = Arc<RwLock<BTreeMap<Vec<u8>, Option<Vec<u8>>>>>;
 
@@ -67,8 +67,13 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MdbxSnapshot {
         match self.read_entry(key) {
             Ok(value) => value,
             Err(err) => {
-                warn!(target: "neo", error = %err, "MDBX snapshot get failed");
-                None
+                error!(target: "neo", error = %err, "MDBX snapshot get failed - this is a critical error that may cause incorrect state");
+                #[cfg(debug_assertions)]
+                panic!(
+                    "MDBX snapshot storage read failed: {err}. This indicates a disk I/O error, corruption, or configuration problem that must be fixed before the node can operate correctly."
+                );
+                #[cfg(not(debug_assertions))]
+                return None;
             }
         }
     }
@@ -81,7 +86,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MdbxSnapshot {
         match self.collect_entries(key_prefix.map(Vec::as_slice), direction) {
             Ok(entries) => Box::new(entries.into_iter()),
             Err(err) => {
-                warn!(target: "neo", error = %err, "MDBX snapshot find failed");
+                error!(target: "neo", error = %err, "MDBX snapshot find failed - this may cause incorrect state");
                 Box::new(std::iter::empty())
             }
         }
@@ -93,8 +98,13 @@ impl RawReadOnlyStore for MdbxSnapshot {
         match self.read_entry(key) {
             Ok(value) => value,
             Err(err) => {
-                warn!(target: "neo", error = %err, "MDBX snapshot get failed");
-                None
+                error!(target: "neo", error = %err, "MDBX snapshot get failed - this is a critical error that may cause incorrect state");
+                #[cfg(debug_assertions)]
+                panic!(
+                    "MDBX snapshot storage read failed: {err}. This indicates a disk I/O error, corruption, or configuration problem that must be fixed before the node can operate correctly."
+                );
+                #[cfg(not(debug_assertions))]
+                return None;
             }
         }
     }

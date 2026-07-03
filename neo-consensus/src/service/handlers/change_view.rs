@@ -48,19 +48,9 @@ impl ConsensusService {
         let timestamp = change_view_msg.timestamp;
         let reason = change_view_msg.reason;
 
-        // C# `ConsensusService.OnMessage`: a `TxRejectedByPolicy`/`TxInvalid`
-        // ChangeView records its `RejectedHashes` against the sending validator,
-        // feeding the primary's `InvalidTransactions` F-skip when it builds a
-        // block. Record before any early-return so reports always accumulate.
-        if matches!(
-            reason,
-            ChangeViewReason::TxRejectedByPolicy | ChangeViewReason::TxInvalid
-        ) {
-            self.context.record_invalid_transactions(
-                payload.validator_index,
-                &change_view_msg.rejected_hashes,
-            );
-        }
+        // NOTE: C# `DBFTPlugin` ChangeView carries only Timestamp+Reason and has
+        // no per-transaction "rejected hashes" / InvalidTransactions machinery, so
+        // there is nothing to record here (see messages/change_view.rs).
 
         debug!(
             block_index = self.context.block_index,
@@ -211,10 +201,36 @@ impl ConsensusService {
     fn change_view(&mut self, new_view: u8, timestamp: u64) -> ConsensusResult<()> {
         let old_view = self.context.view_number;
 
+        // Never move the view backward (or re-enter the current view). C#
+        // `CheckExpectedView` begins with `if (context.ViewNumber >= viewNumber)
+        // return;`. A ChangeView is exempt from the payload view-equality filter,
+        // so a stale ChangeView from a lagging node (new_view <= our current view)
+        // could otherwise reset us to a past view and re-open a decided round.
+        if new_view <= old_view {
+            return Ok(());
+        }
+
         info!(
             block_index = self.context.block_index,
             old_view, new_view, "Changing view"
         );
+
+        // C# `CheckExpectedView`: once M agreements are reached, a validating
+        // (non-watch-only) node broadcasts its OWN ChangeView(ChangeAgreement)
+        // before moving views, UNLESS it already sent a ChangeView for >= new_view
+        // (e.g. it initiated this change via request_change_view). Without this a
+        // lagging validator jumps views silently and peers never observe its
+        // agreement, stalling convergence.
+        if let Ok(my_index) = self.my_index() {
+            let already_agreed = self
+                .context
+                .change_views
+                .get(&my_index)
+                .is_some_and(|(agreed_view, _)| *agreed_view >= new_view);
+            if !already_agreed {
+                self.broadcast_change_agreement(timestamp)?;
+            }
+        }
 
         self.context.reset_for_new_view(new_view, timestamp);
 
@@ -224,6 +240,36 @@ impl ConsensusService {
             new_view,
         })?;
 
+        Ok(())
+    }
+
+    /// Broadcasts this node's own `ChangeView(ChangeAgreement)` for the current
+    /// view (`NewViewNumber = ViewNumber + 1`), mirroring C#
+    /// `MakeChangeView(ChangeViewReason.ChangeAgreement)` in `CheckExpectedView`.
+    fn broadcast_change_agreement(&mut self, timestamp: u64) -> ConsensusResult<()> {
+        let my_index = self.my_index()?;
+        let new_view = self.context.view_number.saturating_add(1);
+        self.context.add_change_view(
+            my_index,
+            new_view,
+            ChangeViewReason::ChangeAgreement,
+            timestamp,
+        )?;
+        let msg = ChangeViewMessage::new(
+            self.context.block_index,
+            self.context.view_number,
+            my_index,
+            timestamp,
+            ChangeViewReason::ChangeAgreement,
+        );
+        let payload = self.create_payload(ConsensusMessageType::ChangeView, msg.serialize())?;
+        if !payload.witness.is_empty() {
+            self.context.change_view_invocations.insert(
+                my_index,
+                InvocationScript::invocation_script_from_signature(&payload.witness),
+            );
+        }
+        self.broadcast(payload)?;
         Ok(())
     }
 }

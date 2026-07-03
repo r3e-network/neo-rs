@@ -30,7 +30,10 @@ impl Block {
         if let Some(root) = neo_crypto::MerkleTree::compute_root(&payload_hashes) {
             return self.header.merkle_root() == &root;
         }
-        true
+        // `compute_root` returns `None` only for empty input, which is handled
+        // above. If we reach this branch with non-empty transactions, the root
+        // computation failed unexpectedly — fail closed.
+        false
     }
 
     /// Verify no duplicate transactions.
@@ -178,8 +181,8 @@ impl neo_primitives::BlockLike for Block {
     type Transaction = Transaction;
 
     fn hash(&self) -> UInt256 {
-        let clone = self.clone();
-        clone.try_hash().unwrap_or_default()
+        self.try_hash()
+            .expect("Block serialization failed - this indicates a bug")
     }
 
     fn index(&self) -> u32 {

@@ -144,12 +144,23 @@ impl ConsensusService {
                 else {
                     continue;
                 };
+                // Preserve the original change-view reason when reconstructing.
+                // The reason is stored in the context's change_views map alongside
+                // the view number; default to Timeout when unavailable (should
+                // not happen in normal operation, as every ChangeView entry
+                // recorded in the context carries a reason).
+                let reason = self
+                    .context
+                    .change_views
+                    .get(&cv.validator_index)
+                    .map(|&(_, r)| r)
+                    .unwrap_or(ChangeViewReason::Timeout);
                 let msg = ChangeViewMessage::new(
                     payload.block_index,
                     cv.original_view_number,
                     cv.validator_index,
                     cv.timestamp,
-                    ChangeViewReason::Timeout,
+                    reason,
                 );
                 let recovered = ConsensusPayload {
                     network: self.network,

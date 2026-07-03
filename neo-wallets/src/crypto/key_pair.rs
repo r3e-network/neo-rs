@@ -122,6 +122,25 @@ impl KeyPair {
         Self::from_nep2(encrypted_key.as_bytes(), password, address_version)
     }
 
+    /// Creates a key pair from a NEP-2 string using explicit scrypt parameters,
+    /// as a NEP-6 wallet carries its own `ScryptParameters` (C# `NEP6Account`
+    /// passes `wallet.Scrypt.N/R/P` to `Wallet.GetPrivateKeyFromNEP2`). A wallet
+    /// created with non-default parameters only decrypts with the same values.
+    pub fn from_nep2_string_with_params(
+        encrypted_key: &str,
+        password: &str,
+        address_version: u8,
+        n: u32,
+        r: u32,
+        p: u32,
+    ) -> CoreResult<Self> {
+        let decoded = base58::decode_check(encrypted_key)
+            .map_err(|_| CoreError::invalid_nep2_key("invalid NEP-2 encrypted key"))?;
+        let private_key =
+            Self::decrypt_nep2_with_params(&decoded, password, address_version, n, r, p)?;
+        Self::from_private_key(&private_key)
+    }
+
     /// Gets the private key.
     pub fn private_key(&self) -> &[u8; HASH_SIZE] {
         &self.private_key
@@ -191,6 +210,22 @@ impl KeyPair {
         Ok(base58::encode_check(&encrypted))
     }
 
+    /// Exports the key pair to NEP-2 using explicit scrypt parameters (C#
+    /// `KeyPair.Export(password, version, N, r, p)`), so a NEP-6 wallet's own
+    /// `ScryptParameters` govern the encryption.
+    pub fn to_nep2_with_params(
+        &self,
+        password: &str,
+        address_version: u8,
+        n: u32,
+        r: u32,
+        p: u32,
+    ) -> CoreResult<String> {
+        let encrypted =
+            Self::encrypt_nep2_with_params(&self.private_key, password, address_version, n, r, p)?;
+        Ok(base58::encode_check(&encrypted))
+    }
+
     /// Decodes a WIF string to a private key.
     fn decode_wif(wif: &str) -> CoreResult<[u8; HASH_SIZE]> {
         let data = base58::decode_check(wif).map_err(map_wif_decode_error)?;
@@ -224,17 +259,27 @@ impl KeyPair {
         base58::encode_check(&data)
     }
 
-    /// Encrypts a private key using NEP-2 standard.
+    /// Encrypts a private key using NEP-2 standard with the NEP-6 default scrypt
+    /// parameters (N=16384, r=8, p=8), matching C# `Wallet.GetPrivateKeyFromNEP2`
+    /// default arguments.
     fn encrypt_nep2(
         private_key: &[u8; HASH_SIZE],
         password: &str,
         address_version: u8,
     ) -> CoreResult<Vec<u8>> {
-        // NEP-2 parameters
-        let n = 16384; // CPU cost
-        let r = 8; // Memory cost
-        let p = 8; // Parallelization
+        Self::encrypt_nep2_with_params(private_key, password, address_version, 16384, 8, 8)
+    }
 
+    /// Encrypts a private key using NEP-2 with explicit scrypt parameters,
+    /// mirroring C# `KeyPair.Export(password, version, N, r, p)`.
+    fn encrypt_nep2_with_params(
+        private_key: &[u8; HASH_SIZE],
+        password: &str,
+        address_version: u8,
+        n: u32,
+        r: u32,
+        p: u32,
+    ) -> CoreResult<Vec<u8>> {
         // Generate address hash
         let script_hash =
             UInt160::from_script(&Self::try_get_verification_script_for_key(private_key)?);
@@ -243,8 +288,7 @@ impl KeyPair {
         let mut address_hash = [0u8; 4];
         address_hash.copy_from_slice(&address_hash_full[0..4]);
 
-        // Derive key using scrypt
-        let n: u32 = n;
+        // Derive key using scrypt with the caller-provided cost parameters.
         let params = Params::new(n.trailing_zeros() as u8, r, p, 64)
             .map_err(|e| CoreError::scrypt(e.to_string()))?;
 
@@ -291,11 +335,25 @@ impl KeyPair {
         Ok(result)
     }
 
-    /// Decrypts a NEP-2 encrypted private key.
+    /// Decrypts a NEP-2 encrypted private key with the NEP-6 default scrypt
+    /// parameters (N=16384, r=8, p=8).
     fn decrypt_nep2(
         encrypted_key: &[u8],
         password: &str,
         address_version: u8,
+    ) -> CoreResult<[u8; HASH_SIZE]> {
+        Self::decrypt_nep2_with_params(encrypted_key, password, address_version, 16384, 8, 8)
+    }
+
+    /// Decrypts a NEP-2 encrypted private key with explicit scrypt parameters,
+    /// mirroring C# `Wallet.GetPrivateKeyFromNEP2(nep2, password, version, N, r, p)`.
+    fn decrypt_nep2_with_params(
+        encrypted_key: &[u8],
+        password: &str,
+        address_version: u8,
+        n: u32,
+        r: u32,
+        p: u32,
     ) -> CoreResult<[u8; HASH_SIZE]> {
         if encrypted_key.len() != 39 {
             return Err(CoreError::invalid_nep2_key("invalid NEP-2 key length"));
@@ -309,13 +367,7 @@ impl KeyPair {
         let address_hash = &encrypted_key[3..7];
         let encrypted_data = &encrypted_key[7..39];
 
-        // NEP-2 parameters
-        let n = 16384;
-        let r = 8;
-        let p = 8;
-
-        // Derive key using scrypt (use Zeroizing for sensitive data)
-        let n: u32 = n;
+        // Derive key using scrypt with the caller-provided cost parameters.
         let params = Params::new(n.trailing_zeros() as u8, r, p, 64)
             .map_err(|e| CoreError::scrypt(e.to_string()))?;
 

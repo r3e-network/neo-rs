@@ -265,9 +265,15 @@ fn bls12381_dispatch_matches_crypto_layer() {
         vec![1u8]
     );
 
-    // Equal: same point true, cross-group false.
+    // Equal: same point true; a cross-group comparison FAULTS in C#
+    // (`ArgumentException("BLS12-381 type mismatch")`), not returns false.
     assert_eq!(call("bls12381Equal", &[g1.clone(), g1.clone()]), vec![1u8]);
-    assert_eq!(call("bls12381Equal", &[g1.clone(), g2.clone()]), vec![0u8]);
+    assert!(
+        CryptoLib::bls12381_method("bls12381Equal", &[g1.clone(), g2.clone()])
+            .unwrap()
+            .is_err(),
+        "cross-group bls12381Equal must fault like C#"
+    );
 
     // Faults (Err -> VM fault): malformed point, swapped pairing operands,
     // wrong scalar length.
@@ -303,13 +309,13 @@ fn recover_secp256k1_returns_none_on_bad_input() {
 }
 
 #[test]
-fn recover_secp256k1_rejects_64_byte_signature_for_csharp_parity() {
-    // C# `Crypto.ECRecover` requires an exactly-65-byte (r‖s‖v) signature and
-    // returns null otherwise. A 64-byte compact / EIP-2098 signature is
-    // mathematically recoverable (neo-crypto's `recover_public_key` accepts it),
-    // so the consensus method MUST reject the 64-byte length — otherwise this node
-    // returns a key where a C# node returns null, forking any contract that
-    // branches on the result.
+fn recover_secp256k1_accepts_64_byte_compact_signature_like_csharp() {
+    // C# `Crypto.ECRecover` accepts BOTH a 65-byte `r‖s‖v` signature AND a 64-byte
+    // EIP-2098 compact `r‖yParityAndS` signature
+    // (`if (signature.Length != 65 && signature.Length != 64) throw`), and
+    // `RecoverSecp256K1` returns the recovered key. The consensus method MUST
+    // accept the 64-byte form too — rejecting it would fork any contract that
+    // branches on the result (this node null, a C# node a key).
     let sk = [0x11u8; 32];
     let msg = b"neo ecrecover parity";
     // `Secp256k1Crypto::sign` hashes the message with SHA-256 internally, so the
@@ -338,9 +344,12 @@ fn recover_secp256k1_rejects_64_byte_signature_for_csharp_parity() {
         "a 65-byte signature must still recover the signer key"
     );
 
-    // The 64-byte form of the very same signature is rejected (returns None),
-    // matching C# Crypto.ECRecover's exact-65-byte requirement.
-    assert!(CryptoLib::recover_secp256k1_method(&hash, &sig64).is_none());
+    // The 64-byte compact form is ACCEPTED (recovers a key), matching C#
+    // Crypto.ECRecover's `signature.Length == 64` branch — NOT rejected.
+    assert!(
+        CryptoLib::recover_secp256k1_method(&hash, &sig64).is_some(),
+        "a 64-byte compact signature must recover a key, matching C# ECRecover"
+    );
 }
 
 #[test]
@@ -349,22 +358,30 @@ fn verify_ecdsa_dispatch_gates_keccak_and_rejects_unknown_curve() {
     // mechanics themselves are covered by neo-crypto's verify_signature_with_hash
     // tests (SHA-256 cross-check + Keccak-256 round-trips).
     let msg = b"message";
-    let empty = b""; // malformed key/sig -> underlying verify yields false
+    let empty = b"";
+    let sk = [0x11u8; 32];
+    // Valid keys for each curve, so a bad-length signature returns false (proving
+    // the curve dispatched) rather than the KEY faulting on decode.
+    let k1 = neo_crypto::Secp256k1Crypto::derive_public_key(&sk).unwrap();
+    let r1 = neo_crypto::Secp256r1Crypto::derive_public_key(&sk).unwrap();
+    let short = [0u8; 10]; // wrong-length sig -> false after a valid key decodes
 
-    // Undefined curve byte -> error (C# KeyNotFound/ArgumentOutOfRange faults).
+    // Undefined curve byte -> error before any decode (C# KeyNotFound/
+    // ArgumentOutOfRange faults).
     assert!(CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x00, true, false).is_err());
 
-    // SHA-256 curves (0x16/0x17) are valid at any height; malformed inputs
-    // dispatch to a false result rather than faulting.
-    assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x16, false, false).unwrap());
-    assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x17, false, false).unwrap());
+    // SHA-256 curves (0x16 secp256k1 / 0x17 secp256r1) are valid at any height; a
+    // valid key + bad-length signature dispatches to a false result.
+    assert!(!CryptoLib::verify_ecdsa_method(msg, &k1, &short, 0x16, false, false).unwrap());
+    assert!(!CryptoLib::verify_ecdsa_method(msg, &r1, &short, 0x17, false, false).unwrap());
 
-    // Keccak-256 curves (0x7A/0x7B) require Cockatrice: gated off -> fault.
-    assert!(CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x7A, false, false).is_err());
-    assert!(CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x7B, false, false).is_err());
-    // Enabled -> dispatch (malformed inputs -> false).
-    assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x7A, true, false).unwrap());
-    assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x7B, true, false).unwrap());
+    // Keccak-256 curves (0x7A/0x7B) require Cockatrice: gated off -> fault (the
+    // gate fires before any key decode).
+    assert!(CryptoLib::verify_ecdsa_method(msg, &k1, &short, 0x7A, false, false).is_err());
+    assert!(CryptoLib::verify_ecdsa_method(msg, &r1, &short, 0x7B, false, false).is_err());
+    // Enabled -> dispatch (valid key + bad-length sig -> false).
+    assert!(!CryptoLib::verify_ecdsa_method(msg, &k1, &short, 0x7A, true, false).unwrap());
+    assert!(!CryptoLib::verify_ecdsa_method(msg, &r1, &short, 0x7B, true, false).unwrap());
 }
 
 #[test]
@@ -372,10 +389,35 @@ fn verify_ecdsa_gorgon_faults_on_bad_format_like_csharp_v2() {
     let msg = b"message";
     let empty = b"";
 
-    // V1 catches malformed key/signature ArgumentException and returns false.
-    assert!(!CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x16, true, false).unwrap());
+    // V1 (active v3.10.0): a malformed public key FAULTS. C# decodes the key
+    // (`ECPoint.DecodePoint`) before the signature-length check, and its
+    // `FormatException` is NOT caught by `catch(ArgumentException)` — so an empty
+    // key faults even though the signature length is also wrong.
+    assert!(CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x16, true, false).is_err());
     // V2 calls C# Crypto.VerifySignature, whose length/public-key checks fault.
     assert!(CryptoLib::verify_ecdsa_method(msg, empty, empty, 0x16, true, true).is_err());
+}
+
+#[test]
+fn verify_ecdsa_v1_good_key_bad_signature_returns_false_not_fault() {
+    // A VALID public key with a wrong-length or non-verifying signature returns
+    // false on the active V0/V1 path (C# `VerifySignatureV0` returns false after
+    // the key decodes) — only a malformed KEY faults.
+    let msg = b"message";
+    let sk = [0x11u8; 32];
+    let pubkey = neo_crypto::Secp256k1Crypto::derive_public_key(&sk).unwrap();
+    // secp256k1SHA256 = 0x16. Wrong-length signature -> false (not a fault).
+    let short_sig = [0u8; 10];
+    assert!(
+        !CryptoLib::verify_ecdsa_method(msg, &pubkey, &short_sig, 0x16, true, false).unwrap(),
+        "good key + wrong-length signature must return false, not fault"
+    );
+    // A correct-length but non-verifying signature -> false.
+    let zero_sig = [0u8; 64];
+    assert!(
+        !CryptoLib::verify_ecdsa_method(msg, &pubkey, &zero_sig, 0x16, true, false).unwrap(),
+        "good key + non-verifying signature must return false"
+    );
 }
 
 fn hex_bytes(s: &str) -> Vec<u8> {

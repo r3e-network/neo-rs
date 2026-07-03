@@ -166,6 +166,103 @@ fn destroy_removes_record_index_storage_and_blocks_hash() {
     assert!(matches!(wl_event.state[3], StackItem::Null));
 }
 
+/// Protocol settings with every hardfork through `HF_Gorgon` active at height 0,
+/// so `destroy` runs the post-Gorgon block-*before*-erase path.
+fn settings_with_gorgon() -> ProtocolSettings {
+    let mut settings = ProtocolSettings::default();
+    settings.hardforks.clear();
+    for hf in [
+        Hardfork::HfAspidochelone,
+        Hardfork::HfBasilisk,
+        Hardfork::HfCockatrice,
+        Hardfork::HfDomovoi,
+        Hardfork::HfEchidna,
+        Hardfork::HfFaun,
+        Hardfork::HfGorgon,
+    ] {
+        settings.hardforks.insert(hf, 0);
+    }
+    settings
+}
+
+#[test]
+fn destroy_under_gorgon_blocks_before_erase_and_reaches_the_same_final_state() {
+    crate::install();
+    let settings = settings_with_gorgon();
+    let cache = DataCache::new(false);
+    put_contract_record(
+        &cache,
+        &build_native_contract_state(&ContractManagement, &settings, 0),
+    );
+
+    let script = destroy_script();
+    let self_hash = UInt160::from_script(&script);
+    let user = ContractState::new_native(7, self_hash, "SelfDestructFixture".to_string());
+    put_contract_record(&cache, &user);
+    let index_key = ContractManagement::contract_id_storage_key(7);
+    cache.add(
+        index_key.clone(),
+        StorageItem::from_bytes(self_hash.to_bytes().to_vec()),
+    );
+    let user_row = StorageKey::new(7, vec![0x01]);
+    cache.add(user_row.clone(), StorageItem::from_bytes(vec![0xEE]));
+    let wl_key = crate::PolicyContract::whitelist_fee_key(&self_hash, 0);
+    let wl_value = BinarySerializer::serialize(
+        &StackItem::from_struct(vec![
+            StackItem::from_byte_string(self_hash.to_bytes()),
+            StackItem::from_byte_string("transfer".as_bytes().to_vec()),
+            StackItem::from_int(4),
+            StackItem::from_int(0),
+        ]),
+        &ExecutionEngineLimits::default(),
+    )
+    .unwrap();
+    cache.add(wl_key.clone(), StorageItem::from_bytes(wl_value));
+    let snapshot = Arc::new(cache);
+
+    let mut persisting_header = BlockHeader::default();
+    persisting_header.set_index(0);
+    persisting_header.set_timestamp(1_700_000_000_000);
+    let persisting_block = Some(Block::from_parts(persisting_header, vec![]));
+    let mut engine = engine_for(Arc::clone(&snapshot), persisting_block, settings);
+    engine
+        .load_script(script, CallFlags::ALL, Some(self_hash))
+        .expect("script loads");
+    assert_eq!(
+        engine.execute_allow_fault(),
+        VmState::HALT,
+        "destroy must HALT under Gorgon"
+    );
+
+    // Block-before-erase reaches the identical final state: record, index, and
+    // storage gone; hash blocked; whitelist cleaned.
+    assert!(
+        snapshot
+            .get(&ContractManagement::contract_storage_key(&self_hash))
+            .is_none(),
+        "contract record deleted"
+    );
+    assert!(snapshot.get(&index_key).is_none(), "id->hash index deleted");
+    assert!(
+        snapshot.get(&user_row).is_none(),
+        "contract storage deleted"
+    );
+    assert!(
+        snapshot
+            .get(&crate::PolicyContract::blocked_account_key(&self_hash))
+            .is_some(),
+        "destroyed contract is blocked"
+    );
+    assert!(snapshot.get(&wl_key).is_none(), "whitelist entry deleted");
+    assert!(
+        engine
+            .notifications()
+            .iter()
+            .any(|n| n.event_name == "Destroy"),
+        "Destroy event emitted"
+    );
+}
+
 #[test]
 fn destroy_is_a_noop_for_a_non_contract_caller() {
     crate::install();

@@ -69,3 +69,34 @@ fn test_nep2_round_trip_uses_standard_base58check_format() {
     // Wrong password must fail the address-hash verification.
     assert!(KeyPair::from_nep2_string(&nep2, "wrong", N3_ADDRESS_VERSION).is_err());
 }
+
+/// A NEP-6 wallet carries its own `ScryptParameters`; a key encrypted with
+/// non-default parameters must round-trip only with the SAME parameters, and the
+/// NEP-6 default (16384/8/8) must reject it — matching C# `NEP6Account`, which
+/// threads `wallet.Scrypt.N/R/P` into encrypt/decrypt.
+#[test]
+fn nep2_honors_non_default_scrypt_parameters() {
+    const N3_ADDRESS_VERSION: u8 = 0x35;
+    let key_pair = KeyPair::generate().unwrap();
+    let password = "Satoshi";
+    // Non-default, but valid, scrypt cost (N must be a power of two).
+    let (n, r, p) = (4096u32, 8u32, 8u32);
+
+    let nep2 = key_pair
+        .to_nep2_with_params(password, N3_ADDRESS_VERSION, n, r, p)
+        .unwrap();
+    assert!(nep2.starts_with("6P"));
+
+    // Same parameters -> recovers the key.
+    let restored =
+        KeyPair::from_nep2_string_with_params(&nep2, password, N3_ADDRESS_VERSION, n, r, p)
+            .unwrap();
+    assert_eq!(key_pair.private_key(), restored.private_key());
+
+    // Default parameters (16384/8/8) must NOT recover a key encrypted at N=4096:
+    // scrypt derives a different key stream, so the address-hash check fails.
+    assert!(
+        KeyPair::from_nep2_string(&nep2, password, N3_ADDRESS_VERSION).is_err(),
+        "default scrypt params must reject a non-default-encrypted NEP-2 key"
+    );
+}

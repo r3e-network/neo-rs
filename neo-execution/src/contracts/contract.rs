@@ -87,8 +87,10 @@ impl Contract {
     /// Prefer `try_create_multi_sig_redeem_script` for fallible construction.
     #[inline]
     pub fn create_multi_sig_redeem_script(m: usize, public_keys: &[ECPoint]) -> Vec<u8> {
-        Self::try_create_multi_sig_redeem_script(m, public_keys)
-            .expect("Invalid multi-sig parameters")
+        Self::try_create_multi_sig_redeem_script(m, public_keys).expect(
+            "multi-sig redeem script construction failed: \
+             m must be in [1, 1024] and m <= public_keys.len()",
+        )
     }
 
     /// Creates a signature contract

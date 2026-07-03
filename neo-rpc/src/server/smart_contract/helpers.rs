@@ -195,8 +195,10 @@ fn stack_item_to_json_with_budget(
             if let Some(iterator_id) = session.register_iterator_interface(iface) {
                 if let Value::Object(obj) = &mut value {
                     obj.insert(
+                        // C# `RpcServer.SmartContract` emits `nameof(IIterator)` =
+                        // the literal "IIterator" for an iterator stack item.
                         "interface".to_string(),
-                        Value::String("StorageIterator".to_string()),
+                        Value::String("IIterator".to_string()),
                     );
                     obj.insert("id".to_string(), Value::String(iterator_id.to_string()));
                 }

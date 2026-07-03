@@ -151,18 +151,20 @@ impl StdLib {
         let value = args.get(1).map(Vec::as_slice).ok_or_else(|| {
             CoreError::invalid_operation("StdLib::memorySearch requires (mem, value)")
         })?;
-        let start = match args.get(2) {
-            Some(b) => BigInt::from_signed_bytes_le(b).to_usize().ok_or_else(|| {
-                CoreError::invalid_operation("StdLib::memorySearch: start out of range")
-            })?,
+        // C# marshals the `int start` parameter with `(int)p.GetInteger()`, a
+        // TRUNCATING two's-complement cast to the low 32 bits (wrapping, not
+        // faulting on out-of-range). `MemorySearch` then does `AsSpan(start)` /
+        // `AsSpan(0, start)`, which throw only for `start < 0` or `start > length`.
+        let start_i32 = match args.get(2) {
+            Some(b) => Self::dotnet_int_cast(&BigInt::from_signed_bytes_le(b)),
             None => 0,
         };
-        // C# `AsSpan(start)` / `AsSpan(0, start)` throw when start exceeds the length.
-        if start > mem.len() {
+        if start_i32 < 0 || i64::from(start_i32) > mem.len() as i64 {
             return Err(CoreError::invalid_operation(
                 "StdLib::memorySearch: start out of range",
             ));
         }
+        let start = start_i32 as usize;
         let backward = args
             .get(3)
             .map(|b| b.iter().any(|x| *x != 0))
@@ -208,14 +210,26 @@ impl StdLib {
             .map_or(-1, |i| i as i64)
     }
 
-    /// Reads an optional integer `base` argument (C# StdLib's `@base` overload),
-    /// defaulting to 10 when absent. Integer args arrive as signed little-endian.
-    fn optional_base(args: &[Vec<u8>], index: usize, method: &str) -> CoreResult<i64> {
+    /// Emulates the .NET `(int)BigInteger` narrowing cast that
+    /// `InteropParameterDescriptor` applies to every `int`-typed native parameter
+    /// (`[typeof(int)] = p => (int)p.GetInteger()`): the low 32 bits reinterpreted
+    /// as a two's-complement `i32`. It WRAPS and never faults — so an out-of-`i32`
+    /// argument (e.g. `2^32 + 10`) becomes a small in-range value (`10`), which is
+    /// then validated by the method itself. Using `to_i32()`/`to_usize()` instead
+    /// would fault where C# succeeds, forking any contract that passes such a value.
+    fn dotnet_int_cast(value: &BigInt) -> i32 {
+        (value & BigInt::from(0xFFFF_FFFFu32)).to_u32().unwrap_or(0) as i32
+    }
+
+    /// Reads an optional integer `base` argument (C# StdLib's `int @base` overload),
+    /// defaulting to 10 when absent. C# marshals it with the truncating `(int)`
+    /// cast; the caller then rejects any base other than 10 or 16.
+    fn optional_base(args: &[Vec<u8>], index: usize, _method: &str) -> CoreResult<i64> {
         match args.get(index) {
             None => Ok(10),
-            Some(bytes) => BigInt::from_signed_bytes_le(bytes).to_i64().ok_or_else(|| {
-                CoreError::invalid_argument(format!("StdLib::{method}: base out of range"))
-            }),
+            Some(bytes) => Ok(i64::from(Self::dotnet_int_cast(
+                &BigInt::from_signed_bytes_le(bytes),
+            ))),
         }
     }
 

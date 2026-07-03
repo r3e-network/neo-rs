@@ -91,3 +91,18 @@ fn deserialize_enforces_depth_and_item_limits() {
     assert!(JsonSerializer::deserialize(br#"{"a":1}"#, 10, 3).is_ok());
     assert!(JsonSerializer::deserialize(br#"{"a":1}"#, 10, 2).is_err());
 }
+
+#[test]
+fn deserialize_large_integer_rounds_through_double_like_csharp() {
+    // C# JsonSerializer.Deserialize reads every JNumber as a `double` (Neo.Json
+    // JNumber.Value) before converting to BigInteger, so integer literals beyond
+    // 2^53 lose precision. Reproduce that: <= 2^53 is exact; > 2^53 takes the
+    // nearest-double value.
+    let de_int = |s: &str| de(s).unwrap().as_int().unwrap();
+    assert_eq!(de_int("42"), BigInt::from(42));
+    // 2^53 is exactly representable as f64.
+    assert_eq!(de_int("9007199254740992"), BigInt::from(9007199254740992i64));
+    // 2^53 + 1 is NOT representable; the nearest double is 2^53, so C# (and now
+    // this node) yields 9007199254740992, NOT the exact 9007199254740993.
+    assert_eq!(de_int("9007199254740993"), BigInt::from(9007199254740992i64));
+}

@@ -28,6 +28,15 @@ pub mod messages;
 pub mod pipeline;
 /// Command-loop service, handle, and context traits.
 pub mod service;
+/// Active signed-StateRoot consensus: StateValidator vote signing + aggregation.
+pub mod state_root_consensus;
+/// Signed StateRoot witness verification against the StateValidators multisig.
+pub mod state_root_verify;
+
+pub use state_root_consensus::{
+    StateRootVoteCollector, aggregate_state_root_witness, sign_state_root, validate_state_root_vote,
+};
+pub use state_root_verify::verify_state_root;
 
 pub(crate) use ledger::ledger_records;
 pub use ledger::{

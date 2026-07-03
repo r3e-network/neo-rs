@@ -83,7 +83,16 @@ pub struct StandardWalletAccount {
     key_pair: Option<KeyPair>,
     nep2_key: Option<String>,
     protocol_settings: Arc<ProtocolSettings>,
+    /// NEP-2 scrypt cost parameters `(N, r, p)`. A NEP-6 wallet carries its own
+    /// `ScryptParameters`, so the owning wallet sets these; they default to the
+    /// NEP-6 standard (16384, 8, 8). C# `NEP6Account` decrypts with
+    /// `wallet.Scrypt.N/R/P`, so a non-default wallet only decrypts with matching
+    /// values.
+    scrypt: (u32, u32, u32),
 }
+
+/// NEP-6 default scrypt parameters `(N, r, p)`.
+const DEFAULT_SCRYPT: (u32, u32, u32) = (16384, 8, 8);
 
 impl StandardWalletAccount {
     /// Creates an account backed by the provided key pair.
@@ -107,6 +116,7 @@ impl StandardWalletAccount {
             key_pair: Some(key_pair),
             nep2_key,
             protocol_settings,
+            scrypt: DEFAULT_SCRYPT,
         }
     }
 
@@ -125,6 +135,7 @@ impl StandardWalletAccount {
             key_pair: None,
             nep2_key: None,
             protocol_settings,
+            scrypt: DEFAULT_SCRYPT,
         }
     }
 
@@ -144,6 +155,7 @@ impl StandardWalletAccount {
             key_pair: None,
             nep2_key: Some(nep2_key),
             protocol_settings,
+            scrypt: DEFAULT_SCRYPT,
         }
     }
 
@@ -155,6 +167,13 @@ impl StandardWalletAccount {
     /// Replaces the stored NEP-2 payload.
     pub fn set_nep2_key(&mut self, nep2: Option<String>) {
         self.nep2_key = nep2;
+    }
+
+    /// Sets the NEP-2 scrypt cost parameters `(N, r, p)` this account's key was
+    /// encrypted with. A NEP-6 wallet calls this with its own `ScryptParameters`
+    /// so a wallet created with non-default parameters decrypts correctly.
+    pub fn set_scrypt_parameters(&mut self, n: u32, r: u32, p: u32) {
+        self.scrypt = (n, r, p);
     }
 }
 
@@ -223,7 +242,8 @@ impl WalletAccount for StandardWalletAccount {
         };
 
         let version = self.protocol_settings.address_version;
-        match KeyPair::from_nep2_string(nep2, password, version) {
+        let (n, r, p) = self.scrypt;
+        match KeyPair::from_nep2_string_with_params(nep2, password, version, n, r, p) {
             Ok(key_pair) => {
                 self.key_pair = Some(key_pair);
                 self.is_locked = false;
@@ -243,7 +263,8 @@ impl WalletAccount for StandardWalletAccount {
     fn verify_password(&self, password: &str) -> WalletResult<bool> {
         if let Some(nep2) = &self.nep2_key {
             let version = self.protocol_settings.address_version;
-            Ok(KeyPair::from_nep2_string(nep2, password, version).is_ok())
+            let (n, r, p) = self.scrypt;
+            Ok(KeyPair::from_nep2_string_with_params(nep2, password, version, n, r, p).is_ok())
         } else {
             Ok(self.key_pair.is_some())
         }
@@ -263,7 +284,8 @@ impl WalletAccount for StandardWalletAccount {
 
         let key = self.key_pair.as_ref().ok_or(WalletError::AccountLocked)?;
         let version = self.protocol_settings.address_version;
-        key.to_nep2(password, version)
+        let (n, r, p) = self.scrypt;
+        key.to_nep2_with_params(password, version, n, r, p)
             .map_err(|e| WalletError::SigningFailed(e.to_string()))
     }
 

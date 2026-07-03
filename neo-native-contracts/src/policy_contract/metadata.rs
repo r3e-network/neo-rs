@@ -216,6 +216,27 @@ pub(super) static POLICY_CONTRACT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLoc
             ContractParameterType::Integer,
         )
         .with_active_in(Hardfork::HfEchidna),
+        // HF_Gorgon: MaxTransactionsPerBlock governance parameter (committee-gated
+        // setter, safe getter).
+        NativeMethod::new(
+            "getMaxTransactionsPerBlock",
+            1 << 15,
+            true,
+            read_states,
+            vec![],
+            ContractParameterType::Integer,
+        )
+        .with_active_in(Hardfork::HfGorgon),
+        NativeMethod::new(
+            "setMaxTransactionsPerBlock",
+            1 << 15,
+            false,
+            CallFlags::STATES.bits(),
+            vec![ContractParameterType::Integer],
+            ContractParameterType::Void,
+        )
+        .with_active_in(Hardfork::HfGorgon)
+        .with_parameter_names(["value"]),
         // blockAccount: dual manifest registration under one name (C# V0/V1).
         // V0 = ContractMethod(true, HF_Faun): genesis-active, DeprecatedIn Faun,
         // flags States. V1 = ActiveIn HF_Faun, flags States|AllowNotify (the

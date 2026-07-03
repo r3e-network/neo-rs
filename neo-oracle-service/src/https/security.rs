@@ -24,9 +24,11 @@ impl Ssrf {
             return Ok(Ssrf::is_internal_ip(ip));
         }
 
-        // DNS lookup and check resolved IP
-        let addr = tokio::net::lookup_host((host, 0)).await?.next();
-        if let Some(addr) = addr {
+        // DNS lookup and check EVERY resolved IP: C# `IPHostEntry.IsInternal()` is
+        // `entry.AddressList.Any(IsInternal)`, so a host that resolves to a public
+        // address AND an internal one (a DNS-rebinding / multi-A-record SSRF) must
+        // be blocked. Checking only the first address would let it through.
+        for addr in tokio::net::lookup_host((host, 0)).await? {
             if Ssrf::is_internal_ip(addr.ip()) {
                 return Ok(true);
             }

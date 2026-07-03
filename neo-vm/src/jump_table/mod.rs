@@ -165,12 +165,18 @@ impl JumpTable {
         DEFAULT.get_or_init(Self::new).clone()
     }
 
-    /// A pre-543 compatibility table kept for tests/future protocol work. Neo
-    /// v3.10.0's `ApplicationEngine.Create` does not select this table.
+    /// The pre-`HF_Gorgon` compound-opcode table. C#
+    /// `ApplicationEngine.ComposeNotGorgonJumpTable` = the default table with
+    /// `HASKEY`/`PICKITEM`/`SETITEM`/`REMOVE` reverted to their pre-neo-vm#543
+    /// handlers. `ApplicationEngine.Create` selects this table when `HF_Echidna`
+    /// is active but `HF_Gorgon` is not — which is the v3.10.0 mainnet/testnet
+    /// case, since `HF_Gorgon` is unscheduled there.
     ///
-    /// SHL/SHR are NOT overridden here: the C# VM has a single SHL/SHR behavior
-    /// (the `shift == 0` early-return), with no `HF_Gorgon` split, so the default
-    /// handler is already correct for every protocol version.
+    /// SHL/SHR are NOT overridden here: they carry no `HF_Gorgon` split, so the
+    /// default handler applies. (Their behavior IS a flat Neo.VM 3.9.0→3.10.0
+    /// change — 3.10.0 always pops + integer-coerces the value even on a zero
+    /// shift — but that is a VM-version change, not a hardfork gate; see the
+    /// `shift` handler in `numeric.rs`.)
     pub fn not_gorgon() -> Self {
         NOT_GORGON
             .get_or_init(|| {

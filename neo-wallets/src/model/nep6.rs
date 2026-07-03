@@ -579,7 +579,7 @@ impl Nep6Account {
             .as_ref()
             .map(|contract| contract.contract.clone());
 
-        let inner = if let Some(ref nep2_key) = file.key {
+        let mut inner = if let Some(ref nep2_key) = file.key {
             StandardWalletAccount::new_from_encrypted(
                 script_hash,
                 nep2_key.clone(),
@@ -593,6 +593,9 @@ impl Nep6Account {
                 Arc::clone(&wallet.protocol_settings),
             )
         };
+        // C# `NEP6Account` decrypts with `wallet.Scrypt.N/R/P`; thread the wallet's
+        // scrypt parameters so a wallet created with non-default values unlocks.
+        inner.set_scrypt_parameters(wallet.scrypt.n, wallet.scrypt.r, wallet.scrypt.p);
 
         let parameter_names = parsed_contract
             .map(|contract| contract.parameter_names)
@@ -651,12 +654,13 @@ impl Nep6Account {
         nep2_key: Option<String>,
     ) -> Self {
         let parameter_names = default_parameter_names(&contract);
-        let inner = StandardWalletAccount::new_with_key(
+        let mut inner = StandardWalletAccount::new_with_key(
             key_pair,
             Some(contract.clone()),
             Arc::clone(wallet.protocol_settings()),
             nep2_key,
         );
+        inner.set_scrypt_parameters(wallet.scrypt.n, wallet.scrypt.r, wallet.scrypt.p);
 
         Self {
             inner,

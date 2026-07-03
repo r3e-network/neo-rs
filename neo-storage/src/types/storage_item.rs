@@ -60,7 +60,13 @@ impl StorageItem {
         if !self.value.is_empty() || self.cache.is_none() {
             return self.value.clone();
         }
-        self.cache.as_ref().unwrap().to_bytes()
+        // SAFETY: the guard above ensures cache is Some when value is empty and cache is not None.
+        // Using expect() instead of unwrap() provides a clear error message if the invariant is
+        // violated due to a logic bug, rather than silently panicking with no context.
+        self.cache
+            .as_ref()
+            .expect("StorageItem invariant violated: value is empty but cache is None")
+            .to_bytes()
     }
 
     /// Returns a reference to the raw stored bytes (may be empty even when a

@@ -58,6 +58,7 @@ fn fake_peer_version_message(network: u32, nonce: u32, height: u32) -> Message {
         network,
         nonce,
         "/fake-peer:0.0.1/".to_string(),
+        height,
         vec![
             NodeCapability::full_node(height),
             NodeCapability::tcp_server(20333),

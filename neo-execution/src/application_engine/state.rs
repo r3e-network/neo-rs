@@ -8,8 +8,17 @@ const HOST_SYSCALL_REGISTRATION_CAPACITY: usize = 41;
 impl ApplicationEngine {
     /// Selects the VM jump table for the persisting block, mirroring C#
     /// `ApplicationEngine.Create`: `index = persistingBlock?.Index ??
-    /// Ledger.CurrentIndex(snapshot)`; then `HF_Echidna ? default :
-    /// not_echidna`.
+    /// Ledger.CurrentIndex(snapshot)`; then:
+    ///   - `HF_Gorgon ? default :`
+    ///   - `HF_Echidna ? not_gorgon :`
+    ///   - `not_echidna`
+    ///
+    /// The three-way selection is consensus-critical because `NotGorgon` and
+    /// `Default` differ in how `HASKEY`/`PICKITEM`/`SETITEM`/`REMOVE` handle
+    /// boundary conditions (the pre-/post-neo-vm#543 handlers). (`SHL`/`SHR` do
+    /// NOT differ across these tables — their zero-shift behavior is a flat
+    /// Neo.VM 3.9.0→3.10.0 change handled in the `shift` handler, not a hardfork
+    /// gate.)
     fn select_jump_table(
         protocol_settings: &ProtocolSettings,
         persisting_block: Option<&Block>,
@@ -23,8 +32,10 @@ impl ApplicationEngine {
                 )
             }
         };
-        if protocol_settings.is_hardfork_enabled(Hardfork::HfEchidna, index) {
+        if protocol_settings.is_hardfork_enabled(Hardfork::HfGorgon, index) {
             JumpTable::default()
+        } else if protocol_settings.is_hardfork_enabled(Hardfork::HfEchidna, index) {
+            JumpTable::not_gorgon()
         } else {
             JumpTable::not_echidna()
         }
@@ -207,8 +218,24 @@ impl ApplicationEngine {
         let host_ptr = host as *mut dyn InteropHost;
         // SAFETY: `host_ptr` is derived from `&mut self` and the
         // `ApplicationEngine` owns the `VmEngine`, so the pointer remains
-        // valid for the engine's lifetime.
+        // valid for the engine's lifetime. The caller must not move the
+        // `ApplicationEngine` after calling `attach_host()` until the VM
+        // execution completes.
         unsafe { self.vm_engine.engine_mut().set_interop_host(host_ptr) };
+
+        // Debug assertion: verify the stored pointer is self-referential.
+        // Catches misuse where the ApplicationEngine is moved after
+        // attach_host() is called, which would leave a dangling interop
+        // host pointer in the VM engine.
+        #[cfg(debug_assertions)]
+        {
+            let stored: *mut dyn InteropHost = host_ptr;
+            let current: *mut dyn InteropHost = self as *mut dyn InteropHost;
+            debug_assert_eq!(
+                stored, current,
+                "ApplicationEngine was moved after attach_host() — VM engine holds dangling interop host pointer"
+            );
+        }
     }
 
     fn register_default_interops(&mut self) -> CoreResult<()> {

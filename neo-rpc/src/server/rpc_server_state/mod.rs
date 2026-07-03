@@ -564,10 +564,25 @@ impl RpcServerState {
             "roothash".to_string(),
             Value::String(root.root_hash.to_string()),
         );
-        // The state-root cache stores the unsigned root; the designated
-        // validators' witness is not retained, so the witness array is
-        // served empty (C# emits the witness when present).
-        obj.insert("witnesses".to_string(), Value::Array(Vec::new()));
+        // C# `StateRoot.ToJson`: `witnesses = [] | [Witness.ToJson()]`, where a
+        // witness is `{ invocation: base64, verification: base64 }`. Emitted when
+        // the root is signed (an aggregated StateValidators witness).
+        let witnesses = match root.witness() {
+            None => Vec::new(),
+            Some(witness) => {
+                let mut w = Map::new();
+                w.insert(
+                    "invocation".to_string(),
+                    Value::String(BASE64_STANDARD.encode(&witness.invocation_script)),
+                );
+                w.insert(
+                    "verification".to_string(),
+                    Value::String(BASE64_STANDARD.encode(&witness.verification_script)),
+                );
+                vec![Value::Object(w)]
+            }
+        };
+        obj.insert("witnesses".to_string(), Value::Array(witnesses));
         Value::Object(obj)
     }
 }

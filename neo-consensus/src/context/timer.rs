@@ -9,15 +9,15 @@ impl ConsensusContext {
     #[must_use]
     pub fn get_timeout(&self) -> u64 {
         // Base timeout + exponential backoff for view changes, matching C#
-        // `TimePerBlock << (ViewNumber + 1)`. The exponent is capped at 5 (a
-        // deliberate, safe deviation): C# performs a 32-bit `int` shift that
-        // overflows into garbage from ~view 17 and wraps from view 31, whereas an
-        // unbounded `u64` shift here would panic. The cap only differs from C# at
-        // view >= 5 — a severely degraded consensus that does not occur in
-        // practice, and where C#'s own value is already nonsensical — so it does
-        // not affect block production or state, only liveness timing in an
-        // unreachable regime.
-        self.base_block_time() << (self.view_number + 1).min(5)
+        // `TimePerBlock << (ViewNumber + 1)`.
+        //
+        // C# uses a 32-bit int shift, where the shift amount is masked to 5 bits
+        // (i.e., `% 32`). This means the timeout grows exponentially for views 0-30,
+        // then wraps around at view 31 (1 << 32 == 1 << 0 for 32-bit int).
+        //
+        // We replicate this behavior exactly by masking the shift amount to 5 bits.
+        let shift = (self.view_number + 1) & 0x1F; // Mask to 5 bits, matching C# behavior
+        self.base_block_time() << shift
     }
 
     /// Non-recovering primary delay before sending a `PrepareRequest`.
@@ -62,10 +62,9 @@ impl ConsensusContext {
     #[must_use]
     pub fn change_view_retry_delay(&self) -> u64 {
         let expected_view = self.view_number.saturating_add(1);
-        // Exponent capped at 5 for the same safety reason as `get_timeout`: an
-        // unbounded `u64` shift would panic, and the cap only diverges from C#'s
-        // overflow-prone 32-bit int shift at the unreachable view >= 4 regime.
-        self.base_block_time() << (expected_view + 1).min(5)
+        // Match C# behavior: 32-bit shift with 5-bit mask (see `get_timeout` for details)
+        let shift = (expected_view + 1) & 0x1F;
+        self.base_block_time() << shift
     }
 
     fn base_block_time(&self) -> u64 {

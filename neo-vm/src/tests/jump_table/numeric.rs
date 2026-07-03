@@ -73,32 +73,43 @@ fn not_on_integer_preserves_boolean_negation() {
     assert!(!pop(&mut engine).as_bool().unwrap(), "NOT(5) => false");
 }
 
-/// C# `Shl`/`Shr` (JumpTable.Numeric.cs:237-261) do `if (shift == 0) return;`
-/// BEFORE popping the value operand, so a zero shift leaves the value untouched
-/// on the stack and never reads it — a non-integer value does NOT fault. There
-/// is no `HF_Gorgon` split in the C# VM, so the single live handler must behave
-/// this way.
+/// Neo.VM **3.10.0** `Shl`/`Shr` unconditionally pop the value operand and
+/// `GetInteger()` it (`BigInteger integer = engine.Pop().GetInteger()`), with no
+/// `if (shift == 0) return;` guard (that guard existed in 3.9.0 and was removed —
+/// verified by decompiling both `Neo.VM.dll` versions). So a zero shift STILL
+/// reads the value: a non-integer operand FAULTS, and an integer-coercible operand
+/// is re-pushed as an Integer. Not hardfork-gated.
 #[test]
-fn shl_zero_shift_leaves_value_untouched_like_csharp() {
-    // A zero shift returns without popping/validating the value: a Buffer value
-    // does NOT fault and stays on the stack.
+fn shl_zero_shift_reads_and_coerces_value_like_csharp_v3100() {
+    // A zero shift over a Buffer FAULTS in 3.10.0 (GetInteger on a Buffer), unlike
+    // 3.9.0 which returned before reading the value.
     let mut engine = engine_with_stack(vec![
         StackItem::from_buffer(vec![0x07]),
         StackItem::from_i64(0),
     ]);
-    shl(&mut engine, &instruction(OpCode::SHL))
-        .expect("SHL by 0 over a Buffer must not fault (C# returns before reading the value)");
     assert!(
-        matches!(pop(&mut engine), StackItem::Buffer(_)),
-        "the value operand is left untouched (still a Buffer)"
+        shl(&mut engine, &instruction(OpCode::SHL)).is_err(),
+        "SHL by 0 over a Buffer must FAULT in v3.10.0 (value is always GetInteger'd)"
     );
 
-    // A zero shift over an integer is the identity.
+    // A zero shift over an integer is the identity, re-pushed as an Integer.
     let mut engine = engine_with_stack(vec![StackItem::from_i64(7), StackItem::from_i64(0)]);
     shl(&mut engine, &instruction(OpCode::SHL)).expect("SHL by 0 over an integer is identity");
-    assert_eq!(pop(&mut engine).as_int().unwrap(), BigInt::from(7));
+    let top = pop(&mut engine);
+    assert!(matches!(top, StackItem::Integer(_)), "coerced to Integer");
+    assert_eq!(top.as_int().unwrap(), BigInt::from(7));
 
-    // A non-zero shift DOES read the value, so a Buffer value faults (GetInteger).
+    // A zero shift over a Boolean coerces it to an Integer (true -> 1), not a bool.
+    let mut engine = engine_with_stack(vec![StackItem::from_bool(true), StackItem::from_i64(0)]);
+    shl(&mut engine, &instruction(OpCode::SHL)).expect("SHL by 0 over a Boolean coerces");
+    let top = pop(&mut engine);
+    assert!(
+        matches!(top, StackItem::Integer(_)),
+        "Boolean value is GetInteger-coerced to an Integer even on a zero shift"
+    );
+    assert_eq!(top.as_int().unwrap(), BigInt::from(1));
+
+    // A non-zero shift also reads the value, so a Buffer value faults (GetInteger).
     let mut engine = engine_with_stack(vec![
         StackItem::from_buffer(vec![0x07]),
         StackItem::from_i64(1),

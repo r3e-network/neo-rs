@@ -91,42 +91,43 @@ impl OracleHttpsProtocol {
                 }
             };
 
-            // Handle redirects only on 3xx responses. C# Neo gates redirect
-            // handling on the status code, so a non-3xx response that happens to
-            // carry a Location header (e.g. 200/201) is NOT treated as a redirect
-            // and its body is returned normally below.
-            if response.status().is_redirection() {
-                if let Some(location) = response.headers().get(reqwest::header::LOCATION) {
-                    if let Ok(location) = location.to_str() {
-                        if let Ok(next_uri) = url::Url::parse(location) {
-                            // Validate redirect URL
-                            if let Err(reason) = Ssrf::validate_url_for_ssrf(next_uri.as_str()) {
-                                tracing::warn!(
-                                    target: "neo::oracle",
-                                    url = %next_uri,
-                                    reason = %reason,
-                                    "Redirect URL SSRF validation failed"
-                                );
-                                return (OracleResponseCode::Forbidden, String::new());
-                            }
-
-                            // Check redirect URL against whitelist/blacklist
-                            if !settings.is_url_allowed(next_uri.as_str()) {
-                                tracing::warn!(
-                                    target: "neo::oracle",
-                                    url = %next_uri,
-                                    "Redirect URL blocked by whitelist/blacklist"
-                                );
-                                return (OracleResponseCode::Forbidden, String::new());
-                            }
-
-                            uri = next_uri;
-                            if redirects > 0 {
-                                redirects -= 1;
-                                continue;
-                            }
-                            return (OracleResponseCode::Timeout, String::new());
+            // Follow a redirect whenever a `Location` header is present, REGARDLESS
+            // of the status code. C# `OracleHttpsProtocol` does `if
+            // (message.Headers.Location is not null) { uri = ...; message = null; }`
+            // inside its request loop and only inspects the status code AFTER the
+            // redirect loop, so a non-3xx response carrying a Location header is
+            // still followed. (Gating this on 3xx — as an earlier change did —
+            // diverges from C# and can change the OracleResponseCode.)
+            if let Some(location) = response.headers().get(reqwest::header::LOCATION) {
+                if let Ok(location) = location.to_str() {
+                    if let Ok(next_uri) = url::Url::parse(location) {
+                        // Validate redirect URL
+                        if let Err(reason) = Ssrf::validate_url_for_ssrf(next_uri.as_str()) {
+                            tracing::warn!(
+                                target: "neo::oracle",
+                                url = %next_uri,
+                                reason = %reason,
+                                "Redirect URL SSRF validation failed"
+                            );
+                            return (OracleResponseCode::Forbidden, String::new());
                         }
+
+                        // Check redirect URL against whitelist/blacklist
+                        if !settings.is_url_allowed(next_uri.as_str()) {
+                            tracing::warn!(
+                                target: "neo::oracle",
+                                url = %next_uri,
+                                "Redirect URL blocked by whitelist/blacklist"
+                            );
+                            return (OracleResponseCode::Forbidden, String::new());
+                        }
+
+                        uri = next_uri;
+                        if redirects > 0 {
+                            redirects -= 1;
+                            continue;
+                        }
+                        return (OracleResponseCode::Timeout, String::new());
                     }
                 }
                 return (OracleResponseCode::Timeout, String::new());

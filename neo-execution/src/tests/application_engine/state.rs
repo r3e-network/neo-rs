@@ -18,10 +18,12 @@ fn registered_services(engine: &ApplicationEngine) -> Vec<(String, i64, u8)> {
 }
 
 #[test]
-fn echidna_selects_default_jump_table_like_csharp_v3100() {
+fn gorgon_selects_default_jump_table_like_csharp_v3100() {
+    // C# `ApplicationEngine.Create`: `HF_Gorgon` enabled -> `DefaultJumpTable`.
     let mut settings = ProtocolSettings::default();
     settings.hardforks.clear();
     settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    settings.hardforks.insert(Hardfork::HfGorgon, 0);
     let snapshot = DataCache::new(false);
 
     let selected = ApplicationEngine::select_jump_table(&settings, None, &snapshot);
@@ -31,7 +33,60 @@ fn echidna_selects_default_jump_table_like_csharp_v3100() {
         assert_eq!(
             handler_id(&selected, opcode),
             handler_id(&default, opcode),
-            "{opcode:?} should use the default post-Echidna handler"
+            "{opcode:?} should use the default post-Gorgon handler"
+        );
+    }
+}
+
+#[test]
+fn echidna_without_gorgon_selects_not_gorgon_table_like_csharp_v3100() {
+    // C# `ApplicationEngine.Create`: `HF_Echidna` enabled but `HF_Gorgon` not ->
+    // `NotGorgonJumpTable` = default with HASKEY/PICKITEM/SETITEM/REMOVE reverted
+    // to their pre-neo-vm#543 handlers. SHL/SHR are unchanged from the default.
+    let mut settings = ProtocolSettings::default();
+    settings.hardforks.clear();
+    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    let snapshot = DataCache::new(false);
+
+    let selected = ApplicationEngine::select_jump_table(&settings, None, &snapshot);
+    let default = JumpTable::default();
+    let not_gorgon = JumpTable::not_gorgon();
+
+    // The selected table is exactly the NotGorgon table.
+    for opcode in [
+        OpCode::SHL,
+        OpCode::SHR,
+        OpCode::HASKEY,
+        OpCode::PICKITEM,
+        OpCode::SETITEM,
+        OpCode::REMOVE,
+    ] {
+        assert_eq!(
+            handler_id(&selected, opcode),
+            handler_id(&not_gorgon, opcode),
+            "{opcode:?} should use the NotGorgon handler under Echidna"
+        );
+    }
+
+    // SHL/SHR match the default (no Gorgon split); the compound opcodes differ.
+    assert_eq!(
+        handler_id(&selected, OpCode::SHL),
+        handler_id(&default, OpCode::SHL)
+    );
+    assert_eq!(
+        handler_id(&selected, OpCode::SHR),
+        handler_id(&default, OpCode::SHR)
+    );
+    for opcode in [
+        OpCode::HASKEY,
+        OpCode::PICKITEM,
+        OpCode::SETITEM,
+        OpCode::REMOVE,
+    ] {
+        assert_ne!(
+            handler_id(&selected, opcode),
+            handler_id(&default, opcode),
+            "{opcode:?} must revert to the pre-543 handler under Echidna-without-Gorgon"
         );
     }
 }

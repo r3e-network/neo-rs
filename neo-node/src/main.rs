@@ -11,11 +11,14 @@
 //!
 //! - `consensus`: Consensus-facing node adapters and startup helpers.
 //! - `node`: Daemon composition, CLI modes, and long-running node startup.
+//! - `state_root`: Active signed-StateRoot (StateValidators) consensus driver.
 
 #[path = "consensus/mod.rs"]
 mod consensus;
 #[path = "node/mod.rs"]
 mod node;
+#[path = "state_root/mod.rs"]
+mod state_root;
 
 // Use mimalloc as the global allocator. The node is allocation-heavy on the
 // block-execution hot path (per-opcode StackItem clones, per-block/per-tx

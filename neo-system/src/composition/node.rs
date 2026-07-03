@@ -337,9 +337,12 @@ impl TxRouterHandle {
             .try_hash()
             .map_err(|_| CoreError::other(format!("{:?}", VerifyResult::Invalid)))?;
         let ledger = LedgerContract::new();
+        // Fail closed on a storage error: a transient lookup failure must NOT be
+        // treated as "not present" (which would admit and relay a possibly-
+        // duplicate transaction). Propagate the error so admission is blocked.
         if ledger
             .contains_transaction(snapshot, &hash)
-            .unwrap_or(false)
+            .map_err(|error| CoreError::other(format!("ledger contains_transaction: {error}")))?
         {
             return Err(CoreError::other(format!(
                 "{:?}",
@@ -352,7 +355,7 @@ impl TxRouterHandle {
         let signers: Vec<_> = tx.signers().iter().map(|s| s.account).collect();
         if ledger
             .contains_conflict_hash(snapshot, &hash, &signers, max_traceable_blocks)
-            .unwrap_or(false)
+            .map_err(|error| CoreError::other(format!("ledger contains_conflict_hash: {error}")))?
         {
             return Err(CoreError::other(format!(
                 "{:?}",

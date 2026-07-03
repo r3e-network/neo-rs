@@ -209,17 +209,29 @@ impl JsonSerializer {
             JsonValue::Null => Ok(StackItem::null()),
             JsonValue::Bool(b) => Ok(StackItem::from_bool(*b)),
             JsonValue::Number(n) => {
-                // C# JsonSerializer.Deserialize treats every JNumber as a double:
-                // a fractional value faults ("Decimal value is not allowed"), and
-                // an integer-valued number becomes a BigInteger (post-Basilisk via
-                // BigInteger.Parse(value.ToString())). serde_json types integer
-                // literals as i64/u64 and only non-integers as f64, so check those
-                // first — they are exact — and fall back to the double path.
-                if let Some(i) = n.as_i64() {
-                    Ok(StackItem::from_int(BigInt::from(i)))
-                } else if let Some(u) = n.as_u64() {
-                    Ok(StackItem::from_int(BigInt::from(u)))
+                // C# JsonSerializer.Deserialize treats EVERY JNumber as a `double`
+                // (Neo.Json `JNumber.Value` is a double parsed via GetDouble(), with
+                // no MAX_SAFE_INTEGER guard), then post-Basilisk converts it with
+                // BigInteger.Parse(value.ToString()). So an integer literal whose
+                // magnitude exceeds 2^53 loses precision BEFORE the BigInteger
+                // conversion. serde_json parses i64/u64 literals exactly, so to match
+                // C# we must route integers beyond 2^53 through an f64 too. Values
+                // within +/-2^53 are represented exactly by f64, so the exact path is
+                // kept for them (identical result, no format/parse overhead).
+                const MAX_EXACT: i128 = 1i128 << 53;
+                let exact = n
+                    .as_i64()
+                    .filter(|v| i128::from(*v).unsigned_abs() <= MAX_EXACT as u128)
+                    .map(BigInt::from)
+                    .or_else(|| {
+                        n.as_u64()
+                            .filter(|v| u128::from(*v) <= MAX_EXACT as u128)
+                            .map(BigInt::from)
+                    });
+                if let Some(big) = exact {
+                    Ok(StackItem::from_int(big))
                 } else {
+                    // Large integer (or non-integer): reproduce C#'s lossy double.
                     let f = n
                         .as_f64()
                         .ok_or_else(|| CoreError::other("Invalid JSON number"))?;

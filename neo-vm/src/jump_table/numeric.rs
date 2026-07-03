@@ -185,11 +185,15 @@ fn shr(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     shift(engine, arithmetic::shr_value)
 }
 
-/// SHL/SHR. C# `Shl`/`Shr` (JumpTable.Numeric.cs:237-261) pop the shift, narrow
-/// it to `int`, `AssertShift`, then `if (shift == 0) return;` BEFORE popping the
-/// value operand — so a zero shift leaves the value untouched on the stack and
-/// never reads it (a non-integer value does NOT fault). There is no `HF_Gorgon`
-/// split in the C# VM; this single early-return behavior is authoritative.
+/// SHL/SHR. Neo.VM **3.10.0** `Shl`/`Shr` pop the shift, narrow it to `int`,
+/// `AssertShift`, then UNCONDITIONALLY pop the value operand and `GetInteger()` it
+/// (`BigInteger integer = engine.Pop().GetInteger(); engine.Push(integer << num)`).
+/// So a zero shift still pops + integer-coerces the value: a non-integer operand
+/// FAULTS, and an integer-coercible operand (Boolean/ByteString/…) is re-pushed as
+/// an Integer. This is a flat Neo.VM 3.9.0→3.10.0 change (3.9.0 had
+/// `if (num != 0) { … }`, leaving the operand untouched on a zero shift) — verified
+/// by decompiling both `Neo.VM.dll` versions — and is NOT hardfork-gated, so the
+/// early-return must not be reintroduced for any protocol height.
 fn shift(
     engine: &mut ExecutionEngine,
     op: fn(StackValue, i64) -> Result<StackValue, String>,
@@ -200,10 +204,14 @@ fn shift(
     limits
         .assert_shift(shift_i32)
         .map_err(VmError::invalid_operation_msg)?;
-    if shift_i32 == 0 {
-        return Ok(());
-    }
-    let value = numeric_operand(ctx.pop()?)?;
+    // C# 3.10.0 `BigInteger integer = Pop().GetInteger()` faults on a Buffer/Null
+    // operand and integer-coerces a Boolean/ByteString/Integer; `Push(integer <<
+    // num)` then re-pushes an Integer, even for a zero shift. Coerce to an Integer
+    // operand first so the shift op yields an Integer (the semantics layer's own
+    // zero-shift shortcut would otherwise preserve the original Boolean/ByteString
+    // type).
+    let integer = super::get_integer(ctx.pop()?)?;
+    let value = numeric_operand(StackItem::from_int(integer))?;
     let result = op(value, i64::from(shift_i32)).map_err(semantics_error)?;
     push_stack_value(ctx, result)
 }

@@ -238,6 +238,7 @@ async fn handle_inbound_inventory_item(
     consensus_inbound_tx: &Option<
         tokio::sync::mpsc::Sender<neo_consensus::messages::ConsensusPayload>,
     >,
+    state_root_inbound_tx: &Option<tokio::sync::mpsc::Sender<neo_payloads::ExtensiblePayload>>,
     pending_blocks: &mut Vec<Arc<neo_payloads::Block>>,
 ) {
     use neo_network::InboundInventory;
@@ -276,6 +277,14 @@ async fn handle_inbound_inventory_item(
                 };
                 if let Some(cp) = cp {
                     let _ = tx.send(cp).await;
+                }
+            }
+            // StateService votes/roots: feed to the state-root driver, which
+            // decodes + authenticates them (it verifies signed roots against the
+            // designated StateValidators before persisting).
+            if let Some(tx) = state_root_inbound_tx {
+                if payload.category == neo_state_service::STATE_SERVICE_CATEGORY {
+                    let _ = tx.send((*payload).clone()).await;
                 }
             }
             // Cache + relay through the blockchain service regardless
@@ -644,9 +653,12 @@ pub async fn run() -> anyhow::Result<()> {
         } else {
             config.p2p.seed_nodes.clone()
         };
-        if let Some(handle) =
-            seeds::spawn_seed_dialing(seed_nodes, network.clone(), observability.clone())
-        {
+        if let Some(handle) = seeds::spawn_seed_dialing(
+            seed_nodes,
+            network.clone(),
+            observability.clone(),
+            shutdown.clone(),
+        ) {
             handles.push(handle);
         }
     } else {
@@ -689,7 +701,7 @@ pub async fn run() -> anyhow::Result<()> {
     // validation stop-height path uses the same shutdown route after observing a
     // committed block event, so the persistent store is dropped cleanly.
     let shutdown_signalled =
-        wait_for_shutdown_signal(node.blockchain(), cli.stop_at_height, shutdown).await;
+        wait_for_shutdown_signal(node.blockchain(), cli.stop_at_height, shutdown.clone()).await;
 
     match shutdown_signalled {
         Ok(signal_name) => {
@@ -703,6 +715,14 @@ pub async fn run() -> anyhow::Result<()> {
             std::future::pending::<()>().await;
         }
     }
+
+    // Signal cancellation to all spawned tasks, then wait a short grace period
+    // for them to observe the token and clean up before aborting. This prevents
+    // the state service MPT workers from being killed mid-write and avoids
+    // leaving durable store files in an inconsistent state.
+    shutdown.cancel();
+    // Give tasks up to 2 seconds to observe cancellation and unwind cleanly.
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     for handle in handles {
         handle.abort();
@@ -917,6 +937,23 @@ async fn build_node(
         (None, None)
     };
 
+    // ----- signed StateRoot (StateValidators) participation -----
+    // The driver runs whenever the state service is enabled: validators sign +
+    // relay votes; observers verify + persist inbound signed roots. The inbound
+    // channel is set up here so the forwarder can feed it StateService payloads;
+    // the driver task is spawned after the network exists (it needs the relay).
+    let state_root_setup = crate::state_root::build_state_root_setup(
+        &settings,
+        config.state_service.enabled && ledger_mode.uses_local_replay_services(),
+        config.state_service.validator_key_hex.as_deref(),
+    )?;
+    let (state_root_inbound_tx, state_root_inbound_rx) = if state_root_setup.is_some() {
+        let (tx, rx) = tokio::sync::mpsc::channel::<neo_payloads::ExtensiblePayload>(1024);
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
+
     // ----- inbound inventory relay: peer blocks/transactions -> ledger -----
     // The network layer is decoupled from the blockchain (C# `NeoSystem`
     // mediator), so each per-peer task forwards decoded inventory over this
@@ -955,6 +992,7 @@ async fn build_node(
         let relay = network.clone();
         let consensus_decode = consensus_decode.clone();
         let consensus_inbound_tx = consensus_inbound_tx.clone();
+        let state_root_inbound_tx = state_root_inbound_tx.clone();
         spawn_daemon_task(
             &mut handles,
             observability.as_ref(),
@@ -983,6 +1021,7 @@ async fn build_node(
                                 &relay,
                                 &consensus_decode,
                                 &consensus_inbound_tx,
+                                &state_root_inbound_tx,
                                 &mut pending_blocks,
                             ).await;
                         }
@@ -1025,6 +1064,38 @@ async fn build_node(
                 task,
             );
         }
+    }
+
+    // ----- signed StateRoot driver -----
+    // Spawn the StateValidators vote/aggregate/verify driver now that the
+    // network relay handle exists. Requires the local state store (roots to
+    // attest and a home for finalized signed roots).
+    if let (Some(setup), Some(inbound_rx), Some(state_store)) =
+        (state_root_setup, state_root_inbound_rx, state_store.clone())
+    {
+        let has_key = setup.keypair.is_some();
+        let task = crate::state_root::state_root_driver_task(
+            setup,
+            blockchain.clone(),
+            network.clone(),
+            Arc::clone(&settings),
+            Arc::clone(&store),
+            state_store,
+            inbound_rx,
+        );
+        info!(
+            target: "neo",
+            validator = has_key,
+            "signed StateRoot driver started",
+        );
+        spawn_daemon_task(
+            &mut handles,
+            observability.as_ref(),
+            &shutdown,
+            TaskKind::Essential,
+            "state_root_driver",
+            task,
+        );
     }
 
     // ----- ledger height -> network advertisement -----

@@ -27,6 +27,8 @@ fn native_contract_surface() {
             "getMillisecondsPerBlock",
             "getMaxValidUntilBlockIncrement",
             "getMaxTraceableBlocks",
+            "getMaxTransactionsPerBlock",
+            "setMaxTransactionsPerBlock",
             "blockAccount",
             "blockAccount",
             "setWhitelistFeeContract",
@@ -260,4 +262,28 @@ fn native_contract_surface() {
     );
     assert_eq!(recover.return_type, ContractParameterType::Boolean);
     assert_eq!(recover.cpu_fee, 1 << 15);
+    // HfGorgon MaxTransactionsPerBlock governance parameter: safe getter,
+    // committee-gated setter (States, Void).
+    let get_mtpb = c
+        .methods()
+        .iter()
+        .find(|m| m.name == "getMaxTransactionsPerBlock")
+        .unwrap();
+    assert!(get_mtpb.safe);
+    assert_eq!(get_mtpb.active_in, Some(Hardfork::HfGorgon));
+    assert_eq!(get_mtpb.required_call_flags, CallFlags::READ_STATES.bits());
+    assert!(get_mtpb.parameters.is_empty());
+    assert_eq!(get_mtpb.return_type, ContractParameterType::Integer);
+    assert_eq!(get_mtpb.cpu_fee, 1 << 15);
+    let set_mtpb = c
+        .methods()
+        .iter()
+        .find(|m| m.name == "setMaxTransactionsPerBlock")
+        .unwrap();
+    assert!(!set_mtpb.safe);
+    assert_eq!(set_mtpb.active_in, Some(Hardfork::HfGorgon));
+    assert_eq!(set_mtpb.required_call_flags, CallFlags::STATES.bits());
+    assert_eq!(set_mtpb.parameters, vec![ContractParameterType::Integer]);
+    assert_eq!(set_mtpb.return_type, ContractParameterType::Void);
+    assert_eq!(set_mtpb.cpu_fee, 1 << 15);
 }

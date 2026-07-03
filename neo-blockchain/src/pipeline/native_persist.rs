@@ -836,7 +836,15 @@ fn stack_value_snapshot(item: &StackItem) -> StackValue {
                 .collect(),
         ),
         StackItem::Pointer(pointer) => {
-            StackValue::Pointer(i64::try_from(pointer.position()).unwrap_or(i64::MAX))
+            // pointer.position() returns usize. On 64-bit platforms (MSRV 1.85),
+            // usize fits in i64. Use an explicit cast with a debug assertion.
+            let pos = pointer.position();
+            debug_assert!(
+                pos <= i64::MAX as usize,
+                "pointer position {pos} exceeds i64::MAX"
+            );
+            #[allow(clippy::cast_possible_wrap)]
+            StackValue::Pointer(pos as i64)
         }
         StackItem::InteropInterface(_) => StackValue::Interop(0),
     }

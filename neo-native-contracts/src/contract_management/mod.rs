@@ -16,6 +16,7 @@
 
 use crate::catalog::standard_native_contracts;
 use crate::hashes::CONTRACT_MANAGEMENT_HASH;
+use neo_config::Hardfork;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, ContractState, NativeContract, NativeEvent, NativeMethod};
 use neo_primitives::{FindOptions, UInt160};
@@ -356,6 +357,17 @@ impl NativeContract for ContractManagement {
                 let Some(contract) = Self::get_contract_from_snapshot(&snapshot, &hash)? else {
                     return Ok(Vec::new());
                 };
+                // C# `DestroyInternal(engine, blockBeforeErase)`: HF_Gorgon's
+                // `destroy` (V1) blocks the account + cleans the whitelist BEFORE
+                // erasing the contract (so a votes-revoke can still claim GAS while
+                // the contract is in the snapshot); pre-Gorgon (V0) does it AFTER
+                // (skipping side calls since the contract is already removed). The
+                // ops are identical — only the order relative to the deletes flips.
+                let block_before_erase = engine.is_hardfork_enabled(Hardfork::HfGorgon);
+                if block_before_erase {
+                    crate::PolicyContract::new().block_account_internal(engine, &hash)?;
+                    self.policy_clean_whitelist(engine, &contract)?;
+                }
                 // Delete the per-contract record and the id -> hash index entry.
                 snapshot.delete(&Self::contract_storage_key(&hash));
                 snapshot.delete(&Self::contract_id_storage_key(contract.id));
@@ -369,11 +381,12 @@ impl NativeContract for ContractManagement {
                 for key in keys {
                     snapshot.delete(&key);
                 }
-                // C#: `await Policy.BlockAccountInternal(engine, hash)` — lock
-                // the destroyed contract (the bool result is discarded) — then
-                // `Policy.CleanWhitelist(engine, contract)`.
-                crate::PolicyContract::new().block_account_internal(engine, &hash)?;
-                self.policy_clean_whitelist(engine, &contract)?;
+                // Pre-Gorgon path: `await Policy.BlockAccountInternal(engine, hash)`
+                // then `Policy.CleanWhitelist(engine, contract)` AFTER the erase.
+                if !block_before_erase {
+                    crate::PolicyContract::new().block_account_internal(engine, &hash)?;
+                    self.policy_clean_whitelist(engine, &contract)?;
+                }
                 // Emit the Destroy event with the destroyed hash.
                 engine
                     .send_notification(

@@ -171,8 +171,22 @@ where
             self.dispatch(cmd).await;
             // Drain all remaining pending commands without yielding to the
             // runtime — keeps the pipeline full during catch-up bursts.
+            // Bounded to 128 commands per batch to prevent starving other
+            // async tasks during sustained catch-up. The yield point gives
+            // the runtime a chance to schedule network I/O, consensus ticks,
+            // and other services.
+            const MAX_DRAIN_PER_BATCH: u32 = 128;
+            let mut drained = 0u32;
             while let Ok(cmd) = self.cmd_rx.try_recv() {
                 self.dispatch(cmd).await;
+                drained += 1;
+                if drained >= MAX_DRAIN_PER_BATCH {
+                    // Yield to the runtime so other async tasks can make
+                    // progress, then resume draining if there are more
+                    // pending commands in the channel.
+                    tokio::task::yield_now().await;
+                    drained = 0;
+                }
             }
         }
         tracing::debug!(target: "neo", "blockchain service run loop exited");
@@ -186,7 +200,18 @@ where
                 self.handle_persist_completed(persist).await;
             }
             BlockchainCommand::Import(import) => {
-                let _ = self.handle_import(import).await;
+                // Import commands without a reply channel still produce a reply
+                // containing error information. Log errors to avoid silently
+                // discarding import failures.
+                let reply = self.handle_import(import).await;
+                if let Some(ref err) = reply.error {
+                    tracing::warn!(
+                        target: "neo",
+                        error = %err,
+                        imported = reply.imported,
+                        "blockchain import completed with error"
+                    );
+                }
             }
             BlockchainCommand::ImportBlocks { import, reply } => {
                 let result = self.handle_import(import).await;

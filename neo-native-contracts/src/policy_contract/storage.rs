@@ -5,9 +5,10 @@ pub(super) use self::whitelist::WhitelistedContractView;
 
 use super::{
     DEFAULT_ATTRIBUTE_FEE, DEFAULT_NOTARY_ASSISTED_ATTRIBUTE_FEE, FEE_FACTOR, MAX_EXEC_FEE_FACTOR,
-    MAX_FEE_PER_BYTE, MAX_MAX_TRACEABLE_BLOCKS, MAX_MAX_VALID_UNTIL_BLOCK_INCREMENT,
-    MAX_MILLISECONDS_PER_BLOCK, MAX_STORAGE_PRICE, PREFIX_ATTRIBUTE_FEE, PREFIX_BLOCKED_ACCOUNT,
-    PREFIX_EXEC_FEE_FACTOR, PREFIX_FEE_PER_BYTE, PREFIX_MAX_TRACEABLE_BLOCKS,
+    MAX_FEE_PER_BYTE, MAX_MAX_TRACEABLE_BLOCKS, MAX_MAX_TRANSACTIONS_PER_BLOCK,
+    MAX_MAX_VALID_UNTIL_BLOCK_INCREMENT, MAX_MILLISECONDS_PER_BLOCK, MAX_STORAGE_PRICE,
+    PREFIX_ATTRIBUTE_FEE, PREFIX_BLOCKED_ACCOUNT, PREFIX_EXEC_FEE_FACTOR, PREFIX_FEE_PER_BYTE,
+    PREFIX_MAX_TRACEABLE_BLOCKS, PREFIX_MAX_TRANSACTIONS_PER_BLOCK,
     PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT, PREFIX_MILLISECONDS_PER_BLOCK, PREFIX_STORAGE_PRICE,
     PolicyContract,
 };
@@ -48,6 +49,10 @@ impl PolicyContract {
 
     pub(crate) fn max_traceable_blocks_key() -> StorageKey {
         Self::setting_key(PREFIX_MAX_TRACEABLE_BLOCKS)
+    }
+
+    pub(crate) fn max_transactions_per_block_key() -> StorageKey {
+        Self::setting_key(PREFIX_MAX_TRANSACTIONS_PER_BLOCK)
     }
 
     pub(super) fn read_optional_i64_setting_key(
@@ -381,6 +386,18 @@ impl PolicyContract {
                 ))),
             );
         }
+        if hardfork == Hardfork::HfGorgon {
+            // C# HfGorgon: migrate MaxTransactionsPerBlock from ProtocolSettings
+            // into Policy storage so the committee can adjust it dynamically.
+            let max_transactions_per_block = engine.protocol_settings().max_transactions_per_block;
+            let snapshot = engine.snapshot_cache();
+            snapshot.add(
+                Self::max_transactions_per_block_key(),
+                StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
+                    max_transactions_per_block,
+                ))),
+            );
+        }
         if hardfork == Hardfork::HfFaun {
             // C# `GetAndChange(_execFeeFactor) ?? throw`: the factor must exist.
             let snapshot = engine.snapshot_cache();
@@ -645,5 +662,91 @@ impl PolicyContract {
         )?;
         u32::try_from(value)
             .map_err(|_| CoreError::invalid_operation("MaxTraceableBlocks out of u32 range"))
+    }
+
+    /// C# `SetMaxTransactionsPerBlock` range guard: `[1, MAX_MAX_TRANSACTIONS_PER_BLOCK]`.
+    pub(super) fn validate_max_transactions_per_block(value: i64) -> CoreResult<()> {
+        if !(1..=MAX_MAX_TRANSACTIONS_PER_BLOCK).contains(&value) {
+            return Err(CoreError::invalid_operation(format!(
+                "MaxTransactionsPerBlock must be between [1, {MAX_MAX_TRANSACTIONS_PER_BLOCK}], got {value}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// C# `GetMaxTransactionsPerBlock`: before `HF_Gorgon`, callers use the
+    /// protocol setting; from `HF_Gorgon` onward, the native getter direct-indexes
+    /// `Prefix_MaxTransactionsPerBlock`.
+    pub(crate) fn read_max_transactions_per_block(
+        &self,
+        engine: &ApplicationEngine,
+    ) -> CoreResult<i64> {
+        let default = i64::from(engine.protocol_settings().max_transactions_per_block);
+        if !engine.is_hardfork_enabled(Hardfork::HfGorgon) {
+            return Ok(default);
+        }
+        let snapshot = engine.snapshot_cache();
+        Self::read_optional_i64_setting_key(
+            &snapshot,
+            Self::max_transactions_per_block_key(),
+            "MaxTransactionsPerBlock",
+        )
+        .map(|opt| opt.unwrap_or(default))
+    }
+
+    /// Writes `Prefix_MaxTransactionsPerBlock`
+    /// (C# `GetAndChange(_maxTransactionsPerBlock).Set(value)`).
+    pub(super) fn put_max_transactions_per_block(
+        &self,
+        snapshot: &DataCache,
+        value: i64,
+    ) -> CoreResult<()> {
+        let key = Self::max_transactions_per_block_key();
+        if snapshot.get(&key).is_none() {
+            // Allow writing even when not previously written — the committee
+            // can set this for the first time after HfGorgon activation.
+            snapshot.add(
+                key,
+                StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))),
+            );
+        } else {
+            snapshot.update(
+                key,
+                StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))),
+            );
+        }
+        Ok(())
+    }
+
+    /// Returns the effective `MaxTransactionsPerBlock` for snapshot-only callers.
+    ///
+    /// Mirrors the `getMaxTraceableBlocks` pattern: before `HF_Gorgon` this is
+    /// the static protocol setting; from `HF_Gorgon` onward it is the Policy
+    /// storage value under prefix 24, with pre-genesis missing-key fallback to
+    /// `ProtocolSettings`.
+    pub fn get_max_transactions_per_block_snapshot(
+        &self,
+        snapshot: &neo_storage::persistence::DataCache,
+        settings: &neo_config::ProtocolSettings,
+    ) -> neo_error::CoreResult<u32> {
+        let default = settings.max_transactions_per_block;
+        let height = match crate::LedgerContract::new().current_index(snapshot) {
+            Ok(height) => height,
+            Err(err) if err.to_string().contains("current block is missing") => return Ok(default),
+            Err(err) => return Err(err),
+        };
+        if !settings.is_hardfork_enabled(Hardfork::HfGorgon, height) {
+            return Ok(default);
+        }
+        let value = match Self::read_optional_i64_setting_key(
+            snapshot,
+            Self::max_transactions_per_block_key(),
+            "MaxTransactionsPerBlock",
+        )? {
+            Some(value) => value,
+            None => return Ok(default),
+        };
+        u32::try_from(value)
+            .map_err(|_| CoreError::invalid_operation("MaxTransactionsPerBlock out of u32 range"))
     }
 }

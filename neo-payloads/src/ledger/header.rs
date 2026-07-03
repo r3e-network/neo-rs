@@ -208,13 +208,8 @@ impl Header {
 
     /// Gets the hash of the header.
     pub fn hash(&self) -> UInt256 {
-        match self.try_hash() {
-            Ok(hash) => hash,
-            Err(err) => {
-                tracing::error!("Header unsigned serialization failed: {err}");
-                UInt256::zero()
-            }
-        }
+        self.try_hash()
+            .expect("Header serialization failed - this indicates a bug")
     }
 
     /// Serializes this header to its canonical Neo RPC JSON object, matching C#

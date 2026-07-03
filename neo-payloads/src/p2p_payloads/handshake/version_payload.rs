@@ -28,6 +28,9 @@ pub struct VersionPayload {
     /// A string used to identify the client software of the node.
     pub user_agent: String,
 
+    /// The last block height received by the node (C# `StartHeight`).
+    pub start_height: u32,
+
     /// The capabilities of the node.
     pub capabilities: Vec<NodeCapability>,
 }
@@ -39,6 +42,7 @@ impl VersionPayload {
         network: u32,
         nonce: u32,
         user_agent: String,
+        start_height: u32,
         capabilities: Vec<NodeCapability>,
     ) -> Self {
         Self {
@@ -51,6 +55,7 @@ impl VersionPayload {
                 .min(u32::MAX as u64) as u32,
             nonce,
             user_agent,
+            start_height,
             capabilities,
         }
     }
@@ -64,10 +69,17 @@ impl Serializable for VersionPayload {
         4 + // Nonce
         SerializeHelper::get_var_size_str(&self.user_agent) + // UserAgent
         NodeCapabilities::node_capabilities_size(&self.capabilities)
-        // Capabilities
+        // Capabilities. NOTE: StartHeight is NOT a top-level field on the wire —
+        // C# `VersionPayload.Serialize` writes only Network|Version|Timestamp|
+        // Nonce|UserAgent|Capabilities; the height travels inside the FullNode
+        // capability. `self.start_height` is a decode-side convenience, not wire.
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        // Matches C# `VersionPayload.Serialize` exactly: no top-level StartHeight
+        // (it is carried by the FullNode capability). Writing one here would inject
+        // 4 bytes that misalign the capability var-int and break the handshake with
+        // every real Neo node.
         writer.write_u32(self.network)?;
         writer.write_u32(self.version)?;
         writer.write_u32(self.timestamp)?;
@@ -86,13 +98,80 @@ impl Serializable for VersionPayload {
         let capabilities =
             NodeCapabilities::deserialize_node_capabilities(reader, MAX_CAPABILITIES)?;
 
+        // C# reads the peer's height from its FullNode capability, not the payload
+        // body; mirror that into the convenience field (0 when the peer advertises
+        // no FullNode capability, e.g. a light client).
+        let start_height = capabilities
+            .iter()
+            .find_map(|capability| match capability {
+                NodeCapability::FullNode { start_height } => Some(*start_height),
+                _ => None,
+            })
+            .unwrap_or(0);
+
         Ok(Self {
             network,
             version,
             timestamp,
             nonce,
             user_agent,
+            start_height,
             capabilities,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The `VersionPayload` wire is exactly C# `VersionPayload.Serialize`:
+    /// `Network|Version|Timestamp|Nonce|UserAgent|Capabilities` — with NO
+    /// top-level `StartHeight`. The height travels inside the FullNode capability.
+    /// (Regression: a phantom top-level `start_height` u32 injected 4 bytes that
+    /// misaligned the capability var-int and broke the handshake with real Neo
+    /// nodes. Symmetric Rust round-trips never caught it.)
+    #[test]
+    fn version_wire_has_no_top_level_start_height_like_csharp() {
+        let payload = VersionPayload {
+            network: 0x334F_454E,
+            version: 0,
+            timestamp: 0x1122_3344,
+            nonce: 0x5566_7788,
+            user_agent: "/Neo:3.6.0/".to_string(),
+            // Convenience field only — it must NOT appear on the wire.
+            start_height: 999,
+            capabilities: vec![NodeCapability::FullNode { start_height: 42 }],
+        };
+        let mut writer = BinaryWriter::new();
+        Serializable::serialize(&payload, &mut writer).expect("serialize");
+        let bytes = writer.into_bytes();
+
+        let ua = payload.user_agent.as_bytes();
+        let mut expected = Vec::new();
+        expected.extend_from_slice(&payload.network.to_le_bytes());
+        expected.extend_from_slice(&payload.version.to_le_bytes());
+        expected.extend_from_slice(&payload.timestamp.to_le_bytes());
+        expected.extend_from_slice(&payload.nonce.to_le_bytes());
+        expected.push(ua.len() as u8); // var-string length (< 0xFD)
+        expected.extend_from_slice(ua);
+        expected.push(0x01); // capability count
+        expected.push(0x10); // NodeCapabilityType::FullNode
+        expected.extend_from_slice(&42u32.to_le_bytes());
+        assert_eq!(
+            bytes, expected,
+            "VersionPayload must not serialize a top-level StartHeight"
+        );
+
+        // The byte right after the user-agent var-string is the capability count,
+        // not a phantom 4-byte height.
+        assert_eq!(bytes[16 + 1 + ua.len()], 0x01);
+
+        // Round-trip: start_height is derived from the FullNode capability.
+        let decoded =
+            <VersionPayload as Serializable>::deserialize(&mut MemoryReader::new(&bytes)).unwrap();
+        assert_eq!(decoded.start_height, 42);
+        assert_eq!(decoded.capabilities.len(), 1);
+        assert_eq!(decoded.user_agent, payload.user_agent);
     }
 }

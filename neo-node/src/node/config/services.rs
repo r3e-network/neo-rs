@@ -20,6 +20,12 @@ pub(in crate::node) struct StateServiceSection {
     /// Configured state-root store path.
     #[serde(default, alias = "Path")]
     pub(in crate::node) path: Option<PathBuf>,
+    /// Optional 32-byte secp256r1 StateValidator signing key, hex-encoded. When
+    /// this key is designated as a `StateValidator` (via `RoleManagement`), the
+    /// node actively signs and relays state-root votes; otherwise the node only
+    /// verifies and persists inbound signed roots (observer).
+    #[serde(default, alias = "ValidatorKeyHex", alias = "PrivateKeyHex")]
+    pub(in crate::node) validator_key_hex: Option<String>,
 }
 
 /// `[indexer]`: read-side block/transaction/account indexing service.
