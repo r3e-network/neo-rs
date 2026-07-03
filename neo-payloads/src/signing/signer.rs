@@ -275,13 +275,16 @@ impl Signer {
             Vec::new()
         };
 
-        StackValue::Array(vec![
-            StackValue::ByteString(self.account.to_bytes()),
-            StackValue::Integer(i64::from(self.scopes.bits())),
-            StackValue::Array(allowed_contracts),
-            StackValue::Array(allowed_groups),
-            StackValue::Array(rules),
-        ])
+        StackValue::Array(
+            neo_vm_rs::next_stack_item_id(),
+            vec![
+                StackValue::ByteString(self.account.to_bytes()),
+                StackValue::Integer(i64::from(self.scopes.bits())),
+                StackValue::Array(neo_vm_rs::next_stack_item_id(), allowed_contracts),
+                StackValue::Array(neo_vm_rs::next_stack_item_id(), allowed_groups),
+                StackValue::Array(neo_vm_rs::next_stack_item_id(), rules),
+            ],
+        )
     }
 }
 

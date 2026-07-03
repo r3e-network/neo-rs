@@ -207,6 +207,7 @@ impl ExternalVmHost<'_> {
                 };
 
                 stack.push(VmStackValue::Array(
+                    neo_vm_rs::next_stack_item_id(),
                     transaction
                         .signers()
                         .iter()

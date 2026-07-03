@@ -101,7 +101,7 @@ impl ContractGroup {
     /// Returns `Error` if the stack value is not a valid struct with two elements.
     pub fn try_from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
         let items = match stack_value {
-            StackValue::Struct(items) => items,
+            StackValue::Struct(_, items) => items,
             other => {
                 return Err(CoreError::invalid_data(format!(
                     "ContractGroup expects struct stack value, found {:?}",
@@ -139,10 +139,13 @@ impl ContractGroup {
             self.pub_key.to_bytes()
         });
 
-        StackValue::Struct(vec![
-            StackValue::ByteString(pub_key_bytes),
-            StackValue::ByteString(self.signature.clone()),
-        ])
+        StackValue::Struct(
+            neo_vm_rs::next_stack_item_id(),
+            vec![
+                StackValue::ByteString(pub_key_bytes),
+                StackValue::ByteString(self.signature.clone()),
+            ],
+        )
     }
 
     /// Builds a contract group from a VM stack item.

@@ -2,6 +2,27 @@ use super::*;
 use neo_vm::stack_item::Map as MapItem;
 use neo_vm_rs::ExecutionEngineLimits;
 
+/// Structural equality for StackValue that ignores the reference-identity ids
+/// on compound variants (neo-vm-rs 0.2.0 compares compounds by id; tests want
+/// value equality). The id is not serialized, so structural equality is the
+/// correct notion for round-trip / shape assertions.
+fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+    use neo_vm_rs::StackValue::*;
+    match (a, b) {
+        (Buffer(_, x), Buffer(_, y)) => x == y,
+        (Array(_, x), Array(_, y)) | (Struct(_, x), Struct(_, y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
+        }
+        (Map(_, x), Map(_, y)) => {
+            x.len() == y.len()
+                && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
+                    stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
+                })
+        }
+        _ => a == b,
+    }
+}
+
 #[test]
 fn deserialize_preserves_map_entry_order_for_roundtrip_bytes() {
     let limits = ExecutionEngineLimits::default();
@@ -54,13 +75,17 @@ fn deserialize_stack_value_reads_storage_payload_without_local_stack_item() {
 
     let value = BinarySerializer::deserialize_stack_value(&serialized).expect("deserialize");
 
-    assert_eq!(
-        value,
-        StackValue::Struct(vec![
+    let expected = StackValue::Struct(
+        neo_vm_rs::next_stack_item_id(),
+        vec![
             StackValue::BigInteger(vec![42]),
             StackValue::ByteString(vec![1, 2, 3]),
             StackValue::Boolean(true),
-        ])
+        ],
+    );
+    assert!(
+        stack_value_struct_eq(&value, &expected),
+        "structural StackValue mismatch: {value:?} vs {expected:?}"
     );
 }
 
@@ -76,10 +101,13 @@ fn deserialize_stack_value_enforces_item_limits() {
 
 #[test]
 fn serialize_stack_value_with_limits_matches_stack_item_and_enforces_size() {
-    let value = StackValue::Array(vec![
-        StackValue::ByteString(vec![1, 2, 3]),
-        StackValue::BigInteger(BigInt::from(42).to_signed_bytes_le()),
-    ]);
+    let value = StackValue::Array(
+        neo_vm_rs::next_stack_item_id(),
+        vec![
+            StackValue::ByteString(vec![1, 2, 3]),
+            StackValue::BigInteger(BigInt::from(42).to_signed_bytes_le()),
+        ],
+    );
     let legacy = StackItem::from_array(vec![
         StackItem::from_byte_string(vec![1, 2, 3]),
         StackItem::from_int(42),
@@ -97,14 +125,23 @@ fn serialize_stack_value_with_limits_matches_stack_item_and_enforces_size() {
 
 #[test]
 fn serialize_stack_value_with_limits_preserves_stack_item_parity_without_runtime_handles() {
-    let value = StackValue::Map(vec![(
-        StackValue::ByteString(b"k".to_vec()),
-        StackValue::Struct(vec![
-            StackValue::Integer(-1),
-            StackValue::BigInteger(vec![0x00]),
-            StackValue::Array(vec![StackValue::Boolean(true), StackValue::Null]),
-        ]),
-    )]);
+    let value = StackValue::Map(
+        neo_vm_rs::next_stack_item_id(),
+        vec![(
+            StackValue::ByteString(b"k".to_vec()),
+            StackValue::Struct(
+                neo_vm_rs::next_stack_item_id(),
+                vec![
+                    StackValue::Integer(-1),
+                    StackValue::BigInteger(vec![0x00]),
+                    StackValue::Array(
+                        neo_vm_rs::next_stack_item_id(),
+                        vec![StackValue::Boolean(true), StackValue::Null],
+                    ),
+                ],
+            ),
+        )],
+    );
     let legacy = StackItem::from_map({
         let mut map = neo_vm_rs::VmOrderedDictionary::new();
         map.insert(

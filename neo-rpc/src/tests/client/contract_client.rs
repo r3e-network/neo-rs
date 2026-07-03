@@ -229,7 +229,7 @@ async fn test_invoke_parses_map_and_struct_stack_items() {
         .await
         .expect("invoke");
 
-    let StackValue::Map(map) = &result.stack[0] else {
+    let StackValue::Map(_, map) = &result.stack[0] else {
         panic!("expected map");
     };
     assert_eq!(map.len(), 1);
@@ -240,7 +240,7 @@ async fn test_invoke_parses_map_and_struct_stack_items() {
         BigInt::from(42)
     );
 
-    let StackValue::Struct(structure) = &result.stack[1] else {
+    let StackValue::Struct(_, structure) = &result.stack[1] else {
         panic!("expected struct");
     };
     assert_eq!(structure.len(), 2);

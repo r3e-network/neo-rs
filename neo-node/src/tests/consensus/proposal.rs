@@ -433,6 +433,7 @@ async fn proposal_resolution_requests_change_view_for_invalid_unverified_transac
         settings,
         validators: Arc::new(RwLock::new(validators.clone())),
         public_key: validators[1].public_key.clone(),
+        store: Arc::new(neo_storage::persistence::providers::memory_store::MemoryStore::new()),
         current_prev_hash: UInt256::default(),
         proposal_txs: HashMap::new(),
     };
@@ -541,6 +542,7 @@ async fn proposal_resolution_requests_block_rejected_without_prepare_response_fo
         settings,
         validators: Arc::new(RwLock::new(validators.clone())),
         public_key: validators[1].public_key.clone(),
+        store: Arc::new(neo_storage::persistence::providers::memory_store::MemoryStore::new()),
         current_prev_hash: UInt256::default(),
         proposal_txs: HashMap::new(),
     };

@@ -1,6 +1,27 @@
 use super::*;
 use neo_vm_rs::StackValue;
 
+/// Structural equality for StackValue that ignores the reference-identity ids
+/// on compound variants (neo-vm-rs 0.2.0 compares compounds by id; tests want
+/// value equality). The id is not serialized, so structural equality is the
+/// correct notion for round-trip / shape assertions.
+fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+    use neo_vm_rs::StackValue::*;
+    match (a, b) {
+        (Buffer(_, x), Buffer(_, y)) => x == y,
+        (Array(_, x), Array(_, y)) | (Struct(_, x), Struct(_, y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
+        }
+        (Map(_, x), Map(_, y)) => {
+            x.len() == y.len()
+                && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
+                    stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
+                })
+        }
+        _ => a == b,
+    }
+}
+
 #[test]
 fn string_wildcard_projects_to_neo_vm_rs_null() {
     assert_eq!(
@@ -13,12 +34,17 @@ fn string_wildcard_projects_to_neo_vm_rs_null() {
 fn string_list_projects_to_neo_vm_rs_byte_string_array() {
     let container = WildCardContainer::create(vec!["transfer".to_string(), "balanceOf".into()]);
 
-    assert_eq!(
-        container.to_stack_value(),
-        StackValue::Array(vec![
+    let left = container.to_stack_value();
+    let right = StackValue::Array(
+        neo_vm_rs::next_stack_item_id(),
+        vec![
             StackValue::ByteString(b"transfer".to_vec()),
             StackValue::ByteString(b"balanceOf".to_vec()),
-        ])
+        ],
+    );
+    assert!(
+        stack_value_struct_eq(&left, &right),
+        "structural StackValue mismatch: {left:?} vs {right:?}"
     );
 }
 
@@ -41,10 +67,13 @@ fn string_wildcard_reads_from_neo_vm_rs_null() {
 #[test]
 fn string_list_reads_from_neo_vm_rs_array() {
     assert_eq!(
-        WildCardContainer::<String>::from_stack_value(StackValue::Array(vec![
-            StackValue::ByteString(b"mint".to_vec()),
-            StackValue::ByteString(b"burn".to_vec()),
-        ]))
+        WildCardContainer::<String>::from_stack_value(StackValue::Array(
+            neo_vm_rs::next_stack_item_id(),
+            vec![
+                StackValue::ByteString(b"mint".to_vec()),
+                StackValue::ByteString(b"burn".to_vec()),
+            ]
+        ))
         .unwrap(),
         WildCardContainer::create(vec!["mint".to_string(), "burn".into()])
     );
@@ -53,20 +82,27 @@ fn string_list_reads_from_neo_vm_rs_array() {
 #[test]
 fn string_list_rejects_struct_and_invalid_strings_like_csharp() {
     assert!(
-        WildCardContainer::<String>::from_stack_value(StackValue::Struct(vec![
-            StackValue::ByteString(b"verify".to_vec()),
-            StackValue::ByteString(b"onNEP17Payment".to_vec()),
-        ]))
+        WildCardContainer::<String>::from_stack_value(StackValue::Struct(
+            neo_vm_rs::next_stack_item_id(),
+            vec![
+                StackValue::ByteString(b"verify".to_vec()),
+                StackValue::ByteString(b"onNEP17Payment".to_vec()),
+            ]
+        ))
         .is_err()
     );
     assert!(
-        WildCardContainer::<String>::from_stack_value(StackValue::Array(vec![StackValue::Null]))
-            .is_err()
+        WildCardContainer::<String>::from_stack_value(StackValue::Array(
+            neo_vm_rs::next_stack_item_id(),
+            vec![StackValue::Null]
+        ))
+        .is_err()
     );
     assert!(
-        WildCardContainer::<String>::from_stack_value(StackValue::Array(vec![
-            StackValue::ByteString(vec![0xff])
-        ]))
+        WildCardContainer::<String>::from_stack_value(StackValue::Array(
+            neo_vm_rs::next_stack_item_id(),
+            vec![StackValue::ByteString(vec![0xff])]
+        ))
         .is_err()
     );
 }

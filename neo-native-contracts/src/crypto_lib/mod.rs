@@ -150,6 +150,15 @@ impl CryptoLib {
     /// wraps `Crypto.ECRecover` in try/catch and returns `null`). Split out so the
     /// success/null decision can be unit tested without an [`ApplicationEngine`].
     fn recover_secp256k1_method(message_hash: &[u8], signature: &[u8]) -> Option<Vec<u8>> {
+        // C# `Crypto.ECRecover` requires an exactly-65-byte (r‖s‖v) signature and
+        // throws (→ null) otherwise. The 64-byte EIP-2098 compact form is an
+        // Ethereum-specific extension with no place in Neo's consensus surface, so
+        // reject it here to avoid a state divergence where this node returns a key
+        // and a C# node returns null. Length is gated before recovery so the
+        // consensus path never accepts a signature C# would reject.
+        if signature.len() != 65 {
+            return None;
+        }
         Secp256k1Crypto::recover_public_key(message_hash, signature).ok()
     }
 

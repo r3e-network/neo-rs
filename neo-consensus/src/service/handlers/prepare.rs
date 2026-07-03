@@ -271,6 +271,23 @@ impl ConsensusService {
             return Ok(());
         }
 
+        // C# ConsensusService.CheckPreparations requires BOTH M preparations AND
+        // that every proposed transaction is available before signing a Commit.
+        // Without this gate a backup could commit-sign a block whose transactions
+        // it never received/validated (mirrors check_commits in commit.rs).
+        if self.context.has_missing_proposed_transactions() {
+            debug!(
+                block_index = self.context.block_index,
+                missing = self
+                    .context
+                    .proposed_tx_hashes
+                    .len()
+                    .saturating_sub(self.context.available_tx_hashes.len()),
+                "PrepareResponse threshold reached before all proposal transactions are available"
+            );
+            return Ok(());
+        }
+
         if self.context.state == ConsensusState::Committed {
             return Ok(());
         }

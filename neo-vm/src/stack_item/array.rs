@@ -47,7 +47,7 @@ impl Array {
             inner: Arc::new(Mutex::new(ArrayInner {
                 items,
                 reference_counter,
-                id: next_stack_item_id(),
+                id: next_stack_item_id() as usize,
                 is_read_only: false,
             })),
         };
@@ -62,7 +62,7 @@ impl Array {
             inner: Arc::new(Mutex::new(ArrayInner {
                 items,
                 reference_counter: None,
-                id: next_stack_item_id(),
+                id: next_stack_item_id() as usize,
                 is_read_only: false,
             })),
         }

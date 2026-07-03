@@ -7,7 +7,7 @@ pub(super) fn required_struct_fields(
     type_name: &str,
     required_len: usize,
 ) -> Result<Vec<StackValue>, CoreError> {
-    let StackValue::Struct(items) = stack_value else {
+    let StackValue::Struct(_, items) = stack_value else {
         return Err(CoreError::invalid_format(format!(
             "{type_name} expects Struct stack value"
         )));
@@ -30,7 +30,7 @@ pub(super) fn decode_stack_value_objects<T>(
 where
     T: Default,
 {
-    let StackValue::Array(items) = stack_value else {
+    let StackValue::Array(_, items) = stack_value else {
         return Err(CoreError::invalid_format(
             "Contract descriptor list must be an Array",
         ));

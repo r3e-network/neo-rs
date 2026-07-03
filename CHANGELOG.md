@@ -2,11 +2,31 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-03
+
 ### Architecture
 - Added supervised daemon task handling in `neo-node`, with essential task failures requesting graceful shutdown and normal task failures reported through bounded observability labels.
 - Added `neo_runtime::BlockImportQueue` for bounded concurrent block preverification before ordered canonical import.
 - Added typed storage table adapters in `neo-storage` and provider factories for hot/cold ledger and immutable state reads.
 - Documented the updated architecture, dataflow, and coding guidance for task supervision, import queues, table codecs, and provider factories.
+
+### Fixed (Neo N3 v3.10.0 consensus / protocol parity)
+- **dBFT commit gate:** a backup no longer signs a `Commit` until it holds every proposed transaction. `check_prepare_responses` now applies the `has_missing_proposed_transactions()` gate that `check_commits` already had, matching C# `ConsensusService.CheckPreparations` (`PreparationPayloads >= M && TransactionHashes.All(ContainsKey)`).
+- **Stale consensus snapshot:** the consensus driver now takes a fresh store snapshot at the start of every round (`ConsensusDriver::fresh_round_snapshot`), so committee / validator / `NextConsensus` reads reflect the current tip across committee-refresh heights — matching C# `ConsensusContext.Reset` — instead of reusing a frozen startup snapshot.
+- **`StdLib.jsonSerialize` UTF-8:** invalid-UTF-8 `ByteString`/`Buffer` values now fault via strict `from_utf8` instead of silently substituting `U+FFFD`, matching C# `StrictUTF8` (removes a VM-reachable execution divergence).
+- **`CryptoLib.recoverSecp256K1`:** rejects any signature that is not exactly 65 bytes at the consensus boundary, matching C# `Crypto.ECRecover`. Previously a 64-byte EIP-2098 signature recovered a key here but returned `null` on C# (Echidna, live mainnet). Adds a parity regression test.
+- **HSM CheckSig hash:** the PKCS#11 single-signature redeem script now derives the `System.Crypto.CheckSig` interop hash from `sha256(name)[..4]` (`0x27b3e756`) instead of a wrong hardcoded value, fixing the derived HSM validator identity.
+- **Oracle HTTPS:** redirects are followed only on 3xx responses (matching C#); removed a per-chunk 8 KB cap that could wrongly reject legitimate sub-64 KB responses delivered in one stream frame.
+- **Wallet witness:** `create_witness` now uses the shared `signature_invocation` helper, validating signature length before the `PUSHDATA1` length byte (no silent `len as u8` truncation).
+- Minor: checked decimal addition in `BigDecimal` multiplication; corrected oracle minimum-gas error text; corrected the JSON quote-escape doc comment.
+
+### Changed
+- Migrated the workspace to the **`neo-vm-rs` 0.2.0** `StackValue` API: the compound variants (`Buffer`/`Array`/`Struct`/`Map`) now carry a leading reference-identity `u64` id, and `next_stack_item_id()` returns `u64`. The id is never serialized, so binary/JSON wire formats and consensus hashes are unchanged. Equality of compound stack values is now reference-based (C# `ReferenceEquals` semantics).
+
+### Internal / tests
+- Converted test assertions that compared compound `StackValue`s by value to a structural helper (0.2.0 compares compounds by reference id).
+- Fixed a parallel test-isolation flake in `neo-system`: a shared, poison-resilient guard now serializes every test that touches the process-global native-contract provider.
+- Architecture tests: classified `neo-static-files` in the layer map and corrected stale file paths in the retired-term doc checks.
 
 ## [0.8.0] - 2026-06-14
 

@@ -308,8 +308,11 @@ impl StdLib {
             .map(|part| StackValue::ByteString(part.as_bytes().to_vec()))
             .collect();
 
-        BinarySerializer::serialize_stack_value_default(&StackValue::Array(items))
-            .map_err(|e| CoreError::invalid_operation(format!("StdLib::stringSplit: {e}")))
+        BinarySerializer::serialize_stack_value_default(&StackValue::Array(
+            neo_vm_rs::next_stack_item_id(),
+            items,
+        ))
+        .map_err(|e| CoreError::invalid_operation(format!("StdLib::stringSplit: {e}")))
     }
 
     /// C# `StdLib.StrLen(str)`: the number of text elements in the string, i.e.

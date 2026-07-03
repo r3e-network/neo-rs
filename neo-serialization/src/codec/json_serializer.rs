@@ -76,11 +76,18 @@ impl JsonSerializer {
                 Ok(JsonValue::Number(JsonNumber::from(int_value)))
             }
             StackItem::ByteString(bytes) => {
-                let string = String::from_utf8_lossy(bytes).to_string();
+                // C# JsonSerializer decodes ByteString/Buffer values with StrictUTF8
+                // (throwOnInvalidBytes=true), so invalid UTF-8 FAULTs the VM. Use
+                // strict from_utf8 (mirroring the map-key path) instead of the lossy
+                // decode, so an invalid-UTF-8 value cannot succeed here while a C#
+                // node faults — a StdLib.jsonSerialize state divergence.
+                let string = String::from_utf8(bytes.clone())
+                    .map_err(|_| CoreError::other("Invalid UTF-8 in byte string"))?;
                 Ok(JsonValue::String(string))
             }
             StackItem::Buffer(buffer) => {
-                let string = String::from_utf8_lossy(&buffer.data()).to_string();
+                let string = String::from_utf8(buffer.data())
+                    .map_err(|_| CoreError::other("Invalid UTF-8 in byte string"))?;
                 Ok(JsonValue::String(string))
             }
             StackItem::Array(array) => Self::serialize_compound_array(array, seen),

@@ -50,7 +50,7 @@ impl Map {
         let map = Self {
             inner: Arc::new(Mutex::new(MapInner {
                 items,
-                id: next_stack_item_id(),
+                id: next_stack_item_id() as usize,
                 reference_counter,
                 is_read_only: false,
             })),
@@ -67,7 +67,7 @@ impl Map {
         Self {
             inner: Arc::new(Mutex::new(MapInner {
                 items: items.into(),
-                id: next_stack_item_id(),
+                id: next_stack_item_id() as usize,
                 reference_counter: None,
                 is_read_only: false,
             })),

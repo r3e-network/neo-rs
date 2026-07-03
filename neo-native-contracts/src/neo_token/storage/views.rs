@@ -15,7 +15,7 @@ pub(in crate::neo_token) struct NeoAccountStateView {
 impl NeoAccountStateView {
     pub(in crate::neo_token) fn to_stack_value(&self) -> StackValue {
         let mut items = match crate::AccountState::new(self.balance.clone()).to_stack_value() {
-            StackValue::Struct(items) => items,
+            StackValue::Struct(_, items) => items,
             _ => unreachable!("AccountState always projects to Struct"),
         };
         items.push(StackValue::Integer(i64::from(self.balance_height)));
@@ -26,11 +26,11 @@ impl NeoAccountStateView {
         items.push(StackValue::BigInteger(
             self.last_gas_per_vote.to_signed_bytes_le(),
         ));
-        StackValue::Struct(items)
+        StackValue::Struct(neo_vm_rs::next_stack_item_id(), items)
     }
 
     pub(in crate::neo_token) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Struct(items) = stack_value else {
+        let StackValue::Struct(_, items) = stack_value else {
             return Err(CoreError::invalid_data("neo account state is not a struct"));
         };
         if items.len() < 4 {
@@ -39,9 +39,11 @@ impl NeoAccountStateView {
             ));
         }
 
-        let balance =
-            crate::AccountState::from_stack_value(StackValue::Struct(vec![items[0].clone()]))?
-                .balance;
+        let balance = crate::AccountState::from_stack_value(StackValue::Struct(
+            neo_vm_rs::next_stack_item_id(),
+            vec![items[0].clone()],
+        ))?
+        .balance;
         let balance_height = neo_vm_rs::stack_value_as_u32(&items[1]).ok_or_else(|| {
             CoreError::invalid_data("account balanceHeight: expected uint32 integer")
         })?;
@@ -81,14 +83,17 @@ impl CandidateState {
     }
 
     pub(in crate::neo_token) fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(vec![
-            StackValue::Boolean(self.registered),
-            StackValue::BigInteger(self.votes.to_signed_bytes_le()),
-        ])
+        StackValue::Struct(
+            neo_vm_rs::next_stack_item_id(),
+            vec![
+                StackValue::Boolean(self.registered),
+                StackValue::BigInteger(self.votes.to_signed_bytes_le()),
+            ],
+        )
     }
 
     pub(in crate::neo_token) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Struct(items) = stack_value else {
+        let StackValue::Struct(_, items) = stack_value else {
             return Err(CoreError::invalid_data("candidate state is not a struct"));
         };
         if items.len() < 2 {
@@ -124,20 +129,24 @@ impl CachedCommittee {
 
     pub(crate) fn to_stack_value(&self) -> StackValue {
         StackValue::Array(
+            neo_vm_rs::next_stack_item_id(),
             self.members
                 .iter()
                 .map(|(point, votes)| {
-                    StackValue::Struct(vec![
-                        StackValue::ByteString(point.to_bytes()),
-                        StackValue::BigInteger(votes.to_signed_bytes_le()),
-                    ])
+                    StackValue::Struct(
+                        neo_vm_rs::next_stack_item_id(),
+                        vec![
+                            StackValue::ByteString(point.to_bytes()),
+                            StackValue::BigInteger(votes.to_signed_bytes_le()),
+                        ],
+                    )
                 })
                 .collect(),
         )
     }
 
     pub(crate) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Array(array) = stack_value else {
+        let StackValue::Array(_, array) = stack_value else {
             return Err(CoreError::invalid_data("committee cache is not an array"));
         };
         let mut members = Vec::with_capacity(array.len());
@@ -148,7 +157,7 @@ impl CachedCommittee {
     }
 
     fn member_from_stack_value(stack_value: StackValue) -> CoreResult<(ECPoint, BigInt)> {
-        let StackValue::Struct(items) = stack_value else {
+        let StackValue::Struct(_, items) = stack_value else {
             return Err(CoreError::invalid_data("committee element is not a struct"));
         };
         if items.len() < 2 {

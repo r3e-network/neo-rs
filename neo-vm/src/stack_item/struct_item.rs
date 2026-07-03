@@ -45,7 +45,7 @@ impl Struct {
         let structure = Self {
             inner: Arc::new(Mutex::new(StructInner {
                 items,
-                id: next_stack_item_id(),
+                id: next_stack_item_id() as usize,
                 reference_counter,
                 is_read_only: false,
             })),
@@ -60,7 +60,7 @@ impl Struct {
         Self {
             inner: Arc::new(Mutex::new(StructInner {
                 items,
-                id: next_stack_item_id(),
+                id: next_stack_item_id() as usize,
                 reference_counter: None,
                 is_read_only: false,
             })),

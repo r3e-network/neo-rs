@@ -15,23 +15,29 @@ fn compound_lengths_use_stack_value_shapes() {
 
     assert!(
         validator
-            .validate(&StackValue::Array(vec![StackValue::Null]))
+            .validate(&StackValue::Array(
+                neo_vm_rs::next_stack_item_id(),
+                vec![StackValue::Null]
+            ))
             .is_ok()
     );
     assert!(
         validator
-            .validate(&StackValue::Struct(vec![
-                StackValue::Null,
-                StackValue::Null
-            ]))
+            .validate(&StackValue::Struct(
+                neo_vm_rs::next_stack_item_id(),
+                vec![StackValue::Null, StackValue::Null]
+            ))
             .is_err()
     );
     assert!(
         validator
-            .validate(&StackValue::Map(vec![
-                (StackValue::Integer(1), StackValue::Boolean(true)),
-                (StackValue::Integer(2), StackValue::Boolean(false)),
-            ]))
+            .validate(&StackValue::Map(
+                neo_vm_rs::next_stack_item_id(),
+                vec![
+                    (StackValue::Integer(1), StackValue::Boolean(true)),
+                    (StackValue::Integer(2), StackValue::Boolean(false)),
+                ]
+            ))
             .is_err()
     );
 }

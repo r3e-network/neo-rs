@@ -239,17 +239,17 @@ impl ScriptBuilder {
             StackValue::BigInteger(bytes) => {
                 self.emit_push_bigint(BigInt::from_signed_bytes_le(bytes))?;
             }
-            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => {
+            StackValue::ByteString(bytes) | StackValue::Buffer(_, bytes) => {
                 self.emit_push(bytes);
             }
-            StackValue::Array(items) | StackValue::Struct(items) => {
+            StackValue::Array(_, items) | StackValue::Struct(_, items) => {
                 for item in items.iter().rev() {
                     self.emit_push_stack_value(item)?;
                 }
                 self.emit_push_int(items.len() as i64);
                 self.emit_pack();
             }
-            StackValue::Map(entries) => {
+            StackValue::Map(_, entries) => {
                 self.emit_opcode(OpCode::NEWMAP);
                 for (key, value) in entries {
                     self.emit_opcode(OpCode::DUP);

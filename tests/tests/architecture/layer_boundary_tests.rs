@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! Layer 0 (Foundation): neo-primitives
-//! Layer 1 (Infrastructure): neo-io, neo-error, neo-crypto, neo-storage, neo-config, neo-vm, neo-serialization, neo-manifest
+//! Layer 1 (Infrastructure): neo-io, neo-error, neo-crypto, neo-storage, neo-static-files, neo-config, neo-vm, neo-serialization, neo-manifest
 //! Layer 2 (Protocol): neo-payloads, neo-consensus, neo-hsm
 //! Layer 3 (Domain services): neo-execution, neo-native-contracts, neo-mempool, neo-state-service, neo-runtime
 //! Layer 4 (Node services): neo-blockchain, neo-network, neo-wallets, neo-indexer, neo-tee
@@ -36,8 +36,10 @@ impl Layer {
             // Layer 0: Foundation (no neo-* dependencies allowed).
             "neo-primitives" => Some(Layer::Foundation),
             // Layer 1: Infrastructure and shared data tooling.
-            "neo-io" | "neo-error" | "neo-crypto" | "neo-storage" | "neo-config" | "neo-vm"
-            | "neo-serialization" | "neo-manifest" => Some(Layer::Infrastructure),
+            "neo-io" | "neo-error" | "neo-crypto" | "neo-storage" | "neo-static-files"
+            | "neo-config" | "neo-vm" | "neo-serialization" | "neo-manifest" => {
+                Some(Layer::Infrastructure)
+            }
             // Layer 2: Protocol payloads and consensus message vocabulary.
             "neo-payloads" | "neo-consensus" | "neo-hsm" => Some(Layer::Protocol),
             // Layer 3: Domain logic with no node composition dependency.
@@ -615,16 +617,16 @@ fn test_active_architecture_docs_do_not_reference_retired_crates() {
         "neo-runtime/Cargo.toml",
         "neo-runtime/src/lib.rs",
         "neo-rpc/Cargo.toml",
-        "neo-rpc/src/client/contract_client.rs",
+        "neo-rpc/src/client/contracts/contract_client.rs",
         "neo-rpc/src/server/rpc_server_blockchain/mod.rs",
-        "neo-rpc/src/tests/server/rpc_server_node.rs",
+        "neo-rpc/src/tests/server/handlers/rpc_server_node.rs",
         "neo-system/Cargo.toml",
         "neo-system/src/lib.rs",
         "neo-network/Cargo.toml",
         "neo-network/src/lib.rs",
         "neo-network/src/wire/mod.rs",
         "neo-network/src/proto/mod.rs",
-        "neo-network/src/task_manager.rs",
+        "neo-network/src/service/task_manager.rs",
     ];
 
     let retired_terms = [

@@ -328,10 +328,15 @@ impl Mul for BigDecimal {
     type Output = Self;
 
     fn mul(self, other: Self) -> Self::Output {
-        // Multiply the values and add the decimals
+        // Multiply the values and add the decimals. `checked_add` turns an
+        // (unreachable via protocol token decimals) u8 overflow into a clear
+        // panic instead of a silent wrap in release builds.
         Self {
             value: self.value * other.value,
-            decimals: self.decimals + other.decimals,
+            decimals: self
+                .decimals
+                .checked_add(other.decimals)
+                .expect("BigDecimal decimals overflow (sum exceeds u8::MAX)"),
         }
     }
 }

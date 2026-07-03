@@ -27,7 +27,10 @@ impl WitnessCondition {
                     .iter()
                     .map(WitnessCondition::to_stack_value)
                     .collect::<Vec<_>>();
-                items.push(StackValue::Array(expressions));
+                items.push(StackValue::Array(
+                    neo_vm_rs::next_stack_item_id(),
+                    expressions,
+                ));
             }
             WitnessCondition::ScriptHash { hash } | WitnessCondition::CalledByContract { hash } => {
                 items.push(StackValue::ByteString(hash.to_bytes()));
@@ -38,17 +41,20 @@ impl WitnessCondition {
             WitnessCondition::CalledByEntry => {}
         }
 
-        StackValue::Array(items)
+        StackValue::Array(neo_vm_rs::next_stack_item_id(), items)
     }
 }
 
 impl WitnessRule {
     /// Converts to a neo-vm-rs stack value (matches C# `WitnessRule.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
-        StackValue::Array(vec![
-            StackValue::Integer(i64::from(self.action.to_byte())),
-            self.condition.to_stack_value(),
-        ])
+        StackValue::Array(
+            neo_vm_rs::next_stack_item_id(),
+            vec![
+                StackValue::Integer(i64::from(self.action.to_byte())),
+                self.condition.to_stack_value(),
+            ],
+        )
     }
 }
 

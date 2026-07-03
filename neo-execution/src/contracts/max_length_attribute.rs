@@ -25,9 +25,9 @@ impl ValidatorAttribute for MaxLengthAttribute {
                 .to_byte_string_bytes()
                 .map(|bytes| bytes.len())
                 .unwrap_or(0),
-            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => bytes.len(),
-            StackValue::Array(array) | StackValue::Struct(array) => array.len(),
-            StackValue::Map(map) => map.len(),
+            StackValue::ByteString(bytes) | StackValue::Buffer(_, bytes) => bytes.len(),
+            StackValue::Array(_, array) | StackValue::Struct(_, array) => array.len(),
+            StackValue::Map(_, map) => map.len(),
             StackValue::Pointer(_) | StackValue::Interop(_) | StackValue::Iterator(_) => 0,
             StackValue::Null => 0,
         };

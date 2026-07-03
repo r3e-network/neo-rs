@@ -316,7 +316,7 @@ impl NativeContract for OracleContract {
                     })?;
                 if gas_for_response < MIN_GAS_FOR_RESPONSE {
                     return Err(CoreError::invalid_operation(format!(
-                        "gasForResponse {gas_for_response} must be at least 0.1 datoshi.",
+                        "gasForResponse {gas_for_response} must be at least 0.1 GAS.",
                     )));
                 }
 

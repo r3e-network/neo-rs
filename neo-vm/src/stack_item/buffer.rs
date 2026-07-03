@@ -40,7 +40,7 @@ impl Buffer {
         Self {
             inner: Arc::new(Mutex::new(BufferInner {
                 data,
-                id: next_stack_item_id(),
+                id: next_stack_item_id() as usize,
             })),
         }
     }

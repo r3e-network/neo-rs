@@ -9,6 +9,7 @@ use crate::jump_table::{JumpTable, register_jump_handlers, require_context};
 use crate::stack_item::{Array, StackItem, Struct};
 use neo_vm_rs::Instruction;
 use neo_vm_rs::StackItemType;
+use neo_vm_rs::next_stack_item_id;
 use neo_vm_rs::{OpCode, StackValue};
 
 /// Registers the type operation handlers.
@@ -130,10 +131,10 @@ fn stack_item_type_probe_value(item_type: StackItemType) -> StackValue {
         StackItemType::Boolean => StackValue::Boolean(false),
         StackItemType::Integer => StackValue::Integer(0),
         StackItemType::ByteString => StackValue::ByteString(Vec::new()),
-        StackItemType::Buffer => StackValue::Buffer(Vec::new()),
-        StackItemType::Array => StackValue::Array(Vec::new()),
-        StackItemType::Struct => StackValue::Struct(Vec::new()),
-        StackItemType::Map => StackValue::Map(Vec::new()),
+        StackItemType::Buffer => StackValue::Buffer(next_stack_item_id(), Vec::new()),
+        StackItemType::Array => StackValue::Array(next_stack_item_id(), Vec::new()),
+        StackItemType::Struct => StackValue::Struct(next_stack_item_id(), Vec::new()),
+        StackItemType::Map => StackValue::Map(next_stack_item_id(), Vec::new()),
         StackItemType::InteropInterface => StackValue::Interop(0),
     }
 }

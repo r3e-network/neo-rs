@@ -524,7 +524,6 @@ fn signature_redeem_script(compressed_pubkey: &[u8; 33]) -> Vec<u8> {
     //   ...33 bytes...
     //   0x41 = SYSCALL opcode
     //   System.Crypto.CheckSig interop hash (4 bytes, little-endian)
-    //   = 0x29 0x3c 0x95 0xb4  (LE of hash32("System.Crypto.CheckSig")[..4])
     //
     // This matches C# `Contract.CreateSignatureRedeemScript` which emits:
     //   ScriptBuilder.EmitPush(publicKey) + ScriptBuilder.EmitSysCall("System.Crypto.CheckSig")
@@ -540,10 +539,12 @@ fn signature_redeem_script(compressed_pubkey: &[u8; 33]) -> Vec<u8> {
     script.extend_from_slice(compressed_pubkey);
     // SYSCALL opcode (0x41)
     script.push(0x41);
-    // System.Crypto.CheckSig interop descriptor hash (first 4 bytes, LE)
-    // sha256("System.Crypto.CheckSig")[0..4] = [0xe9, 0x27, 0xec, 0x2b]
-    // This is the constant used throughout neo-rs (verified against C# reference).
-    script.extend_from_slice(&[0xe9, 0x27, 0xec, 0x2b]);
+    // System.Crypto.CheckSig interop descriptor hash: the first 4 bytes of
+    // sha256("System.Crypto.CheckSig"), little-endian. C# registers the syscall
+    // under BitConverter.ToUInt32(sha256(name)[..4]) = 0x27b3e756, i.e. bytes
+    // [0x56, 0xe7, 0xb3, 0x27]. Derived here so it can never drift from the hash.
+    let checksig_hash = Crypto::sha256(b"System.Crypto.CheckSig");
+    script.extend_from_slice(&checksig_hash[..4]);
     script
 }
 

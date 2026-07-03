@@ -303,6 +303,47 @@ fn recover_secp256k1_returns_none_on_bad_input() {
 }
 
 #[test]
+fn recover_secp256k1_rejects_64_byte_signature_for_csharp_parity() {
+    // C# `Crypto.ECRecover` requires an exactly-65-byte (r‖s‖v) signature and
+    // returns null otherwise. A 64-byte compact / EIP-2098 signature is
+    // mathematically recoverable (neo-crypto's `recover_public_key` accepts it),
+    // so the consensus method MUST reject the 64-byte length — otherwise this node
+    // returns a key where a C# node returns null, forking any contract that
+    // branches on the result.
+    let sk = [0x11u8; 32];
+    let msg = b"neo ecrecover parity";
+    // `Secp256k1Crypto::sign` hashes the message with SHA-256 internally, so the
+    // recovery hash is sha256(msg).
+    let hash = neo_crypto::Crypto::sha256(msg);
+    let expected = neo_crypto::Secp256k1Crypto::derive_public_key(&sk)
+        .unwrap()
+        .to_vec();
+    let sig64 = neo_crypto::Secp256k1Crypto::sign(msg, &sk).unwrap();
+
+    // The 65-byte form with the correct recovery id recovers the signer key and
+    // is accepted by the consensus method.
+    let mut matched = false;
+    for v in 0u8..=3 {
+        let mut sig65 = sig64.to_vec();
+        sig65.push(v);
+        if CryptoLib::recover_secp256k1_method(&hash, &sig65).as_deref()
+            == Some(expected.as_slice())
+        {
+            matched = true;
+            break;
+        }
+    }
+    assert!(
+        matched,
+        "a 65-byte signature must still recover the signer key"
+    );
+
+    // The 64-byte form of the very same signature is rejected (returns None),
+    // matching C# Crypto.ECRecover's exact-65-byte requirement.
+    assert!(CryptoLib::recover_secp256k1_method(&hash, &sig64).is_none());
+}
+
+#[test]
 fn verify_ecdsa_dispatch_gates_keccak_and_rejects_unknown_curve() {
     // The curve/hash dispatch + Cockatrice gate are tested here; the ECDSA
     // mechanics themselves are covered by neo-crypto's verify_signature_with_hash

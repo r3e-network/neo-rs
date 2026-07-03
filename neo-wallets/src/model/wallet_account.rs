@@ -12,7 +12,6 @@ use neo_execution::Contract;
 use neo_payloads::Transaction;
 use neo_payloads::Witness;
 use neo_primitives::UInt160;
-use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
 /// Common interface shared by all wallet-backed accounts.
@@ -283,10 +282,10 @@ impl WalletAccount for StandardWalletAccount {
             key.get_verification_script()
         };
 
-        let mut invocation = Vec::with_capacity(signature.len() + 2);
-        invocation.push(OpCode::PUSHDATA1.byte());
-        invocation.push(signature.len() as u8);
-        invocation.extend_from_slice(&signature);
+        // Use the shared helper, which validates the signature is exactly 64
+        // bytes before emitting the PUSHDATA1 length byte (avoiding a silent
+        // `len as u8` truncation) and matches the C# wallet signing path.
+        let invocation = crate::signature_invocation(&signature)?;
 
         Ok(Witness::new_with_scripts(invocation, verification_script))
     }

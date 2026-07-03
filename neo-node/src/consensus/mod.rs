@@ -28,7 +28,7 @@ use neo_native_contracts::{LedgerContract, NeoToken};
 use neo_network::NetworkHandle;
 use neo_payloads::{ExtensiblePayload, Transaction, Witness};
 use neo_primitives::{UInt160, UInt256};
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::{DataCache, Store, StoreCache};
 use neo_vm::script_builder::RedeemScript;
 use parking_lot::RwLock;
 use tokio::sync::mpsc;
@@ -290,15 +290,30 @@ struct ConsensusDriver {
     settings: Arc<ProtocolSettings>,
     validators: Arc<RwLock<Vec<ValidatorInfo>>>,
     public_key: ECPoint,
+    /// Underlying store handle, used to mint a fresh `DataCache` at the start of
+    /// each round so committee/validator/`NextConsensus` reads reflect the current
+    /// persisted tip (C# `ConsensusContext.Reset` takes a fresh snapshot per round).
+    store: Arc<dyn Store>,
     /// The `prev_hash` of the round currently being driven (carried into
-    /// `assemble_block` — the stored snapshot does not advance, so the tip is
-    /// tracked from `start`/`Imported` rather than re-read).
+    /// `assemble_block`).
     current_prev_hash: UInt256,
     /// Full transactions cached at proposal time, for commit-time assembly.
     proposal_txs: HashMap<UInt256, Arc<Transaction>>,
 }
 
 impl ConsensusDriver {
+    /// Builds a fresh read snapshot of the current persisted store state. Called
+    /// once per round (at start and on each `Imported`) so a driver process that
+    /// spans a committee-refresh height reads the updated validator set rather
+    /// than a frozen startup snapshot.
+    fn fresh_round_snapshot(&self) -> Arc<DataCache> {
+        Arc::new(
+            StoreCache::new_from_store(Arc::clone(&self.store), false)
+                .data_cache()
+                .clone(),
+        )
+    }
+
     fn configure_round(
         &mut self,
         snapshot: &DataCache,
@@ -312,10 +327,12 @@ impl ConsensusDriver {
         Ok(next_consensus)
     }
 
-    async fn run(mut self, startup_snapshot: Arc<DataCache>) {
+    async fn run(mut self) {
+        // Fresh snapshot for the first round (refreshed on each Imported below).
+        let mut round_snapshot = self.fresh_round_snapshot();
         // C# `ConsensusContext.Reset`: first round is height+1 over the tip.
-        let (block_index, prev_hash, prev_timestamp) = ledger_tip(&startup_snapshot);
-        let next_consensus = match self.configure_round(&startup_snapshot, block_index) {
+        let (block_index, prev_hash, prev_timestamp) = ledger_tip(&round_snapshot);
+        let next_consensus = match self.configure_round(&round_snapshot, block_index) {
             Ok(next_consensus) => next_consensus,
             Err(err) => {
                 warn!(target: "neo", %err, "consensus round context unavailable");
@@ -346,14 +363,14 @@ impl ConsensusDriver {
                 // Outbound work from the state machine.
                 maybe_event = self.event_rx.recv() => {
                     let Some(event) = maybe_event else { break };
-                    self.on_consensus_event(event, &startup_snapshot).await;
+                    self.on_consensus_event(event, &round_snapshot).await;
                 }
                 // Inbound consensus payloads from peers.
                 maybe_msg = self.inbound_rx.recv() => {
                     let Some(payload) = maybe_msg else { break };
                     if !prepare_request_passes_ledger_guards(
                         &payload,
-                        &startup_snapshot,
+                        &round_snapshot,
                         &self.mempool,
                         &self.settings,
                     ) {
@@ -368,7 +385,9 @@ impl ConsensusDriver {
                     match ev {
                         Ok(RuntimeEvent::Imported { hash, height, timestamp }) => {
                             let block_index = height + 1;
-                            let next_consensus = match self.configure_round(&startup_snapshot, block_index) {
+                            // Re-read committee/validators from the current tip.
+                            round_snapshot = self.fresh_round_snapshot();
+                            let next_consensus = match self.configure_round(&round_snapshot, block_index) {
                                 Ok(next_consensus) => next_consensus,
                                 Err(err) => {
                                     warn!(target: "neo", %err, block_index, "consensus round context unavailable");
@@ -525,7 +544,7 @@ pub fn consensus_driver_task(
     network: NetworkHandle,
     settings: Arc<ProtocolSettings>,
     validators: Arc<RwLock<Vec<ValidatorInfo>>>,
-    startup_snapshot: Arc<DataCache>,
+    store: Arc<dyn Store>,
     inbound_rx: mpsc::Receiver<ConsensusPayload>,
 ) -> Option<impl std::future::Future<Output = ()> + Send + 'static> {
     // Generously sized: a commit emits BroadcastMessage(Commit) + BlockCommitted
@@ -555,11 +574,12 @@ pub fn consensus_driver_task(
         settings,
         validators,
         public_key: setup.public_key,
+        store,
         current_prev_hash: UInt256::default(),
         proposal_txs: HashMap::new(),
     };
 
-    Some(driver.run(startup_snapshot))
+    Some(driver.run())
 }
 
 #[cfg(test)]

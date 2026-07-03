@@ -14,24 +14,61 @@ use num_bigint::BigInt;
 #[path = "style/mod.rs"]
 mod style;
 
+/// Structural equality for StackValue that ignores the reference-identity ids
+/// on compound variants (neo-vm-rs 0.2.0 compares compounds by id; tests want
+/// value equality). The id is not serialized, so structural equality is the
+/// correct notion for round-trip / shape assertions.
+fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+    use neo_vm_rs::StackValue::*;
+    match (a, b) {
+        (Buffer(_, x), Buffer(_, y)) => x == y,
+        (Array(_, x), Array(_, y)) | (Struct(_, x), Struct(_, y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
+        }
+        (Map(_, x), Map(_, y)) => {
+            x.len() == y.len()
+                && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
+                    stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
+                })
+        }
+        _ => a == b,
+    }
+}
+
 #[test]
 fn account_state_interoperable_projection_matches_csharp_shape() {
     let state = AccountState::new(BigInt::from(12345));
-    let expected_value = StackValue::Struct(vec![StackValue::BigInteger(
-        BigInt::from(12345).to_signed_bytes_le(),
-    )]);
+    let expected_value = StackValue::Struct(
+        neo_vm_rs::next_stack_item_id(),
+        vec![StackValue::BigInteger(
+            BigInt::from(12345).to_signed_bytes_le(),
+        )],
+    );
 
-    assert_eq!(state.to_stack_value(), expected_value);
+    let projected = state.to_stack_value();
+    assert!(
+        stack_value_struct_eq(&projected, &expected_value),
+        "structural StackValue mismatch: {projected:?} vs {expected_value:?}"
+    );
 
     let trait_value = Interoperable::to_stack_value(&state).unwrap();
-    assert_eq!(trait_value, expected_value);
+    assert!(
+        stack_value_struct_eq(&trait_value, &expected_value),
+        "structural StackValue mismatch: {trait_value:?} vs {expected_value:?}"
+    );
 
     let mut parsed = AccountState::new(BigInt::from(0));
     Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
     assert_eq!(parsed, state);
 
-    assert!(AccountState::from_stack_value(StackValue::Array(vec![])).is_err());
-    assert!(AccountState::from_stack_value(StackValue::Struct(vec![])).is_err());
+    assert!(
+        AccountState::from_stack_value(StackValue::Array(neo_vm_rs::next_stack_item_id(), vec![]))
+            .is_err()
+    );
+    assert!(
+        AccountState::from_stack_value(StackValue::Struct(neo_vm_rs::next_stack_item_id(), vec![]))
+            .is_err()
+    );
 }
 
 #[test]

@@ -122,7 +122,9 @@ impl ContractPermissionDescriptor {
     pub fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
         match stack_value {
             StackValue::Null => Ok(Self::create_wildcard()),
-            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => Self::from_bytes(&bytes),
+            StackValue::ByteString(bytes) | StackValue::Buffer(_, bytes) => {
+                Self::from_bytes(&bytes)
+            }
             other => Err(CoreError::other(format!(
                 "Unsupported stack value type for ContractPermissionDescriptor: {:?}",
                 other

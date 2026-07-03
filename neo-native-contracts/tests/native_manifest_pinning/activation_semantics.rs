@@ -24,28 +24,25 @@ fn assert_initialize_block(
         "{} initialize at height {height}",
         contract.name()
     );
-    assert_eq!(hits, expected_hits, "{} hits at height {height}", contract.name());
+    assert_eq!(
+        hits,
+        expected_hits,
+        "{} hits at height {height}",
+        contract.name()
+    );
 }
 
 #[test]
 fn csharp_activation_schedules_drive_runtime_activation_and_manifest_refresh() {
     let settings = test_settings();
     let cases: [(&dyn NativeContract, Option<Hardfork>, &[Option<Hardfork>]); 3] = [
-        (
-            &OracleContract,
-            None,
-            &[None, Some(Hardfork::HfFaun)],
-        ),
+        (&OracleContract, None, &[None, Some(Hardfork::HfFaun)]),
         (
             &Notary,
             Some(Hardfork::HfEchidna),
             &[Some(Hardfork::HfEchidna), Some(Hardfork::HfFaun)],
         ),
-        (
-            &Treasury,
-            Some(Hardfork::HfFaun),
-            &[Some(Hardfork::HfFaun)],
-        ),
+        (&Treasury, Some(Hardfork::HfFaun), &[Some(Hardfork::HfFaun)]),
     ];
 
     for (contract, active_in, csharp_activations) in cases {
@@ -111,7 +108,10 @@ fn omitted_active_in_hardfork_matches_csharp_is_active_asymmetry() {
     settings.hardforks.remove(&Hardfork::HfEchidna);
     settings.hardforks.remove(&Hardfork::HfFaun);
 
-    for contract in [&Notary as &dyn NativeContract, &Treasury as &dyn NativeContract] {
+    for contract in [
+        &Notary as &dyn NativeContract,
+        &Treasury as &dyn NativeContract,
+    ] {
         assert!(
             contract.is_active(&settings, GENESIS),
             "{} should be genesis-active when ActiveIn is not configured",

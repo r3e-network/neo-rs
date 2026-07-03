@@ -13,9 +13,6 @@ const HEADER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 /// Maximum number of redirects to follow.
 const MAX_REDIRECTS: u8 = 2;
 
-/// Maximum size for a single chunk read.
-const MAX_CHUNK_SIZE: usize = 8 * 1024;
-
 impl OracleHttpsProtocol {
     pub(crate) async fn process(
         &self,
@@ -94,37 +91,42 @@ impl OracleHttpsProtocol {
                 }
             };
 
-            // Handle redirects
-            if let Some(location) = response.headers().get(reqwest::header::LOCATION) {
-                if let Ok(location) = location.to_str() {
-                    if let Ok(next_uri) = url::Url::parse(location) {
-                        // Validate redirect URL
-                        if let Err(reason) = Ssrf::validate_url_for_ssrf(next_uri.as_str()) {
-                            tracing::warn!(
-                                target: "neo::oracle",
-                                url = %next_uri,
-                                reason = %reason,
-                                "Redirect URL SSRF validation failed"
-                            );
-                            return (OracleResponseCode::Forbidden, String::new());
-                        }
+            // Handle redirects only on 3xx responses. C# Neo gates redirect
+            // handling on the status code, so a non-3xx response that happens to
+            // carry a Location header (e.g. 200/201) is NOT treated as a redirect
+            // and its body is returned normally below.
+            if response.status().is_redirection() {
+                if let Some(location) = response.headers().get(reqwest::header::LOCATION) {
+                    if let Ok(location) = location.to_str() {
+                        if let Ok(next_uri) = url::Url::parse(location) {
+                            // Validate redirect URL
+                            if let Err(reason) = Ssrf::validate_url_for_ssrf(next_uri.as_str()) {
+                                tracing::warn!(
+                                    target: "neo::oracle",
+                                    url = %next_uri,
+                                    reason = %reason,
+                                    "Redirect URL SSRF validation failed"
+                                );
+                                return (OracleResponseCode::Forbidden, String::new());
+                            }
 
-                        // Check redirect URL against whitelist/blacklist
-                        if !settings.is_url_allowed(next_uri.as_str()) {
-                            tracing::warn!(
-                                target: "neo::oracle",
-                                url = %next_uri,
-                                "Redirect URL blocked by whitelist/blacklist"
-                            );
-                            return (OracleResponseCode::Forbidden, String::new());
-                        }
+                            // Check redirect URL against whitelist/blacklist
+                            if !settings.is_url_allowed(next_uri.as_str()) {
+                                tracing::warn!(
+                                    target: "neo::oracle",
+                                    url = %next_uri,
+                                    "Redirect URL blocked by whitelist/blacklist"
+                                );
+                                return (OracleResponseCode::Forbidden, String::new());
+                            }
 
-                        uri = next_uri;
-                        if redirects > 0 {
-                            redirects -= 1;
-                            continue;
+                            uri = next_uri;
+                            if redirects > 0 {
+                                redirects -= 1;
+                                continue;
+                            }
+                            return (OracleResponseCode::Timeout, String::new());
                         }
-                        return (OracleResponseCode::Timeout, String::new());
                     }
                 }
                 return (OracleResponseCode::Timeout, String::new());
@@ -215,17 +217,11 @@ impl OracleHttpsProtocol {
                     }
                 };
 
-                // Check chunk size limit
-                if chunk.len() > MAX_CHUNK_SIZE {
-                    tracing::warn!(
-                        target: "neo::oracle",
-                        url = %uri,
-                        chunk_size = chunk.len(),
-                        "Chunk too large"
-                    );
-                    return (OracleResponseCode::ResponseTooLarge, String::new());
-                }
-
+                // Only the cumulative and final body sizes are bounded (matching
+                // C#, which has no per-chunk limit). A single stream chunk's size
+                // reflects server/TCP framing, not content, so a legitimate
+                // sub-limit response delivered in one large frame must not be
+                // rejected here.
                 if body.len() + chunk.len() > settings.max_response_size {
                     tracing::warn!(
                         target: "neo::oracle",

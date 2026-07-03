@@ -109,7 +109,7 @@ impl Iter for StorageIterator {
         // Pick field if requested
         if self.options.contains(FindOptions::PickField0) {
             value_item = match value_item {
-                StackValue::Array(array) | StackValue::Struct(array) => array
+                StackValue::Array(_, array) | StackValue::Struct(_, array) => array
                     .first()
                     .cloned()
                     .ok_or_else(|| CoreError::invalid_operation("PickField0 requires field 0"))?,
@@ -121,7 +121,7 @@ impl Iter for StorageIterator {
             };
         } else if self.options.contains(FindOptions::PickField1) {
             value_item = match value_item {
-                StackValue::Array(array) | StackValue::Struct(array) => array
+                StackValue::Array(_, array) | StackValue::Struct(_, array) => array
                     .get(1)
                     .cloned()
                     .ok_or_else(|| CoreError::invalid_operation("PickField1 requires field 1"))?,
@@ -140,10 +140,10 @@ impl Iter for StorageIterator {
             stack_value_to_stack_item(value_item)
         } else {
             // Return struct with key and value
-            stack_value_to_stack_item(StackValue::Struct(vec![
-                StackValue::ByteString(key_bytes),
-                value_item,
-            ]))
+            stack_value_to_stack_item(StackValue::Struct(
+                neo_vm_rs::next_stack_item_id(),
+                vec![StackValue::ByteString(key_bytes), value_item],
+            ))
         }
     }
 

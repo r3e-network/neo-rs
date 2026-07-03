@@ -43,7 +43,7 @@ fn render_stack_value(item: &StackValue, budget: &mut StackValueJsonBudget) -> C
             budget.subtract(2 + text.len() as isize)?;
             Some(Value::String(text))
         }
-        StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => {
+        StackValue::ByteString(bytes) | StackValue::Buffer(_, bytes) => {
             let encoded = BASE64_STANDARD.encode(bytes);
             budget.subtract(2 + encoded.len() as isize)?;
             Some(Value::String(encoded))
@@ -52,7 +52,7 @@ fn render_stack_value(item: &StackValue, budget: &mut StackValueJsonBudget) -> C
             budget.subtract(position.to_string().len() as isize)?;
             Some(Value::Number(JsonNumber::from(*position)))
         }
-        StackValue::Array(items) | StackValue::Struct(items) => {
+        StackValue::Array(_, items) | StackValue::Struct(_, items) => {
             budget.subtract(2 + items.len().saturating_sub(1) as isize)?;
             let values = items
                 .iter()
@@ -60,7 +60,7 @@ fn render_stack_value(item: &StackValue, budget: &mut StackValueJsonBudget) -> C
                 .collect::<CoreResult<Vec<_>>>()?;
             Some(Value::Array(values))
         }
-        StackValue::Map(entries) => {
+        StackValue::Map(_, entries) => {
             budget.subtract(2 + entries.len().saturating_sub(1) as isize)?;
             let values = entries
                 .iter()
@@ -93,10 +93,10 @@ fn stack_value_type_name(item: &StackValue) -> &'static str {
         StackValue::Boolean(_) => "Boolean",
         StackValue::Integer(_) | StackValue::BigInteger(_) => "Integer",
         StackValue::ByteString(_) => "ByteString",
-        StackValue::Buffer(_) => "Buffer",
-        StackValue::Array(_) => "Array",
-        StackValue::Struct(_) => "Struct",
-        StackValue::Map(_) => "Map",
+        StackValue::Buffer(_, _) => "Buffer",
+        StackValue::Array(_, _) => "Array",
+        StackValue::Struct(_, _) => "Struct",
+        StackValue::Map(_, _) => "Map",
         StackValue::Pointer(_) => "Pointer",
         StackValue::Interop(_) | StackValue::Iterator(_) => "InteropInterface",
     }

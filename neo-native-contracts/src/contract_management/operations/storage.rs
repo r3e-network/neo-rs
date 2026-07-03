@@ -189,7 +189,7 @@ impl ContractManagement {
                     "ContractManagement::destroy: whitelist entry: {e}"
                 ))
             })?;
-            let StackValue::Struct(items) = decoded else {
+            let StackValue::Struct(_, items) = decoded else {
                 return Err(CoreError::invalid_data(
                     "whitelisted-contract entry is not a struct",
                 ));

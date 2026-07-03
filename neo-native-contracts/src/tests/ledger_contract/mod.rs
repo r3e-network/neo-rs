@@ -23,6 +23,27 @@ use neo_storage::StorageItem;
 use neo_vm::StackItem;
 use neo_vm_rs::{ExecutionEngineLimits, StackValue};
 
+/// Structural equality for StackValue that ignores the reference-identity ids
+/// on compound variants (neo-vm-rs 0.2.0 compares compounds by id; tests want
+/// value equality). The id is not serialized, so structural equality is the
+/// correct notion for round-trip / shape assertions.
+fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+    use neo_vm_rs::StackValue::*;
+    match (a, b) {
+        (Buffer(_, x), Buffer(_, y)) => x == y,
+        (Array(_, x), Array(_, y)) | (Struct(_, x), Struct(_, y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
+        }
+        (Map(_, x), Map(_, y)) => {
+            x.len() == y.len()
+                && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
+                    stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
+                })
+        }
+        _ => a == b,
+    }
+}
+
 #[test]
 fn native_contract_surface() {
     let c = LedgerContract::new();
@@ -450,11 +471,14 @@ fn ledger_public_return_encoders_use_stack_value_projection() {
 
 #[test]
 fn decode_transaction_state_rejects_malformed_full_record() {
-    let record = BinarySerializer::serialize_stack_value_default(&StackValue::Struct(vec![
-        StackValue::Integer(7),
-        StackValue::ByteString(vec![0xff]),
-        StackValue::Integer(VMState::HALT.to_byte() as i64),
-    ]))
+    let record = BinarySerializer::serialize_stack_value_default(&StackValue::Struct(
+        neo_vm_rs::next_stack_item_id(),
+        vec![
+            StackValue::Integer(7),
+            StackValue::ByteString(vec![0xff]),
+            StackValue::Integer(VMState::HALT.to_byte() as i64),
+        ],
+    ))
     .unwrap();
 
     let error = LedgerContract::decode_transaction_state(&record).unwrap_err();
@@ -468,26 +492,45 @@ fn decode_transaction_state_rejects_malformed_full_record() {
 fn hash_index_state_interoperable_projection_matches_csharp_shape() {
     let hash = UInt256::from_bytes(&[0x77; 32]).unwrap();
     let state = HashIndexState::new(hash, 1234);
-    let expected_value = StackValue::Struct(vec![
-        StackValue::ByteString(hash.to_bytes()),
-        StackValue::Integer(1234),
-    ]);
+    let expected_value = StackValue::Struct(
+        neo_vm_rs::next_stack_item_id(),
+        vec![
+            StackValue::ByteString(hash.to_bytes()),
+            StackValue::Integer(1234),
+        ],
+    );
 
-    assert_eq!(state.to_stack_value(), expected_value);
+    let projected = state.to_stack_value();
+    assert!(
+        stack_value_struct_eq(&projected, &expected_value),
+        "structural StackValue mismatch: {projected:?} vs {expected_value:?}"
+    );
 
     let trait_value = Interoperable::to_stack_value(&state).unwrap();
-    assert_eq!(trait_value, expected_value);
+    assert!(
+        stack_value_struct_eq(&trait_value, &expected_value),
+        "structural StackValue mismatch: {trait_value:?} vs {expected_value:?}"
+    );
 
     let mut parsed = HashIndexState::new(UInt256::default(), 0);
     Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
     assert_eq!(parsed, state);
 
-    assert!(HashIndexState::from_stack_value(StackValue::Array(vec![])).is_err());
     assert!(
-        HashIndexState::from_stack_value(StackValue::Struct(vec![
-            StackValue::ByteString(vec![0x77; 31]),
-            StackValue::Integer(1)
-        ]))
+        HashIndexState::from_stack_value(StackValue::Array(
+            neo_vm_rs::next_stack_item_id(),
+            vec![]
+        ))
+        .is_err()
+    );
+    assert!(
+        HashIndexState::from_stack_value(StackValue::Struct(
+            neo_vm_rs::next_stack_item_id(),
+            vec![
+                StackValue::ByteString(vec![0x77; 31]),
+                StackValue::Integer(1)
+            ]
+        ))
         .is_err()
     );
 }

@@ -773,9 +773,9 @@ async fn build_node(
 
     let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
-    // The consensus driver reads the ledger tip from this startup snapshot for
-    // its first round only; subsequent rounds restart off RuntimeEvent::Imported.
-    let consensus_snapshot = Arc::clone(&snapshot);
+    // The consensus driver now mints a fresh snapshot from the store at the start
+    // of each round (see ConsensusDriver::fresh_round_snapshot), so it takes the
+    // store handle directly rather than a frozen startup snapshot.
     // The durable tip at startup, read before the snapshot is moved into the
     // service contexts; used to seed the advertised height / sync cursor.
     let durable_tip = neo_native_contracts::LedgerContract::new()
@@ -1012,7 +1012,7 @@ async fn build_node(
             network.clone(),
             Arc::clone(&settings),
             consensus_validators.expect("configured consensus has validators"),
-            consensus_snapshot,
+            Arc::clone(&store),
             inbound_rx,
         ) {
             info!(target: "neo", "dBFT consensus driver started (validator node)");

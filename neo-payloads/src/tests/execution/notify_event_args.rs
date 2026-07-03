@@ -1,6 +1,27 @@
 use super::*;
 use neo_vm::Interoperable;
 
+/// Structural equality for StackValue that ignores the reference-identity ids
+/// on compound variants (neo-vm-rs 0.2.0 compares compounds by id; tests want
+/// value equality). The id is not serialized, so structural equality is the
+/// correct notion for round-trip / shape assertions.
+fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+    use neo_vm_rs::StackValue::*;
+    match (a, b) {
+        (Buffer(_, x), Buffer(_, y)) => x == y,
+        (Array(_, x), Array(_, y)) | (Struct(_, x), Struct(_, y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
+        }
+        (Map(_, x), Map(_, y)) => {
+            x.len() == y.len()
+                && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
+                    stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
+                })
+        }
+        _ => a == b,
+    }
+}
+
 fn sample_notification() -> NotifyEventArgs {
     NotifyEventArgs::new_with_optional_container(
         None,
@@ -14,30 +35,45 @@ fn sample_notification() -> NotifyEventArgs {
 fn notify_event_projects_to_neo_vm_rs_stack_value() {
     let notification = sample_notification();
 
-    assert_eq!(
-        notification.to_stack_value().expect("stack value"),
-        StackValue::Array(vec![
+    let left = notification.to_stack_value().expect("stack value");
+    let right = StackValue::Array(
+        neo_vm_rs::next_stack_item_id(),
+        vec![
             StackValue::ByteString(notification.script_hash.to_bytes()),
             StackValue::ByteString(b"Transfer".to_vec()),
-            StackValue::Array(vec![StackValue::Integer(7)]),
-        ])
+            StackValue::Array(
+                neo_vm_rs::next_stack_item_id(),
+                vec![StackValue::Integer(7)],
+            ),
+        ],
+    );
+    assert!(
+        stack_value_struct_eq(&left, &right),
+        "structural StackValue mismatch: {left:?} vs {right:?}"
     );
 }
 
 #[test]
 fn notify_event_prepared_state_projection_uses_stack_value_layout() {
     let notification = sample_notification();
-    let prepared_state = StackValue::Array(vec![StackValue::Boolean(true)]);
+    let prepared_state = StackValue::Array(
+        neo_vm_rs::next_stack_item_id(),
+        vec![StackValue::Boolean(true)],
+    );
 
-    let expected = StackValue::Array(vec![
-        StackValue::ByteString(notification.script_hash.to_bytes()),
-        StackValue::ByteString(b"Transfer".to_vec()),
-        prepared_state.clone(),
-    ]);
+    let expected = StackValue::Array(
+        neo_vm_rs::next_stack_item_id(),
+        vec![
+            StackValue::ByteString(notification.script_hash.to_bytes()),
+            StackValue::ByteString(b"Transfer".to_vec()),
+            prepared_state.clone(),
+        ],
+    );
 
-    assert_eq!(
-        notification.to_stack_value_with_state_array(prepared_state.clone()),
-        expected
+    let projected = notification.to_stack_value_with_state_array(prepared_state.clone());
+    assert!(
+        stack_value_struct_eq(&projected, &expected),
+        "structural StackValue mismatch: {projected:?} vs {expected:?}"
     );
     assert_eq!(
         notification
@@ -75,8 +111,9 @@ fn notify_event_interoperable_to_stack_value_matches_inherent() {
     let notification = sample_notification();
     let expected = notification.to_stack_value().unwrap();
 
-    assert_eq!(
-        Interoperable::to_stack_value(&notification).unwrap(),
-        expected
+    let interop = Interoperable::to_stack_value(&notification).unwrap();
+    assert!(
+        stack_value_struct_eq(&interop, &expected),
+        "structural StackValue mismatch: {interop:?} vs {expected:?}"
     );
 }

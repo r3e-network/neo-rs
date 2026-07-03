@@ -365,13 +365,14 @@ impl AccountState {
     }
 
     pub(crate) fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(vec![StackValue::BigInteger(
-            self.balance.to_signed_bytes_le(),
-        )])
+        StackValue::Struct(
+            neo_vm_rs::next_stack_item_id(),
+            vec![StackValue::BigInteger(self.balance.to_signed_bytes_le())],
+        )
     }
 
     pub(crate) fn from_stack_value(stack_value: StackValue) -> neo_error::CoreResult<Self> {
-        let StackValue::Struct(items) = stack_value else {
+        let StackValue::Struct(_, items) = stack_value else {
             return Err(neo_error::CoreError::invalid_data(
                 "NEP-17 account state is not a struct",
             ));

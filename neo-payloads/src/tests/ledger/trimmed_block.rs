@@ -2,6 +2,26 @@ use super::*;
 use neo_primitives::UInt160;
 use num_bigint::BigInt;
 
+/// Structural equality for StackValue that ignores the reference-identity ids on
+/// compound variants (neo-vm-rs 0.2.0 compares compounds by id; these tests want
+/// value equality — the id is not serialized).
+fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+    use neo_vm_rs::StackValue::*;
+    match (a, b) {
+        (Buffer(_, x), Buffer(_, y)) => x == y,
+        (Array(_, x), Array(_, y)) | (Struct(_, x), Struct(_, y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
+        }
+        (Map(_, x), Map(_, y)) => {
+            x.len() == y.len()
+                && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
+                    stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
+                })
+        }
+        _ => a == b,
+    }
+}
+
 /// Builds a header with distinctive, range-stressing field values. The nonce
 /// is `u64::MAX` (well above `i64::MAX`) to guard the unsigned projection.
 fn sample_header() -> Header {
@@ -70,7 +90,10 @@ fn interoperable_to_stack_value_matches_inherent() {
 
     let trait_value = Interoperable::to_stack_value(&block).unwrap();
     let inherent_value = block.to_stack_value();
-    assert_eq!(trait_value, inherent_value);
+    assert!(
+        stack_value_struct_eq(&trait_value, &inherent_value),
+        "structural StackValue mismatch: {trait_value:?} vs {inherent_value:?}"
+    );
 }
 
 #[test]
@@ -79,7 +102,7 @@ fn to_stack_value_matches_csharp_layout() {
     let hashes = sample_hashes();
     let block = TrimmedBlock::new(header, hashes);
 
-    let neo_vm_rs::StackValue::Array(fields) = block.to_stack_value() else {
+    let neo_vm_rs::StackValue::Array(_, fields) = block.to_stack_value() else {
         panic!("TrimmedBlock projects to an Array");
     };
     assert_eq!(fields.len(), 10, "C# ToStackItem produces a 10-field Array");

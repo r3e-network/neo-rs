@@ -6,6 +6,27 @@ use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
 use neo_vm::Interoperable;
 use neo_vm_rs::StackValue;
+
+/// Structural equality for StackValue that ignores the reference-identity ids
+/// on compound variants (neo-vm-rs 0.2.0 compares compounds by id; tests want
+/// value equality). The id is not serialized, so structural equality is the
+/// correct notion for round-trip / shape assertions.
+fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+    use neo_vm_rs::StackValue::*;
+    match (a, b) {
+        (Buffer(_, x), Buffer(_, y)) => x == y,
+        (Array(_, x), Array(_, y)) | (Struct(_, x), Struct(_, y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
+        }
+        (Map(_, x), Map(_, y)) => {
+            x.len() == y.len()
+                && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
+                    stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
+                })
+        }
+        _ => a == b,
+    }
+}
 // ===== from oracle_native_tests.rs =====
 #[test]
 fn native_contract_surface() {
@@ -154,9 +175,11 @@ fn request_record_layout_matches_csharp_to_stack_item() {
     let expected =
         BinarySerializer::serialize(&expected_item, &ExecutionEngineLimits::default()).unwrap();
     assert_eq!(bytes, expected);
-    assert_eq!(
-        Interoperable::to_stack_value(&request).unwrap(),
-        StackValue::try_from(expected_item.clone()).unwrap()
+    let produced_sv = Interoperable::to_stack_value(&request).unwrap();
+    let expected_sv = StackValue::try_from(expected_item.clone()).unwrap();
+    assert!(
+        stack_value_struct_eq(&produced_sv, &expected_sv),
+        "structural StackValue mismatch: {produced_sv:?} vs {expected_sv:?}"
     );
 
     let mut trait_decoded = OracleRequest::default();
@@ -336,13 +359,17 @@ fn oracle_id_list_interoperable_projection_matches_csharp_shape() {
     let ids = vec![0u64, 7, u64::MAX];
     let state = OracleIdList::new(ids.clone());
     let expected_value = StackValue::Array(
+        neo_vm_rs::next_stack_item_id(),
         ids.iter()
             .map(|id| StackValue::BigInteger(BigInt::from(*id).to_signed_bytes_le()))
             .collect::<Vec<_>>(),
     );
 
     let trait_value = Interoperable::to_stack_value(&state).unwrap();
-    assert_eq!(trait_value, expected_value);
+    assert!(
+        stack_value_struct_eq(&trait_value, &expected_value),
+        "structural StackValue mismatch: {trait_value:?} vs {expected_value:?}"
+    );
 
     let mut parsed = OracleIdList::new(Vec::new());
     Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();

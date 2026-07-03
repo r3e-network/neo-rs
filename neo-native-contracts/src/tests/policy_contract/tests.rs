@@ -6,6 +6,26 @@ use neo_vm::Interoperable;
 #[path = "surface.rs"]
 mod surface;
 
+/// Structural equality for StackValue that ignores the reference-identity ids on
+/// compound variants (neo-vm-rs 0.2.0 compares compounds by id; these tests want
+/// value equality — the id is not serialized).
+fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+    use neo_vm_rs::StackValue::*;
+    match (a, b) {
+        (Buffer(_, x), Buffer(_, y)) => x == y,
+        (Array(_, x), Array(_, y)) | (Struct(_, x), Struct(_, y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
+        }
+        (Map(_, x), Map(_, y)) => {
+            x.len() == y.len()
+                && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
+                    stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
+                })
+        }
+        _ => a == b,
+    }
+}
+
 fn seed_current_block(cache: &DataCache, index: u32) {
     let value = crate::LedgerContract::new()
         .serialize_hash_index_state(&UInt256::default(), index)
@@ -492,9 +512,11 @@ fn whitelisted_contract_struct_round_trips() {
     assert_eq!(bytes, expected);
     let decoded = PolicyContract::decode_whitelisted_contract(&bytes).unwrap();
     assert_eq!(decoded, view);
-    assert_eq!(
-        Interoperable::to_stack_value(&view).unwrap(),
-        StackValue::try_from(expected_item.clone()).unwrap()
+    let produced_sv = Interoperable::to_stack_value(&view).unwrap();
+    let expected_sv = StackValue::try_from(expected_item.clone()).unwrap();
+    assert!(
+        stack_value_struct_eq(&produced_sv, &expected_sv),
+        "structural StackValue mismatch: {produced_sv:?} vs {expected_sv:?}"
     );
 
     let mut trait_decoded = WhitelistedContractView {

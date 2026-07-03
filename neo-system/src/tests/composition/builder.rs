@@ -2,16 +2,15 @@ use super::*;
 use neo_execution::native_contract_provider::NativeContractLookup;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 
-static NATIVE_PROVIDER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 fn memory_store() -> Arc<dyn Store> {
     Arc::new(MemoryStore::new())
 }
 
+// Shared with node.rs's build test via the parent module, so ALL tests in the
+// neo-system binary that touch the process-global native provider serialize on
+// one lock (a per-file lock would not stop cross-module races).
 fn native_provider_test_lock() -> std::sync::MutexGuard<'static, ()> {
-    NATIVE_PROVIDER_TEST_LOCK
-        .lock()
-        .expect("native provider test lock should not be poisoned")
+    crate::composition::native_provider_test_guard()
 }
 
 #[test]
@@ -27,6 +26,9 @@ fn builder_requires_settings() {
 
 #[test]
 fn builder_requires_storage() {
+    // `.build()` can touch the process-global native contract provider, so take
+    // the shared guard to stay serialized with the provider-asserting tests.
+    let _guard = native_provider_test_lock();
     let result = NodeBuilder::default()
         .with_settings(Arc::new(ProtocolSettings::default()))
         .build();
@@ -35,6 +37,7 @@ fn builder_requires_storage() {
 
 #[test]
 fn builder_requires_blockchain_and_network() {
+    let _guard = native_provider_test_lock();
     let result = NodeBuilder::default()
         .with_settings(Arc::new(ProtocolSettings::default()))
         .with_storage(memory_store())

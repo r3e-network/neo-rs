@@ -267,7 +267,9 @@ where
     }
 
     /// Renders the JSON-mandatory escapes the way `Utf8JsonWriter` does: short
-    /// forms for `\b \t \n \f \r \\`, and `"` for the quote character.
+    /// forms for `\b \t \n \f \r \\`, and the six-character Unicode escape
+    /// (backslash-u-0-0-2-2), not the short two-character form, for the quote
+    /// character, matching JavaScriptEncoder.Default.
     fn write_char_escape<W>(&mut self, writer: &mut W, char_escape: CharEscape) -> io::Result<()>
     where
         W: ?Sized + Write,
