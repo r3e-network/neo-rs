@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-03
+
+### Added
+- **Signed StateRoot subsystem (StateValidators).** Completes the C# `StateService` surface: `neo_blockchain::verify_state_root` (witness verification against the StateValidators BFT multisig at 2 GAS), the vote sign/validate/`M`-of-`N` aggregation core + collector, and a node-level P2P consensus driver (`neo-node/src/state_root`) that subscribes to block-persist, signs and relays `Vote` messages over the `"StateService"` extensible category, aggregates and verifies the signed root, persists it, and rotates the relay sender. `StateRoot` is now `IVerifiable` (witness field, `GetSignData(network)`, 0/1-witness var-array serialization) and `getstateroot` returns witnesses. New `[state_service].validator_key_hex` config (absent = observer that verifies + persists inbound signed roots).
+
+### Fixed (Neo N3 v3.10.0 consensus / protocol parity)
+- **P2P handshake compatibility (critical).** `VersionPayload` no longer serializes a phantom top-level `StartHeight`; C# writes only `Network|Version|Timestamp|Nonce|UserAgent|Capabilities`, with the height carried inside the `FullNode` capability. The extra 4 bytes misaligned the capability var-int and made every `version` message mutually unparseable with real Neo nodes — the node could not complete the handshake against mainnet/testnet.
+- **`CryptoLib.recoverSecp256K1` (corrects 0.9.0).** Now accepts both 65-byte and 64-byte (EIP-2098 compact) signatures. C# `Crypto.ECRecover` accepts both (`if (len != 65 && len != 64) throw`); the 0.9.0 "65-only" restriction was based on a misreading and diverged on the HF_Echidna-active path.
+- **Oracle HTTPS redirects (corrects 0.9.0).** A redirect is followed whenever a `Location` header is present, regardless of status (matching C# `OracleHttpsProtocol`); the 0.9.0 "3xx-only" gate was wrong. SSRF filtering now blocks a host if **any** resolved DNS address is internal (C# `IPHostEntry.IsInternal` = `AddressList.Any`).
+- **`CryptoLib.verifyWithECDsa`.** A malformed public key now faults (C# `ECPoint.DecodePoint` throws `FormatException`, which is not caught by `catch(ArgumentException)`); the key is decoded before the signature-length check, matching C# ordering.
+- **`CryptoLib.bls12381Equal`.** A cross-group comparison (e.g. G1 vs G2) now faults (`ArgumentException("BLS12-381 type mismatch")`) instead of returning false.
+- **VM `SHL`/`SHR`.** Neo.VM 3.10.0 removed the zero-shift early-return: the value operand is always `GetInteger()`-coerced, so a zero shift faults on a `Buffer`/`Null` and re-pushes a `Boolean`/`ByteString` as `Integer`.
+- **dBFT commit gate.** `check_prepare_responses` now requires `RequestSentOrReceived` (the PrepareRequest was sent or received) before signing a `Commit`, so `M` PrepareResponses arriving before the PrepareRequest can no longer commit-sign the default (zero) block hash.
+- **dBFT wire/behavior.** `ChangeView` serializes only `Timestamp+Reason` (removed a non-C# `RejectedHashes` array); added the view-backward guard (`CheckExpectedView`) and the own-`ChangeView(ChangeAgreement)` broadcast on reaching `M`; a PrepareResponse from the primary index no longer double-counts.
+- **`StdLib.jsonSerialize` / `jsonDeserialize`.** Invalid-UTF-8 `ByteString`/`Buffer` values fault via strict `from_utf8` (C# `StrictUTF8`); integers `> 2^53` route through `f64` to match C#'s lossy double.
+- **`StdLib` int parameters.** `atoi`/`itoa` `base` and `memorySearch` `start` now wrap via a `.NET` `(int)` truncating cast instead of faulting on out-of-`i32` values.
+- **`ContractManagement.destroy`.** Added the HF_Gorgon block-before-erase ordering (dormant on v3.10.0 mainnet, which does not schedule Gorgon).
+- **`DataCache` merge.** The fast-path merge now store-checks a `Deleted` tombstone for a store-absent key (matching C# `DataCache.Delete`), keeping a spurious tombstone out of the MPT state-root change set.
+- **RPC:** `invokefunction`/`invokescript` emit `"interface":"IIterator"` (was `"StorageIterator"`); a `NotYetValid` relay result maps to `ExpiredTransaction` (`-510`).
+- **NEP-2:** wallet key encryption/decryption threads the NEP-6 wallet's own `ScryptParameters` instead of hardcoding `16384/8/8`.
+- **neo-system oracle admission** fails closed on ledger read errors.
+
+### Changed
+- Migrated the workspace to the `neo-vm-rs` 0.2.0 `StackValue` API (reference-id compound equality; id excluded from serialization).
+- Fixed a latent build break in `neo-storage` (`mdbx/snapshot.rs` used `error!` without importing it).
+
 ## [0.9.0] - 2026-07-03
 
 ### Architecture

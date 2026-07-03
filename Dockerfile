@@ -33,7 +33,7 @@ WORKDIR /workspace/neo-rs
 
 # The neo-vm-rs sibling crate is a path dependency (../neo-vm-rs). It is not
 # published as a Docker image, so clone it directly into the build context
-# (the same way the CI workflows do). Pinned to the v0.9.0-compatible tag.
+# (the same way the CI workflows do), tracking its main branch.
 RUN apt-get update && apt-get install -y --no-install-recommends git \
     && git clone --depth 1 https://github.com/r3e-network/neo-vm-rs.git /workspace/neo-vm-rs \
     && rm -rf /var/lib/apt/lists/*
