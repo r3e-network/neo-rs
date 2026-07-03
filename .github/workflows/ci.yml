@@ -26,7 +26,14 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
       with:
         components: rustfmt
-    - run: cargo fmt --all --check
+    # Check only this workspace's members. `cargo fmt --all` also reformats the
+    # `neo-vm-rs` path dependency, which is a separately-released crate that keeps
+    # its own rustfmt style; `cargo metadata --no-deps` lists members only.
+    - name: Format check (workspace members)
+      run: |
+        for pkg in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name'); do
+          cargo fmt --check --package "$pkg"
+        done
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
