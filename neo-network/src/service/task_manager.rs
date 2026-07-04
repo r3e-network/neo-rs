@@ -200,7 +200,6 @@ pub struct TaskManagerService {
     active: HashMap<TaskId, SyncTask>,
     /// Cancellation token used to break the timer tick on
     /// shutdown.
-    #[allow(dead_code)]
     shutdown: CancellationToken,
 }
 

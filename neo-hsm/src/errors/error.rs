@@ -93,3 +93,11 @@ impl From<HsmError> for ConsensusError {
         ConsensusError::state_error(format!("hsm: {e}"))
     }
 }
+
+impl From<HsmError> for neo_error::CoreError {
+    fn from(err: HsmError) -> Self {
+        neo_error::CoreError::Cryptographic {
+            message: err.to_string(),
+        }
+    }
+}

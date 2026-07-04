@@ -306,20 +306,19 @@ fn recover_secp256k1_returns_none_on_bad_input() {
     assert!(CryptoLib::recover_secp256k1_method(&hash, &[0u8; 10]).is_none()); // bad sig length
     assert!(CryptoLib::recover_secp256k1_method(&[0u8; 31], &[0u8; 65]).is_none()); // bad hash length
     assert!(CryptoLib::recover_secp256k1_method(&hash, &[0u8; 65]).is_none()); // invalid signature
+    // C# `Crypto.ECRecover` requires exactly 65 bytes → a 64-byte signature is
+    // rejected (returns null).
+    assert!(CryptoLib::recover_secp256k1_method(&hash, &[0u8; 64]).is_none()); // 64-byte rejected
 }
 
 #[test]
-fn recover_secp256k1_accepts_64_byte_compact_signature_like_csharp() {
-    // C# `Crypto.ECRecover` accepts BOTH a 65-byte `r‖s‖v` signature AND a 64-byte
-    // EIP-2098 compact `r‖yParityAndS` signature
-    // (`if (signature.Length != 65 && signature.Length != 64) throw`), and
-    // `RecoverSecp256K1` returns the recovered key. The consensus method MUST
-    // accept the 64-byte form too — rejecting it would fork any contract that
-    // branches on the result (this node null, a C# node a key).
+fn recover_secp256k1_rejects_64_byte_compact_signature_like_csharp() {
+    // C# `Crypto.ECRecover` requires exactly 65 bytes (`r‖s‖v`) and throws
+    // `ArgumentException` on any other length (`if (signature.Length != 65)
+    // throw`). `RecoverSecp256K1` catches the exception and returns null. A
+    // 64-byte EIP-2098 compact signature must also return null (None).
     let sk = [0x11u8; 32];
     let msg = b"neo ecrecover parity";
-    // `Secp256k1Crypto::sign` hashes the message with SHA-256 internally, so the
-    // recovery hash is sha256(msg).
     let hash = neo_crypto::Crypto::sha256(msg);
     let expected = neo_crypto::Secp256k1Crypto::derive_public_key(&sk)
         .unwrap()
@@ -344,11 +343,11 @@ fn recover_secp256k1_accepts_64_byte_compact_signature_like_csharp() {
         "a 65-byte signature must still recover the signer key"
     );
 
-    // The 64-byte compact form is ACCEPTED (recovers a key), matching C#
-    // Crypto.ECRecover's `signature.Length == 64` branch — NOT rejected.
+    // The 64-byte compact form is REJECTED — C# `Crypto.ECRecover` throws on
+    // non-65-byte signatures, and `RecoverSecp256K1` returns null.
     assert!(
-        CryptoLib::recover_secp256k1_method(&hash, &sig64).is_some(),
-        "a 64-byte compact signature must recover a key, matching C# ECRecover"
+        CryptoLib::recover_secp256k1_method(&hash, &sig64).is_none(),
+        "a 64-byte compact signature must be rejected, matching C# ECRecover"
     );
 }
 

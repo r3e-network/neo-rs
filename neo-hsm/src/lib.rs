@@ -14,9 +14,6 @@
 //! - `settings`: Protocol settings, hardfork gates, and node configuration
 //!   records.
 
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
-
 mod errors;
 mod providers;
 mod settings;

@@ -21,7 +21,7 @@ neo-crypto = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }
 rand = { workspace = true }
-percent-encoding = "2.3"
+percent-encoding = { workspace = true }
 url = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true }
@@ -43,24 +43,24 @@ neo-execution = { workspace = true }
 neo-io = { workspace = true }
 neo-serialization = { workspace = true }
 neo-native-contracts = { workspace = true }
-neo-network = { workspace = true }
 neo-payloads = { workspace = true }
 neo-primitives = { workspace = true }
-neo-system = { workspace = true }
+neo-runtime = { workspace = true }
 neo-wallets = { workspace = true }
 
-
-neo-blockchain = { workspace = true }
 neo-manifest = { workspace = true }
 
 [build-dependencies]
 # Only used when the neofs-grpc feature is enabled (build.rs checks
 # CARGO_FEATURE_NEOFS_GRPC); Cargo cannot feature-gate build-deps.
-tonic-build = "0.11"
-protoc-bin-vendored = "3.0"
+tonic-build = { workspace = true }
+protoc-bin-vendored = { workspace = true }
 
 [dev-dependencies]
 bs58 = { workspace = true }
+# Tests construct `Node::new(...)` directly; production code uses
+# the `ConfigProvider` + `StoreProvider` traits from `neo-runtime`.
+neo-system = { workspace = true }
 
 [features]
 default = []

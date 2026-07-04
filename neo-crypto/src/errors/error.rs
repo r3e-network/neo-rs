@@ -142,3 +142,11 @@ impl From<hex::FromHexError> for CryptoError {
 
 /// Result type for cryptographic operations.
 pub type CryptoResult<T> = std::result::Result<T, CryptoError>;
+
+impl From<CryptoError> for neo_error::CoreError {
+    fn from(err: CryptoError) -> Self {
+        neo_error::CoreError::Cryptographic {
+            message: err.to_string(),
+        }
+    }
+}

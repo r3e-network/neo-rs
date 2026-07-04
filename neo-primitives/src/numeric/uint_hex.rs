@@ -3,17 +3,13 @@ use crate::error::{PrimitiveError, PrimitiveResult};
 /// Strips a leading `0x` or `0X` prefix from `s`, returning the substring
 /// after the prefix (or the input unchanged if neither prefix matches).
 ///
-/// Re-exported as a public helper because the same prefix-stripping logic
-/// is duplicated across at least six sites in the workspace
-/// (`neo-p2p/src/witness_rule/helpers.rs`, `neo-rpc/src/client/utility.rs`,
-/// `neo-rpc/src/client/utility/witness_rule.rs`,
-/// `neo-oracle-service/src/neofs/json/helpers.rs`, etc.).
+/// This is a re-export of [`crate::numeric::hex_util::strip_hex_prefix`]
+/// (the canonical implementation, ADR-024). Kept for backward compatibility —
+/// new code should import from `hex_util` directly.
 #[inline]
 #[must_use]
 pub fn strip_hex_prefix(s: &str) -> &str {
-    s.strip_prefix("0x")
-        .or_else(|| s.strip_prefix("0X"))
-        .unwrap_or(s)
+    crate::numeric::hex_util::strip_hex_prefix(s)
 }
 
 pub(crate) fn parse_reversed_hex<const N: usize>(s: &str) -> PrimitiveResult<[u8; N]> {

@@ -1,8 +1,8 @@
 use super::utils::{ledger_height, wallet_has_oracle_account};
 use super::{OracleService, OracleStatus};
+use neo_config::ProtocolSettings;
 use neo_native_contracts::{Role, RoleManagement};
 use neo_storage::persistence::DataCache;
-use neo_system::Node;
 use neo_wallets::Wallet;
 use std::sync::Arc;
 
@@ -14,10 +14,10 @@ impl neo_payloads::CommittingHandler for OracleService {
         snapshot: &DataCache,
         _application_executed_list: &[neo_payloads::ApplicationExecuted],
     ) {
-        let Some(system) = system.downcast_ref::<Node>() else {
+        let Some(settings) = system.downcast_ref::<ProtocolSettings>() else {
             return;
         };
-        if system.settings().network != self.settings.network {
+        if settings.network != self.settings.network {
             return;
         }
 

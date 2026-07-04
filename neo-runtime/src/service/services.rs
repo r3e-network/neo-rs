@@ -26,7 +26,7 @@
 //! | `BlockExecutor`         | [`BlockExecutor`]             | `Arc<dyn BlockExecutor>` |
 //! | `NetworkManager`        | [`NetworkService`]            | `Arc<dyn NetworkService>` |
 //! | `Consensus`             | [`ConsensusService`]          | `Arc<dyn ConsensusService>` |
-//! | `Engine`                | [`NeoEngine`]                 | `Arc<dyn NeoEngine>`     |
+//! | `Engine`                | [`EngineApi`]                 | `Arc<dyn EngineApi>`     |
 
 use crate::error::ServiceError;
 use crate::outcome::{ExecutionOutcome, ExecutionPayload, NetworkEvent, ValidationResult};
@@ -40,6 +40,15 @@ use tokio::sync::broadcast;
 /// change to a richer transaction-id type does not cascade through the
 /// service traits.
 pub type TxHash = UInt256;
+
+/// Sealed marker — prevents external implementations of [`EngineApi`].
+/// Matches the reth convention where the engine API trait is sealed because
+/// only one production implementation is expected (the consensus driver's
+/// entry point).
+mod sealed {
+    /// Private supertrait that gates trait implementation.
+    pub trait Sealed {}
+}
 
 /// Marker trait implemented by every Neo runtime service.
 ///
@@ -141,7 +150,7 @@ pub trait ConsensusService: Service {
 }
 
 // =============================================================================
-// NeoEngine
+// EngineApi
 // =============================================================================
 
 /// Engine-API surface.
@@ -152,8 +161,12 @@ pub trait ConsensusService: Service {
 /// [`BlockExecutor`] so the two surfaces can evolve independently: the
 /// engine API is shaped around the consensus protocol's request/response
 /// model, the block executor is shaped around synchronous RPC use.
+///
+/// This trait is sealed — only types within the `neo-runtime` crate
+/// can implement it. This matches reth's convention of sealing the
+/// engine API trait.
 #[async_trait]
-pub trait NeoEngine: Service {
+pub trait EngineApi: sealed::Sealed + Service {
     /// Apply a block and return the resulting [`ExecutionPayload`].
     async fn execute_block(&self, block: &Block) -> Result<ExecutionPayload, ServiceError>;
 

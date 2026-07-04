@@ -25,12 +25,14 @@ neo-crypto = { workspace = true }
 # readers, redeem-script recognizers, strict script validation, the
 # oracle fixed script, and the NEP-17 account-state codec.
 neo-native-contracts = { workspace = true }
-neo-serialization = { workspace = true }
 neo-vm = { workspace = true }
 neo-vm-rs = { workspace = true }
 neo-io = { workspace = true }
 num-bigint = { workspace = true }
 parking_lot = { workspace = true }
+
+[dev-dependencies]
+neo-serialization = { workspace = true }
 
 [lints]
 workspace = true

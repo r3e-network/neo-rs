@@ -268,15 +268,14 @@ fn deposit_storage_uses_stack_value_projection() {
 
     let source = include_str!("../../notary/storage.rs");
     let writer = slice_between(source, "fn write_deposit(", "fn lock_deposit_decision");
+    assert!(writer.contains("encode_storage_struct"));
     assert!(writer.contains("DepositState::new"));
-    assert!(writer.contains("to_stack_value"));
-    assert!(writer.contains("serialize_stack_value_default"));
     assert!(!writer.contains("StackValue::Struct"));
     assert!(!writer.contains("StackItem::from_struct"));
     assert!(!writer.contains("BinarySerializer::serialize("));
 
     let reader = slice_between(source, "fn decode_deposit(", "fn delete_deposit");
-    assert!(reader.contains("deserialize_stack_value_with_limits"));
+    assert!(reader.contains("decode_stack_value"));
     assert!(reader.contains("DepositState::from_stack_value"));
     assert!(!reader.contains("stack_value_as_bigint"));
     assert!(!reader.contains("stack_value_as_u32"));
@@ -360,7 +359,7 @@ fn parse_onnep17_data_handles_null_and_explicit_to() {
         .map(|offset| start + offset)
         .expect("next helper marker exists");
     let parser = &source[start..end];
-    assert!(parser.contains("deserialize_stack_value_with_limits"));
+    assert!(parser.contains("decode_stack_value"));
     assert!(parser.contains("StackValue::Array"));
     assert!(parser.contains("StackValue::Null"));
     assert!(!parser.contains("BinarySerializer::deserialize("));

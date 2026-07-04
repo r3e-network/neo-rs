@@ -352,7 +352,7 @@ fn max_chain_param_writes_persist_to_storage() {
     seed_policy_setting_key(
         &cache,
         PolicyContract::max_valid_until_block_increment_key(),
-        5_760,
+        DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT as i64,
     );
     PolicyContract::new()
         .put_max_valid_until_block_increment(&cache, 5_000)
@@ -550,7 +550,7 @@ fn whitelisted_contract_storage_uses_stack_value_projection() {
         "fn decode_whitelisted_contract",
         "fn encode_whitelisted_contract",
     );
-    assert!(decoder.contains("deserialize_stack_value_with_limits"));
+    assert!(decoder.contains("decode_stack_value"));
     assert!(decoder.contains("WhitelistedContractView::from_stack_value"));
     assert!(!decoder.contains("BinarySerializer::deserialize("));
 
@@ -559,8 +559,7 @@ fn whitelisted_contract_storage_uses_stack_value_projection() {
         "fn encode_whitelisted_contract",
         "fn whitelist_fee_entries",
     );
-    assert!(encoder.contains("to_stack_value"));
-    assert!(encoder.contains("serialize_stack_value_default"));
+    assert!(encoder.contains("encode_storage_struct"));
     assert!(!encoder.contains("StackItem::from_struct"));
     assert!(!encoder.contains("BinarySerializer::serialize("));
 }
@@ -577,7 +576,7 @@ fn committee_cache_reader_uses_stack_value_projection() {
         .expect("assert_almost_full_committee follows committee reader");
     let helper = &source[start..end];
 
-    assert!(helper.contains("deserialize_stack_value_with_limits"));
+    assert!(helper.contains("decode_stack_value"));
     assert!(helper.contains("CachedCommittee::from_stack_value"));
     assert!(!helper.contains("StackValue::Array"));
     assert!(!helper.contains("StackValue::Struct"));

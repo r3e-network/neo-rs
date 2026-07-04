@@ -1,5 +1,6 @@
 //! ApplicationLogs service for capturing execution logs and serving RPC queries.
 
+use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
@@ -7,7 +8,6 @@ use neo_payloads::{CommittedHandler, CommittingHandler};
 use neo_primitives::UInt256;
 use neo_primitives::panic_message;
 use neo_storage::persistence::{DataCache, Store, StoreSnapshot};
-use neo_system::Node;
 use parking_lot::Mutex;
 use serde_json::Value;
 use std::any::Any;
@@ -160,10 +160,10 @@ impl CommittingHandler for ApplicationLogsService {
         if self.disabled.load(Ordering::Relaxed) {
             return;
         }
-        let Some(system) = system.downcast_ref::<Node>() else {
+        let Some(settings) = system.downcast_ref::<ProtocolSettings>() else {
             return;
         };
-        if system.settings().network != self.settings.network {
+        if settings.network != self.settings.network {
             return;
         }
         let result = panic::catch_unwind(AssertUnwindSafe(|| -> CoreResult<()> {
@@ -196,10 +196,10 @@ impl CommittedHandler for ApplicationLogsService {
         if self.disabled.load(Ordering::Relaxed) {
             return;
         }
-        let Some(system) = system.downcast_ref::<Node>() else {
+        let Some(settings) = system.downcast_ref::<ProtocolSettings>() else {
             return;
         };
-        if system.settings().network != self.settings.network {
+        if settings.network != self.settings.network {
             return;
         }
         let result = panic::catch_unwind(AssertUnwindSafe(|| self.commit_batch()));

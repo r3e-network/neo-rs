@@ -7,13 +7,13 @@ use neo_storage::StorageKey;
 use super::LedgerContract;
 
 /// Storage prefix for the per-block-index -> block-hash index.
-const PREFIX_BLOCK_HASH: u8 = 9;
+pub const PREFIX_BLOCK_HASH: u8 = 9;
 /// Storage prefix for the trimmed-block payload.
-const PREFIX_BLOCK: u8 = 5;
+pub const PREFIX_BLOCK: u8 = 5;
 /// Storage prefix for the per-transaction state record.
-const PREFIX_TRANSACTION: u8 = 11;
+pub const PREFIX_TRANSACTION: u8 = 11;
 /// Storage prefix for the current-block (hash, index) pointer.
-const PREFIX_CURRENT_BLOCK: u8 = 12;
+pub const PREFIX_CURRENT_BLOCK: u8 = 12;
 
 impl LedgerContract {
     #[inline]

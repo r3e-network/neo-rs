@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! Layer 0 (Foundation): neo-primitives
-//! Layer 1 (Infrastructure): neo-io, neo-error, neo-crypto, neo-storage, neo-static-files, neo-config, neo-vm, neo-serialization, neo-manifest
+//! Layer 1 (Infrastructure): neo-io, neo-error, neo-crypto, neo-storage, neo-config, neo-vm, neo-serialization, neo-manifest
 //! Layer 2 (Protocol): neo-payloads, neo-consensus, neo-hsm
 //! Layer 3 (Domain services): neo-execution, neo-native-contracts, neo-mempool, neo-state-service, neo-runtime
 //! Layer 4 (Node services): neo-blockchain, neo-network, neo-wallets, neo-indexer, neo-tee
@@ -36,7 +36,7 @@ impl Layer {
             // Layer 0: Foundation (no neo-* dependencies allowed).
             "neo-primitives" => Some(Layer::Foundation),
             // Layer 1: Infrastructure and shared data tooling.
-            "neo-io" | "neo-error" | "neo-crypto" | "neo-storage" | "neo-static-files"
+            "neo-io" | "neo-error" | "neo-crypto" | "neo-storage"
             | "neo-config" | "neo-vm" | "neo-serialization" | "neo-manifest" => {
                 Some(Layer::Infrastructure)
             }
@@ -457,7 +457,11 @@ fn test_development_workspace_crates_are_not_default_members() {
         );
     }
 
-    for runtime_entrypoint in ["neo-indexer", "neo-rpc", "neo-node"] {
+    // Only neo-node needs to be in default-members; neo-rpc and neo-indexer
+    // were intentionally removed to reduce default build tax (Task #137).
+    // They remain workspace members and can be built explicitly with
+    // `cargo build -p neo-rpc` or `cargo build -p neo-indexer`.
+    for runtime_entrypoint in ["neo-node"] {
         assert!(
             default_members
                 .iter()

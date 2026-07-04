@@ -7,36 +7,42 @@ use crate::error::StorageResult;
 use std::any::Any;
 use std::sync::Arc;
 
+use super::fast_sync_store::FastSyncStore;
+use super::raw_overlay_store::RawOverlayStore;
+
 /// Delegate for OnNewSnapshot event
 pub type OnNewSnapshotDelegate = Box<dyn Fn(&dyn Store, Arc<dyn StoreSnapshot>) + Send + Sync>;
 
 /// This interface provides methods for reading, writing from/to database.
 /// Developers should implement this interface to provide new storage engines for NEO.
+///
+/// # Concerns
+///
+/// The `Store` trait covers four concerns:
+/// - **Read** — via `ReadOnlyStore` + `RawReadOnlyStore` supertraits
+/// - **Write** — via `WriteStore` supertrait + `flush()`
+/// - **Snapshot** — `snapshot()` + `on_new_snapshot()`
+/// - **Downcast** — `as_any()`
+///
+/// Two additional concerns live in separate extension traits (ADR-020):
+/// - **Fast-sync** — [`FastSyncStore`] (WAL disabling, buffered writes).
+///   Accessed via [`Store::as_fast_sync_store`].
+/// - **Raw overlay** — [`RawOverlayStore`] (direct overlay commit without
+///   snapshot). Accessed via [`Store::as_raw_overlay_store`].
 pub trait Store:
-    ReadOnlyStore + RawReadOnlyStore + WriteStore<Vec<u8>, Vec<u8>> + Send + Sync + Any
+    ReadOnlyStore
+    + RawReadOnlyStore
+    + WriteStore<Vec<u8>, Vec<u8>>
+    + Send
+    + Sync
+    + std::fmt::Debug
+    + Any
 {
     /// Creates a snapshot of the database.
     fn snapshot(&self) -> Arc<dyn StoreSnapshot>;
 
     /// Event raised when a new snapshot is created
     fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate);
-
-    /// Enables storage-level fast-sync optimizations when supported.
-    fn enable_fast_sync_mode(&self) {}
-
-    /// Disables storage-level fast-sync optimizations.
-    fn disable_fast_sync_mode(&self) {}
-
-    /// Drops pending fast-sync buffered writes that have not reached durable
-    /// storage. Used only when an import aborts before its accepted prefix is
-    /// finalized; successful imports must flush instead.
-    fn discard_pending_fast_sync_writes(&self) {}
-
-    /// Returns whether fast-sync writes have been accepted by the backend but
-    /// are not guaranteed visible through fresh snapshots yet.
-    fn has_pending_fast_sync_writes(&self) -> bool {
-        false
-    }
 
     /// Flushes pending writes to durable storage when supported.
     ///
@@ -46,47 +52,26 @@ pub trait Store:
         Ok(())
     }
 
-    /// Returns whether this store can consume a materialized raw byte-key
-    /// overlay via [`Store::try_commit_raw_overlay`].
-    ///
-    /// The default is `false` so callers do not have to clone a large change
-    /// set merely to discover that the backend will reject it.
-    fn supports_raw_overlay_commit(&self) -> bool {
-        false
-    }
-
-    /// Commits raw byte-key overlay entries directly when the backend can do so
-    /// without constructing a mutable snapshot. Backends that do not support a
-    /// direct overlay commit should return `Ok(false)` so callers can fall back
-    /// to [`Store::snapshot`].
-    ///
-    /// Implementations may sort this materialized overlay by raw key before
-    /// writing so B+tree and LSM backends receive locality-friendly batches.
-    fn try_commit_raw_overlay(
-        &self,
-        _overlay: &[(Vec<u8>, Option<Vec<u8>>)],
-    ) -> StorageResult<bool> {
-        Ok(false)
-    }
-
-    /// Commits raw byte-key overlay entries from a borrowed visitor when the
-    /// backend can consume the changes without the caller first cloning them
-    /// into a `Vec`.
-    ///
-    /// Callers should visit entries in raw byte-key order. `StoreCache`
-    /// satisfies this contract through `DataCache::visit_raw_changes`, keeping
-    /// the hot commit path sorted without forcing every backend to clone the
-    /// overlay just to sort it again.
-    ///
-    /// Implementations should return `Ok(false)` when unsupported so callers
-    /// can fall back to [`Store::try_commit_raw_overlay`] or snapshots.
-    fn try_commit_borrowed_raw_overlay(
-        &self,
-        _visit: &mut dyn FnMut(&mut dyn FnMut(&[u8], Option<&[u8]>)),
-    ) -> StorageResult<bool> {
-        Ok(false)
-    }
-
     /// Downcast support for concrete implementations.
     fn as_any(&self) -> &dyn Any;
+
+    /// Returns a fast-sync extension handle if the backend supports fast-sync
+    /// optimizations. Returns `None` for backends that don't implement
+    /// [`FastSyncStore`].
+    ///
+    /// Backends that support fast-sync should override this to return
+    /// `Some(self)`.
+    fn as_fast_sync_store(&self) -> Option<&dyn FastSyncStore> {
+        None
+    }
+
+    /// Returns a raw-overlay extension handle if the backend supports direct
+    /// overlay commit. Returns `None` for backends that don't implement
+    /// [`RawOverlayStore`].
+    ///
+    /// Backends that support raw overlay commit should override this to
+    /// return `Some(self)`.
+    fn as_raw_overlay_store(&self) -> Option<&dyn RawOverlayStore> {
+        None
+    }
 }

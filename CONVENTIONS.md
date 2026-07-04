@@ -40,7 +40,8 @@ Do **not** re-add `#![deny(unsafe_code)]` / `#![warn(missing_docs)]` headers to
 
 ## Error Handling
 
-Layered strategy:
+The error strategy is formalized in **ADR-011** (see `design.md`). The layered
+strategy works as follows:
 
 ### Cross-crate errors
 Use `CoreError`/`CoreResult` from `neo_error` for errors that cross crate
@@ -53,9 +54,12 @@ use neo_error::{CoreError, CoreResult};
 **Do NOT alias** `CoreError` to `Error` or `CoreResult` to `Result`, and do not
 define a crate-local `pub type Result<…>` alias.
 
-### Crate-internal domain errors
-Each crate defines its own `thiserror` enum for errors that don't leave the
-crate. Never hand-roll `Display`/`std::error::Error`.
+### Crate-internal domain errors (ADR-011 Rule 1)
+A crate **MUST** define its own `thiserror` error type when it has
+domain-specific failure modes that callers need to match on. This includes
+crypto, storage, VM, consensus, network, HSM, and TEE operations. Every domain
+error type **MUST** implement `From<DomainError> for CoreError` for seamless
+`?` propagation (ADR-003).
 
 ```rust
 #[derive(Debug, thiserror::Error)]
@@ -69,10 +73,19 @@ pub enum MyCrateError {
 }
 ```
 
+### CoreError-direct crates (ADR-011 Rule 2)
+A crate **MAY** use `CoreError`/`CoreResult` directly when its failures are
+generic validation or codec errors with no domain-specific variants callers need
+to match on. This includes `neo-payloads`, `neo-native-contracts`, `neo-mempool`,
+`neo-blockchain`, `neo-state-service`, `neo-manifest`, `neo-execution`, and
+`neo-serialization`. Never hand-roll `Display`/`std::error::Error`.
+
 - A module with exactly one error case uses a `struct`, not a one-variant enum.
 - Errors crossing an `.await`/spawn boundary must be `Send + Sync + 'static`.
 - `Result<_, String>` is forbidden in library code — map to a `CoreError` or a
   crate `thiserror` variant. Preserve C#-parity fault-message text where present.
+- The 17/9 split (17 domain-error crates, 9 CoreError-direct crates) is policy,
+  not accident. See ADR-011 for the decision tree.
 
 ### Application boundary
 Only `neo-node` (the binary) may use `anyhow`. Library crates use typed errors.
@@ -132,6 +145,13 @@ hand-written.
   "Decodes"). Add `# Errors`/`# Panics`/`# Safety` sections where applicable.
 - `// SAFETY:` on every unsafe site. C#-parity references (`C# Neo.X.Y`) are
   intentional, keep them.
+- `#![doc(html_root_url = "https://docs.rs/neo-<crate>/<version>")]` — the
+  version **MUST** match `workspace.package.version` in the root `Cargo.toml`
+  (ADR-013). Currently `0.10.0`. Do not let this drift on release.
+- Do **not** re-add `#![deny(unsafe_code)]` / `#![warn(missing_docs)]` headers
+  to `lib.rs`/`main.rs` or submodule `mod.rs` — they are inherited from the
+  workspace lints. (Only benchmark/test harness files may use
+  `#![allow(missing_docs)]`.)
 
 ## Naming & API Idioms
 

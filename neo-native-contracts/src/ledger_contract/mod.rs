@@ -28,7 +28,9 @@ use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
 
 mod metadata;
-mod storage;
+/// LedgerContract storage prefixes and key builders shared with the
+/// blockchain persist pipeline.
+pub mod storage;
 mod wire;
 
 native_contract_handle!(

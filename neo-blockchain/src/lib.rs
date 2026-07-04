@@ -19,7 +19,7 @@
 //! - `service`: Service loops, handles, lifecycle helpers, and command
 //!   processing.
 
-#![doc(html_root_url = "https://docs.rs/neo-blockchain/0.9.0")]
+#![doc(html_root_url = "https://docs.rs/neo-blockchain/0.10.0")]
 
 /// Ledger caches and persisted ledger-record helpers used by the service loop.
 pub mod ledger;
@@ -44,6 +44,7 @@ pub use ledger::{
 };
 pub use pipeline::{
     block_processing, block_validation, empty_block_fast_forward, handlers, native_persist,
+    validate_stage,
 };
 pub use service::{command, handle, internal, service_context};
 

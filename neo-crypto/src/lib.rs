@@ -29,7 +29,9 @@ pub mod hashes;
 pub mod keys;
 pub mod mpt_trie;
 
-pub use curves::{bls12381, bls12381_point, ecc};
+pub use curves::{bls12381_point, ecc};
+#[cfg(any(test, feature = "bls-experimental"))]
+pub use curves::bls12381;
 pub use filters::bloom_filter;
 pub use formats::encoding;
 pub use hashes::{hash, merkle_tree, murmur, named_curve_hash};
@@ -38,6 +40,7 @@ pub use keys::{bip32, signature};
 // Re-exports
 pub use bip32::Bip32Crypto;
 pub use bloom_filter::BloomFilter;
+#[cfg(any(test, feature = "bls-experimental"))]
 pub use bls12381::Bls12381Crypto;
 pub use bls12381_point::Bls12381Point;
 pub use ecc::{ECCurve, ECPoint};

@@ -37,7 +37,7 @@ use neo_io::{MemoryReader, Serializable, SerializableExtensions};
 use neo_native_contracts::{Role, RoleManagement};
 use neo_network::NetworkHandle;
 use neo_payloads::{ExtensiblePayload, Witness};
-use neo_primitives::UInt160;
+use neo_primitives::{UInt160, hex_util};
 use neo_state_service::{
     MessageType, STATE_SERVICE_CATEGORY, StateRoot, StateStore, StateStoreLookup, Vote,
 };
@@ -150,7 +150,7 @@ pub fn build_state_root_setup(
     }
     let keypair = match validator_key_hex {
         Some(hex_key) => {
-            let raw = hex::decode(hex_key.trim())
+            let raw = hex_util::decode_hex(hex_key.trim())
                 .map_err(|e| anyhow::anyhow!("invalid state validator private key hex: {e}"))?;
             let private_key: [u8; 32] = raw
                 .as_slice()

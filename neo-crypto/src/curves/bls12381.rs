@@ -3,26 +3,48 @@
 //! This module wraps the widely used `blst` crate while keeping Neo's exact
 //! domain separation tag and encoding choices isolated from general crypto
 //! utilities.
+//!
+//! # Experimental
+//!
+//! The `Bls12381Crypto` struct is gated behind `cfg(test)` or the
+//! `bls-experimental` feature flag. It has zero production callers and has not
+//! been verified for consensus-critical use.
 
+#[cfg(any(test, feature = "bls-experimental"))]
 use crate::error::{CryptoError, CryptoResult};
+
+#[cfg(any(test, feature = "bls-experimental"))]
 use blst::BLST_ERROR;
+#[cfg(any(test, feature = "bls-experimental"))]
 use blst::min_sig::{AggregatePublicKey, AggregateSignature, PublicKey, SecretKey, Signature};
+#[cfg(any(test, feature = "bls-experimental"))]
 use rand::{RngCore, rngs::OsRng};
+#[cfg(any(test, feature = "bls-experimental"))]
 use zeroize::Zeroizing;
 
 /// BLS12-381 operations using the `blst` crate.
+///
+/// # Experimental
+///
+/// This struct is gated behind `cfg(test)` or the `bls-experimental` feature.
+/// It has zero production callers in this workspace and has not been verified
+/// for production consensus use. Do not depend on this for consensus-critical
+/// operations unless you have independently validated correctness.
 ///
 /// Neo uses the "minimal-signature-size" scheme:
 /// - Private key: scalar (32 bytes)
 /// - Public key: G2 point (96 bytes compressed)
 /// - Signature: G1 point (48 bytes compressed)
+#[cfg(any(test, feature = "bls-experimental"))]
 pub struct Bls12381Crypto;
 
 /// Domain Separation Tag for Neo BLS12-381 signatures.
 ///
 /// This must match the C# implementation exactly for cross-compatibility.
+#[cfg(any(test, feature = "bls-experimental"))]
 const NEO_BLS_DST: &[u8] = b"BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_";
 
+#[cfg(any(test, feature = "bls-experimental"))]
 impl Bls12381Crypto {
     fn secret_key_from_neo_bytes(private_key: &[u8; 32]) -> CryptoResult<SecretKey> {
         if private_key.iter().all(|b| *b == 0) {

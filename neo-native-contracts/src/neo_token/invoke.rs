@@ -4,9 +4,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_execution::application_engine_contract::NativeArgNullMask;
 use neo_execution::{ApplicationEngine, Contract};
 use neo_primitives::{FindOptions, UInt160};
-use neo_serialization::BinarySerializer;
 use neo_vm::StackItem;
-use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -254,15 +252,10 @@ impl NeoToken {
                 // decodes its span as a secp256r1 point, faulting on anything
                 // that is not a valid public key (including Null).
                 let data = args.get(2).map(Vec::as_slice).unwrap_or(&[]);
-                let limits = ExecutionEngineLimits::default();
-                let item = BinarySerializer::deserialize_stack_value_with_limits(
+                let item = crate::support::codec::decode_stack_value(
                     data,
-                    limits.max_item_size as usize,
-                    limits.max_stack_size as usize,
-                )
-                .map_err(|e| {
-                    CoreError::invalid_operation(format!("NeoToken::onNEP17Payment data: {e}"))
-                })?;
+                    "NeoToken::onNEP17Payment data",
+                )?;
                 let pubkey_bytes = item.to_byte_string_bytes().ok_or_else(|| {
                     CoreError::invalid_operation(
                         "NeoToken::onNEP17Payment data: cannot convert to bytes",

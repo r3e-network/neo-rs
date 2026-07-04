@@ -5,10 +5,12 @@ Standalone Neo N3 blockchain node daemon with built-in RPC server.
 ## Overview
 
 `neo-node` is a standalone daemon that runs the Neo N3 blockchain node. It:
-- Synchronizes with the Neo network
+- Synchronizes with the Neo network over the Neo P2P protocol
 - Provides a JSON-RPC API for external clients
-- Manages the blockchain database
-- Supports built-in services (RpcServer, NeoIndexer, ApplicationLogs, TokensTracker, StateService when enabled). Consensus (dBFT) can be enabled via DBFTPlugin settings and a validator wallet.
+- Manages the blockchain database (MDBX default, RocksDB fallback)
+- Supports built-in services (RpcServer, NeoIndexer, ApplicationLogs, TokensTracker, StateService, OracleService when enabled)
+- Consensus (dBFT 2.0) can be enabled via DBFTPlugin settings and a validator wallet
+- Optional TEE support (SGX/Nitro) and HSM-backed consensus signing
 
 ## Installation
 
@@ -108,22 +110,22 @@ console_output = true
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                      neo-node                            │
+│                      neo-node (L7)                       │
 │  ┌─────────────────────────────────────────────────────┐│
-│  │                   NeoSystem                         ││
-│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐   ││
-│  │  │ Blockchain │  │ LocalNode  │  │TaskManager │   ││
-│  │  │   Actor    │  │   Actor    │  │   Actor    │   ││
-│  │  └────────────┘  └────────────┘  └────────────┘   ││
+│  │              neo-system (L5 Composition)             ││
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐    ││
+│  │  │ Blockchain │  │ LocalNode  │  │ TaskManager│    ││
+│  │  │  Service   │  │  (P2P)     │  │ (Supervise)│    ││
+│  │  └────────────┘  └────────────┘  └────────────┘    ││
 │  └─────────────────────────────────────────────────────┘│
 │  ┌─────────────────────────────────────────────────────┐│
-│  │                    Plugins                          ││
-│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐   ││
-│  │  │ RpcServer  │  │ NeoIndexer │  │ AppLogs    │   ││
-│  │  └────────────┘  └────────────┘  └────────────┘   ││
-│  │  ┌────────────┐  ┌────────────┐                  ││
-│  │  │ TokenTrack │  │ StateRoot  │                  ││
-│  │  └────────────┘  └────────────┘                  ││
+│  │           neo-rpc + neo-oracle-service (L6)         ││
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐    ││
+│  │  │ RpcServer  │  │ NeoIndexer │  │ AppLogs    │    ││
+│  │  └────────────┘  └────────────┘  └────────────┘    ││
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐    ││
+│  │  │TokenTrack  │  │StateRoot   │  │ Oracle     │    ││
+│  │  └────────────┘  └────────────┘  └────────────┘    ││
 │  └─────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────┘
                            │
@@ -133,6 +135,11 @@ console_output = true
                     │ JSON-RPC clients │
                     └──────────────────┘
 ```
+
+The node follows a 7-layer architecture inspired by **reth** (provider traits,
+type-state `NodeComponents`, `EngineApi`) and **Polkadot/Substrate** (bounded
+context layers, per-domain error types). See `../design.md` for the 15 ADRs
+and the evolution roadmap.
 
 ## License
 

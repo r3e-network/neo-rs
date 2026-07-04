@@ -31,7 +31,7 @@ mod utils;
 
 pub use errors::{error, network_error, rpc_exception};
 pub(crate) use numeric::uint_hex;
-pub use numeric::{base58_check, big_decimal, uint160, uint256};
+pub use numeric::{base58_check, big_decimal, hex_util, uint160, uint256};
 pub use payload::{
     inventory, log_event_args, serializable_payload, storage, verifiable, verification,
 };
@@ -49,7 +49,11 @@ pub mod blockchain;
 #[path = "macros/mod.rs"]
 pub mod macros;
 
-pub use uint_hex::strip_hex_prefix;
+/// Re-export of the canonical hex prefix stripper (ADR-024).
+///
+/// The legacy re-export from `uint_hex` is kept for backward compatibility —
+/// `uint_hex::strip_hex_prefix` now delegates to `hex_util::strip_hex_prefix`.
+pub use hex_util::strip_hex_prefix;
 
 pub use big_decimal::BigDecimal;
 pub use witness_rule_action::WitnessRuleAction;

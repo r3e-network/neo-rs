@@ -154,12 +154,16 @@ fn restore_durable_store_mode(
     chain_store: &dyn neo_storage::persistence::store::Store,
     service_stores: &[Arc<dyn neo_storage::persistence::store::Store>],
 ) -> anyhow::Result<()> {
-    chain_store.disable_fast_sync_mode();
+    if let Some(fs) = chain_store.as_fast_sync_store() {
+        fs.disable_fast_sync_mode();
+    }
     chain_store
         .flush()
         .map_err(|err| anyhow::anyhow!("flushing chain store after fast-sync mode: {err}"))?;
     for store in service_stores {
-        store.disable_fast_sync_mode();
+        if let Some(fs) = store.as_fast_sync_store() {
+            fs.disable_fast_sync_mode();
+        }
         store
             .flush()
             .map_err(|err| anyhow::anyhow!("flushing service store after fast-sync mode: {err}"))?;
@@ -171,11 +175,15 @@ fn abort_fast_sync_store_mode(
     chain_store: &dyn neo_storage::persistence::store::Store,
     service_stores: &[Arc<dyn neo_storage::persistence::store::Store>],
 ) {
-    chain_store.discard_pending_fast_sync_writes();
-    chain_store.disable_fast_sync_mode();
+    if let Some(fs) = chain_store.as_fast_sync_store() {
+        fs.discard_pending_fast_sync_writes();
+        fs.disable_fast_sync_mode();
+    }
     for store in service_stores {
-        store.discard_pending_fast_sync_writes();
-        store.disable_fast_sync_mode();
+        if let Some(fs) = store.as_fast_sync_store() {
+            fs.discard_pending_fast_sync_writes();
+            fs.disable_fast_sync_mode();
+        }
     }
 }
 
@@ -785,7 +793,9 @@ async fn build_node(
             durable_tip_height,
             "enabling fast-sync store mode for initial catch-up (WAL disabled, auto-compaction off)"
         );
-        store.enable_fast_sync_mode();
+        if let Some(fs) = store.as_fast_sync_store() {
+            fs.enable_fast_sync_mode();
+        }
     }
 
     // Natives are dispatched through the global provider.
@@ -1177,7 +1187,7 @@ async fn build_node(
             neo_rpc::plugins::tokens_tracker::TokensTracker::new(
                 tracker_settings,
                 tracker_store,
-                Arc::clone(&node),
+                node.settings(),
             ),
         )));
     }

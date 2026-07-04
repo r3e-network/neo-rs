@@ -37,6 +37,16 @@ impl MempoolLike for TestMempool {
     ) -> VerifyResult {
         VerifyResult::Succeed
     }
+
+    fn try_add_cached(
+        &self,
+        _tx: &Transaction,
+        _snapshot: &neo_storage::DataCache,
+        _settings: &neo_config::ProtocolSettings,
+        _cached_state_independent: Option<VerifyResult>,
+    ) -> VerifyResult {
+        VerifyResult::Succeed
+    }
 }
 
 #[derive(Debug)]
@@ -49,6 +59,16 @@ impl MempoolLike for FixedResultMempool {
         _tx: &Transaction,
         _snapshot: &neo_storage::DataCache,
         _settings: &neo_config::ProtocolSettings,
+    ) -> VerifyResult {
+        self.result
+    }
+
+    fn try_add_cached(
+        &self,
+        _tx: &Transaction,
+        _snapshot: &neo_storage::DataCache,
+        _settings: &neo_config::ProtocolSettings,
+        _cached_state_independent: Option<VerifyResult>,
     ) -> VerifyResult {
         self.result
     }
@@ -66,6 +86,16 @@ impl MempoolLike for RecordingMempool {
         _tx: &Transaction,
         _snapshot: &neo_storage::DataCache,
         _settings: &neo_config::ProtocolSettings,
+    ) -> VerifyResult {
+        VerifyResult::Succeed
+    }
+
+    fn try_add_cached(
+        &self,
+        _tx: &Transaction,
+        _snapshot: &neo_storage::DataCache,
+        _settings: &neo_config::ProtocolSettings,
+        _cached_state_independent: Option<VerifyResult>,
     ) -> VerifyResult {
         VerifyResult::Succeed
     }

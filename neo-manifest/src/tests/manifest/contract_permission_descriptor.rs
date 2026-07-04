@@ -1,5 +1,6 @@
 use super::*;
 use neo_crypto::{ECPoint, Secp256k1Crypto, Secp256r1Crypto};
+use neo_primitives::hex_util;
 use neo_vm_rs::StackValue;
 
 fn group_key() -> ECPoint {
@@ -91,7 +92,7 @@ fn permission_descriptor_from_json_uses_csharp_lengths_and_curve() {
     let group = group_key();
     let compressed = group.encode_point(true).expect("compressed group");
     assert_eq!(
-        ContractPermissionDescriptor::from_json(&serde_json::Value::String(hex::encode(
+        ContractPermissionDescriptor::from_json(&serde_json::Value::String(hex_util::encode_hex(
             &compressed
         )))
         .unwrap(),
@@ -100,8 +101,8 @@ fn permission_descriptor_from_json_uses_csharp_lengths_and_curve() {
 
     let uncompressed = group.encode_point(false).expect("uncompressed group");
     assert!(
-        ContractPermissionDescriptor::from_json(&serde_json::Value::String(hex::encode(
-            uncompressed
+        ContractPermissionDescriptor::from_json(&serde_json::Value::String(hex_util::encode_hex(
+            &uncompressed
         )))
         .is_err()
     );

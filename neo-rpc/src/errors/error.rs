@@ -4,7 +4,7 @@ use thiserror::Error;
 
 /// Errors that can occur during RPC operations.
 #[derive(Error, Debug)]
-pub enum RpcError {
+pub enum RpcClientError {
     /// Request failed.
     #[error("Request failed: {message}")]
     RequestFailed {
@@ -82,7 +82,7 @@ pub enum RpcError {
     Other(String),
 }
 
-impl RpcError {
+impl RpcClientError {
     /// Create a request failed error.
     pub fn request_failed<S: Into<String>>(message: S) -> Self {
         Self::RequestFailed {
@@ -105,17 +105,17 @@ impl RpcError {
     }
 }
 
-impl From<&str> for RpcError {
+impl From<&str> for RpcClientError {
     fn from(s: &str) -> Self {
         Self::Other(s.to_string())
     }
 }
 
-impl From<String> for RpcError {
+impl From<String> for RpcClientError {
     fn from(s: String) -> Self {
         Self::Other(s)
     }
 }
 
-/// Result type for RPC operations.
-pub type RpcResult<T> = std::result::Result<T, RpcError>;
+/// Result type for RPC client operations.
+pub type RpcClientResult<T> = std::result::Result<T, RpcClientError>;

@@ -62,7 +62,7 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
 
     ui.add_space(14.0);
     widgets::section(ui, "Result");
-    let out = app.wallet_out.lock().unwrap().clone();
+    let out = app.wallet_out.lock().expect("Wallet output mutex poisoned").clone();
     widgets::card(ui, |ui| match out {
         Some(mut text) => {
             ui.add(

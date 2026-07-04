@@ -560,7 +560,7 @@ impl TeeEnclave {
         if path.exists() {
             let data = std::fs::read(&path)?;
             if data.len() >= 8 {
-                let value = u64::from_le_bytes(data[..8].try_into().unwrap());
+                let value = u64::from_le_bytes(data[..8].try_into().expect("data[..8] must be valid since len >= 8"));
                 *self.monotonic_counter.write() = value;
                 debug!("Loaded monotonic counter: {}", value);
             } else {

@@ -21,14 +21,16 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
+use async_trait::async_trait;
 use neo_blockchain::{BlockchainHandle, HeaderCache};
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::{NativeContractLookup, NativeContractProvider};
 use neo_mempool::MemoryPool;
 use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_network::NetworkHandle;
-use neo_payloads::{Transaction, VerifyResult};
-use neo_runtime::{BlockExecutor, ConsensusService, NeoEngine};
+use neo_payloads::{Block, Transaction, VerifyResult};
+use neo_primitives::UInt256;
+use neo_runtime::{BlockExecutor, ConsensusService, EngineApi, BlockchainProvider, ConfigProvider, StoreProvider, TxAdmission, ServiceError};
 use neo_storage::DataCache;
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_cache::StoreCache;
@@ -36,7 +38,7 @@ use neo_storage::persistence::store_cache::StoreCache;
 use neo_error::{CoreError, CoreResult};
 
 use crate::error::NodeResult;
-use crate::service_registry::ServiceRegistry;
+use neo_runtime::ServiceRegistry;
 use crate::wallet_provider::WalletProvider;
 
 /// The composed Neo node runtime.
@@ -95,8 +97,8 @@ pub struct Node {
     pub consensus: Option<Arc<dyn ConsensusService>>,
 
     /// Optional engine API service. Present when a concrete
-    /// `impl NeoEngine` has been wired in by the caller.
-    pub engine: Option<Arc<dyn NeoEngine>>,
+    /// `impl EngineApi` has been wired in by the caller.
+    pub engine: Option<Arc<dyn EngineApi>>,
 
     /// Cancellation token the node monitors for shutdown. A clone
     /// of this is also handed to every service task so they can
@@ -373,6 +375,91 @@ impl TxRouterHandle {
             let _ = self.network.try_broadcast_transaction(tx);
         }
         Ok(())
+    }
+}
+
+// =============================================================================
+// BlockchainProvider implementation
+//
+// This allows `neo-rpc` (and other read-side consumers) to depend on
+// `Arc<dyn BlockchainProvider>` instead of `Arc<Node>`, decoupling the
+// RPC layer from the full node composition.
+// =============================================================================
+
+#[async_trait]
+impl BlockchainProvider for Node {
+    async fn get_block_by_hash(
+        &self,
+        hash: UInt256,
+    ) -> Result<Option<Block>, ServiceError> {
+        self.blockchain.get_block(&hash).await
+    }
+
+    async fn get_block_by_height(
+        &self,
+        height: u32,
+    ) -> Result<Option<Block>, ServiceError> {
+        self.blockchain.get_block_by_height(height).await
+    }
+
+    async fn get_block_count(&self) -> Result<u32, ServiceError> {
+        self.blockchain.get_height().await
+    }
+
+    async fn get_transaction_by_hash(
+        &self,
+        _hash: UInt256,
+    ) -> Result<Option<Transaction>, ServiceError> {
+        // TODO(ADR-031, Phase 3 G2): either implement this via BlockchainHandle
+        // or delete the BlockchainProvider trait entirely. Currently returns
+        // Ok(None) which silently breaks any consumer that depends on it.
+        // The trait has zero `dyn` consumers as of ADR-027 — Phase 3 decides
+        // finish-vs-delete.
+        Ok(None)
+    }
+
+    async fn get_state_root(
+        &self,
+        _height: u32,
+    ) -> Result<Option<UInt256>, ServiceError> {
+        // TODO(ADR-031, Phase 3 G2): either implement this via StateService
+        // or delete the BlockchainProvider trait entirely. Currently returns
+        // Ok(None) which silently breaks any consumer that depends on it.
+        Ok(None)
+    }
+}
+
+#[async_trait]
+impl StoreProvider for Node {
+    fn store(&self) -> Arc<dyn Store> {
+        self.storage.clone()
+    }
+
+    fn store_cache(&self) -> StoreCache {
+        StoreCache::new_from_store(self.storage.clone(), false)
+    }
+}
+
+impl ConfigProvider for Node {
+    fn settings(&self) -> Arc<ProtocolSettings> {
+        Arc::clone(&self.settings)
+    }
+
+    fn max_valid_until_block_increment(&self) -> u32 {
+        self.settings.max_valid_until_block_increment
+    }
+}
+
+impl TxAdmission for Node {
+    fn try_enqueue_preverify(
+        &self,
+        tx: neo_payloads::Transaction,
+        relay: bool,
+        snapshot: &neo_storage::persistence::DataCache,
+    ) -> Result<(), neo_runtime::ServiceError> {
+        self.tx_router_actor()
+            .try_enqueue_preverify(tx, relay, snapshot)
+            .map_err(|e| neo_runtime::ServiceError::Internal(e.to_string()))
     }
 }
 

@@ -163,15 +163,13 @@ impl CryptoLib {
     /// wraps `Crypto.ECRecover` in try/catch and returns `null`). Split out so the
     /// success/null decision can be unit tested without an [`ApplicationEngine`].
     fn recover_secp256k1_method(message_hash: &[u8], signature: &[u8]) -> Option<Vec<u8>> {
-        // C# `Crypto.ECRecover` accepts BOTH a 65-byte `r‖s‖v` signature AND a
-        // 64-byte EIP-2098 compact `r‖yParityAndS` signature
-        // (`if (signature.Length != 65 && signature.Length != 64) throw`), and
-        // `RecoverSecp256K1` returns the recovered key (null only on a thrown
-        // exception). Rejecting the 64-byte form here would diverge from C# on the
-        // HF_Echidna-active `recoverSecp256K1` path (C# recovers a key, we return
-        // null). `recover_public_key` implements the same yParity/mask logic for
-        // the 64-byte form, so delegate for both lengths.
-        if signature.len() != 65 && signature.len() != 64 {
+        // C# `Crypto.ECRecover` requires exactly 65 bytes (`r‖s‖v`) and throws
+        // `ArgumentException` on any other length (`if (signature.Length != 65)
+        // throw`). `RecoverSecp256K1` wraps it in try/catch and returns null on
+        // exception. A 64-byte EIP-2098 compact form is NOT accepted by the C#
+        // consensus method — accepting it would fork any contract that branches on
+        // the result.
+        if signature.len() != 65 {
             return None;
         }
         Secp256k1Crypto::recover_public_key(message_hash, signature).ok()

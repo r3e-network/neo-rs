@@ -3,9 +3,23 @@
 
 use neo_config::ProtocolSettings;
 use neo_primitives::UInt160;
-use neo_rpc::{RpcServer, RpcServerConfig};
+use neo_rpc::{RpcServer, RpcServerConfig, server::NodeContext};
 use neo_system::Node;
 use serde_json::Value;
+use std::sync::Arc;
+
+fn node_to_context(node: &Node) -> NodeContext {
+    NodeContext::from_parts(
+        Arc::clone(&node.settings),
+        Arc::clone(&node.storage),
+        node.blockchain.clone(),
+        node.network.clone(),
+        Arc::clone(&node.mempool),
+        Arc::clone(&node.header_cache),
+        node.services.clone(),
+        Arc::clone(&node.native_contract_provider),
+    )
+}
 
 fn is_valid(result: &Value) -> bool {
     result
@@ -16,9 +30,8 @@ fn is_valid(result: &Value) -> bool {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn validate_address_uses_wallet_base58_check() {
-    let system = std::sync::Arc::new(
-        Node::new(std::sync::Arc::new(ProtocolSettings::default()), None, None).expect("system"),
-    );
+    let node = Node::new(Arc::new(ProtocolSettings::default()), None, None).expect("system");
+    let system: Arc<NodeContext> = Arc::new(node_to_context(&node));
     let server = RpcServer::new(system, RpcServerConfig::default());
 
     let valid_address = UInt160::zero().to_address();

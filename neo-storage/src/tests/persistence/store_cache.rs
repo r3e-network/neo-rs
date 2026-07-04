@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 enum OverlayMode {
     Unsupported,
     Fails,
@@ -19,6 +19,7 @@ enum OverlayMode {
     Materialized,
 }
 
+#[derive(Debug)]
 struct OverlayContractStore {
     inner: MemoryStore,
     mode: OverlayMode,
@@ -106,10 +107,20 @@ impl Store for OverlayContractStore {
         self.inner.on_new_snapshot(handler);
     }
 
-    fn supports_raw_overlay_commit(&self) -> bool {
-        matches!(self.mode, OverlayMode::Fails | OverlayMode::Materialized)
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
+    fn as_raw_overlay_store(&self) -> Option<&dyn crate::persistence::RawOverlayStore> {
+        if matches!(self.mode, OverlayMode::Unsupported) {
+            None
+        } else {
+            Some(self)
+        }
+    }
+}
+
+impl crate::persistence::RawOverlayStore for OverlayContractStore {
     fn try_commit_raw_overlay(
         &self,
         overlay: &[(Vec<u8>, Option<Vec<u8>>)],
@@ -143,10 +154,6 @@ impl Store for OverlayContractStore {
         };
         visit(&mut collect);
         Ok(true)
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 

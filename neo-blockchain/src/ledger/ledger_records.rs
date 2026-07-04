@@ -49,14 +49,9 @@ use neo_primitives::{UInt160, UInt256};
 use neo_storage::{DataCache, StorageItem, StorageKey};
 use neo_vm_rs::VmState as VMState;
 
-/// C# `LedgerContract.Prefix_BlockHash` (9).
-const PREFIX_BLOCK_HASH: u8 = 9;
-/// C# `LedgerContract.Prefix_Block` (5).
-const PREFIX_BLOCK: u8 = 5;
-/// C# `LedgerContract.Prefix_Transaction` (11).
-const PREFIX_TRANSACTION: u8 = 11;
-/// C# `LedgerContract.Prefix_CurrentBlock` (12).
-const PREFIX_CURRENT_BLOCK: u8 = 12;
+use neo_native_contracts::ledger_contract::storage::{
+    PREFIX_BLOCK, PREFIX_BLOCK_HASH, PREFIX_CURRENT_BLOCK, PREFIX_TRANSACTION,
+};
 
 /// Upsert helper: C# `GetAndChange(key, factory).FromReplica(item)`
 /// replaces the stored value whether or not the key already exists.

@@ -5,12 +5,10 @@ use super::{
 };
 use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
-use neo_serialization::BinarySerializer;
 use neo_storage::persistence::DataCache;
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm_rs::{ExecutionEngineLimits, StackValue};
+use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
-use num_traits::ToPrimitive;
 
 /// C# `Notary.Deposit`: `Struct[Amount, Till]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,18 +33,10 @@ impl DepositState {
     }
 
     pub(in crate::notary) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Struct(_, items) = stack_value else {
-            return Err(CoreError::invalid_data("Notary deposit is not a struct"));
-        };
-        let amount_value = items
-            .first()
-            .ok_or_else(|| CoreError::invalid_data("Notary deposit Amount missing"))?;
-        let amount = neo_vm::stack_value_as_bigint(amount_value)
-            .map_err(|e| CoreError::invalid_data(format!("Notary deposit Amount: {e}")))?;
-        let till = items
-            .get(1)
-            .and_then(neo_vm_rs::stack_value_as_u32)
-            .ok_or_else(|| CoreError::invalid_data("Notary deposit Till out of range"))?;
+        let decoder =
+            crate::support::codec::StructDecoder::new(&stack_value, "Notary deposit")?;
+        let amount = decoder.bigint(0, "Amount")?;
+        let till = decoder.u32(1, "Till")?;
         Ok(Self { amount, till })
     }
 }
@@ -88,13 +78,7 @@ impl Notary {
     }
 
     pub(in crate::notary) fn decode_deposit(bytes: &[u8]) -> CoreResult<(BigInt, u32)> {
-        let limits = ExecutionEngineLimits::default();
-        let state = BinarySerializer::deserialize_stack_value_with_limits(
-            bytes,
-            limits.max_item_size as usize,
-            limits.max_stack_size as usize,
-        )
-        .map_err(|e| CoreError::deserialization(format!("Notary deposit: {e}")))?;
+        let state = crate::support::codec::decode_stack_value(bytes, "Notary deposit")?;
         let deposit = DepositState::from_stack_value(state)
             .map_err(|e| CoreError::invalid_data(format!("Notary deposit: {e}")))?;
         Ok((deposit.amount, deposit.till))
@@ -128,9 +112,10 @@ impl Notary {
         amount: &BigInt,
         till: u32,
     ) -> CoreResult<()> {
-        let item = DepositState::new(amount.clone(), till).to_stack_value();
-        let bytes = BinarySerializer::serialize_stack_value_default(&item)
-            .map_err(|e| CoreError::serialization(format!("Notary deposit serialize: {e}")))?;
+        let bytes = crate::support::codec::encode_storage_struct(
+            &DepositState::new(amount.clone(), till),
+            "Notary deposit",
+        )?;
         snapshot.update(Self::deposit_key(account), StorageItem::from_bytes(bytes));
         Ok(())
     }
@@ -163,13 +148,8 @@ impl Notary {
         from: &UInt160,
         data: &[u8],
     ) -> CoreResult<(UInt160, u32)> {
-        let limits = ExecutionEngineLimits::default();
-        let item = BinarySerializer::deserialize_stack_value_with_limits(
-            data,
-            limits.max_item_size as usize,
-            limits.max_stack_size as usize,
-        )
-        .map_err(|e| CoreError::invalid_operation(format!("Notary::onNEP17Payment data: {e}")))?;
+        let item =
+            crate::support::codec::decode_stack_value(data, "Notary::onNEP17Payment data")?;
         let StackValue::Array(_, items) = item else {
             return Err(CoreError::invalid_operation(
                 "Notary::onNEP17Payment data must be an array of 2 elements",
@@ -263,17 +243,11 @@ impl Notary {
         &self,
         snapshot: &DataCache,
     ) -> CoreResult<i64> {
-        let key = Self::max_not_valid_before_delta_key();
-        let Some(item) = snapshot.get(&key) else {
-            return Err(CoreError::invalid_data(
-                "Notary MaxNotValidBeforeDelta is missing",
-            ));
-        };
-        BigInt::from_signed_bytes_le(&item.value_bytes())
-            .to_i64()
-            .ok_or_else(|| {
-                CoreError::invalid_operation("Notary MaxNotValidBeforeDelta out of range")
-            })
+        crate::support::settings::read_required_i64_setting_key(
+            snapshot,
+            Self::max_not_valid_before_delta_key(),
+            "Notary MaxNotValidBeforeDelta",
+        )
     }
 
     /// Parses the leading `Hash160` account argument for the deposit reads.

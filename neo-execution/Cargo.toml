@@ -30,7 +30,6 @@ neo-payloads = { workspace = true }
 # External
 serde = { workspace = true }
 serde_json = { workspace = true }
-hex = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
@@ -58,6 +57,9 @@ sha3 = { workspace = true }
 ripemd = { workspace = true }
 blake2 = { workspace = true }
 bs58 = { workspace = true }
+
+[dev-dependencies]
+hex = { workspace = true }
 
 [lints]
 workspace = true

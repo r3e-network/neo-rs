@@ -177,7 +177,7 @@ fn echidna_at_zero_settings() -> ProtocolSettings {
 /// getversion path reads, in the storage encoding the Policy setters
 /// use (signed little-endian `BigInteger` bytes).
 fn seed_policy_dynamic_values(
-    system: &std::sync::Arc<neo_system::Node>,
+    system: &std::sync::Arc<crate::server::NodeContext>,
     msperblock: u32,
     max_traceable: u32,
     max_vub_increment: u32,

@@ -3,6 +3,7 @@
 use base64::{Engine as _, engine::general_purpose};
 use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
+use neo_primitives::hex_util;
 use neo_primitives::ContractParameterType;
 use neo_primitives::{UInt160, UInt256};
 use num_bigint::BigInt;
@@ -109,7 +110,7 @@ impl ContractParameter {
                 ContractParameterValue::ByteArray(bytes)
             }
             ContractParameterType::PublicKey => {
-                let bytes = hex::decode(text).map_err(|e| CoreError::other(e.to_string()))?;
+                let bytes = hex_util::decode_hex(text).map_err(|e| CoreError::other(e.to_string()))?;
                 if bytes.len() != 33 && bytes.len() != 65 {
                     return Err(CoreError::other("Invalid public key length"));
                 }
@@ -150,7 +151,7 @@ impl ContractParameter {
                 serde_json::Value::String(general_purpose::STANDARD.encode(bytes))
             }
             ContractParameterValue::PublicKey(key) => {
-                serde_json::Value::String(hex::encode(key.encoded()))
+                serde_json::Value::String(hex_util::encode_hex(&key.encoded()))
             }
             ContractParameterValue::String(s) => serde_json::Value::String(s.clone()),
             ContractParameterValue::Array(arr) => {

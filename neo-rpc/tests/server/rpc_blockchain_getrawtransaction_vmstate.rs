@@ -13,6 +13,20 @@ use neo_rpc::server::{RpcHandler, RpcServer, RpcServerBlockchain, RpcServerConfi
 use neo_storage::StorageKey;
 use neo_vm_rs::VmState as VMState;
 use serde_json::Value;
+use std::sync::Arc;
+
+fn node_to_context(node: &neo_system::Node) -> neo_rpc::server::NodeContext {
+    neo_rpc::server::NodeContext::from_parts(
+        Arc::clone(&node.settings),
+        Arc::clone(&node.storage),
+        node.blockchain.clone(),
+        node.network.clone(),
+        Arc::clone(&node.mempool),
+        Arc::clone(&node.header_cache),
+        node.services.clone(),
+        Arc::clone(&node.native_contract_provider),
+    )
+}
 
 fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
     handlers
@@ -133,14 +147,14 @@ fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerB
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_raw_transaction_verbose_omits_vmstate() {
-    let system = std::sync::Arc::new(
-        neo_system::Node::new(
-            std::sync::Arc::new(neo_config::ProtocolSettings::default()),
-            None,
-            None,
-        )
-        .expect("system to start"),
-    );
+    let node = neo_system::Node::new(
+        std::sync::Arc::new(neo_config::ProtocolSettings::default()),
+        None,
+        None,
+    )
+    .expect("system to start");
+    let system: std::sync::Arc<neo_rpc::server::NodeContext> =
+        std::sync::Arc::new(node_to_context(&node));
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());
     let handlers = RpcServerBlockchain::register_handlers();
     let handler = find_handler(&handlers, "getrawtransaction");

@@ -84,7 +84,7 @@ impl OracleService {
             }
 
             task.tx = Some(tx.clone());
-            let data = get_sign_data_vec(&tx, self.system.settings().network)
+            let data = get_sign_data_vec(&tx, self.config.settings().network)
                 .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
             task.signs
                 .retain(|key, value| verify_oracle_signature(key, &data, value));
@@ -92,7 +92,7 @@ impl OracleService {
 
         if let Some(tx) = backup_tx {
             task.backup_tx = Some(tx.clone());
-            let data = get_sign_data_vec(&tx, self.system.settings().network)
+            let data = get_sign_data_vec(&tx, self.config.settings().network)
                 .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
             task.backup_signs
                 .retain(|key, value| verify_oracle_signature(key, &data, value));
@@ -110,9 +110,9 @@ impl OracleService {
         let tx = task.tx.as_ref().expect("oracle tx available");
         let backup_tx = task.backup_tx.as_ref().expect("oracle backup tx available");
 
-        let tx_data = get_sign_data_vec(tx, self.system.settings().network)
+        let tx_data = get_sign_data_vec(tx, self.config.settings().network)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
-        let backup_data = get_sign_data_vec(backup_tx, self.system.settings().network)
+        let backup_data = get_sign_data_vec(backup_tx, self.config.settings().network)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
 
         if verify_oracle_signature(&oracle_pub, &tx_data, &sign) {
@@ -193,8 +193,7 @@ impl OracleService {
         tx_mut.set_witnesses(witnesses);
 
         if let Err(error) = self
-            .system
-            .tx_router_actor()
+            .tx
             .try_enqueue_preverify(tx_mut, true, snapshot)
         {
             warn!(target: "neo::oracle", %error, "failed to relay oracle response tx");

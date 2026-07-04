@@ -22,11 +22,10 @@
 //!
 //! ```rust
 //! use neo_payloads::Witness;
-//! use neo_vm_rs::OpCode;
 //!
 //! // Create a witness from scripts
-//! let invocation_script = vec![OpCode::PUSHDATA1.byte(), 0x40, 0x01, 0x02];
-//! let verification_script = vec![OpCode::PUSHDATA1.byte(), 0x21];
+//! let invocation_script = vec![0x0C, 0x40]; // PUSHDATA1 64-byte
+//! let verification_script = vec![0x0C, 0x21]; // PUSHDATA1 33-byte
 //! let witness = Witness::new_with_scripts(
 //!     invocation_script,
 //!     verification_script,
@@ -38,13 +37,12 @@
 
 use base64::{Engine as _, engine::general_purpose};
 use neo_crypto::Crypto;
-use neo_error::{CoreError, CoreResult};
 use neo_io::{Serializable, serializable::helper::SerializeHelper};
+use neo_primitives::hex_util;
 use neo_primitives::UInt160;
-use neo_vm_rs::OpCode;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
-use std::{convert::TryInto, fmt};
+use std::fmt;
 
 /// Maximum size of invocation script in bytes.
 /// This is designed to allow a MultiSig 21/11 (committee)
@@ -158,126 +156,6 @@ impl Witness {
         }
     }
 
-    /// Verifies the witness signature (production-ready implementation).
-    pub fn verify_signature(&self, hash_data: &[u8], account: &UInt160) -> CoreResult<bool> {
-        // 1. Extract public key from verification script
-        let public_key = self.extract_public_key_from_verification_script()?;
-
-        // 2. Extract signature from invocation script
-        let signature = self.extract_signature_from_invocation_script()?;
-
-        // 3. Verify signature against hash_data using the public key
-        let signature_valid = self.verify_ecdsa_signature(hash_data, &signature, &public_key)?;
-        if !signature_valid {
-            return Ok(false);
-        }
-
-        // 4. Verify that the public key corresponds to the account
-        let computed_account = self.compute_script_hash_from_public_key(&public_key)?;
-        Ok(computed_account == *account)
-    }
-
-    /// Extracts public key from verification script (matches C# verification script parsing exactly).
-    fn extract_public_key_from_verification_script(&self) -> Result<Vec<u8>, CoreError> {
-        if !neo_vm::script_builder::redeem_script::RedeemScript::is_signature_contract(
-            &self.verification_script,
-        ) {
-            return Err(CoreError::Invalid {
-                message: "Unsupported verification script format".to_string(),
-            });
-        }
-
-        let public_key = self.verification_script[2..35].to_vec();
-
-        if public_key.len() != 33 || (public_key[0] != 0x02 && public_key[0] != 0x03) {
-            return Err(CoreError::Invalid {
-                message: "Invalid compressed public key format".to_string(),
-            });
-        }
-
-        Ok(public_key)
-    }
-
-    /// Extracts signature from invocation script (matches C# signature extraction exactly).
-    fn extract_signature_from_invocation_script(&self) -> Result<Vec<u8>, CoreError> {
-        // Real C# Neo N3 implementation: Invocation script signature extraction
-
-        if self.invocation_script.len() != 66 {
-            return Err(CoreError::Invalid {
-                message: "Invalid invocation script length".to_string(),
-            });
-        }
-
-        if self.invocation_script[0] != OpCode::PUSHDATA1.byte()
-            || self.invocation_script[1] != 0x40
-        {
-            return Err(CoreError::Invalid {
-                message: "Invalid invocation script format".to_string(),
-            });
-        }
-
-        let signature = self.invocation_script[2..66].to_vec();
-
-        if signature.len() != 64 {
-            return Err(CoreError::Invalid {
-                message: "Invalid signature length".to_string(),
-            });
-        }
-
-        Ok(signature)
-    }
-
-    /// Verifies ECDSA signature (matches C# ECDsa.VerifyData exactly).
-    fn verify_ecdsa_signature(
-        &self,
-        hash_data: &[u8],
-        signature: &[u8],
-        public_key: &[u8],
-    ) -> CoreResult<bool> {
-        // Real C# Neo N3 implementation: ECDsa.VerifyData
-
-        use neo_crypto::Secp256r1Crypto;
-
-        let signature_bytes: [u8; 64] = signature
-            .try_into()
-            .map_err(|_| CoreError::invalid_data("Invalid signature length"))?;
-
-        Secp256r1Crypto::verify(hash_data, &signature_bytes, public_key).map_err(|e| {
-            CoreError::Cryptographic {
-                message: format!("ECDSA verification failed: {e}"),
-            }
-        })
-    }
-
-    /// Computes script hash from public key (matches C# Contract.CreateSignatureContract exactly).
-    fn compute_script_hash_from_public_key(&self, public_key: &[u8]) -> CoreResult<UInt160> {
-        let verification_script = self.create_verification_script_from_public_key(public_key)?;
-        Ok(UInt160::from_script(&verification_script))
-    }
-
-    /// Creates verification script from public key (matches C# Contract.CreateSignatureRedeemScript exactly).
-    fn create_verification_script_from_public_key(
-        &self,
-        public_key: &[u8],
-    ) -> Result<Vec<u8>, CoreError> {
-        if public_key.len() != 33 {
-            return Err(CoreError::Invalid {
-                message: "Public key must be 33 bytes (compressed)".to_string(),
-            });
-        }
-
-        if public_key[0] != 0x02 && public_key[0] != 0x03 {
-            return Err(CoreError::Invalid {
-                message: "Invalid compressed public key format".to_string(),
-            });
-        }
-
-        Ok(
-            neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(
-                public_key,
-            ),
-        )
-    }
 }
 
 neo_io::impl_default_via_new!(Witness);
@@ -325,8 +203,8 @@ impl fmt::Display for Witness {
         write!(
             f,
             "Witness {{ invocation: {}, verification: {} }}",
-            hex::encode(&self.invocation_script),
-            hex::encode(&self.verification_script)
+            hex_util::encode_hex(&self.invocation_script),
+            hex_util::encode_hex(&self.verification_script)
         )
     }
 }

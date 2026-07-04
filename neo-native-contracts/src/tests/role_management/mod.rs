@@ -197,7 +197,7 @@ fn node_list_storage_codecs_use_stack_value_projection() {
 
     let source = include_str!("../../role_management/node_list.rs");
     let decoder = slice_between(source, "fn decode_node_list", "fn empty_node_list");
-    assert!(decoder.contains("deserialize_stack_value_with_limits"));
+    assert!(decoder.contains("decode_stack_value"));
     assert!(decoder.contains("NodeList::from_stack_value"));
     assert!(!decoder.contains("StackValue::Array"));
 
@@ -207,8 +207,7 @@ fn node_list_storage_codecs_use_stack_value_projection() {
         "/// Builds the persisted `StackValue::Array`",
     );
     assert!(empty_encoder.contains("NodeList::new"));
-    assert!(empty_encoder.contains("to_stack_value"));
-    assert!(empty_encoder.contains("serialize_stack_value_default"));
+    assert!(empty_encoder.contains("encode_storage_struct"));
     assert!(!empty_encoder.contains("StackValue::Array"));
 
     let projector = slice_between(source, "fn nodes_to_stack_value", "fn nodes_to_event_array");

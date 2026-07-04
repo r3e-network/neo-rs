@@ -180,13 +180,13 @@ fn signature_contract_for_keypair(key_pair: &KeyPair) -> Contract {
     Contract::create(vec![ContractParameterType::Signature], script)
 }
 
-fn fund_gas(system: &Arc<neo_system::Node>, account: UInt160, amount: i64) {
+fn fund_gas(system: &Arc<crate::server::NodeContext>, account: UInt160, amount: i64) {
     let mut store = system.store_cache();
     crate::server::test_support::seed_gas_balance(&mut store, &account, BigInt::from(amount));
     store.commit();
 }
 
-fn deploy_verify_contract(system: &Arc<neo_system::Node>) -> UInt160 {
+fn deploy_verify_contract(system: &Arc<crate::server::NodeContext>) -> UInt160 {
     let mut store_cache = system.store_cache();
     let snapshot = Arc::new(store_cache.data_cache().clone());
 

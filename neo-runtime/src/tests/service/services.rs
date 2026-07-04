@@ -48,7 +48,7 @@ fn traits_are_object_safe() {
     fn _executor(_: &dyn BlockExecutor) {}
     fn _network(_: &dyn NetworkService) {}
     fn _consensus(_: &dyn ConsensusService) {}
-    fn _engine(_: &dyn NeoEngine) {}
+    fn _engine(_: &dyn EngineApi) {}
 }
 
 #[tokio::test]

@@ -27,7 +27,7 @@ blake2b_simd = { workspace = true }
 blst = { workspace = true }
 murmur3 = { workspace = true }
 bitvec = { workspace = true }
-hmac = "0.12"
+hmac = { workspace = true }
 num-bigint = { workspace = true }
 num-traits = { workspace = true }
 
@@ -72,6 +72,7 @@ path = "tests/properties/crypto_properties.rs"
 
 [features]
 default = []
+bls-experimental = []
 
 [lints]
 workspace = true

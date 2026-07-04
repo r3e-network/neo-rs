@@ -26,6 +26,7 @@ use neo_execution::{ApplicationEngine, TriggerType};
 use neo_manifest::CallFlags;
 use neo_native_contracts::contract_management::ContractManagement;
 use neo_primitives::UInt160;
+use neo_primitives::hex_util;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm::stack_item::StackItem;
 use neo_vm_rs::VmState as VMState;
@@ -98,7 +99,7 @@ impl RpcServerTokensTracker {
             grouped
                 .entry(key.asset_script_hash)
                 .or_default()
-                .push((hex::encode(&key.token), value));
+                .push((hex_util::encode_hex(&key.token), value));
             count += 1;
         }
 

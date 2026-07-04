@@ -13,10 +13,11 @@
 //! - `service`: Service loops, handles, import queues, lifecycle helpers, and
 //!   command processing.
 
-#![doc(html_root_url = "https://docs.rs/neo-runtime/0.9.0")]
+#![doc(html_root_url = "https://docs.rs/neo-runtime/0.10.0")]
 
 mod errors;
 mod service;
+pub mod node;
 
 // Re-exports for the public surface of the crate.
 //
@@ -28,11 +29,16 @@ pub use service::{
     BlockBatchImportOutcome, BlockExecutor, BlockImport, BlockImportOutcome, BlockImportQueue,
     BlockOrigin, BlockchainEvent, CommitDecision, CommitPolicy, CommitTrigger, ConsensusService,
     DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, ExecutionOutcome, ExecutionPayload,
-    ImportQueue, ImportedTip, InMemorySyncStageCheckpointStore, NeoEngine, NetworkEvent,
-    NetworkService, Service, StageProgress, SyncBlockBatch, SyncPipelineDriver,
+    ImportQueue, ImportedTip, InMemorySyncStageCheckpointStore, EngineApi, NetworkEvent,
+    NetworkService, Service, ServiceRegistry, StageProgress, SyncBlockBatch, SyncPipelineDriver,
     SyncPipelineImportOutcome, SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind,
     TxHash, ValidationResult,
 };
 pub use service::{
-    block_import, blockchain, import_queue, outcome, services, sync_metrics, sync_pipeline,
+    block_import, blockchain, import_queue, outcome, service_registry, services, sync_metrics,
+    sync_pipeline,
+};
+pub use node::{
+    BlockchainProvider, ConfigProvider, FullNode, FullNodeTypes, NeoNodeTypes, NodeComponents,
+    NodeTypes, StoreProvider, TxAdmission,
 };

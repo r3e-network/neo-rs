@@ -7,12 +7,12 @@ use super::settings::TokensTrackerSettings;
 use super::trackers::nep_11::Nep11Tracker;
 use super::trackers::nep_17::Nep17Tracker;
 use super::trackers::tracker_base::Tracker;
+use neo_config::ProtocolSettings;
 use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
 use neo_payloads::{CommittedHandler, CommittingHandler};
 use neo_primitives::panic_message;
 use neo_storage::persistence::{DataCache, Store};
-use neo_system::Node;
 use parking_lot::RwLock;
 use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
@@ -37,8 +37,8 @@ impl TokensTracker {
     ///
     /// * `settings` - Tracker configuration
     /// * `db` - Database store for balance/transfer data
-    /// * `neo_system` - Reference to the Neo system
-    pub fn new(settings: TokensTrackerSettings, db: Arc<dyn Store>, neo_system: Arc<Node>) -> Self {
+    /// * `protocol_settings` - Protocol settings (for VM execution)
+    pub fn new(settings: TokensTrackerSettings, db: Arc<dyn Store>, protocol_settings: Arc<ProtocolSettings>) -> Self {
         let mut trackers: Vec<Box<dyn Tracker>> = Vec::new();
 
         if settings.enabled_nep17() {
@@ -46,7 +46,7 @@ impl TokensTracker {
                 Arc::clone(&db),
                 settings.max_results,
                 settings.track_history,
-                Arc::clone(&neo_system),
+                Arc::clone(&protocol_settings),
             )));
         }
 
@@ -55,7 +55,7 @@ impl TokensTracker {
                 Arc::clone(&db),
                 settings.max_results,
                 settings.track_history,
-                Arc::clone(&neo_system),
+                Arc::clone(&protocol_settings),
             )));
         }
 
@@ -141,10 +141,10 @@ impl CommittingHandler for TokensTracker {
         snapshot: &DataCache,
         application_executed_list: &[ApplicationExecuted],
     ) {
-        let Some(system) = system.downcast_ref::<Node>() else {
+        let Some(settings) = system.downcast_ref::<ProtocolSettings>() else {
             return;
         };
-        if system.settings().network != self.settings.network {
+        if settings.network != self.settings.network {
             return;
         }
 
@@ -162,7 +162,7 @@ impl CommittingHandler for TokensTracker {
                 break;
             }
             if !self.run_tracker_action(&track_name, "on_persist", || {
-                tracker.on_persist(system, block, snapshot, application_executed_list)
+                tracker.on_persist(block, snapshot, application_executed_list)
             }) {
                 break;
             }
@@ -172,10 +172,10 @@ impl CommittingHandler for TokensTracker {
 
 impl CommittedHandler for TokensTracker {
     fn blockchain_committed_handler(&self, system: &dyn Any, _block: &Block) {
-        let Some(system) = system.downcast_ref::<Node>() else {
+        let Some(settings) = system.downcast_ref::<ProtocolSettings>() else {
             return;
         };
-        if system.settings().network != self.settings.network {
+        if settings.network != self.settings.network {
             return;
         }
 

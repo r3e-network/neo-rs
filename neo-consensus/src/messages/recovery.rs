@@ -220,8 +220,13 @@ impl RecoveryMessage {
     }
 
     /// Serializes the message body to bytes (excluding the common header).
-    #[must_use]
-    pub fn serialize(&self) -> Vec<u8> {
+    ///
+    /// Returns `Err` if the underlying `BinaryWriter` fails. The in-memory
+    /// `BinaryWriter` cannot fail in practice, but the `?` propagation here
+    /// ensures that any future writer change (e.g. a streaming sink) surfaces
+    /// an `IoError` instead of silently producing a truncated/malformed
+    /// recovery message.
+    pub fn serialize(&self) -> ConsensusResult<Vec<u8>> {
         let mut writer = BinaryWriter::new();
 
         // The three compact arrays are serialized in ASCENDING validator-index
@@ -238,11 +243,11 @@ impl RecoveryMessage {
         // ChangeViewMessages (serializable array)
         let mut cvs = self.change_view_messages.clone();
         cvs.sort_by_key(|p| p.validator_index);
-        let _ = SerializeHelper::serialize_array(&cvs, &mut writer);
+        SerializeHelper::serialize_array(&cvs, &mut writer).map_err(writer_error)?;
 
         // PrepareRequestMessage presence flag + value OR PreparationHash var-bytes.
         let has_prepare_request = self.prepare_request_message.is_some();
-        let _ = writer.write_bool(has_prepare_request);
+        writer.write_bool(has_prepare_request).map_err(writer_error)?;
         if let Some(ref req) = self.prepare_request_message {
             // Embedded message includes its own common header.
             let bytes = super::consensus_message_bytes(
@@ -252,24 +257,24 @@ impl RecoveryMessage {
                 req.view_number,
                 &req.serialize(),
             );
-            let _ = writer.write_bytes(&bytes);
+            writer.write_bytes(&bytes).map_err(writer_error)?;
         } else if let Some(hash) = self.preparation_hash {
-            let _ = writer.write_var_bytes(&hash.to_bytes());
+            writer.write_var_bytes(&hash.to_bytes()).map_err(writer_error)?;
         } else {
-            let _ = writer.write_var_int(0);
+            writer.write_var_int(0).map_err(writer_error)?;
         }
 
         // PreparationMessages (serializable array)
         let mut preps = self.preparation_messages.clone();
         preps.sort_by_key(|p| p.validator_index);
-        let _ = SerializeHelper::serialize_array(&preps, &mut writer);
+        SerializeHelper::serialize_array(&preps, &mut writer).map_err(writer_error)?;
 
         // CommitMessages (serializable array)
         let mut commits = self.commit_messages.clone();
         commits.sort_by_key(|p| p.validator_index);
-        let _ = SerializeHelper::serialize_array(&commits, &mut writer);
+        SerializeHelper::serialize_array(&commits, &mut writer).map_err(writer_error)?;
 
-        writer.into_bytes()
+        Ok(writer.into_bytes())
     }
 
     /// Deserializes a `RecoveryMessage` from bytes (body only, excluding the common header).
@@ -395,6 +400,15 @@ where
         }
     }
     Ok(())
+}
+
+/// Maps a `neo_io::IoError` from the in-memory `BinaryWriter` into a
+/// `ConsensusError`. The current writer writes to a `Vec<u8>` and cannot
+/// fail, so this is effectively unreachable — but it keeps `serialize`
+/// correct under a future writer change rather than silently dropping the
+/// failure the way the old `let _ = ...` pattern did.
+fn writer_error(err: neo_io::IoError) -> crate::ConsensusError {
+    crate::ConsensusError::SerializationError(format!("RecoveryMessage write failed: {err}"))
 }
 
 #[cfg(test)]

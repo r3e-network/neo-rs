@@ -12,8 +12,6 @@ members = [
     "neo-crypto",
     # Storage traits, `DataCache`, MDBX, RocksDB, and in-memory stores.
     "neo-storage",
-    # Append-only finalized block/transaction/receipt cold files.
-    "neo-static-files",
     # Binary IO helpers (matches C# Neo.IO).
     "neo-io",
     # Stateful NeoVM host over the sibling `neo-vm-rs` semantics crate.
@@ -83,8 +81,6 @@ default-members = [
     "neo-crypto",
     "neo-storage",
     "neo-io",
-    "neo-rpc",
-    "neo-indexer",
     "neo-consensus",
     "neo-node",
 ]
@@ -160,7 +156,6 @@ neo-primitives = { path = "neo-primitives", version = "0.10.0" }
 neo-config = { path = "neo-config", version = "0.10.0" }
 neo-crypto = { path = "neo-crypto", version = "0.10.0" }
 neo-storage = { path = "neo-storage", version = "0.10.0" }
-neo-static-files = { path = "neo-static-files", version = "0.10.0" }
 neo-io = { path = "neo-io", version = "0.10.0" }
 neo-vm = { path = "neo-vm", version = "0.10.0" }
 neo-vm-rs = { path = "../neo-vm-rs" }
@@ -306,6 +301,31 @@ rayon = "=1.10.0"
 subtle = "2.5"
 byteorder = "1.5"
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
+
+# Cryptography — symmetric encryption and KDFs
+hmac = "0.12"
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+cipher = "0.4"
+scrypt = "0.11"
+hkdf = "0.12"
+aes-gcm = "0.10"
+
+# Compression
+zstd = "0.13"
+
+# Dynamic loading
+libloading = "0.8"
+
+# URL encoding
+percent-encoding = "2.3"
+
+# Testing
+mockito = "1.0"
+
+# Build dependencies
+tonic-build = "0.11"
+protoc-bin-vendored = "3.0"
 
 # Profiles
 [profile.release]

@@ -513,46 +513,6 @@ impl Crypto {
             .unwrap_or(false)
     }
 
-    /// Verifies a signature against the supplied public key, inferring the curve where possible.
-    #[must_use]
-    pub fn verify_signature_bytes(message: &[u8], signature: &[u8], public_key: &[u8]) -> bool {
-        if signature.len() != 64 {
-            return false;
-        }
-
-        let mut sig = [0u8; 64];
-        sig.copy_from_slice(signature);
-
-        match public_key.len() {
-            32 => {
-                let mut pk = [0u8; 32];
-                pk.copy_from_slice(public_key);
-                Ed25519Crypto::verify(message, &sig, &pk).unwrap_or(false)
-            }
-            33 => {
-                let mut pk = [0u8; 33];
-                pk.copy_from_slice(public_key);
-                if Secp256k1Crypto::verify(message, &sig, &pk) == Ok(true) {
-                    return true;
-                }
-                Secp256r1Crypto::verify(message, &sig, public_key).unwrap_or(false)
-            }
-            64 | 65 => {
-                if Secp256r1Crypto::verify(message, &sig, public_key) == Ok(true) {
-                    return true;
-                }
-
-                if let Ok(pk) = Secp256k1PublicKey::from_slice(public_key) {
-                    let compressed = pk.serialize();
-                    let mut buf = [0u8; 33];
-                    buf.copy_from_slice(&compressed);
-                    return Secp256k1Crypto::verify(message, &sig, &buf).unwrap_or(false);
-                }
-                false
-            }
-            _ => Secp256r1Crypto::verify(message, &sig, public_key).unwrap_or(false),
-        }
-    }
 }
 
 #[cfg(test)]

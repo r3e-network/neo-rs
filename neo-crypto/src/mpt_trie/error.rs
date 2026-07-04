@@ -41,3 +41,11 @@ impl MptError {
         Self::Key(message.into())
     }
 }
+
+impl From<MptError> for neo_error::CoreError {
+    fn from(err: MptError) -> Self {
+        neo_error::CoreError::Cryptographic {
+            message: err.to_string(),
+        }
+    }
+}

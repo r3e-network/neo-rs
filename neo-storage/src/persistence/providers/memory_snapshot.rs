@@ -14,6 +14,7 @@ use std::sync::Arc;
 type WriteBatch = Arc<RwLock<BTreeMap<Vec<u8>, Option<Vec<u8>>>>>;
 
 /// Point-in-time snapshot over an in-memory store.
+#[derive(Debug)]
 pub struct MemorySnapshot {
     store: Arc<MemoryStore>,
     immutable_data: BTreeMap<Vec<u8>, Vec<u8>>,

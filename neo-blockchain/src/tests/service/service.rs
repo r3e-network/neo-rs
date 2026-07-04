@@ -15,6 +15,16 @@ impl MempoolLike for TestMempool {
     ) -> VerifyResult {
         VerifyResult::Succeed
     }
+
+    fn try_add_cached(
+        &self,
+        _tx: &neo_payloads::Transaction,
+        _snapshot: &neo_storage::DataCache,
+        _settings: &neo_config::ProtocolSettings,
+        _cached_state_independent: Option<VerifyResult>,
+    ) -> VerifyResult {
+        VerifyResult::Succeed
+    }
 }
 
 /// Stub system context used by the unit tests.

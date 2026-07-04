@@ -46,16 +46,34 @@ path = "tests/server/validate_address.rs"
 required-features = ["server"]
 
 [dependencies]
-# Internal crates
+# Internal crates — always needed (error/error_code modules)
 neo-primitives = { workspace = true }
-neo-crypto = { workspace = true }
-neo-io = { workspace = true }
+neo-error = { workspace = true }
+
+# Internal crates — needed by both client and server (serialization, models)
+neo-crypto = { workspace = true, optional = true }
+neo-io = { workspace = true, optional = true }
+neo-manifest = { workspace = true, optional = true }
+neo-native-contracts = { workspace = true, optional = true }
+neo-storage = { workspace = true, optional = true }
+neo-vm = { workspace = true, optional = true }
+neo-wallets = { workspace = true, optional = true }
+neo-serialization = { workspace = true, optional = true }
+
+# Internal crates — client feature
 neo-config = { workspace = true, optional = true }
-neo-oracle-service = { workspace = true, optional = true }
-neo-indexer = { workspace = true, optional = true }
 neo-execution = { workspace = true, optional = true }
 neo-payloads = { workspace = true, optional = true }
 neo-vm-rs = { workspace = true, optional = true }
+
+# Internal crates — server feature only
+neo-runtime = { workspace = true, optional = true }
+neo-oracle-service = { workspace = true, optional = true }
+neo-indexer = { workspace = true, optional = true }
+neo-network = { workspace = true, optional = true }
+neo-state-service = { workspace = true, optional = true }
+neo-blockchain = { workspace = true, optional = true }
+neo-mempool = { workspace = true, optional = true }
 
 # Async runtime
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "time"] }
@@ -69,7 +87,6 @@ serde_urlencoded = { version = "0.7", optional = true }
 
 # Error handling
 thiserror = { workspace = true }
-anyhow = { workspace = true, optional = true }
 
 # Logging
 tracing = { workspace = true }
@@ -112,23 +129,10 @@ rand = { workspace = true, optional = true }
 zeroize = { workspace = true, optional = true }
 subtle = { workspace = true, optional = true }
 
-neo-error = { workspace = true }
-neo-manifest = { workspace = true }
-neo-native-contracts = { workspace = true }
-neo-network = { workspace = true }
-neo-state-service = { workspace = true }
-neo-storage = { workspace = true }
-neo-system = { workspace = true }
-neo-vm = { workspace = true }
-neo-wallets = { workspace = true }
-
-neo-blockchain = { workspace = true }
-neo-mempool = { workspace = true }
-neo-serialization = { workspace = true }
-
 
 [dev-dependencies]
-mockito = "1.0"
+mockito = { workspace = true }
+neo-system = { workspace = true }
 
 [features]
 default = []
@@ -136,12 +140,29 @@ server = [
     "client",  # Server uses client models for JSON serialization
     "dep:jsonrpsee",
     "dep:tower",
+    # Shared client+server deps
+    "dep:neo-crypto",
+    "dep:neo-io",
+    "dep:neo-manifest",
+    "dep:neo-native-contracts",
+    "dep:neo-storage",
+    "dep:neo-vm",
+    "dep:neo-wallets",
+    "dep:neo-serialization",
+    # Client deps (inherited via client feature, but listed for clarity)
     "dep:neo-config",
-    "dep:neo-oracle-service",
-    "dep:neo-indexer",
-    "dep:neo-vm-rs",
     "dep:neo-execution",
     "dep:neo-payloads",
+    "dep:neo-vm-rs",
+    # Server-only deps
+    "dep:neo-runtime",
+    "dep:neo-oracle-service",
+    "dep:neo-indexer",
+    "dep:neo-network",
+    "dep:neo-state-service",
+    "dep:neo-blockchain",
+    "dep:neo-mempool",
+    # External server deps
     "dep:uuid",
     "dep:parking_lot",
     "dep:prometheus",
@@ -164,12 +185,22 @@ server = [
     "dep:sha1",
 ]
 client = [
+    # Shared client+server deps
+    "dep:neo-crypto",
+    "dep:neo-io",
+    "dep:neo-manifest",
+    "dep:neo-native-contracts",
+    "dep:neo-storage",
+    "dep:neo-vm",
+    "dep:neo-wallets",
+    "dep:neo-serialization",
+    # Client deps
     "dep:neo-config",
     "dep:neo-vm-rs",
     "dep:neo-payloads",
     "dep:neo-execution",
+    # External client deps
     "dep:reqwest",
-    "dep:anyhow",
     "dep:base64",
     "dep:hex",
     "dep:num-bigint",

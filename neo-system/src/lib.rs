@@ -14,12 +14,12 @@
 //!   helpers.
 //! - `errors`: Typed errors and result aliases for this crate boundary.
 
-#![doc(html_root_url = "https://docs.rs/neo-system/0.9.0")]
+#![doc(html_root_url = "https://docs.rs/neo-system/0.10.0")]
 
 mod composition;
 mod errors;
 
 // Public re-exports for the crate's public surface.
 pub use composition::{Node, NodeBuilder, ServiceRegistry, WalletProvider};
-pub use composition::{builder, node, service_registry, wallet_provider};
+pub use composition::{builder, node, wallet_provider};
 pub use errors::{NodeError, NodeResult, error};

@@ -27,7 +27,7 @@ use neo_mempool::MemoryPool;
 use neo_native_contracts::{LedgerContract, NeoToken};
 use neo_network::NetworkHandle;
 use neo_payloads::{ExtensiblePayload, Transaction, Witness};
-use neo_primitives::{UInt160, UInt256};
+use neo_primitives::{UInt160, UInt256, hex_util};
 use neo_storage::persistence::{DataCache, Store, StoreCache};
 use neo_vm::script_builder::RedeemScript;
 use parking_lot::RwLock;
@@ -223,7 +223,7 @@ pub fn build_consensus_setup(
             "[consensus].enabled = true requires [consensus].private_key_hex or [consensus.hsm]"
         )
     })?;
-    let raw = hex::decode(hex_key.trim())
+    let raw = hex_util::decode_hex(hex_key.trim())
         .map_err(|e| anyhow::anyhow!("invalid [consensus].private_key_hex: {e}"))?;
     let private_key: [u8; 32] = raw
         .as_slice()

@@ -10,6 +10,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_payloads::VerifiableExt;
 use neo_payloads::{transaction::Transaction, witness::Witness};
+use neo_primitives::hex_util;
 use neo_primitives::ContractParameterType;
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::DataCache;
@@ -91,7 +92,7 @@ impl ContextItem {
                     .ok_or_else(|| CoreError::other("signatures must be an object"))?;
                 let mut signatures = HashMap::new();
                 for (key, value) in sigs {
-                    let key_bytes = hex::decode(key).map_err(|err| {
+                    let key_bytes = hex_util::decode_hex(key).map_err(|err| {
                         CoreError::other(format!("invalid signatures[{key}] public key hex: {err}"))
                     })?;
                     let pub_key = ECPoint::from_bytes(&key_bytes).map_err(|err| {
@@ -141,7 +142,7 @@ impl ContextItem {
         let mut sigs = serde_json::Map::new();
         for (key, value) in &self.signatures {
             sigs.insert(
-                hex::encode(key.encoded()),
+                hex_util::encode_hex(&key.encoded()),
                 serde_json::Value::String(general_purpose::STANDARD.encode(value)),
             );
         }

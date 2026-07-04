@@ -15,8 +15,6 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-
 use neo_config::ProtocolSettings;
 use neo_payloads::{ApplicationExecuted, Block};
 
@@ -153,17 +151,4 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
     fn block_committed_with_context(&self, block: &Block, _context: BlockPersistContext) {
         self.block_committed(block);
     }
-}
-
-/// Async variant of [`SystemContext`]; the trait object behind the
-/// blockchain service is allowed to be either the sync or the async
-/// flavour. The async variant is needed by implementations that
-/// touch the storage backend asynchronously (e.g. RocksDB).
-#[async_trait]
-pub trait AsyncSystemContext: Send + Sync + std::fmt::Debug {
-    /// Returns the effective protocol settings.
-    async fn settings(&self) -> Arc<ProtocolSettings>;
-
-    /// Returns the current canonical chain height.
-    async fn current_height(&self) -> u32;
 }

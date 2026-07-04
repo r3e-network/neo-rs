@@ -1,6 +1,7 @@
 //! WebSocket event types and serialization
 
 use neo_primitives::UInt256;
+use neo_primitives::hex_util;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
@@ -79,7 +80,7 @@ ws_event_types! {
 }
 
 fn prefixed_hash(hash: &UInt256) -> String {
-    format!("0x{}", hex::encode(hash.as_bytes()))
+    format!("0x{}", hex_util::encode_hex(&hash.as_bytes()))
 }
 
 /// WebSocket event payload

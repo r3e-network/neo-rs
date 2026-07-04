@@ -3,17 +3,18 @@
 //! The legacy `NeoSystem` exposed `AddService` / `GetService<T>` so
 //! optional plugin services (application logs, tokens tracker, oracle,
 //! state service, …) could be discovered by the RPC server at request
-//! time. The reth-style [`crate::Node`] keeps the same seam, but as a
-//! plain `TypeId → Arc<dyn Any>` map instead of an actor registry: the
-//! composition root (node binary, test fixture) registers each service
-//! it has started, and consumers look the service up by its concrete
-//! type.
+//! time. This is a plain `TypeId → Arc<dyn Any>` map: the composition
+//! root (node binary, test fixture) registers each service it has
+//! started, and consumers look the service up by its concrete type.
 //!
 //! The registry deliberately stores **one instance per type** — the
 //! same contract the C# `NeoSystem.GetService<T>()` default overload
 //! provides — because every current consumer (RPC `listplugins`,
 //! `getapplicationlog`, state queries, token-tracker queries) wants
 //! "the" service of a given type, not a named collection.
+//!
+//! Lives in `neo-runtime` (L3) so that `neo-rpc` and other consumers
+//! can use it without depending on `neo-system` (L5).
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -25,8 +26,7 @@ use parking_lot::RwLock;
 ///
 /// Cloning the registry clones the *handle*; all clones observe the
 /// same underlying map, so a service registered through one clone is
-/// visible through every other (the [`crate::Node`] is itself `Clone`
-/// and hands copies to the RPC server, plugins, etc.).
+/// visible through every other.
 #[derive(Clone, Default)]
 pub struct ServiceRegistry {
     inner: Arc<RwLock<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>>,
@@ -86,5 +86,41 @@ impl ServiceRegistry {
 }
 
 #[cfg(test)]
-#[path = "../tests/composition/service_registry.rs"]
-mod tests;
+mod tests {
+    use super::*;
+
+    #[test]
+    fn register_and_get_service() {
+        let registry = ServiceRegistry::new();
+        let service: Arc<String> = Arc::new("hello".to_string());
+        registry.register(service);
+        let retrieved = registry.get::<String>();
+        assert!(retrieved.is_some());
+        assert_eq!(&**retrieved.unwrap(), "hello");
+    }
+
+    #[test]
+    fn register_replaces_previous() {
+        let registry = ServiceRegistry::new();
+        registry.register::<String>(Arc::new("first".to_string()));
+        let previous = registry.register::<String>(Arc::new("second".to_string()));
+        assert!(previous.is_some());
+        assert_eq!(&**previous.unwrap(), "first");
+        assert_eq!(&**registry.get::<String>().unwrap(), "second");
+    }
+
+    #[test]
+    fn get_missing_service_returns_none() {
+        let registry = ServiceRegistry::new();
+        assert!(registry.get::<String>().is_none());
+        assert!(!registry.contains::<String>());
+    }
+
+    #[test]
+    fn clones_share_state() {
+        let registry = ServiceRegistry::new();
+        let clone = registry.clone();
+        registry.register::<u32>(Arc::new(42));
+        assert_eq!(*clone.get::<u32>().unwrap(), 42);
+    }
+}

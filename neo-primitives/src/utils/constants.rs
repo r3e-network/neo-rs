@@ -28,6 +28,10 @@ pub const MAX_TRANSACTIONS_PER_BLOCK: usize = 512;
 /// Maximum number of traceable blocks (per ProtocolSettings.Default).
 pub const MAX_TRACEABLE_BLOCKS: u32 = 2_102_400;
 
+/// Default maximum valid-until-block increment (24 hours / 15-second blocks).
+/// Computed as `86_400_000 ms/day / 15_000 ms/block = 5_760`.
+pub const DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT: u32 = 5_760;
+
 // === Transaction Constants ===
 
 /// Maximum size of a transaction in bytes (100 KB).

@@ -60,17 +60,7 @@ impl PolicyContract {
         key: StorageKey,
         setting: &str,
     ) -> CoreResult<Option<i64>> {
-        match snapshot.get(&key) {
-            Some(item) => BigInt::from_signed_bytes_le(&item.value_bytes())
-                .to_i64()
-                .map(Some)
-                .ok_or_else(|| {
-                    CoreError::invalid_operation(format!(
-                        "PolicyContract {setting} storage integer out of range"
-                    ))
-                }),
-            None => Ok(None),
-        }
+        crate::support::settings::read_optional_i64_setting_key(snapshot, key, setting)
     }
 
     pub(super) fn read_required_i64_setting_key(
@@ -78,9 +68,7 @@ impl PolicyContract {
         key: StorageKey,
         setting: &str,
     ) -> CoreResult<i64> {
-        Self::read_optional_i64_setting_key(snapshot, key, setting)?.ok_or_else(|| {
-            CoreError::invalid_operation(format!("PolicyContract {setting} storage is missing"))
-        })
+        crate::support::settings::read_required_i64_setting_key(snapshot, key, setting)
     }
 
     pub(super) fn put_required_i64_setting_key(
@@ -89,16 +77,7 @@ impl PolicyContract {
         setting: &str,
         value: i64,
     ) -> CoreResult<()> {
-        if snapshot.get(&key).is_none() {
-            return Err(CoreError::invalid_operation(format!(
-                "PolicyContract {setting} storage is missing"
-            )));
-        }
-        snapshot.update(
-            key,
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))),
-        );
-        Ok(())
+        crate::support::settings::put_required_i64_setting_key(snapshot, key, setting, value)
     }
 
     /// Reads the max valid-until-block increment with C# `NeoSystemExtensions`
@@ -110,26 +89,14 @@ impl PolicyContract {
         snapshot: &neo_storage::persistence::DataCache,
         settings: &neo_config::ProtocolSettings,
     ) -> neo_error::CoreResult<u32> {
-        let default = settings.max_valid_until_block_increment;
-        let height = match crate::LedgerContract::new().current_index(snapshot) {
-            Ok(height) => height,
-            Err(err) if err.to_string().contains("current block is missing") => return Ok(default),
-            Err(err) => return Err(err),
-        };
-        if !settings.is_hardfork_enabled(Hardfork::HfEchidna, height) {
-            return Ok(default);
-        }
-        let value = match Self::read_optional_i64_setting_key(
+        crate::support::settings::read_hardfork_gated_u32_setting(
             snapshot,
+            settings,
+            settings.max_valid_until_block_increment,
+            Hardfork::HfEchidna,
             Self::max_valid_until_block_increment_key(),
             "MaxValidUntilBlockIncrement",
-        )? {
-            Some(value) => value,
-            None => return Ok(default),
-        };
-        u32::try_from(value).map_err(|_| {
-            CoreError::invalid_operation("MaxValidUntilBlockIncrement out of u32 range")
-        })
+        )
     }
 
     /// Returns the effective `MaxTraceableBlocks` for snapshot-only callers.
@@ -143,25 +110,14 @@ impl PolicyContract {
         snapshot: &neo_storage::persistence::DataCache,
         settings: &neo_config::ProtocolSettings,
     ) -> neo_error::CoreResult<u32> {
-        let default = settings.max_traceable_blocks;
-        let height = match crate::LedgerContract::new().current_index(snapshot) {
-            Ok(height) => height,
-            Err(err) if err.to_string().contains("current block is missing") => return Ok(default),
-            Err(err) => return Err(err),
-        };
-        if !settings.is_hardfork_enabled(Hardfork::HfEchidna, height) {
-            return Ok(default);
-        }
-        let value = match Self::read_optional_i64_setting_key(
+        crate::support::settings::read_hardfork_gated_u32_setting(
             snapshot,
+            settings,
+            settings.max_traceable_blocks,
+            Hardfork::HfEchidna,
             Self::max_traceable_blocks_key(),
             "MaxTraceableBlocks",
-        )? {
-            Some(value) => value,
-            None => return Ok(default),
-        };
-        u32::try_from(value)
-            .map_err(|_| CoreError::invalid_operation("MaxTraceableBlocks out of u32 range"))
+        )
     }
 
     /// Reads the execution fee factor from the snapshot using C#'s
@@ -729,24 +685,13 @@ impl PolicyContract {
         snapshot: &neo_storage::persistence::DataCache,
         settings: &neo_config::ProtocolSettings,
     ) -> neo_error::CoreResult<u32> {
-        let default = settings.max_transactions_per_block;
-        let height = match crate::LedgerContract::new().current_index(snapshot) {
-            Ok(height) => height,
-            Err(err) if err.to_string().contains("current block is missing") => return Ok(default),
-            Err(err) => return Err(err),
-        };
-        if !settings.is_hardfork_enabled(Hardfork::HfGorgon, height) {
-            return Ok(default);
-        }
-        let value = match Self::read_optional_i64_setting_key(
+        crate::support::settings::read_hardfork_gated_u32_setting(
             snapshot,
+            settings,
+            settings.max_transactions_per_block,
+            Hardfork::HfGorgon,
             Self::max_transactions_per_block_key(),
             "MaxTransactionsPerBlock",
-        )? {
-            Some(value) => value,
-            None => return Ok(default),
-        };
-        u32::try_from(value)
-            .map_err(|_| CoreError::invalid_operation("MaxTransactionsPerBlock out of u32 range"))
+        )
     }
 }

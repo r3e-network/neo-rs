@@ -30,7 +30,6 @@ num-traits = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 neo-serialization = { workspace = true }
-hex = { workspace = true }
 
 [features]
 default = []

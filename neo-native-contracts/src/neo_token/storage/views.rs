@@ -30,36 +30,22 @@ impl NeoAccountStateView {
     }
 
     pub(in crate::neo_token) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Struct(_, items) = stack_value else {
-            return Err(CoreError::invalid_data("neo account state is not a struct"));
-        };
-        if items.len() < 4 {
+        let decoder =
+            crate::support::codec::StructDecoder::new(&stack_value, "neo account state")?;
+        if decoder.len() < 4 {
             return Err(CoreError::invalid_data(
                 "neo account state must have at least 4 fields",
             ));
         }
 
-        let balance = crate::AccountState::from_stack_value(StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
-            vec![items[0].clone()],
-        ))?
-        .balance;
-        let balance_height = neo_vm_rs::stack_value_as_u32(&items[1]).ok_or_else(|| {
-            CoreError::invalid_data("account balanceHeight: expected uint32 integer")
-        })?;
-        let vote_to = if matches!(items[2], StackValue::Null) {
+        let balance = decoder.bigint(0, "balance")?;
+        let balance_height = decoder.u32(1, "balanceHeight")?;
+        let vote_to = if decoder.is_null(2) {
             None
         } else {
-            let bytes = items[2].to_byte_string_bytes().ok_or_else(|| {
-                CoreError::invalid_data("account voteTo: expected byte-compatible value")
-            })?;
-            Some(
-                ECPoint::from_bytes(&bytes)
-                    .map_err(|e| CoreError::invalid_data(format!("account voteTo point: {e}")))?,
-            )
+            Some(decoder.ec_point(2, "voteTo")?)
         };
-        let last_gas_per_vote = neo_vm::stack_value_as_bigint(&items[3])
-            .map_err(|e| CoreError::invalid_data(format!("account lastGasPerVote: {e}")))?;
+        let last_gas_per_vote = decoder.bigint(3, "lastGasPerVote")?;
         Ok(Self {
             balance,
             balance_height,
@@ -93,20 +79,15 @@ impl CandidateState {
     }
 
     pub(in crate::neo_token) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Struct(_, items) = stack_value else {
-            return Err(CoreError::invalid_data("candidate state is not a struct"));
-        };
-        if items.len() < 2 {
+        let decoder =
+            crate::support::codec::StructDecoder::new(&stack_value, "candidate state")?;
+        if decoder.len() < 2 {
             return Err(CoreError::invalid_data(
                 "candidate state must have at least 2 fields",
             ));
         }
-
-        let registered = neo_vm_rs::stack_value_as_bool(&items[0]).ok_or_else(|| {
-            CoreError::invalid_data("candidate registered: expected boolean-compatible value")
-        })?;
-        let votes = neo_vm::stack_value_as_bigint(&items[1])
-            .map_err(|e| CoreError::invalid_data(format!("candidate votes: {e}")))?;
+        let registered = decoder.bool_value(0, "registered")?;
+        let votes = decoder.bigint(1, "votes")?;
         Ok(Self { registered, votes })
     }
 }
@@ -157,21 +138,15 @@ impl CachedCommittee {
     }
 
     fn member_from_stack_value(stack_value: StackValue) -> CoreResult<(ECPoint, BigInt)> {
-        let StackValue::Struct(_, items) = stack_value else {
-            return Err(CoreError::invalid_data("committee element is not a struct"));
-        };
-        if items.len() < 2 {
+        let decoder =
+            crate::support::codec::StructDecoder::new(&stack_value, "committee element")?;
+        if decoder.len() < 2 {
             return Err(CoreError::invalid_data(
                 "committee element must have at least 2 fields",
             ));
         }
-        let bytes = items[0]
-            .to_byte_string_bytes()
-            .ok_or_else(|| CoreError::invalid_data("committee pubkey: not bytes"))?;
-        let point = ECPoint::from_bytes(&bytes)
-            .map_err(|e| CoreError::invalid_data(format!("committee EC point: {e}")))?;
-        let votes = neo_vm::stack_value_as_bigint(&items[1])
-            .map_err(|e| CoreError::invalid_data(format!("committee votes: {e}")))?;
+        let point = decoder.ec_point(0, "pubkey")?;
+        let votes = decoder.bigint(1, "votes")?;
         Ok((point, votes))
     }
 }

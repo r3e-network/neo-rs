@@ -1,6 +1,6 @@
 use super::models::{RpcFoundStates, RpcStateRoot};
 use super::utility::base64_string_token;
-use crate::{RpcClient, RpcError};
+use crate::{RpcClient, RpcClientError};
 use base64::{Engine as _, engine::general_purpose};
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::json::JToken;
@@ -13,7 +13,7 @@ pub struct StateApi {
     rpc_client: Arc<RpcClient>,
 }
 
-fn decode_base64_rpc_result(result: &JToken) -> Result<Vec<u8>, RpcError> {
+fn decode_base64_rpc_result(result: &JToken) -> Result<Vec<u8>, RpcClientError> {
     let value = result.as_string().ok_or("Invalid response format")?;
     general_purpose::STANDARD
         .decode(value)
@@ -30,7 +30,7 @@ impl StateApi {
 
     /// Get state root by index
     /// Matches C# `GetStateRootAsync`
-    pub async fn get_state_root(&self, index: u32) -> Result<RpcStateRoot, RpcError> {
+    pub async fn get_state_root(&self, index: u32) -> Result<RpcStateRoot, RpcClientError> {
         let result = self
             .rpc_client
             .rpc_send_async("getstateroot", vec![JToken::Number(f64::from(index))])
@@ -48,7 +48,7 @@ impl StateApi {
         root_hash: &UInt256,
         script_hash: &UInt160,
         key: &[u8],
-    ) -> Result<Vec<u8>, RpcError> {
+    ) -> Result<Vec<u8>, RpcClientError> {
         let result = self
             .rpc_client
             .rpc_send_async(
@@ -70,7 +70,7 @@ impl StateApi {
         &self,
         root_hash: &UInt256,
         proof_bytes: &[u8],
-    ) -> Result<Vec<u8>, RpcError> {
+    ) -> Result<Vec<u8>, RpcClientError> {
         let result = self
             .rpc_client
             .rpc_send_async(
@@ -87,7 +87,7 @@ impl StateApi {
 
     /// Get state height information
     /// Matches C# `GetStateHeightAsync`
-    pub async fn get_state_height(&self) -> Result<(Option<u32>, Option<u32>), RpcError> {
+    pub async fn get_state_height(&self) -> Result<(Option<u32>, Option<u32>), RpcClientError> {
         let result = self
             .rpc_client
             .rpc_send_async("getstateheight", vec![])
@@ -141,7 +141,7 @@ impl StateApi {
         prefix: &[u8],
         from: Option<&[u8]>,
         count: Option<i32>,
-    ) -> Result<RpcFoundStates, RpcError> {
+    ) -> Result<RpcFoundStates, RpcClientError> {
         let params = Self::make_find_states_params(root_hash, script_hash, prefix, from, count);
 
         let result = self.rpc_client.rpc_send_async("findstates", params).await?;
@@ -158,7 +158,7 @@ impl StateApi {
         root_hash: &UInt256,
         script_hash: &UInt160,
         key: &[u8],
-    ) -> Result<Vec<u8>, RpcError> {
+    ) -> Result<Vec<u8>, RpcClientError> {
         let result = self
             .rpc_client
             .rpc_send_async(

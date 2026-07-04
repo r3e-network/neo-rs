@@ -16,7 +16,7 @@
 //! - `nef_file`: NEF file records and checksum logic.
 //! - `validator_attribute`: validator attribute records.
 
-#![doc(html_root_url = "https://docs.rs/neo-manifest/0.9.0")]
+#![doc(html_root_url = "https://docs.rs/neo-manifest/0.10.0")]
 
 #[path = "protocol/call_flags.rs"]
 pub mod call_flags;

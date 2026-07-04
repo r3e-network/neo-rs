@@ -21,4 +21,7 @@ pub mod verification;
 
 pub use transaction_router::{PreverifyCompleted, TransactionRouter};
 pub use transaction_verification_context::TransactionVerificationContext;
-pub use verification::{verify_state_dependent, verify_state_independent, verify_transaction};
+pub use verification::{
+    verify_state_dependent, verify_state_independent, verify_transaction,
+    verify_transaction_dependent_only,
+};

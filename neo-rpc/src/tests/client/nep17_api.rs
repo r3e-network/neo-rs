@@ -36,7 +36,7 @@ fn invoke_response_empty(gas_consumed: i64) -> String {
     invoke_response(Vec::new(), gas_consumed)
 }
 
-fn emit_argument(sb: &mut ScriptBuilder, arg: &serde_json::Value) -> Result<(), RpcError> {
+fn emit_argument(sb: &mut ScriptBuilder, arg: &serde_json::Value) -> Result<(), RpcClientError> {
     match arg {
         serde_json::Value::Null => {
             sb.emit_opcode(OpCode::PUSHNULL);

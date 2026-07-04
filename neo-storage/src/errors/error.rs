@@ -101,8 +101,22 @@ pub type StorageResult<T> = std::result::Result<T, StorageError>;
 
 impl From<StorageError> for neo_error::CoreError {
     fn from(err: StorageError) -> Self {
-        neo_error::CoreError::InvalidOperation {
-            message: err.to_string(),
+        match err {
+            StorageError::KeyNotFound { key } => neo_error::CoreError::NotFound { resource: key },
+            StorageError::ReadOnly => {
+                neo_error::CoreError::InvalidOperation { message: "Storage is read-only".into() }
+            }
+            StorageError::Serialization { message } => {
+                neo_error::CoreError::Codec { message }
+            }
+            StorageError::Backend { message } => neo_error::CoreError::Io { message },
+            StorageError::InvalidOperation { message } => {
+                neo_error::CoreError::InvalidOperation { message }
+            }
+            StorageError::CommitFailed(msg) => {
+                neo_error::CoreError::InvalidOperation { message: msg }
+            }
+            StorageError::Io { message } => neo_error::CoreError::Io { message },
         }
     }
 }

@@ -56,7 +56,7 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
         ui.add_space(6.0);
     }
 
-    if let Some(status) = app.integration_status.lock().unwrap().clone() {
+    if let Some(status) = app.integration_status.lock().expect("Integration status mutex poisoned").clone() {
         ui.add_space(8.0);
         widgets::card(ui, |ui| {
             ui.label(egui::RichText::new(status).color(theme::TEXT_MUTED).monospace().size(12.0));

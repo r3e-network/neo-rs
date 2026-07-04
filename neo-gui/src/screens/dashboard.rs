@@ -9,7 +9,7 @@ use crate::widgets;
 pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
     // Snapshot state, then release the lock before drawing.
     let (online, status, mempool, conns, heights, last_err) = {
-        let s = app.state.lock().unwrap();
+        let s = app.state.lock().expect("NodeState mutex poisoned");
         (
             s.online,
             s.status.clone(),

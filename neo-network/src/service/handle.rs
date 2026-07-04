@@ -419,7 +419,9 @@ impl NetworkHandle {
     /// Synchronous, non-blocking transaction broadcast for callers that cannot
     /// `.await` (e.g. a plugin under a non-async lock). Fire-and-forget: the
     /// command is dropped (returning `Err` so the caller can log) if the
-    /// channel is full or the service has shut down. Delivery is best-effort,
+    /// channel cannot accept it immediately. `Full` means local backpressure / a
+    /// saturated command queue, while `Closed` means the service is shutting
+    /// down or the command channel has been closed. Delivery is best-effort,
     /// mirroring C# `LocalNode` relay under a saturated send queue.
     pub fn try_broadcast_transaction(&self, transaction: Transaction) -> NetworkResult<()> {
         use tokio::sync::mpsc::error::TrySendError;
@@ -428,9 +430,8 @@ impl NetworkHandle {
             .try_send(NetworkCommand::BroadcastTransaction { transaction })
         {
             Ok(()) => Ok(()),
-            Err(TrySendError::Full(_) | TrySendError::Closed(_)) => {
-                Err(NetworkError::LocalShuttingDown)
-            }
+            Err(TrySendError::Full(_)) => Err(NetworkError::ChannelFull),
+            Err(TrySendError::Closed(_)) => Err(NetworkError::LocalShuttingDown),
         }
     }
 

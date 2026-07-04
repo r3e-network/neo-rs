@@ -1,4 +1,4 @@
-use crate::RpcError;
+use crate::RpcClientError;
 use neo_manifest::CallFlags;
 use neo_primitives::UInt160;
 use neo_vm::script_builder::ScriptBuilder;
@@ -9,7 +9,7 @@ pub(crate) fn build_dynamic_call_script(
     method: &str,
     args: &[serde_json::Value],
     call_flags: CallFlags,
-) -> Result<Vec<u8>, RpcError> {
+) -> Result<Vec<u8>, RpcClientError> {
     let mut sb = ScriptBuilder::new();
 
     emit_json_args_array(&mut sb, args)?;
@@ -21,7 +21,7 @@ pub(crate) fn build_dynamic_call_script(
 pub(crate) fn emit_json_args_array(
     sb: &mut ScriptBuilder,
     args: &[serde_json::Value],
-) -> Result<(), RpcError> {
+) -> Result<(), RpcClientError> {
     if args.is_empty() {
         sb.emit_opcode(OpCode::NEWARRAY0);
     } else {
@@ -38,7 +38,7 @@ pub(crate) fn emit_json_args_array(
 pub(crate) fn emit_json_argument(
     sb: &mut ScriptBuilder,
     arg: &serde_json::Value,
-) -> Result<(), RpcError> {
+) -> Result<(), RpcClientError> {
     match arg {
         serde_json::Value::Null => {
             sb.emit_opcode(OpCode::PUSHNULL);
@@ -80,11 +80,11 @@ pub(crate) fn emit_contract_call(
     script_hash: &UInt160,
     method: &str,
     call_flags: CallFlags,
-) -> Result<(), RpcError> {
+) -> Result<(), RpcClientError> {
     sb.emit_push_int(i64::from(call_flags.bits()));
     sb.emit_push(method.as_bytes());
     sb.emit_push(&script_hash.to_array());
     sb.emit_syscall("System.Contract.Call")
-        .map_err(|err| RpcError::invalid_params(err.to_string()))?;
+        .map_err(|err| RpcClientError::invalid_params(err.to_string()))?;
     Ok(())
 }

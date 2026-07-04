@@ -16,6 +16,7 @@ description = "Canonical home for Neo P2P network host: reth-style LocalNode, Re
 [dependencies]
 # Lower foundation / infrastructure layers
 neo-primitives = { workspace = true }
+neo-error = { workspace = true }
 neo-config = { workspace = true }
 
 # Protocol types and binary wire helpers

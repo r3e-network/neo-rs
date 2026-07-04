@@ -147,6 +147,24 @@ impl PeerSession {
                 _ = tokio::time::sleep_until(deadline) => {
                     return CloseReason::TimedOut;
                 }
+                // Message reads are placed before timer ticks so that
+                // incoming frames are always processed with priority,
+                // preventing starvation when timers fire concurrently
+                // (the sync timer runs on a fast 100 ms cadence).
+                frame = framed.next() => match frame {
+                    Some(Ok(message)) => {
+                        deadline = Instant::now() + timeouts.idle;
+                        if let Err(reason) = self.on_message(framed, message).await {
+                            return reason;
+                        }
+                    }
+                    Some(Err(err)) => {
+                        return CloseReason::Transport(format!("frame decode failed: {err}"));
+                    }
+                    None => {
+                        return CloseReason::RemoteClosed;
+                    }
+                },
                 _ = ping_timer.tick() => {
                     if let Err(reason) = self.send_ping(framed).await {
                         return reason;
@@ -172,20 +190,6 @@ impl PeerSession {
                     }
                     Some(RemoteNodeCommand::Shutdown) | None => {
                         return CloseReason::ShutdownRequested;
-                    }
-                },
-                frame = framed.next() => match frame {
-                    Some(Ok(message)) => {
-                        deadline = Instant::now() + timeouts.idle;
-                        if let Err(reason) = self.on_message(framed, message).await {
-                            return reason;
-                        }
-                    }
-                    Some(Err(err)) => {
-                        return CloseReason::Transport(format!("frame decode failed: {err}"));
-                    }
-                    None => {
-                        return CloseReason::RemoteClosed;
                     }
                 },
             }

@@ -5,10 +5,6 @@ use neo_wallets::KeyPair;
 /// Maximum URL length allowed.
 const MAX_URL_LENGTH: usize = 2048;
 
-/// Maximum number of redirects allowed.
-#[allow(dead_code)]
-const MAX_REDIRECTS: u8 = 2;
-
 impl OracleService {
     pub(in super::super) async fn process_url(
         &self,

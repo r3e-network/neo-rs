@@ -2,6 +2,7 @@ use base64::Engine as _;
 use neo_crypto::Secp256r1Crypto;
 use neo_error::{CoreError, CoreResult};
 use neo_io::BinaryWriter;
+use neo_primitives::hex_util;
 use neo_wallets::KeyPair;
 use rand::RngCore;
 use rand::rngs::OsRng;
@@ -48,7 +49,7 @@ impl NeoFsBearerSigner {
     }
 
     pub(crate) fn salt_message_wallet_connect(data: &[u8], salt: &[u8; 16]) -> Vec<u8> {
-        let salt_hex = hex::encode(salt);
+        let salt_hex = hex_util::encode_hex(salt);
         let salted_len = salt_hex.len() + data.len();
         let mut writer = BinaryWriter::new();
         writer

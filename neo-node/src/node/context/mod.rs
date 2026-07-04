@@ -80,10 +80,6 @@ impl DaemonContext {
         *self.tokens_tracker.write() = tokens_tracker;
     }
 
-    fn plugin_node(&self) -> Option<Arc<neo_system::Node>> {
-        self.node.read().as_ref().map(Arc::clone)
-    }
-
     fn tokens_tracker(&self) -> Option<Arc<neo_rpc::plugins::tokens_tracker::TokensTracker>> {
         self.tokens_tracker.read().as_ref().map(Arc::clone)
     }
@@ -208,15 +204,12 @@ impl DaemonContext {
         if application_logs.is_none() && tokens_tracker.is_none() {
             return;
         }
-        let Some(node) = self.plugin_node() else {
-            return;
-        };
 
         if let Some(application_logs) = application_logs {
-            application_logs.blockchain_committed_handler(node.as_ref(), block);
+            application_logs.blockchain_committed_handler(self.settings.as_ref(), block);
         }
         if let Some(tokens_tracker) = tokens_tracker {
-            tokens_tracker.blockchain_committed_handler(node.as_ref(), block);
+            tokens_tracker.blockchain_committed_handler(self.settings.as_ref(), block);
         }
     }
 }
@@ -302,13 +295,10 @@ impl DaemonContext {
         if application_logs.is_none() && tokens_tracker.is_none() {
             return;
         }
-        let Some(node) = self.plugin_node() else {
-            return;
-        };
 
         if let Some(application_logs) = application_logs {
             application_logs.blockchain_committing_handler(
-                node.as_ref(),
+                self.settings.as_ref(),
                 block,
                 snapshot,
                 application_executed_list,
@@ -316,7 +306,7 @@ impl DaemonContext {
         }
         if let Some(tokens_tracker) = tokens_tracker {
             tokens_tracker.blockchain_committing_handler(
-                node.as_ref(),
+                self.settings.as_ref(),
                 block,
                 snapshot,
                 application_executed_list,

@@ -39,7 +39,7 @@ use super::session::Session;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_transport::log_join_error;
-use neo_system::Node;
+use super::node_context::NodeContext;
 use neo_wallets::Wallet;
 
 /// Callback signature used by registered RPC handlers.
@@ -118,7 +118,7 @@ pub static RPC_ERR_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
 
 /// JSON-RPC server for a Neo node.
 pub struct RpcServer {
-    system: Arc<Node>,
+    system: Arc<NodeContext>,
     settings: RpcServerConfig,
     handler_lookup: Arc<RwLock<HashMap<String, Arc<RpcHandler>>>>,
     started: bool,
@@ -144,8 +144,8 @@ pub struct RpcServer {
 }
 
 impl RpcServer {
-    /// Create an RPC server with the given node system and server settings.
-    pub fn new(system: Arc<Node>, settings: RpcServerConfig) -> Self {
+    /// Create an RPC server with the given node context and server settings.
+    pub fn new(system: Arc<NodeContext>, settings: RpcServerConfig) -> Self {
         let rate_limiter = Arc::new(rate_limiter_from_settings(&settings));
         Self {
             system,
@@ -178,9 +178,9 @@ impl RpcServer {
         self.settings = settings;
     }
 
-    /// Return the node system served by this RPC instance.
+    /// Return the node context served by this RPC instance.
     #[must_use]
-    pub fn system(&self) -> Arc<Node> {
+    pub fn system(&self) -> Arc<NodeContext> {
         Arc::clone(&self.system)
     }
 

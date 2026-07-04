@@ -1,5 +1,6 @@
 use super::super::{NeoFsAuth, OracleServiceSettings};
 use super::signing::NeoFsBearerSigner;
+use neo_primitives::hex_util;
 use neo_wallets::KeyPair;
 
 impl NeoFsAuth {
@@ -34,8 +35,8 @@ impl NeoFsAuth {
                     key,
                     settings.neofs_wallet_connect,
                 ) {
-                    signature = Some(hex::encode(sig));
-                    signature_key = Some(hex::encode(key_bytes));
+                    signature = Some(hex_util::encode_hex(&sig));
+                    signature_key = Some(hex_util::encode_hex(&key_bytes));
                 }
             }
         }

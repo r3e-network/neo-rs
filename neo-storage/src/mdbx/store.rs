@@ -26,6 +26,12 @@ pub struct MdbxStore {
     on_new_snapshot: Arc<RwLock<Vec<OnNewSnapshotDelegate>>>,
 }
 
+impl std::fmt::Debug for MdbxStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MdbxStore").finish_non_exhaustive()
+    }
+}
+
 impl MdbxStore {
     pub(crate) fn open(
         path: &Path,
@@ -354,10 +360,16 @@ impl Store for MdbxStore {
         self.db.sync(true).map(|_| ()).map_err(mdbx_error)
     }
 
-    fn supports_raw_overlay_commit(&self) -> bool {
-        true
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
+    fn as_raw_overlay_store(&self) -> Option<&dyn crate::persistence::RawOverlayStore> {
+        Some(self)
+    }
+}
+
+impl crate::persistence::RawOverlayStore for MdbxStore {
     fn try_commit_raw_overlay(
         &self,
         overlay: &[(Vec<u8>, Option<Vec<u8>>)],
@@ -399,10 +411,6 @@ impl Store for MdbxStore {
             tx.commit().map_err(mdbx_commit_error)?;
         }
         Ok(true)
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 

@@ -20,7 +20,8 @@
 //! output.
 //!
 //! Short escape forms match `Utf8JsonWriter` exactly: `\b` `\t` `\n` `\f` `\r`
-//! and `\\`. Note that the quote character is emitted as `"` (not `\"`),
+//! and `\\`. Note that the quote character is emitted as the six-character
+//! Unicode escape `\u0022` (not the short two-character form `\"`),
 //! matching `JavaScriptEncoder.Default`. All other escapes use uppercase
 //! hexadecimal digits, e.g. `<`, `&`, `\uD83D`.
 

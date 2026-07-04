@@ -20,8 +20,8 @@ toml = { workspace = true }
 thiserror = { workspace = true }
 # Canonical typed ProtocolSettings + HardforkManager live here (moved from neo-core)
 neo-primitives = { workspace = true }
+neo-error = { workspace = true }
 neo-crypto = { workspace = true }
-hex = { workspace = true }
 parking_lot = { workspace = true }
 
 [lints]

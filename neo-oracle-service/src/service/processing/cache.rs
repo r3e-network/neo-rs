@@ -27,7 +27,7 @@ impl OracleService {
     }
 
     pub(in super::super) fn snapshot_cache(&self) -> DataCache {
-        let snapshot = self.system.storage().snapshot();
+        let snapshot = self.store.store().snapshot();
         let store_cache = StoreCache::new_from_snapshot(snapshot);
         store_cache.data_cache().clone()
     }

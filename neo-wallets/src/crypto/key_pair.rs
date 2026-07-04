@@ -8,9 +8,10 @@ use aes::Aes256;
 use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit, generic_array::GenericArray};
 use neo_crypto::{CryptoError, ECC, ECCurve, ECDsa, Secp256r1Crypto, base58};
 use neo_error::{CoreError, CoreResult};
-use neo_execution::Helper;
+use neo_primitives::hex_util;
 use neo_primitives::HASH_SIZE;
 use neo_primitives::UInt160;
+use neo_vm::script_builder::redeem_script::RedeemScript;
 use scrypt::Params;
 use std::fmt;
 use subtle::ConstantTimeEq;
@@ -34,10 +35,10 @@ impl fmt::Debug for KeyPair {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KeyPair")
             .field("private_key", &"[REDACTED]")
-            .field("public_key", &hex::encode(&self.public_key))
+            .field("public_key", &hex_util::encode_hex(&self.public_key))
             .field(
                 "compressed_public_key",
-                &hex::encode(&self.compressed_public_key),
+                &hex_util::encode_hex(&self.compressed_public_key),
             )
             .finish()
     }
@@ -175,7 +176,7 @@ impl KeyPair {
 
     /// Gets the verification script for this key pair.
     pub fn get_verification_script(&self) -> Vec<u8> {
-        Helper::signature_redeem_script(&self.compressed_public_key)
+        RedeemScript::signature_redeem_script(&self.compressed_public_key)
     }
 
     /// Signs data with this key pair.
@@ -328,7 +329,7 @@ impl KeyPair {
 
         let mut result = Vec::with_capacity(39);
         result.extend_from_slice(b"\x01\x42"); // NEP-2 prefix
-        result.push(0xe0); // Flags
+        result.push(0xe0); // NEP-2 flags: isCompressed (0x80) | isEC (0x40) | reserved (0x20)
         result.extend_from_slice(&address_hash);
         result.extend_from_slice(&encrypted);
 
@@ -439,7 +440,7 @@ impl KeyPair {
         // used the wrong interop ("System.Crypto.CheckWitness") embedded as raw
         // ASCII, so the NEP-2 scrypt salt (address) diverged and '6P…' keys were
         // not interoperable with standard wallets.
-        Ok(Helper::signature_redeem_script(&compressed))
+        Ok(RedeemScript::signature_redeem_script(&compressed))
     }
 }
 

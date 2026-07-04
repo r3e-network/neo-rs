@@ -50,6 +50,8 @@ mod utility;
 #[path = "apis/wallet_api.rs"]
 mod wallet_api;
 
+#[cfg(feature = "server")]
+pub(crate) use utility::parse_script_hash_or_address_inner;
 pub use contract_client::ContractClient;
 pub use error::{ClientRpcError, RpcException};
 pub use nep17_api::Nep17Api;

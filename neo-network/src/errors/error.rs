@@ -36,6 +36,10 @@ pub enum NetworkError {
     #[error("local node service is shutting down")]
     LocalShuttingDown,
 
+    /// The local node's command channel is currently full; callers may retry.
+    #[error("local node command channel is full")]
+    ChannelFull,
+
     /// The local node has not been `start()`-ed yet.
     #[error("local node service has not been started")]
     NotStarted,
@@ -56,6 +60,9 @@ impl From<NetworkError> for neo_runtime::ServiceError {
             NetworkError::LocalShuttingDown => neo_runtime::ServiceError::ServiceUnavailable(
                 "local node shutting down".to_string(),
             ),
+            NetworkError::ChannelFull => neo_runtime::ServiceError::ServiceUnavailable(
+                "local node command channel is full".to_string(),
+            ),
             NetworkError::NotStarted => {
                 neo_runtime::ServiceError::InvalidState("local node not started".to_string())
             }
@@ -68,3 +75,11 @@ impl From<NetworkError> for neo_runtime::ServiceError {
 
 /// Result alias for network-layer operations.
 pub type NetworkResult<T> = Result<T, NetworkError>;
+
+impl From<NetworkError> for neo_error::CoreError {
+    fn from(err: NetworkError) -> Self {
+        neo_error::CoreError::Network {
+            message: err.to_string(),
+        }
+    }
+}

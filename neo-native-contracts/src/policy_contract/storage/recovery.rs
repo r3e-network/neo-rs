@@ -2,9 +2,7 @@ use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
 use neo_primitives::UInt160;
-use neo_serialization::BinarySerializer;
 use neo_storage::persistence::DataCache;
-use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 
 use super::PolicyContract;
@@ -23,13 +21,10 @@ impl PolicyContract {
         let item = snapshot.get(&key).ok_or_else(|| {
             CoreError::invalid_operation("NeoToken committee cache is not initialized")
         })?;
-        let limits = ExecutionEngineLimits::default();
-        let decoded = BinarySerializer::deserialize_stack_value_with_limits(
+        let decoded = crate::support::codec::decode_stack_value(
             &item.value_bytes(),
-            limits.max_item_size as usize,
-            limits.max_stack_size as usize,
-        )
-        .map_err(|e| CoreError::deserialization(format!("committee cache: {e}")))?;
+            "committee cache",
+        )?;
         let committee = crate::neo_token::CachedCommittee::from_stack_value(decoded)?;
         let mut points = committee
             .into_members()

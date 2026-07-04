@@ -82,7 +82,7 @@ fn invoke_response_integer(value: i64) -> String {
     rpc_response(JToken::Object(result))
 }
 
-fn emit_argument(sb: &mut ScriptBuilder, arg: &serde_json::Value) -> Result<(), RpcError> {
+fn emit_argument(sb: &mut ScriptBuilder, arg: &serde_json::Value) -> Result<(), RpcClientError> {
     match arg {
         serde_json::Value::Null => {
             sb.emit_opcode(OpCode::PUSHNULL);

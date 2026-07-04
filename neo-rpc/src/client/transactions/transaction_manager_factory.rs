@@ -1,4 +1,4 @@
-use crate::{RpcClient, RpcError, TransactionManager};
+use crate::{RpcClient, RpcClientError, TransactionManager};
 use neo_payloads::{Signer, Transaction, TransactionAttribute};
 use rand::Rng;
 use std::sync::Arc;
@@ -24,7 +24,7 @@ impl TransactionManagerFactory {
         &self,
         script: &[u8],
         signers: &[Signer],
-    ) -> Result<TransactionManager, RpcError> {
+    ) -> Result<TransactionManager, RpcClientError> {
         // Invoke script to get gas consumption
         let invoke_result = self
             .rpc_client
@@ -42,7 +42,7 @@ impl TransactionManagerFactory {
         script: &[u8],
         signers: &[Signer],
         attributes: &[TransactionAttribute],
-    ) -> Result<TransactionManager, RpcError> {
+    ) -> Result<TransactionManager, RpcClientError> {
         // Invoke script to get gas consumption
         let invoke_result = self
             .rpc_client
@@ -61,7 +61,7 @@ impl TransactionManagerFactory {
         system_fee: i64,
         signers: &[Signer],
         attributes: &[TransactionAttribute],
-    ) -> Result<TransactionManager, RpcError> {
+    ) -> Result<TransactionManager, RpcClientError> {
         // Get current block count (RPC returns height + 1)
         let block_count = self.rpc_client.get_block_count().await?;
         let current_height = block_count.saturating_sub(1);

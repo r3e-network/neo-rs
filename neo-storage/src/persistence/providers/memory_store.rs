@@ -17,6 +17,12 @@ pub struct MemoryStore {
     on_new_snapshot: Arc<RwLock<Vec<OnNewSnapshotDelegate>>>,
 }
 
+impl std::fmt::Debug for MemoryStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MemoryStore").finish_non_exhaustive()
+    }
+}
+
 impl MemoryStore {
     /// Creates a new MemoryStore.
     pub fn new() -> Self {

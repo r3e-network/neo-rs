@@ -115,14 +115,7 @@ pub fn parse_script_hash_or_address_with_error(
     address_version: u8,
     map_address_error: impl FnOnce(neo_error::CoreError) -> RpcException,
 ) -> Result<UInt160, RpcException> {
-    let mut parsed = None;
-    if UInt160::try_parse(text, &mut parsed) {
-        if let Some(value) = parsed {
-            return Ok(value);
-        }
-    }
-
-    neo_wallets::wallet_helper::WalletAddress::to_script_hash(text, address_version)
+    crate::client::parse_script_hash_or_address_inner(text, address_version)
         .map_err(map_address_error)
 }
 

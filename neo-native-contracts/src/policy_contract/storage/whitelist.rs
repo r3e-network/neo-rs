@@ -1,9 +1,8 @@
 use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
-use neo_serialization::BinarySerializer;
 use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm_rs::{ExecutionEngineLimits, StackValue};
+use neo_vm_rs::StackValue;
 
 use super::PolicyContract;
 use crate::policy_contract::PREFIX_WHITELISTED_FEE_CONTRACTS;
@@ -39,13 +38,8 @@ impl PolicyContract {
     pub(in crate::policy_contract) fn decode_whitelisted_contract(
         value: &[u8],
     ) -> CoreResult<WhitelistedContractView> {
-        let limits = ExecutionEngineLimits::default();
-        let decoded = BinarySerializer::deserialize_stack_value_with_limits(
-            value,
-            limits.max_item_size as usize,
-            limits.max_stack_size as usize,
-        )
-        .map_err(|e| CoreError::deserialization(format!("whitelisted contract: {e}")))?;
+        let decoded =
+            crate::support::codec::decode_stack_value(value, "whitelisted contract")?;
         WhitelistedContractView::from_stack_value(decoded)
     }
 
@@ -55,9 +49,7 @@ impl PolicyContract {
     pub(in crate::policy_contract) fn encode_whitelisted_contract(
         view: &WhitelistedContractView,
     ) -> CoreResult<Vec<u8>> {
-        let item = view.to_stack_value();
-        BinarySerializer::serialize_stack_value_default(&item)
-            .map_err(|e| CoreError::invalid_operation(format!("encode whitelisted contract: {e}")))
+        crate::support::codec::encode_storage_struct(view, "whitelisted contract")
     }
 
     /// Collects the `Prefix_WhitelistedFeeContracts` storage entries in
@@ -129,31 +121,12 @@ pub(in crate::policy_contract) struct WhitelistedContractView {
 
 impl WhitelistedContractView {
     pub(super) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Struct(_, items) = stack_value else {
-            return Err(CoreError::invalid_data(
-                "whitelisted contract is not a struct",
-            ));
-        };
-        let hash_bytes = items
-            .first()
-            .ok_or_else(|| CoreError::invalid_data("whitelisted contract missing hash"))?
-            .to_byte_string_bytes()
-            .ok_or_else(|| CoreError::invalid_data("whitelisted contract hash is not byte-like"))?;
-        let contract_hash =
-            crate::args::bytes_to_hash160(&hash_bytes, "whitelisted contract hash")?;
-        let method = items
-            .get(1)
-            .and_then(neo_vm_rs::stack_value_as_string)
-            .ok_or_else(|| CoreError::invalid_data("whitelisted contract method is not UTF-8"))?;
-        let arg_count = items
-            .get(2)
-            .and_then(neo_vm_rs::stack_value_as_i64)
-            .and_then(|value| i32::try_from(value).ok())
-            .ok_or_else(|| CoreError::invalid_data("whitelisted contract argCount out of range"))?;
-        let fixed_fee = items
-            .get(3)
-            .and_then(neo_vm_rs::stack_value_as_i64)
-            .ok_or_else(|| CoreError::invalid_data("whitelisted contract fixedFee out of range"))?;
+        let decoder =
+            crate::support::codec::StructDecoder::new(&stack_value, "whitelisted contract")?;
+        let contract_hash = decoder.hash160(0, "hash")?;
+        let method = decoder.string(1, "method")?;
+        let arg_count = decoder.i32(2, "argCount")?;
+        let fixed_fee = decoder.i64(3, "fixedFee")?;
         Ok(Self {
             contract_hash,
             method,

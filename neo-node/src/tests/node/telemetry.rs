@@ -100,7 +100,10 @@ fn indexed_service_at(height: u32) -> Arc<neo_indexer::IndexerService> {
 fn renders_rocksdb_fast_sync_batch_metrics() {
     let (node, _tmp) = rocksdb_test_node();
     let storage = node.storage();
-    storage.enable_fast_sync_mode();
+    storage
+        .as_fast_sync_store()
+        .expect("RocksDB store supports fast-sync")
+        .enable_fast_sync_mode();
 
     for index in 0..3 {
         let mut writer = node.store_cache();

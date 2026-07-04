@@ -678,7 +678,7 @@ where
                         .await;
                 }
                 crate::inventory_payload::InventoryPayload::Transaction(tx) => {
-                    let _ = self.on_new_transaction(&tx);
+                    let _ = self.on_new_transaction(&tx, None);
                 }
                 crate::inventory_payload::InventoryPayload::Extensible(payload) => {
                     let _ = self.handle_extensible_inventory(*payload, false).await;
@@ -1096,12 +1096,13 @@ where
             }
         };
         if task.result == VerifyResult::Succeed {
-            let result = self.on_new_transaction(&task.transaction);
+            let result = self.on_new_transaction(&task.transaction, task.cached_state_independent);
             debug!(
                 target: "neo",
                 %hash,
                 ?result,
                 relay = task.relay,
+                cached_state_independent = ?task.cached_state_independent,
                 "preverified transaction admitted through mempool"
             );
             return;

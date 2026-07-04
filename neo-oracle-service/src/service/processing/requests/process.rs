@@ -65,7 +65,7 @@ impl OracleService {
                 &pending_request,
                 &mut response,
                 &oracle_nodes,
-                &self.system.settings(),
+                &self.config.settings(),
                 false,
             )?;
 
@@ -79,7 +79,7 @@ impl OracleService {
                 &pending_request,
                 &mut backup_response,
                 &oracle_nodes,
-                &self.system.settings(),
+                &self.config.settings(),
                 true,
             )?;
 
@@ -111,9 +111,9 @@ impl OracleService {
                     continue;
                 }
 
-                let tx_sign = sign_transaction(&response_tx, &key, self.system.settings().network);
+                let tx_sign = sign_transaction(&response_tx, &key, self.config.settings().network);
                 let backup_sign =
-                    sign_transaction(&backup_tx, &key, self.system.settings().network);
+                    sign_transaction(&backup_tx, &key, self.config.settings().network);
 
                 self.add_response_tx_sign(
                     snapshot,

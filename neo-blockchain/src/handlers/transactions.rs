@@ -95,7 +95,7 @@ where
         let mut accepted = 0usize;
         let mut rejected = 0usize;
         for transaction in fill.transactions {
-            if self.on_new_transaction(&transaction).is_success() {
+            if self.on_new_transaction(&transaction, None).is_success() {
                 accepted += 1;
             } else {
                 rejected += 1;
@@ -189,7 +189,17 @@ where
 
     /// Transaction admission used by reverify and inventory paths.
     /// Returns the [`VerifyResult`] for the transaction.
-    pub(crate) fn on_new_transaction(&self, transaction: &Transaction) -> VerifyResult {
+    ///
+    /// `cached_state_independent` is an optional pre-computed
+    /// state-independent result from `TransactionRouter::preverify`.
+    /// When `Some(VerifyResult::Succeed)` is provided the mempool
+    /// skips redundant signature re-verification and only runs
+    /// state-dependent checks.
+    pub(crate) fn on_new_transaction(
+        &self,
+        transaction: &Transaction,
+        cached_state_independent: Option<VerifyResult>,
+    ) -> VerifyResult {
         let hash = match transaction.try_hash() {
             Ok(hash) => hash,
             Err(error) => {
@@ -216,12 +226,20 @@ where
 
         let settings = self.system.settings();
         let result = match self.system.store_snapshot() {
-            Some(snapshot) => self
-                .mempool
-                .try_add(transaction, snapshot.as_ref(), &settings),
+            Some(snapshot) => self.mempool.try_add_cached(
+                transaction,
+                snapshot.as_ref(),
+                &settings,
+                cached_state_independent,
+            ),
             None => {
                 let snapshot = neo_storage::DataCache::new(false);
-                self.mempool.try_add(transaction, &snapshot, &settings)
+                self.mempool.try_add_cached(
+                    transaction,
+                    &snapshot,
+                    &settings,
+                    cached_state_independent,
+                )
             }
         };
         if result == VerifyResult::Succeed {

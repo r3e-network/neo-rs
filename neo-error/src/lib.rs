@@ -11,7 +11,7 @@
 //!
 //! - `error`: Typed error definitions and conversions.
 
-#![doc(html_root_url = "https://docs.rs/neo-error/0.9.0")]
+#![doc(html_root_url = "https://docs.rs/neo-error/0.10.0")]
 
 #[path = "errors/error.rs"]
 pub mod error;

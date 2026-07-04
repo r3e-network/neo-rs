@@ -11,7 +11,7 @@ use neo_storage::persistence::{
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm_rs::{StackValue, VmState as VMState};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct FailingStore;
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingStore {
@@ -74,6 +74,7 @@ impl Store for FailingStore {
     }
 }
 
+#[derive(Debug)]
 struct FailingSnapshot {
     store: Arc<dyn Store>,
 }

@@ -9,7 +9,8 @@ async fn session_registers_and_traverses_storage_iterator() {
     let settings = ProtocolSettings::default();
     let system = crate::server::test_support::test_system(settings);
     let session = Session::new(
-        system,
+        system.clone(), // Arc<Node> coerced to Arc<dyn StoreProvider>
+        system,         // Arc<Node> coerced to Arc<dyn ConfigProvider>
         vec![OpCode::RET.byte()],
         None,
         None,

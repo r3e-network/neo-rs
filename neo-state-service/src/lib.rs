@@ -18,7 +18,7 @@
 //!   immutable provider views.
 //! - `validation`: Validation routines and typed verdicts for protocol data.
 
-#![doc(html_root_url = "https://docs.rs/neo-state-service/0.9.0")]
+#![doc(html_root_url = "https://docs.rs/neo-state-service/0.10.0")]
 
 mod protocol;
 mod service;

@@ -6,6 +6,7 @@ use crate::attestation::Quote;
 use crate::error::{EnclaveInitError, TeeError, TeeResult};
 use libloading::{Library, Symbol};
 use neo_error::{CoreError, CoreResult};
+use neo_primitives::hex_util;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -200,7 +201,7 @@ fn ensure_hardware_prerequisites() -> TeeResult<()> {
 fn load_quote_bytes(sealed_data_path: &Path) -> TeeResult<Vec<u8>> {
     if let Ok(hex_quote) = std::env::var(ENV_SGX_QUOTE_HEX) {
         let trimmed = normalize_hex_input(&hex_quote);
-        let decoded = hex::decode(trimmed).map_err(|e| {
+        let decoded = hex_util::decode_hex(trimmed).map_err(|e| {
             TeeError::enclave_init_error(
                 EnclaveInitError::HardwareUnavailable,
                 format!("{ENV_SGX_QUOTE_HEX} is not valid hex: {e}"),
@@ -285,7 +286,7 @@ fn parse_key_file_contents(data: &[u8]) -> Option<[u8; 32]> {
 
 fn decode_sealing_key_from_hex(input: &str) -> CoreResult<[u8; 32]> {
     let normalized = normalize_hex_input(input);
-    let bytes = hex::decode(normalized).map_err(|e| CoreError::other(e.to_string()))?;
+    let bytes = hex_util::decode_hex(normalized).map_err(|e| CoreError::other(e.to_string()))?;
     if bytes.len() != 32 {
         return Err(CoreError::other(format!(
             "expected 32 bytes, got {}",

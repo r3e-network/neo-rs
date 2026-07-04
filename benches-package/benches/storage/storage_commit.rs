@@ -132,27 +132,20 @@ impl Store for SnapshotOnlyStore {
         self.inner.on_new_snapshot(handler);
     }
 
-    fn enable_fast_sync_mode(&self) {
-        self.inner.enable_fast_sync_mode();
-    }
-
-    fn disable_fast_sync_mode(&self) {
-        self.inner.disable_fast_sync_mode();
-    }
-
     fn flush(&self) -> StorageResult<()> {
         self.inner.flush()
     }
 
-    fn try_commit_raw_overlay(
-        &self,
-        _overlay: &[(Vec<u8>, Option<Vec<u8>>)],
-    ) -> StorageResult<bool> {
-        Ok(false)
-    }
-
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn as_fast_sync_store(&self) -> Option<&dyn neo_storage::persistence::FastSyncStore> {
+        self.inner.as_fast_sync_store()
+    }
+
+    fn as_raw_overlay_store(&self) -> Option<&dyn neo_storage::persistence::RawOverlayStore> {
+        self.inner.as_raw_overlay_store()
     }
 }
 

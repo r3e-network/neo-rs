@@ -137,7 +137,7 @@ impl FairOrderingPolicy {
                 // Primary key is commit time, secondary uses commitment for deterministic ordering
                 let commitment_key = timing
                     .commitment
-                    .map(|c| u64::from_le_bytes(c[..8].try_into().unwrap()))
+                    .map(|c| u64::from_le_bytes(c[..8].try_into().expect("[u8;32][..8] must convert to [u8;8]")))
                     .unwrap_or(0);
                 OrderingKey {
                     primary: timing.sequence_number,

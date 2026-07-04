@@ -51,7 +51,8 @@ async fn traverse_iterator_rejects_expired_session() {
     let traverse = find_handler(&handlers, "traverseiterator");
 
     let session = Session::new(
-        server.system(),
+        server.system(), // Arc<Node> coerced to Arc<dyn StoreProvider>
+        server.system(), // Arc<Node> coerced to Arc<dyn ConfigProvider>
         vec![OpCode::RET.byte()],
         None,
         None,
@@ -141,7 +142,8 @@ async fn traverse_iterator_returns_items_and_can_terminate_session() {
     let terminate = find_handler(&handlers, "terminatesession");
 
     let session = Session::new(
-        server.system(),
+        server.system(), // Arc<Node> coerced to Arc<dyn StoreProvider>
+        server.system(), // Arc<Node> coerced to Arc<dyn ConfigProvider>
         vec![OpCode::RET.byte()],
         None,
         None,

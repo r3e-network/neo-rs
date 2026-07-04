@@ -9,6 +9,8 @@ use super::resolve_public_key_index;
 #[cfg(feature = "hsm")]
 use neo_crypto::ECPoint;
 #[cfg(feature = "hsm")]
+use neo_primitives::hex_util;
+#[cfg(feature = "hsm")]
 use std::sync::Arc;
 #[cfg(feature = "hsm")]
 use tracing::{info, warn};
@@ -82,7 +84,7 @@ pub(super) fn build_hsm_consensus_setup(
         .unwrap_or_else(|| PathBuf::from(neo_hsm::profile(provider).default_library));
     let key_id = match &cfg.key_id_hex {
         Some(h) => Some(
-            hex::decode(h.trim())
+            hex_util::decode_hex(h.trim())
                 .map_err(|e| anyhow::anyhow!("[consensus.hsm].key_id_hex is not valid hex: {e}"))?,
         ),
         None => None,
@@ -106,7 +108,7 @@ pub(super) fn build_hsm_consensus_setup(
     let my_index = resolve_public_key_index(&public_key, &validators);
     if my_index.is_none() {
         warn!(
-            pubkey = %hex::encode(signer.public_key()),
+            pubkey = %hex_util::encode_hex(signer.public_key()),
             "HSM consensus key is not in the validator set; the node will relay only"
         );
     }

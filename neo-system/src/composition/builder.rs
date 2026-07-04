@@ -19,12 +19,12 @@ use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::{NativeContractLookup, NativeContractProvider};
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
-use neo_runtime::{BlockExecutor, ConsensusService, NeoEngine};
+use neo_runtime::{BlockExecutor, ConsensusService, EngineApi};
 use neo_storage::persistence::store::Store;
 
 use crate::error::NodeResult;
 use crate::node::Node;
-use crate::service_registry::ServiceRegistry;
+use neo_runtime::ServiceRegistry;
 use crate::wallet_provider::WalletProvider;
 
 /// Fluent builder for [`Node`].
@@ -41,7 +41,7 @@ pub struct NodeBuilder {
     native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
     block_executor: Option<Arc<dyn BlockExecutor>>,
     consensus: Option<Arc<dyn ConsensusService>>,
-    engine: Option<Arc<dyn NeoEngine>>,
+    engine: Option<Arc<dyn EngineApi>>,
 }
 
 impl std::fmt::Debug for NodeBuilder {
@@ -153,7 +153,7 @@ impl NodeBuilder {
     }
 
     /// Install an engine API service.
-    pub fn with_engine(mut self, engine: Arc<dyn NeoEngine>) -> Self {
+    pub fn with_engine(mut self, engine: Arc<dyn EngineApi>) -> Self {
         self.engine = Some(engine);
         self
     }

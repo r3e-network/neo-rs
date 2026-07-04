@@ -12,6 +12,30 @@ fn addr(s: &str) -> SocketAddr {
     s.parse().expect("socket address")
 }
 
+fn transaction_with_nonce(nonce: u32) -> Transaction {
+    let mut transaction = Transaction::new();
+    transaction.set_nonce(nonce);
+    transaction
+}
+
+#[test]
+fn try_broadcast_transaction_splits_full_and_closed_errors() {
+    let (handle, cmd_rx, _events) = NetworkHandle::channel(1, 32);
+
+    assert!(handle.try_broadcast_transaction(transaction_with_nonce(1)).is_ok());
+
+    let full_error = handle
+        .try_broadcast_transaction(transaction_with_nonce(2))
+        .expect_err("second non-blocking send should see full command queue");
+    assert!(matches!(full_error, NetworkError::ChannelFull));
+
+    drop(cmd_rx);
+    let closed_error = handle
+        .try_broadcast_transaction(transaction_with_nonce(3))
+        .expect_err("send after receiver drop should see closed command channel");
+    assert!(matches!(closed_error, NetworkError::LocalShuttingDown));
+}
+
 #[test]
 fn folds_peer_connected_and_disconnected_events() {
     let (handle, _cmd_rx, events) = test_handle();

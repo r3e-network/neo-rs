@@ -513,6 +513,7 @@ impl MemoryPool {
         }
 
         let mut invalid_transactions = Vec::new();
+        let mut rebroadcast_transactions = Vec::new();
         let more_unverified = {
             let mut guard = self.inner.write();
             let to_check: Vec<PoolItem> = guard
@@ -583,6 +584,12 @@ impl MemoryPool {
                 for target in conflict_target_hashes(&tx) {
                     guard.conflicts.entry(target).or_default().insert(hash);
                 }
+
+                // C# `ReverifyTransactions` calls `RelayDirectly` for each
+                // transaction that survives re-verification after block persist.
+                // Collect the clones so we can fire the callback outside the
+                // write lock — the relay subscriber may touch the pool itself.
+                rebroadcast_transactions.push(tx);
             }
 
             !guard.unverified.is_empty()
@@ -595,6 +602,19 @@ impl MemoryPool {
                     TransactionRemovalReason::NoLongerValid,
                 );
                 callback(self, &args);
+            }
+        }
+
+        // C# `MemoryPool.ReverifyTransactions` → `RelayDirectly`: rebroadcast
+        // every surviving transaction that the block-persist cycle re-verified
+        // and promoted back into the verified pool. This is a best-effort relay;
+        // a dropped broadcast is harmless — the tx stays in the pool and will
+        // be announced via inventory on the next gossip cycle.
+        if !rebroadcast_transactions.is_empty() {
+            if let Some(relay) = &self.transaction_relay {
+                for tx in &rebroadcast_transactions {
+                    relay(tx);
+                }
             }
         }
 
@@ -710,6 +730,139 @@ impl MemoryPool {
             // for the caller. The previous gate only counted the verified queue,
             // so block-persist survivors dumped into the unverified queue could
             // push total occupancy to ~2x the configured capacity.
+            let mut new_tx_evicted = false;
+            while guard.verified.len() + guard.unverified.len() > guard.capacity {
+                let Some(dropped) = guard.remove_lowest_fee() else {
+                    break;
+                };
+                if dropped.hash() == hash {
+                    new_tx_evicted = true;
+                }
+                removed_transactions.push(dropped);
+            }
+            (removed_transactions, new_tx_evicted)
+        };
+
+        if let Some(callback) = &self.transaction_added {
+            callback(self, &transaction);
+        }
+        if !removed_transactions.is_empty() {
+            if let Some(callback) = &self.transaction_removed {
+                let args = TransactionRemovedEventArgs::new(
+                    removed_transactions,
+                    TransactionRemovalReason::CapacityExceeded,
+                );
+                callback(self, &args);
+            }
+        }
+        if new_tx_evicted {
+            return VerifyResult::OutOfMemory;
+        }
+        VerifyResult::Succeed
+    }
+
+    /// Attempts to admit a transaction using a cached state-independent
+    /// verification result.
+    ///
+    /// C# `MemoryPool.TryAdd` reads `Transaction.VerificationResult` (cached
+    /// by `Blockchain.AskForTransaction`) and skips redundant re-verification.
+    /// This method provides the same optimization: callers that have already
+    /// performed `verify_state_independent` pass the cached outcome here and
+    /// the method only runs the state-dependent checks (`verify_state_dependent`).
+    ///
+    /// When `cached_state_independent` is `Some(VerifyResult::Succeed)` the
+    /// state-independent checks (size, script parse, ECDSA fast-paths) are
+    /// skipped. Any other cached value causes an early rejection. When `None`
+    /// is passed, the full `verify_transaction` (state-independent +
+    /// state-dependent) is performed — identical to [`Self::try_add`].
+    pub fn try_add_cached(
+        &self,
+        transaction: Transaction,
+        snapshot: &DataCache,
+        cached_state_independent: Option<VerifyResult>,
+    ) -> VerifyResult {
+        let hash = transaction.hash();
+
+        // Subscriber veto gate.
+        if let Some(callback) = &self.new_transaction {
+            let mut args = NewTransactionEventArgs::new(transaction.clone(), snapshot.clone());
+            callback(self, &mut args);
+            if args.cancel {
+                return VerifyResult::PolicyFail;
+            }
+        }
+
+        let (removed_transactions, new_tx_evicted) = {
+            let mut guard = self.inner.write();
+            if guard.verified.contains(&hash) || guard.unverified.contains(&hash) {
+                return VerifyResult::AlreadyInPool;
+            }
+
+            let conflicts_to_remove = match guard.check_conflicts(&transaction) {
+                Some(list) => list,
+                None => return VerifyResult::HasConflicts,
+            };
+
+            let pooled_sender_fee = transaction
+                .signers()
+                .first()
+                .and_then(|s| guard.sender_fees.get(&s.account).cloned())
+                .unwrap_or_default();
+            let tx_sender = transaction.signers().first().map(|s| s.account);
+            let rebate = conflict_rebate(&conflicts_to_remove, tx_sender);
+            let effective_pooled_fee = &pooled_sender_fee - &rebate;
+            let oracle_duplicate = oracle_response_id(&transaction)
+                .is_some_and(|id| guard.oracle_responses.contains_key(&id));
+
+            // M7: skip redundant state-independent verification when a
+            // cached result is available (cached -> never repeats ECDSA).
+            let result = match cached_state_independent {
+                // Preverified: state-independent already passed — only
+                // run state-dependent checks.
+                Some(VerifyResult::Succeed) => {
+                    crate::verification::verify_transaction_dependent_only(
+                        &transaction,
+                        snapshot,
+                        &self.settings,
+                        &effective_pooled_fee,
+                        oracle_duplicate,
+                    )
+                }
+                // Preverified but failed: reject immediately.
+                Some(fail) => fail,
+                // No cache: run full verification (same as try_add).
+                None => crate::verification::verify_transaction(
+                    &transaction,
+                    snapshot,
+                    &self.settings,
+                    &effective_pooled_fee,
+                    oracle_duplicate,
+                ),
+            };
+            if result != VerifyResult::Succeed {
+                return result;
+            }
+
+            guard.verified.insert(PoolItem::new(transaction.clone()));
+            guard.context_add(&transaction);
+
+            let mut removed_transactions = Vec::new();
+            for conflict in &conflicts_to_remove {
+                let chash = conflict.hash();
+                if let Some(removed) = guard.verified.remove(&chash) {
+                    let dropped = (*removed.transaction).clone();
+                    guard.context_remove(&dropped);
+                    guard.conflicts.retain(|_, set| {
+                        set.remove(&chash);
+                        !set.is_empty()
+                    });
+                    removed_transactions.push(dropped);
+                }
+            }
+            for target in conflict_target_hashes(&transaction) {
+                guard.conflicts.entry(target).or_default().insert(hash);
+            }
+
             let mut new_tx_evicted = false;
             while guard.verified.len() + guard.unverified.len() > guard.capacity {
                 let Some(dropped) = guard.remove_lowest_fee() else {

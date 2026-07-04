@@ -20,7 +20,7 @@
 //! - `crypto`: Wallet key pairs, signing, and address helpers.
 //! - `scripting`: Wallet script construction and verification helpers.
 
-#![doc(html_root_url = "https://docs.rs/neo-wallets/0.9.0")]
+#![doc(html_root_url = "https://docs.rs/neo-wallets/0.10.0")]
 
 // ============================================================================
 // Wallet data model
@@ -58,8 +58,4 @@ pub use version::Version;
 pub use wallet::{Wallet, WalletError, WalletResult};
 pub use wallet_account::{StandardWalletAccount, WalletAccount};
 
-// Re-export of the canonical smart-contract Helper for back-compat with the
-// historical `neo_wallets::Helper` (which was a type alias for
-// `crate::smart_contract::helper::Helper`).
-pub use neo_execution::Helper;
 pub use wallet_provider::WalletProvider;

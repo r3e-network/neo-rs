@@ -20,8 +20,8 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, serialize_to_base64};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
-use hex;
 use neo_native_contracts::{LedgerContract, contract_management::ContractManagement};
+use neo_primitives::hex_util;
 use num_traits::ToPrimitive;
 
 use crate::server::ledger_queries;
@@ -413,7 +413,7 @@ impl RpcServerBlockchain {
                 )
             })?;
             result.push(json!({
-                "publickey": hex::encode(&point),
+                "publickey": hex_util::encode_hex(&point),
                 "votes": votes_value}));
         }
         Ok(Value::Array(result))
@@ -451,7 +451,7 @@ impl RpcServerBlockchain {
         for (point, votes) in &candidates {
             let active = validators.iter().any(|validator| validator == point);
             result.push(json!({
-                "publickey": hex::encode(point),
+                "publickey": hex_util::encode_hex(point),
                 "votes": votes.to_string(),
                 "active": active}));
         }
@@ -490,7 +490,7 @@ impl RpcServerBlockchain {
         })?;
         let members: Vec<Value> = committee
             .iter()
-            .map(|point| Value::String(hex::encode(point)))
+            .map(|point| Value::String(hex_util::encode_hex(point)))
             .collect();
         Ok(Value::Array(members))
     }

@@ -11,7 +11,7 @@ use crate::wallet_account::{StandardWalletAccount, WalletAccount};
 use crate::wallet_helper::WalletAddress;
 use async_trait::async_trait;
 use neo_config::ProtocolSettings;
-use neo_execution::Contract;
+use neo_vm::Contract;
 use neo_payloads::{Transaction, Witness};
 use neo_primitives::ContractParameterType;
 use neo_primitives::{UInt160, UInt256};
@@ -777,7 +777,8 @@ impl WalletAccount for Nep6Account {
 
 impl Nep6Contract {
     fn from_file(file: &Nep6ContractFile) -> WalletResult<Self> {
-        let script = hex::decode(&file.script).map_err(|e| WalletError::Other(e.to_string()))?;
+        let script =
+            neo_primitives::hex_util::decode_hex(&file.script).map_err(|e| WalletError::Other(e.to_string()))?;
         let mut parameter_names = Vec::with_capacity(file.parameters.len());
         let parameter_types = file
             .parameters
@@ -810,7 +811,7 @@ impl Nep6Contract {
             .collect();
 
         Nep6ContractFile {
-            script: hex::encode(&contract.script),
+            script: neo_primitives::hex_util::encode_hex(&contract.script),
             parameters,
             deployed: false,
         }

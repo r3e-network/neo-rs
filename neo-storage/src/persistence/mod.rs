@@ -12,11 +12,13 @@
 //!
 //! - `data_cache`: Write-back cache implementation and tracked-entry state.
 //! - `providers`: Provider implementations behind the crate public traits.
+//! - `fast_sync_store`: Fast-sync extension trait (ADR-021).
 //! - `read_only_store`: read-only store trait.
+//! - `raw_overlay_store`: Raw overlay extension trait (ADR-021).
 //! - `seek_direction`: seek direction enum.
 //! - `storage`: Storage contexts, key builders, and storage item helpers for
 //!   execution.
-//! - `store`: Store implementation for the surrounding backend or domain.
+//! - `store`: Core store trait (read + write + snapshot + downcast).
 //! - `store_cache`: store-backed cache overlay.
 //! - `store_factory`: store factory trait.
 //! - `store_provider`: store provider trait.
@@ -30,9 +32,15 @@
 pub mod data_cache;
 /// Built-in store providers used by tests and ephemeral nodes.
 pub mod providers;
+/// Fast-sync extension trait for [`Store`](store::Store).
+#[path = "traits/fast_sync_store.rs"]
+pub mod fast_sync_store;
 /// Read-only store traits.
 #[path = "traits/read_only_store.rs"]
 pub mod read_only_store;
+/// Raw overlay extension trait for [`Store`](store::Store).
+#[path = "traits/raw_overlay_store.rs"]
+pub mod raw_overlay_store;
 /// Iteration direction for seek/find operations.
 #[path = "traits/seek_direction.rs"]
 pub mod seek_direction;
@@ -64,7 +72,9 @@ pub mod transaction;
 pub mod write_store;
 
 pub use data_cache::{DataCache, Trackable};
+pub use fast_sync_store::FastSyncStore;
 pub use read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric};
+pub use raw_overlay_store::RawOverlayStore;
 pub use seek_direction::SeekDirection;
 pub use store::Store;
 pub use store_cache::StoreCache;

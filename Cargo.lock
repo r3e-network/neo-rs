@@ -2339,8 +2339,8 @@ dependencies = [
 name = "neo-config"
 version = "0.10.0"
 dependencies = [
- "hex",
  "neo-crypto",
+ "neo-error",
  "neo-primitives",
  "parking_lot",
  "serde",
@@ -2356,6 +2356,7 @@ dependencies = [
  "bincode",
  "lru",
  "neo-crypto",
+ "neo-error",
  "neo-io",
  "neo-payloads",
  "neo-primitives",
@@ -2468,11 +2469,11 @@ version = "0.10.0"
 dependencies = [
  "base64 0.22.1",
  "cryptoki",
- "hex",
  "neo-consensus",
  "neo-crypto",
  "neo-error",
  "neo-primitives",
+ "neo-vm",
  "p256",
  "parking_lot",
  "reqwest",
@@ -2525,7 +2526,6 @@ name = "neo-manifest"
 version = "0.10.0"
 dependencies = [
  "base64 0.22.1",
- "hex",
  "neo-crypto",
  "neo-error",
  "neo-io",
@@ -2592,6 +2592,7 @@ dependencies = [
  "bytes",
  "futures",
  "neo-config",
+ "neo-error",
  "neo-io",
  "neo-payloads",
  "neo-primitives",
@@ -2673,7 +2674,6 @@ dependencies = [
  "bs58",
  "futures",
  "hex",
- "neo-blockchain",
  "neo-config",
  "neo-crypto",
  "neo-error",
@@ -2681,9 +2681,9 @@ dependencies = [
  "neo-io",
  "neo-manifest",
  "neo-native-contracts",
- "neo-network",
  "neo-payloads",
  "neo-primitives",
+ "neo-runtime",
  "neo-serialization",
  "neo-storage",
  "neo-system",
@@ -2712,7 +2712,6 @@ version = "0.10.0"
 dependencies = [
  "base64 0.22.1",
  "bitvec",
- "hex",
  "neo-config",
  "neo-crypto",
  "neo-error",
@@ -2759,7 +2758,6 @@ dependencies = [
 name = "neo-rpc"
 version = "0.10.0"
 dependencies = [
- "anyhow",
  "async-trait",
  "base64 0.22.1",
  "bytes",
@@ -2783,6 +2781,7 @@ dependencies = [
  "neo-oracle-service",
  "neo-payloads",
  "neo-primitives",
+ "neo-runtime",
  "neo-serialization",
  "neo-state-service",
  "neo-storage",
@@ -2819,8 +2818,11 @@ name = "neo-runtime"
 version = "0.10.0"
 dependencies = [
  "async-trait",
+ "neo-config",
  "neo-payloads",
  "neo-primitives",
+ "neo-storage",
+ "parking_lot",
  "serde",
  "thiserror 2.0.18",
  "tokio",
@@ -2869,15 +2871,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "neo-static-files"
-version = "0.10.0"
-dependencies = [
- "parking_lot",
- "tempfile",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "neo-storage"
 version = "0.10.0"
 dependencies = [
@@ -2904,6 +2897,7 @@ dependencies = [
 name = "neo-system"
 version = "0.10.0"
 dependencies = [
+ "async-trait",
  "neo-blockchain",
  "neo-config",
  "neo-error",
@@ -2912,6 +2906,7 @@ dependencies = [
  "neo-native-contracts",
  "neo-network",
  "neo-payloads",
+ "neo-primitives",
  "neo-runtime",
  "neo-state-service",
  "neo-storage",
@@ -2995,6 +2990,7 @@ dependencies = [
  "parking_lot",
  "serde_json",
  "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]
@@ -3017,7 +3013,6 @@ dependencies = [
  "bip39",
  "cbc",
  "cipher",
- "hex",
  "neo-config",
  "neo-crypto",
  "neo-error",

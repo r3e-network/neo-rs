@@ -30,7 +30,7 @@ mod tests;
 
 use neo_crypto::ECPoint;
 use neo_payloads::Transaction;
-use neo_system::Node;
+use neo_runtime::{ConfigProvider, StoreProvider, TxAdmission};
 use neo_wallets::Wallet;
 use parking_lot::{Mutex, RwLock};
 use std::borrow::Borrow;
@@ -241,7 +241,9 @@ impl OracleDedupState {
 /// Oracle service runtime.
 pub struct OracleService {
     settings: OracleServiceSettings,
-    system: Arc<Node>,
+    config: Arc<dyn ConfigProvider>,
+    store: Arc<dyn StoreProvider>,
+    tx: Arc<dyn TxAdmission>,
     status: AtomicU8,
     self_ref: RwLock<Weak<OracleService>>,
     wallet: RwLock<Option<Arc<dyn Wallet>>>,

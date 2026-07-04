@@ -553,8 +553,7 @@ fn ledger_storage_codecs_use_stack_value_projection() {
         "pub fn serialize_persisted_transaction_state",
     );
     assert!(hash_serializer.contains("HashIndexState::new"));
-    assert!(hash_serializer.contains("to_stack_value"));
-    assert!(hash_serializer.contains("serialize_stack_value_default"));
+    assert!(hash_serializer.contains("encode_storage_struct"));
     assert!(!hash_serializer.contains("StackValue::Struct"));
     assert!(!hash_serializer.contains("StackItem::from_struct"));
     assert!(!hash_serializer.contains("BinarySerializer::serialize("));
@@ -584,14 +583,14 @@ fn ledger_storage_codecs_use_stack_value_projection() {
         "pub(crate) fn deserialize_hash_index_state",
         "pub(crate) fn decode_transaction_state",
     );
-    assert!(hash_deserializer.contains("deserialize_stack_value_with_limits"));
+    assert!(hash_deserializer.contains("decode_stack_value"));
     assert!(hash_deserializer.contains("HashIndexState::from_stack_value"));
     assert!(!hash_deserializer.contains("bytes_to_hash256"));
     assert!(!hash_deserializer.contains("stack_value_as_u32"));
     assert!(!hash_deserializer.contains("BinarySerializer::deserialize("));
 
     let tx_deserializer = slice_between(source, "pub(crate) fn decode_transaction_state", "\n}\n");
-    assert!(tx_deserializer.contains("deserialize_stack_value_with_limits"));
+    assert!(tx_deserializer.contains("decode_stack_value"));
     assert!(tx_deserializer.contains("from_stack_value"));
     assert!(!tx_deserializer.contains("Transaction::deserialize"));
     assert!(!tx_deserializer.contains("MemoryReader::new"));

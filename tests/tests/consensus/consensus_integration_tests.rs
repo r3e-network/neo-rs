@@ -353,7 +353,7 @@ async fn test_recovery_message_serialization() {
     let msg = RecoveryMessage::new(100, 0, 1);
 
     // Serialize
-    let data = msg.serialize();
+    let data = msg.serialize().unwrap();
     assert!(!data.is_empty());
 
     // Deserialize
@@ -384,25 +384,6 @@ async fn test_consensus_payload_creation() {
     assert_eq!(payload.view_number, 0);
     assert_eq!(payload.message_type, ConsensusMessageType::PrepareRequest);
     assert_eq!(payload.data, vec![0x01, 0x02, 0x03]);
-}
-
-#[tokio::test]
-async fn test_consensus_payload_sign_data() {
-    let payload = ConsensusPayload::new(
-        0x4E454F,
-        100,
-        0,
-        0,
-        ConsensusMessageType::PrepareRequest,
-        vec![0x01, 0x02, 0x03],
-    );
-
-    let sign_data = payload.get_sign_data();
-    assert!(!sign_data.is_empty());
-
-    // Sign data should be deterministic
-    let sign_data2 = payload.get_sign_data();
-    assert_eq!(sign_data, sign_data2);
 }
 
 // ============================================================================

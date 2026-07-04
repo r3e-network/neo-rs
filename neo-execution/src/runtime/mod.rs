@@ -12,7 +12,6 @@
 //!
 //! - `bls12381_interop`: BLS12-381 interop handlers.
 //! - `diagnostic`: RPC diagnostic endpoints and health reporting helpers.
-//! - `engine_provider`: execution engine provider trait.
 //! - `env_flags`: execution environment flag records.
 //! - `execution_context_state`: execution context state records.
 //! - `helper`: shared helper functions.
@@ -22,7 +21,6 @@
 /// `InteropInterface` wrapper for BLS12-381 curve points (CryptoLib).
 pub mod bls12381_interop;
 pub mod diagnostic;
-pub mod engine_provider;
 /// Environment flag helpers used by execution diagnostics and optional profiling.
 pub mod env_flags;
 pub mod execution_context_state;

@@ -316,10 +316,15 @@ impl RpcServerState {
         trie: &mut Trie<MptReadSnapshot>,
         script_hash: &UInt160,
     ) -> Result<i32, RpcException> {
-        let mut key = Vec::with_capacity(std::mem::size_of::<i32>() + 1 + UInt160::LENGTH);
-        key.extend_from_slice(&CONTRACT_MANAGEMENT_ID.to_le_bytes());
-        key.push(PREFIX_CONTRACT);
-        key.extend_from_slice(&script_hash.to_bytes());
+        // Build the raw storage key bytes: id (LE) + prefix + script_hash.
+        // Uses StorageKey::create_with_uint160 (ADR-025) instead of hand-rolling
+        // the Vec to ensure byte-layout consistency with the rest of the workspace.
+        let key = neo_storage::StorageKey::create_with_uint160(
+            CONTRACT_MANAGEMENT_ID,
+            PREFIX_CONTRACT,
+            script_hash,
+        )
+        .to_array();
 
         let record = trie
             .try_get_value(&key)
@@ -348,7 +353,7 @@ impl RpcServerState {
             .map_err(|err| Self::trie_lookup_error("proof query", &err))?
             .ok_or_else(|| RpcException::from(RpcError::unknown_storage_item()))?;
         let nodes: Vec<Vec<u8>> = proof.into_iter().collect();
-        Ok(BASE64_STANDARD.encode(Self::encode_proof_payload(&storage_key, &nodes)))
+        Ok(BASE64_STANDARD.encode(Self::encode_proof_payload(&storage_key, &nodes)?))
     }
 
     /// Serializes `(contract_id, key)` as the C# `StorageKey.ToArray()`
@@ -386,6 +391,18 @@ impl RpcServerState {
         }
     }
 
+    /// Converts a `neo_io::IoError` from the in-memory `BinaryWriter` into
+    /// an internal RPC error. The current writer writes to a `Vec<u8>` and
+    /// cannot fail, but keeping the conversion in one place lets
+    /// `encode_proof_payload` use `?` and stay resilient to a future
+    /// streaming writer.
+    fn writer_error_to_rpc(err: neo_io::IoError) -> RpcException {
+        RpcException::from(
+            RpcError::internal_server_error()
+                .with_data(format!("proof payload encoding failed: {err}")),
+        )
+    }
+
     /// The state-root cache does not persist the MPT trie, so queries
     /// that must walk historical tries cannot be answered.
     fn proofs_unsupported() -> RpcException {
@@ -412,14 +429,25 @@ impl RpcServerState {
     /// [`Self::decode_proof_payload`]): `WriteVarBytes(storage_key)`,
     /// `WriteVarInt(count)`, then each node as `VarBytes` — the exact
     /// layout `StatePlugin.GetProof` emits.
-    fn encode_proof_payload(key: &[u8], nodes: &[Vec<u8>]) -> Vec<u8> {
+    ///
+    /// Returns `Err` if the underlying `BinaryWriter` fails. The in-memory
+    /// `BinaryWriter` cannot fail in practice, but propagating the `?` here
+    /// ensures that any future writer change surfaces an internal error
+    /// instead of silently producing a truncated/malformed proof payload.
+    fn encode_proof_payload(key: &[u8], nodes: &[Vec<u8>]) -> Result<Vec<u8>, RpcException> {
         let mut writer = neo_io::BinaryWriter::new();
-        let _ = writer.write_var_bytes(key);
-        let _ = writer.write_var_int(nodes.len() as u64);
+        writer
+            .write_var_bytes(key)
+            .map_err(Self::writer_error_to_rpc)?;
+        writer
+            .write_var_int(nodes.len() as u64)
+            .map_err(Self::writer_error_to_rpc)?;
         for node in nodes {
-            let _ = writer.write_var_bytes(node);
+            writer
+                .write_var_bytes(node)
+                .map_err(Self::writer_error_to_rpc)?;
         }
-        writer.into_bytes()
+        Ok(writer.into_bytes())
     }
 
     fn parse_uint256(params: &[Value], idx: usize, method: &str) -> Result<UInt256, RpcException> {

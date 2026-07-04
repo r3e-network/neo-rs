@@ -4,12 +4,13 @@ use crate::enclave::TeeEnclave;
 use crate::error::{TeeError, TeeResult};
 use crate::wallet::SealedKey;
 use neo_crypto::{Crypto, Secp256r1Crypto};
+use neo_primitives::hex_util;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{error, info};
 
 /// TEE-protected wallet that stores keys in sealed format
 pub struct TeeWallet {
@@ -87,7 +88,7 @@ impl TeeWallet {
                         keys.insert(sealed_key.script_hash, sealed_key);
                     }
                     Err(e) => {
-                        warn!("Failed to load key {}: {}", key_filename, e);
+                        error!("Failed to load key {}: {}", key_filename, e);
                     }
                 }
             }
@@ -162,7 +163,7 @@ impl TeeWallet {
         )?;
 
         // Save key to file
-        let key_filename = format!("key_{}.json", hex::encode(&script_hash[..8]));
+        let key_filename = format!("key_{}.json", hex_util::encode_hex(&script_hash[..8]));
         let key_path = self.path.join(&key_filename);
         sealed_key.save_to_file(&key_path)?;
 
@@ -201,7 +202,7 @@ impl TeeWallet {
             SealedKey::seal(&self.enclave, private_key, &public_key, &script_hash, label)?;
 
         // Save key to file
-        let key_filename = format!("key_{}.json", hex::encode(&script_hash[..8]));
+        let key_filename = format!("key_{}.json", hex_util::encode_hex(&script_hash[..8]));
         let key_path = self.path.join(&key_filename);
         sealed_key.save_to_file(&key_path)?;
 
@@ -234,7 +235,7 @@ impl TeeWallet {
     /// Set the default account
     pub fn set_default_account(&self, script_hash: &[u8; 20]) -> TeeResult<()> {
         if !self.keys.read().contains_key(script_hash) {
-            return Err(TeeError::KeyNotFound(hex::encode(script_hash)));
+            return Err(TeeError::KeyNotFound(hex_util::encode_hex(script_hash)));
         }
         *self.default_account.write() = Some(*script_hash);
         self.save_metadata()?;
@@ -252,7 +253,7 @@ impl TeeWallet {
             .read()
             .get(script_hash)
             .cloned()
-            .ok_or_else(|| TeeError::KeyNotFound(hex::encode(script_hash)))?;
+            .ok_or_else(|| TeeError::KeyNotFound(hex_util::encode_hex(script_hash)))?;
 
         // Unseal the private key inside TEE
         let private_key = sealed_key.unseal(&self.enclave)?;
@@ -270,11 +271,11 @@ impl TeeWallet {
 
         let removed = self.keys.write().remove(script_hash);
         if removed.is_none() {
-            return Err(TeeError::KeyNotFound(hex::encode(script_hash)));
+            return Err(TeeError::KeyNotFound(hex_util::encode_hex(script_hash)));
         }
 
         // Delete key file
-        let key_filename = format!("key_{}.json", hex::encode(&script_hash[..8]));
+        let key_filename = format!("key_{}.json", hex_util::encode_hex(&script_hash[..8]));
         let key_path = self.path.join(&key_filename);
         if key_path.exists() {
             std::fs::remove_file(&key_path)?;
@@ -286,7 +287,7 @@ impl TeeWallet {
         }
 
         self.save_metadata()?;
-        info!("Deleted key from TEE wallet: {}", hex::encode(script_hash));
+        info!("Deleted key from TEE wallet: {}", hex_util::encode_hex(script_hash));
         Ok(())
     }
 
@@ -295,7 +296,7 @@ impl TeeWallet {
             .keys
             .read()
             .keys()
-            .map(|hash| format!("key_{}.json", hex::encode(&hash[..8])))
+            .map(|hash| format!("key_{}.json", hex_util::encode_hex(&hash[..8])))
             .collect();
 
         let metadata = WalletMetadata {

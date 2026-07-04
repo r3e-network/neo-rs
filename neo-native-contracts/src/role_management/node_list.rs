@@ -2,29 +2,24 @@
 
 use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
-use neo_serialization::BinarySerializer;
 use neo_vm::StackItem;
-use neo_vm_rs::{ExecutionEngineLimits, StackValue};
+use neo_vm_rs::StackValue;
 
 /// Decodes a serialized node-list (a `BinarySerializer` array of compressed
 /// EC-point byte strings) into `ECPoint`s.
 pub(super) fn decode_node_list(value: &[u8]) -> CoreResult<Vec<ECPoint>> {
-    let limits = ExecutionEngineLimits::default();
-    let value = BinarySerializer::deserialize_stack_value_with_limits(
-        value,
-        limits.max_item_size as usize,
-        limits.max_stack_size as usize,
-    )
-    .map_err(|e| CoreError::deserialization(format!("RoleManagement node list: {e}")))?;
+    let value =
+        crate::support::codec::decode_stack_value(value, "RoleManagement node list")?;
     Ok(NodeList::from_stack_value(value)?.into_nodes())
 }
 
 /// Serializes an empty node list (C# returns an empty `ECPoint[]`, not `null`,
 /// when no designation exists).
 pub(super) fn empty_node_list() -> CoreResult<Vec<u8>> {
-    let item = NodeList::new(Vec::new()).to_stack_value();
-    BinarySerializer::serialize_stack_value_default(&item)
-        .map_err(|e| CoreError::invalid_operation(format!("RoleManagement empty list: {e}")))
+    crate::support::codec::encode_storage_struct(
+        &NodeList::new(Vec::new()),
+        "RoleManagement empty list",
+    )
 }
 
 /// Builds the persisted `StackValue::Array` representation for C# `NodeList`.
@@ -47,8 +42,10 @@ pub(super) fn nodes_to_event_array(points: &[ECPoint]) -> CoreResult<StackItem> 
 pub(super) fn encode_node_list(points: &[ECPoint]) -> CoreResult<Vec<u8>> {
     let mut sorted = points.to_vec();
     sorted.sort();
-    BinarySerializer::serialize_stack_value_default(&nodes_to_stack_value(&sorted))
-        .map_err(|e| CoreError::invalid_operation(format!("RoleManagement node list: {e}")))
+    crate::support::codec::encode_storage_struct(
+        &NodeList::new(sorted),
+        "RoleManagement node list",
+    )
 }
 
 /// Decodes + validates the `nodes` Array argument: 1..=32 compressed EC points

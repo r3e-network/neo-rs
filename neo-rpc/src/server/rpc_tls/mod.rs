@@ -14,6 +14,7 @@
 
 use super::rpc_server_settings::RpcServerConfig;
 use neo_error::{CoreError, CoreResult};
+use neo_primitives::hex_util;
 use p12::PFX;
 use rustls::server::AllowAnyAuthenticatedClient;
 use rustls::{Certificate, PrivateKey, RootCertStore, ServerConfig};
@@ -128,7 +129,7 @@ fn thumbprint_hex(cert_der: &[u8]) -> String {
     let mut hasher = Sha1::new();
     hasher.update(cert_der);
     let digest = hasher.finalize();
-    hex::encode_upper(digest)
+    hex_util::encode_hex_upper(&digest)
 }
 
 fn normalize_thumbprint(value: &str) -> String {

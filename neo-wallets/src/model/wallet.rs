@@ -5,7 +5,7 @@
 
 use crate::{key_pair::KeyPair, version::Version, wallet_account::WalletAccount};
 use async_trait::async_trait;
-use neo_execution::Contract;
+use neo_vm::Contract;
 use neo_payloads::Transaction;
 use neo_primitives::{UInt160, UInt256};
 use std::sync::Arc;

@@ -16,7 +16,7 @@ use std::net::SocketAddr;
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
 
-/// Result of executing a block via the [`crate::NeoEngine`] /
+/// Result of executing a block via the [`crate::EngineApi`] /
 /// [`crate::BlockExecutor`] services.
 ///
 /// This is the compact summary returned across runtime service boundaries.
@@ -60,7 +60,7 @@ impl ExecutionOutcome {
 /// Engine-API-style execution payload.
 ///
 /// In reth this is the typed return value of `engine_executePayload`; in
-/// neo-rs it is the analogous blob returned by [`crate::NeoEngine::execute_block`].
+/// neo-rs it is the analogous blob returned by [`crate::EngineApi::execute_block`].
 /// The payload currently wraps the compact [`ExecutionOutcome`]. Raw
 /// execution notifications and state-root artifacts remain owned by the
 /// concrete execution and blockchain crates.
@@ -74,7 +74,7 @@ pub struct ExecutionPayload {
 ///
 /// The validation pipeline runs in two phases in the reth model: a cheap
 /// *consensus* check (header / merkle / witness shape) and an expensive
-/// *execution* check (state transition). [`crate::NeoEngine::validate_block`]
+/// *execution* check (state transition). [`crate::EngineApi::validate_block`]
 /// is the cheap, consensus-shaped variant — anything beyond header / merkle
 /// belongs in `execute_block`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

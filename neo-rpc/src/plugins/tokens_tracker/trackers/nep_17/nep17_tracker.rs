@@ -7,6 +7,7 @@ use super::super::token_transfer::TokenTransfer;
 use super::super::tracker_base::{Tracker, TrackerBase, TransferRecord};
 use super::nep17_balance_key::Nep17BalanceKey;
 use super::nep17_transfer_key::Nep17TransferKey;
+use neo_config::ProtocolSettings;
 use neo_execution::ApplicationEngine;
 use neo_manifest::CallFlags;
 use neo_native_contracts::contract_management::ContractManagement;
@@ -14,7 +15,6 @@ use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
 use neo_primitives::{LogLevel, TriggerType, UInt160};
 use neo_storage::persistence::DataCache;
-use neo_system::Node;
 use neo_vm::StackItem;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
@@ -46,10 +46,10 @@ impl Nep17Tracker {
         db: Arc<dyn neo_storage::persistence::Store>,
         max_results: u32,
         should_track_history: bool,
-        neo_system: Arc<Node>,
+        settings: Arc<ProtocolSettings>,
     ) -> Self {
         Self {
-            base: TrackerBase::new(db, max_results, should_track_history, neo_system),
+            base: TrackerBase::new(db, max_results, should_track_history, settings),
             current_height: 0,
             current_block: None,
         }
@@ -119,7 +119,9 @@ impl Nep17Tracker {
                 block_index: self.current_height,
                 tx_hash: *tx_hash,
             };
-            let _ = self.base.put(NEP17_TRANSFER_SENT_PREFIX, &key, &value);
+            if let Err(e) = self.base.put(NEP17_TRANSFER_SENT_PREFIX, &key, &value) {
+                TrackerBase::log(self.track_name(), &format!("Failed to store NEP-17 transfer sent: {e}"), LogLevel::Error);
+            }
         }
 
         if record.to != UInt160::zero() {
@@ -135,7 +137,9 @@ impl Nep17Tracker {
                 block_index: self.current_height,
                 tx_hash: *tx_hash,
             };
-            let _ = self.base.put(NEP17_TRANSFER_RECEIVED_PREFIX, &key, &value);
+            if let Err(e) = self.base.put(NEP17_TRANSFER_RECEIVED_PREFIX, &key, &value) {
+                TrackerBase::log(self.track_name(), &format!("Failed to store NEP-17 transfer received: {e}"), LogLevel::Error);
+            }
         }
 
         *transfer_index += 1;
@@ -160,7 +164,7 @@ impl Nep17Tracker {
             None,
             Arc::new(snapshot.clone()),
             self.current_block.clone(),
-            self.base.neo_system.settings().as_ref().clone(),
+            self.base.settings.as_ref().clone(),
             17_000_000,
             None,
         ) {
@@ -198,7 +202,9 @@ impl Nep17Tracker {
         };
 
         if balance.is_zero() {
-            let _ = self.base.delete(NEP17_BALANCE_PREFIX, &key);
+            if let Err(e) = self.base.delete(NEP17_BALANCE_PREFIX, &key) {
+                TrackerBase::log(self.track_name(), &format!("Failed to delete NEP-17 balance: {e}"), LogLevel::Error);
+            }
             return;
         }
 
@@ -206,7 +212,9 @@ impl Nep17Tracker {
             balance,
             last_updated_block: self.current_height,
         };
-        let _ = self.base.put(NEP17_BALANCE_PREFIX, &key, &value);
+        if let Err(e) = self.base.put(NEP17_BALANCE_PREFIX, &key, &value) {
+            TrackerBase::log(self.track_name(), &format!("Failed to store NEP-17 balance: {e}"), LogLevel::Error);
+        }
     }
 
     /// Returns the database prefixes for RPC queries.
@@ -226,7 +234,6 @@ impl Tracker for Nep17Tracker {
 
     fn on_persist(
         &mut self,
-        _system: &Node,
         block: &Block,
         snapshot: &DataCache,
         executed_list: &[ApplicationExecuted],

@@ -494,9 +494,10 @@ impl NativeContract for GasToken {
         // Collect the per-transaction data under the shared block borrow; the
         // burns below need `&mut engine`.
         let (primary_index, tx_data) = {
-            let block = engine.persisting_block().ok_or_else(|| {
-                CoreError::invalid_operation("GasToken::on_persist requires a persisting block")
-            })?;
+            let block = crate::support::engine::require_persisting_block(
+                engine,
+                "GasToken::on_persist",
+            )?;
             let tx_data: Vec<(Option<UInt160>, i64, i64, Option<u8>)> = block
                 .transactions
                 .iter()

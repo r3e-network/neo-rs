@@ -71,6 +71,9 @@ fn curve_order(curve: ECCurve) -> CryptoResult<&'static BigUint> {
 }
 
 fn add_mod_order(a: &[u8], b: &[u8; 32], n: &BigUint) -> CryptoResult<[u8; 32]> {
+    // SAFETY: BIP-32 child derivation here uses variable-time big-integer arithmetic.
+    // This is acceptable because this code path is only used for wallet key derivation,
+    // not consensus operations.
     let a_int = BigUint::from_bytes_be(a);
     if a_int >= *n {
         return Err(CryptoError::invalid_argument(

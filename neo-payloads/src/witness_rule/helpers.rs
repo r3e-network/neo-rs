@@ -1,6 +1,6 @@
-use hex::{decode as hex_decode, encode as hex_encode};
 use neo_error::{CoreError, CoreResult};
 use neo_io::{IoError, IoResult, MemoryReader};
+use neo_primitives::hex_util;
 
 /// Size of a compressed ECPoint in bytes.
 pub const ECPOINT_COMPRESSED_SIZE: usize = 33;
@@ -8,13 +8,16 @@ pub const ECPOINT_COMPRESSED_SIZE: usize = 33;
 pub const ECPOINT_UNCOMPRESSED_SIZE: usize = 65;
 
 /// Encodes bytes as a lowercase hex string.
+///
+/// Delegates to `neo_primitives::hex_util::encode_hex` (ADR-024).
 pub fn encode_hex(bytes: &[u8]) -> String {
-    hex_encode(bytes)
+    hex_util::encode_hex(bytes)
 }
 
 fn decode_hex(value: &str) -> CoreResult<Vec<u8>> {
-    hex_decode(neo_primitives::strip_hex_prefix(value))
-        .map_err(|e| CoreError::other(format!("Invalid hex string: {e}")))
+    hex_util::decode_hex(value).map_err(|e| {
+        CoreError::other(format!("Invalid hex string: {e}"))
+    })
 }
 
 /// Parses a hex-encoded ECPoint group, validating the byte length.

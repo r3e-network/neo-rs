@@ -9,7 +9,7 @@ use crate::widgets;
 
 pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
     let (host, cpu_hist, mem_hist, bps_hist, online) = {
-        let s = app.state.lock().unwrap();
+        let s = app.state.lock().expect("NodeState mutex poisoned");
         (
             s.host,
             s.cpu_history.iter().copied().collect::<Vec<_>>(),

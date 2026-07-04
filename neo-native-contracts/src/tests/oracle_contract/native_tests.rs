@@ -242,8 +242,7 @@ fn oracle_storage_codecs_use_stack_value_projection() {
         "fn encode_oracle_request",
         "fn decode_oracle_request",
     );
-    assert!(request_encoder.contains("to_stack_value"));
-    assert!(request_encoder.contains("serialize_stack_value_default"));
+    assert!(request_encoder.contains("encode_storage_struct"));
     assert!(!request_encoder.contains("StackItem::from_array"));
     assert!(!request_encoder.contains("BinarySerializer::serialize("));
 
@@ -252,20 +251,19 @@ fn oracle_storage_codecs_use_stack_value_projection() {
         "fn decode_oracle_request",
         "fn encode_id_list",
     );
-    assert!(request_decoder.contains("deserialize_stack_value_with_limits"));
+    assert!(request_decoder.contains("decode_stack_value"));
     assert!(request_decoder.contains("OracleRequest::from_stack_value"));
     assert!(!request_decoder.contains("BinarySerializer::deserialize("));
 
     let id_list_encoder = slice_between(storage_source, "fn encode_id_list", "fn decode_id_list");
     assert!(id_list_encoder.contains("OracleIdList::new"));
-    assert!(id_list_encoder.contains("to_stack_value"));
+    assert!(id_list_encoder.contains("encode_storage_struct"));
     assert!(!id_list_encoder.contains("StackValue::Array"));
-    assert!(id_list_encoder.contains("serialize_stack_value_default"));
     assert!(!id_list_encoder.contains("StackItem::from_array"));
     assert!(!id_list_encoder.contains("BinarySerializer::serialize("));
 
     let id_list_decoder = slice_between(storage_source, "fn decode_id_list", "fn read_request");
-    assert!(id_list_decoder.contains("deserialize_stack_value_with_limits"));
+    assert!(id_list_decoder.contains("decode_stack_value"));
     assert!(id_list_decoder.contains("OracleIdList::from_stack_value"));
     assert!(!id_list_decoder.contains("StackValue::Array"));
     assert!(!id_list_decoder.contains("stack_value_as_bigint"));
@@ -282,7 +280,7 @@ fn oracle_storage_codecs_use_stack_value_projection() {
         "// C#: UserData = BinarySerializer.Serialize(userData,",
         "let request = OracleRequest",
     );
-    assert!(request_user_data.contains("deserialize_stack_value_with_limits"));
+    assert!(request_user_data.contains("decode_stack_value"));
     assert!(request_user_data.contains("serialize_stack_value_with_limits"));
     assert!(!request_user_data.contains("BinarySerializer::deserialize("));
     assert!(!request_user_data.contains("BinarySerializer::serialize_with_limits("));

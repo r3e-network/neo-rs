@@ -23,8 +23,12 @@ impl OracleService {
         let counter = self.counter.fetch_add(1, Ordering::SeqCst);
         let https = self.https.clone();
         tokio::spawn(async move {
-            let Ok(public_key) = key.get_public_key_point() else {
-                return;
+            let public_key = match key.get_public_key_point() {
+                Ok(pk) => pk,
+                Err(e) => {
+                    warn!(target: "neo::oracle", %e, "failed to get public key point for oracle signature");
+                    return;
+                }
             };
             let mut message = Vec::with_capacity(public_key.as_bytes().len() + 8 + tx_sign.len());
             message.extend_from_slice(public_key.as_bytes());
@@ -33,7 +37,10 @@ impl OracleService {
 
             let sign = match key.sign(&message) {
                 Ok(sign) => sign,
-                Err(_) => return,
+                Err(e) => {
+                    warn!(target: "neo::oracle", %e, "failed to sign oracle response message");
+                    return;
+                }
             };
 
             let payload = serde_json::json!({

@@ -11,7 +11,7 @@ use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
 use neo_primitives::{LogLevel, UInt160};
 use neo_storage::persistence::{DataCache, SeekDirection, Store, StoreSnapshot};
-use neo_system::Node;
+use neo_config::ProtocolSettings;
 use neo_vm::StackItem;
 use num_bigint::BigInt;
 use serde_json::{Value, json};
@@ -74,7 +74,6 @@ pub trait Tracker: Send + Sync {
     /// Called when a block is being persisted.
     fn on_persist(
         &mut self,
-        system: &Node,
         block: &Block,
         snapshot: &DataCache,
         executed_list: &[ApplicationExecuted],
@@ -97,8 +96,8 @@ pub struct TrackerBase {
     pub db: Arc<dyn Store>,
     /// Current snapshot for batch operations.
     snapshot: Option<Arc<dyn StoreSnapshot>>,
-    /// Reference to the Neo system.
-    pub neo_system: Arc<Node>,
+    /// Protocol settings (for VM execution).
+    pub settings: Arc<ProtocolSettings>,
 }
 
 impl TrackerBase {
@@ -107,14 +106,14 @@ impl TrackerBase {
         db: Arc<dyn Store>,
         max_results: u32,
         should_track_history: bool,
-        neo_system: Arc<Node>,
+        settings: Arc<ProtocolSettings>,
     ) -> Self {
         Self {
             should_track_history,
             max_results,
             db,
             snapshot: None,
-            neo_system,
+            settings,
         }
     }
 

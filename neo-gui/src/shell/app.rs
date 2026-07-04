@@ -95,7 +95,7 @@ impl NeoGuiApp {
 
         let cfg = Arc::new(Mutex::new(PollerCfg::default()));
         let state: SharedState = Arc::new(Mutex::new(NodeState::default()));
-        let url_edit = cfg.lock().unwrap().url.clone();
+        let url_edit = cfg.lock().expect("PollerCfg mutex poisoned").url.clone();
 
         spawn_poller(cc.egui_ctx.clone(), Arc::clone(&cfg), Arc::clone(&state));
 
@@ -194,12 +194,12 @@ impl NeoGuiApp {
                     ui.add_space(16.0);
 
                     let (online, height, network) = {
-                        let s = self.state.lock().unwrap();
-                        (
-                            s.online,
-                            s.status.as_ref().map(|st| st.block_count).unwrap_or(0),
-                            s.status.as_ref().map(|st| st.version.protocol.network_name()).unwrap_or("—"),
-                        )
+let s = self.state.lock().expect("NodeState mutex poisoned");
+                    (
+                        s.online,
+                        s.status.as_ref().map(|st| st.block_count).unwrap_or(0),
+                        s.status.as_ref().map(|st| st.version.protocol.network_name()).unwrap_or("—"),
+                    )
                     };
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -254,7 +254,7 @@ fn spawn_poller(ctx: Context, cfg: Arc<Mutex<PollerCfg>>, state: SharedState) {
         let mut last_height: u64 = 0;
         loop {
             let (url, interval, enabled) = {
-                let c = cfg.lock().unwrap();
+                let c = cfg.lock().expect("PollerCfg mutex poisoned");
                 (c.url.clone(), c.interval, c.enabled)
             };
 
@@ -285,25 +285,25 @@ fn spawn_poller(ctx: Context, cfg: Arc<Mutex<PollerCfg>>, state: SharedState) {
                         let peers = client.peers().ok();
                         let bps = status.block_count.saturating_sub(last_height) as f32;
                         last_height = status.block_count;
-                        let mut s = state.lock().unwrap();
-                        s.online = true;
-                        s.last_error = None;
-                        s.push_height(status.block_count);
-                        s.push_metrics(host.cpu_percent, host.mem_percent(), bps);
-                        s.status = Some(status);
-                        s.peers = peers;
-                        s.host = host;
+let mut s = state.lock().expect("NodeState mutex poisoned");
+                    s.online = true;
+                    s.last_error = None;
+                    s.push_height(status.block_count);
+                    s.push_metrics(host.cpu_percent, host.mem_percent(), bps);
+                    s.status = Some(status);
+                    s.peers = peers;
+                    s.host = host;
                     }
                     Err(e) => {
-                        let mut s = state.lock().unwrap();
-                        s.online = false;
-                        s.last_error = Some(e.to_string());
-                        s.host = host;
+let mut s = state.lock().expect("NodeState mutex poisoned");
+                    s.online = false;
+                    s.last_error = Some(e.to_string());
+                    s.host = host;
                     }
                 }
             } else {
-                let mut s = state.lock().unwrap();
-                s.host = host;
+let mut s = state.lock().expect("NodeState mutex poisoned");
+            s.host = host;
             }
             ctx.request_repaint();
             std::thread::sleep(interval);

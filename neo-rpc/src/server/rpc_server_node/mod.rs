@@ -20,13 +20,13 @@ use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 #[cfg(test)]
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use hex;
 use neo_config::ProtocolSettings;
 use neo_io::{MemoryReader, Serializable};
 use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_network::handle::LocalNodeInfo;
 use neo_payloads::{block::Block, transaction::Transaction};
 use neo_primitives::hardfork::Hardfork;
+use neo_primitives::hex_util;
 use neo_storage::StorageKey;
 use neo_storage::persistence::DataCache;
 use num_bigint::BigInt;
@@ -356,6 +356,6 @@ impl RpcServerNode {
     }
 
     fn format_public_key(bytes: &[u8]) -> String {
-        hex::encode(bytes)
+        hex_util::encode_hex(bytes)
     }
 }

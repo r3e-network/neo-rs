@@ -32,7 +32,7 @@ tracing = { workspace = true }
 parking_lot = { workspace = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
-zstd = "0.13"
+zstd = { workspace = true }
 bincode = { workspace = true }
 
 [[test]]

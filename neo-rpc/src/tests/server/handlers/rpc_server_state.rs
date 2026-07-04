@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::server::rpc_server::RpcServer;
 
-fn make_server_with_state() -> (Arc<neo_system::Node>, Arc<StateStore>, RpcServer) {
+fn make_server_with_state() -> (Arc<crate::server::NodeContext>, Arc<StateStore>, RpcServer) {
     let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let state_store = Arc::new(StateStore::new());
     system.register_service(Arc::clone(&state_store));

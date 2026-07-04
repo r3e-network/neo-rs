@@ -146,11 +146,10 @@ impl NativeContract for OracleContract {
     /// price to the designated oracle node selected by `id % nodes.len()`.
     fn post_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let (block_index, response_ids): (u32, Vec<u64>) = {
-            let block = engine.persisting_block().ok_or_else(|| {
-                CoreError::invalid_operation(
-                    "OracleContract::post_persist requires a persisting block",
-                )
-            })?;
+            let block = crate::support::engine::require_persisting_block(
+                engine,
+                "OracleContract::post_persist",
+            )?;
             let ids = block
                 .transactions
                 .iter()
@@ -366,14 +365,10 @@ impl NativeContract for OracleContract {
                 // MaxUserDataLength, engine.Limits.MaxStackSize) — re-encode
                 // the marshaled item under the 512-byte cap.
                 let limits = ExecutionEngineLimits::default();
-                let user_data_item = BinarySerializer::deserialize_stack_value_with_limits(
+                let user_data_item = crate::support::codec::decode_stack_value(
                     &user_data_bytes,
-                    limits.max_item_size as usize,
-                    limits.max_stack_size as usize,
-                )
-                .map_err(|e| {
-                    CoreError::invalid_operation(format!("OracleContract::request userData: {e}"))
-                })?;
+                    "OracleContract::request userData",
+                )?;
                 let user_data = BinarySerializer::serialize_stack_value_with_limits(
                     &user_data_item,
                     MAX_USER_DATA_LENGTH,

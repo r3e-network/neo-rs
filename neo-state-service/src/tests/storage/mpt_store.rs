@@ -7,6 +7,7 @@ use neo_storage::persistence::{
 use neo_storage::types::{StorageItem, StorageKey};
 use parking_lot::Mutex as ParkingMutex;
 
+#[derive(Debug)]
 struct BorrowOnlySnapshot {
     key: Vec<u8>,
     value: Vec<u8>,
@@ -56,6 +57,12 @@ struct RecordingRawOverlayStore {
     inner: MemoryStore,
     entries: ParkingMutex<Vec<(Vec<u8>, Option<Vec<u8>>)>>,
     commit_count: ParkingMutex<usize>,
+}
+
+impl std::fmt::Debug for RecordingRawOverlayStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RecordingRawOverlayStore").finish_non_exhaustive()
+    }
 }
 
 impl RecordingRawOverlayStore {
@@ -131,6 +138,23 @@ impl Store for RecordingRawOverlayStore {
         self.inner.on_new_snapshot(handler);
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_raw_overlay_store(&self) -> Option<&dyn neo_storage::persistence::RawOverlayStore> {
+        Some(self)
+    }
+}
+
+impl neo_storage::persistence::RawOverlayStore for RecordingRawOverlayStore {
+    fn try_commit_raw_overlay(
+        &self,
+        _overlay: &[(Vec<u8>, Option<Vec<u8>>)],
+    ) -> neo_storage::StorageResult<bool> {
+        Ok(false)
+    }
+
     fn try_commit_borrowed_raw_overlay(
         &self,
         visit: &mut dyn FnMut(&mut dyn FnMut(&[u8], Option<&[u8]>)),
@@ -146,10 +170,6 @@ impl Store for RecordingRawOverlayStore {
         self.inner.apply_batch(&batch);
         self.entries.lock().extend(entries);
         Ok(true)
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 

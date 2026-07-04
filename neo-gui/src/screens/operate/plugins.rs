@@ -50,7 +50,7 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
     });
     ui.add_space(8.0);
     widgets::section(ui, "Reported by node");
-    let out = app.rpc_out.lock().unwrap().clone();
+    let out = app.rpc_out.lock().expect("RPC output mutex poisoned").clone();
     widgets::card(ui, |ui| match out {
         Some(mut text) => {
             ui.add(

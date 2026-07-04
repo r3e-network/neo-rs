@@ -17,12 +17,15 @@ description = "Reth-style async service vocabulary for Neo (service traits, even
 # Lower protocol / foundation layers
 neo-primitives = { workspace = true }
 neo-payloads = { workspace = true }
+neo-storage = { workspace = true }
+neo-config = { workspace = true }
 
 # External
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 async-trait = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
+parking_lot = { workspace = true }
 
 [lints]
 workspace = true

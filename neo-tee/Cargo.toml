@@ -25,7 +25,7 @@ attestation = ["sgx-hw"]
 # parser + vsock protocol + in-enclave fair-ordering proofs). Off by default.
 # Pulls CBOR (attestation parsing) and the consensus signer trait. The
 # hardware/PKI/KMS parts are isolated and flagged inside `src/nitro/`.
-nitro = ["dep:ciborium", "dep:neo-consensus", "dep:neo-primitives"]
+nitro = ["dep:ciborium", "dep:neo-consensus"]
 
 [dependencies]
 # Core dependencies
@@ -36,18 +36,21 @@ hex = { workspace = true }
 base64 = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
-hkdf = "0.12"
-aes-gcm = "0.10"
+hkdf = { workspace = true }
+aes-gcm = { workspace = true }
 zeroize = { workspace = true }
 parking_lot = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 tracing = { workspace = true }
-libloading = "0.8"
+libloading = { workspace = true }
 
 # Workspace crypto primitives (secp256r1 + hash160)
 neo-crypto = { workspace = true }
 neo-error = { workspace = true }
+# Canonical hex helpers (ADR-024): used by error/mempool/wallet/attestation/sgx
+# production code under default features, so this is a required dependency.
+neo-primitives = { workspace = true }
 bincode = { workspace = true }
 
 # SGX dependencies (optional)
@@ -59,8 +62,6 @@ ciborium = { version = "0.2", optional = true }
 # ConsensusSigner trait the NitroEnclaveSigner implements. Acyclic:
 # neo-consensus does NOT depend on neo-tee.
 neo-consensus = { workspace = true, optional = true }
-# UInt160 script hash for can_sign / signer identity.
-neo-primitives = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

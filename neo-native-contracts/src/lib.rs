@@ -372,16 +372,9 @@ impl AccountState {
     }
 
     pub(crate) fn from_stack_value(stack_value: StackValue) -> neo_error::CoreResult<Self> {
-        let StackValue::Struct(_, items) = stack_value else {
-            return Err(neo_error::CoreError::invalid_data(
-                "NEP-17 account state is not a struct",
-            ));
-        };
-        let balance = items
-            .first()
-            .ok_or_else(|| neo_error::CoreError::invalid_data("NEP-17 account state is empty"))?;
-        let balance = neo_vm::stack_value_as_bigint(balance)
-            .map_err(|e| neo_error::CoreError::invalid_data(format!("NEP-17 balance: {e}")))?;
+        let decoder =
+            crate::support::codec::StructDecoder::new(&stack_value, "NEP-17 account state")?;
+        let balance = decoder.bigint(0, "balance")?;
         Ok(Self { balance })
     }
 }
@@ -392,24 +385,17 @@ neo_vm::impl_interoperable_via_stack_value!(AccountState);
 /// its on-chain byte representation. Shared by [`read_nep17_balance`] and the
 /// per-token account readers (`GasToken::read_gas_account`,
 /// `NeoToken::read_account_state`) to avoid duplicating the
-/// `deserialize_stack_value_with_limits` + `AccountState::from_stack_value`
-/// plumbing in every caller.
+/// `decode_stack_value` + `AccountState::from_stack_value` plumbing in every
+/// caller.
 pub(crate) fn deserialize_account_state(bytes: &[u8]) -> neo_error::CoreResult<AccountState> {
-    let limits = neo_vm_rs::ExecutionEngineLimits::default();
-    let decoded = neo_serialization::BinarySerializer::deserialize_stack_value_with_limits(
-        bytes,
-        limits.max_item_size as usize,
-        limits.max_stack_size as usize,
-    )
-    .map_err(|e| neo_error::CoreError::deserialization(format!("NEP-17 account state: {e}")))?;
+    let decoded = crate::support::codec::decode_stack_value(bytes, "NEP-17 account state")?;
     AccountState::from_stack_value(decoded)
 }
 
 /// Serializes a NEP-17 account-state struct to its on-chain byte form.
 /// Companion of [`deserialize_account_state`].
 pub(crate) fn serialize_account_state(state: &AccountState) -> neo_error::CoreResult<Vec<u8>> {
-    neo_serialization::BinarySerializer::serialize_stack_value_default(&state.to_stack_value())
-        .map_err(|e| neo_error::CoreError::serialization(format!("NEP-17 account state: {e}")))
+    crate::support::codec::encode_storage_struct(state, "NEP-17 account state")
 }
 
 /// Reads a NEP-17 account balance — the `Balance` field (index 0) of the

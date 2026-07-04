@@ -7,6 +7,7 @@ use neo_crypto::{ECCurve, ECPoint};
 use neo_error::CoreError;
 use neo_error::CoreResult;
 use neo_primitives::constants::ADDRESS_SIZE;
+use neo_primitives::hex_util;
 use neo_vm::Interoperable;
 use neo_vm::InteroperableError;
 use neo_vm::StackItem;
@@ -175,11 +176,11 @@ impl Serialize for ContractGroup {
     where
         S: serde::Serializer,
     {
-        let pubkey_hex = hex::encode(
-            self.pub_key
-                .encode_compressed()
-                .map_err(|e| serde::ser::Error::custom(e.to_string()))?,
-        );
+        let pubkey_bytes = self
+            .pub_key
+            .encode_compressed()
+            .map_err(|e| serde::ser::Error::custom(e.to_string()))?;
+        let pubkey_hex = hex_util::encode_hex(&pubkey_bytes);
         let signature_b64 = general_purpose::STANDARD.encode(&self.signature);
 
         let helper = ContractGroupSerde {
@@ -214,7 +215,7 @@ impl<'de> Deserialize<'de> for ContractGroup {
     {
         let helper = ContractGroupSerde::deserialize(deserializer)?;
 
-        let pubkey_bytes = hex::decode(helper.pubkey)
+        let pubkey_bytes = hex_util::decode_hex(&helper.pubkey)
             .map_err(|e| serde::de::Error::custom(format!("Invalid group pubkey: {}", e)))?;
         let pub_key = ECPoint::decode(&pubkey_bytes, ECCurve::secp256r1())
             .map_err(|e| serde::de::Error::custom(format!("Invalid group pubkey: {}", e)))?;

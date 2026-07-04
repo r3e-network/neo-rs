@@ -53,7 +53,7 @@ async fn verify_proof_round_trips_value() {
         .expect("proof present");
 
     let nodes: Vec<Vec<u8>> = proof.into_iter().collect();
-    let payload = RpcServerState::encode_proof_payload(&key, &nodes);
+    let payload = RpcServerState::encode_proof_payload(&key, &nodes).unwrap();
     let payload_b64 = BASE64_STANDARD.encode(payload);
 
     let (_system, _state_store, server) = make_server_with_state();
@@ -87,7 +87,7 @@ async fn verify_proof_rejects_wrong_root() {
         .expect("proof query")
         .expect("proof present");
     let nodes: Vec<Vec<u8>> = proof.into_iter().collect();
-    let payload = RpcServerState::encode_proof_payload(&key, &nodes);
+    let payload = RpcServerState::encode_proof_payload(&key, &nodes).unwrap();
     let payload_b64 = BASE64_STANDARD.encode(payload);
 
     let (_system, _state_store, server) = make_server_with_state();

@@ -9,10 +9,8 @@ use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
 use neo_payloads::{OracleResponse, Transaction, TransactionAttribute};
 use neo_primitives::UInt256;
-use neo_serialization::BinarySerializer;
 use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -74,26 +72,22 @@ impl OracleContract {
         snapshot: &DataCache,
         price: i64,
     ) -> CoreResult<()> {
-        let key = Self::price_key();
-        if snapshot.get(&key).is_none() {
-            return Err(CoreError::invalid_data("OracleContract price is missing"));
-        }
-        snapshot.update(
-            key,
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(price))),
-        );
-        Ok(())
+        crate::support::settings::put_required_i64_setting_key(
+            snapshot,
+            Self::price_key(),
+            "OracleContract price",
+            price,
+        )
     }
 
     /// Reads `Prefix_Price`. C# genesis initialization seeds this record and
     /// later code reads it with direct storage access, so absence is a fault.
     pub(in crate::oracle_contract) fn read_price(&self, snapshot: &DataCache) -> CoreResult<i64> {
-        let item = snapshot
-            .get(&Self::price_key())
-            .ok_or_else(|| CoreError::invalid_data("OracleContract price is missing"))?;
-        BigInt::from_signed_bytes_le(&item.value_bytes())
-            .to_i64()
-            .ok_or_else(|| CoreError::invalid_data("OracleContract price out of range"))
+        crate::support::settings::read_required_i64_setting_key(
+            snapshot,
+            Self::price_key(),
+            "OracleContract price",
+        )
     }
 
     /// The oracle request price setting key `(Oracle.ID, [Prefix_Price])`.
@@ -156,42 +150,29 @@ impl OracleContract {
     pub(in crate::oracle_contract) fn encode_oracle_request(
         request: &OracleRequest,
     ) -> CoreResult<Vec<u8>> {
-        let item = request.to_stack_value();
-        BinarySerializer::serialize_stack_value_default(&item)
-            .map_err(|e| CoreError::serialization(format!("OracleRequest serialize: {e}")))
+        crate::support::codec::encode_storage_struct(request, "OracleRequest")
     }
 
     /// Decodes a stored `OracleRequest` record (C# `OracleRequest.FromStackItem`).
     pub(in crate::oracle_contract) fn decode_oracle_request(
         bytes: &[u8],
     ) -> CoreResult<OracleRequest> {
-        let limits = ExecutionEngineLimits::default();
-        let item = BinarySerializer::deserialize_stack_value_with_limits(
-            bytes,
-            limits.max_item_size as usize,
-            limits.max_stack_size as usize,
-        )
-        .map_err(|e| CoreError::deserialization(format!("OracleRequest: {e}")))?;
+        let item = crate::support::codec::decode_stack_value(bytes, "OracleRequest")?;
         OracleRequest::from_stack_value(item)
     }
 
     /// Encodes the per-url id-list (C# `IdList : InteroperableList<ulong>`): the
     /// BinarySerialized `Array` of `Integer` ids.
     pub(in crate::oracle_contract) fn encode_id_list(ids: &[u64]) -> CoreResult<Vec<u8>> {
-        let item = OracleIdList::new(ids.to_vec()).to_stack_value();
-        BinarySerializer::serialize_stack_value_default(&item)
-            .map_err(|e| CoreError::serialization(format!("Oracle IdList serialize: {e}")))
+        crate::support::codec::encode_storage_struct(
+            &OracleIdList::new(ids.to_vec()),
+            "Oracle IdList",
+        )
     }
 
     /// Decodes the per-url id-list (C# `IdList.FromStackItem`, `(ulong)item.GetInteger()`).
     pub(in crate::oracle_contract) fn decode_id_list(bytes: &[u8]) -> CoreResult<Vec<u64>> {
-        let limits = ExecutionEngineLimits::default();
-        let item = BinarySerializer::deserialize_stack_value_with_limits(
-            bytes,
-            limits.max_item_size as usize,
-            limits.max_stack_size as usize,
-        )
-        .map_err(|e| CoreError::deserialization(format!("Oracle IdList: {e}")))?;
+        let item = crate::support::codec::decode_stack_value(bytes, "Oracle IdList")?;
         Ok(OracleIdList::from_stack_value(item)?.into_ids())
     }
 

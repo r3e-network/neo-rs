@@ -60,7 +60,8 @@ pub const DEFAULT_EXEC_FEE_FACTOR: u32 = 30;
 pub const DEFAULT_FEE_PER_BYTE: u32 = 1000;
 /// Default max valid-until-block increment
 /// (matches C# `PolicyContract.DefaultMaxValidUntilBlockIncrement`).
-pub const DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT: u32 = 5_760;
+pub const DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT: u32 =
+    neo_primitives::constants::DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT;
 
 native_contract_handle!(
     /// Static accessor for the PolicyContract native contract.

@@ -24,7 +24,7 @@ runs the NeoVM and dBFT 2.0 consensus, and serves the standard JSON-RPC API.
 neo-rs is a production node implementation that speaks Neo N3's wire protocol,
 executes its virtual machine, and maintains its ledger and state exactly as the
 canonical C# node does — so the two are interchangeable on the same network. It
-is organized as a layered Rust workspace of focused crates, built on mature
+is organized as a 7-layer Rust workspace of 28 focused crates, built on mature
 libraries (MDBX, RocksDB, jsonrpsee, the RustCrypto suite) with the protocol-defining
 parts (NeoVM, var-int wire format, MPT, dBFT) implemented from the specification.
 
@@ -36,7 +36,7 @@ parts (NeoVM, var-int wire format, MPT, dBFT) implemented from the specification
 | **Consensus** | dBFT 2.0 (single-block finality, view changes) |
 | **Virtual machine** | NeoVM with full opcode + interop surface and gas metering |
 | **State** | Merkle-Patricia Trie state root, proofs (`getproof`/`getstate`) |
-| **Native contracts** | NEO, GAS, Policy, Oracle, Notary, StdLib, CryptoLib, RoleManagement, ContractManagement, Ledger |
+| **Native contracts** | NEO, GAS, Policy, Oracle, Notary, StdLib, CryptoLib, RoleManagement, ContractManagement, Ledger, Treasury |
 | **Standards** | NEP-17 (tokens), NEP-11 (NFTs), NEP-6 (wallets), NEP-2 keys |
 | **Hardforks** | Full Neo N3 hardfork schedule through v3.10.0 |
 | **JSON-RPC** | ~55 methods (blockchain, state, invocation, governance, wallet, oracle) |
@@ -47,24 +47,30 @@ See [docs/protocol-compatibility.md](./docs/protocol-compatibility.md) for the p
 
 ## Architecture at a glance
 
-The workspace is layered so dependencies flow strictly downward — Foundation
-crates know nothing of the services above them.
+The workspace is organized into **7 layers, 28 production crates** (plus 2
+dev-only crates) so dependencies flow strictly downward — Foundation crates
+know nothing of the services above them.
 
 ```mermaid
 flowchart TD
-    APP["<b>Application</b><br/>neo-node (daemon)"]
-    SVC["<b>Services</b><br/>neo-system · neo-runtime · neo-blockchain · neo-network<br/>neo-rpc · neo-indexer · neo-wallets · neo-oracle-service"]
-    MID["<b>VM / Execution / State / Protocol</b><br/>neo-vm · neo-execution · neo-native-contracts · neo-state-service<br/>neo-mempool · neo-payloads · neo-consensus · neo-manifest"]
-    FND["<b>Foundation</b><br/>neo-primitives · neo-io · neo-crypto · neo-config<br/>neo-error · neo-serialization · neo-storage"]
-    APP --> SVC --> MID --> FND
+    APP["<b>Application</b><br/>neo-node (daemon) · neo-gui (desktop, excluded)"]
+    PLUG["<b>Plugin / RPC Boundary</b><br/>neo-rpc · neo-oracle-service"]
+    COMP["<b>Composition</b><br/>neo-system"]
+    NODE["<b>Node Services</b><br/>neo-blockchain · neo-network · neo-wallets<br/>neo-indexer · neo-tee"]
+    DOM["<b>Domain Services</b><br/>neo-runtime · neo-execution · neo-native-contracts<br/>neo-state-service · neo-mempool · neo-engine"]
+    PROTO["<b>Protocol</b><br/>neo-payloads · neo-consensus · neo-hsm"]
+    INF["<b>Infrastructure</b><br/>neo-io · neo-error · neo-crypto · neo-storage<br/>neo-static-files · neo-config · neo-vm · neo-serialization · neo-manifest"]
+    FND["<b>Foundation</b><br/>neo-primitives"]
+    APP --> PLUG --> COMP --> NODE --> DOM --> PROTO --> INF --> FND
 ```
 
-The runtime layer now includes bounded task supervision, a shared block-import
-contract, a bounded import queue for concurrent preverification, typed storage
-table codecs, and provider factories for hot/cold ledger reads. Full crate map
-and design decisions: [docs/architecture.md](./docs/architecture.md).
-How a block, transaction, and consensus round flow through these crates:
-[docs/dataflow.md](./docs/dataflow.md).
+The architecture follows patterns from **reth** (provider traits, sealed
+`NodeTypes`/`NodeComponents` traits, `EngineApi`, pipeline stage abstraction,
+feature-gated RPC) and **Polkadot/Substrate** (bounded context layers,
+per-domain error types, service trait composition). See [`design.md`](./design.md)
+for the 23 ADRs and the 4-phase evolution roadmap, and [docs/architecture.md](./docs/architecture.md)
+for the full crate reference. How a block, transaction, and consensus round
+flow through these crates: [docs/dataflow.md](./docs/dataflow.md).
 
 ## Quick start
 
@@ -128,13 +134,14 @@ you can understand the whole node without reading source.
 | Doc | What you'll learn |
 |-----|-------------------|
 | [Getting started](./docs/getting-started.md) | Install, build, and run your first node |
-| [Architecture](./docs/architecture.md) | The layered workspace design and key decisions |
+| [Architecture](./docs/architecture.md) | The 7-layer workspace design and key decisions |
 | [Dataflow](./docs/dataflow.md) | How blocks, transactions, consensus, and state move through the node |
 | [Configuration](./docs/configuration.md) | Every TOML section and key, with defaults |
 | [RPC API](./docs/rpc-api.md) | All JSON-RPC methods, grouped, with examples |
 | [Protocol & compatibility](./docs/protocol-compatibility.md) | Neo N3 v3.10.0 parity, native contracts, hardforks |
 | [Operations](./docs/operations.md) | Deploy, monitor, secure, back up, and upgrade |
 | [Coding/design guidance](./docs/coding-design-architecture-guidance.md) | High-level domain-flow style, fluent APIs, abstraction layers, module organization |
+| [Architecture design (ADR)](./design.md) | 15 ADRs, reth/polkadot comparison, 4-phase evolution roadmap |
 
 **Learning paths:** operators → *getting-started → configuration → operations*;
 developers → *architecture → dataflow → protocol-compatibility → rpc-api*.
@@ -143,19 +150,24 @@ developers → *architecture → dataflow → protocol-compatibility → rpc-api
 
 ```
 neo-rs/
-├── neo-primitives, neo-io, neo-crypto, neo-config,   # Foundation / infrastructure
-│   neo-error, neo-serialization, neo-storage, neo-static-files
-├── neo-payloads, neo-consensus, neo-manifest,        # Protocol / VM / state
-│   neo-vm, neo-execution, neo-native-contracts,
-│   neo-state-service, neo-mempool
-├── neo-blockchain, neo-network, neo-runtime,         # Services
-│   neo-system, neo-wallets, neo-rpc,
-│   neo-oracle-service, neo-indexer, neo-tee
-├── neo-node                                          # Application (daemon)
-├── config/                                           # mainnet/testnet TOML configs
-├── docs/                                             # the documentation system
-└── tests/ (neo-tests), benches-package/ (neo-benches), fuzz/
-                                                       # tests, benchmarks, fuzzing
+├── neo-primitives                          # L0 Foundation — primitive types
+├── neo-io, neo-error, neo-crypto,          # L1 Infrastructure
+│   neo-storage, neo-static-files, neo-config,
+│   neo-vm, neo-serialization, neo-manifest
+├── neo-payloads, neo-consensus, neo-hsm    # L2 Protocol
+├── neo-runtime, neo-execution,             # L3 Domain Services
+│   neo-native-contracts, neo-state-service,
+│   neo-mempool, neo-engine
+├── neo-blockchain, neo-network, neo-wallets,# L4 Node Services
+│   neo-indexer, neo-tee
+├── neo-system                              # L5 Composition
+├── neo-rpc, neo-oracle-service             # L6 Plugin / RPC Boundary
+├── neo-node                                # L7 Application (daemon binary)
+├── design.md                               # 15 ADRs + evolution roadmap
+├── config/                                 # mainnet/testnet TOML configs
+├── docs/                                   # the documentation system
+└── tests/ (neo-tests), benches-package/    # dev-only: integration tests, benchmarks
+    fuzz/                                   # dev-only: fuzzing
 ```
 
 ## Build and test

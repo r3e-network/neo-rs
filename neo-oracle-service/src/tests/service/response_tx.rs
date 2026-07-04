@@ -82,14 +82,15 @@ fn create_response_tx_matches_csharp_fee_math() {
         .build()
         .expect("tokio runtime");
     let _guard = runtime.enter();
-    let system =
-        neo_system::Node::new(std::sync::Arc::clone(&settings), None, None).expect("neo system");
+    let system = std::sync::Arc::new(
+        neo_system::Node::new(std::sync::Arc::clone(&settings), None, None).expect("neo system"),
+    );
     let oracle_settings = OracleServiceSettings {
         network: settings.network,
         ..Default::default()
     };
     let service =
-        OracleService::new(oracle_settings, std::sync::Arc::new(system)).expect("oracle service");
+        OracleService::new(oracle_settings, system.clone(), system.clone(), system.clone()).expect("oracle service");
     let snapshot = service.snapshot_cache();
 
     seed_transaction_state(&snapshot, &request.original_tx_id, &origin_tx, 1);

@@ -29,8 +29,8 @@ use neo_payloads::transaction_attribute::TransactionAttribute;
 use neo_payloads::witness::Witness;
 use neo_primitives::TriggerType;
 use neo_primitives::Verifiable;
+use neo_runtime::{ConfigProvider, StoreProvider};
 use neo_storage::persistence::StoreCache;
-use neo_system::Node;
 use neo_vm::stack_item::{InteropInterface as VmInteropInterface, StackItem};
 use rand::random;
 use uuid::Uuid;
@@ -115,15 +115,19 @@ impl Session {
     /// output, and later any VM iterators exposed by the invocation result.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        system: Arc<Node>,
+        store_provider: Arc<dyn StoreProvider>,
+        config_provider: Arc<dyn ConfigProvider>,
         script: Vec<u8>,
         signers: Option<Vec<Signer>>,
         witnesses: Option<Vec<Witness>>,
         gas_limit: i64,
         diagnostic: Option<Diagnostic>,
     ) -> CoreResult<Self> {
-        let store_cache = system.store_cache();
+        let store_cache = store_provider.store_cache();
         let snapshot_cache = Arc::new(store_cache.data_cache().clone());
+
+        let settings = config_provider.settings();
+        let max_valid_until_block_increment = config_provider.max_valid_until_block_increment();
 
         let tx_container = signers.as_ref().map(|signer_list| {
             let mut tx = Transaction::new();
@@ -132,7 +136,7 @@ impl Session {
             let valid_until = LedgerContract::new()
                 .current_index(store_cache.data_cache())
                 .unwrap_or(0)
-                .saturating_add(system.max_valid_until_block_increment());
+                .saturating_add(max_valid_until_block_increment);
             tx.set_valid_until_block(valid_until);
             tx.set_signers(signer_list.clone());
             tx.set_attributes(Vec::<TransactionAttribute>::new());
@@ -154,7 +158,7 @@ impl Session {
             tx_container,
             Arc::clone(&snapshot_cache),
             None,
-            system.settings().as_ref().clone(),
+            settings.as_ref().clone(),
             gas_limit,
             diagnostic_box,
         )

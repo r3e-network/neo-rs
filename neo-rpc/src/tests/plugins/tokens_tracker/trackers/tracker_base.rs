@@ -9,7 +9,7 @@ use neo_storage::persistence::{
 use neo_storage::{StorageItem, StorageKey};
 use std::any::Any;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct FailingStore;
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingStore {
@@ -72,6 +72,7 @@ impl Store for FailingStore {
     }
 }
 
+#[derive(Debug)]
 struct FailingSnapshot {
     store: Arc<dyn Store>,
 }
@@ -120,8 +121,8 @@ impl StoreSnapshot for FailingSnapshot {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn tracker_base_commit_propagates_snapshot_try_commit_failure() {
-    let system = Node::new(Arc::new(ProtocolSettings::mainnet()), None, None).expect("neo system");
-    let mut tracker = TrackerBase::new(Arc::new(FailingStore), 100, true, Arc::new(system));
+    let settings = Arc::new(ProtocolSettings::mainnet());
+    let mut tracker = TrackerBase::new(Arc::new(FailingStore), 100, true, settings);
     tracker.reset_batch();
 
     let err = tracker

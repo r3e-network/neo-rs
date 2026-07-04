@@ -14,7 +14,7 @@
 //! - `events`: Mempool event records emitted to subscribers.
 //! - `pool`: Memory-pool indexes, items, and mutation helpers.
 
-#![doc(html_root_url = "https://docs.rs/neo-mempool/0.9.0")]
+#![doc(html_root_url = "https://docs.rs/neo-mempool/0.10.0")]
 
 mod admission;
 mod events;
@@ -23,7 +23,7 @@ mod pool;
 pub use admission::{
     PreverifyCompleted, TransactionRouter, TransactionVerificationContext, transaction_router,
     transaction_verification_context, verification, verify_state_dependent,
-    verify_state_independent, verify_transaction,
+    verify_state_independent, verify_transaction, verify_transaction_dependent_only,
 };
 pub use events::{
     NewTransactionEventArgs, TransactionRemovedEventArgs, new_transaction_event_args,

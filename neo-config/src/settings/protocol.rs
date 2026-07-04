@@ -62,6 +62,14 @@ impl From<&str> for ProtocolConfigError {
     }
 }
 
+impl From<ProtocolConfigError> for neo_error::CoreError {
+    fn from(err: ProtocolConfigError) -> Self {
+        neo_error::CoreError::Configuration {
+            message: err.to_string(),
+        }
+    }
+}
+
 /// Represents the protocol settings of the NEO system.
 /// Matches C# ProtocolSettings record exactly
 #[derive(Debug, Clone, PartialEq)]
@@ -147,7 +155,7 @@ impl ProtocolSettings {
             milliseconds_per_block: 15_000,
             max_transactions_per_block: constants::MAX_TRANSACTIONS_PER_BLOCK as u32,
             max_block_size: constants::MAX_BLOCK_SIZE as u32,
-            max_valid_until_block_increment: 86_400_000 / 15_000,
+            max_valid_until_block_increment: constants::DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT,
             memory_pool_max_transactions: 50_000,
             max_traceable_blocks: constants::MAX_TRACEABLE_BLOCKS,
             initial_gas_distribution: constants::INITIAL_GAS_DISTRIBUTION,
@@ -199,7 +207,7 @@ impl ProtocolSettings {
             milliseconds_per_block: 15_000,
             max_transactions_per_block: 200,
             max_block_size: constants::MAX_BLOCK_SIZE as u32,
-            max_valid_until_block_increment: 5_760,
+            max_valid_until_block_increment: constants::DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT,
             memory_pool_max_transactions: 50_000,
             max_traceable_blocks: constants::MAX_TRACEABLE_BLOCKS,
             initial_gas_distribution: constants::INITIAL_GAS_DISTRIBUTION,
@@ -251,7 +259,7 @@ impl ProtocolSettings {
             milliseconds_per_block: 15_000,
             max_transactions_per_block: 5_000,
             max_block_size: constants::MAX_BLOCK_SIZE as u32,
-            max_valid_until_block_increment: 5_760,
+            max_valid_until_block_increment: constants::DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT,
             memory_pool_max_transactions: 50_000,
             max_traceable_blocks: constants::MAX_TRACEABLE_BLOCKS,
             initial_gas_distribution: constants::INITIAL_GAS_DISTRIBUTION,
@@ -520,9 +528,11 @@ impl CommitteeParser {
                 continue;
             }
             let bytes =
-                hex::decode(trimmed).map_err(|err| ProtocolConfigError::InvalidCommitteeEntry {
-                    entry: entry.clone(),
-                    reason: format!("invalid hex: {err}"),
+                neo_primitives::hex_util::decode_hex(trimmed).map_err(|err| {
+                    ProtocolConfigError::InvalidCommitteeEntry {
+                        entry: entry.clone(),
+                        reason: format!("invalid hex: {err}"),
+                    }
                 })?;
             let point = ECPoint::from_bytes(&bytes).map_err(|e| {
                 ProtocolConfigError::InvalidCommitteeEntry {

@@ -7,6 +7,7 @@ use super::super::token_transfer::TokenTransfer;
 use super::super::tracker_base::{Tracker, TrackerBase, TransferRecord};
 use super::nep11_balance_key::Nep11BalanceKey;
 use super::nep11_transfer_key::Nep11TransferKey;
+use neo_config::ProtocolSettings;
 use neo_execution::ApplicationEngine;
 use neo_manifest::CallFlags;
 use neo_native_contracts::contract_management::ContractManagement;
@@ -14,7 +15,6 @@ use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
 use neo_primitives::{LogLevel, TriggerType, UInt160};
 use neo_storage::persistence::DataCache;
-use neo_system::Node;
 use neo_vm::StackItem;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
@@ -41,10 +41,10 @@ impl Nep11Tracker {
         db: Arc<dyn neo_storage::persistence::Store>,
         max_results: u32,
         should_track_history: bool,
-        neo_system: Arc<Node>,
+        settings: Arc<ProtocolSettings>,
     ) -> Self {
         Self {
-            base: TrackerBase::new(db, max_results, should_track_history, neo_system),
+            base: TrackerBase::new(db, max_results, should_track_history, settings),
             current_height: 0,
             current_block: None,
         }
@@ -107,7 +107,9 @@ impl Nep11Tracker {
                 block_index: self.current_height,
                 tx_hash: *tx_hash,
             };
-            let _ = self.base.put(NEP11_TRANSFER_SENT_PREFIX, &key, &value);
+            if let Err(e) = self.base.put(NEP11_TRANSFER_SENT_PREFIX, &key, &value) {
+                TrackerBase::log(self.track_name(), &format!("Failed to store NEP-11 transfer sent: {e}"), LogLevel::Error);
+            }
         }
 
         if record.to != UInt160::zero() {
@@ -124,7 +126,9 @@ impl Nep11Tracker {
                 block_index: self.current_height,
                 tx_hash: *tx_hash,
             };
-            let _ = self.base.put(NEP11_TRANSFER_RECEIVED_PREFIX, &key, &value);
+            if let Err(e) = self.base.put(NEP11_TRANSFER_RECEIVED_PREFIX, &key, &value) {
+                TrackerBase::log(self.track_name(), &format!("Failed to store NEP-11 transfer received: {e}"), LogLevel::Error);
+            }
         }
 
         *transfer_index += 1;
@@ -170,7 +174,7 @@ impl Nep11Tracker {
             None,
             Arc::new(snapshot.clone()),
             self.current_block.clone(),
-            self.base.neo_system.settings().as_ref().clone(),
+            self.base.settings.as_ref().clone(),
             34_000_000,
             None,
         ) {
@@ -225,8 +229,12 @@ impl Nep11Tracker {
             last_updated_block: self.current_height,
         };
 
-        let _ = self.base.put(NEP11_BALANCE_PREFIX, &key_to, &value_to);
-        let _ = self.base.put(NEP11_BALANCE_PREFIX, &key_from, &value_from);
+        if let Err(e) = self.base.put(NEP11_BALANCE_PREFIX, &key_to, &value_to) {
+            TrackerBase::log(self.track_name(), &format!("Failed to store NEP-11 balance (to): {e}"), LogLevel::Error);
+        }
+        if let Err(e) = self.base.put(NEP11_BALANCE_PREFIX, &key_from, &value_from) {
+            TrackerBase::log(self.track_name(), &format!("Failed to store NEP-11 balance (from): {e}"), LogLevel::Error);
+        }
     }
 
     fn save_nft_balance(&mut self, record: &TransferRecord) {
@@ -241,7 +249,9 @@ impl Nep11Tracker {
 
         if record.from != UInt160::zero() {
             let key_from = Nep11BalanceKey::new(record.from, record.asset, token_id.clone());
-            let _ = self.base.delete(NEP11_BALANCE_PREFIX, &key_from);
+            if let Err(e) = self.base.delete(NEP11_BALANCE_PREFIX, &key_from) {
+                TrackerBase::log(self.track_name(), &format!("Failed to delete NEP-11 balance (from): {e}"), LogLevel::Error);
+            }
         }
 
         if record.to != UInt160::zero() {
@@ -250,7 +260,9 @@ impl Nep11Tracker {
                 balance: BigInt::one(),
                 last_updated_block: self.current_height,
             };
-            let _ = self.base.put(NEP11_BALANCE_PREFIX, &key_to, &value);
+            if let Err(e) = self.base.put(NEP11_BALANCE_PREFIX, &key_to, &value) {
+                TrackerBase::log(self.track_name(), &format!("Failed to store NEP-11 balance (to): {e}"), LogLevel::Error);
+            }
         }
     }
 
@@ -271,7 +283,6 @@ impl Tracker for Nep11Tracker {
 
     fn on_persist(
         &mut self,
-        _system: &Node,
         block: &Block,
         snapshot: &DataCache,
         executed_list: &[ApplicationExecuted],

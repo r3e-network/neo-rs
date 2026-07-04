@@ -1,9 +1,18 @@
 //! Network error types for P2P operations.
+//!
+//! NOTE: This type is named `NetworkError` for historical reasons. It represents
+//! **P2P protocol-level** errors (protocol violations, invalid messages, connection
+//! failures). It is distinct from `neo_network::NetworkError`, which represents
+//! **network service-level** errors (shutdown, remote unavailable). The alias
+//! `P2pError` is preferred for new code to avoid the name collision.
 
 use std::net::SocketAddr;
 use thiserror::Error;
 
-/// Network-related errors.
+/// P2P protocol-level network errors.
+///
+/// Also re-exported as `P2pError` — prefer that name in new code to avoid
+/// collision with `neo_network::NetworkError`.
 #[derive(Debug, Clone, Error)]
 pub enum NetworkError {
     /// Protocol violation by a peer.
@@ -34,6 +43,14 @@ pub enum NetworkError {
 
 /// Result type for network operations.
 pub type NetworkResult<T> = Result<T, NetworkError>;
+
+/// Preferred alias for [`NetworkError`] — avoids collision with
+/// `neo_network::NetworkError`.
+pub type P2pError = NetworkError;
+
+/// Preferred alias for [`NetworkResult`] — avoids collision with
+/// `neo_network::NetworkResult`.
+pub type P2pResult<T> = NetworkResult<T>;
 
 impl From<std::io::Error> for NetworkError {
     fn from(error: std::io::Error) -> Self {

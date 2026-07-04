@@ -482,7 +482,7 @@ impl CommitPolicy {
 }
 
 /// Provider-neutral checkpoint store for staged sync.
-pub trait SyncStageCheckpointStore: Send + Sync {
+pub trait SyncStageCheckpointStore: Send + Sync + std::fmt::Debug {
     /// Return the last durable checkpoint for `stage`, if present.
     fn checkpoint(&self, stage: SyncStageKind) -> ServiceResult<Option<SyncStageCheckpoint>>;
 

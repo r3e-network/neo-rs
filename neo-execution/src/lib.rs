@@ -63,13 +63,11 @@ pub use contract_parameters_context::ContractParametersContext;
 pub use contract_state::ContractState;
 pub use deployed_contract::DeployedContract;
 pub use diagnostic::{Diagnostic, InstructionCounter};
-pub use engine_provider::ApplicationEngineProvider;
 // `env_flag_enabled` stays crate-private to `env_flags` (it is only used inside the engine).
 pub use execution_context_state::ExecutionContextState;
 pub use hardfork_activable::HardforkActivable;
 pub use helper::Helper;
 pub use interoperable::Interoperable;
-pub use key_builder::KeyBuilder;
 pub use max_length_attribute::MaxLengthAttribute;
 pub use native_contract::{NativeContract, NativeEvent, NativeMethod, is_active_for};
 pub use native_contract_cache::{NativeContractsCache, NativeContractsCacheEntry};
@@ -93,7 +91,7 @@ pub use native::{
     native_registry,
 };
 pub use runtime::{
-    bls12381_interop, diagnostic, engine_provider, env_flags, execution_context_state, helper,
+    bls12381_interop, diagnostic, env_flags, execution_context_state, helper,
     interoperable, notify_event_args,
 };
-pub use storage::{key_builder, storage_context, storage_item_ext};
+pub use storage::{storage_context, storage_item_ext};

@@ -1,6 +1,6 @@
 //! # neo-execution::storage
 //!
-//! Storage contexts, key builders, and storage item helpers for execution.
+//! Storage contexts and storage item helpers for execution.
 //!
 //! ## Boundary
 //!
@@ -10,10 +10,12 @@
 //!
 //! ## Contents
 //!
-//! - `key_builder`: storage key builder helpers.
 //! - `storage_context`: storage context records.
 //! - `storage_item_ext`: storage item extension helpers.
+//!
+//! Note: The `KeyBuilder` newtype wrapper that previously lived here was removed
+//! (ADR-022). Use `neo_storage::KeyBuilder` directly — it is the single source
+//! of truth for storage key construction.
 
-pub mod key_builder;
 pub mod storage_context;
 pub mod storage_item_ext;

@@ -28,15 +28,25 @@ pub(super) fn start_rpc_server(
     remote_ledger_rpc: Option<&str>,
 ) -> anyhow::Result<Arc<parking_lot::RwLock<neo_rpc::server::RpcServer>>> {
     use neo_rpc::server::{
-        RpcServer, RpcServerApplicationLogs, RpcServerBlockchain, RpcServerIndexer, RpcServerNode,
-        RpcServerOracle, RpcServerSmartContract, RpcServerState, RpcServerTokensTracker,
-        RpcServerUtilities, RpcServerWallet,
+        NodeContext, RpcServer, RpcServerApplicationLogs, RpcServerBlockchain, RpcServerIndexer,
+        RpcServerNode, RpcServerOracle, RpcServerSmartContract, RpcServerState,
+        RpcServerTokensTracker, RpcServerUtilities, RpcServerWallet,
     };
 
     let rpc_config = config.rpc.server_config(network_magic)?;
     let bind_address = rpc_config.bind_address;
     let port = rpc_config.port;
-    let mut server = RpcServer::new(Arc::clone(node), rpc_config);
+    let node_ctx: Arc<NodeContext> = Arc::new(NodeContext::from_parts(
+        Arc::clone(&node.settings),
+        Arc::clone(&node.storage),
+        node.blockchain.clone(),
+        node.network.clone(),
+        Arc::clone(&node.mempool),
+        Arc::clone(&node.header_cache),
+        node.services.clone(),
+        Arc::clone(&node.native_contract_provider),
+    ));
+    let mut server = RpcServer::new(node_ctx, rpc_config);
     if let Some(endpoint) = remote_ledger_rpc {
         server
             .set_remote_ledger_rpc(endpoint)

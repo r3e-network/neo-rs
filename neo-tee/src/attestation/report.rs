@@ -1,5 +1,6 @@
 //! Attestation report structures
 
+use neo_primitives::hex_util;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
@@ -64,7 +65,7 @@ mod bytes64 {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&hex::encode(data))
+        serializer.serialize_str(&hex_util::encode_hex(data))
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 64], D::Error>
@@ -84,7 +85,7 @@ mod bytes64 {
             where
                 E: de::Error,
             {
-                let bytes = hex::decode(v).map_err(de::Error::custom)?;
+                let bytes = hex_util::decode_hex(v).map_err(de::Error::custom)?;
                 if bytes.len() != 64 {
                     return Err(de::Error::custom(format!(
                         "expected 64 bytes, got {}",
@@ -109,7 +110,7 @@ mod bytes16 {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&hex::encode(data))
+        serializer.serialize_str(&hex_util::encode_hex(data))
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 16], D::Error>
@@ -129,7 +130,7 @@ mod bytes16 {
             where
                 E: de::Error,
             {
-                let bytes = hex::decode(v).map_err(de::Error::custom)?;
+                let bytes = hex_util::decode_hex(v).map_err(de::Error::custom)?;
                 if bytes.len() != 16 {
                     return Err(de::Error::custom(format!(
                         "expected 16 bytes, got {}",
@@ -619,17 +620,17 @@ impl Quote {
 
     /// Get the report data as a hex string
     pub fn report_data_hex(&self) -> String {
-        hex::encode(self.report_data)
+        hex_util::encode_hex(&self.report_data)
     }
 
     /// Get the MRENCLAVE as a hex string
     pub fn mrenclave_hex(&self) -> String {
-        hex::encode(self.mrenclave)
+        hex_util::encode_hex(&self.mrenclave)
     }
 
     /// Get the MRSIGNER as a hex string
     pub fn mrsigner_hex(&self) -> String {
-        hex::encode(self.mrsigner)
+        hex_util::encode_hex(&self.mrsigner)
     }
 }
 

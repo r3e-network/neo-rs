@@ -19,7 +19,7 @@ use neo_primitives::UInt256;
 use neo_storage::persistence::Store;
 use neo_storage::persistence::providers::MemoryStoreProvider;
 use neo_storage::{StorageItem, StorageKey};
-use neo_system::Node;
+use crate::server::NodeContext;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
@@ -61,7 +61,7 @@ where
 }
 
 fn attach_tokens_tracker(
-    system: &Arc<Node>,
+    system: &Arc<NodeContext>,
     store: Arc<dyn Store>,
     enabled_trackers: Vec<String>,
     track_history: bool,
@@ -75,7 +75,7 @@ fn attach_tokens_tracker(
     system.register_service(Arc::clone(&service));
 }
 
-fn store_contract_state(system: &Arc<Node>, contract: &ContractState) {
+fn store_contract_state(system: &Arc<NodeContext>, contract: &ContractState) {
     const PREFIX_CONTRACT: u8 = 0x08;
     const PREFIX_CONTRACT_HASH: u8 = 0x0c;
 

@@ -21,6 +21,12 @@ struct SnapshotCountingRawOverlayStore {
     on_new_snapshot: ParkingMutex<Vec<OnNewSnapshotDelegate>>,
 }
 
+impl std::fmt::Debug for SnapshotCountingRawOverlayStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SnapshotCountingRawOverlayStore").finish_non_exhaustive()
+    }
+}
+
 impl SnapshotCountingRawOverlayStore {
     fn new() -> Self {
         Self {
@@ -100,6 +106,23 @@ impl Store for SnapshotCountingRawOverlayStore {
         self.on_new_snapshot.lock().push(handler);
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_raw_overlay_store(&self) -> Option<&dyn neo_storage::persistence::RawOverlayStore> {
+        Some(self)
+    }
+}
+
+impl neo_storage::persistence::RawOverlayStore for SnapshotCountingRawOverlayStore {
+    fn try_commit_raw_overlay(
+        &self,
+        _overlay: &[(Vec<u8>, Option<Vec<u8>>)],
+    ) -> neo_storage::StorageResult<bool> {
+        Ok(false)
+    }
+
     fn try_commit_borrowed_raw_overlay(
         &self,
         visit: &mut dyn FnMut(&mut dyn FnMut(&[u8], Option<&[u8]>)),
@@ -112,10 +135,6 @@ impl Store for SnapshotCountingRawOverlayStore {
         visit(&mut sink);
         self.inner.apply_batch(&batch);
         Ok(true)
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 

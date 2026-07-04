@@ -28,6 +28,7 @@ async fn preverify_completed_uses_mempool_verdict_before_caching() {
             transaction: rejected,
             relay: true,
             result: VerifyResult::Succeed,
+            cached_state_independent: Some(VerifyResult::Succeed),
         })
         .await;
     assert!(
@@ -43,6 +44,7 @@ async fn preverify_completed_uses_mempool_verdict_before_caching() {
             transaction: accepted,
             relay: true,
             result: VerifyResult::Succeed,
+            cached_state_independent: Some(VerifyResult::Succeed),
         })
         .await;
     assert!(accepting.ledger.get_transaction(&accepted_hash).is_some());
@@ -75,7 +77,7 @@ async fn on_new_transaction_reports_already_exists_for_persisted_ledger_tx() {
         "test fixture must seed a full Ledger transaction record"
     );
 
-    assert_eq!(service.on_new_transaction(&tx), VerifyResult::AlreadyExists);
+    assert_eq!(service.on_new_transaction(&tx, None), VerifyResult::AlreadyExists);
 }
 
 #[tokio::test]
@@ -92,7 +94,7 @@ async fn on_new_transaction_reports_has_conflicts_for_traceable_ledger_conflict(
     let tx_hash = tx.try_hash().expect("tx hash");
     seed_conflict_record(snapshot.as_ref(), &tx_hash, &signer, 0);
 
-    assert_eq!(service.on_new_transaction(&tx), VerifyResult::HasConflicts);
+    assert_eq!(service.on_new_transaction(&tx, None), VerifyResult::HasConflicts);
     assert!(
         service.ledger.get_transaction(&tx_hash).is_none(),
         "C# Blockchain.OnNewTransaction rejects traceable ledger conflicts before mempool admission"

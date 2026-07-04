@@ -50,7 +50,7 @@ impl ConsensusService {
         let recovery = self.build_recovery_message()?;
 
         let payload =
-            self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize())?;
+            self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize()?)?;
         self.broadcast(payload)?;
 
         Ok(())
@@ -388,7 +388,7 @@ impl ConsensusService {
         let recovery = self.build_recovery_message()?;
 
         let payload =
-            self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize())?;
+            self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize()?)?;
         self.broadcast(payload)?;
         Ok(())
     }
@@ -397,7 +397,7 @@ impl ConsensusService {
         let recovery = self.build_recovery_message()?;
 
         let payload =
-            self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize())?;
+            self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize()?)?;
         self.broadcast(payload)?;
         Ok(())
     }

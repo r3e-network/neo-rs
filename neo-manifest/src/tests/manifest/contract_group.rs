@@ -1,4 +1,5 @@
 use super::*;
+use neo_primitives::hex_util;
 
 /// Structural equality for StackValue that ignores the reference-identity ids
 /// on compound variants (neo-vm-rs 0.2.0 compares compounds by id; tests want
@@ -22,7 +23,7 @@ fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -
 }
 
 fn sample_group() -> ContractGroup {
-    let encoded = hex::decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+    let encoded = hex_util::decode_hex("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
         .expect("hex");
     let pub_key = ECPoint::decode(&encoded, ECCurve::secp256r1()).expect("valid ECPoint");
 

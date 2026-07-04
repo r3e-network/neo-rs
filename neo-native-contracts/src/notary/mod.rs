@@ -123,9 +123,10 @@ impl NativeContract for Notary {
         // Pass 1: under the persisting-block borrow, accumulate the fee
         // count and the Notary-paid deposit debits.
         let (n_fees, debits) = {
-            let block = engine.persisting_block().ok_or_else(|| {
-                CoreError::invalid_operation("Notary::on_persist requires a persisting block")
-            })?;
+            let block = crate::support::engine::require_persisting_block(
+                engine,
+                "Notary::on_persist",
+            )?;
             let mut n_fees: i64 = 0;
             let mut debits: Vec<(UInt160, i64)> = Vec::new();
             for tx in &block.transactions {

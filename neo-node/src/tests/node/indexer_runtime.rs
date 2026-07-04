@@ -303,7 +303,7 @@ fn backfill_repairs_partially_indexed_notifications() {
 #[test]
 fn application_logs_recover_indexer_notifications_for_backfill() {
     let settings = Arc::new(ProtocolSettings::default());
-    let node = neo_system::Node::new(Arc::clone(&settings), None, None).expect("node");
+    let _node = neo_system::Node::new(Arc::clone(&settings), None, None).expect("node");
     let chain_store: Arc<dyn Store> = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
@@ -347,8 +347,8 @@ fn application_logs_recover_indexer_notifications_for_backfill() {
             ],
         ));
 
-    logs.blockchain_committing_handler(&node, &block, snapshot.as_ref(), &[executed]);
-    logs.blockchain_committed_handler(&node, &block);
+    logs.blockchain_committing_handler(settings.as_ref(), &block, snapshot.as_ref(), &[executed]);
+    logs.blockchain_committed_handler(settings.as_ref(), &block);
 
     let records =
         application_log_notification_records(&logs, &block).expect("recover notifications");

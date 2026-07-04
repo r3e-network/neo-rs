@@ -1,11 +1,11 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use hex;
 use neo_crypto::{ECCurve, ECPoint};
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 use neo_payloads::witness::Witness;
 use neo_payloads::witness_rule::WitnessRule;
 use neo_primitives::WitnessScope;
+use neo_primitives::hex_util;
 use neo_serialization::json::JToken;
 
 use super::super::model::SignersAndWitnesses;
@@ -102,7 +102,7 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
                         .as_ref()
                         .ok_or_else(|| invalid_params("Null group entry"))?;
                     let text = expect_string(group, "Allowed group entries must be strings")?;
-                    let bytes = hex::decode(text.trim_start_matches("0x"))
+                    let bytes = hex_util::decode_hex(&text)
                         .map_err(|_| invalid_params("Invalid ECPoint"))?;
                     ECPoint::new(ECCurve::Secp256r1, bytes)
                         .map_err(|e| invalid_params(format!("Invalid ECPoint: {e}")))

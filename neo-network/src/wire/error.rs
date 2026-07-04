@@ -35,3 +35,11 @@ impl From<neo_io::IoError> for WireError {
         Self::Serialization(err.to_string())
     }
 }
+
+impl From<WireError> for neo_error::CoreError {
+    fn from(err: WireError) -> Self {
+        neo_error::CoreError::Network {
+            message: err.to_string(),
+        }
+    }
+}

@@ -1,6 +1,6 @@
 use super::contract_script::{build_dynamic_call_script, emit_contract_call};
 use super::models::RpcInvokeResult;
-use crate::{RpcClient, RpcError};
+use crate::{RpcClient, RpcClientError};
 use neo_manifest::ContractManifest;
 use neo_native_contracts::ContractManagement;
 use neo_payloads::{Signer, Transaction};
@@ -32,7 +32,7 @@ impl ContractClient {
         script_hash: &UInt160,
         operation: &str,
         args: Vec<serde_json::Value>,
-    ) -> Result<RpcInvokeResult, RpcError> {
+    ) -> Result<RpcInvokeResult, RpcClientError> {
         // Create script using script builder
         let script = build_dynamic_call_script(script_hash, operation, &args, CallFlags::ALL)?;
 
@@ -50,7 +50,7 @@ impl ContractClient {
         nef_file: &[u8],
         manifest: &ContractManifest,
         key: &KeyPair,
-    ) -> Result<Transaction, RpcError> {
+    ) -> Result<Transaction, RpcClientError> {
         let script = Self::build_deploy_contract_script(nef_file, manifest, CallFlags::ALL)?;
 
         let sender = key.get_script_hash();
@@ -69,7 +69,7 @@ impl ContractClient {
         method: &str,
         args: &[serde_json::Value],
         call_flags: CallFlags,
-    ) -> Result<Vec<u8>, RpcError> {
+    ) -> Result<Vec<u8>, RpcClientError> {
         build_dynamic_call_script(script_hash, method, args, call_flags)
     }
 
@@ -77,7 +77,7 @@ impl ContractClient {
         nef_file: &[u8],
         manifest: &ContractManifest,
         call_flags: CallFlags,
-    ) -> Result<Vec<u8>, RpcError> {
+    ) -> Result<Vec<u8>, RpcClientError> {
         let manifest_json = manifest.to_json()?.to_string();
 
         let mut sb = ScriptBuilder::new();

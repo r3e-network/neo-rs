@@ -16,9 +16,17 @@
 //! - `empty_block_fast_forward`: guarded empty-block fast-forward eligibility.
 //! - `handlers`: service message handlers.
 //! - `native_persist`: native-contract persistence hooks.
+//! - `stage_traits`: pipeline stage trait definitions (ADR-027, moved from neo-engine).
+//! - `validate_stage`: concrete `ValidateStage` impl (ADR-010 Phase 1).
 
 pub mod block_processing;
 pub mod block_validation;
 pub mod empty_block_fast_forward;
 pub mod handlers;
 pub mod native_persist;
+pub mod stage_traits;
+pub mod validate_stage;
+
+pub use stage_traits::{
+    EngineError, EngineResult, PipelineStage, StageContext, StageId, StageOutput, ValidateStage,
+};

@@ -4,7 +4,12 @@ use std::any::Any;
 use std::path::Path;
 use std::sync::Arc;
 
-/// A provider used to create Store instances.
+/// A factory used to create [`Store`] instances.
+///
+/// NOTE: This trait is named `StoreProvider` and represents a **store factory**.
+/// It is distinct from `neo_runtime::StoreProvider`, which is an **accessor**
+/// that returns an already-created store. The alias `StoreFactory` is preferred
+/// for new code to avoid the name collision.
 pub trait StoreProvider: Send + Sync + Any {
     /// Gets the name of the StoreProvider.
     fn name(&self) -> &str;
@@ -24,3 +29,7 @@ pub trait StoreProvider: Send + Sync + Any {
     /// Downcast support for provider tests and factory diagnostics.
     fn as_any(&self) -> &dyn Any;
 }
+
+/// Preferred alias for [`StoreProvider`] — avoids collision with
+/// `neo_runtime::StoreProvider` (which is a store accessor, not a factory).
+pub trait StoreFactory: StoreProvider {}

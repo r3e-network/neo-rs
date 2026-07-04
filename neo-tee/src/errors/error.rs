@@ -1,5 +1,6 @@
 //! TEE Error types
 
+use neo_primitives::hex_util;
 use thiserror::Error;
 
 /// Result type for TEE operations
@@ -146,16 +147,16 @@ impl TeeError {
     /// Create a MRENCLAVE mismatch error
     pub fn mrenclave_mismatch(expected: &[u8; 32], actual: &[u8; 32]) -> Self {
         TeeError::MrEnclaveMismatch {
-            expected: hex::encode(expected),
-            actual: hex::encode(actual),
+            expected: hex_util::encode_hex(expected),
+            actual: hex_util::encode_hex(actual),
         }
     }
 
     /// Create a MRSIGNER mismatch error
     pub fn mrsigner_mismatch(expected: &[u8; 32], actual: &[u8; 32]) -> Self {
         TeeError::MrSignerMismatch {
-            expected: hex::encode(expected),
-            actual: hex::encode(actual),
+            expected: hex_util::encode_hex(expected),
+            actual: hex_util::encode_hex(actual),
         }
     }
 }

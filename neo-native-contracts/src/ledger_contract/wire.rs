@@ -2,7 +2,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_payloads::{Transaction, TrimmedBlock};
 use neo_primitives::UInt256;
 use neo_serialization::BinarySerializer;
-use neo_vm_rs::{ExecutionEngineLimits, StackValue, VmState as VMState};
+use neo_vm_rs::{StackValue, VmState as VMState};
 
 use super::LedgerContract;
 
@@ -30,23 +30,15 @@ impl HashIndexState {
     }
 
     pub(crate) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Struct(_, items) = stack_value else {
-            return Err(CoreError::invalid_data(
-                "HashIndexState record is not a Struct stack item",
-            ));
-        };
-        if items.len() < 2 {
+        let decoder =
+            crate::support::codec::StructDecoder::new(&stack_value, "HashIndexState")?;
+        if decoder.len() < 2 {
             return Err(CoreError::invalid_data(
                 "HashIndexState struct is shorter than expected",
             ));
         }
-
-        let hash_bytes = items[0]
-            .to_byte_string_bytes()
-            .ok_or_else(|| CoreError::invalid_data("HashIndexState hash is not byte-like"))?;
-        let hash = crate::args::bytes_to_hash256(&hash_bytes, "HashIndexState hash")?;
-        let index = neo_vm_rs::stack_value_as_u32(&items[1])
-            .ok_or_else(|| CoreError::invalid_data("HashIndexState index out of uint range"))?;
+        let hash = decoder.hash256(0, "hash")?;
+        let index = decoder.u32(1, "index")?;
         Ok(Self { hash, index })
     }
 }
@@ -57,9 +49,10 @@ impl LedgerContract {
     /// Serialises a `(hash, index)` pair into the C# `HashIndexState`
     /// wire format used for the current-block pointer.
     pub fn serialize_hash_index_state(&self, hash: &UInt256, index: u32) -> CoreResult<Vec<u8>> {
-        let item = HashIndexState::new(*hash, index).to_stack_value();
-        BinarySerializer::serialize_stack_value_default(&item)
-            .map_err(|e| CoreError::serialization(format!("HashIndexState: {e}")))
+        crate::support::codec::encode_storage_struct(
+            &HashIndexState::new(*hash, index),
+            "HashIndexState",
+        )
     }
 
     /// Serialises a persisted transaction state into the C# wire format:
@@ -121,13 +114,7 @@ impl LedgerContract {
     }
 
     pub(crate) fn deserialize_hash_index_state(bytes: &[u8]) -> CoreResult<(UInt256, u32)> {
-        let limits = ExecutionEngineLimits::default();
-        let item = BinarySerializer::deserialize_stack_value_with_limits(
-            bytes,
-            limits.max_item_size as usize,
-            limits.max_stack_size as usize,
-        )
-        .map_err(|e| CoreError::invalid_data(format!("HashIndexState: {e}")))?;
+        let item = crate::support::codec::decode_stack_value(bytes, "HashIndexState")?;
         let state = HashIndexState::from_stack_value(item)
             .map_err(|e| CoreError::invalid_data(format!("HashIndexState: {e}")))?;
         Ok((state.hash, state.index))
@@ -139,13 +126,7 @@ impl LedgerContract {
     pub(crate) fn decode_transaction_state(
         bytes: &[u8],
     ) -> CoreResult<neo_payloads::TransactionState> {
-        let limits = ExecutionEngineLimits::default();
-        let item = BinarySerializer::deserialize_stack_value_with_limits(
-            bytes,
-            limits.max_item_size as usize,
-            limits.max_stack_size as usize,
-        )
-        .map_err(|e| CoreError::invalid_data(format!("TransactionState: {e}")))?;
+        let item = crate::support::codec::decode_stack_value(bytes, "TransactionState")?;
         let mut state = neo_payloads::TransactionState::new(0, None, VMState::NONE);
         state
             .from_stack_value(item)

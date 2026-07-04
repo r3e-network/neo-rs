@@ -16,7 +16,7 @@
 //! - `providers`: Provider implementations behind the crate public traits.
 //! - `serialization`: serialization codecs and compatibility checks.
 
-#![doc(html_root_url = "https://docs.rs/neo-serialization/0.9.0")]
+#![doc(html_root_url = "https://docs.rs/neo-serialization/0.10.0")]
 
 #[path = "codec/binary_serializer.rs"]
 pub mod binary_serializer;

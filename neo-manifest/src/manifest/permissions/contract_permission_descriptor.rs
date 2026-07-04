@@ -3,6 +3,7 @@
 use super::contract_group::ContractGroup;
 use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
+use neo_primitives::hex_util;
 use neo_primitives::UInt160;
 use neo_vm::StackItem;
 use neo_vm_rs::StackValue;
@@ -74,7 +75,7 @@ impl ContractPermissionDescriptor {
                         .map_err(|e| CoreError::other(e.to_string()));
                 }
                 66 => {
-                    let bytes = hex::decode(s).map_err(|e| CoreError::other(e.to_string()))?;
+                    let bytes = hex_util::decode_hex(s).map_err(|e| CoreError::other(e.to_string()))?;
                     return ECPoint::decode_secp256r1(&bytes)
                         .map(ContractPermissionDescriptor::Group)
                         .map_err(|e| CoreError::other(e.to_string()));
@@ -91,7 +92,7 @@ impl ContractPermissionDescriptor {
             ContractPermissionDescriptor::Wildcard => serde_json::Value::String("*".to_string()),
             ContractPermissionDescriptor::Hash(h) => serde_json::Value::String(h.to_string()),
             ContractPermissionDescriptor::Group(g) => {
-                serde_json::Value::String(hex::encode(g.encoded()))
+                serde_json::Value::String(hex_util::encode_hex(&g.encoded()))
             }
         }
     }
@@ -178,7 +179,7 @@ impl Serialize for ContractPermissionDescriptor {
             ContractPermissionDescriptor::Wildcard => serializer.serialize_str("*"),
             ContractPermissionDescriptor::Hash(hash) => serializer.serialize_str(&hash.to_string()),
             ContractPermissionDescriptor::Group(group) => {
-                serializer.serialize_str(&hex::encode(group.encoded()))
+                serializer.serialize_str(&hex_util::encode_hex(&group.encoded()))
             }
         }
     }

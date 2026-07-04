@@ -988,12 +988,17 @@ impl MptStore {
                     }
                 };
                 let committed = backing
-                    .try_commit_borrowed_raw_overlay(&mut visit)
-                    .map_err(|err| {
-                        MptError::storage(format!(
-                            "state-service empty-batch backing commit failed: {err}"
-                        ))
-                    })?;
+                    .as_raw_overlay_store()
+                    .map(|ro| {
+                        ro.try_commit_borrowed_raw_overlay(&mut visit)
+                            .map_err(|err| {
+                                MptError::storage(format!(
+                                    "state-service empty-batch backing commit failed: {err}"
+                                ))
+                            })
+                    })
+                    .transpose()?
+                    .unwrap_or(false);
                 if committed {
                     return Ok(counts);
                 }
@@ -1071,7 +1076,11 @@ impl MptStore {
     fn should_publish_live_overlay(&self) -> bool {
         match self.backing.as_ref() {
             None => true,
-            Some(backing) => backing.has_pending_fast_sync_writes(),
+            Some(backing) => {
+                backing
+                    .as_fast_sync_store()
+                    .is_some_and(|fs| fs.has_pending_fast_sync_writes())
+            }
         }
     }
 
@@ -1253,10 +1262,17 @@ impl MptStore {
                     }
                 };
                 let committed = backing
-                    .try_commit_borrowed_raw_overlay(&mut visit)
-                    .map_err(|err| {
-                        MptError::storage(format!("state-service backing commit failed: {err}"))
-                    })?;
+                    .as_raw_overlay_store()
+                    .map(|ro| {
+                        ro.try_commit_borrowed_raw_overlay(&mut visit)
+                            .map_err(|err| {
+                                MptError::storage(format!(
+                                    "state-service backing commit failed: {err}"
+                                ))
+                            })
+                    })
+                    .transpose()?
+                    .unwrap_or(false);
                 if committed {
                     return Ok(counts);
                 }

@@ -90,6 +90,7 @@ impl ApplicationEngine {
             gas_consumed: 0,
             fee_amount: gas_limit.saturating_mul(FEE_FACTOR),
             fee_consumed: 0,
+            // Safe defaults; overwritten by refresh_policy_settings().
             exec_fee_factor: 30u32 * (FEE_FACTOR as u32),
             storage_price: 100_000u32,
             call_flags: CallFlags::ALL,
@@ -167,6 +168,7 @@ impl ApplicationEngine {
             gas_consumed: 0,
             fee_amount: gas_limit.saturating_mul(FEE_FACTOR),
             fee_consumed: 0,
+            // Safe defaults; overwritten by refresh_policy_settings().
             exec_fee_factor: 30u32 * (FEE_FACTOR as u32),
             storage_price: 100_000u32,
             call_flags: CallFlags::ALL,

@@ -377,12 +377,11 @@ impl NativeContract for NeoToken {
     /// `CommitteeChanged` notification when the member set changed.
     fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         let total_start = Instant::now();
-        let block_index = engine
-            .persisting_block()
-            .map(|block| block.index())
-            .ok_or_else(|| {
-                CoreError::invalid_operation("NeoToken::on_persist requires a persisting block")
-            })?;
+        let block_index = crate::support::engine::require_persisting_block(
+            engine,
+            "NeoToken::on_persist",
+        )?
+        .index();
         let committee_count = engine.protocol_settings().committee_members_count();
         if committee_count == 0 {
             return Err(CoreError::invalid_operation(
@@ -479,12 +478,11 @@ impl NativeContract for NeoToken {
     /// * m / (m + n) / 100`, credited as `factor * that / votes` with factor 2
     /// for validators (`i < n`) and 1 otherwise.
     fn post_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
-        let block_index = engine
-            .persisting_block()
-            .map(|block| block.index())
-            .ok_or_else(|| {
-                CoreError::invalid_operation("NeoToken::post_persist requires a persisting block")
-            })?;
+        let block_index = crate::support::engine::require_persisting_block(
+            engine,
+            "NeoToken::post_persist",
+        )?
+        .index();
         let committee_count = engine.protocol_settings().committee_members_count();
         let validators_count =
             usize::try_from(engine.protocol_settings().validators_count).unwrap_or(0);

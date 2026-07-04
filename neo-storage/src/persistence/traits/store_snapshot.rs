@@ -16,6 +16,7 @@ pub trait StoreSnapshot:
     + WriteStore<Vec<u8>, Vec<u8>>
     + Send
     + Sync
+    + std::fmt::Debug
 {
     /// Get the underlying store
     fn store(&self) -> Arc<dyn Store>;

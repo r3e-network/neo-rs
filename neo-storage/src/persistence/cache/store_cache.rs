@@ -159,30 +159,32 @@ impl StoreCache {
             return Ok(false);
         };
 
-        let mut visit = |sink: &mut dyn FnMut(&[u8], Option<&[u8]>)| {
-            self.data_cache.visit_raw_changes(sink);
-        };
-        let committed = store
-            .try_commit_borrowed_raw_overlay(&mut visit)
-            .map_err(|e| DataCacheError::CommitFailed(format!("storage write failed: {e}")))?;
-        if committed {
-            self.data_cache.commit();
-            return Ok(true);
+        // Try the raw overlay extension if the backend supports it.
+        if let Some(raw_overlay) = store.as_raw_overlay_store() {
+            let mut visit = |sink: &mut dyn FnMut(&[u8], Option<&[u8]>)| {
+                self.data_cache.visit_raw_changes(sink);
+            };
+            let committed = raw_overlay
+                .try_commit_borrowed_raw_overlay(&mut visit)
+                .map_err(|e| DataCacheError::CommitFailed(format!("storage write failed: {e}")))?;
+            if committed {
+                self.data_cache.commit();
+                return Ok(true);
+            }
+
+            // Fall back to materialized overlay.
+            let overlay = self.data_cache.extract_raw_changes();
+            let committed = raw_overlay
+                .try_commit_raw_overlay(&overlay)
+                .map_err(|e| DataCacheError::CommitFailed(format!("storage write failed: {e}")))?;
+            if committed {
+                self.data_cache.commit();
+            }
+            return Ok(committed);
         }
 
-        if !store.supports_raw_overlay_commit() {
-            return Ok(false);
-        }
-
-        let overlay = self.data_cache.extract_raw_changes();
-
-        let committed = store
-            .try_commit_raw_overlay(&overlay)
-            .map_err(|e| DataCacheError::CommitFailed(format!("storage write failed: {e}")))?;
-        if committed {
-            self.data_cache.commit();
-        }
-        Ok(committed)
+        // Backend doesn't support raw overlay commit.
+        Ok(false)
     }
 
     /// Gets an item from the cache or underlying store.

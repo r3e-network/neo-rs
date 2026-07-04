@@ -269,8 +269,10 @@ pub(in crate::node) fn open_service_store_with_storage_config(
         anyhow::anyhow!("failed to open {service_name} {storage_provider} store: {err}")
     })?;
     if fast_sync {
-        store.enable_fast_sync_mode();
-        debug!(target: "neo", service = service_name, "enabled service store fast-sync mode");
+        if let Some(fs) = store.as_fast_sync_store() {
+            fs.enable_fast_sync_mode();
+            debug!(target: "neo", service = service_name, "enabled service store fast-sync mode");
+        }
     }
     Ok(store)
 }

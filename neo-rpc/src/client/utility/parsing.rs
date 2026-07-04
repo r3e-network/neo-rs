@@ -211,14 +211,30 @@ pub fn required_uint256(json: &JObject, field: &str) -> CoreResult<UInt256> {
         .map_err(|_| CoreError::other(format!("Missing or invalid '{field}' field")))
 }
 
+/// Parses either a hex script hash or an address using the supplied address version.
+///
+/// Shared core logic used by both client- and server-side parsing helpers,
+/// avoiding duplication across `client::utility::parsing` and
+/// `server::rpc_helpers`.
+pub(crate) fn parse_script_hash_or_address_inner(
+    text: &str,
+    address_version: u8,
+) -> CoreResult<UInt160> {
+    let mut parsed = None;
+    if UInt160::try_parse(text, &mut parsed) {
+        if let Some(value) = parsed {
+            return Ok(value);
+        }
+    }
+    WalletHelper::to_script_hash(text, address_version)
+}
+
 /// Parses either a hex script hash or an address using the supplied protocol settings.
 pub fn parse_script_hash_or_address(
     value: &str,
     protocol_settings: &ProtocolSettings,
 ) -> CoreResult<UInt160> {
-    UInt160::parse(value)
-        .map_err(|err| CoreError::other(err.to_string()))
-        .or_else(|_| WalletHelper::to_script_hash(value, protocol_settings.address_version))
+    parse_script_hash_or_address_inner(value, protocol_settings.address_version)
 }
 
 /// Reads a required script-hash-or-address field.

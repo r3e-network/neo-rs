@@ -16,7 +16,6 @@
 use super::*;
 use neo_runtime::sync_metrics::{self, NeoTokenCommitteeComputeStage};
 use neo_serialization::BinarySerializer;
-use neo_vm_rs::ExecutionEngineLimits;
 use num_traits::ToPrimitive;
 use std::time::Instant;
 
@@ -138,22 +137,15 @@ impl NeoToken {
 
     /// Decodes a stored `NeoAccountState` struct into its fields.
     pub(super) fn decode_neo_account_state(value: &[u8]) -> CoreResult<NeoAccountStateView> {
-        let limits = ExecutionEngineLimits::default();
-        let decoded = BinarySerializer::deserialize_stack_value_with_limits(
-            value,
-            limits.max_item_size as usize,
-            limits.max_stack_size as usize,
-        )
-        .map_err(|e| CoreError::deserialization(format!("neo account state: {e}")))?;
+        let decoded =
+            crate::support::codec::decode_stack_value(value, "neo account state")?;
         NeoAccountStateView::from_stack_value(decoded)
     }
 
     /// Encodes a `NeoAccountState` (`Struct[Balance, BalanceHeight, VoteTo,
     /// LastGasPerVote]`) — the write counterpart of [`decode_neo_account_state`].
     pub(super) fn encode_neo_account_state(state: &NeoAccountStateView) -> CoreResult<Vec<u8>> {
-        let item = state.to_stack_value();
-        BinarySerializer::serialize_stack_value_default(&item)
-            .map_err(|e| CoreError::invalid_operation(format!("encode neo account state: {e}")))
+        crate::support::codec::encode_storage_struct(state, "neo account state")
     }
 
     /// The `Prefix_VotersCount` storage key (a single key, no suffix).
@@ -317,13 +309,8 @@ impl NeoToken {
             }
         }
 
-        let limits = ExecutionEngineLimits::default();
-        let decoded = BinarySerializer::deserialize_stack_value_with_limits(
-            &raw,
-            limits.max_item_size as usize,
-            limits.max_stack_size as usize,
-        )
-        .map_err(|e| CoreError::deserialization(format!("committee cache: {e}")))?;
+        let decoded =
+            crate::support::codec::decode_stack_value(&raw, "committee cache")?;
         let members = CachedCommittee::from_stack_value(decoded)?.into_members();
 
         let mut cache = COMMITTEE_DESERIALIZE_CACHE
@@ -419,9 +406,10 @@ impl NeoToken {
     /// `CachedCommittee.ToStackItem`), the byte-exact write counterpart of
     /// [`read_committee_with_votes`].
     pub(super) fn encode_committee(members: &[(ECPoint, BigInt)]) -> CoreResult<Vec<u8>> {
-        let array = CachedCommittee::new(members.to_vec()).to_stack_value();
-        BinarySerializer::serialize_stack_value_default(&array)
-            .map_err(|e| CoreError::invalid_operation(format!("encode committee cache: {e}")))
+        crate::support::codec::encode_storage_struct(
+            &CachedCommittee::new(members.to_vec()),
+            "committee cache",
+        )
     }
 
     pub(in crate::neo_token) fn decode_canonical_committee_member_at(
@@ -697,13 +685,8 @@ impl NeoToken {
         if let Some(decoded) = Self::decode_canonical_candidate_state(value)? {
             return Ok(decoded);
         }
-        let limits = ExecutionEngineLimits::default();
-        let decoded = BinarySerializer::deserialize_stack_value_with_limits(
-            value,
-            limits.max_item_size as usize,
-            limits.max_stack_size as usize,
-        )
-        .map_err(|e| CoreError::deserialization(format!("candidate state: {e}")))?;
+        let decoded =
+            crate::support::codec::decode_stack_value(value, "candidate state")?;
         let state = CandidateState::from_stack_value(decoded)?;
         Ok((state.registered, state.votes))
     }
@@ -758,9 +741,10 @@ impl NeoToken {
     /// Encodes a `CandidateState` storage value — a `Struct[Registered(bool),
     /// Votes]` — the write counterpart of [`decode_candidate_state`].
     pub(super) fn encode_candidate_state(registered: bool, votes: &BigInt) -> CoreResult<Vec<u8>> {
-        let item = CandidateState::new(registered, votes.clone()).to_stack_value();
-        BinarySerializer::serialize_stack_value_default(&item)
-            .map_err(|e| CoreError::invalid_operation(format!("encode candidate state: {e}")))
+        crate::support::codec::encode_storage_struct(
+            &CandidateState::new(registered, votes.clone()),
+            "candidate state",
+        )
     }
 
     /// The `Prefix_Candidate` storage key for `pubkey` (`prefix ++ 33-byte pubkey`).

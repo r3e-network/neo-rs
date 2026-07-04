@@ -59,8 +59,11 @@ pub mod client;
 // Public Re-exports
 // ============================================================================
 
-// Core error types
-pub use error::{RpcError, RpcResult};
+// Core error types — client-side error enum renamed to RpcClientError to
+// avoid collision with the server-side RpcError struct (JSON-RPC protocol
+// error, matching C# Neo.Plugins.RpcServer.RpcError).
+#[cfg(feature = "client")]
+pub use error::{RpcClientError, RpcClientResult};
 pub use error_code::RpcErrorCode;
 
 // Server exports (requires `server` feature)

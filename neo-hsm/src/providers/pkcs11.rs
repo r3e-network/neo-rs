@@ -41,6 +41,7 @@ use neo_consensus::ConsensusSigner;
 use neo_consensus::error::ConsensusError;
 use neo_crypto::{Crypto, Secp256r1Crypto};
 use neo_primitives::UInt160;
+use neo_primitives::hex_util;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -176,7 +177,7 @@ impl Pkcs11Signer {
 
                 // ── Sign loop ─────────────────────────────────────────────────
                 info!(
-                    pubkey = hex::encode(pubkey),
+                    pubkey = hex_util::encode_hex(&pubkey),
                     "neo-hsm: PKCS#11 worker ready"
                 );
                 for cmd in cmd_rx {
@@ -349,7 +350,7 @@ impl Pkcs11Signer {
             {
                 return Err(HsmError::PublicKey(format!(
                     "key '{key_label}' is not on secp256r1: ec_params={}",
-                    hex::encode(params)
+                    hex_util::encode_hex(params)
                 )));
             }
         } else {
@@ -371,7 +372,7 @@ impl Pkcs11Signer {
 
         info!(
             label = key_label,
-            pubkey = hex::encode(compressed_pubkey),
+            pubkey = hex_util::encode_hex(&compressed_pubkey),
             script_hash = %script_hash,
             "neo-hsm: key located on HSM"
         );
@@ -517,35 +518,11 @@ fn normalize_to_compressed(point: &[u8]) -> HsmResult<[u8; 33]> {
 /// The `UInt160::from_script()` of this byte sequence is the validator's
 /// consensus script hash (the value returned by `can_sign` / stored in
 /// `NextConsensus`).
+///
+/// Delegates to `neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script`
+/// to guarantee opcode values never drift from the canonical NeoVM definition.
 fn signature_redeem_script(compressed_pubkey: &[u8; 33]) -> Vec<u8> {
-    // NeoVM opcodes:
-    //   0x0C = PUSHDATA1 with 1-byte length prefix (NEOV3)
-    //   0x21 = length of the pubkey (33)
-    //   ...33 bytes...
-    //   0x41 = SYSCALL opcode
-    //   System.Crypto.CheckSig interop hash (4 bytes, little-endian)
-    //
-    // This matches C# `Contract.CreateSignatureRedeemScript` which emits:
-    //   ScriptBuilder.EmitPush(publicKey) + ScriptBuilder.EmitSysCall("System.Crypto.CheckSig")
-    //
-    // neo-consensus uses multisig_verification_script which wraps m-of-n;
-    // here we build the single-sig variant for HSM key identity.
-    let mut script = Vec::with_capacity(40);
-    // PUSHDATA1  (NeVM3 opcode 0x0C)
-    script.push(0x0C);
-    // Length byte for 33-byte pubkey
-    script.push(0x21);
-    // The 33-byte compressed public key
-    script.extend_from_slice(compressed_pubkey);
-    // SYSCALL opcode (0x41)
-    script.push(0x41);
-    // System.Crypto.CheckSig interop descriptor hash: the first 4 bytes of
-    // sha256("System.Crypto.CheckSig"), little-endian. C# registers the syscall
-    // under BitConverter.ToUInt32(sha256(name)[..4]) = 0x27b3e756, i.e. bytes
-    // [0x56, 0xe7, 0xb3, 0x27]. Derived here so it can never drift from the hash.
-    let checksig_hash = Crypto::sha256(b"System.Crypto.CheckSig");
-    script.extend_from_slice(&checksig_hash[..4]);
-    script
+    neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(compressed_pubkey)
 }
 
 #[cfg(test)]

@@ -83,7 +83,7 @@ pub use context::{
 // ============================================================================
 
 pub use messages::{
-    ChangeViewMessage, CommitMessage, ConsensusMessage, ConsensusPayload, PrepareRequestMessage,
+    ChangeViewMessage, CommitMessage, ConsensusPayload, PrepareRequestMessage,
     PrepareResponseMessage, RecoveryMessage, RecoveryRequestMessage,
 };
 

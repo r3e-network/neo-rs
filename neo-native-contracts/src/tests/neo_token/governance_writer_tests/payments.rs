@@ -170,7 +170,7 @@ fn on_nep17_payment_data_parser_uses_stack_value_projection() {
         .expect("next branch exists");
     let branch = &source[start..end];
 
-    assert!(branch.contains("deserialize_stack_value_with_limits"));
+    assert!(branch.contains("decode_stack_value"));
     assert!(branch.contains("to_byte_string_bytes"));
     assert!(!branch.contains("BinarySerializer::deserialize("));
 }

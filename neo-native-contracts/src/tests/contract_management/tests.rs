@@ -193,8 +193,8 @@ fn clean_whitelist_storage_decode_uses_stack_value_projection() {
         .expect("following helper exists");
     let helper = &source[start..end];
 
-    assert!(helper.contains("deserialize_stack_value_with_limits"));
-    assert!(helper.contains("StackValue::Struct"));
+    assert!(helper.contains("decode_stack_value"));
+    assert!(helper.contains("StructDecoder"));
     assert!(!helper.contains("BinarySerializer::deserialize("));
     assert!(!helper.contains("StackItem::Struct"));
 }
@@ -574,8 +574,7 @@ fn contract_state_marshals_to_five_element_array() {
         .expect("contract_hash_entries follows contract_state_to_bytes");
     let helper = &source[start..end];
 
-    assert!(helper.contains("to_stack_value"));
-    assert!(helper.contains("serialize_stack_value_default"));
+    assert!(helper.contains("encode_storage_struct"));
     assert!(!helper.contains("to_stack_item"));
     assert!(!helper.contains("BinarySerializer::serialize("));
 }

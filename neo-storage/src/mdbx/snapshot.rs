@@ -23,6 +23,12 @@ pub struct MdbxSnapshot {
     write_batch: WriteBatch,
 }
 
+impl std::fmt::Debug for MdbxSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MdbxSnapshot").finish_non_exhaustive()
+    }
+}
+
 impl MdbxSnapshot {
     pub(crate) fn new(store: Arc<MdbxStore>) -> Self {
         let read_tx = store

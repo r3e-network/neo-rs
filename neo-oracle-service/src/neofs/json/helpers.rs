@@ -1,4 +1,5 @@
 use base64::Engine as _;
+use neo_primitives::hex_util;
 
 use super::super::decode_raw_base58;
 
@@ -38,7 +39,7 @@ pub(crate) fn normalize_neofs_hex_header(value: &str) -> String {
     }
     if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(normalized) {
         if !decoded.is_empty() {
-            return hex::encode(decoded);
+            return hex_util::encode_hex(&decoded);
         }
     }
     trimmed.to_string()

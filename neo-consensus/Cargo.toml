@@ -16,6 +16,7 @@ description = "dBFT consensus for Neo blockchain"
 [dependencies]
 # Internal crates
 neo-primitives = { workspace = true }
+neo-error = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
 # ScriptBuilder + VM host live in neo-core/src/neo_vm; pure semantics in neo-vm-rs

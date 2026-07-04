@@ -1,6 +1,7 @@
 use super::super::super::NeoFsAuth;
 use super::super::super::proto::neofs_v2;
 use neo_error::{CoreError, CoreResult};
+use neo_primitives::hex_util;
 
 const NEOFS_SDK_VERSION_MAJOR: u32 = 2;
 const NEOFS_SDK_VERSION_MINOR: u32 = 11;
@@ -83,7 +84,7 @@ fn build_neofs_bearer_token(auth: &NeoFsAuth) -> CoreResult<Option<neofs_v2::acl
 fn decode_neofs_signature_bytes(value: &str) -> CoreResult<Vec<u8>> {
     let trimmed = value.trim();
     let normalized = normalize_neofs_hex_header(trimmed);
-    if let Ok(decoded) = hex::decode(&normalized) {
+    if let Ok(decoded) = hex_util::decode_hex(&normalized) {
         return Ok(decoded);
     }
     base64::engine::general_purpose::STANDARD

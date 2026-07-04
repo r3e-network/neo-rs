@@ -1,6 +1,6 @@
 use super::hooks::RpcClientHooks;
 use super::{DEFAULT_HTTP_TIMEOUT, RpcClient};
-use crate::RpcError;
+use crate::RpcClientError;
 use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
 use reqwest::{Client, Url};
@@ -75,7 +75,7 @@ impl RpcClientBuilder {
     }
 
     /// Build the configured [`RpcClient`].
-    pub fn build(self) -> Result<RpcClient, RpcError> {
+    pub fn build(self) -> Result<RpcClient, RpcClientError> {
         let mut client_builder = Client::builder().no_proxy().timeout(self.timeout);
 
         if let (Some(user), Some(pass)) = (self.rpc_user, self.rpc_pass) {

@@ -1,12 +1,12 @@
 use crate::witness_rule::WitnessCondition;
 use crate::witness_rule::{WitnessRule, WitnessRuleAction};
-use hex::{decode as hex_decode, encode as hex_encode};
 use neo_crypto::{ECCurve, ECPoint};
 use neo_error::{CoreError, CoreResult};
 use neo_io::macros::{OptionExt, ValidateLength};
 use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use neo_primitives::{UINT160_SIZE, UInt160, WitnessScope, strip_hex_prefix};
+use neo_primitives::hex_util;
+use neo_primitives::{UINT160_SIZE, UInt160, WitnessScope};
 use neo_vm::{Interoperable, InteroperableError};
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
@@ -129,7 +129,7 @@ impl Signer {
             let groups: Vec<_> = self
                 .allowed_groups
                 .iter()
-                .map(|g| serde_json::Value::String(hex_encode(g.as_bytes())))
+                .map(|g| serde_json::Value::String(hex_util::encode_hex(g.as_bytes())))
                 .collect();
             json.insert(
                 "allowedgroups".to_string(),
@@ -213,8 +213,7 @@ impl Signer {
                     let text = value
                         .as_str()
                         .ok_or_else(|| CoreError::other("allowedgroups items must be strings"))?;
-                    let trimmed = strip_hex_prefix(text);
-                    let bytes = hex_decode(trimmed)
+                    let bytes = hex_util::decode_hex(text)
                         .map_err(|e| CoreError::other(format!("Invalid ECPoint hex: {e}")))?;
                     ECPoint::from_bytes(&bytes)
                         .map_err(|e| CoreError::other(format!("Invalid ECPoint: {e}")))

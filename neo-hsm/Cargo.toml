@@ -35,6 +35,7 @@ neo-primitives = { workspace = true }
 neo-crypto     = { workspace = true }
 neo-consensus  = { workspace = true }
 neo-error      = { workspace = true }
+neo-vm         = { workspace = true }
 
 # PKCS#11 v2.40 wrapper (feature-gated; all three clouds via their .so)
 cryptoki = { version = "0.12", optional = true }
@@ -65,9 +66,6 @@ tracing = { workspace = true }
 
 # Zero-on-drop for PIN material
 zeroize = { workspace = true }
-
-# Hex encoding for tracing/error messages
-hex = { workspace = true }
 
 [lints]
 workspace = true

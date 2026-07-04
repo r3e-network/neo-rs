@@ -20,7 +20,7 @@ use anyhow::Context;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_io::{MemoryReader, Serializable};
 use neo_payloads::Transaction;
-use neo_primitives::UInt256;
+use neo_primitives::{UInt256, hex_util};
 use serde_json::{Value, json};
 use tracing::warn;
 
@@ -305,7 +305,7 @@ fn decode_remote_serialized_with<T>(
             .with_context(|| format!("decoding remote ledger {label} base64"))?,
         RemotePayloadEncoding::Hex => {
             let hex_text = text.strip_prefix("0x").unwrap_or(text);
-            hex::decode(hex_text).with_context(|| format!("decoding remote ledger {label} hex"))?
+            hex_util::decode_hex(hex_text).with_context(|| format!("decoding remote ledger {label} hex"))?
         }
     };
     deserialize(&bytes)

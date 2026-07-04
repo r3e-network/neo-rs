@@ -95,9 +95,10 @@ impl ECCurve {
 ///
 /// # Security
 /// - Uses constant-time comparison to prevent timing side-channel attacks.
-/// - Key material is automatically zeroized when the point is dropped.
+/// - The point data is zeroized on drop (a defense-in-depth measure even though
+///   ECPoints contain public keys, not secret keys).
 #[allow(unused_assignments)]
-#[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Serialize, Zeroize, ZeroizeOnDrop)]
 pub struct ECPoint {
     /// The curve this point belongs to.
     #[zeroize(skip)]
@@ -106,6 +107,27 @@ pub struct ECPoint {
     /// Compressed representation of the point (33 bytes for secp256r1/k1, 32 for Ed25519).
     /// This field is zeroized on drop to prevent memory disclosure.
     data: Vec<u8>,
+}
+
+// Custom Deserialize that validates on-curve, so an invalid point fails at
+// deserialization time rather than causing a panic in Ord::cmp later.
+// The derived Deserialize would skip ECPoint::new()'s on-curve check.
+impl<'de> serde::Deserialize<'de> for ECPoint {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        // Use a helper struct that mirrors the field layout so we can borrow the
+        // derived Deserialize for the inner shape, then validate.
+        #[derive(serde::Deserialize)]
+        struct ECPointRaw {
+            curve: ECCurve,
+            data: Vec<u8>,
+        }
+
+        let raw = ECPointRaw::deserialize(deserializer)?;
+        ECPoint::new(raw.curve, raw.data).map_err(serde::de::Error::custom)
+    }
 }
 
 // Implement constant-time equality comparison to prevent timing attacks.
@@ -482,7 +504,12 @@ impl ECPoint {
 
 impl fmt::Debug for ECPoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ECPoint({:?}, {})", self.curve, hex::encode(&self.data))
+        write!(
+            f,
+            "ECPoint({:?}, {})",
+            self.curve,
+            neo_primitives::hex_util::encode_hex(&self.data)
+        )
     }
 }
 

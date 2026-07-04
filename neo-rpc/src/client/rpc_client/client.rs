@@ -1,6 +1,6 @@
 use super::super::ClientRpcError;
 use super::super::models::{RpcPlugin, RpcRequest, RpcResponse};
-use crate::RpcError;
+use crate::RpcClientError;
 use neo_config::ProtocolSettings;
 use regex::Regex;
 use reqwest::{Client, Url};
@@ -27,7 +27,7 @@ impl RpcClient {
         rpc_user: Option<String>,
         rpc_pass: Option<String>,
         protocol_settings: Option<ProtocolSettings>,
-    ) -> Result<Self, RpcError> {
+    ) -> Result<Self, RpcClientError> {
         RpcClientBuilder::new(url)
             .with_optional_auth(rpc_user, rpc_pass)
             .protocol_settings(protocol_settings.unwrap_or_default())

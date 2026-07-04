@@ -112,6 +112,23 @@ pub fn verify_transaction(
     verify_state_dependent(tx, snapshot, settings, pooled_sender_fee, oracle_duplicate)
 }
 
+/// Runs only [`verify_state_dependent`], skipping
+/// [`verify_state_independent`]. Used when the state-independent
+/// result is already cached (e.g. from `TransactionRouter::preverify`
+/// → `PreverifyCompleted::cached_state_independent`), avoiding
+/// redundant ECDSA signature verification. C# achieves the same
+/// by caching `Transaction.VerificationResult` which `MemoryPool.
+/// TryAdd` reads before performing state-dependent checks only.
+pub fn verify_transaction_dependent_only(
+    tx: &Transaction,
+    snapshot: &DataCache,
+    settings: &ProtocolSettings,
+    pooled_sender_fee: &BigInt,
+    oracle_duplicate: bool,
+) -> VerifyResult {
+    verify_state_dependent(tx, snapshot, settings, pooled_sender_fee, oracle_duplicate)
+}
+
 /// C# `Transaction.VerifyStateIndependent` (Transaction.cs:371).
 pub fn verify_state_independent(tx: &Transaction, settings: &ProtocolSettings) -> VerifyResult {
     use neo_io::Serializable;

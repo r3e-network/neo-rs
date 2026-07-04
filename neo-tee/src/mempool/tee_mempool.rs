@@ -10,6 +10,7 @@ use crate::error::{TeeError, TeeResult};
 use crate::mempool::fair_ordering::{FairOrderingPolicy, OrderingKey, TransactionTiming};
 use crate::ordering_merkle::ordering_merkle_root;
 use neo_crypto::Secp256r1Crypto;
+use neo_primitives::hex_util;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -192,7 +193,7 @@ impl TeeMempool {
 
         debug!(
             "Added transaction {} with sequence {} to batch {}",
-            hex::encode(&tx_hash[..8]),
+            hex_util::encode_hex(&tx_hash[..8]),
             sequence,
             batch_id
         );

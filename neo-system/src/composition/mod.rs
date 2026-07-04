@@ -11,17 +11,18 @@
 //!
 //! - `builder`: RPC client builder.
 //! - `node`: Daemon composition, CLI modes, and long-running node startup.
-//! - `service_registry`: Service registry and lookup helpers.
 //! - `wallet_provider`: wallet provider adapter.
+//!
+//! `ServiceRegistry` is re-exported from `neo-runtime` — see
+//! [`neo_runtime::ServiceRegistry`].
 
 pub mod builder;
 pub mod node;
-pub mod service_registry;
 pub mod wallet_provider;
 
 pub use builder::NodeBuilder;
 pub use node::Node;
-pub use service_registry::ServiceRegistry;
+pub use neo_runtime::ServiceRegistry;
 pub use wallet_provider::WalletProvider;
 
 /// Serializes tests across this module tree that touch the process-global native

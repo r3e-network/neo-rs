@@ -9,6 +9,7 @@ use neo_crypto::bls12381_point::{G1_COMPRESSED_SIZE, G2_COMPRESSED_SIZE, GT_SIZE
 use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
 use neo_payloads::Transaction;
+use neo_primitives::hex_util;
 use neo_primitives::ContractParameterType;
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::BinarySerializer;
@@ -104,7 +105,7 @@ fn contract_call_trace_enabled(app: &ApplicationEngine) -> bool {
 
 fn trace_hex_prefix(bytes: &[u8]) -> String {
     let prefix_len = bytes.len().min(32);
-    let mut text = hex::encode(&bytes[..prefix_len]);
+    let mut text = hex_util::encode_hex(&bytes[..prefix_len]);
     if bytes.len() > prefix_len {
         text.push_str("...");
     }
@@ -242,7 +243,7 @@ fn contract_call_handler(
         eprintln!(
             "trace contract.call: tx={} target_raw={} method={} flags={} args=[{}]",
             tx_hash,
-            hex::encode(&hash_bytes),
+            hex_util::encode_hex(&hash_bytes),
             method,
             call_flags_value,
             args_summary
@@ -438,7 +439,7 @@ fn contract_call_native_handler(
                     "call_native arg[{index}] type={:?} len={} preview=0x{}",
                     parameter_types.get(index),
                     bytes.len(),
-                    hex::encode(&bytes[..preview_len])
+                    hex_util::encode_hex(&bytes[..preview_len])
                 );
             }
             args.push(bytes);
@@ -464,7 +465,7 @@ fn contract_call_native_handler(
                 script_hash,
                 method_name,
                 result_bytes.len(),
-                hex::encode(&result_bytes[..preview_len])
+                hex_util::encode_hex(&result_bytes[..preview_len])
             );
         }
 

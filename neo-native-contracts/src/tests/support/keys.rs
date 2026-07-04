@@ -2,25 +2,10 @@ use super::*;
 use neo_primitives::{UInt160, UInt256};
 
 #[test]
-fn prefixed_composes_prefix_and_suffix() {
-    let key = prefixed(0xAB, &[0x01, 0x02, 0x03]);
-    assert_eq!(key, vec![0xAB, 0x01, 0x02, 0x03]);
-}
-
-#[test]
 fn prefixed_key_wraps_suffix_with_contract_id() {
     let key = prefixed_key(-9, 0xAB, &[0x01, 0x02, 0x03]);
     assert_eq!(key.id(), -9);
     assert_eq!(key.key(), &[0xAB, 0x01, 0x02, 0x03]);
-}
-
-#[test]
-fn prefixed_with_hash160_matches_manual_construction() {
-    let hash = UInt160::from_bytes(&[7u8; 20]).unwrap();
-    let key = prefixed_with_hash160(14, &hash);
-    let mut expected = vec![14u8];
-    expected.extend_from_slice(&[7u8; 20]);
-    assert_eq!(key, expected);
 }
 
 #[test]
@@ -31,16 +16,6 @@ fn prefixed_hash160_key_wraps_hash_suffix_with_contract_id() {
     expected.extend_from_slice(&[7u8; 20]);
     assert_eq!(key.id(), -7);
     assert_eq!(key.key(), expected);
-}
-
-#[test]
-fn prefixed_with_hash160_i32_be_appends_big_endian_i32() {
-    let hash = UInt160::from_bytes(&[7u8; 20]).unwrap();
-    let key = prefixed_with_hash160_i32_be(16, &hash, 0x01020304);
-    let mut expected = vec![16u8];
-    expected.extend_from_slice(&[7u8; 20]);
-    expected.extend_from_slice(&[1, 2, 3, 4]);
-    assert_eq!(key, expected);
 }
 
 #[test]
@@ -55,16 +30,9 @@ fn prefixed_hash160_i32_be_key_wraps_composite_suffix_with_contract_id() {
 }
 
 #[test]
-fn prefixed_with_hash256_matches_manual_construction() {
-    let hash = UInt256::from_bytes(&[9u8; 32]).unwrap();
-    let key = prefixed_with_hash256(8, &hash);
-    let mut expected = vec![8u8];
-    expected.extend_from_slice(&[9u8; 32]);
-    assert_eq!(key, expected);
-}
-
-#[test]
 fn typed_key_helpers_match_storage_key_legacy_builders() {
+    // Oracle test: proves system C (support::keys) produces byte-identical
+    // keys to system D (StorageKey::create_with_*).
     let hash256 = UInt256::from_bytes(&[9u8; 32]).unwrap();
     let hash160 = UInt160::from_bytes(&[7u8; 20]).unwrap();
 
@@ -91,22 +59,22 @@ fn typed_key_helpers_match_storage_key_legacy_builders() {
 }
 
 #[test]
-fn prefixed_with_u32_be_is_big_endian() {
-    let key = prefixed_with_u32_be(0xFF, 0x12345678);
-    assert_eq!(key, vec![0xFF, 0x12, 0x34, 0x56, 0x78]);
+fn prefixed_u32_be_key_is_big_endian() {
+    let key = prefixed_u32_be_key(-1, 0xFF, 0x12345678);
+    assert_eq!(key.key(), &[0xFF, 0x12, 0x34, 0x56, 0x78]);
 }
 
 #[test]
-fn prefixed_with_i32_be_is_big_endian() {
-    let key = prefixed_with_i32_be(0x10, -1);
-    assert_eq!(key, vec![0x10, 0xFF, 0xFF, 0xFF, 0xFF]);
+fn prefixed_i32_be_key_is_big_endian() {
+    let key = prefixed_i32_be_key(-1, 0x10, -1);
+    assert_eq!(key.key(), &[0x10, 0xFF, 0xFF, 0xFF, 0xFF]);
 }
 
 #[test]
-fn prefixed_with_u64_be_is_big_endian() {
-    let key = prefixed_with_u64_be(0x09, 0x0102030405060708);
+fn prefixed_u64_be_key_is_big_endian() {
+    let key = prefixed_u64_be_key(-1, 0x09, 0x0102030405060708);
     assert_eq!(
-        key,
-        vec![0x09, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
+        key.key(),
+        &[0x09, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
     );
 }

@@ -53,6 +53,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc};
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
@@ -69,6 +70,7 @@ use crate::local_identity::LocalIdentity;
 use crate::peer_id::PeerId;
 use crate::peer_registry::PeerRegistry;
 use crate::remote_node::{BlockSource, InboundInventory, RemoteNodeService, RemoteNodeState};
+use crate::spawn::spawn_guarded;
 
 /// Time we wait for the outbound TCP dial to complete before
 /// declaring the peer unreachable.
@@ -104,6 +106,9 @@ pub struct LocalNodeService {
     /// `Start`-idempotency check can both see it without
     /// re-consuming the listener).
     bind_addr: Option<SocketAddr>,
+    /// `JoinHandle` of the spawned accept loop, so we can await it
+    /// during shutdown to catch panics.
+    accept_handle: Option<JoinHandle<()>>,
     /// Optional sink handed to every per-peer service so blocks and
     /// transactions decoded from peers reach the ledger.
     inbound_tx: Option<mpsc::Sender<InboundInventory>>,
@@ -163,6 +168,7 @@ impl LocalNodeService {
             shutdown: CancellationToken::new(),
             started: false,
             bind_addr: None,
+            accept_handle: None,
             inbound_tx: None,
             block_source: None,
         };
@@ -281,8 +287,9 @@ impl LocalNodeService {
 
         // Spawn the accept loop on a fresh task. The task captures
         // its own clones of the shared state so the command loop
-        // can keep running.
-        tokio::spawn(accept_loop(
+        // can keep running. The `JoinHandle` is stored so we can
+        // await it during shutdown to catch panics.
+        self.accept_handle = Some(spawn_guarded("accept_loop", accept_loop(
             listener,
             self.identity.clone(),
             self.registry.clone(),
@@ -290,7 +297,7 @@ impl LocalNodeService {
             self.shutdown.clone(),
             self.inbound_tx.clone(),
             self.block_source.clone(),
-        ));
+        )));
 
         self.started = true;
         self.bind_addr = Some(local_addr);
@@ -347,7 +354,7 @@ impl LocalNodeService {
                 address: Some(addr),
             })
             .ok();
-        tokio::spawn(service.run());
+        spawn_guarded("remote_node", service.run());
         Ok(peer_id)
     }
 
@@ -465,6 +472,11 @@ impl LocalNodeService {
             let _ = handle.shutdown().await;
         }
         self.shutdown.cancel();
+        // Await the accept loop so we catch any panic it suffered
+        // (the cancellation token above unblocks its `select!`).
+        if let Some(handle) = self.accept_handle.take() {
+            let _ = handle.await;
+        }
         self.started = false;
         self.bind_addr = None;
     }
@@ -578,7 +590,7 @@ async fn accept_loop(
                             peer_id: peer_id.to_string(),
                             address: Some(reported),
                         });
-                        tokio::spawn(service.run());
+                        spawn_guarded("remote_node", service.run());
                     }
                     Err(err) => {
                         error!(

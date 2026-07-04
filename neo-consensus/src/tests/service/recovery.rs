@@ -169,7 +169,7 @@ async fn recovery_message_change_view_triggers_view_change() {
         1,
         1,
         ConsensusMessageType::RecoveryMessage,
-        recovery.serialize(),
+        recovery.serialize().unwrap(),
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
@@ -227,7 +227,7 @@ async fn recovery_message_commits_for_other_view_do_not_commit_block() {
         1,
         0,
         ConsensusMessageType::RecoveryMessage,
-        recovery.serialize(),
+        recovery.serialize().unwrap(),
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
@@ -280,7 +280,7 @@ async fn recovery_message_ignores_invalid_prepare_request_signature() {
         1,
         0,
         ConsensusMessageType::RecoveryMessage,
-        recovery.serialize(),
+        recovery.serialize().unwrap(),
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
@@ -313,7 +313,7 @@ async fn recovery_message_ignores_invalid_prepare_response_signature() {
         1,
         0,
         ConsensusMessageType::RecoveryMessage,
-        recovery.serialize(),
+        recovery.serialize().unwrap(),
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
@@ -360,7 +360,7 @@ async fn recovery_message_ignores_invalid_commit_signature() {
         1,
         0,
         ConsensusMessageType::RecoveryMessage,
-        recovery.serialize(),
+        recovery.serialize().unwrap(),
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
@@ -411,7 +411,7 @@ async fn recovery_message_ignores_prepare_response_with_mismatched_hash() {
         1,
         0,
         ConsensusMessageType::RecoveryMessage,
-        recovery.serialize(),
+        recovery.serialize().unwrap(),
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
@@ -526,7 +526,7 @@ async fn recovery_message_with_commits_triggers_block_commit() {
         1,
         0,
         ConsensusMessageType::RecoveryMessage,
-        recovery.serialize(),
+        recovery.serialize().unwrap(),
     );
     sign_payload(&service, &mut payload, &keys[1]);
 

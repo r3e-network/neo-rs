@@ -10,6 +10,7 @@ use neo_execution::application_engine::TEST_MODE_GAS;
 use neo_io::Serializable;
 use neo_manifest::CallFlags;
 use neo_primitives::UInt160;
+use neo_primitives::hex_util;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
@@ -51,7 +52,7 @@ pub(super) fn parse_token_id_param(
         .get(index)
         .and_then(|value| value.as_str())
         .ok_or_else(|| invalid_params(format!("{method} requires tokenId parameter")))?;
-    hex::decode(text).map_err(|_| invalid_params("Invalid tokenId"))
+    hex_util::decode_hex(text).map_err(|_| invalid_params("Invalid tokenId"))
 }
 
 pub(super) fn collect_transfers(
@@ -95,7 +96,7 @@ pub(super) fn collect_nep11_transfers(
         |key, entry| {
             entry.insert(
                 "tokenid".to_string(),
-                Value::String(hex::encode(&key.token)),
+                Value::String(hex_util::encode_hex(&key.token)),
             );
         },
     )

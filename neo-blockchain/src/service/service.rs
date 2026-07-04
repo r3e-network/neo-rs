@@ -352,6 +352,21 @@ pub trait MempoolLike: std::fmt::Debug + Send + Sync {
         settings: &neo_config::ProtocolSettings,
     ) -> VerifyResult;
 
+    /// Try to add a transaction using a cached state-independent
+    /// verification result. When `cached_state_independent` is
+    /// `Some(VerifyResult::Succeed)` the mempool skips redundant
+    /// signature verification and only performs state-dependent
+    /// checks. Should only be used when the caller has already
+    /// verified the transaction's signatures (e.g. through
+    /// `TransactionRouter::preverify`).
+    fn try_add_cached(
+        &self,
+        tx: &neo_payloads::Transaction,
+        snapshot: &neo_storage::DataCache,
+        settings: &neo_config::ProtocolSettings,
+        cached_state_independent: Option<VerifyResult>,
+    ) -> VerifyResult;
+
     /// Update the pool after `block` is persisted (C# `MemoryPool.
     /// UpdatePoolForBlockPersisted`): remove the block's transactions and evict
     /// pooled transactions that conflict with the persisted ones. Default no-op
@@ -383,6 +398,21 @@ impl MempoolLike for neo_mempool::MemoryPool {
         _settings: &neo_config::ProtocolSettings,
     ) -> VerifyResult {
         neo_mempool::MemoryPool::try_add(self, tx.clone(), snapshot)
+    }
+
+    fn try_add_cached(
+        &self,
+        tx: &neo_payloads::Transaction,
+        snapshot: &neo_storage::DataCache,
+        _settings: &neo_config::ProtocolSettings,
+        cached_state_independent: Option<VerifyResult>,
+    ) -> VerifyResult {
+        neo_mempool::MemoryPool::try_add_cached(
+            self,
+            tx.clone(),
+            snapshot,
+            cached_state_independent,
+        )
     }
 
     fn block_persisted(&self, block: &neo_payloads::Block) {

@@ -109,16 +109,38 @@ impl MempoolLike for NodeMempoolAdapter {
         }
         self.pool.try_add(tx.clone(), store.data_cache())
     }
+
+    fn try_add_cached(
+        &self,
+        tx: &neo_payloads::Transaction,
+        _snapshot: &neo_storage::DataCache,
+        _settings: &ProtocolSettings,
+        cached_state_independent: Option<VerifyResult>,
+    ) -> VerifyResult {
+        let hash = tx.hash();
+        if self.pool.contains(&hash) {
+            return VerifyResult::AlreadyInPool;
+        }
+        let store = StoreCache::new_from_store(Arc::clone(&self.store), true);
+        match neo_native_contracts::LedgerContract::new()
+            .contains_transaction(store.data_cache(), &hash)
+        {
+            Ok(true) => return VerifyResult::AlreadyExists,
+            Ok(false) => {}
+            Err(_) => return VerifyResult::Invalid,
+        }
+        self.pool.try_add_cached(tx.clone(), store.data_cache(), cached_state_independent)
+    }
 }
 
-/// Builds an `Arc<Node>` test system over an in-memory store.
+/// Builds an `Arc<NodeContext>` test system over an in-memory store.
 ///
 /// When called from inside a Tokio runtime (the `#[tokio::test]`
 /// fixtures), the blockchain service loop is spawned so handle
 /// round-trips resolve; outside a runtime the service is dropped,
 /// which makes handle sends fail fast instead of hanging — the
 /// synchronous tests never exercise the relay path.
-pub(crate) fn test_system(settings: ProtocolSettings) -> Arc<Node> {
+pub(crate) fn test_system(settings: ProtocolSettings) -> Arc<crate::server::NodeContext> {
     let settings = Arc::new(settings);
     let storage: Arc<dyn Store> = Arc::new(MemoryStore::new());
     let mempool = Arc::new(MemoryPool::new(&settings));
@@ -159,7 +181,16 @@ pub(crate) fn test_system(settings: ProtocolSettings) -> Arc<Node> {
     let node = Arc::new(node);
     seed_native_contract_records(&node);
     seed_genesis_state(&node);
-    node
+    Arc::new(crate::server::NodeContext::from_parts(
+        Arc::clone(&node.settings),
+        Arc::clone(&node.storage),
+        node.blockchain.clone(),
+        node.network.clone(),
+        Arc::clone(&node.mempool),
+        Arc::clone(&node.header_cache),
+        node.services.clone(),
+        Arc::clone(&node.native_contract_provider),
+    ))
 }
 
 /// `ContractManagement.PREFIX_CONTRACT` — the per-contract record

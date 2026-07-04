@@ -39,6 +39,12 @@ pub struct RocksDbStore {
     pub(crate) read_ahead_config: ReadAheadConfig,
 }
 
+impl std::fmt::Debug for RocksDbStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RocksDbStore").finish_non_exhaustive()
+    }
+}
+
 impl RocksDbStore {
     pub(crate) fn open(
         config: &StorageConfig,
@@ -479,6 +485,28 @@ impl Store for RocksDbStore {
         self.on_new_snapshot.write().push(handler);
     }
 
+    fn flush(&self) -> StorageResult<()> {
+        // Propagate batch-write failures so callers can react to durability loss.
+        self.flush_batch_writes()?;
+        // flush_memtables logs WAL/memtable errors internally (best-effort).
+        self.flush_memtables();
+        Ok(())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_fast_sync_store(&self) -> Option<&dyn crate::persistence::FastSyncStore> {
+        Some(self)
+    }
+
+    fn as_raw_overlay_store(&self) -> Option<&dyn crate::persistence::RawOverlayStore> {
+        Some(self)
+    }
+}
+
+impl crate::persistence::FastSyncStore for RocksDbStore {
     fn enable_fast_sync_mode(&self) {
         RocksDbStore::enable_fast_sync_mode(self);
     }
@@ -494,19 +522,9 @@ impl Store for RocksDbStore {
     fn has_pending_fast_sync_writes(&self) -> bool {
         RocksDbStore::has_pending_fast_sync_writes(self)
     }
+}
 
-    fn flush(&self) -> StorageResult<()> {
-        // Propagate batch-write failures so callers can react to durability loss.
-        self.flush_batch_writes()?;
-        // flush_memtables logs WAL/memtable errors internally (best-effort).
-        self.flush_memtables();
-        Ok(())
-    }
-
-    fn supports_raw_overlay_commit(&self) -> bool {
-        true
-    }
-
+impl crate::persistence::RawOverlayStore for RocksDbStore {
     fn try_commit_raw_overlay(
         &self,
         overlay: &[(Vec<u8>, Option<Vec<u8>>)],
@@ -563,10 +581,6 @@ impl Store for RocksDbStore {
         })?;
         Ok(true)
     }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
 }
 
 impl Clone for RocksDbStore {
@@ -607,6 +621,12 @@ pub struct RocksDbSnapshot {
     pending_changes: Mutex<BTreeMap<Vec<u8>, Option<Vec<u8>>>>,
     /// Read-ahead configuration
     read_ahead_config: ReadAheadConfig,
+}
+
+impl std::fmt::Debug for RocksDbSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RocksDbSnapshot").finish_non_exhaustive()
+    }
 }
 
 impl RocksDbSnapshot {

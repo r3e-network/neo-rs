@@ -13,7 +13,6 @@ use std::any::Any;
 use std::sync::Arc;
 
 use crate::{ApplicationExecuted, Block};
-use neo_primitives::UInt160;
 use neo_storage::persistence::DataCache;
 use tracing::debug;
 
@@ -174,48 +173,6 @@ pub trait WalletChangedHandler: Send + Sync {
     );
 }
 
-/// Minimal signing interface used by [`WalletChangedHandler`]. The trait is
-/// intentionally narrow; the full wallet API lives in `neo-wallets` as
-/// `WalletProvider`. This trait focuses only on account lookup and signing.
-pub trait SignerProvider: Send + Sync {
-    /// Get an account by script hash.
-    fn get_account(&self, script_hash: &UInt160) -> Option<Arc<dyn AccountLike>>;
-    /// Sign arbitrary data with the account's private key.
-    fn sign(&self, data: &[u8], script_hash: &UInt160) -> Result<Vec<u8>, String>;
-    /// Whether the wallet holds the account identified by the script hash.
-    fn contains(&self, script_hash: &UInt160) -> bool;
-}
-
-/// Minimal account interface; full account API lives in `neo-wallets`.
-pub trait AccountLike: Send + Sync {
-    /// Get the script hash.
-    fn script_hash(&self) -> UInt160;
-    /// Whether the account is locked.
-    fn is_locked(&self) -> bool;
-    /// Whether the account has a private key.
-    fn has_key(&self) -> bool;
-    /// Get the public key (if available).
-    fn get_key(&self) -> Option<Vec<u8>>;
-}
-
-/// Implemented by services that need to react to P2P messages. Mirrors the
-/// C# `IMessageReceivedHandler` interface.
-pub trait MessageReceivedHandler: Send + Sync {
-    /// Return `true` to keep the message flowing, `false` to drop it.
-    fn remote_node_message_received_handler(
-        &self,
-        system: &dyn Any,
-        message: &dyn MessageLike,
-    ) -> bool;
-}
-
-/// Minimal P2P message interface used by [`MessageReceivedHandler`].
-pub trait MessageLike: Send + Sync {
-    /// Raw payload bytes.
-    fn payload(&self) -> &[u8];
-    /// Message command (e.g. transaction, block).
-    fn command(&self) -> u8;
-}
 /// Convenience re-export for plugins that only need the witness type.
 pub use crate::Witness as WitnessType;
 

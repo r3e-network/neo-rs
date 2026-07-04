@@ -23,7 +23,7 @@
 //!   helpers.
 //! - `tx_builder`: Transaction builder helpers for constructing Neo payloads.
 
-#![doc(html_root_url = "https://docs.rs/neo-payloads/0.9.0")]
+#![doc(html_root_url = "https://docs.rs/neo-payloads/0.10.0")]
 
 // ── P2P wire payload types (relocated from neo-p2p) ───────────────────
 
@@ -93,8 +93,7 @@ pub use application_executed::ApplicationExecuted;
 pub use block::Block;
 pub use conflicts::Conflicts;
 pub use event_handlers::{
-    AccountLike, CommittedHandler, CommittingHandler, MessageLike, MessageReceivedHandler,
-    PluginEvent, SignerProvider, WalletChangedHandler, WitnessType,
+    CommittedHandler, CommittingHandler, PluginEvent, WalletChangedHandler, WitnessType,
 };
 pub use extensible_payload::ExtensiblePayload;
 pub use header::{Header as BlockHeader, Header};

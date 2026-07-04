@@ -19,9 +19,6 @@
 //!   records.
 //! - `trackers`: Token tracker implementations grouped by token standard.
 
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
-
 pub mod extensions;
 pub mod runtime;
 pub mod service;

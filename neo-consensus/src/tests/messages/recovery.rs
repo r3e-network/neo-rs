@@ -23,7 +23,7 @@ fn recovery_message_roundtrip_minimal_without_prepare_request() {
         invocation_script: vec![0x0C, 0x40, 0xBB],
     });
 
-    let bytes = msg.serialize();
+    let bytes = msg.serialize().unwrap();
     let parsed = RecoveryMessage::deserialize(&bytes, 100, 0, 1).unwrap();
     assert!(parsed.prepare_request_message.is_none());
     assert_eq!(parsed.preparation_hash, msg.preparation_hash);
@@ -53,7 +53,7 @@ fn recovery_message_wire_format_bytes_without_prepare_request() {
         invocation_script: vec![0xFF, 0x00],
     });
 
-    let bytes = msg.serialize();
+    let bytes = msg.serialize().unwrap();
     let mut expected = Vec::new();
     let prep_hash_bytes = prep_hash.to_array();
 

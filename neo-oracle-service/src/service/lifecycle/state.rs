@@ -2,9 +2,9 @@ use super::super::{
     ExpiringSet, FINISHED_CACHE_TTL, OracleDedupState, OracleService, OracleServiceError,
     OracleServiceSettings, OracleStatus,
 };
+use neo_runtime::{ConfigProvider, StoreProvider, TxAdmission};
 #[cfg(feature = "oracle")]
 use super::super::{OracleHttpsProtocol, OracleNeoFsProtocol};
-use neo_system::Node;
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 #[cfg(feature = "oracle")]
@@ -16,13 +16,17 @@ impl OracleService {
     /// Create a new oracle service bound to the given node system.
     pub fn new(
         settings: OracleServiceSettings,
-        system: Arc<Node>,
+        config: Arc<dyn ConfigProvider>,
+        store: Arc<dyn StoreProvider>,
+        tx: Arc<dyn TxAdmission>,
     ) -> Result<Self, OracleServiceError> {
         let mut settings = settings;
         settings.normalize();
         Ok(Self {
             settings,
-            system,
+            config,
+            store,
+            tx,
             status: AtomicU8::new(OracleStatus::Unstarted.as_u8()),
             self_ref: RwLock::new(Weak::new()),
             wallet: RwLock::new(None),
