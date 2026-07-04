@@ -2786,6 +2786,7 @@ dependencies = [
  "neo-state-service",
  "neo-storage",
  "neo-system",
+ "neo-test-fixtures",
  "neo-vm",
  "neo-vm-rs",
  "neo-wallets",
@@ -2945,6 +2946,19 @@ dependencies = [
  "tokio",
  "tracing",
  "zeroize",
+]
+
+[[package]]
+name = "neo-test-fixtures"
+version = "0.10.0"
+dependencies = [
+ "neo-crypto",
+ "neo-io",
+ "neo-native-contracts",
+ "neo-payloads",
+ "neo-primitives",
+ "neo-storage",
+ "neo-vm-rs",
 ]
 
 [[package]]

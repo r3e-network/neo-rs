@@ -208,7 +208,7 @@ impl PipelineStage for NeoValidateStage {
         self.validate(ctx, block).await?;
 
         Ok(StageOutput::performed(
-            start.elapsed().as_micros() as u64,
+            neo_runtime::time::elapsed_us(start.elapsed()),
         ))
     }
 }

@@ -124,10 +124,4 @@ impl From<std::io::Error> for P2PError {
 /// Result type for P2P operations.
 pub type P2PResult<T> = std::result::Result<T, P2PError>;
 
-impl From<P2PError> for neo_error::CoreError {
-    fn from(err: P2PError) -> Self {
-        neo_error::CoreError::Network {
-            message: err.to_string(),
-        }
-    }
-}
+neo_error::impl_error_from_struct!(neo_error::CoreError, P2PError => Network);

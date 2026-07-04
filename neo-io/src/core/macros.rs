@@ -29,7 +29,46 @@ macro_rules! impl_error_from {
         $(
             impl From<$source> for $error_type {
                 fn from(error: $source) -> Self {
-                    <$error_type>::$method(error.to_string())
+                    Self::$method(error.to_string())
+                }
+            }
+        )+
+    };
+}
+
+/// Implements `From<T>` for error types whose variants are **struct-variant**
+/// constructors with a single `message: String` field.
+///
+/// This is the struct-variant counterpart of [`impl_error_from!`], which only
+/// supports tuple-variant constructors (e.g. `CoreError::io(string)`). Many
+/// `CoreError` variants use the struct form `CoreError::Cryptographic { message:
+/// String }`; this macro eliminates the boilerplate for those conversions.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// impl_error_from_struct! {
+///     CoreError,
+///     CryptoError => Cryptographic,
+///     NetworkError => Network,
+/// }
+/// ```
+///
+/// Expands to:
+/// ```rust,ignore
+/// impl From<CryptoError> for CoreError {
+///     fn from(error: CryptoError) -> Self {
+///         CoreError::Cryptographic { message: error.to_string() }
+///     }
+/// }
+/// ```
+#[macro_export]
+macro_rules! impl_error_from_struct {
+    ($error_type:ty, $($source:ty => $variant:ident),+ $(,)?) => {
+        $(
+            impl From<$source> for $error_type {
+                fn from(error: $source) -> Self {
+                    Self::$variant { message: error.to_string() }
                 }
             }
         )+

@@ -912,14 +912,14 @@ where
         // Per-block timing breakdown (debug-level). Shows where wall-clock
         // time goes: hash, verify (signature), persist (native contracts),
         // or commit (RocksDB write). Enable with RUST_LOG=neo::sync=debug.
-        let total_us = after_commit.as_micros() as u64;
-        let verify_us = (after_verify - after_hash).as_micros() as u64;
-        let persist_us = (after_persist - after_verify).as_micros() as u64;
-        let commit_us = (after_commit - after_persist).as_micros() as u64;
+        let total_us = neo_runtime::time::elapsed_us(after_commit);
+        let verify_us = neo_runtime::time::elapsed_us(after_verify - after_hash);
+        let persist_us = neo_runtime::time::elapsed_us(after_persist - after_verify);
+        let commit_us = neo_runtime::time::elapsed_us(after_commit - after_persist);
         debug!(
             target: "neo::sync",
             index,
-            hash_us = after_hash.as_micros() as u64,
+            hash_us = neo_runtime::time::elapsed_us(after_hash),
             verify_us,
             persist_us,
             commit_us,

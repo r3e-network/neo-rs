@@ -74,6 +74,8 @@ members = [
     "tests",
     # Criterion benchmarks.
     "benches-package",
+    # Shared test fixtures (transactions, blocks, store helpers).
+    "neo-test-fixtures",
 ]
 default-members = [
     "neo-primitives",
@@ -191,6 +193,9 @@ neo-oracle-service = { path = "neo-oracle-service", version = "0.10.0" }
 
 # Application layer
 neo-node = { path = "neo-node", version = "0.10.0" }
+
+# Development-only crates
+neo-test-fixtures = { path = "neo-test-fixtures", version = "0.10.0" }
 
 # === Core dependencies ===
 # Async runtime

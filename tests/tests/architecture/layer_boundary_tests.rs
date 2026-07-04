@@ -56,8 +56,8 @@ impl Layer {
             "neo-system" => Some(Layer::Composition),
             // Layer 6: Optional plugin/RPC-facing service boundary.
             "neo-oracle-service" | "neo-rpc" => Some(Layer::PluginBoundary),
-            // Layer 7: Binaries and UI clients.
-            "neo-node" | "neo-gui" => Some(Layer::Application),
+            // Layer 7: Binaries, UI clients, and development-only tooling.
+            "neo-node" | "neo-gui" | "neo-test-fixtures" => Some(Layer::Application),
             _ => None,
         }
     }

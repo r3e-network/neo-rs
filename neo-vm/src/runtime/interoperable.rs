@@ -21,13 +21,7 @@ pub enum InteroperableError {
     NotSupported(String),
 }
 
-impl From<InteroperableError> for neo_error::CoreError {
-    fn from(err: InteroperableError) -> Self {
-        neo_error::CoreError::InvalidOperation {
-            message: err.to_string(),
-        }
-    }
-}
+neo_error::impl_error_from_struct!(neo_error::CoreError, InteroperableError => InvalidOperation);
 
 /// Host type that can project itself to and from a NeoVM stack value.
 #[allow(clippy::wrong_self_convention)]

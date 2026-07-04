@@ -1,0 +1,26 @@
+[package]
+name = "neo-test-fixtures"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Shared test fixtures (transactions, blocks, store helpers) for Neo workspace integration tests"
+
+[dependencies]
+neo-primitives = { workspace = true }
+neo-payloads = { workspace = true }
+neo-storage = { workspace = true }
+neo-crypto = { workspace = true }
+neo-native-contracts = { workspace = true }
+neo-vm-rs = { workspace = true }
+neo-io = { workspace = true }
+
+[lints]
+workspace = true

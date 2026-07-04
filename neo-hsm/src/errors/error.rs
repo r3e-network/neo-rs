@@ -94,10 +94,4 @@ impl From<HsmError> for ConsensusError {
     }
 }
 
-impl From<HsmError> for neo_error::CoreError {
-    fn from(err: HsmError) -> Self {
-        neo_error::CoreError::Cryptographic {
-            message: err.to_string(),
-        }
-    }
-}
+neo_error::impl_error_from_struct!(neo_error::CoreError, HsmError => Cryptographic);

@@ -133,6 +133,7 @@ subtle = { workspace = true, optional = true }
 [dev-dependencies]
 mockito = { workspace = true }
 neo-system = { workspace = true }
+neo-test-fixtures = { workspace = true }
 
 [features]
 default = []

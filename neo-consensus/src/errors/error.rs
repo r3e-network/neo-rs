@@ -198,10 +198,4 @@ impl ConsensusError {
 /// Result type for consensus operations.
 pub type ConsensusResult<T> = std::result::Result<T, ConsensusError>;
 
-impl From<ConsensusError> for neo_error::CoreError {
-    fn from(err: ConsensusError) -> Self {
-        neo_error::CoreError::InvalidOperation {
-            message: err.to_string(),
-        }
-    }
-}
+neo_error::impl_error_from_struct!(neo_error::CoreError, ConsensusError => InvalidOperation);

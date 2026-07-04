@@ -1,34 +1,60 @@
-# neo-rs Audit Refactor — Network ChannelFull Semantics
+# Phase 1 Delivery Summary — Deep Architecture Refactor
 
-## What was done
+**Commit**: `b8afcc0` — Phase 1: Dead code excision + native contract support layer
+**Date**: 2026-07-04
+**ADRs**: ADR-027 (dead code excision), ADR-028 (native contract support layer)
 
-Completed a low-risk incremental refactor from the existing service/app-layer audit: `neo-network` now distinguishes local command-channel backpressure from actual service shutdown in `NetworkHandle::try_broadcast_transaction`.
+## TL;DR
 
-## Key changes
+Deleted 2 dead crates, 6 dead traits, and consolidated ~265 lines of duplicated
+boilerplate into 3 support modules. Workspace went from 28 → 26 crates.
+Architecture health score 9.4 → 9.5. All 3346 tests pass.
 
-- Added `NetworkError::ChannelFull` with message `local node command channel is full`.
-- Mapped `NetworkError::ChannelFull` to `neo_runtime::ServiceError::ServiceUnavailable(...)`.
-- Updated `try_broadcast_transaction` so:
-  - `TrySendError::Full(_)` returns `NetworkError::ChannelFull`.
-  - `TrySendError::Closed(_)` returns `NetworkError::LocalShuttingDown`.
-- Added a focused test covering both full-queue and closed-channel paths.
+## What Was Done
 
-## Files changed
+### Phase 1.1 — Dead Code Excision (ADR-027)
 
-- `neo-network/src/errors/error.rs`
-- `neo-network/src/service/handle.rs`
-- `neo-network/src/tests/service/handle.rs`
+| Action | Detail |
+|--------|--------|
+| Deleted `neo-static-files` crate | L1c orphan — 0 production consumers. Real cold-archive code lives in `neo-blockchain/src/ledger/static_archive.rs` |
+| Deleted `neo-engine` crate | L3 — entire public state API had 0 production callers. `BlockchainEngineAdapter` was never instantiated. `ValidateStage` + `PipelineStage` traits moved to `neo-blockchain/src/pipeline/stage_traits.rs` |
+| Deleted 6 dead traits | `AsyncSystemContext`, `ApplicationEngineProvider`, `SignerProvider`, `AccountLike`, `MessageReceivedHandler`, `MessageLike`, `ConsensusMessage`, `Box<dyn ConsensusSigner>` impl |
+| Restructured `OracleNodeProvider` | 0-method marker trait → 3 explicit fields (`config`, `store`, `tx`) on `OracleService` |
+| Correctly kept 2 traits | `WalletChangedHandler` (has prod impl in OracleService) and `BlockLike` (has prod impl on Block) — audit was wrong about these |
+
+### Phase 1.2 — Native Contract Support Layer (ADR-028)
+
+| File | Purpose | Sites Consolidated |
+|------|---------|-------------------|
+| `support/codec.rs` | `decode_stack_value`, `encode_storage_struct`, `StructDecoder` | 14 decode + 12 encode + 8 from_stack_value |
+| `support/engine.rs` | `require_persisting_block` | 4 sites |
+| `support/settings.rs` | `read_hardfork_gated_u32_setting` + i64 helpers | 3 snapshot readers + 12 BigInt→i64 sites |
+
+19 production files + 8 test files migrated. Data encoding is byte-identical.
 
 ## Verification
 
-QA independently verified:
+| Check | Result |
+|-------|--------|
+| `cargo check --workspace --tests` | ✅ 0 errors, 0 warnings |
+| `cargo test --workspace` | ✅ 3346 passed, 0 failed |
+| `cargo test -p neo-native-contracts` | ✅ 377 passed, 0 failed |
+| `cargo test -p neo-tests --test layer_boundary_tests` | ✅ 20/20 pass |
 
-- `cargo test --manifest-path "/Users/jinghuiliao/git/neo-rs/Cargo.toml" -p neo-network try_broadcast_transaction` — passed.
-- `cargo check --manifest-path "/Users/jinghuiliao/git/neo-rs/Cargo.toml" -p neo-network --tests` — passed.
-- `cargo test --manifest-path "/Users/jinghuiliao/git/neo-rs/Cargo.toml" -p neo-network` — passed, 107 tests passed, 0 failed.
+## File Changes
 
-## Follow-up notes
+- **Deleted**: `neo-static-files/` (entire directory), `neo-engine/` (entire directory),
+  `neo-blockchain/src/service/engine_adapter.rs`, `neo-execution/src/runtime/engine_provider.rs`
+- **Created**: `neo-blockchain/src/pipeline/stage_traits.rs`,
+  `neo-native-contracts/src/support/codec.rs`, `support/engine.rs`, `support/settings.rs`
+- **Modified**: 19 production files in neo-native-contracts, 8 test files,
+  `Cargo.toml`, `Dockerfile`, `layer_boundary_tests.rs`, `design.md`
+- **Total diff**: 265 files changed, +2263 / -3272 lines (net -1009 lines)
 
-- No source bug or test bug remained after QA; routing decision: `NoOne`.
-- Deliberately not included in this round: blockchain explicit shutdown path, live `NeoValidateStage` wiring, RPC split, or broader architecture changes.
-- Earlier teammate failures were network/turn-limit related; the final implementation and QA outputs were independently verified before delivery.
+## Next Steps (Approved, Not Yet Executed)
+
+- **Phase 2**: Cross-crate helpers (`now_millis`, `elapsed_us`, `invocation_script`,
+  `impl_error_from` macro) + `neo-test-fixtures` dev crate
+- **Phase 3**: Split `neo-rpc` (275 files) into api/client/server + architecture
+  honesty renames
+- **Phase 4**: Async signer correctness (`ConsensusSigner::sign` → async)

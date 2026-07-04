@@ -36,10 +36,4 @@ impl From<neo_io::IoError> for WireError {
     }
 }
 
-impl From<WireError> for neo_error::CoreError {
-    fn from(err: WireError) -> Self {
-        neo_error::CoreError::Network {
-            message: err.to_string(),
-        }
-    }
-}
+neo_error::impl_error_from_struct!(neo_error::CoreError, WireError => Network);

@@ -18,6 +18,7 @@
 mod errors;
 mod service;
 pub mod node;
+pub mod time;
 
 // Re-exports for the public surface of the crate.
 //

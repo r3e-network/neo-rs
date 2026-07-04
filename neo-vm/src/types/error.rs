@@ -735,13 +735,7 @@ impl VmError {
     }
 }
 
-impl From<VmError> for neo_error::CoreError {
-    fn from(err: VmError) -> Self {
-        neo_error::CoreError::InvalidOperation {
-            message: err.to_string(),
-        }
-    }
-}
+neo_error::impl_error_from_struct!(neo_error::CoreError, VmError => InvalidOperation);
 
 #[cfg(test)]
 #[path = "../tests/types/error.rs"]

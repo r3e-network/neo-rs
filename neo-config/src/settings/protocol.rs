@@ -62,13 +62,7 @@ impl From<&str> for ProtocolConfigError {
     }
 }
 
-impl From<ProtocolConfigError> for neo_error::CoreError {
-    fn from(err: ProtocolConfigError) -> Self {
-        neo_error::CoreError::Configuration {
-            message: err.to_string(),
-        }
-    }
-}
+neo_error::impl_error_from_struct!(neo_error::CoreError, ProtocolConfigError => Configuration);
 
 /// Represents the protocol settings of the NEO system.
 /// Matches C# ProtocolSettings record exactly

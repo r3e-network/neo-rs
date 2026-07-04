@@ -1287,9 +1287,92 @@ Validation is split into:
 | Dead crate `neo-engine` | Deleted — traits moved to `neo-blockchain::pipeline::stage_traits` (ADR-027) |
 | Dead trait excision | 6 dead traits + 1 marker trait deleted (ADR-027) |
 | Native contract codec layer | `support/codec.rs` + `support/engine.rs` + `support/settings.rs` consolidate ~265 lines of duplicated boilerplate (ADR-028) |
+| Cross-crate helpers + test fixtures | Shared `now_millis`, `elapsed_us`, `invocation_from_signature`, `impl_error_from_struct!` macro, `neo-test-fixtures` crate (ADR-029) |
 
 ---
 
+### ADR-029: Cross-crate helpers + test fixtures
+
+**Status**: Accepted (implemented)
+
+**Context**: The deep audit (`.planning/codebase/deep-audit-2026-07-04.md` Theme D
++ E) found ~250 lines of duplicated utility code scattered across 4-5 crates:
+
+1. **Epoch-millisecond clock** — 3 copies of `now_millis()` / `current_timestamp()`
+   in `neo-consensus`, `neo-node` (×2), each with `SystemTime::now().duration_since(
+   UNIX_EPOCH).unwrap_or_default().as_millis() as u64`.
+
+2. **Elapsed-microsecond timing** — 6 sites in `neo-blockchain::pipeline` used
+   `as_micros() as u64` which silently truncates u128→u64 on overflow (only
+   relevant for durations >584M years, but still a code smell).
+
+3. **Signature invocation script** — 3 copies of `invocation_script_from_signature`
+   (2 hand-rolling `PUSHDATA1` bytes, 1 using `ScriptBuilder::emit_push`) and 2
+   copies of the inverse `signature_from_invocation_script`, across
+   `neo-consensus` and `neo-node` (×2).
+
+4. **Domain→CoreError From impls** — 13 mechanical `impl From<DomainError> for
+   CoreError { fn from(err) -> Self { CoreError::Variant { message:
+   err.to_string() } } }` blocks across 7 crates. The existing
+   `impl_error_from!` macro only supported tuple-variant constructors.
+
+5. **Test fixtures** — `make_transaction`, `make_ledger_block`, `store_block`
+   duplicated between two `neo-rpc` test files (~120 lines each, with slightly
+   different defaults).
+
+**Decision**:
+
+1. **`now_millis()`** — added to `neo-primitives/src/utils/time.rs` (an existing
+   `time` module already re-exported at the crate root as `neo_primitives::time`).
+   3 call sites migrated. `neo-consensus::current_timestamp()` kept as a thin
+   delegate to preserve its private API.
+
+2. **`elapsed_us()` / `elapsed_millis()`** — new `neo-runtime/src/time.rs` module
+   with saturating u128→u64 conversion (`.min(u64::MAX as u128) as u64`).
+   6 call sites in `neo-blockchain::pipeline` migrated.
+
+3. **`invocation_from_signature()` / `signature_from_invocation()`** — added to
+   `neo-vm/src/script_builder/mod.rs`. The forward direction is a method on
+   `ScriptBuilder` (delegates to `emit_push`); the inverse is a standalone
+   function checking `PUSHDATA1 0x40 <64 bytes>`. Verified byte-identical to
+   both the hand-rolled and ScriptBuilder-based originals. 5 call sites migrated
+   (3 forward + 2 inverse). `neo-consensus::InvocationScript` struct kept as a
+   thin delegate.
+
+4. **`impl_error_from_struct!` macro** — new macro in `neo-io/src/core/macros.rs`
+   alongside the existing `impl_error_from!`, re-exported from `neo-error`.
+   Supports struct-variant constructors: `CoreError::Variant { message:
+   err.to_string() }`. 13 domain error impls migrated across 7 crates.
+   `neo-storage::StorageError` skipped (has custom `match` logic, not pure
+   message conversion). **Bug fix**: also fixed `impl_error_from!` to use
+   `Self::` instead of `<$error_type>::` which triggered E0658 (experimental
+   qualified path syntax) for path-typed `$error_type`.
+
+5. **`neo-test-fixtures` crate** — new dev-only workspace member providing
+   `TestTransactionBuilder` (fluent builder with sensible defaults), plus
+   `make_ledger_block()` and `store_block()` / `store_block_with_vmstate()`.
+   Two `neo-rpc` test files migrated. The crate is classified as Layer 7
+   (Application) in layer boundary tests since it's test infrastructure, not
+   production code.
+
+**Trade-offs**:
+- **Gaining**: ~250 lines of duplication eliminated. Saturating conversion is
+  strictly safer than truncating. New contracts/tests follow a clear pattern via
+  `TestTransactionBuilder` and `impl_error_from_struct!`. Future contributors
+  have one canonical location for each utility.
+- **Giving up**: One indirection layer per utility call. The `neo-test-fixtures`
+  crate adds a 27th workspace member (test-only, no production weight).
+- **Reversibility**: High — each call site can be inlined back.
+
+**Consequences**:
+- `neo_primitives::time::now_millis()` is the canonical epoch-millisecond clock
+- `neo_runtime::time::elapsed_us/elapsed_millis` is the canonical elapsed-timing helper
+- `neo_vm::ScriptBuilder::invocation_from_signature` + `neo_vm::signature_from_invocation` are the canonical signature script helpers
+- `neo_error::impl_error_from_struct!` is the canonical macro for struct-variant CoreError conversions
+- `neo-test-fixtures` is the canonical location for shared test builders
+- Workspace: 26 production crates + 1 test crate = 27 workspace members
+- 3346 tests pass (matches baseline — zero regressions)
+- Architecture health score: 9.5 → 9.5 (consolidation, no structural change)
 ### ADR-028: Native contract support layer — codec, engine, and settings helpers
 
 **Status**: Accepted (implemented)

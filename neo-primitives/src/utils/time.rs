@@ -30,9 +30,26 @@
 //! // TimeProvider::set_current(Arc::new(MyFixedTimeSource));
 //! ```
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use std::sync::{Arc, LazyLock};
+
+/// Returns the current time in milliseconds since the Unix epoch.
+///
+/// Returns 0 if the system clock is before the epoch (should never happen
+/// in practice but avoids panicking on misconfigured clocks).
+///
+/// This is the canonical epoch-millis helper shared across the workspace.
+/// Consensus view-timeouts, state-root retry backoff, and block timestamp
+/// derivation all use this clock.
+pub fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
 
 /// Trait implemented by concrete time sources.
 pub trait TimeSource: Send + Sync {

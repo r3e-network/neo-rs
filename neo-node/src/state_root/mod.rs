@@ -28,7 +28,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use neo_blockchain::{BlockchainHandle, RuntimeEvent, StateRootVoteCollector, verify_state_root};
 use neo_config::ProtocolSettings;
@@ -38,12 +38,13 @@ use neo_native_contracts::{Role, RoleManagement};
 use neo_network::NetworkHandle;
 use neo_payloads::{ExtensiblePayload, Witness};
 use neo_primitives::{UInt160, hex_util};
+use neo_primitives::time::now_millis;
 use neo_state_service::{
     MessageType, STATE_SERVICE_CATEGORY, StateRoot, StateStore, StateStoreLookup, Vote,
 };
 use neo_storage::DataCache;
 use neo_storage::persistence::{Store, StoreCache};
-use neo_vm::script_builder::RedeemScript;
+use neo_vm::script_builder::{RedeemScript, ScriptBuilder};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
@@ -60,24 +61,7 @@ const INITIAL_VOTE_DELAY_MS: u64 = 3_000;
 /// overflow or stall a round indefinitely.
 const MAX_RETRY_SHIFT: u32 = 6;
 
-/// Milliseconds since the Unix epoch (the clock used for round retry backoff).
-fn now_millis() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
-
 // ===================== extensible <-> {Vote, StateRoot} codec =====================
-
-/// `PUSHDATA1 0x40 <64-byte sig>` — a single-signature invocation script.
-fn invocation_script_from_signature(signature: &[u8; 64]) -> Vec<u8> {
-    let mut script = Vec::with_capacity(2 + signature.len());
-    script.push(neo_vm_rs::OpCode::PUSHDATA1.byte());
-    script.push(signature.len() as u8);
-    script.extend_from_slice(signature);
-    script
-}
 
 /// Builds a `StateService` extensible carrying a `[MessageType][payload]` body,
 /// signed by the sender's key. Mirrors C# `VerificationContext.CreatePayload`.
@@ -109,7 +93,10 @@ fn build_extensible(
     sign_data[..4].copy_from_slice(&network.to_le_bytes());
     sign_data[4..].copy_from_slice(&hash.to_bytes());
     let signature = Secp256r1Crypto::sign(&sign_data, private_key).ok()?;
-    ext.witness = Witness::new_with_scripts(invocation_script_from_signature(&signature), redeem);
+    ext.witness = Witness::new_with_scripts(
+        ScriptBuilder::new().invocation_from_signature(&signature).to_array(),
+        redeem,
+    );
     Some(ext)
 }
 

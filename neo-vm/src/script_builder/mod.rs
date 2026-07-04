@@ -36,13 +36,7 @@ impl ScriptBuilderError {
     }
 }
 
-impl From<ScriptBuilderError> for neo_error::CoreError {
-    fn from(err: ScriptBuilderError) -> Self {
-        neo_error::CoreError::InvalidOperation {
-            message: err.to_string(),
-        }
-    }
-}
+neo_error::impl_error_from_struct!(neo_error::CoreError, ScriptBuilderError => InvalidOperation);
 
 /// Convenience result alias for fallible script-building operations.
 pub type ScriptBuilderResult<T> = Result<T, ScriptBuilderError>;
@@ -329,6 +323,19 @@ impl ScriptBuilder {
         self.emit_opcode(OpCode::APPEND)
     }
 
+    /// Push a signature onto the stack as a single-sig invocation script.
+    ///
+    /// For a 64-byte secp256r1 signature this produces the canonical
+    /// `PUSHDATA1 0x40 <64-byte sig>` sequence (66 bytes total) that
+    /// Neo witness invocation scripts use. The output is byte-identical
+    /// to the hand-rolled `PUSHDATA1 + len + sig` construction that was
+    /// previously duplicated across neo-consensus and neo-node.
+    ///
+    /// This is the inverse of [`signature_from_invocation`].
+    pub fn invocation_from_signature(&mut self, signature: &[u8]) -> &mut Self {
+        self.emit_push(signature)
+    }
+
     /// Emits a pack operation.
     #[inline]
     pub fn emit_pack(&mut self) -> &mut Self {
@@ -361,6 +368,24 @@ impl Default for ScriptBuilder {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Extract the raw signature from a `PUSHDATA1 0x40 <64-byte sig>` invocation
+/// script.
+///
+/// Returns `None` if the script doesn't match this exact shape (wrong length,
+/// wrong opcode, or wrong length byte). This is the inverse of
+/// [`ScriptBuilder::invocation_from_signature`].
+///
+/// The returned slice borrows from `script` — no allocation.
+pub fn signature_from_invocation(script: &[u8]) -> Option<&[u8]> {
+    if script.len() != 66 {
+        return None;
+    }
+    if script[0] != OpCode::PUSHDATA1.byte() || script[1] != 0x40 {
+        return None;
+    }
+    Some(&script[2..66])
 }
 
 fn pad_signed(bytes: &[u8], target_len: usize, negative: bool) -> Vec<u8> {

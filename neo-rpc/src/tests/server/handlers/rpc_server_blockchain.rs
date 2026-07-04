@@ -3,15 +3,10 @@ use crate::client::models::RpcRawMemPool;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_config::ProtocolSettings;
 use neo_execution::ContractState;
-use neo_io::SerializableExtensions;
 use neo_io::{MemoryReader, Serializable};
 use neo_manifest::{ContractManifest, NefFile};
-use neo_native_contracts::LedgerContract;
 use neo_payloads::Block as LedgerBlock;
-use neo_payloads::BlockHeader as LedgerBlockHeader;
-use neo_payloads::TrimmedBlock;
 use neo_payloads::VerifyResult;
-use neo_payloads::Witness as LedgerWitness;
 use neo_payloads::block::Block;
 use neo_payloads::get_sign_data_vec;
 use neo_payloads::signer::Signer;
@@ -21,6 +16,7 @@ use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_serialization::BinarySerializer;
 use neo_serialization::json::JToken;
 use neo_storage::{StorageItem, StorageKey};
+use neo_test_fixtures::TestTransactionBuilder;
 use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};
 use neo_vm_rs::{OpCode, StackValue};
 use neo_wallets::KeyPair;
@@ -80,18 +76,16 @@ fn mint_gas(
 }
 
 fn make_transaction(nonce: u32) -> Transaction {
-    let mut tx = Transaction::new();
-    tx.set_nonce(nonce);
-    tx.set_network_fee(1_0000_0000);
-    tx.set_system_fee(0);
-    tx.set_valid_until_block(1);
-    tx.set_script(vec![OpCode::PUSH1.byte()]);
-    tx.set_signers(vec![Signer::new(
-        UInt160::from_bytes(&[7u8; 20]).expect("account"),
-        WitnessScope::GLOBAL,
-    )]);
-    tx.set_witnesses(vec![Witness::empty()]);
-    tx
+    TestTransactionBuilder::new()
+        .nonce(nonce)
+        .network_fee(1_0000_0000)
+        .system_fee(0)
+        .valid_until_block(1)
+        .signer(
+            UInt160::from_bytes(&[7u8; 20]).expect("account"),
+            WitnessScope::GLOBAL,
+        )
+        .build()
 }
 
 fn make_ledger_block(
@@ -99,79 +93,11 @@ fn make_ledger_block(
     index: u32,
     transactions: Vec<Transaction>,
 ) -> LedgerBlock {
-    let ledger = LedgerContract::new();
-    let prev_hash = ledger.current_hash(store.data_cache()).unwrap_or_default();
-
-    let merkle_root = if transactions.is_empty() {
-        UInt256::zero()
-    } else {
-        let hashes: Vec<UInt256> = transactions.iter().map(|tx| tx.hash()).collect();
-        neo_crypto::MerkleTree::compute_root(&hashes).unwrap_or_else(UInt256::zero)
-    };
-
-    let header = LedgerBlockHeader::new_with_witnesses(
-        0,
-        prev_hash,
-        merkle_root,
-        1,
-        0,
-        index,
-        0,
-        UInt160::zero(),
-        vec![LedgerWitness::empty()],
-    );
-
-    LedgerBlock::from_parts(header, transactions)
+    neo_test_fixtures::make_ledger_block(store, index, transactions)
 }
 
 fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerBlock) {
-    const PREFIX_BLOCK: u8 = 0x05;
-    const PREFIX_BLOCK_HASH: u8 = 0x09;
-    const PREFIX_TRANSACTION: u8 = 0x0b;
-    const PREFIX_CURRENT_BLOCK: u8 = 0x0c;
-
-    let hash = block.hash();
-    let index = block.index();
-
-    // `Prefix_BlockHash` key: prefix + big-endian index (C#
-    // `KeyBuilder.AddBigEndian`), matching the `LedgerContract` reader.
-    let mut hash_key_bytes = Vec::with_capacity(1 + 4);
-    hash_key_bytes.push(PREFIX_BLOCK_HASH);
-    hash_key_bytes.extend_from_slice(&index.to_be_bytes());
-    let hash_key = StorageKey::new(LedgerContract::ID, hash_key_bytes);
-    store.add(hash_key, StorageItem::from_bytes(hash.to_bytes().to_vec()));
-
-    let trimmed = TrimmedBlock::from_block(block).expect("trim block");
-    let trimmed_bytes = trimmed.to_array().expect("serialize trimmed block");
-    let mut block_key_bytes = Vec::with_capacity(1 + 32);
-    block_key_bytes.push(PREFIX_BLOCK);
-    block_key_bytes.extend_from_slice(&hash.to_bytes());
-    let block_key = StorageKey::new(LedgerContract::ID, block_key_bytes);
-    store.add(block_key, StorageItem::from_bytes(trimmed_bytes));
-
-    for tx in &block.transactions {
-        // `Prefix_Transaction` value: the C# `TransactionState` interoperable
-        // stack item (`Struct[Integer(index), ByteString(tx), Integer(state)]`)
-        // serialized with `BinarySerializer`, matching the reader.
-        let record = neo_native_contracts::LedgerContract::new()
-            .serialize_persisted_transaction_state(index, VMState::NONE, tx)
-            .expect("serialize TransactionState record");
-
-        let mut tx_key_bytes = Vec::with_capacity(1 + 32);
-        tx_key_bytes.push(PREFIX_TRANSACTION);
-        tx_key_bytes.extend_from_slice(&tx.hash().to_bytes());
-        let tx_key = StorageKey::new(LedgerContract::ID, tx_key_bytes);
-        store.add(tx_key, StorageItem::from_bytes(record));
-    }
-
-    // `Prefix_CurrentBlock` value: the C# `HashIndexState` interoperable
-    // stack item (`Struct[ByteString(hash), Integer(index)]`).
-    let current_bytes = neo_native_contracts::LedgerContract::new()
-        .serialize_hash_index_state(&hash, index)
-        .expect("serialize HashIndexState pointer");
-    let current_key = StorageKey::new(LedgerContract::ID, vec![PREFIX_CURRENT_BLOCK]);
-    store.add(current_key, StorageItem::from_bytes(current_bytes));
-    store.commit();
+    neo_test_fixtures::store_block_with_vmstate(store, block, VMState::NONE);
 }
 
 fn store_contract_state(

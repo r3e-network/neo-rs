@@ -50,10 +50,4 @@ pub enum ConfigError {
 /// Result type for configuration operations
 pub type ConfigResult<T> = Result<T, ConfigError>;
 
-impl From<ConfigError> for neo_error::CoreError {
-    fn from(err: ConfigError) -> Self {
-        neo_error::CoreError::Configuration {
-            message: err.to_string(),
-        }
-    }
-}
+neo_error::impl_error_from_struct!(neo_error::CoreError, ConfigError => Configuration);

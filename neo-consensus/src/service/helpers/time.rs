@@ -1,11 +1,10 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
-/// Gets the current timestamp in milliseconds
+/// Gets the current timestamp in milliseconds since the Unix epoch.
+///
+/// Delegates to the shared [`neo_primitives::time::now_millis`] helper
+/// (ADR-029 D2) so that all epoch-millis callers across the workspace use
+/// a single, well-tested clock.
 pub(in crate::service) fn current_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
+    neo_primitives::time::now_millis()
 }
 
 /// C# `ConsensusContext.MakePrepareRequest` sets

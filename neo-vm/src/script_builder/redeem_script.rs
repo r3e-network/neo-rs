@@ -37,13 +37,7 @@ impl RedeemScriptError {
     }
 }
 
-impl From<RedeemScriptError> for neo_error::CoreError {
-    fn from(err: RedeemScriptError) -> Self {
-        neo_error::CoreError::InvalidOperation {
-            message: err.to_string(),
-        }
-    }
-}
+neo_error::impl_error_from_struct!(neo_error::CoreError, RedeemScriptError => InvalidOperation);
 
 /// Neo N3 redeem-script primitives (construction and pattern recognition for
 /// the standard signature / multi-signature verification scripts).

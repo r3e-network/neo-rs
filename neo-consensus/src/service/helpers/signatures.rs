@@ -1,17 +1,14 @@
 use super::super::ConsensusService;
 use crate::{ConsensusError, ConsensusResult};
 use neo_primitives::{UInt160, UInt256};
-use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::OpCode;
+use neo_vm::script_builder::{ScriptBuilder, signature_from_invocation};
 use tracing::{debug, warn};
 
 pub(in crate::service) struct InvocationScript;
 
 impl InvocationScript {
     pub(in crate::service) fn invocation_script_from_signature(signature: &[u8]) -> Vec<u8> {
-        let mut builder = ScriptBuilder::new();
-        builder.emit_push(signature);
-        builder.to_array()
+        ScriptBuilder::new().invocation_from_signature(signature).to_array()
     }
 
     /// Extracts signature from invocation script.
@@ -19,16 +16,11 @@ impl InvocationScript {
     /// Returns `Option<&[u8]>` to avoid unnecessary allocation.
     /// The signature slice is a reference into the input invocation script,
     /// valid for the lifetime of the input.
+    ///
+    /// Delegates to the shared [`neo_vm::script_builder::signature_from_invocation`]
+    /// (ADR-029 D1) so the validation logic lives in one place.
     pub(in crate::service) fn signature_from_invocation_script(invocation: &[u8]) -> Option<&[u8]> {
-        if invocation.len() != 66 {
-            return None;
-        }
-        if invocation[0] != OpCode::PUSHDATA1.byte() || invocation[1] != 0x40 {
-            return None;
-        }
-        // Return a slice instead of allocating a new Vec.
-        // The caller can call .to_vec() if they need an owned copy.
-        Some(&invocation[2..66])
+        signature_from_invocation(invocation)
     }
 }
 

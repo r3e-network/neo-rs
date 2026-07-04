@@ -18,10 +18,12 @@ pub mod error;
 
 pub use error::{CoreError, CoreResult, Result};
 
-// Re-export the `impl_error_from!` macro from `neo-io` so consumers of
-// `CoreError` (and `IoError`-adjacent error types) can use the same
-// boilerplate-reducing helper without depending on `neo-io` macros
-// directly. The macro itself still lives in `neo-io` (it is a generic
-// helper, not specific to this crate).
+// Re-export the `impl_error_from!` and `impl_error_from_struct!` macros from
+// `neo-io` so consumers of `CoreError` (and `IoError`-adjacent error types) can
+// use the same boilerplate-reducing helpers without depending on `neo-io`
+// macros directly. The macros themselves still live in `neo-io` (they are
+// generic helpers, not specific to this crate).
 #[doc(inline)]
 pub use neo_io::impl_error_from;
+#[doc(inline)]
+pub use neo_io::impl_error_from_struct;

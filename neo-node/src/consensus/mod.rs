@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use neo_blockchain::{BlockchainCommand, BlockchainHandle, RuntimeEvent};
 use neo_config::ProtocolSettings;
@@ -28,8 +28,9 @@ use neo_native_contracts::{LedgerContract, NeoToken};
 use neo_network::NetworkHandle;
 use neo_payloads::{ExtensiblePayload, Transaction, Witness};
 use neo_primitives::{UInt160, UInt256, hex_util};
+use neo_primitives::time::now_millis;
 use neo_storage::persistence::{DataCache, Store, StoreCache};
-use neo_vm::script_builder::RedeemScript;
+use neo_vm::script_builder::{RedeemScript, ScriptBuilder, signature_from_invocation};
 use parking_lot::RwLock;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
@@ -54,36 +55,7 @@ const BLOCK_VERSION: u32 = 0;
 /// C# DBFTPlugin `DbftSettings.MaxBlockSystemFee` default for Neo v3.10.0.
 const DBFT_MAX_BLOCK_SYSTEM_FEE: i64 = 150_000_000_000;
 
-/// Milliseconds since the Unix epoch — the same clock the consensus crate uses
-/// for view-timeout accounting.
-fn now_millis() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
-}
-
 // ===================== Extensible <-> ConsensusPayload codec =====================
-
-/// `PUSHDATA1 0x40 <64-byte sig>` — a single-signature invocation script.
-fn invocation_script_from_signature(signature: &[u8]) -> Vec<u8> {
-    let mut script = Vec::with_capacity(2 + signature.len());
-    script.push(neo_vm_rs::OpCode::PUSHDATA1.byte());
-    script.push(signature.len() as u8);
-    script.extend_from_slice(signature);
-    script
-}
-
-/// Extracts the raw 64-byte signature from a single-sig invocation script.
-fn signature_from_invocation_script(invocation: &[u8]) -> Option<&[u8]> {
-    if invocation.len() != 66
-        || invocation[0] != neo_vm_rs::OpCode::PUSHDATA1.byte()
-        || invocation[1] != 0x40
-    {
-        return None;
-    }
-    Some(&invocation[2..66])
-}
 
 /// Builds the outbound dBFT [`ExtensiblePayload`] for a `ConsensusPayload` the
 /// service produced (its `witness` is the raw 64-byte signature). Mirrors C#
@@ -100,7 +72,7 @@ fn consensus_to_extensible(
     ext.sender = validator.script_hash;
     ext.data = payload.to_message_bytes();
     ext.witness = Witness::new_with_scripts(
-        invocation_script_from_signature(&payload.witness),
+        ScriptBuilder::new().invocation_from_signature(&payload.witness).to_array(),
         RedeemScript::signature_redeem_script(&validator.public_key.encoded()),
     );
     Some(ext)
@@ -118,7 +90,7 @@ pub fn extensible_to_consensus(
     if ext.category != DBFT_CATEGORY {
         return None;
     }
-    let signature = signature_from_invocation_script(&ext.witness.invocation_script)?;
+    let signature = signature_from_invocation(&ext.witness.invocation_script)?;
     let payload =
         ConsensusPayload::from_message_bytes(network, &ext.data, signature.to_vec()).ok()?;
     let validator = validators.get(payload.validator_index as usize)?;
