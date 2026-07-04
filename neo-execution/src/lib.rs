@@ -52,6 +52,9 @@ pub mod runtime;
 /// Storage-key and storage-context helpers used during execution.
 pub mod storage;
 
+/// NEP-17 metadata reader backed by [`ApplicationEngine`].
+pub mod nep17_reader;
+
 // ============================================================================
 // Re-exports at the crate root
 // ============================================================================
@@ -72,6 +75,7 @@ pub use max_length_attribute::MaxLengthAttribute;
 pub use native_contract::{NativeContract, NativeEvent, NativeMethod, is_active_for};
 pub use native_contract_cache::{NativeContractsCache, NativeContractsCacheEntry};
 pub use native_registry::NativeRegistry;
+pub use nep17_reader::Nep17MetadataReaderImpl;
 pub use neo_primitives::TriggerType;
 pub use notify_event_args::NotifyEventArgs;
 pub use storage_context::StorageContext;

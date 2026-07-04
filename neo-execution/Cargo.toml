@@ -26,6 +26,7 @@ neo-storage = { workspace = true }
 neo-manifest = { workspace = true }
 neo-serialization = { workspace = true }
 neo-payloads = { workspace = true }
+neo-runtime = { workspace = true }
 
 # External
 serde = { workspace = true }

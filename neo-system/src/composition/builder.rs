@@ -19,7 +19,7 @@ use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::{NativeContractLookup, NativeContractProvider};
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
-use neo_runtime::{BlockExecutor, ConsensusService, EngineApi};
+use neo_runtime::{BlockExecutor, ConsensusApi, EngineApi};
 use neo_storage::persistence::store::Store;
 
 use crate::error::NodeResult;
@@ -40,7 +40,7 @@ pub struct NodeBuilder {
     services: Option<ServiceRegistry>,
     native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
     block_executor: Option<Arc<dyn BlockExecutor>>,
-    consensus: Option<Arc<dyn ConsensusService>>,
+    consensus: Option<Arc<dyn ConsensusApi>>,
     engine: Option<Arc<dyn EngineApi>>,
 }
 
@@ -147,7 +147,7 @@ impl NodeBuilder {
     }
 
     /// Install a consensus service.
-    pub fn with_consensus(mut self, consensus: Arc<dyn ConsensusService>) -> Self {
+    pub fn with_consensus(mut self, consensus: Arc<dyn ConsensusApi>) -> Self {
         self.consensus = Some(consensus);
         self
     }

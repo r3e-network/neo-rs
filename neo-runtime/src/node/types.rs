@@ -25,11 +25,11 @@
 //! `neo-system` uses runtime `Option<Arc<dyn Trait>>` composition. The
 //! type-state traits are kept as a future-proofing seam — they will become
 //! functional once concrete service implementations (`BlockExecutor`,
-//! `ConsensusService`, `EngineApi`) exist.
+//! `ConsensusApi`, `EngineApi`) exist.
 
 use async_trait::async_trait;
 use crate::service::services::{
-    BlockExecutor, ConsensusService, EngineApi, NetworkService,
+    BlockExecutor, ConsensusApi, EngineApi, NetworkService,
 };
 use crate::ServiceError;
 use crate::service::import_queue::ImportQueue;
@@ -194,7 +194,7 @@ pub trait NodeComponents<N: FullNodeTypes>: sealed::Sealed + Send + Sync + 'stat
     type Network: NetworkService;
 
     /// Consensus service.
-    type Consensus: ConsensusService;
+    type Consensus: ConsensusApi;
 
     /// Engine API surface.
     type Engine: EngineApi;

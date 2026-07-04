@@ -24,6 +24,7 @@
 pub mod block_import;
 pub mod blockchain;
 pub mod import_queue;
+pub mod nep17;
 pub mod outcome;
 pub mod service_registry;
 pub mod services;
@@ -35,9 +36,10 @@ pub use block_import::{
 };
 pub use blockchain::{BlockchainEvent, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY};
 pub use import_queue::{BlockImportQueue, ImportQueue};
+pub use nep17::{Nep17Metadata, Nep17MetadataReader};
 pub use outcome::{ExecutionOutcome, ExecutionPayload, NetworkEvent, ValidationResult};
 pub use service_registry::ServiceRegistry;
-pub use services::{BlockExecutor, ConsensusService, EngineApi, NetworkService, Service, TxHash};
+pub use services::{BlockExecutor, ConsensusApi, EngineApi, NetworkService, Service, TxHash};
 pub use sync_pipeline::{
     CommitDecision, CommitPolicy, CommitTrigger, InMemorySyncStageCheckpointStore, StageProgress,
     SyncBlockBatch, SyncPipelineDriver, SyncPipelineImportOutcome, SyncStageCheckpoint,

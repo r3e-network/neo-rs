@@ -25,7 +25,7 @@
 //! |-------------------------|-------------------------------|------------------------|
 //! | `BlockExecutor`         | [`BlockExecutor`]             | `Arc<dyn BlockExecutor>` |
 //! | `NetworkManager`        | [`NetworkService`]            | `Arc<dyn NetworkService>` |
-//! | `Consensus`             | [`ConsensusService`]          | `Arc<dyn ConsensusService>` |
+//! | `Consensus`             | [`ConsensusApi`]          | `Arc<dyn ConsensusApi>` |
 //! | `Engine`                | [`EngineApi`]                 | `Arc<dyn EngineApi>`     |
 
 use crate::error::ServiceError;
@@ -126,17 +126,17 @@ pub trait NetworkService: Service {
 }
 
 // =============================================================================
-// ConsensusService
+// ConsensusApi
 // =============================================================================
 
 /// Drives the dBFT consensus loop.
 ///
 /// In reth there is no consensus service in the same sense (consensus is
 /// external); in neo-rs the dBFT plugin ships as a service so the same
-/// `Arc<dyn ConsensusService>` is reachable from both the node binary
+/// `Arc<dyn ConsensusApi>` is reachable from both the node binary
 /// and the test harness.
 #[async_trait]
-pub trait ConsensusService: Service {
+pub trait ConsensusApi: Service {
     /// Start the consensus loop. Idempotent: a second call while
     /// already running is a no-op.
     async fn start(&self) -> Result<(), ServiceError>;

@@ -1,6 +1,8 @@
 use super::*;
+use neo_config::ProtocolSettings;
 use neo_execution::contract_state::ContractState;
 use neo_execution::native_contract::{NativeContract, build_native_contract_state};
+use neo_execution::Nep17MetadataReaderImpl;
 use neo_native_contracts::{GasToken, NeoToken};
 use neo_storage::{DataCache, StorageItem, StorageKey};
 
@@ -34,8 +36,9 @@ fn nonexistent_asset_id_is_rejected() {
     let snapshot = Arc::new(DataCache::new(false));
     let settings = ProtocolSettings::default();
     let bogus = UInt160::from_bytes(&[0xAB; 20]).unwrap();
+    let reader = Nep17MetadataReaderImpl::new(Arc::clone(&snapshot), settings);
 
-    let err = AssetDescriptor::new(snapshot, settings, bogus)
+    let err = AssetDescriptor::new(snapshot, &reader, bogus)
         .expect_err("undeployed asset must be rejected");
     assert!(
         err.to_string().contains("No asset contract found"),
@@ -59,9 +62,10 @@ fn descriptor_reads_gas_metadata() {
 
     let snapshot = Arc::new(cache);
     let gas_hash = NativeContract::hash(&gas);
+    let reader = Nep17MetadataReaderImpl::new(Arc::clone(&snapshot), settings);
 
     let descriptor =
-        AssetDescriptor::new(snapshot, settings, gas_hash).expect("GAS descriptor must build");
+        AssetDescriptor::new(snapshot, &reader, gas_hash).expect("GAS descriptor must build");
 
     assert_eq!(descriptor.asset_id, gas_hash);
     assert_eq!(descriptor.asset_name, "GasToken");
@@ -83,9 +87,10 @@ fn descriptor_reads_neo_metadata() {
 
     let snapshot = Arc::new(cache);
     let neo_hash = NativeContract::hash(&neo);
+    let reader = Nep17MetadataReaderImpl::new(Arc::clone(&snapshot), settings);
 
     let descriptor =
-        AssetDescriptor::new(snapshot, settings, neo_hash).expect("NEO descriptor must build");
+        AssetDescriptor::new(snapshot, &reader, neo_hash).expect("NEO descriptor must build");
 
     assert_eq!(descriptor.asset_id, neo_hash);
     assert_eq!(descriptor.asset_name, "NeoToken");

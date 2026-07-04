@@ -1,6 +1,7 @@
 use neo_crypto::{ECCurve, ECPoint};
 use neo_execution::contract::Contract;
 use neo_execution::contract_parameters_context::ContractParametersContext;
+use neo_execution::Nep17MetadataReaderImpl;
 use neo_io::Serializable;
 use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_payloads::conflicts::Conflicts;
@@ -107,10 +108,14 @@ impl RpcServerWallet {
 
         let store = server.system().store_cache();
         let descriptor_snapshot = Arc::new(store.data_cache().clone());
+        let reader = Nep17MetadataReaderImpl::new(
+            Arc::clone(&descriptor_snapshot),
+            server.system().settings().as_ref().clone(),
+        );
         let descriptor_cache = |asset: &UInt160| {
             AssetDescriptor::new(
                 Arc::clone(&descriptor_snapshot),
-                server.system().settings().as_ref().clone(),
+                &reader,
                 *asset,
             )
             .map_err(|err| neo_error::CoreError::other(err.to_string()))
@@ -367,9 +372,14 @@ impl RpcServerWallet {
     ) -> Result<Value, RpcException> {
         let wallet = Self::require_wallet(server)?;
         let store = server.system().store_cache();
-        let descriptor = AssetDescriptor::new(
-            Arc::new(store.data_cache().clone()),
+        let snapshot = Arc::new(store.data_cache().clone());
+        let reader = Nep17MetadataReaderImpl::new(
+            Arc::clone(&snapshot),
             server.system().settings().as_ref().clone(),
+        );
+        let descriptor = AssetDescriptor::new(
+            snapshot,
+            &reader,
             asset,
         )
         .map_err(|err| invalid_params(err.to_string()))?;

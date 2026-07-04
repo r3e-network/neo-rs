@@ -28,16 +28,16 @@ pub mod time;
 pub use errors::{ServiceError, ServiceResult, error};
 pub use service::{
     BlockBatchImportOutcome, BlockExecutor, BlockImport, BlockImportOutcome, BlockImportQueue,
-    BlockOrigin, BlockchainEvent, CommitDecision, CommitPolicy, CommitTrigger, ConsensusService,
+    BlockOrigin, BlockchainEvent, CommitDecision, CommitPolicy, CommitTrigger, ConsensusApi,
     DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, ExecutionOutcome, ExecutionPayload,
-    ImportQueue, ImportedTip, InMemorySyncStageCheckpointStore, EngineApi, NetworkEvent,
-    NetworkService, Service, ServiceRegistry, StageProgress, SyncBlockBatch, SyncPipelineDriver,
-    SyncPipelineImportOutcome, SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind,
-    TxHash, ValidationResult,
+    ImportQueue, ImportedTip, InMemorySyncStageCheckpointStore, EngineApi, Nep17Metadata,
+    Nep17MetadataReader, NetworkEvent, NetworkService, Service, ServiceRegistry, StageProgress,
+    SyncBlockBatch, SyncPipelineDriver, SyncPipelineImportOutcome, SyncStageCheckpoint,
+    SyncStageCheckpointStore, SyncStageKind, TxHash, ValidationResult,
 };
 pub use service::{
-    block_import, blockchain, import_queue, outcome, service_registry, services, sync_metrics,
-    sync_pipeline,
+    block_import, blockchain, import_queue, nep17, outcome, service_registry, services,
+    sync_metrics, sync_pipeline,
 };
 pub use node::{
     BlockchainProvider, ConfigProvider, FullNode, FullNodeTypes, NeoNodeTypes, NodeComponents,

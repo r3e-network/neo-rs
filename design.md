@@ -1373,6 +1373,80 @@ Validation is split into:
 - Workspace: 26 production crates + 1 test crate = 27 workspace members
 - 3346 tests pass (matches baseline — zero regressions)
 - Architecture health score: 9.5 → 9.5 (consolidation, no structural change)
+
+---
+
+### ADR-030: neo-hsm default features, ConsensusApi rename, Nep17MetadataReader extraction
+
+**Status**: Accepted (implemented)
+
+**Context**: Three independent architecture-honesty fixes from the deep audit
+(Theme B4 + G1 + G3):
+
+1. **B4 — `neo-hsm` default FFI** (Finding 12): `neo-hsm` had
+   `default = ["pkcs11"]`, pulling PKCS#11 FFI (cryptoki crate) into any
+   consumer that didn't specify `default-features = false`. A signing-backend
+   crate should not have FFI on by default (compare `neo-tee` which defaults
+   to simulation).
+
+2. **G1 — `ConsensusService` name collision** (Finding 3):
+   `neo-runtime/src/service/services.rs:139` defined
+   `pub trait ConsensusService: Service` while
+   `neo-consensus/src/service/core.rs:12` defined
+   `pub struct ConsensusService` (the real dBFT state machine). The trait had
+   0 implementations. Exact analogue of ADR-007's `NeoEngine → EngineApi` fix.
+
+3. **G3 — `neo-wallets` → `neo-execution` coupling** ( Finding 4):
+   `neo-wallets` (L4) depended on `neo-execution` (L3) solely for
+   `AssetDescriptor` which queries NEP-17 `symbol`/`decimals` by running a
+   contract call through `ApplicationEngine`. This transitively forced every
+   `neo-wallets` consumer to compile the full execution engine.
+
+**Decision**:
+
+**B4**: Flip `neo-hsm` default to `[]`. Update `neo-node`'s `hsm` feature to
+`["dep:neo-hsm", "neo-hsm/pkcs11"]` so enabling `neo-node`'s `hsm` feature
+still activates PKCS#11. The 4 PKCS#11 tests in `neo-hsm` now require
+`cargo test -p neo-hsm --features pkcs11` to run (expected — they test FFI
+code that shouldn't compile by default).
+
+**G1**: Rename the trait `ConsensusService` → `ConsensusApi` in `neo-runtime`.
+Update all 8 referencing files (trait def, re-exports, `NodeComponents`
+associated type, builder, node, test). Do NOT rename the `ConsensusService`
+struct in `neo-consensus` — that's the real implementation.
+
+**G3**: Extract `Nep17MetadataReader` trait in `neo-runtime/src/service/nep17.rs`
+with a single `read_metadata(contract_hash) -> Result<Nep17Metadata, ServiceError>`
+method (returns both symbol + decimals in one call to preserve the single-VM-
+execution behavior from C#). The concrete impl `Nep17MetadataReaderImpl` lives
+in `neo-execution/src/nep17_reader.rs` (natural home for `ApplicationEngine`).
+`neo-wallets` now depends on `neo-runtime` (light, trait-only) instead of
+`neo-execution` (heavy, full VM engine). `neo-execution` gained `neo-runtime`
+as a dependency (one-way, no cycle).
+
+**G4 (skipped)**: `StoreProvider`/`ConfigProvider` impls on `Node` vs
+`NodeContext` have trivial 1-line forwarding bodies — not worth abstracting.
+
+**Trade-offs**:
+- **Gaining**: `neo-hsm` no longer footguns consumers with FFI by default.
+  `ConsensusService` collision resolved (matches ADR-007 precedent). `neo-wallets`
+  compile time drops (no longer pulls execution engine transitively). The
+  trait seam enables future mock implementations for wallet testing.
+- **Giving up**: The 4 PKCS#11 tests don't run in default `cargo test --workspace`
+  (they require `--features pkcs11`). `neo-execution` gained `neo-runtime` as
+  a dependency (acceptable — one-way, and `neo-runtime` is lightweight).
+- **Reversibility**: High for all three changes.
+
+**Consequences**:
+- `neo-hsm` default features: `[]` (was `["pkcs11"]`)
+- `neo-node` hsm feature: `["dep:neo-hsm", "neo-hsm/pkcs11"]`
+- `neo_runtime::ConsensusApi` is the canonical trait name (was `ConsensusService`)
+- `neo_runtime::Nep17MetadataReader` is the canonical NEP-17 metadata trait
+- `neo_execution::Nep17MetadataReaderImpl` is the canonical concrete impl
+- `neo-wallets` no longer directly depends on `neo-execution` (moved to dev-deps)
+- Workspace default test count: 3342 (was 3346 — 4 PKCS#11 tests now behind
+  `--features pkcs11`, all pass when feature is enabled)
+- Architecture health score: 9.5 → 9.5
 ### ADR-028: Native contract support layer — codec, engine, and settings helpers
 
 **Status**: Accepted (implemented)

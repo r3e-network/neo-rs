@@ -30,7 +30,7 @@ use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_network::NetworkHandle;
 use neo_payloads::{Block, Transaction, VerifyResult};
 use neo_primitives::UInt256;
-use neo_runtime::{BlockExecutor, ConsensusService, EngineApi, BlockchainProvider, ConfigProvider, StoreProvider, TxAdmission, ServiceError};
+use neo_runtime::{BlockExecutor, ConsensusApi, EngineApi, BlockchainProvider, ConfigProvider, StoreProvider, TxAdmission, ServiceError};
 use neo_storage::DataCache;
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_cache::StoreCache;
@@ -93,8 +93,8 @@ pub struct Node {
     pub block_executor: Option<Arc<dyn BlockExecutor>>,
 
     /// Optional consensus service. Present when a concrete
-    /// `impl ConsensusService` has been wired in by the caller.
-    pub consensus: Option<Arc<dyn ConsensusService>>,
+    /// `impl ConsensusApi` has been wired in by the caller.
+    pub consensus: Option<Arc<dyn ConsensusApi>>,
 
     /// Optional engine API service. Present when a concrete
     /// `impl EngineApi` has been wired in by the caller.

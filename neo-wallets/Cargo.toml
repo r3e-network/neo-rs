@@ -22,7 +22,7 @@ neo-crypto = { workspace = true }
 neo-config = { workspace = true }
 neo-storage = { workspace = true }
 neo-payloads = { workspace = true }
-neo-execution = { workspace = true }
+neo-runtime = { workspace = true }
 neo-native-contracts = { workspace = true }
 neo-manifest = { workspace = true }
 neo-vm = { workspace = true }
@@ -45,6 +45,9 @@ base64 = { workspace = true }
 subtle = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }
+
+[dev-dependencies]
+neo-execution = { workspace = true }
 
 [lints]
 workspace = true

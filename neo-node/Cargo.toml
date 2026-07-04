@@ -28,7 +28,7 @@ tee = ["dep:neo-tee"]
 # Enable TEE with SGX hardware (requires `tee`).
 tee-sgx = ["tee", "neo-tee/sgx-hw"]
 # Optional HSM-backed consensus signing (PKCS#11: AWS/Azure/GCP).
-hsm = ["dep:neo-hsm"]
+hsm = ["dep:neo-hsm", "neo-hsm/pkcs11"]
 
 [dependencies]
 neo-vm-rs = { workspace = true }

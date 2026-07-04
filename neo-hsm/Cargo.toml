@@ -16,7 +16,7 @@ description = "Cloud-HSM-backed validator key management for Neo N3 consensus (P
 [features]
 # pkcs11 (default): generic PKCS#11 signer covering AWS CloudHSM, Azure Cloud HSM,
 # GCP via libkmsp11, and any generic HSM (SoftHSM, Luna, nCipher).
-default = ["pkcs11"]
+default = []
 pkcs11 = ["dep:cryptoki"]
 
 # azure: native REST signer for Azure Managed HSM / Key Vault Premium.
