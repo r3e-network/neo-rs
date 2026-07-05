@@ -46,10 +46,11 @@ ConsensusSigner deadlock fix (ADR-031).
 ### Key Patterns
 
 1. **Provider traits** (`neo-runtime`): `ConfigProvider`, `StoreProvider`,
-   `BlockchainProvider`, `TxAdmission` — decouple L6 from L5
-2. **NodeTypes/NodeComponents** (`neo-runtime`): sealed type-state traits
-   (ADR-021) for compile-time component verification (reth pattern).
-   Scaffolded — current builder uses runtime composition (ADR-023)
+   `TxAdmission` — decouple L6 from L5 (`BlockchainProvider` was removed in
+   ADR-032)
+2. **NodeTypes** (`neo-runtime`): the surviving sealed single-impl seam
+   (ADR-021). The `NodeComponents` / `FullNode` type-state composition was
+   removed in ADR-032; the builder validates concrete fields at `build()`
 3. **EnginePipeline** (`neo-engine`): stage-based block processing abstraction
 4. **Unified error handling**: all library crates use `CoreError` with `From`
    impls; application crates use `anyhow::Result`
@@ -418,11 +419,12 @@ This section documents which patterns are adopted, adapted, or deferred.
 
 | Pattern | reth location | neo-rs location | Status |
 |---------|---------------|-----------------|--------|
-| Provider traits | `reth-provider` | `neo-runtime` (BlockchainProvider, StoreProvider, ConfigProvider) | Adopted |
-| NodeTypes/NodeComponents type-state | `reth-node-api` | `neo-runtime/src/node/types.rs` | Adopted |
-| Engine API trait | `reth-engine` `Engine` | `neo-runtime` `EngineApi` (renamed from NeoEngine, ADR-007) | Adopted |
+| Provider traits | `reth-provider` | `neo-runtime` (StoreProvider, ConfigProvider, TxAdmission; `BlockchainProvider` deleted in ADR-032) | Adopted (BlockchainProvider removed) |
+| NodeTypes sealed seam | `reth-node-api` | `neo-runtime/src/node/types.rs` | Adopted (single-impl sealed seam) |
+| NodeComponents / FullNode type-state | `reth-node-api` | (removed) | Removed (ADR-032) |
+| Engine API trait | `reth-engine` `Engine` | (removed) `EngineApi` | Removed/Superseded (ADR-033) |
 | Pipeline stage abstraction | `reth-stages` | `neo-engine` `PipelineStage` | Scaffolded (ADR-010) |
-| Service trait vocabulary | `reth-interfaces` | `neo-runtime` `Service`, `BlockExecutor`, etc. | Adopted |
+| Service trait vocabulary | `reth-interfaces` | `neo-runtime` `Service` (surviving); `BlockExecutor` etc. removed | Removed/Superseded (ADR-033) |
 | `anyhow` in binary, typed errors in libs | `reth-node` | `neo-node` (anyhow), all libs (typed) | Adopted |
 | Composition root builder | `reth-node-builder` | `neo-system` `NodeBuilder` | Adopted |
 | Feature-gated RPC client/server | `reth-rpc` / `reth-rpc-client` | `neo-rpc` `client`/`server` features | Adopted (ADR-001) |

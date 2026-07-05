@@ -6,15 +6,15 @@
 //! - the typed blockchain handle from `neo-blockchain`,
 //! - the typed network handle from `neo-network`,
 //! - a [`WalletProvider`] for the optional node wallet,
-//! - and the runtime service traits from `neo-runtime` for the
-//!   remaining subsystems (block executor, consensus, engine API).
+//! - the storage backend, mempool, header cache, and service registry,
+//! - and the native contract provider installed for NeoVM host calls.
 //!
-//! Construction goes through [`crate::NodeBuilder`], so the *combination*
-//! of services is type-checked at `build()` time. The trait-object
-//! services that don't have a concrete `impl` in this stage are
-//! stored as `Option<Arc<dyn Trait>>` so the builder can be set up
-//! with whatever subset the caller has ready, and the rest can be
-//! wired in later.
+//! Construction goes through [`crate::NodeBuilder`], whose `build()`
+//! validates the required components (storage, the blockchain and
+//! network handles, the native provider) by null-checking each concrete
+//! field and returning a descriptive missing-service error when one is
+//! absent. There are no trait-object executor / consensus / engine
+//! fields to compose: those were removed in ADR-032 / ADR-033.
 
 use std::sync::Arc;
 use std::time::Duration;

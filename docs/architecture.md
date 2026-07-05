@@ -195,24 +195,21 @@ The detailed rules for this style live in
   (blockchain, network, consensus, mempool) run as `tokio` services that
   communicate through typed command channels rather than shared locks or an
   actor framework. `neo-runtime` defines the service traits (`Service`,
-  `BlockExecutor`, `NetworkService`, `ConsensusService`, `EngineApi`,
-  `BlockImport`, `ImportQueue`) and shared events; `neo-system` is the
+  `NetworkService`, `BlockImport`, `ImportQueue`), the `Nep17MetadataReader`
+  and `SyncStageCheckpointStore` seams, and shared events; `neo-system` is the
   composition root that instantiates and connects concrete services. This gives
   clear ownership, backpressure, and testable boundaries between services.
 
-- **Node composition traits (scaffolded).** `neo-runtime` defines `NodeTypes`,
-  `NodeComponents`, `FullNode`, `BlockchainProvider`, `StoreProvider`,
-  `ConfigProvider`, and `TxAdmission` traits — following reth's compile-time
-  component verification pattern. `NodeTypes` and `NodeComponents` are sealed
-  (ADR-021) to lock the composition surface. The provider traits
-  (`BlockchainProvider`, `StoreProvider`, `ConfigProvider`, `TxAdmission`) are
-  the active decoupling layer — `neo-rpc` and `neo-oracle-service` depend on
-  these traits rather than `neo_system::Node`. The type-state composition
-  (`NodeComponents` associated types, `FullNode` trait) is scaffolded for
-  future use (ADR-023); the current `NodeBuilder` uses runtime
-  `Option<Arc<dyn>>` composition. The `EngineApi` trait (renamed from
-  `NeoEngine` in ADR-007, sealed in ADR-021) is the consensus↔execution
-  interface, modeled after reth's `Engine` trait.
+- **Node composition traits.** `neo-runtime` defines the `NodeTypes` (sealed),
+  `StoreProvider`, `ConfigProvider`, and `TxAdmission` traits — the surviving
+  decoupling layer. `NodeTypes` is sealed (ADR-021) to lock the associated-type
+  surface. The provider traits (`StoreProvider`, `ConfigProvider`,
+  `TxAdmission`) are the active decoupling layer — `neo-rpc` and
+  `neo-oracle-service` depend on these traits rather than `neo_system::Node`.
+  The earlier type-state composition traits (`NodeComponents`, `FullNode`,
+  `FullNodeTypes`, `BlockchainProvider`) and the `EngineApi` consensus↔execution
+  trait were removed in ADR-032/ADR-033; `NodeBuilder` validates concrete
+  fields at `build()` rather than composing trait objects.
 
 - **Pipeline stage traits.** The pipeline stage traits (`ValidateStage`,
   `PipelineStage`) live in `neo-blockchain::pipeline::stage_traits`, alongside
@@ -311,9 +308,8 @@ and headers through execution (`neo-execution`, L3) and the state-commit pipelin
 (`neo-state-service`, L3); the mempool (`neo-mempool`, L3) admits and routes
 transactions; consensus (`neo-consensus`, L2, when enabled) drives block
 production; and `neo-rpc` (L6) serves the JSON-RPC surface to clients. The
-`EngineApi` trait (L3, in `neo-runtime`) is the typed interface between consensus
-and execution, implemented by the concrete `BlockchainService` (L4); the
-pipeline stage traits it drives live in `neo-blockchain::pipeline::stage_traits`.
+concrete `BlockchainService` (L4) drives execution and block persistence; the
+pipeline stage traits it uses live in `neo-blockchain::pipeline::stage_traits`.
 
 For a step-by-step trace of how a block and a transaction move through these
 services — including the P2P sync path, execution, state-root commit, and RPC

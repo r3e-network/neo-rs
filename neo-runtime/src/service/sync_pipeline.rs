@@ -16,6 +16,20 @@
 //!   durably commit progress.
 //! - `SyncStageCheckpointStore`: provider-neutral checkpoint persistence seam
 //!   for crash-resumable stages.
+//!
+//! ## Status
+//!
+//! These are reusable primitives that are **not yet instantiated by the
+//! production sync path**. `SyncPipelineDriver` is constructed only under
+//! `tests/`; the live import path calls [`crate::BlockImport`] directly via
+//! `BlockchainHandle::import_many` (driven by neo-blockchain's
+//! `handle_block_inventory`), bypassing this driver and the import queue.
+//!
+//! The advertised crash-resume is a design seam, not a shipped capability: the
+//! only `SyncStageCheckpointStore` implementation is
+//! [`InMemorySyncStageCheckpointStore`], which cannot survive a process
+//! restart. Full staged-sync wiring (a durable checkpoint store plus a
+//! production driver) is deferred (see the sync roadmap / ADRs).
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
@@ -192,6 +206,11 @@ pub struct SyncPipelineImportOutcome {
 /// configured [`CommitPolicy`] fires. It intentionally does not know where
 /// blocks came from: P2P, fast-sync packages, and future state-sync adapters
 /// can all map their input into [`SyncBlockBatch`].
+///
+/// **Status:** this driver is a reusable primitive with no production callers —
+/// it is constructed only under `tests/`. The live import path bypasses it and
+/// calls [`crate::BlockImport`] directly via `BlockchainHandle::import_many`
+/// (see this module's `## Status` note). Full staged-sync wiring is deferred.
 pub struct SyncPipelineDriver<Q: ImportQueue + ?Sized, C: SyncStageCheckpointStore + ?Sized> {
     import_queue: Arc<Q>,
     checkpoints: Arc<C>,

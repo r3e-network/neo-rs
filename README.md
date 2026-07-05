@@ -64,8 +64,8 @@ flowchart TD
     APP --> PLUG --> COMP --> NODE --> DOM --> PROTO --> INF --> FND
 ```
 
-The architecture follows patterns from **reth** (provider traits, sealed
-`NodeTypes`/`NodeComponents` traits, `EngineApi`, pipeline stage abstraction,
+The architecture follows patterns from **reth** (provider traits, the sealed
+`NodeTypes` seam, pipeline stage abstraction,
 feature-gated RPC) and **Polkadot/Substrate** (bounded context layers,
 per-domain error types, service trait composition). See [`design.md`](./design.md)
 for the full ADR log and the 4-phase evolution roadmap, and [docs/architecture.md](./docs/architecture.md)

@@ -13,9 +13,11 @@
 Single `Store` trait with `DataCache` + `StoreCache` overlay. MDBX is the
 production default, RocksDB remains supported, and in-memory providers cover
 tests/ephemeral nodes. Raw key/value bytes remain C# compatible through
-`StorageKey` / `StorageItem`; `neo_storage::persistence::Table`,
-`TableCodec`, and `TableReader` add a typed table boundary over those same
-bytes.
+`StorageKey` / `StorageItem`, and `StorageKey` / `KeyBuilder` over those raw
+bytes is the live encoding on every storage access path.
+`neo_storage::persistence::Table`, `TableCodec`, and `TableReader` add a typed
+table boundary over those same bytes, but that boundary is on no live storage
+access path today — it is a defined seam, not a live encoding.
 
 ```rust
 pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync + Any {
@@ -27,11 +29,11 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync + A
 | Aspect | neo-rs | Reth | Polkadot SDK |
 |--------|--------|------|-------------|
 | Abstraction | Single `Store` trait | `Database` trait with GATs | `kvdb` trait, 3-level stack |
-| Table encoding | `Table`/`TableCodec` over C# bytes; `KeyBuilder` remains for domain keys | Per-table `Encode`/`Decode` + `Compact` derive | Per-column encoding (parity-scale-codec) |
-| Tiering | Hot DB today plus provider-backed cold ledger/static-file scaffold | Hot (MDBX) / Cold (RocksDB) / Static (NippyJar) | Single DB (parity-db or RocksDB) |
+| Table encoding | Live: `StorageKey` / `KeyBuilder` over raw C#-compatible bytes; `Table`/`TableCodec` boundary exists but on no live access path | Per-table `Encode`/`Decode` + `Compact` derive | Per-column encoding (parity-scale-codec) |
+| Tiering | Hot DB only today; cold-ledger / static-file provider scaffold exists but is unwired (constructed only under `tests/`) | Hot (MDBX) / Cold (RocksDB) / Static (NippyJar) | Single DB (parity-db or RocksDB) |
 | Overlay | `DataCache` with `Arc<RwLock<HashMap>>` | MDBX transaction | `OverlayedChanges` |
 | Pruning | Manual via `MaxTraceableBlocks` | Per-segment config (4 profiles) | `PruningMode` enum |
-| Static files | `StaticLedgerArchive` scaffold via providers (`parking_lot::Mutex`) | NippyJar columnar (mandatory, mmap) | None |
+| Static files | `StaticLedgerArchive` present but not wired (constructed only under `tests/`); its `parking_lot::Mutex` choice is correct | NippyJar columnar (mandatory, mmap) | None |
 
 ### Reth innovations
 
@@ -63,7 +65,7 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync + A
 |----------|--------|---------|
 | P0 | Hot/Cold/Static tiering | 30%+ disk savings, tiered hardware |
 | P1 | Compact derive macro for Neo types | 15-25% storage savings, fewer bytes |
-| Done | `parking_lot::Mutex` in static files | Eliminates std mutex contention |
+| Correct, but not wired | `parking_lot::Mutex` in static files | Right choice, but `StaticLedgerArchive` is present-not-wired (constructed only under `tests/`), not an active tiering feature |
 | P3 | `OverlayedChanges`-style transactional overlay | Cleaner per-tx isolation |
 
 ---
@@ -75,14 +77,18 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync + A
 Blocks processed sequentially through a single `BlockchainService` command loop.
 Out-of-order blocks parked in `Arc<Mutex<BTreeMap<u32, UnverifiedBlocksList>>>`.
 Drain batch size = 500, cache max = 50K. Eviction drops top 25% (O(n log n)).
-`neo_runtime::sync_pipeline` now provides stage identifiers, Reth-style
+`neo_runtime::sync_pipeline` provides stage identifiers, Reth-style
 `CommitPolicy` thresholds (`max_blocks`, `max_changes`, `max_cumulative_gas`,
 `max_duration`), a provider-neutral `SyncStageCheckpointStore` seam, and
 `SyncPipelineDriver`, which imports contiguous `SyncBlockBatch` values through
 the shared `ImportQueue` and checkpoints the import stage when policy fires.
-These close the downloader-to-import handoff; the concrete multi-stage
-headers/bodies/execute/index/prune loop still remains the next large
-integration step.
+These are reusable primitives; the driver and queue are constructed only under
+`tests/` and are not yet on the production sync path. The concrete multi-stage
+headers/bodies/execute/index/prune loop remains the next large integration step.
+
+Live path: P2P Block -> `InboundInventory::Block` -> neo-blockchain
+`handle_block_inventory` / `persist_block_sequence`, bypassing this queue/driver
+layer (the driver + queue are constructed only under `tests/`).
 
 ```rust
 // Sequential: verify → persist → commit per block
@@ -125,8 +131,8 @@ while let Some(cmd) = cmd_rx.recv().await {
 | Priority | Change | Benefit |
 |----------|--------|---------|
 | P0 | Staged sync pipeline integration | 3-5x sync speed, crash resume |
-| Done | Import queue boundary with bounded concurrent `check` | Reusable preverification surface; downloader batch handoff now goes through `SyncPipelineDriver` |
-| Done | Commit policy/checkpoint primitives plus import-stage driver | Tunable memory/i-o; shared crash-resume seam; ordered downloader handoff |
+| Primitives Done / Wiring Pending | Import queue boundary with bounded concurrent `check` | Reusable preverification surface; the queue is constructed only under `tests/` and is not yet on the production sync path |
+| Primitives Done / Wiring Pending | Commit policy/checkpoint primitives plus import-stage driver | Tunable memory/i-o; the crash-resume seam is a design seam only (the sole `SyncStageCheckpointStore` impl is in-memory); driver is constructed only under `tests/` |
 | P2 | Warp sync / state sync | Minutes to sync instead of hours |
 
 ---
@@ -139,9 +145,13 @@ while let Some(cmd) = cmd_rx.recv().await {
 implements it and routes to the `neo-blockchain` service loop. The reusable
 `neo_runtime::BlockImportQueue` runs bounded concurrent `check` calls, then
 submits the verified batch to `BlockImport::import_many` in original order.
-`neo_runtime::SyncPipelineDriver` now consumes contiguous sync batches, rejects
+`neo_runtime::SyncPipelineDriver` consumes contiguous sync batches, rejects
 height gaps, calls the import queue, and writes import-stage checkpoints
-according to `CommitPolicy`.
+according to `CommitPolicy` — but this behavior exercises only in unit tests;
+the queue and driver are constructed only under `tests/` and have no production
+callers. The live import path calls `BlockImport` directly via
+`BlockchainHandle::import_many`, driven by neo-blockchain's
+`handle_block_inventory`.
 Execution, native persistence, state-root updates, and durable commits still
 happen only inside `neo-blockchain`.
 
@@ -173,11 +183,13 @@ let import_chain = Box::new(NeoHeaderVerifier)
 ```
 
 Current status: the shared trait, bounded queue, and import-stage sync driver
-exist. `neo-network::BlockDownloadBatch` converts into
-`neo_runtime::SyncBlockBatch`, preserving the single ordered import path. The
-per-peer request scheduler, cross-peer range scheduler, and ordered response
-buffer now exist. The remaining work is the async peer
-transport stream and broader staged pipeline.
+exist as primitives (the queue and driver are constructed only under `tests/`).
+`neo-network::BlockDownloadBatch` converts into `neo_runtime::SyncBlockBatch`,
+preserving the single ordered import path. Of the downloader components, only the
+per-peer `BlockRequestScheduler` is wired into production (used by `PeerSession`);
+the `CrossPeerBlockRangeScheduler` and ordered response buffer exist but are
+constructed only in `neo-network/src/tests/`. The remaining work is the async
+peer transport stream and broader staged pipeline.
 
 ---
 
@@ -185,17 +197,30 @@ transport stream and broader staged pipeline.
 
 ### neo-rs (current)
 
-`neo-node` now has explicit daemon task supervision. Essential tasks request
-node shutdown on error or unexpected exit; normal tasks report/log failures
-without terminating the daemon. Metrics use bounded `task_kind` and `outcome`
-labels.
+`neo-node` now has explicit daemon task supervision (genuinely done). Essential
+tasks request node shutdown on error or unexpected exit; normal tasks report/log
+failures without terminating the daemon. Metrics use bounded `task_kind` and
+`outcome` labels.
 
 ```rust
-pub struct DaemonTaskHandle {
-    pub kind: DaemonTaskKind,
-    pub criticality: DaemonTaskCriticality,
-    // supervised JoinHandle plus shutdown token
+// neo-node/src/node/tasks/supervision.rs
+pub(in crate::node) enum TaskKind {
+    Essential, // exit/panic cancels the node shutdown token
+    Normal,    // exit/panic is reported but does not stop the daemon
 }
+
+pub(in crate::node) fn spawn_daemon_task<F>(
+    handles: &mut Vec<tokio::task::JoinHandle<()>>,
+    observability: Option<&ObservabilityRuntime>,
+    shutdown: &CancellationToken,
+    kind: TaskKind,
+    task_name: &'static str,
+    future: F,
+) where F: Future<Output = ()> + Send + 'static;
+
+// spawn_daemon_task_result takes the same args with
+// F: Future<Output = anyhow::Result<()>> and records an error outcome on Err.
+pub(in crate::node) fn spawn_daemon_task_result<F>(/* ... */);
 ```
 
 ### Polkadot SDK innovations
@@ -250,14 +275,16 @@ wire `block` messages and the inventory sink. The
 records now exist, with a channel-backed adapter for tests/composition roots.
 `BlockDownloadBatch` converts into `neo_runtime::SyncBlockBatch`, which the
 runtime sync driver can feed into the import queue. The per-peer
-`BlockRequestScheduler` now owns the `GetBlockByIndex` request-window policy
+`BlockRequestScheduler` owns the `GetBlockByIndex` request-window policy
 used by `PeerSession` (`500` blocks per request, `1000` blocks in flight,
-stall rewind). `CrossPeerBlockRangeScheduler` owns cross-peer peer selection,
-peer bias, bounded in-flight range assignment, and retry accounting. The
-`OrderedBlockBatchBuffer` holds out-of-order peer responses until the next
-contiguous height is available. The remaining work is the async stream executor
-that sends those assignments to peers and yields `BlockDownloadBatch` values
-directly.
+stall rewind) — this is the one downloader component wired into production.
+`CrossPeerBlockRangeScheduler` (cross-peer selection, peer bias, bounded
+in-flight range assignment, retry accounting) and `OrderedBlockBatchBuffer`
+(holds out-of-order peer responses until the next contiguous height is
+available) are implemented but unwired — constructed only in
+`neo-network/src/tests/`. The `ChannelBlockDownloader` adapter is likewise
+test-only. The remaining work is the async stream executor that sends those
+assignments to peers and yields `BlockDownloadBatch` values directly.
 
 ### Reth innovations
 
@@ -288,9 +315,11 @@ pub trait BlockDownloader:
 {
     fn config(&self) -> &BlockDownloadConfig;
 }
-// Per-peer request policy is implemented by BlockRequestScheduler.
-// Cross-peer range policy is implemented by CrossPeerBlockRangeScheduler.
-// Ordered response buffering is implemented by OrderedBlockBatchBuffer.
+// WIRED: per-peer request policy (BlockRequestScheduler, used by PeerSession).
+// IMPLEMENTED-BUT-UNWIRED (constructed only in neo-network/src/tests/):
+//   - cross-peer range policy (CrossPeerBlockRangeScheduler)
+//   - ordered response buffering (OrderedBlockBatchBuffer)
+//   - the channel-backed adapter (ChannelBlockDownloader)
 // The async transport stream remains the next implementation step.
 ```
 
@@ -304,7 +333,10 @@ Native Rust NeoVM — no WASM. `ApplicationEngine` with per-tx child caches.
 `NativeContractProvider` remains the lower-level execution seam, but
 `neo-system::NodeBuilder` now makes the provider an explicit composition-root
 dependency and installs the standard provider by default only after required
-services validate.
+services validate. Note that `build()` installs the provider into a
+process-global `OnceLock` (`neo-execution` `native_contract_provider.rs`), and
+NeoVM host-call dispatch still resolves through that global rather than the
+injected `Arc`.
 
 ### Polkadot SDK innovations
 
@@ -320,8 +352,13 @@ services validate.
 ### Recommendations for neo-rs
 
 1. Keep native execution (NeoVM in Rust is already fast).
-2. **Done:** make `NativeContractProvider` part of `NodeBuilder` config instead
-   of a hidden `install()` side effect.
+2. **Partial:** `NativeContractProvider` is now an explicit `NodeBuilder` field,
+   so the composition root chooses the provider. But native dispatch still
+   resolves through a process-global `OnceLock`
+   (`neo-execution/src/native/native_contract_provider.rs`) that `build()`
+   installs the injected provider into. Remaining step: thread the injected
+   `Arc<dyn NativeContractProvider>` to the NeoVM host-call sites instead of
+   reading it back from the global.
 3. Consider WASM runtime for future sidechain/feature-gate support.
 
 ---
@@ -375,7 +412,7 @@ pub struct TransactionState {
 | Stage commit policy + checkpoints | ★★★ | - | ★★★★ | ★★ | Import-stage driver done |
 | Compact derive macro | ★★ | ★★★★ | - | ★★ | Small |
 | Task supervision | - | - | ★★★★★ | ★★ | Done |
-| BlockDownloader as Stream | ★★★ | - | ★★ | ★★★ | Boundary + per-peer scheduler + cross-peer range scheduler + ordered buffer done; async transport stream medium |
+| BlockDownloader as Stream | ★★★ | - | ★★ | ★★★ | Boundary + per-peer scheduler wired; cross-peer range scheduler + ordered buffer implemented but unwired (test-only); async transport stream medium |
 | Essential task monitoring | - | - | ★★★★★ | ★ | Small |
 | Metrics infrastructure | - | - | ★★★★ | ★★ | Medium |
 
@@ -384,10 +421,10 @@ pub struct TransactionState {
 ## Implementation Order (Recommended)
 
 1. **Essential task supervision + metrics** — implemented in `neo-node`.
-2. **Typed table boundary** — implemented in `neo-storage`; compact derive is still future work.
+2. **Typed table boundary** — implemented in `neo-storage` but on no live storage access path (the live encoding remains `StorageKey` / `KeyBuilder` over raw C#-compatible bytes); compact derive is still future work.
 3. **Block import queue with concurrent verification** — reusable runtime boundary implemented.
 4. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`.
-5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; per-peer `BlockRequestScheduler` is wired into `PeerSession`; `CrossPeerBlockRangeScheduler` covers cross-peer assignment and retry policy; `OrderedBlockBatchBuffer` covers contiguous response release; async peer transport stream remains next.
+5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; per-peer `BlockRequestScheduler` is wired into `PeerSession`; `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) and `OrderedBlockBatchBuffer` (contiguous response release) are implemented but unwired, constructed only in `neo-network/src/tests/`; async peer transport stream remains next.
 6. **Hot/Cold/Static tiering integration** (medium, big storage win)
 7. **Staged sync pipeline integration** (large, biggest overall impact)
 

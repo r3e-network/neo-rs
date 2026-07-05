@@ -19,6 +19,15 @@
 //! concurrency, then hands the verified blocks to [`BlockImport::import_many`]
 //! in their original order so state transition and durable persistence remain
 //! single-path and deterministic.
+//!
+//! ## Status
+//!
+//! This is a reusable primitive that is **not yet instantiated by the
+//! production sync path**. `BlockImportQueue` is constructed only under
+//! `tests/`; the live import path calls [`BlockImport`] directly via
+//! `BlockchainHandle::import_many` (driven by neo-blockchain's
+//! `handle_block_inventory`). Full staged-sync wiring that would route through
+//! this queue is deferred (see the sync roadmap / ADRs).
 
 use crate::{
     BlockBatchImportOutcome, BlockImport, BlockOrigin, Service, ServiceError, ServiceResult,

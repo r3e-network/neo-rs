@@ -5,11 +5,14 @@
 //! no `Option::unwrap` in any public method, so a partially
 //! configured builder is always safe to drop.
 //!
-//! The trait-object services (block executor, consensus, engine
-//! API) stay `Option<...>` because their concrete `impl`s are
-//! still landing in subsequent stages. The handles
-//! (`BlockchainHandle`, `NetworkHandle`) and the storage backend
-//! are required.
+//! The required components — storage, the blockchain and network
+//! handles, and the native contract provider — are validated at
+//! [`NodeBuilder::build`], which null-checks each concrete field and
+//! returns a descriptive missing-service / missing-config error when
+//! one is absent. There are no trait-object executor / consensus /
+//! engine fields to compose: those were removed in ADR-032 / ADR-033.
+//! The native contract provider defaults to the standard provider when
+//! not supplied.
 
 use std::sync::Arc;
 use tracing::debug;
