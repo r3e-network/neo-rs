@@ -1611,7 +1611,9 @@ Migrate 19 production files + 8 test files to use the new helpers.
 - Error message wording changed slightly (e.g. "Notary deposit" →
   "Notary deposit is not a struct") but data encoding is byte-identical
 - 377 native-contract tests pass; 3346 workspace tests pass (no regressions)
-- Architecture health score: 9.5 → 9.5 (consolidation, no structural change)### ADR-027: Dead code excision — neo-static-files, neo-engine, and 7 dead traits
+- Architecture health score: 9.5 → 9.5 (consolidation, no structural change)
+
+### ADR-027: Dead code excision — neo-static-files, neo-engine, and dead traits
 
 **Status**: Accepted (implemented)
 
@@ -1672,10 +1674,11 @@ in production. Specifically:
   restructure `OracleService` to hold 3 separate `Arc<dyn ConfigProvider>`,
   `Arc<dyn StoreProvider>`, `Arc<dyn TxAdmission>` fields instead of the marker
   trait object.
-- **Mark `BlockchainProvider` stub methods** with explicit TODOs referencing
-  Phase 3 (ADR-031 G2) which will decide finish-vs-delete. The trait has zero
-  `dyn` consumers but is an associated type on the sealed `NodeComponents`
-  scaffold (ADR-023).
+- **Mark `BlockchainProvider` stub methods** with explicit TODOs deferring the
+  finish-vs-delete decision. The trait has zero `dyn` consumers but is an
+  associated type on the sealed `NodeComponents` scaffold (ADR-023).
+  *(Resolved in ADR-032: deleted — zero consumers, and the two stubs silently
+  returned `Ok(None)`.)*
 - **Keep `WalletChangedHandler` and `BlockLike`** — the audit's "zero impls"
   claim was incorrect for both.
 
@@ -1708,3 +1711,67 @@ in production. Specifically:
 - Dockerfile updated: `COPY neo-static-files/` line removed
 - 3346 tests pass (down from 3356 — 10 dead tests removed with their dead traits)
 - Architecture health score: 9.4 → 9.5 (dead code excision improves honesty)
+
+### ADR-032: Dead type-state scaffolding excision — BlockchainProvider, NodeComponents, FullNode
+
+**Status**: Accepted (implemented)
+
+**Context**: ADR-021 sealed and ADR-023 documented a reth-inspired compile-time
+type-state composition seam in `neo-runtime/src/node/types.rs`: the
+`NodeComponents<N>` trait (associated component types), `FullNode`,
+`FullNodeTypes`, the `#[allow(dead_code)]` `FullNodeComponentsExt`, and a
+read-side `BlockchainProvider` trait. ADR-023 already recorded this as
+"scaffolded but not functional." The post-ADR-027..031 audit confirmed it never
+became functional and never will in its current shape:
+
+- `NodeComponents` / `FullNode` / `FullNodeComponentsExt` — **zero
+  implementations, zero consumers** (only re-exports and doc comments).
+- `FullNodeTypes` — used only as a bound by the above; no other consumer.
+- `BlockchainProvider` — **zero `dyn` consumers**; its only implementation
+  (`impl BlockchainProvider for Node` in neo-system) returned `Ok(None)` from
+  `get_transaction_by_hash` and `get_state_root`. That is a *silent wrong
+  answer* landmine: any future `dyn BlockchainProvider` consumer would have
+  read "no such transaction / no state root" instead of an error or the real
+  value. The stubs carried a mis-tagged `TODO(ADR-031, Phase 3 G2)`.
+
+This is roadmap item G2 ("decide the runtime service-trait seam: delete the dead
+traits OR move to an L2 `neo-runtime-api`") and the tail of A5.
+
+**Decision**: **Delete** the entire dead type-state seam rather than finish or
+relocate it. Removed from `neo-runtime`: `BlockchainProvider`, `NodeComponents`,
+`FullNode`, `FullNodeTypes`, `FullNodeComponentsExt`, plus their re-exports
+(`node/mod.rs`, `lib.rs`) and now-unused imports (`async_trait`, `BlockExecutor`,
+`ConsensusApi`, `EngineApi`, `NetworkService`, `ImportQueue`). Removed from
+`neo-system`: the `impl BlockchainProvider for Node` block and its unused
+imports. **Kept**: `NodeTypes` + `NeoNodeTypes` (live protocol-primitive types)
+and the three active provider traits `StoreProvider`, `ConfigProvider`,
+`TxAdmission` — these are load-bearing (the RPC session consumes
+`Arc<dyn StoreProvider>`; the oracle service consumes `TxAdmission`).
+
+**G4 (StoreConfigBundle) deliberately NOT done** — reaffirming the Phase-3 skip.
+`StoreProvider`/`ConfigProvider` are implemented once each on `Node` and once on
+`neo-rpc`'s `NodeContext` as trivial 1-line forwarding, and both structs must
+remain the `dyn` target. A shared `StoreConfigBundle` would still require both to
+`impl` the traits (Rust has no impl delegation), so it would *add* an indirection
+layer without removing any forwarding. Not worth the churn.
+
+**Trade-offs**:
+- **Gaining**: ~140 LOC of never-functional scaffolding removed; the silent
+  `Ok(None)` correctness trap eliminated; the architecture doc now matches
+  reality — node composition is runtime `Option<Arc<dyn Trait>>` wiring, not a
+  type-state graph.
+- **Giving up**: the reth-style compile-time component seam. Correct call: it
+  shipped nothing, and a real typed-node design should be driven by concrete
+  requirements, not a speculative scaffold. ADR-021 (sealing) and ADR-023
+  (type-state status) are superseded for these types.
+- **Reversibility**: High — mechanical to reintroduce if a concrete `TypedNode`
+  ever needs it.
+
+**Consequences**:
+- `neo-runtime::node` exports only `NodeTypes`, `NeoNodeTypes`, `StoreProvider`,
+  `ConfigProvider`, `TxAdmission`.
+- Resolves roadmap G2 and the A5 `BlockchainProvider` tail; the Phase-1 TODOs in
+  `neo-system/src/composition/node.rs` are gone.
+- No test changes — nothing consumed the deleted types.
+- Architecture health score: 9.6 → 9.6 (removes a latent correctness trap; net
+  honesty gain, no structural regression).

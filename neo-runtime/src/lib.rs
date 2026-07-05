@@ -40,6 +40,5 @@ pub use service::{
     sync_metrics, sync_pipeline,
 };
 pub use node::{
-    BlockchainProvider, ConfigProvider, FullNode, FullNodeTypes, NeoNodeTypes, NodeComponents,
-    NodeTypes, StoreProvider, TxAdmission,
+    ConfigProvider, NeoNodeTypes, NodeTypes, StoreProvider, TxAdmission,
 };

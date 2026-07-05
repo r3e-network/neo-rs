@@ -1,12 +1,12 @@
-//! Node type hierarchy and component traits.
+//! Node type hierarchy and provider traits.
 //!
-//! This module defines [`NodeTypes`], [`NodeComponents`], and
-//! [`FullNode`] — the compile-time type hierarchy that replaces
-//! runtime-checked service wiring.
+//! This module defines [`NodeTypes`] (protocol primitives) and the active
+//! provider-trait decoupling layer ([`StoreProvider`], [`ConfigProvider`],
+//! [`TxAdmission`]) that lets L6 crates depend on L3 traits instead of the
+//! concrete `neo_system::Node`.
 
 mod types;
 
 pub use types::{
-    BlockchainProvider, ConfigProvider, FullNode, FullNodeTypes, NeoNodeTypes,
-    NodeComponents, NodeTypes, StoreProvider, TxAdmission,
+    ConfigProvider, NeoNodeTypes, NodeTypes, StoreProvider, TxAdmission,
 };

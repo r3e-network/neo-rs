@@ -28,9 +28,8 @@ use neo_execution::native_contract_provider::{NativeContractLookup, NativeContra
 use neo_mempool::MemoryPool;
 use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_network::NetworkHandle;
-use neo_payloads::{Block, Transaction, VerifyResult};
-use neo_primitives::UInt256;
-use neo_runtime::{BlockExecutor, ConsensusApi, EngineApi, BlockchainProvider, ConfigProvider, StoreProvider, TxAdmission, ServiceError};
+use neo_payloads::{Transaction, VerifyResult};
+use neo_runtime::{BlockExecutor, ConsensusApi, EngineApi, ConfigProvider, StoreProvider, TxAdmission};
 use neo_storage::DataCache;
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_cache::StoreCache;
@@ -375,57 +374,6 @@ impl TxRouterHandle {
             let _ = self.network.try_broadcast_transaction(tx);
         }
         Ok(())
-    }
-}
-
-// =============================================================================
-// BlockchainProvider implementation
-//
-// This allows `neo-rpc` (and other read-side consumers) to depend on
-// `Arc<dyn BlockchainProvider>` instead of `Arc<Node>`, decoupling the
-// RPC layer from the full node composition.
-// =============================================================================
-
-#[async_trait]
-impl BlockchainProvider for Node {
-    async fn get_block_by_hash(
-        &self,
-        hash: UInt256,
-    ) -> Result<Option<Block>, ServiceError> {
-        self.blockchain.get_block(&hash).await
-    }
-
-    async fn get_block_by_height(
-        &self,
-        height: u32,
-    ) -> Result<Option<Block>, ServiceError> {
-        self.blockchain.get_block_by_height(height).await
-    }
-
-    async fn get_block_count(&self) -> Result<u32, ServiceError> {
-        self.blockchain.get_height().await
-    }
-
-    async fn get_transaction_by_hash(
-        &self,
-        _hash: UInt256,
-    ) -> Result<Option<Transaction>, ServiceError> {
-        // TODO(ADR-031, Phase 3 G2): either implement this via BlockchainHandle
-        // or delete the BlockchainProvider trait entirely. Currently returns
-        // Ok(None) which silently breaks any consumer that depends on it.
-        // The trait has zero `dyn` consumers as of ADR-027 — Phase 3 decides
-        // finish-vs-delete.
-        Ok(None)
-    }
-
-    async fn get_state_root(
-        &self,
-        _height: u32,
-    ) -> Result<Option<UInt256>, ServiceError> {
-        // TODO(ADR-031, Phase 3 G2): either implement this via StateService
-        // or delete the BlockchainProvider trait entirely. Currently returns
-        // Ok(None) which silently breaks any consumer that depends on it.
-        Ok(None)
     }
 }
 
