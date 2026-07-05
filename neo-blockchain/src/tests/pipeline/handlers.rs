@@ -152,6 +152,28 @@ fn batch_header_verification_uses_explicit_native_provider_helper() {
 }
 
 #[test]
+fn store_header_verification_uses_system_native_provider() {
+    let source = include_str!("../../pipeline/handlers.rs");
+    let verifier_start = source
+        .find("fn verify_header_against_store")
+        .expect("store-backed header verifier exists");
+    let verifier_end = source[verifier_start..]
+        .find("fn verify_header_against_snapshot")
+        .map(|offset| verifier_start + offset)
+        .expect("snapshot verifier follows store verifier");
+    let verifier = &source[verifier_start..verifier_end];
+
+    assert!(
+        verifier.contains("self.system.native_contract_provider()"),
+        "store-backed header verification must use the provider exposed by SystemContext"
+    );
+    assert!(
+        verifier.contains("verify_header_against_snapshot_with_native_provider"),
+        "store-backed header verification must route through the explicit-provider verifier"
+    );
+}
+
+#[test]
 fn extensible_verification_uses_system_native_provider() {
     let source = include_str!("../../pipeline/handlers.rs");
     let handler_start = source

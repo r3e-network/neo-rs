@@ -48,16 +48,12 @@ where
                 block.index()
             ))
         })?;
-        self.verify_header_against_snapshot(block, settings.as_ref(), snapshot.as_ref())
-    }
-
-    fn verify_header_against_snapshot(
-        &self,
-        block: &Block,
-        settings: &neo_config::ProtocolSettings,
-        snapshot: &neo_storage::DataCache,
-    ) -> CoreResult<()> {
-        self.verify_header_against_snapshot_with_native_provider(block, settings, snapshot, None)
+        self.verify_header_against_snapshot_with_native_provider(
+            block,
+            settings.as_ref(),
+            snapshot.as_ref(),
+            self.system.native_contract_provider(),
+        )
     }
 
     fn verify_header_against_snapshot_with_native_provider(
