@@ -320,6 +320,7 @@ where
 
         let snapshot = self.system.store_snapshot();
         let settings = self.system.settings();
+        let native_contract_provider = self.system.native_contract_provider();
         let ledger = neo_native_contracts::LedgerContract::new();
 
         // C# verification anchor: HeaderCache.Last, else the ledger tip block.
@@ -367,13 +368,14 @@ where
                     break;
                 }
                 let next_consensus = *prev_header.next_consensus();
-                if neo_execution::Helper::verify_witness(
+                if neo_execution::Helper::verify_witness_with_native_provider(
                     &header,
                     settings.as_ref(),
                     snap,
                     &next_consensus,
                     &header.witness,
                     300_000_000,
+                    native_contract_provider.clone(),
                 )
                 .is_err()
                 {

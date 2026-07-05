@@ -177,6 +177,28 @@ fn extensible_verification_uses_system_native_provider() {
     );
 }
 
+#[test]
+fn header_inventory_verification_uses_system_native_provider() {
+    let source = include_str!("../../pipeline/handlers.rs");
+    let handler_start = source
+        .find("pub(crate) fn handle_headers")
+        .expect("header handler exists");
+    let handler_end = source[handler_start..]
+        .find("pub(crate) async fn handle_import")
+        .map(|offset| handler_start + offset)
+        .expect("import handler follows header handler");
+    let handler = &source[handler_start..handler_end];
+
+    assert!(
+        handler.contains("self.system.native_contract_provider()"),
+        "header inventory verification must use the provider exposed by SystemContext"
+    );
+    assert!(
+        handler.contains("verify_witness_with_native_provider"),
+        "header inventory verification must use the explicit-provider witness helper"
+    );
+}
+
 fn fixture() -> (
     BlockchainService<TestContext, TestMempool>,
     BlockchainHandle,
