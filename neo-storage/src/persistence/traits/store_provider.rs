@@ -4,12 +4,13 @@ use std::any::Any;
 use std::path::Path;
 use std::sync::Arc;
 
-/// A factory used to create [`Store`] instances.
+/// Backend factory used to create [`Store`] instances.
 ///
-/// NOTE: This trait is named `StoreProvider` and represents a **store factory**.
-/// It is distinct from `neo_runtime::StoreProvider`, which is an **accessor**
-/// that returns an already-created store. The alias `StoreFactory` is preferred
-/// for new code to avoid the name collision.
+/// This trait is named `StoreProvider` because each implementation provides one
+/// named storage backend (`memory`, `mdbx`, `rocksdb`) to the
+/// [`crate::persistence::StoreFactory`] registry. It is distinct from
+/// `neo_runtime::StoreProvider`, which is an accessor for an already-created
+/// store in composition code.
 pub trait StoreProvider: Send + Sync + Any {
     /// Gets the name of the StoreProvider.
     fn name(&self) -> &str;
@@ -29,7 +30,3 @@ pub trait StoreProvider: Send + Sync + Any {
     /// Downcast support for provider tests and factory diagnostics.
     fn as_any(&self) -> &dyn Any;
 }
-
-/// Preferred alias for [`StoreProvider`] — avoids collision with
-/// `neo_runtime::StoreProvider` (which is a store accessor, not a factory).
-pub trait StoreFactory: StoreProvider {}

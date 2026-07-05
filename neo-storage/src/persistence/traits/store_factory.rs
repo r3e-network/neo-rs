@@ -33,7 +33,12 @@ static PROVIDERS: LazyLock<RwLock<HashMap<String, Arc<dyn StoreProvider>>>> = La
     RwLock::new(providers)
 });
 
-/// Factory for creating stores from named providers.
+/// Registry-backed facade for creating stores from named providers.
+///
+/// This is the only production entry point for opening storage backends by
+/// name. Concrete backends implement [`StoreProvider`]; callers ask this facade
+/// for `memory`, `mdbx`, or `rocksdb` stores instead of constructing backend
+/// adapters directly.
 pub struct StoreFactory;
 
 impl StoreFactory {
@@ -63,16 +68,7 @@ impl StoreFactory {
     where
         P: AsRef<Path>,
     {
-        let key = provider_key(storage_provider);
-        if key.is_empty() {
-            return Err(empty_provider_error());
-        }
-        let providers = PROVIDERS.read();
-        let provider = providers
-            .get(&key)
-            .cloned()
-            .ok_or_else(|| unknown_provider_error(storage_provider, &providers))?;
-        provider.get_store(path.as_ref())
+        provider_for(storage_provider)?.get_store(path.as_ref())
     }
 
     /// Get store from a named provider and full storage configuration.
@@ -83,16 +79,7 @@ impl StoreFactory {
         storage_provider: &str,
         config: StorageConfig,
     ) -> StorageResult<Arc<dyn Store>> {
-        let key = provider_key(storage_provider);
-        if key.is_empty() {
-            return Err(empty_provider_error());
-        }
-        let providers = PROVIDERS.read();
-        let provider = providers
-            .get(&key)
-            .cloned()
-            .ok_or_else(|| unknown_provider_error(storage_provider, &providers))?;
-        provider.get_store_with_config(config)
+        provider_for(storage_provider)?.get_store_with_config(config)
     }
 }
 
@@ -112,6 +99,18 @@ fn register_builtin_provider(
     provider: Arc<dyn StoreProvider>,
 ) {
     providers.insert(provider_key(name), provider);
+}
+
+fn provider_for(storage_provider: &str) -> StorageResult<Arc<dyn StoreProvider>> {
+    let key = provider_key(storage_provider);
+    if key.is_empty() {
+        return Err(empty_provider_error());
+    }
+    let providers = PROVIDERS.read();
+    providers
+        .get(&key)
+        .cloned()
+        .ok_or_else(|| unknown_provider_error(storage_provider, &providers))
 }
 
 fn unknown_provider_error(

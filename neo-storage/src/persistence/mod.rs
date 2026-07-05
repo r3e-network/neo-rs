@@ -20,8 +20,8 @@
 //!   execution.
 //! - `store`: Core store trait (read + write + snapshot + downcast).
 //! - `store_cache`: store-backed cache overlay.
-//! - `store_factory`: store factory trait.
-//! - `store_provider`: store provider trait.
+//! - `store_factory`: named provider registry and store factory facade.
+//! - `store_provider`: backend provider trait implemented by concrete stores.
 //! - `store_snapshot`: snapshot store trait.
 //! - `track_state`: tracked mutation state enum.
 //! - `transaction`: Transaction body, signer, witness, and fee records.
@@ -50,10 +50,10 @@ pub mod storage;
 pub mod store;
 #[path = "cache/store_cache.rs"]
 pub mod store_cache;
-/// Factory abstraction for named store providers.
+/// Registry-backed factory facade for named store providers.
 #[path = "traits/store_factory.rs"]
 pub mod store_factory;
-/// Store provider trait.
+/// Backend provider trait implemented by concrete store adapters.
 #[path = "traits/store_provider.rs"]
 pub mod store_provider;
 /// Mutable point-in-time store snapshots.
