@@ -183,16 +183,17 @@ impl ApplicationEngine {
         // `neo-native-contracts` directly. C# `GetCommitteeAddress` faults if the
         // committee cache is missing, so a lookup error is propagated. When no
         // provider is installed (engine used standalone), we fail closed.
-        let committee_address =
-            match crate::native_contract_provider::NativeContractLookup::lookup_committee_address(
-                self.snapshot_cache.as_ref(),
-            )
+        let Some(neo_token) = self.native_contract_by_name("NeoToken") else {
+            return Ok(false);
+        };
+        let committee_address = match neo_token
+            .committee_address(self.snapshot_cache.as_ref())
             .map_err(|e| {
                 CoreError::invalid_operation(format!("committee address lookup failed: {e}"))
             })? {
-                Some(address) => address,
-                None => return Ok(false),
-            };
+            Some(address) => address,
+            None => return Ok(false),
+        };
         self.check_witness_hash(&committee_address)
     }
 
@@ -221,11 +222,14 @@ impl ApplicationEngine {
             .ok_or_else(|| CoreError::invalid_operation("No current contract"))?;
 
         // 2. Get contract state to get the ID (matches C# snapshot lookup)
-        let contract =
-            crate::native_contract_provider::NativeContractLookup::lookup_contract_management(
-                self.snapshot_cache.as_ref(),
-                &contract_hash,
-            )?
+        let contract = self
+            .native_contract_by_name("ContractManagement")
+            .map(|contract_management| {
+                contract_management
+                    .lookup_contract_state(self.snapshot_cache.as_ref(), &contract_hash)
+            })
+            .transpose()?
+            .flatten()
             .ok_or_else(|| {
                 CoreError::not_found(format!("Contract not found: {}", contract_hash))
             })?;

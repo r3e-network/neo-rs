@@ -347,9 +347,9 @@ same `Arc` into `NodeBuilder`; headless/test construction still falls back to th
 builder's standard provider default. `ApplicationEngine` now captures the
 installed or scoped provider at construction and uses that stable handle for
 direct native calls, policy reads, dynamic-call policy gates, contract-management
-lookups made from contract loading, current-index reads, and whitelisted-fee
-checks. Some host-call helpers still resolve through the process-global
-compatibility bridge in
+lookups made from contract loading, committee-witness checks, storage-context
+resolution, current-index reads, and whitelisted-fee checks. Some host-call
+helpers still resolve through the process-global compatibility bridge in
 `neo-execution/src/native/native_contract_provider.rs`.
 
 ### Polkadot SDK innovations
@@ -371,10 +371,11 @@ compatibility bridge in
    standard provider for early genesis/native persistence and the composed
    `Node`, and `ApplicationEngine` captures the provider during construction for
    direct native calls, policy reads, dynamic-call policy gates,
-   contract-management lookups made from contract loading, current-index reads,
-   and fee whitelist checks. Remaining step: thread the captured
-   `Arc<dyn NativeContractProvider>` through the unconverted helper/syscall
-   paths instead of reading them back from `NativeContractLookup`.
+   contract-management lookups made from contract loading, committee-witness
+   checks, storage-context resolution, current-index reads, and fee whitelist
+   checks. Remaining step: thread the captured `Arc<dyn NativeContractProvider>`
+   through the unconverted helper/syscall paths instead of reading them back
+   from `NativeContractLookup`.
 3. Consider WASM runtime for future sidechain/feature-gate support.
 
 ---

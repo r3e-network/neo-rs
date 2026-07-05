@@ -174,25 +174,111 @@ impl NativeContract for MeteredNativeContract {
 }
 
 struct SingleNativeProvider {
-    native: Arc<MeteredNativeContract>,
+    native: Arc<dyn NativeContract>,
 }
 
 impl NativeContractProvider for SingleNativeProvider {
     fn get_native_contract(&self, hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
-        (&self.native.hash() == hash).then(|| self.native.clone() as Arc<dyn NativeContract>)
+        (&self.native.hash() == hash).then(|| self.native.clone())
     }
 
     fn get_native_contract_by_name(&self, name: &str) -> Option<Arc<dyn NativeContract>> {
         name.eq_ignore_ascii_case(self.native.name())
-            .then(|| self.native.clone() as Arc<dyn NativeContract>)
+            .then(|| self.native.clone())
     }
 
     fn all_native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
-        vec![self.native.clone() as Arc<dyn NativeContract>]
+        vec![self.native.clone()]
     }
 
     fn all_native_contract_hashes(&self) -> Vec<UInt160> {
         vec![self.native.hash()]
+    }
+}
+
+struct ContractManagementNative {
+    contract: ContractState,
+}
+
+impl NativeContract for ContractManagementNative {
+    fn id(&self) -> i32 {
+        -1
+    }
+
+    fn hash(&self) -> UInt160 {
+        UInt160::from_bytes(&[0xCD; 20]).expect("contract management hash")
+    }
+
+    fn name(&self) -> &str {
+        "ContractManagement"
+    }
+
+    fn methods(&self) -> &[crate::NativeMethod] {
+        &[]
+    }
+
+    fn invoke(
+        &self,
+        _engine: &mut ApplicationEngine,
+        _method: &str,
+        _args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        Err(CoreError::invalid_operation(
+            "test contract management is metadata-only",
+        ))
+    }
+
+    fn lookup_contract_state(
+        &self,
+        _snapshot: &DataCache,
+        hash: &UInt160,
+    ) -> CoreResult<Option<ContractState>> {
+        Ok((hash == &self.contract.hash).then(|| self.contract.clone()))
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+struct FailingCommitteeNative;
+
+impl NativeContract for FailingCommitteeNative {
+    fn id(&self) -> i32 {
+        -5
+    }
+
+    fn hash(&self) -> UInt160 {
+        UInt160::from_bytes(&[0xCE; 20]).expect("neo token hash")
+    }
+
+    fn name(&self) -> &str {
+        "NeoToken"
+    }
+
+    fn methods(&self) -> &[crate::NativeMethod] {
+        &[]
+    }
+
+    fn invoke(
+        &self,
+        _engine: &mut ApplicationEngine,
+        _method: &str,
+        _args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        Err(CoreError::invalid_operation(
+            "test neo token is metadata-only",
+        ))
+    }
+
+    fn committee_address(&self, _snapshot: &DataCache) -> CoreResult<Option<UInt160>> {
+        Err(CoreError::invalid_operation(
+            "captured committee provider used",
+        ))
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
@@ -289,6 +375,79 @@ fn native_call_uses_provider_captured_at_engine_creation() {
         .expect("native method should use provider captured at engine creation");
 
     assert_eq!(engine.fee_consumed(), 50 * 100_000);
+}
+
+#[test]
+fn committee_witness_uses_provider_captured_at_engine_creation() {
+    let _provider_guard = lock_provider();
+    let provider = Arc::new(SingleNativeProvider {
+        native: Arc::new(FailingCommitteeNative),
+    }) as Arc<dyn NativeContractProvider>;
+
+    let engine = NativeContractLookup::with_scoped_provider(provider, || {
+        ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            None,
+        )
+    })
+    .expect("engine");
+
+    NativeContractLookup::install_provider(Arc::new(EmptyProvider));
+
+    let err = engine
+        .check_committee_witness()
+        .expect_err("captured NeoToken provider should be used");
+    assert!(
+        err.to_string().contains("captured committee provider used"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn storage_context_uses_provider_captured_at_engine_creation() {
+    let _provider_guard = lock_provider();
+    let contract_hash =
+        UInt160::parse("0xa1b2c3d4e5f60718293a4b5c6d7e8f0102030416").expect("contract hash");
+    let contract = build_mock_contract(contract_hash);
+    let provider = Arc::new(SingleNativeProvider {
+        native: Arc::new(ContractManagementNative {
+            contract: contract.clone(),
+        }),
+    }) as Arc<dyn NativeContractProvider>;
+
+    let mut engine = NativeContractLookup::with_scoped_provider(provider, || {
+        ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            None,
+        )
+    })
+    .expect("engine");
+
+    NativeContractLookup::install_provider(Arc::new(EmptyProvider));
+
+    engine
+        .load_script(
+            vec![OpCode::RET.byte()],
+            CallFlags::ALL,
+            Some(contract_hash),
+        )
+        .expect("load contract script");
+
+    let context = engine
+        .get_storage_context()
+        .expect("captured ContractManagement provider should resolve contract state");
+    assert_eq!(context.id, contract.id);
+    assert!(!context.is_read_only);
 }
 
 #[test]
