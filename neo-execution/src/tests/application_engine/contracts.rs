@@ -1,11 +1,14 @@
 use super::*;
+use crate::native_contract::OracleRequestDetails;
 use crate::native_contract_provider::lock_native_provider;
 use crate::native_contract_provider::{NativeContractLookup, NativeContractProvider};
+use neo_crypto::{ECCurve, ECPoint};
 use neo_manifest::{
-    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
-    ContractPermission, NefFile, WildCardContainer,
+    ContractAbi, ContractGroup, ContractManifest, ContractMethodDescriptor,
+    ContractParameterDefinition, ContractPermission, NefFile, WildCardContainer,
 };
-use neo_primitives::ContractParameterType;
+use neo_payloads::{OracleResponse, Signer, Transaction, TransactionAttribute};
+use neo_primitives::{ContractParameterType, OracleResponseCode, WitnessScope};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
 use parking_lot::Mutex as PlMutex;
@@ -196,6 +199,34 @@ impl NativeContractProvider for SingleNativeProvider {
     }
 }
 
+struct NativeSetProvider {
+    natives: Vec<Arc<dyn NativeContract>>,
+}
+
+impl NativeContractProvider for NativeSetProvider {
+    fn get_native_contract(&self, hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
+        self.natives
+            .iter()
+            .find(|native| native.hash() == *hash)
+            .cloned()
+    }
+
+    fn get_native_contract_by_name(&self, name: &str) -> Option<Arc<dyn NativeContract>> {
+        self.natives
+            .iter()
+            .find(|native| name.eq_ignore_ascii_case(native.name()))
+            .cloned()
+    }
+
+    fn all_native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
+        self.natives.clone()
+    }
+
+    fn all_native_contract_hashes(&self) -> Vec<UInt160> {
+        self.natives.iter().map(|native| native.hash()).collect()
+    }
+}
+
 struct ContractManagementNative {
     contract: ContractState,
 }
@@ -274,6 +305,99 @@ impl NativeContract for FailingCommitteeNative {
     fn committee_address(&self, _snapshot: &DataCache) -> CoreResult<Option<UInt160>> {
         Err(CoreError::invalid_operation(
             "captured committee provider used",
+        ))
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+struct OracleNative {
+    original_tx_id: UInt256,
+}
+
+impl NativeContract for OracleNative {
+    fn id(&self) -> i32 {
+        -9
+    }
+
+    fn hash(&self) -> UInt160 {
+        UInt160::from_bytes(&[0xC9; 20]).expect("oracle hash")
+    }
+
+    fn name(&self) -> &str {
+        "OracleContract"
+    }
+
+    fn methods(&self) -> &[crate::NativeMethod] {
+        &[]
+    }
+
+    fn invoke(
+        &self,
+        _engine: &mut ApplicationEngine,
+        _method: &str,
+        _args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        Err(CoreError::invalid_operation(
+            "test oracle contract is metadata-only",
+        ))
+    }
+
+    fn oracle_request_url_full(
+        &self,
+        _snapshot: &DataCache,
+        _id: u64,
+    ) -> CoreResult<Option<OracleRequestDetails>> {
+        Ok(Some(OracleRequestDetails::new(
+            "https://neo.org",
+            self.original_tx_id,
+        )))
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+struct FailingLedgerNative;
+
+impl NativeContract for FailingLedgerNative {
+    fn id(&self) -> i32 {
+        -4
+    }
+
+    fn hash(&self) -> UInt160 {
+        UInt160::from_bytes(&[0xC4; 20]).expect("ledger hash")
+    }
+
+    fn name(&self) -> &str {
+        "LedgerContract"
+    }
+
+    fn methods(&self) -> &[crate::NativeMethod] {
+        &[]
+    }
+
+    fn invoke(
+        &self,
+        _engine: &mut ApplicationEngine,
+        _method: &str,
+        _args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        Err(CoreError::invalid_operation(
+            "test ledger contract is metadata-only",
+        ))
+    }
+
+    fn transaction_state(
+        &self,
+        _snapshot: &DataCache,
+        _tx_hash: &UInt256,
+    ) -> CoreResult<Option<neo_payloads::TransactionState>> {
+        Err(CoreError::invalid_operation(
+            "captured ledger provider used",
         ))
     }
 
@@ -448,6 +572,106 @@ fn storage_context_uses_provider_captured_at_engine_creation() {
         .expect("captured ContractManagement provider should resolve contract state");
     assert_eq!(context.id, contract.id);
     assert!(!context.is_read_only);
+}
+
+#[test]
+fn oracle_response_witness_uses_provider_captured_at_engine_creation() {
+    let _provider_guard = lock_provider();
+    let original_tx_id = UInt256::from_bytes(&[0x42; 32]).expect("original tx hash");
+    let provider = Arc::new(NativeSetProvider {
+        natives: vec![
+            Arc::new(OracleNative { original_tx_id }) as Arc<dyn NativeContract>,
+            Arc::new(FailingLedgerNative) as Arc<dyn NativeContract>,
+        ],
+    }) as Arc<dyn NativeContractProvider>;
+
+    let delegated_signer =
+        UInt160::parse("0x0102030405060708090a0b0c0d0e0f1011121324").expect("signer");
+    let mut tx = Transaction::new();
+    tx.set_attributes(vec![TransactionAttribute::OracleResponse(
+        OracleResponse::new(7, OracleResponseCode::Success, Vec::new()),
+    )]);
+    tx.set_signers(vec![Signer::new(delegated_signer, WitnessScope::NONE)]);
+
+    let engine = NativeContractLookup::with_scoped_provider(provider, || {
+        ApplicationEngine::new(
+            TriggerType::Application,
+            Some(Arc::new(tx)),
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            None,
+        )
+    })
+    .expect("engine");
+
+    NativeContractLookup::install_provider(Arc::new(EmptyProvider));
+
+    let err = engine
+        .check_witness_hash(&delegated_signer)
+        .expect_err("captured Oracle and Ledger providers should be used");
+    assert!(
+        err.to_string().contains("captured ledger provider used"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn group_witness_uses_provider_captured_at_engine_creation() {
+    let _provider_guard = lock_provider();
+    let group_bytes =
+        hex::decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
+            .expect("group public key");
+    let group_point =
+        ECPoint::from_bytes_with_curve(ECCurve::secp256r1(), &group_bytes).expect("group point");
+    let contract_hash =
+        UInt160::parse("0xa1b2c3d4e5f60718293a4b5c6d7e8f0102030426").expect("contract hash");
+    let mut contract = build_mock_contract(contract_hash);
+    contract
+        .manifest
+        .groups
+        .push(ContractGroup::new(group_point.clone(), vec![0; 64]));
+    let provider = Arc::new(SingleNativeProvider {
+        native: Arc::new(ContractManagementNative { contract }),
+    }) as Arc<dyn NativeContractProvider>;
+
+    let witness_account =
+        UInt160::parse("0x0102030405060708090a0b0c0d0e0f1011121325").expect("signer");
+    let mut signer = Signer::new(witness_account, WitnessScope::CUSTOM_GROUPS);
+    signer.allowed_groups.push(group_point);
+    let mut tx = Transaction::new();
+    tx.set_signers(vec![signer]);
+
+    let mut engine = NativeContractLookup::with_scoped_provider(provider, || {
+        ApplicationEngine::new(
+            TriggerType::Application,
+            Some(Arc::new(tx)),
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            None,
+        )
+    })
+    .expect("engine");
+
+    NativeContractLookup::install_provider(Arc::new(EmptyProvider));
+
+    engine
+        .load_script(
+            vec![OpCode::RET.byte()],
+            CallFlags::READ_STATES,
+            Some(contract_hash),
+        )
+        .expect("load grouped contract script");
+
+    assert!(
+        engine
+            .check_witness_hash(&witness_account)
+            .expect("captured ContractManagement provider should evaluate group"),
+        "group witness must match the contract manifest exposed by the captured provider"
+    );
 }
 
 #[test]

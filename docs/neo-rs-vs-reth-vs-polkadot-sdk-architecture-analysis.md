@@ -348,8 +348,10 @@ builder's standard provider default. `ApplicationEngine` now captures the
 installed or scoped provider at construction and uses that stable handle for
 direct native calls, policy reads, dynamic-call policy gates, contract-management
 lookups made from contract loading, committee-witness checks, storage-context
-resolution, current-index reads, and whitelisted-fee checks. Some host-call
-helpers still resolve through the process-global compatibility bridge in
+resolution, OracleResponse witness inheritance, witness group checks,
+current-index reads, and whitelisted-fee checks. Constructor-time jump-table
+selection and non-engine helper paths still resolve through the process-global
+compatibility bridge in
 `neo-execution/src/native/native_contract_provider.rs`.
 
 ### Polkadot SDK innovations
@@ -372,10 +374,11 @@ helpers still resolve through the process-global compatibility bridge in
    `Node`, and `ApplicationEngine` captures the provider during construction for
    direct native calls, policy reads, dynamic-call policy gates,
    contract-management lookups made from contract loading, committee-witness
-   checks, storage-context resolution, current-index reads, and fee whitelist
-   checks. Remaining step: thread the captured `Arc<dyn NativeContractProvider>`
-   through the unconverted helper/syscall paths instead of reading them back
-   from `NativeContractLookup`.
+   checks, storage-context resolution, OracleResponse witness inheritance,
+   witness group checks, current-index reads, and fee whitelist checks.
+   Remaining step: thread the captured `Arc<dyn NativeContractProvider>` through
+   constructor-time jump-table selection and non-engine helper paths instead of
+   reading them back from `NativeContractLookup`.
 3. Consider WASM runtime for future sidechain/feature-gate support.
 
 ---

@@ -1,5 +1,4 @@
 use super::*;
-use crate::native_contract_provider::NativeContractLookup;
 
 fn witness_trace_enabled(app: &ApplicationEngine) -> bool {
     let Ok(raw) = std::env::var("NEO_TRACE_WITNESS_TX") else {
@@ -146,7 +145,7 @@ impl ApplicationEngine {
                 TransactionAttribute::OracleResponse(resp) => Some(resp.id),
                 _ => None,
             }) {
-                let oracle = NativeContractLookup::lookup_oracle_contract();
+                let oracle = self.native_contract_by_name("OracleContract");
                 let request = oracle
                     .ok_or_else(|| {
                         CoreError::invalid_operation(
@@ -160,7 +159,7 @@ impl ApplicationEngine {
                         ))
                     })?;
 
-                let ledger = NativeContractLookup::lookup_ledger_contract();
+                let ledger = self.native_contract_by_name("LedgerContract");
                 let state = ledger
                     .ok_or_else(|| {
                         CoreError::invalid_operation(
@@ -338,10 +337,14 @@ impl ApplicationEngine {
     /// Group match for a witness Group/CalledByGroup condition. Callers validate
     /// the ReadStates call flag first, matching C# GroupCondition.Match ordering.
     fn contract_matches_group(&self, contract_hash: &UInt160, group: &[u8]) -> CoreResult<bool> {
-        let Some(contract) = NativeContractLookup::lookup_contract_management(
-            self.snapshot_cache.as_ref(),
-            contract_hash,
-        )?
+        let Some(contract) = self
+            .native_contract_by_name("ContractManagement")
+            .map(|contract_management| {
+                contract_management
+                    .lookup_contract_state(self.snapshot_cache.as_ref(), contract_hash)
+            })
+            .transpose()?
+            .flatten()
         else {
             return Ok(false);
         };
