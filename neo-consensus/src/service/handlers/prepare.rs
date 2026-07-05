@@ -4,7 +4,7 @@ use crate::context::ConsensusState;
 use crate::messages::{
     CommitMessage, ConsensusPayload, PrepareRequestMessage, PrepareResponseMessage,
 };
-use crate::{ConsensusError, ConsensusMessageType, ConsensusResult};
+use crate::{ChangeViewReason, ConsensusError, ConsensusMessageType, ConsensusResult};
 use tracing::{debug, info, warn};
 
 impl ConsensusService {
@@ -236,6 +236,15 @@ impl ConsensusService {
     }
 
     /// Sends our `PrepareResponse` if needed and not already sent.
+    ///
+    /// This is the choke point for C# `ConsensusService.CheckPrepareResponse`
+    /// (called once every proposed transaction is present). Before a backup
+    /// signs and broadcasts its `PrepareResponse` it re-checks the proposed
+    /// block against the dBFT block-size and block-system-fee policy limits, in
+    /// that order, exactly as C# does — a backup must NOT endorse a block a
+    /// (malicious or buggy) primary packed beyond `MaxBlockSize` /
+    /// `MaxBlockSystemFee`, and instead requests a view change with
+    /// `BlockRejectedByPolicy`.
     pub(in crate::service) async fn send_prepare_response(&mut self) -> ConsensusResult<()> {
         if self.context.is_primary() {
             return Ok(());
@@ -249,6 +258,50 @@ impl ConsensusService {
         if self.context.prepare_responses.contains_key(&my_index) {
             return Ok(());
         }
+
+        // C# `CheckPrepareResponse`: policy checks run only once the whole
+        // proposal is present (`TransactionHashes.Length == Transactions.Count`).
+        // Every caller already gates on this, but guard here too so a partial
+        // proposal never trips a spurious rejection on incomplete metrics.
+        if !self.context.has_missing_proposed_transactions() {
+            // Check maximum block size via block policy (C# check #1).
+            let expected_block_size = self.context.expected_block_size();
+            if expected_block_size > self.context.max_block_size as usize {
+                warn!(
+                    block_index = self.context.block_index,
+                    expected_block_size,
+                    max_block_size = self.context.max_block_size,
+                    "Rejected block: the size exceeds the policy"
+                );
+                self.request_change_view(
+                    ChangeViewReason::BlockRejectedByPolicy,
+                    current_timestamp(),
+                )
+                .await?;
+                return Ok(());
+            }
+            // Check maximum block system fee via block policy (C# check #2).
+            let expected_block_system_fee = self.context.expected_block_system_fee();
+            if expected_block_system_fee > self.context.max_block_system_fee {
+                warn!(
+                    block_index = self.context.block_index,
+                    expected_block_system_fee,
+                    max_block_system_fee = self.context.max_block_system_fee,
+                    "Rejected block: the system fee exceeds the policy"
+                );
+                self.request_change_view(
+                    ChangeViewReason::BlockRejectedByPolicy,
+                    current_timestamp(),
+                )
+                .await?;
+                return Ok(());
+            }
+        }
+
+        // C# `CheckPrepareResponse`: timeout extension due to the prepare
+        // response we are about to send (`ExtendTimerByFactor(2)`), applied
+        // immediately before broadcasting the response.
+        self.context.extend_timer_by_factor(2);
 
         let preparation_hash = self.context.preparation_hash.unwrap_or_default();
         let response = PrepareResponseMessage::new(

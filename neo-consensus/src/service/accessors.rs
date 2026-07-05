@@ -41,6 +41,24 @@ impl ConsensusService {
         self.max_transactions_per_block
     }
 
+    /// Sets the block-size / block-system-fee policy limits a backup enforces in
+    /// `CheckPrepareResponse` before sending its `PrepareResponse`
+    /// (C# `DbftSettings.MaxBlockSize` / `DbftSettings.MaxBlockSystemFee`).
+    pub fn set_max_block_policy(&mut self, max_block_size: u32, max_block_system_fee: i64) {
+        self.context
+            .set_max_block_policy(max_block_size, max_block_system_fee);
+    }
+
+    /// Records the wire size and system fee of a proposal transaction whose body
+    /// the node has cached, so the backup can compute the expected block size /
+    /// system fee for its `CheckPrepareResponse` policy checks. Mirrors C#
+    /// `ConsensusContext.Transactions[hash] = tx`, but keeps the consensus crate
+    /// hash-only by carrying just the two policy-relevant metrics.
+    pub fn record_transaction_metrics(&mut self, hash: neo_primitives::UInt256, size: usize, system_fee: i64) {
+        self.context
+            .record_transaction_metrics(hash, crate::context::TxMetrics { size, system_fee });
+    }
+
     /// Updates the private key used for signing consensus messages.
     /// The key is wrapped in `Zeroizing` so it is wiped from memory on drop.
     pub fn set_private_key(&mut self, private_key: Vec<u8>) {

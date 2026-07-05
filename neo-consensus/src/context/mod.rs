@@ -38,6 +38,21 @@ pub const BLOCK_TIME_MS: u64 = DEFAULT_BLOCK_TIME_MS;
 /// Maximum validators in dBFT
 pub const MAX_VALIDATORS: usize = 21;
 
+/// C# DBFTPlugin `DbftSettings.MaxBlockSize` — the block-size policy a backup
+/// enforces in `CheckPrepareResponse` before sending its `PrepareResponse`.
+/// The DBFTPlugin ships `MaxBlockSize = 2097152` (2 MiB) in `DBFTPlugin.json`,
+/// which matches `neo_primitives::constants::MAX_BLOCK_SIZE` and the value the
+/// primary already enforces during `EnsureMaxBlockLimitation`. Used as the
+/// default until the node overrides it via
+/// [`ConsensusContext::set_max_block_policy`].
+pub const DEFAULT_MAX_BLOCK_SIZE: u32 = 2_097_152;
+
+/// C# DBFTPlugin `DbftSettings.MaxBlockSystemFee` default (150000000000, i.e.
+/// 1500 GAS). The block-system-fee policy a backup enforces in
+/// `CheckPrepareResponse`, identical to the limit the primary applies in
+/// `EnsureMaxBlockLimitation`.
+pub const DEFAULT_MAX_BLOCK_SYSTEM_FEE: i64 = 150_000_000_000;
+
 /// Maximum size of message hash cache (LRU limit for memory protection)
 /// Matches C# `DBFTPlugin`'s message caching behavior
 pub const MAX_MESSAGE_CACHE_SIZE: usize = 10_000;
@@ -50,6 +65,17 @@ mod validator_info;
 use persistence::{PersistedConsensusState, decode_state, encode_state};
 pub use state::ConsensusState;
 pub use validator_info::ValidatorInfo;
+
+/// Wire size and system fee of a single proposal transaction, mirroring the
+/// C# `Transaction.Size` / `Transaction.SystemFee` values `ConsensusContext`
+/// reads when computing the expected block size and system fee.
+#[derive(Debug, Clone, Copy)]
+pub struct TxMetrics {
+    /// Serialized transaction size in bytes (C# `Transaction.Size`).
+    pub size: usize,
+    /// Transaction system fee (C# `Transaction.SystemFee`).
+    pub system_fee: i64,
+}
 
 /// Consensus context holding all state for the current consensus round
 #[derive(Debug)]
@@ -94,6 +120,19 @@ pub struct ConsensusContext {
     pub proposed_tx_hashes: Vec<UInt256>,
     /// Proposed transaction hashes that are locally available for this view.
     pub available_tx_hashes: HashSet<UInt256>,
+    /// Per-transaction (wire size, system fee) for the locally available
+    /// proposal transactions (C# `ConsensusContext.Transactions.Values`, from
+    /// which `GetExpectedBlockSize` sums `tx.Size` and `GetExpectedBlockSystemFee`
+    /// sums `tx.SystemFee`). The service crate is otherwise hash-only; the node
+    /// feeds these metrics as it caches each transaction body so the backup can
+    /// evaluate the block-policy limits in `CheckPrepareResponse` without pulling
+    /// full transaction bodies into the consensus crate.
+    pub available_tx_metrics: HashMap<UInt256, TxMetrics>,
+    /// Block-size policy limit (C# `DbftSettings.MaxBlockSize`). Enforced by a
+    /// backup in `send_prepare_response` (C# `CheckPrepareResponse`).
+    pub max_block_size: u32,
+    /// Block-system-fee policy limit (C# `DbftSettings.MaxBlockSystemFee`).
+    pub max_block_system_fee: i64,
     /// Nonce for the block
     pub nonce: u64,
 
@@ -177,6 +216,9 @@ impl ConsensusContext {
             proposed_timestamp: 0,
             proposed_tx_hashes: Vec::new(),
             available_tx_hashes: HashSet::new(),
+            available_tx_metrics: HashMap::new(),
+            max_block_size: DEFAULT_MAX_BLOCK_SIZE,
+            max_block_system_fee: DEFAULT_MAX_BLOCK_SYSTEM_FEE,
             nonce: 0,
             prepare_request_received: false,
             transaction_request_sent: false,
@@ -330,6 +372,7 @@ impl ConsensusContext {
         self.proposed_timestamp = 0;
         self.proposed_tx_hashes.clear();
         self.available_tx_hashes.clear();
+        self.available_tx_metrics.clear();
         self.nonce = 0;
 
         // Clear signatures
@@ -366,6 +409,7 @@ impl ConsensusContext {
         self.proposed_timestamp = 0;
         self.proposed_tx_hashes.clear();
         self.available_tx_hashes.clear();
+        self.available_tx_metrics.clear();
         self.nonce = 0;
         self.prepare_request_received = false;
         self.transaction_request_sent = false;
@@ -503,6 +547,113 @@ impl ConsensusContext {
     pub fn has_missing_proposed_transactions(&self) -> bool {
         !self.proposed_tx_hashes.is_empty()
             && self.proposed_tx_hashes.len() > self.available_tx_hashes.len()
+    }
+
+    /// Sets the block-size / block-system-fee policy limits enforced by a backup
+    /// before it sends its `PrepareResponse` (C# `DbftSettings.MaxBlockSize` /
+    /// `DbftSettings.MaxBlockSystemFee`). Called by the node when it configures a
+    /// consensus round so both limits track the same source the primary uses in
+    /// `EnsureMaxBlockLimitation`.
+    pub fn set_max_block_policy(&mut self, max_block_size: u32, max_block_system_fee: i64) {
+        self.max_block_size = max_block_size;
+        self.max_block_system_fee = max_block_system_fee;
+    }
+
+    /// Records the wire size and system fee of a proposal transaction whose body
+    /// the node has cached (C# `ConsensusContext.Transactions[hash] = tx`). Only
+    /// transactions that belong to the current proposal are retained, so the
+    /// expected-block computations stay scoped to `TransactionHashes`.
+    pub fn record_transaction_metrics(&mut self, hash: UInt256, metrics: TxMetrics) {
+        if self.proposed_tx_hashes.contains(&hash) {
+            self.available_tx_metrics.insert(hash, metrics);
+        }
+    }
+
+    /// Expected serialized block size, mirroring C#
+    /// `ConsensusContext.GetExpectedBlockSize()`:
+    /// `GetExpectedBlockSizeWithoutTransactions(Transactions.Count) + Σ tx.Size`.
+    ///
+    /// The base (transaction-free) size counts the fixed header fields, the
+    /// M-of-N block witness (verification script + an invocation script pushing
+    /// `M` 64-byte signatures — C# `_witnessSize`), and the transaction-count
+    /// var-int. Only transactions whose metrics have been recorded contribute to
+    /// the per-tx sum; the caller must ensure the full proposal is available
+    /// (`!has_missing_proposed_transactions`) before treating the result as the
+    /// final block size, exactly as C# only reaches this check once
+    /// `TransactionHashes.Length == Transactions.Count`.
+    #[must_use]
+    pub fn expected_block_size(&self) -> usize {
+        let tx_count = self.available_tx_metrics.len();
+        let base = self.expected_block_size_without_transactions(tx_count);
+        let tx_bytes: usize = self
+            .available_tx_metrics
+            .values()
+            .map(|m| m.size)
+            .sum();
+        base.saturating_add(tx_bytes)
+    }
+
+    /// Expected block system fee, mirroring C#
+    /// `ConsensusContext.GetExpectedBlockSystemFee()`: `Σ tx.SystemFee`.
+    #[must_use]
+    pub fn expected_block_system_fee(&self) -> i64 {
+        self.available_tx_metrics
+            .values()
+            .map(|m| m.system_fee)
+            .fold(0i64, i64::saturating_add)
+    }
+
+    /// C# `ConsensusContext.GetExpectedBlockSizeWithoutTransactions`: the fixed
+    /// header + witness + tx-count var-int size, independent of the transaction
+    /// bodies. The witness matches C# `_witnessSize` — an `M`-of-`N` multi-sig
+    /// verification script plus an invocation script that pushes `M` 64-byte
+    /// commit signatures.
+    #[must_use]
+    fn expected_block_size_without_transactions(&self, expected_transactions: usize) -> usize {
+        use neo_io::serializable::helper::SerializeHelper;
+        use neo_payloads::Witness;
+        use neo_vm::script_builder::{RedeemScript, ScriptBuilder};
+
+        // Witness verification script: the canonical M-of-N multi-sig over the
+        // sorted validator keys (C# `Contract.CreateMultiSigRedeemScript`).
+        let n = self.validators.len();
+        let m = RedeemScript::bft_threshold(n);
+        let mut sorted: Vec<neo_crypto::ECPoint> =
+            self.validators.iter().map(|v| v.public_key.clone()).collect();
+        sorted.sort();
+        let mut verification = ScriptBuilder::new();
+        verification.emit_push_int(m as i64);
+        for key in &sorted {
+            verification.emit_push(key.as_bytes());
+        }
+        verification.emit_push_int(n as i64);
+        verification
+            .emit_syscall("System.Crypto.CheckMultisig")
+            .expect("infallible: in-memory emit");
+
+        // Witness invocation script: M pushes of a 64-byte signature placeholder
+        // (C# `_witnessSize` invocation: `for (x < M) sb.EmitPush(new byte[64])`).
+        let mut invocation = ScriptBuilder::new();
+        let signature_placeholder = [0u8; 64];
+        for _ in 0..m {
+            invocation.emit_push(&signature_placeholder);
+        }
+
+        let witness =
+            Witness::new_with_scripts(invocation.to_array(), verification.to_array());
+
+        // C# GetExpectedBlockSizeWithoutTransactions field layout.
+        4               // Version (uint)
+            + 32        // PrevHash (UInt256)
+            + 32        // MerkleRoot (UInt256)
+            + 8         // Timestamp (ulong)
+            + 8         // Nonce (ulong)
+            + 4         // Index (uint)
+            + 1         // PrimaryIndex (byte)
+            + 20        // NextConsensus (UInt160)
+            + 1         // Witness array length prefix (1 witness)
+            + witness.size()
+            + SerializeHelper::get_var_size_usize(expected_transactions)
     }
 
     /// Collects all commit signatures for block finalization
@@ -776,6 +927,13 @@ impl ConsensusContext {
             proposed_timestamp: state.proposed_timestamp,
             proposed_tx_hashes: state.proposed_tx_hashes,
             available_tx_hashes: HashSet::new(),
+            // Per-tx metrics are ephemeral (fed by the node as bodies are
+            // cached); a reloaded backup re-fills them as it re-fetches the
+            // proposal transactions. Policy limits restart at the C# defaults
+            // and are re-set by the node when the round is configured.
+            available_tx_metrics: HashMap::new(),
+            max_block_size: DEFAULT_MAX_BLOCK_SIZE,
+            max_block_system_fee: DEFAULT_MAX_BLOCK_SYSTEM_FEE,
             nonce: state.nonce,
             prepare_request_received: state.prepare_request_received,
             transaction_request_sent: false,

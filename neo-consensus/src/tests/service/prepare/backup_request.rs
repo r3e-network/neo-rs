@@ -274,6 +274,155 @@ async fn missing_transaction_timeout_reason_is_tx_not_found() {
     assert_eq!(reason, Some(ChangeViewReason::TxNotFound));
 }
 
+/// Collects the reason of the first ChangeView the backup broadcast (if any).
+fn broadcast_change_view_reason(
+    rx: &mut mpsc::Receiver<ConsensusEvent>,
+) -> Option<ChangeViewReason> {
+    let mut reason = None;
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::BroadcastMessage(payload) = event {
+            if payload.message_type == ConsensusMessageType::ChangeView {
+                let cv = crate::messages::ChangeViewMessage::deserialize(
+                    &payload.data,
+                    payload.block_index,
+                    payload.view_number,
+                    payload.validator_index,
+                )
+                .expect("change view body");
+                reason = Some(cv.reason);
+            }
+        }
+    }
+    reason
+}
+
+/// C# `ConsensusService.CheckPrepareResponse` (Check.cs:37-43): before a backup
+/// sends its `PrepareResponse`, if the proposed block's expected system fee
+/// exceeds `DbftSettings.MaxBlockSystemFee` it must request a view change with
+/// `BlockRejectedByPolicy` and NOT respond. A neo-rs backup that only limited
+/// the primary assembly path would instead endorse an over-limit block a
+/// malicious/buggy primary packed, forking against a C# committee.
+#[tokio::test]
+async fn backup_rejects_over_system_fee_proposal_with_block_rejected_by_policy() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    // Backup: validator index 1 (primary for view 0 at block 0 is index 0).
+    let mut service = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
+    service.set_expected_block_time(1_000);
+    // Generous block-size limit; a tight system-fee limit so the fee check trips.
+    service.set_max_block_policy(2_097_152, 1_000);
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+
+    let tx_hash = UInt256::from([0x31; 32]);
+    let proposal = vec![tx_hash];
+    deliver_prepare_request(&mut service, network, &keys, proposal).await;
+    // Drain the RequestProposalTransactions event.
+    while rx.try_recv().is_ok() {}
+
+    // The node caches the transaction body and feeds its policy metrics: a
+    // system fee (1_500) above the 1_000 limit (C# `Transaction.SystemFee`).
+    service.record_transaction_metrics(tx_hash, 120, 1_500);
+
+    // The last (only) proposal transaction arrives → C# `AddTransaction` ->
+    // `CheckPrepareResponse`. The system-fee policy check must fire.
+    service.on_transaction(tx_hash).await.unwrap();
+
+    // The backup requested a view change with the block-policy reason and did
+    // NOT broadcast a PrepareResponse (the rejection path emits a ChangeView).
+    assert_eq!(
+        broadcast_change_view_reason(&mut rx),
+        Some(ChangeViewReason::BlockRejectedByPolicy),
+        "backup requests BlockRejectedByPolicy for an over-system-fee proposal"
+    );
+    assert_eq!(
+        service
+            .context()
+            .change_views
+            .get(&1)
+            .map(|(_, reason)| *reason),
+        Some(ChangeViewReason::BlockRejectedByPolicy),
+    );
+    assert!(
+        !service.context().prepare_responses.contains_key(&1),
+        "backup must NOT record/send a PrepareResponse for an over-system-fee block"
+    );
+}
+
+/// Same choke point, block-size branch (C# Check.cs:31-36, checked FIRST): an
+/// expected block size over `DbftSettings.MaxBlockSize` also yields a
+/// `BlockRejectedByPolicy` view change instead of a `PrepareResponse`.
+#[tokio::test]
+async fn backup_rejects_over_size_proposal_with_block_rejected_by_policy() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
+    service.set_expected_block_time(1_000);
+    // Tight block-size limit (below even the transaction-free base size) so the
+    // size check trips; generous system-fee limit.
+    service.set_max_block_policy(10, 150_000_000_000);
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+
+    let tx_hash = UInt256::from([0x31; 32]);
+    let proposal = vec![tx_hash];
+    deliver_prepare_request(&mut service, network, &keys, proposal).await;
+    while rx.try_recv().is_ok() {}
+
+    service.record_transaction_metrics(tx_hash, 200, 0);
+    service.on_transaction(tx_hash).await.unwrap();
+
+    assert_eq!(
+        broadcast_change_view_reason(&mut rx),
+        Some(ChangeViewReason::BlockRejectedByPolicy),
+        "backup requests BlockRejectedByPolicy for an over-size proposal"
+    );
+    assert!(
+        !service.context().prepare_responses.contains_key(&1),
+        "backup must NOT send a PrepareResponse for an over-size block"
+    );
+}
+
+/// A proposal within both policy limits still yields a normal `PrepareResponse`
+/// (the checks must not over-reject), and the backup extends its change-view
+/// timer by factor 2 (C# `CheckPrepareResponse`: `ExtendTimerByFactor(2)` right
+/// before sending the response).
+#[tokio::test]
+async fn backup_sends_prepare_response_for_in_policy_proposal_and_extends_timer() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
+    service.set_expected_block_time(1_000);
+    // C# defaults: 2 MiB block size, 1500 GAS system fee.
+    service.set_max_block_policy(2_097_152, 150_000_000_000);
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+
+    let tx_hash = UInt256::from([0x31; 32]);
+    let proposal = vec![tx_hash];
+    deliver_prepare_request(&mut service, network, &keys, proposal).await;
+    while rx.try_recv().is_ok() {}
+
+    // A modest transaction well inside both limits.
+    service.record_transaction_metrics(tx_hash, 250, 100_000);
+    service.on_transaction(tx_hash).await.unwrap();
+
+    assert_eq!(
+        broadcast_prepare_response_count(&mut rx),
+        1,
+        "an in-policy proposal still produces a PrepareResponse"
+    );
+    assert!(
+        service.context().change_views.is_empty(),
+        "no view change for an in-policy proposal"
+    );
+    // ExtendTimerByFactor(2): 2 * base_block_time(1000) / M(3) = 666 (>0).
+    assert!(
+        service.context().timer_extension > 0,
+        "sending the PrepareResponse extends the change-view timer (factor 2)"
+    );
+}
+
 #[tokio::test]
 async fn backup_prepare_request_with_transactions_requests_exact_hashes() {
     let network = 0x4E454F;

@@ -25,6 +25,7 @@ use neo_consensus::{ConsensusEvent, ConsensusService, ConsensusSigner, Validator
 use neo_crypto::{ECPoint, Secp256r1Crypto};
 use neo_mempool::MemoryPool;
 use neo_native_contracts::{LedgerContract, NeoToken, PolicyContract};
+use neo_io::Serializable;
 use neo_network::NetworkHandle;
 use neo_payloads::{ExtensiblePayload, Transaction, Witness};
 use neo_primitives::{UInt160, UInt256, hex_util};
@@ -328,6 +329,14 @@ impl ConsensusDriver {
             .get_milliseconds_per_block_snapshot(snapshot, &self.settings)?;
         self.service.set_expected_block_time(u64::from(ms_per_block));
 
+        // C# `DbftSettings.MaxBlockSize` / `MaxBlockSystemFee`: the block-policy
+        // limits a backup re-checks in `CheckPrepareResponse` before sending its
+        // `PrepareResponse`. Use the same source the primary applies in
+        // `EnsureMaxBlockLimitation` (`select_primary_proposal_transactions` /
+        // `proposed_block_policy_rejection`) so primary and backup agree.
+        self.service
+            .set_max_block_policy(self.settings.max_block_size, DBFT_MAX_BLOCK_SYSTEM_FEE);
+
         Ok(next_consensus)
     }
 
@@ -475,6 +484,15 @@ impl ConsensusDriver {
         // committed to.
         if self.service.context().is_proposed_transaction(&tx_hash) {
             if let Some(item) = self.mempool.get(&tx_hash) {
+                // Feed the two block-policy metrics (C# `Transaction.Size` /
+                // `Transaction.SystemFee`) so the backup can evaluate
+                // `CheckPrepareResponse` once this late-arriving transaction
+                // completes the proposal.
+                self.service.record_transaction_metrics(
+                    tx_hash,
+                    <Transaction as Serializable>::size(item.transaction.as_ref()),
+                    item.transaction.system_fee(),
+                );
                 self.proposal_txs.insert(tx_hash, item.transaction);
             }
         }
@@ -547,6 +565,20 @@ impl ConsensusDriver {
                         &validators,
                     )
                 };
+                // Feed the block-policy metrics (C# `Transaction.Size` /
+                // `Transaction.SystemFee`) for every proposal transaction whose
+                // body was just cached, so the backup's `CheckPrepareResponse`
+                // policy checks (inside `send_prepare_response`) see the same
+                // per-tx size/fee the primary used in `EnsureMaxBlockLimitation`.
+                for hash in &availability.available {
+                    if let Some(tx) = self.proposal_txs.get(hash) {
+                        self.service.record_transaction_metrics(
+                            *hash,
+                            <Transaction as Serializable>::size(tx.as_ref()),
+                            tx.system_fee(),
+                        );
+                    }
+                }
                 if let Err(err) = self
                     .service
                     .on_transactions_received(availability.available)
