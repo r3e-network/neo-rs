@@ -8,7 +8,9 @@ pub(in crate::service) struct InvocationScript;
 
 impl InvocationScript {
     pub(in crate::service) fn invocation_script_from_signature(signature: &[u8]) -> Vec<u8> {
-        ScriptBuilder::new().invocation_from_signature(signature).to_array()
+        ScriptBuilder::new()
+            .invocation_from_signature(signature)
+            .to_array()
     }
 
     /// Extracts signature from invocation script.

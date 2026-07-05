@@ -137,8 +137,14 @@ async fn recovery_message_change_view_triggers_view_change() {
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
 
     let build_change_view = |validator_index: u8, timestamp: u64, key: &[u8; 32]| {
-        let msg =
-            ChangeViewMessage::new(0, 0, validator_index, timestamp, ChangeViewReason::Timeout);
+        let msg = ChangeViewMessage::new(
+            0,
+            0,
+            validator_index,
+            timestamp,
+            ChangeViewReason::Timeout,
+            Vec::new(),
+        );
         let mut payload = ConsensusPayload::new(
             network,
             0,

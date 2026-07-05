@@ -258,9 +258,9 @@ impl ConsensusService {
             preparation_hash,
         );
 
-        let response_payload =
-            self.create_payload(ConsensusMessageType::PrepareResponse, response.serialize())
-                .await?;
+        let response_payload = self
+            .create_payload(ConsensusMessageType::PrepareResponse, response.serialize())
+            .await?;
         let my_witness = response_payload.witness.clone();
         let invocation_script = InvocationScript::invocation_script_from_signature(&my_witness);
         self.broadcast(response_payload)?;

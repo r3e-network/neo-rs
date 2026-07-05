@@ -210,7 +210,10 @@ async fn primary_broadcasts_prepare_request_with_transactions() {
     while rx.try_recv().is_ok() {}
 
     let tx_hashes = vec![UInt256::from([0x11; 32]), UInt256::from([0x22; 32])];
-    service.on_transactions_received(tx_hashes.clone()).await.unwrap();
+    service
+        .on_transactions_received(tx_hashes.clone())
+        .await
+        .unwrap();
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
@@ -271,7 +274,10 @@ async fn primary_truncates_prepare_request_to_protocol_transaction_limit() {
     while rx.try_recv().is_ok() {}
 
     let tx_hashes = vec![UInt256::from([0x11; 32]), UInt256::from([0x22; 32])];
-    service.on_transactions_received(tx_hashes.clone()).await.unwrap();
+    service
+        .on_transactions_received(tx_hashes.clone())
+        .await
+        .unwrap();
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {

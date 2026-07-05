@@ -81,7 +81,8 @@ impl ConsensusService {
     ) -> ConsensusResult<()> {
         let next_consensus =
             ConsensusBlockFields::compute_next_consensus_address(&self.context.validators);
-        self.resume_with_next_consensus(timestamp, prev_hash, next_consensus, version).await
+        self.resume_with_next_consensus(timestamp, prev_hash, next_consensus, version)
+            .await
     }
 
     /// Resumes consensus from a recovered context with the header `NextConsensus`

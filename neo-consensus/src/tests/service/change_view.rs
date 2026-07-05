@@ -360,7 +360,10 @@ async fn timeout_view_change_allows_new_prepare_request() {
     ));
 
     let tx_hashes = vec![UInt256::from([0x33; 32])];
-    service.on_transactions_received(tx_hashes.clone()).await.unwrap();
+    service
+        .on_transactions_received(tx_hashes.clone())
+        .await
+        .unwrap();
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
@@ -401,6 +404,7 @@ async fn view_change_allows_consensus_to_complete() {
             validator_index,
             2_000 + validator_index as u64,
             ChangeViewReason::Timeout,
+            Vec::new(),
         );
         let mut payload = ConsensusPayload::new(
             network,
@@ -435,7 +439,10 @@ async fn view_change_allows_consensus_to_complete() {
     assert!(requested);
 
     let tx_hashes = vec![UInt256::from([0x44; 32])];
-    service.on_transactions_received(tx_hashes.clone()).await.unwrap();
+    service
+        .on_transactions_received(tx_hashes.clone())
+        .await
+        .unwrap();
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
@@ -526,6 +533,7 @@ async fn change_view_threshold_triggers_view_change() {
             validator_index,
             1_000 + validator_index as u64,
             ChangeViewReason::Timeout,
+            Vec::new(),
         );
         let mut payload = ConsensusPayload::new(
             network,
@@ -634,7 +642,7 @@ async fn no_view_change_after_commit_sent() {
     let signature = sign_commit(network, &block_hash, &keys[0]);
     service.context.commits.insert(0, signature);
 
-    let msg = ChangeViewMessage::new(0, 0, 1, 2_000, ChangeViewReason::Timeout);
+    let msg = ChangeViewMessage::new(0, 0, 1, 2_000, ChangeViewReason::Timeout, Vec::new());
     let mut payload = ConsensusPayload::new(
         network,
         0,
@@ -668,6 +676,7 @@ async fn m_minus_one_change_views_not_enough() {
             validator_index,
             1_000 + validator_index as u64,
             ChangeViewReason::Timeout,
+            Vec::new(),
         );
         let mut payload = ConsensusPayload::new(
             network,

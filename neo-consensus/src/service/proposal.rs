@@ -34,7 +34,10 @@ impl ConsensusService {
     }
 
     /// Called when transactions are received from mempool
-    pub async fn on_transactions_received(&mut self, tx_hashes: Vec<UInt256>) -> ConsensusResult<()> {
+    pub async fn on_transactions_received(
+        &mut self,
+        tx_hashes: Vec<UInt256>,
+    ) -> ConsensusResult<()> {
         if !self.running {
             return Ok(());
         }

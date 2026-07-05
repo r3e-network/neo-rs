@@ -160,12 +160,16 @@ impl PersistCompletedHarness {
     ) -> ConsensusResult<()> {
         match &event {
             ConsensusEvent::RequestTransactions { .. } => {
-                self.services[sender_index].on_transactions_received(Vec::new()).await?;
+                self.services[sender_index]
+                    .on_transactions_received(Vec::new())
+                    .await?;
             }
             ConsensusEvent::RequestProposalTransactions {
                 transaction_hashes, ..
             } => {
-                self.services[sender_index].on_transactions_received(transaction_hashes.clone()).await?;
+                self.services[sender_index]
+                    .on_transactions_received(transaction_hashes.clone())
+                    .await?;
             }
             ConsensusEvent::BroadcastMessage(payload) => {
                 let maybe_prepare = if payload.message_type == ConsensusMessageType::PrepareRequest
@@ -186,7 +190,9 @@ impl PersistCompletedHarness {
                     }
                     service.process_message(payload.clone()).await?;
                     if let Some(ref prepare) = maybe_prepare {
-                        service.on_transactions_received(prepare.transaction_hashes.clone()).await?;
+                        service
+                            .on_transactions_received(prepare.transaction_hashes.clone())
+                            .await?;
                     }
                 }
             }

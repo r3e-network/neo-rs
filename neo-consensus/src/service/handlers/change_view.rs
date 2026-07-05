@@ -48,9 +48,11 @@ impl ConsensusService {
         let timestamp = change_view_msg.timestamp;
         let reason = change_view_msg.reason;
 
-        // NOTE: C# `DBFTPlugin` ChangeView carries only Timestamp+Reason and has
-        // no per-transaction "rejected hashes" / InvalidTransactions machinery, so
-        // there is nothing to record here (see messages/change_view.rs).
+        // C# `DBFTPlugin` ChangeView carries a `RejectedHashes` UInt256[] for the
+        // TxRejectedByPolicy/TxInvalid reasons (see messages/change_view.rs). The
+        // parsed hashes are available in `change_view_msg.rejected_hashes`.
+        // TODO(dBFT): feed those into context.record_invalid_transactions so the
+        // primary can skip over-F-rejected txs (context.invalid_tx_hashes_over_f).
 
         debug!(
             block_index = self.context.block_index,
@@ -62,7 +64,8 @@ impl ConsensusService {
 
         // If the ChangeView targets a view we already passed, treat it as a recovery request.
         if new_view <= self.context.view_number {
-            self.maybe_send_recovery_response(payload.validator_index).await?;
+            self.maybe_send_recovery_response(payload.validator_index)
+                .await?;
         }
 
         let commit_sent = self
@@ -142,12 +145,17 @@ impl ConsensusService {
             .add_change_view(self.my_index()?, new_view, reason, timestamp)?;
 
         // Broadcast ChangeView message
+        // TODO(dBFT): populate rejected hashes from context.invalid_transactions
+        // when reason is TxRejectedByPolicy/TxInvalid. An empty array is
+        // wire-valid and C#-parseable; the WIRE FORMAT is the P0, population is a
+        // follow-up.
         let msg = ChangeViewMessage::new(
             self.context.block_index,
             self.context.view_number,
             self.my_index()?,
             timestamp,
             reason,
+            Vec::new(),
         );
 
         let payload = self
@@ -259,12 +267,14 @@ impl ConsensusService {
             ChangeViewReason::ChangeAgreement,
             timestamp,
         )?;
+        // ChangeAgreement never carries RejectedHashes (only reasons 0x3/0x4 do).
         let msg = ChangeViewMessage::new(
             self.context.block_index,
             self.context.view_number,
             my_index,
             timestamp,
             ChangeViewReason::ChangeAgreement,
+            Vec::new(),
         );
         let payload = self
             .create_payload(ConsensusMessageType::ChangeView, msg.serialize())

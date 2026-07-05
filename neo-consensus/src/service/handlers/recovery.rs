@@ -156,12 +156,18 @@ impl ConsensusService {
                     .get(&cv.validator_index)
                     .map(|&(_, r)| r)
                     .unwrap_or(ChangeViewReason::Timeout);
+                // ChangeViewPayloadCompact (RecoveryMessage's compact form)
+                // carries no RejectedHashes — C# reconstructs the ChangeView body
+                // the same way, so an empty array here matches. The signature was
+                // already verified against the compact invocation script, not this
+                // reconstructed body.
                 let msg = ChangeViewMessage::new(
                     payload.block_index,
                     cv.original_view_number,
                     cv.validator_index,
                     cv.timestamp,
                     reason,
+                    Vec::new(),
                 );
                 let recovered = ConsensusPayload {
                     network: self.network,
@@ -336,7 +342,10 @@ impl ConsensusService {
         Ok(())
     }
 
-    pub(in crate::service) async fn reprocess_recovery_payload(&mut self, payload: ConsensusPayload) {
+    pub(in crate::service) async fn reprocess_recovery_payload(
+        &mut self,
+        payload: ConsensusPayload,
+    ) {
         let result = match payload.message_type {
             ConsensusMessageType::ChangeView => self.on_change_view(&payload).await,
             ConsensusMessageType::PrepareRequest => self.on_prepare_request(&payload).await,

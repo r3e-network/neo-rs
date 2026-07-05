@@ -247,7 +247,9 @@ impl RecoveryMessage {
 
         // PrepareRequestMessage presence flag + value OR PreparationHash var-bytes.
         let has_prepare_request = self.prepare_request_message.is_some();
-        writer.write_bool(has_prepare_request).map_err(writer_error)?;
+        writer
+            .write_bool(has_prepare_request)
+            .map_err(writer_error)?;
         if let Some(ref req) = self.prepare_request_message {
             // Embedded message includes its own common header.
             let bytes = super::consensus_message_bytes(
@@ -259,7 +261,9 @@ impl RecoveryMessage {
             );
             writer.write_bytes(&bytes).map_err(writer_error)?;
         } else if let Some(hash) = self.preparation_hash {
-            writer.write_var_bytes(&hash.to_bytes()).map_err(writer_error)?;
+            writer
+                .write_var_bytes(&hash.to_bytes())
+                .map_err(writer_error)?;
         } else {
             writer.write_var_int(0).map_err(writer_error)?;
         }
