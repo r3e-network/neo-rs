@@ -263,11 +263,10 @@ The detailed rules for this style live in
   contract loading, committee-witness checks, storage-context resolution,
   OracleResponse witness inheritance, witness group checks, current-index
   reads, and whitelisted-fee checks. The process-global lookup remains only as
-  a compatibility bridge for standalone callers, constructor-time jump-table
-  current-index selection, runtime helpers, and blockchain native persistence.
-  Headless/test construction can still omit the provider and let the builder
-  install the standard default. ADR-015 proposes a builder pattern for future
-  extensibility.
+  a compatibility bridge for standalone callers, runtime helpers, and
+  blockchain native persistence. Headless/test construction can still omit the
+  provider and let the builder install the standard default. ADR-015 proposes a
+  builder pattern for future extensibility.
 
 - **Error type policy.** `neo-error` owns the authoritative `CoreError` /
   `CoreResult`. ADR-011 formalizes the split: 17 crates with domain-specific

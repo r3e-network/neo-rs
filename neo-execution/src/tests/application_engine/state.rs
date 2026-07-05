@@ -1,5 +1,31 @@
 use super::*;
+use crate::native_contract_provider::NativeContractProvider;
 use neo_vm_rs::OpCode;
+use std::sync::Arc;
+
+struct CurrentIndexProvider(u32);
+
+impl NativeContractProvider for CurrentIndexProvider {
+    fn get_native_contract(&self, _hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
+        None
+    }
+
+    fn get_native_contract_by_name(&self, _name: &str) -> Option<Arc<dyn NativeContract>> {
+        None
+    }
+
+    fn all_native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
+        Vec::new()
+    }
+
+    fn all_native_contract_hashes(&self) -> Vec<UInt160> {
+        Vec::new()
+    }
+
+    fn current_block_index(&self, _snapshot: &DataCache) -> CoreResult<u32> {
+        Ok(self.0)
+    }
+}
 
 fn handler_id(table: &JumpTable, opcode: OpCode) -> usize {
     table
@@ -26,7 +52,7 @@ fn gorgon_selects_default_jump_table_like_csharp_v3100() {
     settings.hardforks.insert(Hardfork::HfGorgon, 0);
     let snapshot = DataCache::new(false);
 
-    let selected = ApplicationEngine::select_jump_table(&settings, None, &snapshot);
+    let selected = ApplicationEngine::select_jump_table(&settings, None, &snapshot, None);
     let default = JumpTable::default();
 
     for opcode in [OpCode::SHL, OpCode::SHR, OpCode::HASKEY, OpCode::PICKITEM] {
@@ -48,7 +74,7 @@ fn echidna_without_gorgon_selects_not_gorgon_table_like_csharp_v3100() {
     settings.hardforks.insert(Hardfork::HfEchidna, 0);
     let snapshot = DataCache::new(false);
 
-    let selected = ApplicationEngine::select_jump_table(&settings, None, &snapshot);
+    let selected = ApplicationEngine::select_jump_table(&settings, None, &snapshot, None);
     let default = JumpTable::default();
     let not_gorgon = JumpTable::not_gorgon();
 
@@ -89,6 +115,25 @@ fn echidna_without_gorgon_selects_not_gorgon_table_like_csharp_v3100() {
             "{opcode:?} must revert to the pre-543 handler under Echidna-without-Gorgon"
         );
     }
+}
+
+#[test]
+fn jump_table_selection_uses_supplied_native_provider_current_index() {
+    let mut settings = ProtocolSettings::default();
+    settings.hardforks.clear();
+    settings.hardforks.insert(Hardfork::HfEchidna, 1);
+    settings.hardforks.insert(Hardfork::HfGorgon, 10);
+    let snapshot = DataCache::new(false);
+    let provider = Arc::new(CurrentIndexProvider(10)) as Arc<dyn NativeContractProvider>;
+
+    let selected = ApplicationEngine::select_jump_table(&settings, None, &snapshot, Some(provider));
+    let default = JumpTable::default();
+
+    assert_eq!(
+        handler_id(&selected, OpCode::HASKEY),
+        handler_id(&default, OpCode::HASKEY),
+        "constructor-time jump table selection must use the injected provider current index"
+    );
 }
 
 fn expected_base_services() -> Vec<(String, i64, u8)> {

@@ -23,14 +23,13 @@ impl ApplicationEngine {
         protocol_settings: &ProtocolSettings,
         persisting_block: Option<&Block>,
         snapshot: &DataCache,
+        native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
     ) -> JumpTable {
         let index = match persisting_block {
             Some(block) => block.header.index(),
-            None => {
-                crate::native_contract_provider::NativeContractLookup::lookup_current_block_index(
-                    snapshot,
-                )
-            }
+            None => native_contract_provider
+                .and_then(|provider| provider.current_block_index(snapshot).ok())
+                .unwrap_or(0),
         };
         if protocol_settings.is_hardfork_enabled(Hardfork::HfGorgon, index) {
             JumpTable::default()
@@ -75,10 +74,13 @@ impl ApplicationEngine {
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
         let original_snapshot_cache = Arc::clone(&snapshot_cache);
+        let native_contract_provider =
+            crate::native_contract_provider::NativeContractLookup::native_contract_provider();
         let jump_table = Self::select_jump_table(
             &protocol_settings,
             persisting_block.as_deref(),
             snapshot_cache.as_ref(),
+            native_contract_provider.clone(),
         );
         let mut engine = ExecutionEngine::new(Some(jump_table));
         // Match C# Neo: no instruction-count cap on the execution path. Bounding
@@ -106,8 +108,7 @@ impl ApplicationEngine {
             notifications: Vec::new(),
             logs: Vec::new(),
             native_registry: NativeRegistry::new(),
-            native_contract_provider:
-                crate::native_contract_provider::NativeContractLookup::native_contract_provider(),
+            native_contract_provider,
             native_contract_cache: Arc::new(Mutex::new(NativeContractsCache::default())),
             contracts: HashMap::new(),
             storage_iterators: HashMap::new(),
@@ -160,10 +161,13 @@ impl ApplicationEngine {
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
         let original_snapshot_cache = Arc::clone(&snapshot_cache);
+        let native_contract_provider =
+            crate::native_contract_provider::NativeContractLookup::native_contract_provider();
         let jump_table = Self::select_jump_table(
             &protocol_settings,
             persisting_block.as_deref(),
             snapshot_cache.as_ref(),
+            native_contract_provider.clone(),
         );
         let mut engine = ExecutionEngine::new(Some(jump_table));
         // Match C# Neo: no instruction-count cap on the execution path. Bounding
@@ -191,8 +195,7 @@ impl ApplicationEngine {
             notifications: Vec::new(),
             logs: Vec::new(),
             native_registry: NativeRegistry::new(),
-            native_contract_provider:
-                crate::native_contract_provider::NativeContractLookup::native_contract_provider(),
+            native_contract_provider,
             native_contract_cache,
             contracts,
             storage_iterators: HashMap::new(),
