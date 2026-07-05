@@ -10,6 +10,45 @@ use num_bigint::BigInt;
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 use std::collections::HashSet;
 
+/// Reproduces C#'s `(BigInteger)double` conversion for a finite `f64`: the exact
+/// binary value of the IEEE-754 double, truncated toward zero.
+///
+/// This is the pre-`HF_Basilisk` `JsonSerializer.Deserialize` behavior. C# reads
+/// every JSON number as a `double` and, before Basilisk, casts it directly:
+/// `return (BigInteger)num.Value;` (JsonSerializer.cs:201). That cast takes the
+/// double's *stored* value — e.g. `1e30` becomes `1000000000000000019884624838656`
+/// (mantissa*2^exp of the nearest double), NOT the decimal `10^30`.
+///
+/// The double `sign * mantissa * 2^exp` is reconstructed from its raw bit pattern
+/// and, for negative exponents, right-shifted (which truncates toward zero once the
+/// sign is re-applied — matching .NET's toward-zero `(BigInteger)double`).
+fn bigint_from_double_truncated(d: f64) -> BigInt {
+    if d == 0.0 {
+        return BigInt::from(0);
+    }
+    let bits = d.to_bits();
+    let sign: i8 = if (bits >> 63) != 0 { -1 } else { 1 };
+    let raw_exponent = ((bits >> 52) & 0x7FF) as i64;
+    let raw_mantissa = bits & ((1u64 << 52) - 1);
+    let (mantissa, exponent) = if raw_exponent == 0 {
+        // Subnormal: no implicit leading bit; biased exponent is 1 - 1023 - 52.
+        (raw_mantissa, -1074i64)
+    } else {
+        // Normal: restore the implicit leading 1, unbias, and account for the 52-bit
+        // fractional mantissa (1023 exponent bias + 52).
+        (raw_mantissa | (1u64 << 52), raw_exponent - 1075)
+    };
+    let magnitude = BigInt::from(mantissa);
+    let magnitude = if exponent >= 0 {
+        magnitude << (exponent as usize)
+    } else {
+        // Right-shifting the non-negative magnitude drops the fractional bits, i.e.
+        // truncates toward zero once the sign is re-applied below.
+        magnitude >> ((-exponent) as usize)
+    };
+    if sign < 0 { -magnitude } else { magnitude }
+}
+
 /// JSON serialization utilities for VM stack items.
 pub struct JsonSerializer;
 
@@ -170,23 +209,39 @@ impl JsonSerializer {
     /// bounds the total produced item count (C# `JsonSerializer.Deserialize`
     /// decrements `engine.Limits.MaxStackSize`, default 2048, once per item and
     /// once per map entry, faulting when exhausted). Both faults match C#.
-    pub fn deserialize(json: &[u8], max_depth: usize, max_items: usize) -> CoreResult<StackItem> {
+    ///
+    /// `basilisk_active` selects the JSON-number → VM Integer conversion, gated on
+    /// `HF_Basilisk` exactly as C# `JsonSerializer.Deserialize` gates on
+    /// `engine.IsHardforkEnabled(Hardfork.HF_Basilisk)` (JsonSerializer.cs:197).
+    /// Pre-Basilisk (`false`) reproduces C#'s `(BigInteger)double` truncating cast of
+    /// the double's exact stored value; post-Basilisk (`true`) parses the double's
+    /// shortest round-trip decimal, so e.g. `1e30` yields
+    /// `1000000000000000019884624838656` before Basilisk and `10^30` after. The
+    /// caller MUST pass the flag for the block height being replayed, or replay
+    /// diverges from C# on numbers whose magnitude exceeds 2^53.
+    pub fn deserialize(
+        json: &[u8],
+        max_depth: usize,
+        max_items: usize,
+        basilisk_active: bool,
+    ) -> CoreResult<StackItem> {
         let value: JsonValue =
             serde_json::from_slice(json).map_err(|e| CoreError::other(e.to_string()))?;
-        Self::deserialize_from_json(&value, max_depth, max_items)
+        Self::deserialize_from_json(&value, max_depth, max_items, basilisk_active)
     }
 
     /// Deserializes a [`JsonValue`] into a stack item (see [`deserialize`] for the
-    /// limit semantics).
+    /// limit and `basilisk_active` semantics).
     ///
     /// [`deserialize`]: Self::deserialize
     pub fn deserialize_from_json(
         value: &JsonValue,
         max_depth: usize,
         max_items: usize,
+        basilisk_active: bool,
     ) -> CoreResult<StackItem> {
         let mut remaining = max_items;
-        Self::deserialize_internal(value, 0, max_depth, &mut remaining)
+        Self::deserialize_internal(value, 0, max_depth, &mut remaining, basilisk_active)
     }
 
     fn deserialize_internal(
@@ -194,6 +249,7 @@ impl JsonSerializer {
         depth: usize,
         max_depth: usize,
         remaining: &mut usize,
+        basilisk_active: bool,
     ) -> CoreResult<StackItem> {
         if depth >= max_depth {
             return Err(CoreError::other("Maximum JSON depth exceeded"));
@@ -211,13 +267,15 @@ impl JsonSerializer {
             JsonValue::Number(n) => {
                 // C# JsonSerializer.Deserialize treats EVERY JNumber as a `double`
                 // (Neo.Json `JNumber.Value` is a double parsed via GetDouble(), with
-                // no MAX_SAFE_INTEGER guard), then post-Basilisk converts it with
-                // BigInteger.Parse(value.ToString()). So an integer literal whose
-                // magnitude exceeds 2^53 loses precision BEFORE the BigInteger
-                // conversion. serde_json parses i64/u64 literals exactly, so to match
-                // C# we must route integers beyond 2^53 through an f64 too. Values
-                // within +/-2^53 are represented exactly by f64, so the exact path is
-                // kept for them (identical result, no format/parse overhead).
+                // no MAX_SAFE_INTEGER guard). The fractional check `num.Value % 1 != 0`
+                // (JsonSerializer.cs:196) runs BEFORE the hardfork gate, so a
+                // non-integral double FAULTS both pre- and post-Basilisk. Only when
+                // the double is integral do the two eras diverge on the conversion.
+                //
+                // serde_json parses i64/u64 literals exactly, so to match C# we route
+                // any number through the f64 the double would have held. Values within
+                // +/-2^53 are represented exactly by f64, so for those the exact path
+                // is kept (identical result in both eras, no float round-trip needed).
                 const MAX_EXACT: i128 = 1i128 << 53;
                 let exact = n
                     .as_i64()
@@ -229,24 +287,34 @@ impl JsonSerializer {
                             .map(BigInt::from)
                     });
                 if let Some(big) = exact {
-                    Ok(StackItem::from_int(big))
-                } else {
-                    // Large integer (or non-integer): reproduce C#'s lossy double.
-                    let f = n
-                        .as_f64()
-                        .ok_or_else(|| CoreError::other("Invalid JSON number"))?;
-                    if f.fract() != 0.0 {
-                        return Err(CoreError::other("Decimal value is not allowed"));
-                    }
-                    // `{f}` is the shortest round-trippable decimal in fixed (never
-                    // scientific) notation — matching the integer value C# obtains
-                    // from `BigInteger.Parse(double.ToString())`, not the double's
-                    // exact stored value (which `{:.0}` would give).
-                    let big = format!("{f}")
-                        .parse::<BigInt>()
-                        .map_err(|_| CoreError::other("Invalid JSON integer"))?;
-                    Ok(StackItem::from_int(big))
+                    // Within +/-2^53 both eras agree (the double is the exact integer,
+                    // and its shortest decimal parses back to the same value).
+                    return Ok(StackItem::from_int(big));
                 }
+                // Large integer (or non-integer): reproduce C#'s lossy double.
+                let f = n
+                    .as_f64()
+                    .ok_or_else(|| CoreError::other("Invalid JSON number"))?;
+                if f.fract() != 0.0 {
+                    // C# `num.Value % 1 != 0` faults regardless of hardfork.
+                    return Err(CoreError::other("Decimal value is not allowed"));
+                }
+                let big = if basilisk_active {
+                    // Post-Basilisk: `BigInteger.Parse(num.Value.ToString(...))`. `{f}`
+                    // is the shortest round-trippable decimal in fixed (never
+                    // scientific) notation — the integer value C# obtains from
+                    // `BigInteger.Parse(double.ToString())`, NOT the double's exact
+                    // stored value. So `1e30` -> 10^30.
+                    format!("{f}")
+                        .parse::<BigInt>()
+                        .map_err(|_| CoreError::other("Invalid JSON integer"))?
+                } else {
+                    // Pre-Basilisk: `(BigInteger)num.Value` — the double's EXACT stored
+                    // binary value, truncated toward zero. So `1e30` ->
+                    // 1000000000000000019884624838656.
+                    bigint_from_double_truncated(f)
+                };
+                Ok(StackItem::from_int(big))
             }
             JsonValue::String(s) => Ok(StackItem::from_byte_string(s.as_bytes())),
             JsonValue::Array(arr) => {
@@ -257,6 +325,7 @@ impl JsonSerializer {
                         depth + 1,
                         max_depth,
                         remaining,
+                        basilisk_active,
                     )?);
                 }
                 Ok(StackItem::from_array(items))
@@ -276,8 +345,13 @@ impl JsonSerializer {
                     }
                     *remaining -= 1;
                     let key_item = StackItem::from_byte_string(key.as_bytes());
-                    let value_item =
-                        Self::deserialize_internal(element, depth + 1, max_depth, remaining)?;
+                    let value_item = Self::deserialize_internal(
+                        element,
+                        depth + 1,
+                        max_depth,
+                        remaining,
+                        basilisk_active,
+                    )?;
                     entries.push((key_item, value_item));
                 }
                 Ok(StackItem::Map(MapItem::new_untracked(entries)))

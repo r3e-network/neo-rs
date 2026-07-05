@@ -19,6 +19,7 @@ mod encoding;
 mod metadata;
 mod serialization;
 
+use neo_config::Hardfork;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
 use neo_serialization::BinarySerializer;
@@ -81,7 +82,17 @@ impl StdLib {
     /// Pure dispatch for StdLib's stateless methods, split out so it can be unit
     /// tested without constructing an [`ApplicationEngine`]. Returns `None` for an
     /// unknown method so [`StdLib::invoke`] can emit a precise error.
-    fn dispatch(method: &str, args: &[Vec<u8>]) -> Option<CoreResult<Vec<u8>>> {
+    ///
+    /// `basilisk_active` is the only piece of block-height context StdLib needs: it
+    /// is `engine.IsHardforkEnabled(Hardfork.HF_Basilisk)` and gates only
+    /// `jsonDeserialize`'s number handling (every other method is height-independent).
+    /// [`StdLib::invoke`] supplies it from the engine; unit tests pass the era under
+    /// test directly.
+    fn dispatch(
+        method: &str,
+        args: &[Vec<u8>],
+        basilisk_active: bool,
+    ) -> Option<CoreResult<Vec<u8>>> {
         let result = match method {
             // Encoders: ByteArray -> String (returned as UTF-8 bytes).
             "base64Encode" => encoding::base64_encode_impl(args),
@@ -134,7 +145,7 @@ impl StdLib {
             "serialize" => serialization::serialize_impl(args),
             "deserialize" => serialization::deserialize_impl(args),
             "jsonSerialize" => serialization::json_serialize_impl(args),
-            "jsonDeserialize" => serialization::json_deserialize_impl(args),
+            "jsonDeserialize" => serialization::json_deserialize_impl(args, basilisk_active),
             _ => return None,
         };
         Some(result)
@@ -433,11 +444,14 @@ impl NativeContract for StdLib {
 
     fn invoke(
         &self,
-        _engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine,
         method: &str,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        Self::dispatch(method, args).unwrap_or_else(|| {
+        // The only block-height-dependent StdLib behavior is jsonDeserialize's
+        // number handling, gated on HF_Basilisk (C# JsonSerializer.Deserialize).
+        let basilisk_active = engine.is_hardfork_enabled(Hardfork::HfBasilisk);
+        Self::dispatch(method, args, basilisk_active).unwrap_or_else(|| {
             Err(CoreError::invalid_operation(format!(
                 "StdLib method '{method}' is not implemented"
             )))

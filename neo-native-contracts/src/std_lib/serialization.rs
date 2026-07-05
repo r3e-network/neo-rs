@@ -36,11 +36,21 @@ pub(super) fn json_serialize_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
 
 /// jsonDeserialize(json) -> the StackItem, re-encoded as BinarySerializer bytes.
 /// Depth 10 + MaxStackSize match C# (`JToken.Parse(json, 10)` + engine limits).
-pub(super) fn json_deserialize_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
+///
+/// `basilisk_active` is `engine.IsHardforkEnabled(Hardfork.HF_Basilisk)` for the
+/// current block, gating the JSON-number → Integer conversion exactly as C#
+/// `JsonSerializer.Deserialize` does: pre-Basilisk numbers use the `(BigInteger)double`
+/// truncating cast (`1e30` -> 1000000000000000019884624838656), post-Basilisk parse
+/// the decimal string (`1e30` -> 10^30). Replaying a block below the Basilisk height
+/// with the wrong flag diverges from C# on any number whose magnitude exceeds 2^53.
+pub(super) fn json_deserialize_impl(args: &[Vec<u8>], basilisk_active: bool) -> CoreResult<Vec<u8>> {
     StdLib::arg_bytes(args, "jsonDeserialize").and_then(|json| {
         let limits = ExecutionEngineLimits::default();
-        let item = JsonSerializer::deserialize(json, 10, limits.max_stack_size as usize)
-            .map_err(|e| CoreError::invalid_operation(format!("StdLib::jsonDeserialize: {e}")))?;
+        let item =
+            JsonSerializer::deserialize(json, 10, limits.max_stack_size as usize, basilisk_active)
+                .map_err(|e| {
+                    CoreError::invalid_operation(format!("StdLib::jsonDeserialize: {e}"))
+                })?;
         BinarySerializer::serialize(&item, &limits)
             .map_err(|e| CoreError::invalid_operation(format!("StdLib::jsonDeserialize: {e}")))
     })

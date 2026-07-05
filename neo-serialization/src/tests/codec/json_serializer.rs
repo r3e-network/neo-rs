@@ -6,8 +6,10 @@ fn ser(item: &StackItem) -> String {
 }
 
 fn de(json: &str) -> neo_error::CoreResult<StackItem> {
-    // C# defaults: JToken.Parse depth 10, engine MaxStackSize 2048.
-    JsonSerializer::deserialize(json.as_bytes(), 10, 2048)
+    // C# defaults: JToken.Parse depth 10, engine MaxStackSize 2048. Post-Basilisk
+    // number handling (the modern chain default); pre-Basilisk is covered by the
+    // dedicated `deserialize_number_gates_on_basilisk` test.
+    JsonSerializer::deserialize(json.as_bytes(), 10, 2048, true)
 }
 
 #[test]
@@ -78,18 +80,18 @@ fn deserialize_matches_csharp_vectors() {
 #[test]
 fn deserialize_enforces_depth_and_item_limits() {
     // Depth limit faults (C# JToken.Parse(json, maxDepth)).
-    assert!(JsonSerializer::deserialize(b"[[[1]]]", 2, 2048).is_err());
-    assert!(JsonSerializer::deserialize(b"[[[1]]]", 8, 2048).is_ok());
+    assert!(JsonSerializer::deserialize(b"[[[1]]]", 2, 2048, true).is_err());
+    assert!(JsonSerializer::deserialize(b"[[[1]]]", 8, 2048, true).is_ok());
 
     // Item-count limit faults like C# maxStackSize: a wide-but-shallow array
     // would HALT without this guard but must FAULT to match C#.
     // `[1,1,1,1,1]` = 1 (array) + 5 (elements) = 6 items.
-    assert!(JsonSerializer::deserialize(b"[1,1,1,1,1]", 10, 6).is_ok());
-    assert!(JsonSerializer::deserialize(b"[1,1,1,1,1]", 10, 5).is_err());
+    assert!(JsonSerializer::deserialize(b"[1,1,1,1,1]", 10, 6, true).is_ok());
+    assert!(JsonSerializer::deserialize(b"[1,1,1,1,1]", 10, 5, true).is_err());
 
     // A map charges 1 (map) + 2 per entry (entry + value): {"a":1} = 3.
-    assert!(JsonSerializer::deserialize(br#"{"a":1}"#, 10, 3).is_ok());
-    assert!(JsonSerializer::deserialize(br#"{"a":1}"#, 10, 2).is_err());
+    assert!(JsonSerializer::deserialize(br#"{"a":1}"#, 10, 3, true).is_ok());
+    assert!(JsonSerializer::deserialize(br#"{"a":1}"#, 10, 2, true).is_err());
 }
 
 #[test]
@@ -105,4 +107,46 @@ fn deserialize_large_integer_rounds_through_double_like_csharp() {
     // 2^53 + 1 is NOT representable; the nearest double is 2^53, so C# (and now
     // this node) yields 9007199254740992, NOT the exact 9007199254740993.
     assert_eq!(de_int("9007199254740993"), BigInt::from(9007199254740992i64));
+}
+
+#[test]
+fn deserialize_number_gates_on_basilisk() {
+    // P0 consensus-replay parity: C# JsonSerializer.Deserialize converts a JSON
+    // number to a VM Integer differently before vs after HF_Basilisk
+    // (JsonSerializer.cs:197-201). Replaying mainnet blocks below the Basilisk
+    // height (mainnet < 4_120_000 / testnet < 2_680_000) MUST use the pre-Basilisk
+    // path or state diverges from C#.
+    let de_int = |s: &str, basilisk: bool| {
+        JsonSerializer::deserialize(s.as_bytes(), 10, 2048, basilisk)
+            .unwrap()
+            .as_int()
+            .unwrap()
+    };
+
+    // "1e30": serde parses 1e30 to the same f64 C#'s GetDouble() produces.
+    // Pre-Basilisk `(BigInteger)num.Value` yields the double's EXACT stored value;
+    // post-Basilisk `BigInteger.Parse(num.Value.ToString())` yields decimal 10^30.
+    let pre_1e30: BigInt = "1000000000000000019884624838656".parse().unwrap();
+    let post_1e30: BigInt = "1000000000000000000000000000000".parse().unwrap(); // 10^30
+    // Cross-check pre_1e30 against the double's binary expansion: 1e30 rounds to
+    // the double 0x46293E5939A08CEA, whose value is mantissa*2^exp =
+    // 7105427357601002 * 2^47, and 7105427357601002 << 47 ==
+    // 1000000000000000019884624838656.
+    assert_eq!(pre_1e30, BigInt::from(7_105_427_357_601_002u64) << 47);
+    assert_ne!(pre_1e30, post_1e30);
+    assert_eq!(de_int("1e30", false), pre_1e30);
+    assert_eq!(de_int("1e30", true), post_1e30);
+
+    // A small integer is identical in both eras (exact within +/-2^53).
+    assert_eq!(de_int("42", false), BigInt::from(42));
+    assert_eq!(de_int("42", true), BigInt::from(42));
+
+    // Negative large magnitude also matches the truncated exact double pre-Basilisk.
+    assert_eq!(de_int("-1e30", false), -pre_1e30.clone());
+    assert_eq!(de_int("-1e30", true), -post_1e30);
+
+    // Fractional numbers fault in BOTH eras (C#'s `num.Value % 1 != 0` check runs
+    // before the hardfork gate).
+    assert!(JsonSerializer::deserialize(b"123.45", 10, 2048, false).is_err());
+    assert!(JsonSerializer::deserialize(b"123.45", 10, 2048, true).is_err());
 }

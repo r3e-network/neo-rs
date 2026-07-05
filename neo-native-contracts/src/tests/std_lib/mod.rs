@@ -19,7 +19,7 @@ use neo_primitives::ContractParameterType;
 use neo_vm_rs::ExecutionEngineLimits;
 
 fn call(method: &str, arg: &[u8]) -> CoreResult<Vec<u8>> {
-    StdLib::dispatch(method, &[arg.to_vec()]).expect("known method")
+    StdLib::dispatch(method, &[arg.to_vec()], true).expect("known method")
 }
 
 #[test]
@@ -62,13 +62,13 @@ fn base64_decode_respects_max_input_length() {
     let ok = "A".repeat(MAX_INPUT_LENGTH - 4) + "QQ==";
     assert_eq!(ok.len(), MAX_INPUT_LENGTH);
     assert!(
-        StdLib::dispatch("base64Decode", &[ok.into_bytes()])
+        StdLib::dispatch("base64Decode", &[ok.into_bytes()], true)
             .unwrap()
             .is_ok()
     );
     let too_long = "A".repeat(MAX_INPUT_LENGTH + 1);
     assert!(
-        StdLib::dispatch("base64Decode", &[too_long.into_bytes()])
+        StdLib::dispatch("base64Decode", &[too_long.into_bytes()], true)
             .unwrap()
             .is_err()
     );
@@ -77,11 +77,11 @@ fn base64_decode_respects_max_input_length() {
 #[test]
 fn base64_encode_respects_max_input_length() {
     let ok = vec![0u8; MAX_INPUT_LENGTH];
-    assert!(StdLib::dispatch("base64Encode", &[ok]).unwrap().is_ok());
+    assert!(StdLib::dispatch("base64Encode", &[ok], true).unwrap().is_ok());
 
     let too_long = vec![0u8; MAX_INPUT_LENGTH + 1];
     assert!(
-        StdLib::dispatch("base64Encode", &[too_long])
+        StdLib::dispatch("base64Encode", &[too_long], true)
             .unwrap()
             .is_err()
     );
@@ -195,19 +195,19 @@ fn base58_round_trips() {
 fn base58_methods_respect_max_input_length() {
     let too_long_bytes = vec![0u8; MAX_INPUT_LENGTH + 1];
     assert!(
-        StdLib::dispatch("base58Encode", std::slice::from_ref(&too_long_bytes))
+        StdLib::dispatch("base58Encode", std::slice::from_ref(&too_long_bytes), true)
             .unwrap()
             .is_err()
     );
     assert!(
-        StdLib::dispatch("base58CheckEncode", std::slice::from_ref(&too_long_bytes))
+        StdLib::dispatch("base58CheckEncode", std::slice::from_ref(&too_long_bytes), true)
             .unwrap()
             .is_err()
     );
 
     let too_long_base58 = "1".repeat(MAX_INPUT_LENGTH + 1);
     assert!(
-        StdLib::dispatch("base58Decode", &[too_long_base58.into_bytes()])
+        StdLib::dispatch("base58Decode", &[too_long_base58.into_bytes()], true)
             .unwrap()
             .is_err()
     );
@@ -215,7 +215,7 @@ fn base58_methods_respect_max_input_length() {
     let valid_over_limit_check = base58::encode_check(&too_long_bytes).into_bytes();
     assert!(valid_over_limit_check.len() > MAX_INPUT_LENGTH);
     assert!(
-        StdLib::dispatch("base58CheckDecode", &[valid_over_limit_check])
+        StdLib::dispatch("base58CheckDecode", &[valid_over_limit_check], true)
             .unwrap()
             .is_err()
     );
@@ -224,7 +224,7 @@ fn base58_methods_respect_max_input_length() {
 #[test]
 fn memory_compare_matches_csharp_sign() {
     let cmp = |a: &[u8], b: &[u8]| -> BigInt {
-        let out = StdLib::dispatch("memoryCompare", &[a.to_vec(), b.to_vec()])
+        let out = StdLib::dispatch("memoryCompare", &[a.to_vec(), b.to_vec()], true)
             .unwrap()
             .unwrap();
         BigInt::from_signed_bytes_le(&out)
@@ -241,12 +241,12 @@ fn memory_compare_matches_csharp_sign() {
 fn memory_compare_respects_max_input_length() {
     let too_long = vec![0u8; MAX_INPUT_LENGTH + 1];
     assert!(
-        StdLib::dispatch("memoryCompare", &[too_long.clone(), Vec::new()])
+        StdLib::dispatch("memoryCompare", &[too_long.clone(), Vec::new()], true)
             .unwrap()
             .is_err()
     );
     assert!(
-        StdLib::dispatch("memoryCompare", &[Vec::new(), too_long])
+        StdLib::dispatch("memoryCompare", &[Vec::new(), too_long], true)
             .unwrap()
             .is_err()
     );
@@ -254,14 +254,14 @@ fn memory_compare_respects_max_input_length() {
 
 #[test]
 fn unknown_method_is_none() {
-    assert!(StdLib::dispatch("notAStdLibMethod", &[vec![1]]).is_none());
+    assert!(StdLib::dispatch("notAStdLibMethod", &[vec![1]], true).is_none());
 }
 
 /// stringSplit via the dispatch seam: decodes the BinarySerialized Array
 /// return back into the substrings for comparison.
 fn split(args: &[&[u8]]) -> Vec<String> {
     let owned: Vec<Vec<u8>> = args.iter().map(|a| a.to_vec()).collect();
-    let bytes = StdLib::dispatch("stringSplit", &owned).unwrap().unwrap();
+    let bytes = StdLib::dispatch("stringSplit", &owned, true).unwrap().unwrap();
     let item =
         BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None).unwrap();
     item.as_array()
@@ -325,7 +325,7 @@ fn itoa(value: i64, base: Option<i64>) -> CoreResult<String> {
     if let Some(base) = base {
         args.push(BigInt::from(base).to_signed_bytes_le());
     }
-    StdLib::dispatch("itoa", &args)
+    StdLib::dispatch("itoa", &args, true)
         .unwrap()
         .map(|b| String::from_utf8(b).unwrap())
 }
@@ -337,7 +337,7 @@ fn atoi(value: &str, base: Option<i64>) -> CoreResult<BigInt> {
     if let Some(base) = base {
         args.push(BigInt::from(base).to_signed_bytes_le());
     }
-    StdLib::dispatch("atoi", &args)
+    StdLib::dispatch("atoi", &args, true)
         .unwrap()
         .map(|b| BigInt::from_signed_bytes_le(&b))
 }
@@ -427,13 +427,13 @@ fn atoi_respects_max_input_length() {
     // C# [MaxLength(1024)] on the input: 1024 bytes ok, 1025 faults.
     let ok = "1".repeat(MAX_INPUT_LENGTH);
     assert!(
-        StdLib::dispatch("atoi", &[ok.into_bytes()])
+        StdLib::dispatch("atoi", &[ok.into_bytes()], true)
             .unwrap()
             .is_ok()
     );
     let too_long = "1".repeat(MAX_INPUT_LENGTH + 1);
     assert!(
-        StdLib::dispatch("atoi", &[too_long.into_bytes()])
+        StdLib::dispatch("atoi", &[too_long.into_bytes()], true)
             .unwrap()
             .is_err()
     );
@@ -486,7 +486,7 @@ fn native_contract_surface() {
 
 /// strLen via the dispatch seam: UTF-8 string bytes in, signed-LE Integer out.
 fn str_len(arg: &[u8]) -> CoreResult<i64> {
-    StdLib::dispatch("strLen", &[arg.to_vec()])
+    StdLib::dispatch("strLen", &[arg.to_vec()], true)
         .unwrap()
         .map(|b| BigInt::from_signed_bytes_le(&b).to_i64().unwrap())
 }
@@ -551,7 +551,7 @@ fn str_len_is_ungated_and_safe() {
 fn memory_search_matches_csharp() {
     let search = |args: &[&[u8]]| -> i64 {
         let owned: Vec<Vec<u8>> = args.iter().map(|a| a.to_vec()).collect();
-        let out = StdLib::dispatch("memorySearch", &owned).unwrap().unwrap();
+        let out = StdLib::dispatch("memorySearch", &owned, true).unwrap().unwrap();
         BigInt::from_signed_bytes_le(&out).to_i64().unwrap()
     };
     let n = |v: i64| BigInt::from(v).to_signed_bytes_le();
@@ -571,7 +571,7 @@ fn memory_search_matches_csharp() {
 fn memory_search_start_out_of_range_faults() {
     // C# AsSpan(start) throws when start exceeds the length.
     assert!(
-        StdLib::dispatch("memorySearch", &[b"abc".to_vec(), b"a".to_vec(), vec![9]])
+        StdLib::dispatch("memorySearch", &[b"abc".to_vec(), b"a".to_vec(), vec![9]], true)
             .unwrap()
             .is_err()
     );
@@ -581,12 +581,12 @@ fn memory_search_start_out_of_range_faults() {
 fn memory_search_respects_only_mem_max_input_length() {
     let too_long = vec![0u8; MAX_INPUT_LENGTH + 1];
     assert!(
-        StdLib::dispatch("memorySearch", &[too_long.clone(), vec![0]])
+        StdLib::dispatch("memorySearch", &[too_long.clone(), vec![0]], true)
             .unwrap()
             .is_err()
     );
 
-    let out = StdLib::dispatch("memorySearch", &[b"abc".to_vec(), too_long])
+    let out = StdLib::dispatch("memorySearch", &[b"abc".to_vec(), too_long], true)
         .unwrap()
         .unwrap();
     assert_eq!(BigInt::from_signed_bytes_le(&out), BigInt::from(-1));
@@ -603,7 +603,7 @@ fn serialize_deserialize_round_trip_and_fault() {
     )
     .unwrap();
     assert_eq!(
-        StdLib::dispatch("serialize", std::slice::from_ref(&payload))
+        StdLib::dispatch("serialize", std::slice::from_ref(&payload), true)
             .unwrap()
             .unwrap(),
         payload
@@ -611,13 +611,13 @@ fn serialize_deserialize_round_trip_and_fault() {
     // deserialize accepts the valid payload (returns it for the Any-return
     // decode) and faults on malformed input.
     assert_eq!(
-        StdLib::dispatch("deserialize", std::slice::from_ref(&payload))
+        StdLib::dispatch("deserialize", std::slice::from_ref(&payload), true)
             .unwrap()
             .unwrap(),
         payload
     );
     assert!(
-        StdLib::dispatch("deserialize", &[vec![0xff, 0xff, 0xff]])
+        StdLib::dispatch("deserialize", &[vec![0xff, 0xff, 0xff]], true)
             .unwrap()
             .is_err()
     );
@@ -630,7 +630,7 @@ fn json_serialize_deserialize_match_csharp_vectors() {
     // The engine BinarySerializes the `Any` arg before dispatch sees it.
     let ser = |item: &StackItem| -> String {
         let payload = BinarySerializer::serialize(item, &limits).unwrap();
-        let json = StdLib::dispatch("jsonSerialize", &[payload])
+        let json = StdLib::dispatch("jsonSerialize", &[payload], true)
             .unwrap()
             .unwrap();
         String::from_utf8(json).unwrap()
@@ -648,7 +648,7 @@ fn json_serialize_deserialize_match_csharp_vectors() {
     // bytes (for the engine's Any-return decode); compare to the direct
     // encoding of the expected item.
     let de_eq = |json: &str, item: &StackItem| {
-        let out = StdLib::dispatch("jsonDeserialize", &[json.as_bytes().to_vec()])
+        let out = StdLib::dispatch("jsonDeserialize", &[json.as_bytes().to_vec()], true)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -662,22 +662,64 @@ fn json_serialize_deserialize_match_csharp_vectors() {
     de_eq("null", &StackItem::null());
     // Faults: invalid JSON ("***") and a fractional number ("no decimals").
     assert!(
-        StdLib::dispatch("jsonDeserialize", &[b"***".to_vec()])
+        StdLib::dispatch("jsonDeserialize", &[b"***".to_vec()], true)
             .unwrap()
             .is_err()
     );
     assert!(
-        StdLib::dispatch("jsonDeserialize", &[b"123.45".to_vec()])
+        StdLib::dispatch("jsonDeserialize", &[b"123.45".to_vec()], true)
             .unwrap()
             .is_err()
     );
 
     // Serialize -> deserialize round-trips a structured value.
-    let payload = StdLib::dispatch("jsonDeserialize", &[br#"{"k":[1,true,null]}"#.to_vec()])
+    let payload = StdLib::dispatch("jsonDeserialize", &[br#"{"k":[1,true,null]}"#.to_vec()], true)
         .unwrap()
         .unwrap();
     let item = BinarySerializer::deserialize(&payload, &limits, None).unwrap();
     assert_eq!(ser(&item), r#"{"k":[1,true,null]}"#);
+}
+
+#[test]
+fn json_deserialize_number_gates_on_basilisk() {
+    use neo_vm::StackItem;
+    // P0 replay parity: StdLib.jsonDeserialize routes through the engine's
+    // HF_Basilisk gate. Pre-Basilisk a JSON number uses C#'s `(BigInteger)double`
+    // truncating cast; post-Basilisk it parses the decimal string. Assert against
+    // the BinarySerialized encoding dispatch returns.
+    let limits = ExecutionEngineLimits::default();
+    let de_eq = |json: &str, basilisk: bool, item: &StackItem| {
+        let out = StdLib::dispatch("jsonDeserialize", &[json.as_bytes().to_vec()], basilisk)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            out,
+            BinarySerializer::serialize(item, &limits).unwrap(),
+            "json={json} basilisk={basilisk}"
+        );
+    };
+
+    let pre_1e30: BigInt = "1000000000000000019884624838656".parse().unwrap();
+    let post_1e30: BigInt = "1000000000000000000000000000000".parse().unwrap(); // 10^30
+    // Pre-Basilisk: exact IEEE-754 value of the double 1e30.
+    de_eq("1e30", false, &StackItem::from_int(pre_1e30));
+    // Post-Basilisk: decimal 10^30.
+    de_eq("1e30", true, &StackItem::from_int(post_1e30));
+    // Small integer identical in both eras.
+    de_eq("42", false, &StackItem::from_int(BigInt::from(42)));
+    de_eq("42", true, &StackItem::from_int(BigInt::from(42)));
+
+    // Fractional faults in both eras.
+    assert!(
+        StdLib::dispatch("jsonDeserialize", &[b"1.5".to_vec()], false)
+            .unwrap()
+            .is_err()
+    );
+    assert!(
+        StdLib::dispatch("jsonDeserialize", &[b"1.5".to_vec()], true)
+            .unwrap()
+            .is_err()
+    );
 }
 
 #[test]
@@ -702,7 +744,7 @@ fn int_params_truncate_to_i32_like_dotnet_cast() {
     // itoa: a `base` of 2^32 + 16 wraps to 16 (hex), not a fault.
     let base_hex = (BigInt::from(1u64 << 32) + BigInt::from(16)).to_signed_bytes_le();
     let value = BigInt::from(255).to_signed_bytes_le();
-    let out = StdLib::dispatch("itoa", &[value, base_hex])
+    let out = StdLib::dispatch("itoa", &[value, base_hex], true)
         .expect("known method")
         .expect("base 2^32+16 wraps to 16");
     assert_eq!(String::from_utf8(out).unwrap(), "0ff");
