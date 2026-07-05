@@ -100,9 +100,9 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, StackParseErro
             Ok(integer_stack_value(integer))
         }
         "ByteString" => parse_base64_stack_value(json, "ByteString", StackValue::ByteString),
-        "Buffer" => parse_base64_stack_value(json, "Buffer", |bytes| StackValue::Buffer(bytes)),
-        "Array" => parse_stack_sequence(json, "Array", |items| StackValue::Array(items)),
-        "Struct" => parse_stack_sequence(json, "Struct", |items| StackValue::Struct(items)),
+        "Buffer" => parse_base64_stack_value(json, "Buffer", StackValue::Buffer),
+        "Array" => parse_stack_sequence(json, "Array", StackValue::Array),
+        "Struct" => parse_stack_sequence(json, "Struct", StackValue::Struct),
         "Map" => {
             let values = json
                 .get("value")

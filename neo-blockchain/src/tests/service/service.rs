@@ -1,4 +1,5 @@
 use super::*;
+use crate::command::BlockchainCommand;
 use crate::handle::BlockchainHandle;
 use std::sync::Arc;
 
@@ -81,6 +82,31 @@ fn handle_debug_includes_capacity() {
     let (handle, _rx) = BlockchainHandle::with_capacity();
     let s = format!("{:?}", handle);
     assert!(s.contains("BlockchainHandle"));
+}
+
+#[tokio::test]
+async fn handle_submits_inventory_block_batches_without_exposing_command_enum() {
+    let (handle, mut cmd_rx, _event_tx) = BlockchainHandle::channel(4, 4);
+    let block = Arc::new(neo_payloads::Block::new());
+
+    handle
+        .submit_inventory_blocks(vec![Arc::clone(&block)], true, false)
+        .await
+        .expect("submit inventory blocks");
+
+    match cmd_rx.recv().await.expect("inventory command") {
+        BlockchainCommand::InventoryBlocks {
+            blocks,
+            relay,
+            pre_verified,
+        } => {
+            assert_eq!(blocks.len(), 1);
+            assert!(Arc::ptr_eq(&blocks[0], &block));
+            assert!(relay);
+            assert!(!pre_verified);
+        }
+        other => panic!("expected InventoryBlocks command, got {other:?}"),
+    }
 }
 
 #[test]

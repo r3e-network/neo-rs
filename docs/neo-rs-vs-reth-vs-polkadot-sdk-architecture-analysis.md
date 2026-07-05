@@ -86,9 +86,14 @@ These are reusable primitives; the driver and queue are constructed only under
 `tests/` and are not yet on the production sync path. The concrete multi-stage
 headers/bodies/execute/index/prune loop remains the next large integration step.
 
-Live path: P2P Block -> `InboundInventory::Block` -> neo-blockchain
-`handle_block_inventory` / `persist_block_sequence`, bypassing this queue/driver
-layer (the driver + queue are constructed only under `tests/`).
+Live path: P2P Block -> `InboundInventory::Block` -> `neo-node` buffering ->
+`BlockchainHandle::submit_inventory_blocks` -> neo-blockchain
+`handle_block_inventory_batch` / `persist_block_sequence`, bypassing the
+generic queue/driver layer for now. That bypass is intentional until the queue
+has an inventory-aware adapter: the live inventory path owns relay policy,
+future-block parking, unverified draining, and mempool maintenance, while
+`SyncPipelineDriver` is still a reusable primitive constructed only under
+`tests/`.
 
 ```rust
 // Sequential: verify → persist → commit per block

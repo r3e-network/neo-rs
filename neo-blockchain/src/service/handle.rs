@@ -7,7 +7,8 @@
 //!
 //! The handle has *two* styles of API:
 //!
-//! 1. **Fire-and-forget commands** ([`BlockchainHandle::tell`]): send a
+//! 1. **Fire-and-forget commands** ([`BlockchainHandle::tell`],
+//!    [`BlockchainHandle::submit_inventory_blocks`]): send a
 //!    [`crate::BlockchainCommand`] down the `mpsc::Sender` without
 //!    waiting for a reply.
 //! 2. **Request/response** ([`BlockchainHandle::import_block`],
@@ -118,6 +119,31 @@ impl BlockchainHandle {
         command: BlockchainCommand,
     ) -> Result<(), mpsc::error::TrySendError<BlockchainCommand>> {
         self.cmd_tx.try_send(command)
+    }
+
+    /// Submit a peer-relayed inventory block burst to the live sync path.
+    ///
+    /// This keeps callers on a typed API while preserving the blockchain
+    /// service's inventory-specific semantics: relay policy, parked future
+    /// blocks, deferred batch store commit, unverified-drain handling, and
+    /// mempool maintenance all remain inside the service loop.
+    pub async fn submit_inventory_blocks(
+        &self,
+        blocks: Vec<Arc<Block>>,
+        relay: bool,
+        pre_verified: bool,
+    ) -> Result<(), ServiceError> {
+        if blocks.is_empty() {
+            return Ok(());
+        }
+        self.cmd_tx
+            .send(BlockchainCommand::InventoryBlocks {
+                blocks,
+                relay,
+                pre_verified,
+            })
+            .await
+            .map_err(|_| ServiceError::unavailable("blockchain command channel closed"))
     }
 
     /// Import an externally supplied block. Resolves to `Ok(true)` when

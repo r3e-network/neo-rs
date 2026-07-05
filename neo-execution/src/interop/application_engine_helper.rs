@@ -321,7 +321,7 @@ fn notification_state_to_stack_value(state: &[StackItem]) -> CoreResult<StackVal
         .cloned()
         .map(StackValue::try_from)
         .collect::<Result<Vec<_>, _>>()
-        .map(|items| StackValue::Array(items))
+        .map(StackValue::Array)
         .map_err(|error| CoreError::other(error.to_string()))
 }
 

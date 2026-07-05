@@ -50,10 +50,15 @@ Two startup details matter for correctness:
 
 ## 2. Block ingestion
 
-A block arriving from a peer is decoded by its per-peer task, forwarded to the
-blockchain service, structurally and witness-verified, then run through the C#
-`Blockchain.Persist` pipeline and committed durably. Out-of-order blocks are
-parked and drained when their parent lands.
+A block arriving from a peer is decoded by its per-peer task, buffered by
+`neo-node`, and submitted through
+`neo_blockchain::BlockchainHandle::submit_inventory_blocks`. The blockchain
+service then structurally and witness-verifies it, runs the C#
+`Blockchain.Persist` pipeline, and commits it durably. Out-of-order blocks are
+parked and drained when their parent lands. The typed handle method deliberately
+preserves inventory-specific behavior (relay policy, parking, draining, and
+live mempool maintenance) instead of routing peer blocks through the generic
+bulk-import command.
 
 Downloaded block batches may first pass through `neo_runtime::BlockImportQueue`:
 the queue runs `BlockImport::check` with bounded concurrency and then calls

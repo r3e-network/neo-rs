@@ -227,11 +227,7 @@ async fn flush_inventory_block_batch(
     }
     let blocks = std::mem::take(pending_blocks);
     let _ = blockchain
-        .tell(neo_blockchain::BlockchainCommand::InventoryBlocks {
-            blocks,
-            relay: true,
-            pre_verified: false,
-        })
+        .submit_inventory_blocks(blocks, true, false)
         .await;
 }
 
