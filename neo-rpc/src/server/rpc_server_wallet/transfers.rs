@@ -443,16 +443,16 @@ impl RpcServerWallet {
         let signer_accounts: Vec<UInt160> =
             tx.signers().iter().map(|signer| signer.account).collect();
         for signer_account in signer_accounts {
-            if let Some(account) = wallet.get_account(&signer_account) {
+            if let Some(account) = wallet.account(&signer_account) {
                 let mut contract_opt: Option<Contract> = account
                     .contract()
                     .cloned()
                     .map(|c| Contract::create(c.parameter_list, c.script));
-                let key_opt = account.get_key();
+                let key_opt = account.key();
                 if contract_opt.is_none() {
                     if let Some(ref key) = key_opt {
                         let pub_point = key
-                            .get_public_key_point()
+                            .public_key_point()
                             .ok()
                             .and_then(|p| ECPoint::from_bytes(&p.to_bytes()).ok());
                         if let Some(point) = pub_point {
@@ -548,7 +548,7 @@ impl RpcServerWallet {
                     Some("Neo.Network.P2P.Payloads.Transaction".to_string()),
                 );
                 for signer in tx.signers() {
-                    if let Some(account) = wallet.get_account(&signer.account) {
+                    if let Some(account) = wallet.account(&signer.account) {
                         if let Some(contract) = account.contract() {
                             context.add_contract(Contract::create(
                                 contract.parameter_list.clone(),

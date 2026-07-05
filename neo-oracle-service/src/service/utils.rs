@@ -49,14 +49,14 @@ pub(super) fn ledger_height(snapshot: &DataCache) -> u32 {
 }
 
 pub(super) fn wallet_has_oracle_account(wallet: &dyn Wallet, oracles: &[ECPoint]) -> bool {
-    wallet.get_accounts().iter().any(|account| {
+    wallet.accounts().iter().any(|account| {
         if !account.has_key() || account.is_locked() {
             return false;
         }
-        let Some(key) = account.get_key() else {
+        let Some(key) = account.key() else {
             return false;
         };
-        let Ok(pubkey) = key.get_public_key_point() else {
+        let Ok(pubkey) = key.public_key_point() else {
             return false;
         };
         oracles.iter().any(|oracle| oracle == &pubkey)
@@ -66,13 +66,13 @@ pub(super) fn wallet_has_oracle_account(wallet: &dyn Wallet, oracles: &[ECPoint]
 pub(super) fn select_oracle_key(wallet: &dyn Wallet, oracles: &[ECPoint]) -> Option<KeyPair> {
     for oracle in oracles {
         let script_hash = Contract::create_signature_contract(oracle.clone()).script_hash();
-        let Some(account) = wallet.get_account(&script_hash) else {
+        let Some(account) = wallet.account(&script_hash) else {
             continue;
         };
         if !account.has_key() || account.is_locked() {
             continue;
         }
-        let Some(key) = account.get_key() else {
+        let Some(key) = account.key() else {
             continue;
         };
         return Some(key);

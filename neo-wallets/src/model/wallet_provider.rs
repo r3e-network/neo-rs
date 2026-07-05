@@ -15,5 +15,5 @@ pub trait WalletProvider: Send + Sync + Any {
 
     /// Get the currently opened Wallet instance.
     /// Matches C# GetWallet method
-    fn get_wallet(&self) -> Option<Arc<dyn Wallet>>;
+    fn wallet(&self) -> Option<Arc<dyn Wallet>>;
 }

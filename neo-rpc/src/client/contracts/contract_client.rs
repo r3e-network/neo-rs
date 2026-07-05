@@ -53,7 +53,7 @@ impl ContractClient {
     ) -> Result<Transaction, RpcClientError> {
         let script = Self::build_deploy_contract_script(nef_file, manifest, CallFlags::ALL)?;
 
-        let sender = key.get_script_hash();
+        let sender = key.script_hash();
         let signers = vec![Signer::new(sender, WitnessScope::CALLED_BY_ENTRY)];
 
         let mut manager = crate::TransactionManagerFactory::new(self.rpc_client.clone())

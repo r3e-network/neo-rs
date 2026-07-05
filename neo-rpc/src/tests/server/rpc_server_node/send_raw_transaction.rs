@@ -68,7 +68,7 @@ async fn send_raw_transaction_accepts_valid_transaction() {
     let handler = find_handler(&handlers, "sendrawtransaction");
 
     let keypair = KeyPair::from_private_key(&[0x44u8; 32]).expect("keypair");
-    let account = keypair.get_script_hash();
+    let account = keypair.script_hash();
     let mut store = system.store_cache();
     mint_gas(
         &mut store,
@@ -115,7 +115,7 @@ async fn send_raw_transaction_reports_invalid_signature() {
     let handler = find_handler(&handlers, "sendrawtransaction");
 
     let keypair = KeyPair::from_private_key(&[0x77u8; 32]).expect("keypair");
-    let account = keypair.get_script_hash();
+    let account = keypair.script_hash();
     let mut store = system.store_cache();
     mint_gas(
         &mut store,
@@ -157,7 +157,7 @@ async fn send_raw_transaction_reports_invalid_size() {
     tx.set_system_fee(0);
     tx.set_valid_until_block(1);
     tx.set_signers(vec![Signer::new(
-        keypair.get_script_hash(),
+        keypair.script_hash(),
         WitnessScope::GLOBAL,
     )]);
     tx.set_attributes(vec![TransactionAttribute::OracleResponse(
@@ -210,7 +210,7 @@ async fn send_raw_transaction_reports_invalid_attribute() {
     let handler = find_handler(&handlers, "sendrawtransaction");
 
     let keypair = KeyPair::from_private_key(&[0x22u8; 32]).expect("keypair");
-    let account = keypair.get_script_hash();
+    let account = keypair.script_hash();
     let mut store = system.store_cache();
     mint_gas(
         &mut store,
@@ -275,7 +275,7 @@ async fn send_raw_transaction_reports_policy_failed() {
     let handler = find_handler(&handlers, "sendrawtransaction");
 
     let keypair = KeyPair::from_private_key(&[0x44u8; 32]).expect("keypair");
-    let account = keypair.get_script_hash();
+    let account = keypair.script_hash();
     let policy = PolicyContract::new();
     let mut store = system.store_cache();
     let key = StorageKey::create_with_uint160(policy.id(), 15, &account);
@@ -309,7 +309,7 @@ async fn send_raw_transaction_reports_already_in_pool() {
     let handler = find_handler(&handlers, "sendrawtransaction");
 
     let keypair = KeyPair::from_private_key(&[0x55u8; 32]).expect("keypair");
-    let account = keypair.get_script_hash();
+    let account = keypair.script_hash();
     let mut store = system.store_cache();
     mint_gas(
         &mut store,

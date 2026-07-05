@@ -92,7 +92,7 @@ async fn cancel_transaction_returns_transaction_json() {
     mint_gas(
         &mut store,
         &server.system().settings(),
-        keypair.get_script_hash(),
+        keypair.script_hash(),
         BigInt::from(50_0000_0000i64),
     );
     store.commit();
@@ -262,7 +262,7 @@ async fn cancel_transaction_rejects_wallet_fee_limit() {
     mint_gas(
         &mut store,
         &server.system().settings(),
-        keypair.get_script_hash(),
+        keypair.script_hash(),
         BigInt::from(50_0000_0000i64),
     );
     store.commit();
@@ -303,7 +303,7 @@ async fn cancel_transaction_applies_extra_fee() {
     mint_gas(
         &mut store,
         &server.system().settings(),
-        keypair.get_script_hash(),
+        keypair.script_hash(),
         BigInt::from(50_0000_0000i64),
     );
     store.commit();
@@ -316,7 +316,7 @@ async fn cancel_transaction_applies_extra_fee() {
 
     let txid = UInt256::from([0x55u8; 32]);
     let conflict = TransactionAttribute::Conflicts(Conflicts::new(txid));
-    let signers = vec![Signer::new(keypair.get_script_hash(), WitnessScope::NONE)];
+    let signers = vec![Signer::new(keypair.script_hash(), WitnessScope::NONE)];
     let snapshot = server.system().store_cache();
     let snapshot_arc = Arc::new(snapshot.data_cache().clone());
     let base_tx = crate::server::wallet_compat::make_transaction(
@@ -369,7 +369,7 @@ async fn cancel_transaction_bumps_fee_for_mempool_conflict() {
     mint_gas(
         &mut store,
         &server.system().settings(),
-        keypair.get_script_hash(),
+        keypair.script_hash(),
         BigInt::from(50_0000_0000i64),
     );
     store.commit();

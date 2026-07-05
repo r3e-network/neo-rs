@@ -263,7 +263,7 @@ async fn create_deploy_contract_tx_builds_signed_transaction() {
     let settings = ProtocolSettings::default_settings();
     let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
         .expect("key pair");
-    let sender = key.get_script_hash();
+    let sender = key.script_hash();
     let manifest = ContractManifest::new("TestContract".to_string());
     let nef = vec![1u8];
 

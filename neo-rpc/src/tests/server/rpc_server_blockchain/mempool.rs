@@ -112,9 +112,9 @@ async fn get_raw_mem_pool_mixed_verified_and_unverified() {
     let keypair_b = KeyPair::from_private_key(&[0x22u8; 32]).expect("keypair b");
     let keypair_c = KeyPair::from_private_key(&[0x33u8; 32]).expect("keypair c");
 
-    let account_a = keypair_a.get_script_hash();
-    let account_b = keypair_b.get_script_hash();
-    let account_c = keypair_c.get_script_hash();
+    let account_a = keypair_a.script_hash();
+    let account_b = keypair_b.script_hash();
+    let account_c = keypair_c.script_hash();
 
     let mut store = system.store_cache();
     let funded = BigInt::from(50_0000_0000i64);

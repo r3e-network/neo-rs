@@ -131,7 +131,7 @@ impl WalletApi {
         key: &KeyPair,
         add_assert: bool,
     ) -> Result<Transaction, RpcClientError> {
-        let sender_script = Contract::create_signature_redeem_script(key.get_public_key_point()?);
+        let sender_script = Contract::create_signature_redeem_script(key.public_key_point()?);
         let sender = UInt160::from_script(&sender_script);
 
         self.claim_gas_from_account_with_assert(&sender, key, add_assert)

@@ -41,7 +41,7 @@ pub trait WalletAccount: Send + Sync {
     fn has_key(&self) -> bool;
 
     /// Returns the decrypted key pair if present.
-    fn get_key(&self) -> Option<KeyPair>;
+    fn key(&self) -> Option<KeyPair>;
 
     /// Returns the contract (if any) bound to this account.
     fn contract(&self) -> Option<&Contract>;
@@ -105,7 +105,7 @@ impl StandardWalletAccount {
         let script_hash = contract
             .as_ref()
             .map(|contract| contract.script_hash())
-            .unwrap_or_else(|| key_pair.get_script_hash());
+            .unwrap_or_else(|| key_pair.script_hash());
 
         Self {
             script_hash,
@@ -210,7 +210,7 @@ impl WalletAccount for StandardWalletAccount {
         self.key_pair.is_some() || self.nep2_key.is_some()
     }
 
-    fn get_key(&self) -> Option<KeyPair> {
+    fn key(&self) -> Option<KeyPair> {
         self.key_pair.clone()
     }
 
@@ -301,7 +301,7 @@ impl WalletAccount for StandardWalletAccount {
         let verification_script = if let Some(contract) = &self.contract {
             contract.script.clone()
         } else {
-            key.get_verification_script()
+            key.verification_script()
         };
 
         // Use the shared helper, which validates the signature is exactly 64

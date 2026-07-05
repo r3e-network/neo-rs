@@ -158,7 +158,7 @@ impl KeyPair {
     }
 
     /// Gets the public key as an ECPoint.
-    pub fn get_public_key_point(&self) -> CoreResult<neo_crypto::ECPoint> {
+    pub fn public_key_point(&self) -> CoreResult<neo_crypto::ECPoint> {
         neo_crypto::ECPoint::decode_compressed_with_curve(
             neo_crypto::ECCurve::secp256r1(),
             &self.compressed_public_key,
@@ -170,12 +170,12 @@ impl KeyPair {
 
     /// Gets the script hash for this key pair.
     /// This matches the C# KeyPair.PublicKeyHash property.
-    pub fn get_script_hash(&self) -> UInt160 {
-        UInt160::from_script(&self.get_verification_script())
+    pub fn script_hash(&self) -> UInt160 {
+        UInt160::from_script(&self.verification_script())
     }
 
     /// Gets the verification script for this key pair.
-    pub fn get_verification_script(&self) -> Vec<u8> {
+    pub fn verification_script(&self) -> Vec<u8> {
         RedeemScript::signature_redeem_script(&self.compressed_public_key)
     }
 

@@ -111,7 +111,7 @@ async fn wallet_api_transfer_decimal_from_key_converts_amount() {
     let settings = ProtocolSettings::default_settings();
     let wif = "KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p";
     let key = KeyPair::from_wif(wif).expect("key pair");
-    let sender = key.get_script_hash();
+    let sender = key.script_hash();
     let to_hash = UInt160::from_bytes(&[0x88u8; 20]).expect("to hash");
     let to_address = WalletHelper::to_address(&to_hash, settings.address_version);
     let expected_hash =
@@ -180,7 +180,7 @@ async fn wallet_api_transfer_decimal_from_key_converts_amount() {
 async fn wallet_api_transfer_multi_sig_requires_enough_keys() {
     let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
         .expect("key pair");
-    let public_key = key.get_public_key_point().expect("public key");
+    let public_key = key.public_key_point().expect("public key");
     let to = UInt160::from_bytes(&[0x44u8; 20]).expect("to hash");
 
     let url = Url::parse("http://localhost").expect("url");
@@ -212,7 +212,7 @@ async fn wallet_api_transfer_multi_sig_sends_transaction() {
     let settings = ProtocolSettings::default_settings();
     let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
         .expect("key pair");
-    let public_key = key.get_public_key_point().expect("public key");
+    let public_key = key.public_key_point().expect("public key");
     let to = UInt160::from_bytes(&[0x66u8; 20]).expect("to hash");
     let expected_hash =
         UInt256::parse("0x0000000000000000000000000000000000000000000000000000000000000022")
@@ -258,7 +258,7 @@ async fn wallet_api_transfer_multi_sig_with_empty_string_data() {
     let settings = ProtocolSettings::default_settings();
     let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
         .expect("key pair");
-    let public_key = key.get_public_key_point().expect("public key");
+    let public_key = key.public_key_point().expect("public key");
     let to = UInt160::from_bytes(&[0x77u8; 20]).expect("to hash");
     let expected_hash =
         UInt256::parse("0x0000000000000000000000000000000000000000000000000000000000000033")

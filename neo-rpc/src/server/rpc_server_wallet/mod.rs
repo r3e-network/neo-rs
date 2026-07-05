@@ -93,7 +93,7 @@ impl RpcServerWallet {
         let address = expect_string_param(params, 0, "dumpprivkey")?;
         let script_hash = Self::parse_script_hash(server, &address)?;
         let wallet = Self::require_wallet(server)?;
-        let account = wallet.get_account(&script_hash).ok_or_else(|| {
+        let account = wallet.account(&script_hash).ok_or_else(|| {
             RpcException::from(RpcError::unknown_account().with_data(script_hash.to_string()))
         })?;
         if !account.has_key() {
@@ -148,7 +148,7 @@ impl RpcServerWallet {
         let neo_hash = NeoToken::script_hash();
         let snapshot = Arc::new(store.data_cache().clone());
         let mut total = BigInt::zero();
-        for account in wallet.get_accounts() {
+        for account in wallet.accounts() {
             // C# GetWalletUnclaimedGas sums NativeContract.NEO.UnclaimedGas
             // per account; the engine probe invokes the same native
             // `unclaimedGas(account, end)` method.
@@ -181,7 +181,7 @@ impl RpcServerWallet {
     fn list_address(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
         let wallet = Self::require_wallet(server)?;
         let mut entries = Vec::new();
-        for account in wallet.get_accounts() {
+        for account in wallet.accounts() {
             entries.push(Self::account_to_json(account.as_ref()));
         }
         Ok(Value::Array(entries))
@@ -239,7 +239,7 @@ impl RpcServerWallet {
         let account_script = |hash: &UInt160| -> Option<Vec<u8>> {
             wallet.as_ref().and_then(|wallet| {
                 wallet
-                    .get_account(hash)
+                    .account(hash)
                     .and_then(|account| account.contract().map(|contract| contract.script.clone()))
             })
         };

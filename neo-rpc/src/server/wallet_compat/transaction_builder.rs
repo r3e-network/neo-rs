@@ -113,7 +113,7 @@ where
 
         let account_script = |hash: &UInt160| -> Option<Vec<u8>> {
             wallet
-                .get_account(hash)
+                .account(hash)
                 .and_then(|account| account.contract().map(|contract| contract.script.clone()))
         };
         let network_fee = calculate_network_fee(&tx, snapshot, settings, &account_script, max_gas)?;

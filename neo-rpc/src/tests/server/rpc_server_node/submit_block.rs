@@ -43,7 +43,7 @@ async fn submit_block_accepts_valid_block() {
     let handler = find_handler(&handlers, "submitblock");
 
     let mut store = system.store_cache();
-    let account = validator.get_script_hash();
+    let account = validator.script_hash();
     mint_gas(
         &mut store,
         &settings,
@@ -84,7 +84,7 @@ async fn submit_block_reports_already_exists() {
     let handler = find_handler(&handlers, "submitblock");
 
     let mut store = system.store_cache();
-    let account = validator.get_script_hash();
+    let account = validator.script_hash();
     mint_gas(
         &mut store,
         &settings,
@@ -123,7 +123,7 @@ async fn submit_block_reports_invalid_block() {
     let handler = find_handler(&handlers, "submitblock");
 
     let mut store = system.store_cache();
-    let account = validator.get_script_hash();
+    let account = validator.script_hash();
     mint_gas(
         &mut store,
         &settings,
@@ -162,7 +162,7 @@ async fn submit_block_reports_invalid_prev_hash() {
     let handler = find_handler(&handlers, "submitblock");
 
     let mut store = system.store_cache();
-    let account = validator.get_script_hash();
+    let account = validator.script_hash();
     mint_gas(
         &mut store,
         &settings,
@@ -201,7 +201,7 @@ async fn submit_block_reports_invalid_index() {
     let handler = find_handler(&handlers, "submitblock");
 
     let mut store = system.store_cache();
-    let account = validator.get_script_hash();
+    let account = validator.script_hash();
     mint_gas(
         &mut store,
         &settings,

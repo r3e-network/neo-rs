@@ -100,7 +100,7 @@ impl TransactionManager {
     /// Add Signature
     /// Matches C# `AddSignature`
     pub fn add_signature(&mut self, key: &KeyPair) -> Result<&mut Self, RpcClientError> {
-        let public_point = key.get_public_key_point()?;
+        let public_point = key.public_key_point()?;
         let contract = Contract::create_signature_contract(public_point);
         self.add_sign_item(contract, key.clone())?;
         Ok(self)
@@ -198,7 +198,7 @@ impl TransactionManager {
         for item in &self.sign_store {
             for key in &item.key_pairs {
                 let signature = key.sign(&sign_data)?;
-                let public_key = key.get_public_key_point()?;
+                let public_key = key.public_key_point()?;
                 let added = self
                     .context
                     .add_signature(item.contract.clone(), public_key, signature)

@@ -97,14 +97,14 @@ impl OracleService {
                 OracleServiceError::Processing("wallet not available".to_string())
             })?;
 
-            for account in wallet.get_accounts() {
+            for account in wallet.accounts() {
                 if !account.has_key() || account.is_locked() {
                     continue;
                 }
-                let Some(key) = account.get_key() else {
+                let Some(key) = account.key() else {
                     continue;
                 };
-                let Ok(oracle_pub) = key.get_public_key_point() else {
+                let Ok(oracle_pub) = key.public_key_point() else {
                     continue;
                 };
                 if !oracle_nodes.iter().any(|p| p == &oracle_pub) {

@@ -266,7 +266,7 @@ fn build_and_sign_transaction(
     let data_cache = snapshot.data_cache();
     let account_script = |hash: &neo_primitives::UInt160| -> Option<Vec<u8>> {
         wallet
-            .get_account(hash)
+            .account(hash)
             .and_then(|account| account.contract().map(|contract| contract.script.clone()))
     };
     let network_fee = wallet_compat::calculate_network_fee(
@@ -312,7 +312,7 @@ fn sign_transaction_with_wallet(
 ) -> Vec<PendingSignatureItem> {
     let mut pending = Vec::new();
     for signer in signers {
-        match wallet.get_account(&signer.account) {
+        match wallet.account(&signer.account) {
             Some(account) if account.has_key() => {
                 match build_account_witness(account.as_ref(), tx, network) {
                     Ok(witness) => tx.add_witness(witness),
@@ -331,7 +331,7 @@ fn build_account_witness(
     tx: &Transaction,
     network: u32,
 ) -> CoreResult<Witness> {
-    let key = account.get_key().ok_or_else(|| {
+    let key = account.key().ok_or_else(|| {
         CoreError::other(WalletError::Other("Account locked".to_string()).to_string())
     })?;
     let signature = wallet_compat::sign_transaction_with_key(tx, &key, network)?;
@@ -339,7 +339,7 @@ fn build_account_witness(
     let verification_script = if let Some(contract) = account.contract() {
         contract.script.clone()
     } else {
-        key.get_verification_script()
+        key.verification_script()
     };
 
     let mut invocation = Vec::with_capacity(signature.len() + 2);

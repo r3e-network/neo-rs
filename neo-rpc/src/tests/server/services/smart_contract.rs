@@ -106,7 +106,7 @@ impl Wallet for TestWallet {
         Err(WalletError::Other("not supported".to_string()))
     }
 
-    fn get_account(&self, script_hash: &UInt160) -> Option<Arc<dyn WalletAccount>> {
+    fn account(&self, script_hash: &UInt160) -> Option<Arc<dyn WalletAccount>> {
         if &self.account.script_hash() == script_hash {
             Some(Arc::clone(&self.account))
         } else {
@@ -114,18 +114,18 @@ impl Wallet for TestWallet {
         }
     }
 
-    fn get_accounts(&self) -> Vec<Arc<dyn WalletAccount>> {
+    fn accounts(&self) -> Vec<Arc<dyn WalletAccount>> {
         vec![Arc::clone(&self.account)]
     }
 
-    async fn get_available_balance(
+    async fn available_balance(
         &self,
         _asset_id: &neo_primitives::UInt256,
     ) -> WalletResult<i64> {
         Err(WalletError::Other("not supported".to_string()))
     }
 
-    async fn get_unclaimed_gas(&self) -> WalletResult<i64> {
+    async fn unclaimed_gas(&self) -> WalletResult<i64> {
         Err(WalletError::Other("not supported".to_string()))
     }
 
@@ -166,7 +166,7 @@ impl Wallet for TestWallet {
         Err(WalletError::Other("not supported".to_string()))
     }
 
-    fn get_default_account(&self) -> Option<Arc<dyn WalletAccount>> {
+    fn default_account(&self) -> Option<Arc<dyn WalletAccount>> {
         Some(Arc::clone(&self.account))
     }
 
@@ -210,7 +210,7 @@ fn deploy_verify_contract(system: &Arc<crate::server::NodeContext>) -> UInt160 {
     let manifest_bytes = serde_json::to_vec(&manifest_json).expect("manifest bytes");
 
     let key_pair = KeyPair::from_private_key(&[0x44u8; 32]).expect("keypair");
-    let sender = key_pair.get_script_hash();
+    let sender = key_pair.script_hash();
     let mut tx = Transaction::new();
     tx.set_signers(vec![Signer::new(sender, WitnessScope::CALLED_BY_ENTRY)]);
     tx.add_witness(Witness::new());

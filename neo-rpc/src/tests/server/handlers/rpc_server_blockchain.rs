@@ -48,7 +48,7 @@ fn build_signed_transaction(
     tx.set_valid_until_block(1);
     tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_signers(vec![Signer::new(
-        keypair.get_script_hash(),
+        keypair.script_hash(),
         WitnessScope::GLOBAL,
     )]);
 
@@ -58,7 +58,7 @@ fn build_signed_transaction(
     invocation.push(OpCode::PUSHDATA1.byte());
     invocation.push(signature.len() as u8);
     invocation.extend_from_slice(&signature);
-    let verification_script = keypair.get_verification_script();
+    let verification_script = keypair.verification_script();
     tx.set_witnesses(vec![Witness::new_with_scripts(
         invocation,
         verification_script,

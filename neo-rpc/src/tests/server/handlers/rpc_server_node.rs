@@ -52,7 +52,7 @@ fn build_signed_transaction_custom(
     tx.set_valid_until_block(1);
     tx.set_script(script);
     tx.set_signers(vec![Signer::new(
-        keypair.get_script_hash(),
+        keypair.script_hash(),
         WitnessScope::GLOBAL,
     )]);
 
@@ -62,7 +62,7 @@ fn build_signed_transaction_custom(
     invocation.push(OpCode::PUSHDATA1.byte());
     invocation.push(signature.len() as u8);
     invocation.extend_from_slice(&signature);
-    let verification_script = keypair.get_verification_script();
+    let verification_script = keypair.verification_script();
     tx.set_witnesses(vec![Witness::new_with_scripts(
         invocation,
         verification_script,
@@ -104,7 +104,7 @@ fn build_signed_transaction_with(
     tx.set_valid_until_block(valid_until_block);
     tx.set_script(script);
     tx.set_signers(vec![Signer::new(
-        keypair.get_script_hash(),
+        keypair.script_hash(),
         WitnessScope::GLOBAL,
     )]);
     tx.set_attributes(attributes);
@@ -115,7 +115,7 @@ fn build_signed_transaction_with(
     invocation.push(OpCode::PUSHDATA1.byte());
     invocation.push(signature.len() as u8);
     invocation.extend_from_slice(&signature);
-    let verification_script = keypair.get_verification_script();
+    let verification_script = keypair.verification_script();
     tx.set_witnesses(vec![Witness::new_with_scripts(
         invocation,
         verification_script,
@@ -126,7 +126,7 @@ fn build_signed_transaction_with(
 fn single_validator_settings(keypair: &KeyPair) -> ProtocolSettings {
     let mut settings = ProtocolSettings::default();
     let validator = keypair
-        .get_public_key_point()
+        .public_key_point()
         .expect("validator public key");
     settings.standby_committee = vec![validator];
     settings.validators_count = 1;

@@ -13,7 +13,7 @@ where
     match sender {
         Some(sender) => vec![sender],
         None => wallet
-            .get_accounts()
+            .accounts()
             .into_iter()
             .filter(|account| !account.is_locked() && account.has_key())
             .map(|account| account.script_hash())

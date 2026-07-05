@@ -158,7 +158,7 @@ fn get_new_address_adds_wallet_account() {
     let result = (new_address_handler.callback())(&server, &[]).expect("get new address");
     let new_address = result.as_str().expect("address");
     let wallet = server.wallet().expect("wallet");
-    let accounts = wallet.get_accounts();
+    let accounts = wallet.accounts();
     assert!(
         accounts
             .iter()
@@ -282,7 +282,7 @@ fn import_priv_key_adds_account() {
     let new_key = KeyPair::from_private_key(&[0x22u8; 32]).expect("keypair");
     let wif = new_key.to_wif();
     let expected_address = wallet_helper::to_address(
-        &new_key.get_script_hash(),
+        &new_key.script_hash(),
         ProtocolSettings::default().address_version,
     );
 
@@ -359,12 +359,12 @@ async fn import_priv_key_returns_existing_account() {
 
     let wallet = server.wallet().expect("wallet");
     let existing = wallet
-        .get_accounts()
+        .accounts()
         .into_iter()
         .find(|account| account.has_key())
         .expect("existing account");
     let existing_wif = existing.export_wif().expect("wif");
-    let initial_count = wallet.get_accounts().len();
+    let initial_count = wallet.accounts().len();
 
     let params = [Value::String(existing_wif)];
     let result = tokio::task::block_in_place(|| (import_handler.callback())(&server, &params))
@@ -382,7 +382,7 @@ async fn import_priv_key_returns_existing_account() {
         assert!(obj.get("label").is_some_and(Value::is_null));
     }
 
-    let current_count = wallet.get_accounts().len();
+    let current_count = wallet.accounts().len();
     assert_eq!(current_count, initial_count);
 
     let result = (close_handler.callback())(&server, &[]).expect("close wallet");
@@ -411,14 +411,14 @@ async fn dump_priv_key_rejects_unknown_account() {
 
     let other_key = KeyPair::from_private_key(&[0x33u8; 32]).expect("keypair");
     let other_address = wallet_helper::to_address(
-        &other_key.get_script_hash(),
+        &other_key.script_hash(),
         ProtocolSettings::default().address_version,
     );
     let params = [Value::String(other_address)];
     let err = (dump_handler.callback())(&server, &params).expect_err("unknown account");
     let rpc_error: RpcError = err.into();
     assert_eq!(rpc_error.code(), RpcError::unknown_account().code());
-    let other_hash = other_key.get_script_hash().to_string();
+    let other_hash = other_key.script_hash().to_string();
     assert_eq!(rpc_error.data(), Some(other_hash.as_str()));
 
     let result = (close_handler.callback())(&server, &[]).expect("close wallet");

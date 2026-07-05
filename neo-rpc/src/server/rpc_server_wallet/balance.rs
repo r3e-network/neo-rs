@@ -24,7 +24,7 @@ impl RpcServerWallet {
         W: CoreWallet + ?Sized,
     {
         let accounts: Vec<UInt160> = wallet
-            .get_accounts()
+            .accounts()
             .into_iter()
             .filter(|account| account.has_key())
             .map(|account| account.script_hash())

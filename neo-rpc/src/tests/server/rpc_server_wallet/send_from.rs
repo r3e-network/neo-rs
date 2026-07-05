@@ -67,7 +67,7 @@ async fn send_from_returns_transaction_json() {
     mint_gas(
         &mut store,
         &system.settings(),
-        keypair.get_script_hash(),
+        keypair.script_hash(),
         BigInt::from(50_0000_0000i64),
     );
     store.commit();
@@ -100,7 +100,7 @@ async fn send_from_returns_transaction_json() {
         .expect("signers");
     assert_eq!(signers.len(), 1);
     let signer = signers[0].as_object().expect("signer");
-    let expected_account = keypair.get_script_hash().to_string();
+    let expected_account = keypair.script_hash().to_string();
     assert_eq!(
         signer.get("account").and_then(Value::as_str),
         Some(expected_account.as_str())

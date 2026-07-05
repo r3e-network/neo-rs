@@ -26,7 +26,7 @@ async fn get_transaction_height_rejects_mempool_transaction() {
     let handler = find_handler(&handlers, "gettransactionheight");
 
     let keypair = KeyPair::from_private_key(&[0x23u8; 32]).expect("keypair");
-    let account = keypair.get_script_hash();
+    let account = keypair.script_hash();
     let mut store = system.store_cache();
     mint_gas(
         &mut store,

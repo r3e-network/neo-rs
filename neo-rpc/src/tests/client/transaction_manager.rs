@@ -107,7 +107,7 @@ async fn make_transaction_preserves_signer_scope() {
     let url = Url::parse(&server.url()).unwrap();
     let client = Arc::new(RpcClient::builder(url).build().unwrap());
     let key = KeyPair::from_private_key(&[1u8; 32]).expect("key");
-    let sender = key.get_script_hash();
+    let sender = key.script_hash();
     let signers = vec![Signer::new(sender, WitnessScope::GLOBAL)];
 
     let manager = TransactionManager::make_transaction(client, &[0x01], Some(signers), None)
@@ -137,7 +137,7 @@ async fn sign_adds_signature_and_sets_fees() {
             .unwrap(),
     );
     let key = KeyPair::from_private_key(&[2u8; 32]).expect("key");
-    let sender = key.get_script_hash();
+    let sender = key.script_hash();
     let signers = vec![Signer::new(sender, WitnessScope::GLOBAL)];
 
     let mut manager =
@@ -174,7 +174,7 @@ async fn sign_rejects_mismatched_key() {
     let client = Arc::new(RpcClient::builder(url).build().unwrap());
     let key = KeyPair::from_private_key(&[3u8; 32]).expect("key");
     let wrong_key = KeyPair::from_private_key(&[4u8; 32]).expect("wrong key");
-    let sender = key.get_script_hash();
+    let sender = key.script_hash();
     let signers = vec![Signer::new(sender, WitnessScope::GLOBAL)];
 
     let mut manager =
@@ -209,7 +209,7 @@ async fn sign_rejects_duplicate_signature() {
             .unwrap(),
     );
     let key = KeyPair::from_private_key(&[9u8; 32]).expect("key");
-    let sender = key.get_script_hash();
+    let sender = key.script_hash();
     let signers = vec![Signer::new(sender, WitnessScope::GLOBAL)];
 
     let mut manager =
@@ -246,7 +246,7 @@ async fn sign_rejects_insufficient_gas() {
             .unwrap(),
     );
     let key = KeyPair::from_private_key(&[8u8; 32]).expect("key");
-    let sender = key.get_script_hash();
+    let sender = key.script_hash();
     let signers = vec![Signer::new(sender, WitnessScope::GLOBAL)];
 
     let mut manager =
@@ -275,8 +275,8 @@ async fn sign_multi_sig_contract() {
     let client = Arc::new(RpcClient::builder(url).build().unwrap());
     let key_a = KeyPair::from_private_key(&[5u8; 32]).expect("key a");
     let key_b = KeyPair::from_private_key(&[6u8; 32]).expect("key b");
-    let pub_a = key_a.get_public_key_point().expect("pub a");
-    let pub_b = key_b.get_public_key_point().expect("pub b");
+    let pub_a = key_a.public_key_point().expect("pub a");
+    let pub_b = key_b.public_key_point().expect("pub b");
     let contract = Contract::create_multi_sig_contract(2, &[pub_a.clone(), pub_b.clone()]);
     let signers = vec![Signer::new(contract.script_hash(), WitnessScope::GLOBAL)];
 
@@ -309,7 +309,7 @@ async fn add_witness_by_hash_adds_second_witness() {
     let url = Url::parse(&server.url()).unwrap();
     let client = Arc::new(RpcClient::builder(url).build().unwrap());
     let key = KeyPair::from_private_key(&[7u8; 32]).expect("key");
-    let sender = key.get_script_hash();
+    let sender = key.script_hash();
     let signers = vec![
         Signer::new(sender, WitnessScope::GLOBAL),
         Signer::new(UInt160::zero(), WitnessScope::GLOBAL),

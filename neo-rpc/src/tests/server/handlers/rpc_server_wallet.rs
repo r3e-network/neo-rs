@@ -55,7 +55,7 @@ async fn create_wallet_file(password: &str) -> (String, KeyPair, String) {
         .await
         .expect("import nep2");
     wallet.persist().expect("persist wallet");
-    let address = wallet_helper::to_address(&keypair.get_script_hash(), settings.address_version);
+    let address = wallet_helper::to_address(&keypair.script_hash(), settings.address_version);
     (path, keypair, address)
 }
 
@@ -182,7 +182,7 @@ fn build_signed_transaction_custom(
     tx.set_valid_until_block(1);
     tx.set_script(script);
     tx.set_signers(vec![Signer::new(
-        keypair.get_script_hash(),
+        keypair.script_hash(),
         WitnessScope::GLOBAL,
     )]);
 
@@ -192,7 +192,7 @@ fn build_signed_transaction_custom(
     invocation.push(OpCode::PUSHDATA1.byte());
     invocation.push(signature.len() as u8);
     invocation.extend_from_slice(&signature);
-    let verification_script = keypair.get_verification_script();
+    let verification_script = keypair.verification_script();
     tx.set_witnesses(vec![Witness::new_with_scripts(
         invocation,
         verification_script,

@@ -23,7 +23,7 @@ impl OracleService {
         let counter = self.counter.fetch_add(1, Ordering::SeqCst);
         let https = self.https.clone();
         tokio::spawn(async move {
-            let public_key = match key.get_public_key_point() {
+            let public_key = match key.public_key_point() {
                 Ok(pk) => pk,
                 Err(e) => {
                     warn!(target: "neo::oracle", %e, "failed to get public key point for oracle signature");

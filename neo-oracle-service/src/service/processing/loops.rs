@@ -101,14 +101,14 @@ impl OracleService {
                                 continue;
                             }
                             if span > REFRESH_INTERVAL {
-                                for account in wallet.get_accounts() {
+                                for account in wallet.accounts() {
                                     if !account.has_key() || account.is_locked() {
                                         continue;
                                     }
-                                    let Some(key) = account.get_key() else {
+                                    let Some(key) = account.key() else {
                                         continue;
                                     };
-                                    let Ok(pubkey) = key.get_public_key_point() else {
+                                    let Ok(pubkey) = key.public_key_point() else {
                                         continue;
                                     };
                                     if let Some(sign) = task.backup_signs.get(&pubkey) {

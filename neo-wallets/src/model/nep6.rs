@@ -256,7 +256,7 @@ impl Wallet for Nep6Wallet {
                     return Err(WalletError::InvalidPassword);
                 }
 
-                let key = account.inner.get_key().ok_or(WalletError::AccountLocked)?;
+                let key = account.inner.key().ok_or(WalletError::AccountLocked)?;
                 let version = self.protocol_settings.address_version;
                 let new_nep2 = key
                     .to_nep2(new_password, version)
@@ -286,7 +286,7 @@ impl Wallet for Nep6Wallet {
             .map_err(|e| WalletError::Other(e.to_string()))?;
         let contract = Contract::create_signature_contract(
             key_pair
-                .get_public_key_point()
+                .public_key_point()
                 .map_err(|e| WalletError::Other(e.to_string()))?,
         );
         let account = Nep6Account::with_key(self.clone(), key_pair, contract, None);
@@ -333,7 +333,7 @@ impl Wallet for Nep6Wallet {
         Ok(())
     }
 
-    fn get_account(
+    fn account(
         &self,
         script_hash: &UInt160,
     ) -> Option<Arc<dyn crate::wallet_account::WalletAccount>> {
@@ -344,7 +344,7 @@ impl Wallet for Nep6Wallet {
             .map(|account| account as Arc<dyn crate::wallet_account::WalletAccount>)
     }
 
-    fn get_accounts(&self) -> Vec<Arc<dyn crate::wallet_account::WalletAccount>> {
+    fn accounts(&self) -> Vec<Arc<dyn crate::wallet_account::WalletAccount>> {
         self.accounts
             .read()
             .values()
@@ -353,11 +353,11 @@ impl Wallet for Nep6Wallet {
             .collect()
     }
 
-    async fn get_available_balance(&self, _asset_id: &UInt256) -> WalletResult<i64> {
+    async fn available_balance(&self, _asset_id: &UInt256) -> WalletResult<i64> {
         Ok(0)
     }
 
-    async fn get_unclaimed_gas(&self) -> WalletResult<i64> {
+    async fn unclaimed_gas(&self) -> WalletResult<i64> {
         Ok(0)
     }
 
@@ -368,7 +368,7 @@ impl Wallet for Nep6Wallet {
         let key_pair = KeyPair::from_wif(wif).map_err(|e| WalletError::Other(e.to_string()))?;
         let contract = Contract::create_signature_contract(
             key_pair
-                .get_public_key_point()
+                .public_key_point()
                 .map_err(|e| WalletError::Other(e.to_string()))?,
         );
         let account = Nep6Account::with_key(self.clone(), key_pair, contract, None);
@@ -387,7 +387,7 @@ impl Wallet for Nep6Wallet {
             .map_err(|e| WalletError::Other(e.to_string()))?;
         let contract = Contract::create_signature_contract(
             key_pair
-                .get_public_key_point()
+                .public_key_point()
                 .map_err(|e| WalletError::Other(e.to_string()))?,
         );
         let account =
@@ -410,7 +410,7 @@ impl Wallet for Nep6Wallet {
             return Err(WalletError::AccountLocked);
         }
 
-        let key = account.inner.get_key().ok_or(WalletError::AccountLocked)?;
+        let key = account.inner.key().ok_or(WalletError::AccountLocked)?;
 
         key.sign(data)
             .map_err(|e| WalletError::SigningFailed(e.to_string()))
@@ -515,7 +515,7 @@ impl Wallet for Nep6Wallet {
         self.persist()
     }
 
-    fn get_default_account(&self) -> Option<Arc<dyn crate::wallet_account::WalletAccount>> {
+    fn default_account(&self) -> Option<Arc<dyn crate::wallet_account::WalletAccount>> {
         self.accounts
             .read()
             .values()
@@ -728,8 +728,8 @@ impl WalletAccount for Nep6Account {
         self.inner.has_key()
     }
 
-    fn get_key(&self) -> Option<KeyPair> {
-        self.inner.get_key()
+    fn key(&self) -> Option<KeyPair> {
+        self.inner.key()
     }
 
     fn contract(&self) -> Option<&Contract> {

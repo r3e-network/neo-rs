@@ -505,7 +505,7 @@ async fn create_transfer_tx_with_from_builds_transaction() {
     let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
         .expect("key pair");
     let from_script =
-        Contract::create_signature_redeem_script(key.get_public_key_point().expect("public key"));
+        Contract::create_signature_redeem_script(key.public_key_point().expect("public key"));
     let from = UInt160::from_script(&from_script);
     let to = UInt160::from_bytes(&[0x11u8; 20]).expect("to hash");
     let amount = BigInt::from(1_00000000u64);
@@ -568,8 +568,8 @@ async fn create_transfer_tx_multi_sig_builds_transaction() {
         .expect("key pair 2");
 
     let public_keys = vec![
-        key1.get_public_key_point().expect("public key 1"),
-        key2.get_public_key_point().expect("public key 2"),
+        key1.public_key_point().expect("public key 1"),
+        key2.public_key_point().expect("public key 2"),
     ];
     let m = 2usize;
     let to = UInt160::from_bytes(&[0x22u8; 20]).expect("to hash");
@@ -631,7 +631,7 @@ async fn create_transfer_tx_multi_sig_requires_enough_keys() {
 
     let key = KeyPair::from_wif("KyXwTh1hB76RRMquSvnxZrJzQx7h9nQP2PCRL38v6VDb5ip3nf1p")
         .expect("key pair");
-    let public_keys = vec![key.get_public_key_point().expect("public key")];
+    let public_keys = vec![key.public_key_point().expect("public key")];
 
     let err = api
         .create_transfer_tx_multi_sig_with_assert(

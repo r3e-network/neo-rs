@@ -107,16 +107,16 @@ pub trait Wallet: Send + Sync {
     async fn export(&self, path: &str, password: &str) -> WalletResult<()>;
 
     /// Gets the account with the specified script hash.
-    fn get_account(&self, script_hash: &UInt160) -> Option<Arc<dyn WalletAccount>>;
+    fn account(&self, script_hash: &UInt160) -> Option<Arc<dyn WalletAccount>>;
 
     /// Gets all accounts in the wallet.
-    fn get_accounts(&self) -> Vec<Arc<dyn WalletAccount>>;
+    fn accounts(&self) -> Vec<Arc<dyn WalletAccount>>;
 
     /// Gets the available balance of the specified asset.
-    async fn get_available_balance(&self, asset_id: &UInt256) -> WalletResult<i64>;
+    async fn available_balance(&self, asset_id: &UInt256) -> WalletResult<i64>;
 
     /// Gets the unclaimed GAS amount.
-    async fn get_unclaimed_gas(&self) -> WalletResult<i64>;
+    async fn unclaimed_gas(&self) -> WalletResult<i64>;
 
     /// Imports an account from a WIF (Wallet Import Format) private key.
     async fn import_wif(&self, wif: &str) -> WalletResult<Arc<dyn WalletAccount>>;
@@ -147,7 +147,7 @@ pub trait Wallet: Send + Sync {
     async fn save(&self) -> WalletResult<()>;
 
     /// Gets the default account.
-    fn get_default_account(&self) -> Option<Arc<dyn WalletAccount>>;
+    fn default_account(&self) -> Option<Arc<dyn WalletAccount>>;
 
     /// Sets the default account.
     async fn set_default_account(&self, script_hash: &UInt160) -> WalletResult<()>;

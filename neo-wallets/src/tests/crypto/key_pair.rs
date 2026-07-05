@@ -19,7 +19,7 @@ fn nep2_uses_canonical_checksig_verification_script() {
     let pk = [1u8; HASH_SIZE];
     let kp = KeyPair::from_private_key(&pk).unwrap();
     let script = KeyPair::try_get_verification_script_for_key(&pk).unwrap();
-    assert_eq!(script, kp.get_verification_script());
+    assert_eq!(script, kp.verification_script());
     assert_eq!(script.len(), 40, "canonical CheckSig script is 40 bytes");
 
     // A standard '6P…' NEP-2 string round-trips at the N3 address version.

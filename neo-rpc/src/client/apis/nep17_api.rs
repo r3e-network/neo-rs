@@ -198,7 +198,7 @@ impl Nep17Api {
         data: Option<serde_json::Value>,
         add_assert: bool,
     ) -> Result<Transaction, RpcClientError> {
-        let from_script = Contract::create_signature_redeem_script(key.get_public_key_point()?);
+        let from_script = Contract::create_signature_redeem_script(key.public_key_point()?);
         let from = UInt160::from_script(&from_script);
         self.create_transfer_tx_with_from_and_assert(
             script_hash,
