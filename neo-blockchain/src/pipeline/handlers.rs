@@ -57,6 +57,18 @@ where
         settings: &neo_config::ProtocolSettings,
         snapshot: &neo_storage::DataCache,
     ) -> CoreResult<()> {
+        self.verify_header_against_snapshot_with_native_provider(block, settings, snapshot, None)
+    }
+
+    fn verify_header_against_snapshot_with_native_provider(
+        &self,
+        block: &Block,
+        settings: &neo_config::ProtocolSettings,
+        snapshot: &neo_storage::DataCache,
+        native_contract_provider: Option<
+            Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>,
+        >,
+    ) -> CoreResult<()> {
         let index = block.index();
         if i32::from(block.header.primary_index()) >= settings.validators_count {
             return Err(CoreError::other(format!(
@@ -86,13 +98,14 @@ where
         }
 
         let next_consensus = *prev.header.next_consensus();
-        if neo_execution::Helper::verify_witness(
+        if neo_execution::Helper::verify_witness_with_native_provider(
             &block.header,
             settings,
             snapshot,
             &next_consensus,
             &block.header.witness,
             300_000_000,
+            native_contract_provider,
         )
         .is_err()
         {
@@ -108,10 +121,11 @@ where
         block: &Block,
         resources: &BatchPersistResources,
     ) -> CoreResult<()> {
-        self.verify_header_against_snapshot(
+        self.verify_header_against_snapshot_with_native_provider(
             block,
             resources.settings.as_ref(),
             resources.snapshot.as_ref(),
+            Some(resources.native_persist.provider()),
         )
     }
 

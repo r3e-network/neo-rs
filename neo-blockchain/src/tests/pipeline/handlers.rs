@@ -120,6 +120,37 @@ impl MempoolLike for RecordingMempool {
     }
 }
 
+#[test]
+fn batch_header_verification_uses_explicit_native_provider_helper() {
+    let source = include_str!("../../pipeline/handlers.rs");
+    let verifier_start = source
+        .find("fn verify_header_against_snapshot_with_native_provider")
+        .expect("provider-aware verifier exists");
+    let verifier_end = source[verifier_start..]
+        .find("fn verify_header_with_batch_resources")
+        .map(|offset| verifier_start + offset)
+        .expect("batch verifier follows provider-aware verifier");
+    let provider_aware_verifier = &source[verifier_start..verifier_end];
+    assert!(
+        provider_aware_verifier.contains("verify_witness_with_native_provider"),
+        "provider-aware header verification must use the explicit-provider witness helper"
+    );
+
+    let start = source
+        .find("fn verify_header_with_batch_resources")
+        .expect("batch header verifier exists");
+    let end = source[start..]
+        .find("fn collect_empty_fast_forward_run")
+        .map(|offset| start + offset)
+        .expect("next handler helper follows batch verifier");
+    let verifier = &source[start..end];
+
+    assert!(
+        verifier.contains("Some(resources.native_persist.provider())"),
+        "batch header verification must pass the provider captured in BatchPersistResources"
+    );
+}
+
 fn fixture() -> (
     BlockchainService<TestContext, TestMempool>,
     BlockchainHandle,

@@ -274,6 +274,11 @@ impl NativePersistResources {
     pub fn contracts(&self) -> &[Arc<dyn neo_execution::NativeContract>] {
         self.contracts.as_ref()
     }
+
+    /// Returns the native-contract provider captured for this persistence batch.
+    pub fn provider(&self) -> Arc<dyn NativeContractProvider> {
+        Arc::clone(&self.provider)
+    }
 }
 
 /// A block persistence result whose storage writes are still staged in a child
