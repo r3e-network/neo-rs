@@ -16,23 +16,28 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use neo_consensus::ConsensusSigner;
+//! use neo_consensus::{ConsensusSigner, ConsensusResult};
 //! use neo_primitives::UInt160;
+//! use async_trait::async_trait;
 //!
 //! struct MySigner;
 //!
+//! #[async_trait]
 //! impl ConsensusSigner for MySigner {
 //!     fn can_sign(&self, script_hash: &UInt160) -> bool {
 //!         // Check if we have the key for this script hash
 //!         true
 //!     }
 //!
-//!     fn sign(&self, data: &[u8], script_hash: &UInt160) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-//!         // Sign the data
+//!     async fn sign(&self, data: &[u8], script_hash: &UInt160) -> ConsensusResult<Vec<u8>> {
+//!         // Sign the data (HSM/network signers may await here)
 //!         Ok(vec![0u8; 64])
 //!     }
 //! }
 //! ```
+//!
+//! Production implementations live in `neo-hsm` (PKCS#11, Azure Key Vault, GCP
+//! KMS) and `neo-tee` (Nitro Enclave), plus the in-process software signer.
 
 use crate::ConsensusResult;
 use async_trait::async_trait;

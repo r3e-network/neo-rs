@@ -11,11 +11,7 @@
 //!
 //! - `errors`: Typed errors and result aliases for this crate boundary.
 //! - `providers`: Provider implementations behind the crate public traits.
-//! - `settings`: Protocol settings, hardfork gates, and node configuration
-//!   records.
-
-#![deny(unsafe_code)]
-#![warn(missing_docs)]
+//! - `settings`: HSM provider settings and signing profile records.
 
 mod errors;
 mod providers;

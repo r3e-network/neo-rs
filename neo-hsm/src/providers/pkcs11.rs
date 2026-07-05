@@ -111,7 +111,7 @@ pub struct Pkcs11Signer {
 // - ObjectHandle is #[repr(transparent)] over CK_ULONG (usize): Send+Sync
 // - [u8;33] and UInt160 are both Send+Sync
 // - The Session lives exclusively in the worker thread and never escapes Pkcs11Signer
-// No unsafe impls are needed or permitted (#![deny(unsafe_code)]).
+// No unsafe impls are needed or permitted (the workspace lints deny unsafe_code).
 const _: () = {
     fn assert_send<T: Send>() {}
     fn assert_sync<T: Sync>() {}
