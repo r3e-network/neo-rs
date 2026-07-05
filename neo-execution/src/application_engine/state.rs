@@ -71,11 +71,34 @@ impl ApplicationEngine {
         gas_limit: i64,
         diagnostic: Option<Box<dyn Diagnostic>>,
     ) -> CoreResult<Self> {
+        let native_contract_provider =
+            crate::native_contract_provider::NativeContractLookup::native_contract_provider();
+        Self::new_with_shared_block_and_native_contract_provider(
+            trigger,
+            script_container,
+            snapshot_cache,
+            persisting_block,
+            protocol_settings,
+            gas_limit,
+            diagnostic,
+            native_contract_provider,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_shared_block_and_native_contract_provider(
+        trigger: TriggerType,
+        script_container: Option<Arc<dyn Verifiable>>,
+        snapshot_cache: Arc<DataCache>,
+        persisting_block: Option<Arc<Block>>,
+        protocol_settings: ProtocolSettings,
+        gas_limit: i64,
+        diagnostic: Option<Box<dyn Diagnostic>>,
+        native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+    ) -> CoreResult<Self> {
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
         let original_snapshot_cache = Arc::clone(&snapshot_cache);
-        let native_contract_provider =
-            crate::native_contract_provider::NativeContractLookup::native_contract_provider();
         let jump_table = Self::select_jump_table(
             &protocol_settings,
             persisting_block.as_deref(),

@@ -1,6 +1,130 @@
 use super::*;
+use crate::native_contract_provider::{
+    NativeContractLookup, NativeContractProvider, lock_native_provider,
+};
+use crate::{ContractState, NativeContract, NativeMethod};
+use neo_manifest::{
+    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractPermission, NefFile,
+    WildCardContainer,
+};
 use neo_payloads::{Block, Header, OracleResponse, Signer, Transaction, TransactionAttribute};
-use neo_primitives::{OracleResponseCode, WitnessScope};
+use neo_primitives::{
+    ContractBasicMethod, ContractParameterType, OracleResponseCode, WitnessScope,
+};
+
+struct EmptyNativeProvider;
+
+impl NativeContractProvider for EmptyNativeProvider {
+    fn get_native_contract(&self, _hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
+        None
+    }
+
+    fn get_native_contract_by_name(&self, _name: &str) -> Option<Arc<dyn NativeContract>> {
+        None
+    }
+
+    fn all_native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
+        Vec::new()
+    }
+
+    fn all_native_contract_hashes(&self) -> Vec<UInt160> {
+        Vec::new()
+    }
+}
+
+struct ContractManagementNative {
+    contract: ContractState,
+}
+
+impl NativeContract for ContractManagementNative {
+    fn id(&self) -> i32 {
+        -1
+    }
+
+    fn hash(&self) -> UInt160 {
+        UInt160::from_bytes(&[0xCD; 20]).expect("contract management hash")
+    }
+
+    fn name(&self) -> &str {
+        "ContractManagement"
+    }
+
+    fn methods(&self) -> &[NativeMethod] {
+        &[]
+    }
+
+    fn invoke(
+        &self,
+        _engine: &mut ApplicationEngine,
+        _method: &str,
+        _args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        Err(CoreError::invalid_operation(
+            "test contract management is metadata-only",
+        ))
+    }
+
+    fn lookup_contract_state(
+        &self,
+        _snapshot: &DataCache,
+        hash: &UInt160,
+    ) -> CoreResult<Option<ContractState>> {
+        Ok((hash == &self.contract.hash).then(|| self.contract.clone()))
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+struct SingleNativeProvider {
+    native: Arc<dyn NativeContract>,
+}
+
+impl NativeContractProvider for SingleNativeProvider {
+    fn get_native_contract(&self, hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
+        (&self.native.hash() == hash).then(|| self.native.clone())
+    }
+
+    fn get_native_contract_by_name(&self, name: &str) -> Option<Arc<dyn NativeContract>> {
+        name.eq_ignore_ascii_case(self.native.name())
+            .then(|| self.native.clone())
+    }
+
+    fn all_native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
+        vec![self.native.clone()]
+    }
+
+    fn all_native_contract_hashes(&self) -> Vec<UInt160> {
+        vec![self.native.hash()]
+    }
+}
+
+fn build_verify_contract(hash: UInt160) -> ContractState {
+    let nef = NefFile::new(
+        "test".to_string(),
+        vec![OpCode::PUSH1.byte(), OpCode::RET.byte()],
+    );
+    let verify = ContractMethodDescriptor::new(
+        ContractBasicMethod::VERIFY.to_string(),
+        Vec::new(),
+        ContractParameterType::Boolean,
+        0,
+        true,
+    )
+    .expect("verify descriptor");
+    let manifest = ContractManifest {
+        name: "VerifyContract".to_string(),
+        groups: Vec::new(),
+        features: std::collections::HashMap::new(),
+        supported_standards: Vec::new(),
+        abi: ContractAbi::new(vec![verify], Vec::new()),
+        permissions: vec![ContractPermission::default_wildcard()],
+        trusts: WildCardContainer::default(),
+        extra: None,
+    };
+    ContractState::new(7, hash, nef, manifest)
+}
 
 #[test]
 fn verify_witnesses_uses_transaction_witnesses_for_count_check() {
@@ -116,6 +240,45 @@ fn verify_witness_uses_transaction_container_for_check_witness() {
     .expect(
         "CheckWitness inside transaction witness verification must see the real Transaction container",
     );
+}
+
+#[test]
+fn verify_witness_uses_explicit_native_provider_for_contract_verification() {
+    let _guard = lock_native_provider();
+    let contract_hash =
+        UInt160::parse("0xa1b2c3d4e5f60718293a4b5c6d7e8f0102030526").expect("contract hash");
+    let provider = Arc::new(SingleNativeProvider {
+        native: Arc::new(ContractManagementNative {
+            contract: build_verify_contract(contract_hash),
+        }),
+    }) as Arc<dyn NativeContractProvider>;
+
+    NativeContractLookup::install_provider(Arc::new(EmptyNativeProvider));
+
+    let mut tx = Transaction::new();
+    tx.set_version(0);
+    tx.set_nonce(0x0102_0304);
+    tx.set_system_fee(1);
+    tx.set_network_fee(1);
+    tx.set_valid_until_block(42);
+    tx.set_script(vec![OpCode::RET.byte()]);
+    tx.set_signers(vec![Signer::new(contract_hash, WitnessScope::NONE)]);
+    let witness = Witness::new_with_scripts(Vec::new(), Vec::new());
+    tx.set_witnesses(vec![witness.clone()]);
+
+    let settings = ProtocolSettings::default();
+    let snapshot = DataCache::new(false);
+
+    Helper::verify_witness_with_native_provider(
+        &tx,
+        &settings,
+        &snapshot,
+        &contract_hash,
+        &witness,
+        Helper::MAX_VERIFICATION_GAS,
+        Some(provider),
+    )
+    .expect("explicit provider should resolve ContractManagement after global replacement");
 }
 
 #[test]

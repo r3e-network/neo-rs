@@ -3,6 +3,7 @@
 use crate::NativeRegistry;
 use crate::application_engine::ApplicationEngine;
 use crate::contract::Contract;
+use crate::native_contract_provider::{NativeContractLookup, NativeContractProvider};
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
@@ -165,6 +166,23 @@ impl Helper {
         snapshot: &DataCache,
         max_gas: i64,
     ) -> bool {
+        Self::verify_witnesses_with_native_provider(
+            verifiable,
+            settings,
+            snapshot,
+            max_gas,
+            NativeContractLookup::native_contract_provider(),
+        )
+    }
+
+    /// Verifies all witnesses using an explicit native-contract provider.
+    pub fn verify_witnesses_with_native_provider<V: VerifiableExt>(
+        verifiable: &V,
+        settings: &ProtocolSettings,
+        snapshot: &DataCache,
+        max_gas: i64,
+        native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+    ) -> bool {
         if max_gas < 0 {
             return false;
         }
@@ -175,7 +193,11 @@ impl Helper {
         // the execution-layer provider so Header/Block can mirror C#'s
         // Ledger-backed `GetScriptHashesForVerifying` without making
         // `neo-payloads` depend on native contracts.
-        let hashes = match known_script_hashes_for_verifying(verifiable, snapshot) {
+        let hashes = match known_script_hashes_for_verifying_with_native_provider(
+            verifiable,
+            snapshot,
+            native_contract_provider.clone(),
+        ) {
             Ok(Some(hashes)) => hashes,
             Ok(None) => verifiable.script_hashes_for_verifying(snapshot),
             Err(_) => return false,
@@ -193,13 +215,14 @@ impl Helper {
 
         // Verify each witness
         for (i, hash) in hashes.iter().enumerate() {
-            match Self::verify_witness(
+            match Self::verify_witness_with_native_provider(
                 verifiable,
                 settings,
                 snapshot,
                 hash,
                 witnesses[i],
                 remaining_gas,
+                native_contract_provider.clone(),
             ) {
                 Ok(fee) => {
                     remaining_gas -= fee;
@@ -234,6 +257,27 @@ impl Helper {
         witness: &Witness,
         max_gas: i64,
     ) -> CoreResult<i64> {
+        Self::verify_witness_with_native_provider(
+            verifiable,
+            settings,
+            snapshot,
+            hash,
+            witness,
+            max_gas,
+            NativeContractLookup::native_contract_provider(),
+        )
+    }
+
+    /// Verifies a single witness using an explicit native-contract provider.
+    pub fn verify_witness_with_native_provider<V: VerifiableExt>(
+        verifiable: &V,
+        settings: &ProtocolSettings,
+        snapshot: &DataCache,
+        hash: &UInt160,
+        witness: &Witness,
+        max_gas: i64,
+        native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+    ) -> CoreResult<i64> {
         // Validate invocation script (check for bad opcodes)
         if !Self::is_valid_script(&witness.invocation_script) {
             return Err(CoreError::invalid_operation(
@@ -253,7 +297,7 @@ impl Helper {
                     hash_data: verifiable.hash_data(),
                 })
             });
-        let mut engine = ApplicationEngine::new(
+        let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
             TriggerType::Verification,
             Some(container),
             cloned_snapshot,
@@ -261,15 +305,20 @@ impl Helper {
             settings.clone(),
             max_gas,
             None,
+            native_contract_provider.clone(),
         )?;
 
         // Check if witness has empty verification script (contract verification)
         if witness.verification_script.is_empty() {
             // Contract verification: load the contract's Verify method
-            let mut contract =
-                crate::native_contract_provider::NativeContractLookup::lookup_contract_management(
-                    snapshot, hash,
-                )?
+            let mut contract = native_contract_provider
+                .as_ref()
+                .and_then(|provider| provider.get_native_contract_by_name("ContractManagement"))
+                .map(|contract_management| {
+                    contract_management.lookup_contract_state(snapshot, hash)
+                })
+                .transpose()?
+                .flatten()
                 .ok_or_else(|| {
                     CoreError::invalid_operation(format!("Contract not found for hash {}", hash))
                 })?;
@@ -379,6 +428,18 @@ pub(crate) fn known_script_hashes_for_verifying(
     verifiable: &dyn Verifiable,
     snapshot: &DataCache,
 ) -> CoreResult<Option<Vec<UInt160>>> {
+    known_script_hashes_for_verifying_with_native_provider(
+        verifiable,
+        snapshot,
+        NativeContractLookup::native_contract_provider(),
+    )
+}
+
+pub(crate) fn known_script_hashes_for_verifying_with_native_provider(
+    verifiable: &dyn Verifiable,
+    snapshot: &DataCache,
+    native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+) -> CoreResult<Option<Vec<UInt160>>> {
     if let Some(tx) = verifiable
         .as_any()
         .downcast_ref::<neo_payloads::Transaction>()
@@ -392,10 +453,16 @@ pub(crate) fn known_script_hashes_for_verifying(
         return Ok(Some(payload.script_hashes_for_verifying(snapshot)));
     }
     if let Some(header) = verifiable.as_any().downcast_ref::<neo_payloads::Header>() {
-        return header_script_hashes_for_verifying(header, snapshot).map(Some);
+        return header_script_hashes_for_verifying(header, snapshot, native_contract_provider)
+            .map(Some);
     }
     if let Some(block) = verifiable.as_any().downcast_ref::<neo_payloads::Block>() {
-        return header_script_hashes_for_verifying(&block.header, snapshot).map(Some);
+        return header_script_hashes_for_verifying(
+            &block.header,
+            snapshot,
+            native_contract_provider,
+        )
+        .map(Some);
     }
     Ok(None)
 }
@@ -403,12 +470,14 @@ pub(crate) fn known_script_hashes_for_verifying(
 fn header_script_hashes_for_verifying(
     header: &neo_payloads::Header,
     snapshot: &DataCache,
+    native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
 ) -> CoreResult<Vec<UInt160>> {
     if *header.prev_hash() == UInt256::zero() {
         return Ok(vec![header.witness.script_hash()]);
     }
 
-    let ledger = crate::native_contract_provider::NativeContractLookup::lookup_ledger_contract()
+    let ledger = native_contract_provider
+        .and_then(|provider| provider.get_native_contract_by_name("LedgerContract"))
         .ok_or_else(|| {
             CoreError::invalid_operation(
                 "Header witness verification requires the Ledger native contract",

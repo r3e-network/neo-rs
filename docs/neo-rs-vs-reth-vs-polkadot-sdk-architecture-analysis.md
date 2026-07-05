@@ -349,8 +349,9 @@ installed or scoped provider at construction and uses that stable handle for
 direct native calls, policy reads, dynamic-call policy gates, contract-management
 lookups made from contract loading, committee-witness checks, storage-context
 resolution, OracleResponse witness inheritance, witness group checks,
-current-index reads, and whitelisted-fee checks. Non-engine helper paths still
-resolve through the process-global compatibility bridge in
+current-index reads, and whitelisted-fee checks. Runtime witness helpers now
+have explicit-provider entry points, while legacy wrappers and blockchain native
+persistence still resolve through the process-global compatibility bridge in
 `neo-execution/src/native/native_contract_provider.rs`.
 
 ### Polkadot SDK innovations
@@ -376,7 +377,8 @@ resolve through the process-global compatibility bridge in
    checks, storage-context resolution, OracleResponse witness inheritance,
    witness group checks, current-index reads, and fee whitelist checks.
    Remaining step: thread the captured `Arc<dyn NativeContractProvider>` through
-   non-engine helper paths instead of reading them back from
+   blockchain native persistence and migrate legacy helper callers to the
+   explicit-provider helper entry points instead of reading them back from
    `NativeContractLookup`.
 3. Consider WASM runtime for future sidechain/feature-gate support.
 
