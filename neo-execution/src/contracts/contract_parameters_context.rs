@@ -5,9 +5,9 @@ use crate::contract_parameter::ContractParameter;
 use crate::contract_parameter::ContractParameterValue;
 use crate::helper::Helper as ContractHelper;
 use base64::{Engine as _, engine::general_purpose};
-use neo_crypto::{Crypto, ECPoint};
+use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
-use neo_io::{BinaryWriter, MemoryReader, Serializable};
+use neo_io::{MemoryReader, Serializable};
 use neo_payloads::VerifiableExt;
 use neo_payloads::{transaction::Transaction, witness::Witness};
 use neo_primitives::hex_util;
@@ -154,8 +154,15 @@ impl ContextItem {
 
 /// The context used to add witnesses for Verifiable (matches C# ContractParametersContext)
 pub struct ContractParametersContext {
-    /// Serialized verifiable payload (unsigned)
+    /// Serialized verifiable payload (unsigned, no witnesses).
+    ///
+    /// C# `ContractParametersContext.ToJson` writes `SerializeUnsigned` into the
+    /// `data` field (ContractParametersContext.cs:414), and `FromJson` reconstructs
+    /// via `DeserializeUnsigned` (line 298). The witness-less form is what makes a
+    /// partially-signed context portable across wallets.
     verifiable_bytes: Vec<u8>,
+    /// Hash of the verifiable (C# `Verifiable.Hash`), i.e. `Sha256(SerializeUnsigned)`.
+    verifiable_hash: UInt256,
     /// Informational type name
     verifiable_type: String,
     /// The snapshot cache used to read data
@@ -191,11 +198,15 @@ impl ContractParametersContext {
         let script_hashes = verifiable.script_hashes_for_verifying(snapshot_cache.as_ref());
         let verifiable_type =
             verifiable_type.unwrap_or_else(|| "Neo.Network.P2P.Payloads.Verifiable".to_string());
-        let mut writer = BinaryWriter::new();
-        let _ = verifiable.serialize(&mut writer);
-        let verifiable_bytes = writer.into_bytes();
+        // C# serializes the UNSIGNED verifiable (no witnesses) into `data`
+        // (ContractParametersContext.cs:414). `Verifiable::hash_data()` returns exactly
+        // that unsigned form, matching `IVerifiable.SerializeUnsigned`.
+        let verifiable_bytes = verifiable.hash_data();
+        // C# stores `Verifiable.Hash` in the context (line 408) = Sha256(SerializeUnsigned).
+        let verifiable_hash = verifiable.hash().unwrap_or_default();
         Self {
             verifiable_bytes,
+            verifiable_hash,
             verifiable_type,
             snapshot_cache,
             network,
@@ -443,16 +454,17 @@ impl ContractParametersContext {
             serde_json::Value::String(self.verifiable_type.clone()),
         );
 
-        let data_bytes = self.hash_data();
-        let hash_bytes = Crypto::hash256(data_bytes);
-        let hash = UInt256::from_bytes(&hash_bytes).unwrap_or_else(|_| UInt256::default());
+        // C# writes `Verifiable.Hash` (Sha256 of the unsigned form), not a re-hash of
+        // `data` here (ContractParametersContext.cs:408).
         obj.insert(
             "hash".to_string(),
-            serde_json::Value::String(hash.to_string()),
+            serde_json::Value::String(self.verifiable_hash.to_string()),
         );
+        // `data` is the UNSIGNED serialization (no witnesses), Base64-encoded, matching
+        // C# `SerializeUnsigned` (line 414).
         obj.insert(
             "data".to_string(),
-            serde_json::Value::String(general_purpose::STANDARD.encode(data_bytes)),
+            serde_json::Value::String(general_purpose::STANDARD.encode(self.hash_data())),
         );
 
         let mut items = serde_json::Map::new();
@@ -521,9 +533,27 @@ impl ContractParametersContext {
         let data_bytes = general_purpose::STANDARD
             .decode(data_field)
             .map_err(|err| CoreError::other(format!("Invalid context data: {}", err)))?;
+        // C# reconstructs the verifiable from the witness-less `data` via
+        // `DeserializeUnsigned` (ContractParametersContext.cs:298). Using the full
+        // `deserialize` here would (incorrectly) demand a witness array in `data`.
         let mut reader = MemoryReader::new(&data_bytes);
-        let transaction = <Transaction as Serializable>::deserialize(&mut reader)
+        let transaction = Transaction::deserialize_unsigned(&mut reader)
             .map_err(|err| CoreError::other(err.to_string()))?;
+
+        // C# verifies `json["hash"] == verifiable.Hash` when present (line 299-304).
+        if let Some(hash_str) = obj.get("hash").and_then(|v| v.as_str()) {
+            let expected = hash_str
+                .parse::<UInt256>()
+                .map_err(|e| CoreError::other(format!("Invalid context hash: {e}")))?;
+            let actual = transaction
+                .try_hash()
+                .map_err(|e| CoreError::other(e.to_string()))?;
+            if expected != actual {
+                return Err(CoreError::other(format!(
+                    "context hash {expected} does not match transaction hash {actual}"
+                )));
+            }
+        }
 
         let context = Self::from_json(json, transaction.clone(), snapshot)?;
         Ok((context, transaction))

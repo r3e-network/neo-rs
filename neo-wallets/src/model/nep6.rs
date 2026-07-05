@@ -10,6 +10,7 @@ use crate::wallet::{Wallet, WalletError, WalletResult};
 use crate::wallet_account::{StandardWalletAccount, WalletAccount};
 use crate::wallet_helper::WalletAddress;
 use async_trait::async_trait;
+use base64::{engine::general_purpose, Engine as _};
 use neo_config::ProtocolSettings;
 use neo_vm::Contract;
 use neo_payloads::{Transaction, Witness};
@@ -777,8 +778,11 @@ impl WalletAccount for Nep6Account {
 
 impl Nep6Contract {
     fn from_file(file: &Nep6ContractFile) -> WalletResult<Self> {
-        let script =
-            neo_primitives::hex_util::decode_hex(&file.script).map_err(|e| WalletError::Other(e.to_string()))?;
+        // C# `NEP6Contract.FromJson` decodes `script` via `Convert.FromBase64String`
+        // (NEP6Contract.cs:29); it must be Base64, not hex, for neo-cli/neo-gui interop.
+        let script = general_purpose::STANDARD
+            .decode(&file.script)
+            .map_err(|e| WalletError::Other(e.to_string()))?;
         let mut parameter_names = Vec::with_capacity(file.parameters.len());
         let parameter_types = file
             .parameters
@@ -811,7 +815,9 @@ impl Nep6Contract {
             .collect();
 
         Nep6ContractFile {
-            script: neo_primitives::hex_util::encode_hex(&contract.script),
+            // C# `NEP6Contract.ToJson` encodes `script` via `Convert.ToBase64String`
+            // (NEP6Contract.cs:39); it must be Base64, not hex, for neo-cli/neo-gui interop.
+            script: general_purpose::STANDARD.encode(&contract.script),
             parameters,
             deployed: false,
         }
@@ -857,3 +863,7 @@ fn default_parameter_names(contract: &Contract) -> Vec<String> {
             .collect()
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/model/nep6.rs"]
+mod tests;
