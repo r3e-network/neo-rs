@@ -420,12 +420,48 @@ impl PeerSession {
                 }
                 Ok(())
             }
+            // C# `OnAddrMessageReceived`: ingest a *solicited* `Addr` reply.
+            // A peer only accepts `Addr` when it previously sent `GetAddr`
+            // (`if (!sent) return;`); the flag is then cleared so each `Addr`
+            // matches one `GetAddr`. Endpoints with a positive port are added
+            // to the unconnected address book the dial path drains from
+            // (`_system.LocalNode.Tell(new Peer.Peers(endPoints))` →
+            // `Peer.AddPeers`).
+            MessageCommand::Addr => {
+                if !self.get_addr_sent {
+                    trace!(
+                        target: "neo_network",
+                        peer_id = %self.peer_id,
+                        "dropping unsolicited addr (no getaddr was sent)"
+                    );
+                    return Ok(());
+                }
+                self.get_addr_sent = false;
+                let mut reader = MemoryReader::new(&message.payload_raw);
+                let payload = AddrPayload::deserialize(&mut reader).map_err(|err| {
+                    CloseReason::ProtocolViolation(format!("invalid addr payload: {err}"))
+                })?;
+                let endpoints: Vec<std::net::SocketAddr> = payload
+                    .address_list
+                    .iter()
+                    .filter_map(|entry| entry.endpoint())
+                    .filter(|endpoint| endpoint.port() > 0)
+                    .collect();
+                if !endpoints.is_empty() {
+                    let added = self.registry.add_unconnected(endpoints);
+                    trace!(
+                        target: "neo_network",
+                        peer_id = %self.peer_id,
+                        added,
+                        "ingested addr entries into the unconnected address book"
+                    );
+                }
+                Ok(())
+            }
             other => {
                 // Genuine no-ops for this node profile. C# default arm:
                 // Alert/MerkleBlock/NotFound/Reject/FilterAdd/FilterClear/
-                // FilterLoad. `Addr` is also ignored here, matching C#
-                // `OnAddrMessageReceived` (`if (!sent) return;`): this node
-                // never sends `GetAddr`, so unsolicited `Addr` is dropped.
+                // FilterLoad.
                 trace!(
                     target: "neo_network",
                     peer_id = %self.peer_id,

@@ -76,6 +76,10 @@ use crate::spawn::spawn_guarded;
 /// declaring the peer unreachable.
 const DIAL_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// Cadence of the peer-discovery maintenance tick (C# `Peer.OnTimer` fires
+/// every 5 s to top the connection count back up toward the desired minimum).
+const DISCOVERY_INTERVAL: Duration = Duration::from_secs(5);
+
 /// Reth-style local node service.
 ///
 /// Constructed via [`LocalNodeService::new`] (C# `ChannelsConfig`
@@ -115,6 +119,10 @@ pub struct LocalNodeService {
     /// Optional read-only ledger view handed to every per-peer service
     /// so it can serve peers' block requests.
     block_source: Option<Arc<dyn BlockSource>>,
+    /// Cadence of the peer-discovery maintenance tick. Defaults to
+    /// [`DISCOVERY_INTERVAL`] (C# `Peer.OnTimer` = 5 s); overridable so
+    /// integration tests can drive discovery on a fast cadence.
+    discovery_interval: Duration,
 }
 
 impl fmt::Debug for LocalNodeService {
@@ -171,8 +179,18 @@ impl LocalNodeService {
             accept_handle: None,
             inbound_tx: None,
             block_source: None,
+            discovery_interval: DISCOVERY_INTERVAL,
         };
         (service, handle)
+    }
+
+    /// Override the peer-discovery tick cadence (default
+    /// [`DISCOVERY_INTERVAL`]). Intended for integration tests that need
+    /// discovery to run faster than the 5 s production interval.
+    #[doc(hidden)]
+    pub fn with_discovery_interval(mut self, interval: Duration) -> Self {
+        self.discovery_interval = interval;
+        self
     }
 
     /// Attach an inbound-inventory sink: blocks and transactions decoded
@@ -202,20 +220,106 @@ impl LocalNodeService {
 
     /// Drive the service loop until the command channel is closed.
     ///
-    /// Every command is dispatched to a private `async fn` handler
-    /// on the service struct; the loop itself is just
-    /// `while let Some(cmd) = self.cmd_rx.recv().await`.
+    /// The loop `select!`s over the command stream and a periodic
+    /// peer-discovery tick (C# `Peer.OnTimer`). Every command is dispatched
+    /// to a private `async fn` handler on the service struct; the discovery
+    /// tick runs [`Self::maintain_peers`].
     pub async fn run(mut self) {
         info!(target: "neo_network", "local node service run loop started");
-        while let Some(cmd) = self.cmd_rx.recv().await {
-            let is_shutdown = matches!(cmd, NetworkCommand::Shutdown);
-            self.dispatch(cmd).await;
-            if is_shutdown {
-                break;
+        // C# `Peer.OnTimer` runs on a fixed schedule independent of inbound
+        // commands; drive the peer-discovery maintenance from a matching
+        // interval interleaved with the command stream.
+        let mut discovery_timer = tokio::time::interval(self.discovery_interval);
+        discovery_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        // The first tick fires immediately; skip it so we do not run discovery
+        // before the listener is even started.
+        discovery_timer.tick().await;
+        loop {
+            tokio::select! {
+                cmd = self.cmd_rx.recv() => {
+                    let Some(cmd) = cmd else {
+                        break;
+                    };
+                    let is_shutdown = matches!(cmd, NetworkCommand::Shutdown);
+                    self.dispatch(cmd).await;
+                    if is_shutdown {
+                        break;
+                    }
+                }
+                _ = discovery_timer.tick() => {
+                    self.maintain_peers().await;
+                }
             }
         }
         self.on_shutdown().await;
         info!(target: "neo_network", "local node service run loop exited");
+    }
+
+    /// Peer-discovery maintenance tick (C# `Peer.OnTimer` +
+    /// `LocalNode.NeedMorePeers`). When the connected count is below the
+    /// desired minimum:
+    ///
+    /// 1. Dial candidate endpoints already learned via `Addr` gossip and
+    ///    queued in the shared address book (C# `OnTimer` samples
+    ///    `UnconnectedPeers` and calls `ConnectToPeer`).
+    /// 2. If the address book is empty but peers are connected, broadcast
+    ///    `GetAddr` to every peer to learn more (C# `NeedMorePeers`'s
+    ///    `if (!ConnectedPeers.IsEmpty) BroadcastMessage(GetAddr)` branch).
+    ///
+    /// The zero-peers reseed branch (C# `NeedMorePeers` else-branch that
+    /// re-adds the seed list) is driven by the node's seed dialer, so it is
+    /// intentionally not duplicated here.
+    async fn maintain_peers(&mut self) {
+        if !self.started {
+            return;
+        }
+        let connected = self.registry.len();
+        let desired = self.config.min_desired_connections;
+        if connected >= desired {
+            return;
+        }
+        let need = desired - connected;
+
+        // Prefer dialing peers we already know about (C# `OnTimer` connects
+        // sampled `UnconnectedPeers` before asking for more).
+        let candidates = self.registry.take_unconnected(need);
+        if !candidates.is_empty() {
+            for addr in candidates {
+                if let Err(err) = self.handle_connect_peer(addr).await {
+                    debug!(
+                        target: "neo_network",
+                        %addr,
+                        %err,
+                        "discovery dial to unconnected candidate failed"
+                    );
+                }
+            }
+            return;
+        }
+
+        // No candidates queued: ask connected peers for more (C#
+        // `NeedMorePeers` → `BroadcastMessage(GetAddr)`). With no peers at all
+        // there is nobody to ask; the seed dialer handles that case.
+        let handles = self.registry.handles();
+        if handles.is_empty() {
+            return;
+        }
+        debug!(
+            target: "neo_network",
+            connected,
+            desired,
+            "peer count below desired minimum; broadcasting getaddr"
+        );
+        for (peer_id, handle) in handles {
+            if let Err(err) = handle.try_send_get_addr() {
+                trace!(
+                    target: "neo_network",
+                    %peer_id,
+                    %err,
+                    "dropping getaddr to peer (channel full or closed)"
+                );
+            }
+        }
     }
 
     /// Dispatch a single command to its handler. Public for testing.

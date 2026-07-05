@@ -99,6 +99,13 @@ pub(super) struct PeerSession {
     /// flight, flushed on `verack` (C# `RemoteNode` queues messages
     /// until `_verack` is set).
     pub(super) pending_outbound: Vec<Message>,
+    /// Whether we have sent a `GetAddr` to this peer and are awaiting its
+    /// `Addr` reply (C# `RemoteNode._sentCommands[GetAddr]`). Only a
+    /// solicited `Addr` is ingested; an unsolicited one is dropped
+    /// (C# `OnAddrMessageReceived`: `if (!sent) return;`). Reset to
+    /// `false` once the reply is consumed so each `Addr` matches one
+    /// `GetAddr`.
+    pub(super) get_addr_sent: bool,
     /// Optional sink for blocks/transactions decoded from this peer.
     pub(super) inbound_tx: Option<mpsc::Sender<InboundInventory>>,
     /// Optional read-only ledger view for serving block requests.
@@ -188,6 +195,11 @@ impl PeerSession {
                             return reason;
                         }
                     }
+                    Some(RemoteNodeCommand::SendGetAddr) => {
+                        if let Err(reason) = self.send_get_addr(framed).await {
+                            return reason;
+                        }
+                    }
                     Some(RemoteNodeCommand::Shutdown) | None => {
                         return CloseReason::ShutdownRequested;
                     }
@@ -234,6 +246,26 @@ impl PeerSession {
             .send(message)
             .await
             .map_err(|err| CloseReason::Transport(format!("send ping: {err}")))?;
+        Ok(())
+    }
+
+    /// C# `LocalNode.NeedMorePeers` → `BroadcastMessage(GetAddr)`: solicit
+    /// the peer's known addresses so the mesh can grow beyond the seed list.
+    /// A no-op until the handshake completes (`GetAddr` is a post-handshake
+    /// message; queuing it mid-handshake would race the version exchange).
+    /// Records that we sent `GetAddr` so the peer's `Addr` reply is accepted
+    /// (C# `_sentCommands[GetAddr]`).
+    async fn send_get_addr(&mut self, framed: &mut PeerFramed) -> Result<(), CloseReason> {
+        if !self.verack_received {
+            return Ok(());
+        }
+        let message = Message::from_payload_bytes(MessageCommand::GetAddr, Vec::new(), false)
+            .map_err(|err| CloseReason::Transport(format!("encode getaddr: {err}")))?;
+        framed
+            .send(message)
+            .await
+            .map_err(|err| CloseReason::Transport(format!("send getaddr: {err}")))?;
+        self.get_addr_sent = true;
         Ok(())
     }
 

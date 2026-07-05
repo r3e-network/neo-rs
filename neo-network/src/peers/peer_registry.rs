@@ -18,7 +18,7 @@
 //!   connection from the same remote address whose version nonce
 //!   matches an existing peer's is rejected.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 
 use crate::ChannelsConfig;
@@ -51,6 +51,12 @@ struct RegistryInner {
     /// Live connection count per remote IP address
     /// (C# `Peer.ConnectedAddresses`).
     address_counts: HashMap<IpAddr, usize>,
+    /// Candidate peer endpoints learned from `Addr` gossip but not yet
+    /// dialed (C# `Peer.UnconnectedPeers`). The dial path
+    /// (`LocalNodeService`'s discovery tick) drains from here when the
+    /// connected count drops below the desired minimum. Bounded by
+    /// [`PeerRegistry::UNCONNECTED_MAX`] (C# `Peer.UnconnectedMax`).
+    unconnected: HashSet<SocketAddr>,
 }
 
 /// Shared connected-peer registry with C#-faithful admission control.
@@ -64,6 +70,12 @@ pub struct PeerRegistry {
     /// (C# `ChannelsConfig.MaxConnectionsPerAddress`, default 3).
     max_connections_per_address: usize,
     inner: parking_lot::Mutex<RegistryInner>,
+}
+
+impl PeerRegistry {
+    /// Maximum number of unconnected candidate endpoints retained in the
+    /// address book (C# `Peer.UnconnectedMax` = 1000).
+    pub const UNCONNECTED_MAX: usize = 1000;
 }
 
 impl std::fmt::Debug for PeerRegistry {
@@ -95,6 +107,7 @@ impl PeerRegistry {
             inner: parking_lot::Mutex::new(RegistryInner {
                 peers: HashMap::new(),
                 address_counts: HashMap::new(),
+                unconnected: HashSet::new(),
             }),
         }
     }
@@ -199,6 +212,66 @@ impl PeerRegistry {
             }
         }
         out
+    }
+
+    /// Add candidate peer endpoints to the unconnected address book
+    /// (C# `Peer.AddPeers`), skipping any endpoint that duplicates a
+    /// currently connected peer's transport or advertised listener
+    /// endpoint. The book is capped at [`Self::UNCONNECTED_MAX`]: once at
+    /// capacity, C# stops taking new peers, so we do the same.
+    ///
+    /// Returns the number of endpoints newly inserted.
+    pub fn add_unconnected(&self, endpoints: impl IntoIterator<Item = SocketAddr>) -> usize {
+        let mut inner = self.inner.lock();
+        // C# `AddPeers` gates on the whole batch: `if (UnconnectedPeers.Count
+        // < UnconnectedMax)`. Preserve that (no partial fill past the cap).
+        if inner.unconnected.len() >= Self::UNCONNECTED_MAX {
+            return 0;
+        }
+        // Build the set of endpoints already represented by a live peer so a
+        // candidate we are already connected to is never re-queued (C#
+        // `AddPeers` filters against `ConnectedPeers.Values`).
+        let mut connected: HashSet<SocketAddr> = HashSet::new();
+        for entry in inner.peers.values() {
+            connected.insert(entry.remote_addr);
+            if let Some(addr) = entry.listener_addr {
+                connected.insert(addr);
+            }
+        }
+        let mut added = 0;
+        for endpoint in endpoints {
+            if inner.unconnected.len() >= Self::UNCONNECTED_MAX {
+                break;
+            }
+            if connected.contains(&endpoint) {
+                continue;
+            }
+            if inner.unconnected.insert(endpoint) {
+                added += 1;
+            }
+        }
+        added
+    }
+
+    /// Remove and return up to `count` unconnected candidate endpoints for
+    /// dialing (C# `Peer.OnTimer`: `UnconnectedPeers.Sample(...)` followed by
+    /// `Except`). Fewer than `count` are returned when the book holds fewer.
+    pub fn take_unconnected(&self, count: usize) -> Vec<SocketAddr> {
+        if count == 0 {
+            return Vec::new();
+        }
+        let mut inner = self.inner.lock();
+        let taken: Vec<SocketAddr> = inner.unconnected.iter().copied().take(count).collect();
+        for endpoint in &taken {
+            inner.unconnected.remove(endpoint);
+        }
+        taken
+    }
+
+    /// Number of unconnected candidate endpoints currently queued
+    /// (C# `LocalNode.UnconnectedCount`).
+    pub fn unconnected_len(&self) -> usize {
+        self.inner.lock().unconnected.len()
     }
 
     /// Remove a peer, decrementing its per-address count

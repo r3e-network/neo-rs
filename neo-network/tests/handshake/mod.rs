@@ -210,6 +210,8 @@ async fn recv_getblockbyindex(fake: &mut FakeFramed) -> GetBlockByIndexPayload {
 
 #[path = "block_source.rs"]
 mod block_source;
+#[path = "discovery.rs"]
+mod discovery;
 #[path = "handshake_flow.rs"]
 mod handshake_flow;
 #[path = "inventory.rs"]

@@ -203,6 +203,11 @@ pub enum RemoteNodeCommand {
     /// Send a pre-encoded wire frame (a complete `Message` byte
     /// sequence) to the peer.
     SendRaw(Vec<u8>),
+    /// Send a `GetAddr` message to the peer to solicit its known peers
+    /// (C# `LocalNode.NeedMorePeers` → `BroadcastMessage(GetAddr)`). The
+    /// session records that it sent `GetAddr` so the peer's `Addr` reply
+    /// is accepted (C# `_sentCommands[GetAddr]`).
+    SendGetAddr,
     /// Request graceful shutdown of the service task.
     Shutdown,
 }
@@ -292,6 +297,21 @@ impl RemoteNodeHandle {
         use tokio::sync::mpsc::error::TrySendError;
         self.cmd_tx
             .try_send(RemoteNodeCommand::SendRaw(bytes))
+            .map_err(|err| match err {
+                TrySendError::Full(_) => crate::error::NetworkError::RemoteUnavailable {
+                    peer_id: format!("{:?}", self.peer_id),
+                    detail: "send channel full (slow peer)".to_string(),
+                },
+                TrySendError::Closed(_) => crate::error::NetworkError::LocalShuttingDown,
+            })
+    }
+
+    /// Non-blocking request to send a `GetAddr` to the peer. Best-effort: a
+    /// dropped `GetAddr` (channel full) is retried on the next discovery tick.
+    pub fn try_send_get_addr(&self) -> NetworkResult<()> {
+        use tokio::sync::mpsc::error::TrySendError;
+        self.cmd_tx
+            .try_send(RemoteNodeCommand::SendGetAddr)
             .map_err(|err| match err {
                 TrySendError::Full(_) => crate::error::NetworkError::RemoteUnavailable {
                     peer_id: format!("{:?}", self.peer_id),
@@ -465,6 +485,7 @@ impl RemoteNodeService {
             sync_scheduler: BlockRequestScheduler::default(),
             peer_allows_compression: false,
             pending_outbound: Vec::new(),
+            get_addr_sent: false,
             inbound_tx,
             block_source,
         };

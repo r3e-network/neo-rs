@@ -125,6 +125,64 @@ fn record_version_nonce_for_unregistered_peer_fails() {
 }
 
 #[test]
+fn add_unconnected_dedups_and_skips_connected_endpoints() {
+    let registry = PeerRegistry::with_limits(100, 10);
+    // A connected peer whose listener endpoint must not be re-queued.
+    let (peer, _) = admit(&registry, "10.0.0.1:5001");
+    registry.record_listener_addr(peer, addr("10.0.0.1:20333"));
+
+    let added = registry.add_unconnected([
+        addr("10.0.0.2:20333"),
+        addr("10.0.0.3:20333"),
+        addr("10.0.0.2:20333"),      // duplicate within the batch
+        addr("10.0.0.1:20333"),      // already connected (listener) => skipped
+        addr("10.0.0.1:5001"),       // already connected (transport) => skipped
+    ]);
+    assert_eq!(added, 2, "only two distinct, non-connected endpoints");
+    assert_eq!(registry.unconnected_len(), 2);
+
+    // Re-adding an already-queued endpoint is a no-op.
+    assert_eq!(registry.add_unconnected([addr("10.0.0.2:20333")]), 0);
+    assert_eq!(registry.unconnected_len(), 2);
+}
+
+#[test]
+fn take_unconnected_drains_up_to_count() {
+    let registry = PeerRegistry::with_limits(100, 10);
+    registry.add_unconnected([
+        addr("10.0.0.2:20333"),
+        addr("10.0.0.3:20333"),
+        addr("10.0.0.4:20333"),
+    ]);
+    assert_eq!(registry.unconnected_len(), 3);
+
+    let taken = registry.take_unconnected(2);
+    assert_eq!(taken.len(), 2);
+    assert_eq!(registry.unconnected_len(), 1, "taken endpoints are removed");
+
+    // take(0) is a no-op; taking more than remain returns just the remainder.
+    assert!(registry.take_unconnected(0).is_empty());
+    assert_eq!(registry.take_unconnected(10).len(), 1);
+    assert_eq!(registry.unconnected_len(), 0);
+}
+
+#[test]
+fn add_unconnected_respects_the_unconnected_cap() {
+    let registry = PeerRegistry::with_limits(100, 10);
+    // Fill to the cap.
+    let batch: Vec<SocketAddr> = (0..PeerRegistry::UNCONNECTED_MAX)
+        .map(|i| addr(&format!("10.1.{}.{}:20333", i / 256, i % 256)))
+        .collect();
+    let added = registry.add_unconnected(batch);
+    assert_eq!(added, PeerRegistry::UNCONNECTED_MAX);
+    assert_eq!(registry.unconnected_len(), PeerRegistry::UNCONNECTED_MAX);
+
+    // At capacity, further additions are rejected wholesale (C# `AddPeers`).
+    assert_eq!(registry.add_unconnected([addr("10.9.9.9:20333")]), 0);
+    assert_eq!(registry.unconnected_len(), PeerRegistry::UNCONNECTED_MAX);
+}
+
+#[test]
 fn handles_snapshot_and_lookup() {
     let registry = PeerRegistry::with_limits(100, 10);
     let (peer, _) = admit(&registry, "10.0.0.1:1001");
