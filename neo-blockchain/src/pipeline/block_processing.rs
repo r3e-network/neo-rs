@@ -157,11 +157,17 @@ where
             );
             return Ok(None);
         };
+        let native_contract_provider = self.system.native_contract_provider().ok_or_else(|| {
+            neo_error::CoreError::invalid_operation(
+                "persist_block_sequence requires a native-contract provider from SystemContext",
+            )
+        })?;
         Ok(Some(BatchPersistResources {
             snapshot,
             settings: self.system.settings(),
-            native_persist: crate::native_persist::NativePersistResources::from_installed_provider(
-            )?,
+            native_persist: crate::native_persist::NativePersistResources::from_provider(
+                native_contract_provider,
+            ),
         }))
     }
 

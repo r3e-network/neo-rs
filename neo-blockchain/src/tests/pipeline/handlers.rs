@@ -15,6 +15,12 @@ use num_bigint::BigInt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::oneshot;
 
+type NativeProviderArc = Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>;
+
+fn standard_native_provider() -> NativeProviderArc {
+    Arc::new(neo_native_contracts::StandardNativeProvider::new())
+}
+
 #[derive(Debug)]
 struct TestContext;
 impl SystemContext for TestContext {
@@ -273,6 +279,9 @@ impl SystemContext for StoreContext {
             calls.fetch_add(1, Ordering::SeqCst);
         }
         Some(Arc::clone(&self.snapshot))
+    }
+    fn native_contract_provider(&self) -> Option<NativeProviderArc> {
+        Some(standard_native_provider())
     }
     fn block_committing(
         &self,

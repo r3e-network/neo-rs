@@ -42,6 +42,10 @@ impl SystemContext for FailingSecondCommitContext {
         Some(Arc::clone(&self.snapshot))
     }
 
+    fn native_contract_provider(&self) -> Option<NativeProviderArc> {
+        Some(standard_native_provider())
+    }
+
     fn block_committing(
         &self,
         _block: &Block,
@@ -87,6 +91,10 @@ impl SystemContext for FailingBulkFlushContext {
         Some(Arc::clone(&self.snapshot))
     }
 
+    fn native_contract_provider(&self) -> Option<NativeProviderArc> {
+        Some(standard_native_provider())
+    }
+
     fn flush_bulk_sync_commit_handlers(&self) -> Result<(), String> {
         self.flush_calls.fetch_add(1, Ordering::SeqCst);
         Err("state-root worker reported a failed operation".to_string())
@@ -127,6 +135,10 @@ impl SystemContext for StateServiceEmptyFastPathContext {
 
     fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache>> {
         Some(Arc::clone(&self.snapshot))
+    }
+
+    fn native_contract_provider(&self) -> Option<NativeProviderArc> {
+        Some(standard_native_provider())
     }
 
     fn block_committing(

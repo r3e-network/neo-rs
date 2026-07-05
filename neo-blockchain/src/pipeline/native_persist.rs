@@ -248,7 +248,10 @@ pub struct NativePersistResources {
 }
 
 impl NativePersistResources {
-    fn from_provider(provider: Arc<dyn NativeContractProvider>) -> Self {
+    /// Captures the canonical native-contract list once from an explicit
+    /// provider. The list order is the C# native registration order used by
+    /// both OnPersist and PostPersist hooks.
+    pub(crate) fn from_provider(provider: Arc<dyn NativeContractProvider>) -> Self {
         let contracts = provider.all_native_contracts().into();
         Self {
             provider,
