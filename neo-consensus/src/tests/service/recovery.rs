@@ -549,6 +549,111 @@ async fn recovery_message_with_commits_triggers_block_commit() {
     assert_eq!(committed, Some(0));
 }
 
+/// P0 crash-safety regression: a RecoveryMessage that carries M valid
+/// PrepareResponses but NO valid PrepareRequest must NOT cause the node to sign
+/// a Commit. Previously an unguarded tail block in `on_recovery_message` would
+/// fire on `has_enough_prepare_responses()` alone and sign a Commit over
+/// `proposed_block_hash.unwrap_or_default()` — i.e. a DEFAULT/ZERO block hash —
+/// because no PrepareRequest had established the real proposed block.
+///
+/// C# `ConsensusService.OnRecoveryMessageReceived` never signs a Commit; it only
+/// reaches `CheckPreparations` (which requires `RequestSentOrReceived`) through
+/// the normal reprocessed handlers, so it can never commit over a zero hash.
+#[tokio::test]
+async fn recovery_message_without_prepare_request_does_not_commit_zero_hash() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    // Node under test is validator 0 (a backup for view 0; primary is index 0
+    // in this construction — start() below computes the primary). We choose a
+    // backup so the node would actually try to sign a Commit if the buggy path
+    // were reachable.
+    let mut service = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+
+    // A preparation hash that the (bogus) PrepareResponses reference. There is
+    // NO PrepareRequest in this recovery message, so the node never learns the
+    // real proposed block hash.
+    let preparation_hash = UInt256::from([0xAB; 32]);
+
+    let mut recovery = RecoveryMessage::new(0, 0, 2);
+    recovery.preparation_hash = Some(preparation_hash);
+
+    // Build M valid PrepareResponses. The primary (index 0 for block 0 / view 0)
+    // is skipped during recovery reprocessing, so use the three non-primary
+    // validators (1, 2, 3). Each compact invocation script must contain a
+    // signature that verifies over the PrepareResponse payload that
+    // `on_recovery_message` reconstructs.
+    let mut preparation_messages = Vec::new();
+    for &validator_index in &[1u8, 2u8, 3u8] {
+        let response =
+            PrepareResponseMessage::new(0, 0, validator_index, preparation_hash);
+        let mut resp_payload = ConsensusPayload::new(
+            network,
+            0,
+            validator_index,
+            0,
+            ConsensusMessageType::PrepareResponse,
+            response.serialize(),
+        );
+        sign_payload(&service, &mut resp_payload, &keys[validator_index as usize]);
+        preparation_messages.push(PreparationPayloadCompact {
+            validator_index,
+            invocation_script: invocation_script(&resp_payload.witness),
+        });
+    }
+    recovery.preparation_messages = preparation_messages;
+
+    let mut payload = ConsensusPayload::new(
+        network,
+        0,
+        2,
+        0,
+        ConsensusMessageType::RecoveryMessage,
+        recovery.serialize().unwrap(),
+    );
+    sign_payload(&service, &mut payload, &keys[2]);
+
+    service.process_message(payload).await.unwrap();
+
+    // The M PrepareResponses were accepted into the context...
+    assert!(
+        service.context().prepare_responses.len() >= service.context().m(),
+        "test precondition: M prepare responses should be recorded"
+    );
+    // ...but because no PrepareRequest was (re)established, the node must NOT have
+    // signed or broadcast any Commit, and must not have recorded its own commit.
+    assert!(
+        !service.context().prepare_request_received,
+        "no PrepareRequest should have been established"
+    );
+    assert!(
+        service.context().proposed_block_hash.is_none(),
+        "no real proposed block hash should exist"
+    );
+    assert!(
+        service.context().commits.is_empty(),
+        "node must not sign a Commit over a default/zero block hash from recovery"
+    );
+
+    let mut commit_broadcast = false;
+    let mut committed = false;
+    while let Ok(event) = rx.try_recv() {
+        match event {
+            ConsensusEvent::BroadcastMessage(p)
+                if p.message_type == ConsensusMessageType::Commit =>
+            {
+                commit_broadcast = true;
+            }
+            ConsensusEvent::BlockCommitted { .. } => committed = true,
+            _ => {}
+        }
+    }
+    assert!(!commit_broadcast, "no Commit should have been broadcast");
+    assert!(!committed, "no block should have been committed");
+}
+
 #[tokio::test]
 async fn recovery_response_includes_compact_payloads() {
     let network = 0x4E454F;

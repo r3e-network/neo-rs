@@ -70,6 +70,82 @@ impl ConsensusService {
         Ok(())
     }
 
+    /// Attempts to resume consensus for `block_index` from the configured
+    /// recovery-log file, mirroring C# `ConsensusService.OnStart` which calls
+    /// `context.Load()` before `InitializeConsensus`.
+    ///
+    /// Returns `Ok(true)` when a matching persisted state was loaded and the
+    /// round resumed (the caller must NOT then call `start_*`). Returns
+    /// `Ok(false)` when there is no usable persisted state (no path configured,
+    /// file missing/empty/corrupt, or persisted for a different block index), in
+    /// which case the caller proceeds with a normal fresh `start_*`.
+    ///
+    /// Only a persisted state whose `block_index` matches the round being started
+    /// is resumed. A persisted state for an older block is stale (that block was
+    /// already produced) and is ignored, exactly as C# `Deserialize` rejects a
+    /// mismatched `Block.Index`.
+    pub async fn try_load_and_resume(
+        &mut self,
+        block_index: u32,
+        timestamp: u64,
+        prev_hash: UInt256,
+        next_consensus: UInt160,
+        version: u32,
+    ) -> ConsensusResult<bool> {
+        let Some(path) = self.state_path.clone() else {
+            return Ok(false);
+        };
+        if !path.exists() {
+            return Ok(false);
+        }
+
+        let validators = self.context.validators.clone();
+        let my_index = self.context.my_index;
+        let expected_block_time = self.context.expected_block_time;
+
+        let loaded = match crate::context::ConsensusContext::load(&path, validators, my_index) {
+            Ok(ctx) => ctx,
+            Err(err) => {
+                // Corrupt/unreadable recovery log: fall back to a fresh start
+                // (C# `Load()` returns false on any deserialization error).
+                info!(%err, "consensus recovery log unreadable; starting fresh");
+                return Ok(false);
+            }
+        };
+
+        // Only resume a recovery log written for THIS block round. Anything else
+        // is stale and must not override the fresh round.
+        if loaded.block_index != block_index {
+            info!(
+                persisted = loaded.block_index,
+                round = block_index,
+                "consensus recovery log is for a different block; ignoring"
+            );
+            return Ok(false);
+        }
+
+        info!(
+            block_index,
+            view = loaded.view_number,
+            commit_sent = loaded.my_index.is_some_and(|idx| loaded.commits.contains_key(&idx)),
+            "resuming consensus from recovery log"
+        );
+
+        self.context = loaded;
+        self.context.expected_block_time = expected_block_time;
+
+        // Restore the transient per-round header fields the recovery log does not
+        // carry, then re-enter the gated commit checks (C# `OnStart` calls
+        // `CheckPreparations()` when `CommitSent`). Because `proposed_block_hash`,
+        // `prepare_request_received` and our own commit are all restored from
+        // disk, this can only ever re-derive the SAME block — never a different
+        // one at the same (height, view).
+        self.resume_with_next_consensus(timestamp, prev_hash, next_consensus, version)
+            .await?;
+
+        Ok(true)
+    }
+
     /// Resumes consensus from a recovered context.
     ///
     /// This restores transient fields that are not persisted and continues the round.

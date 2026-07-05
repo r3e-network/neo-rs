@@ -1054,6 +1054,12 @@ async fn build_node(
         consensus_setup.filter(|_| ledger_mode.uses_local_replay_services()),
         consensus_inbound_rx,
     ) {
+        // dBFT recovery-log directory: the persistent data directory (same
+        // resolution as the ledger store), or `None` for an in-memory node —
+        // which disables persistence (C# `DbftSettings.IgnoreRecoveryLogs`).
+        let consensus_data_dir = storage_override
+            .map(std::path::Path::to_path_buf)
+            .or_else(|| config.storage.data_directory());
         if let Some(task) = crate::consensus::consensus_driver_task(
             setup,
             blockchain.clone(),
@@ -1062,6 +1068,7 @@ async fn build_node(
             Arc::clone(&settings),
             consensus_validators.expect("configured consensus has validators"),
             Arc::clone(&store),
+            consensus_data_dir.as_deref(),
             inbound_rx,
         ) {
             info!(target: "neo", "dBFT consensus driver started (validator node)");

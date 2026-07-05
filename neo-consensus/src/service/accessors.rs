@@ -1,6 +1,6 @@
 use crate::context::{ConsensusContext, ValidatorInfo};
 use crate::{ConsensusError, ConsensusResult, ConsensusSigner};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::ConsensusService;
@@ -55,6 +55,32 @@ impl ConsensusService {
     /// Persists the current consensus context to disk for recovery.
     pub fn save_context(&self, path: &Path) -> ConsensusResult<()> {
         self.context.save(path)
+    }
+
+    /// Sets the recovery-log file path used for crash-recovery persistence.
+    ///
+    /// When set, the context is saved immediately before this node signs and
+    /// broadcasts its own Commit and is reloaded on startup — mirroring C#
+    /// `ConsensusContext.Save`/`Load` guarded by `DbftSettings.RecoveryLogs`.
+    /// Passing `None` disables persistence (C# `IgnoreRecoveryLogs = true`).
+    pub fn set_state_path(&mut self, path: Option<PathBuf>) {
+        self.state_path = path;
+    }
+
+    /// Persists the consensus context to the configured recovery-log path, if any.
+    ///
+    /// This is the Rust analogue of C# `ConsensusContext.Save()`. It is called
+    /// from `check_prepare_responses` exactly once — immediately before this node
+    /// broadcasts its own Commit — so a crash/restart resumes from a state that
+    /// already records the signed commit and cannot equivocate at the same
+    /// (height, view). A persistence failure here propagates so the Commit is
+    /// NOT broadcast (C# `store.PutSync` throwing aborts the same code path
+    /// before `localNode.Tell`).
+    pub(in crate::service) fn save_context_if_configured(&self) -> ConsensusResult<()> {
+        if let Some(path) = self.state_path.as_deref() {
+            self.context.save(path)?;
+        }
+        Ok(())
     }
 
     /// Returns the network magic number this service is configured for.

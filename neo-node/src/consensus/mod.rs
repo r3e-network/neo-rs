@@ -273,6 +273,19 @@ struct ConsensusDriver {
     proposal_txs: HashMap<UInt256, Arc<Transaction>>,
 }
 
+/// Builds the dBFT recovery-log file path under the node data directory, mirroring
+/// C# `DbftSettings.RecoveryLogs` (default sub-store name `"ConsensusState"`).
+/// Returns `None` when no data directory is configured (in-memory / test runs),
+/// which disables persistence (C# `IgnoreRecoveryLogs`).
+fn recovery_log_path(data_dir: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+    let dir = data_dir?.join("ConsensusState");
+    if let Err(err) = std::fs::create_dir_all(&dir) {
+        warn!(target: "neo", %err, dir = %dir.display(), "could not create consensus recovery-log dir; persistence disabled");
+        return None;
+    }
+    Some(dir.join("consensus-state.bin"))
+}
+
 impl ConsensusDriver {
     /// Builds a fresh read snapshot of the current persisted store state. Called
     /// once per round (at start and on each `Imported`) so a driver process that
@@ -326,17 +339,42 @@ impl ConsensusDriver {
             }
         };
         self.current_prev_hash = prev_hash;
-        match self.service.start_with_block_context(
-            block_index,
-            now_millis(),
-            prev_hash,
-            prev_timestamp,
-            next_consensus,
-            BLOCK_VERSION,
-        ) {
-            Ok(()) => info!(target: "neo", block_index, "consensus started"),
+        // C# `ConsensusService.OnStart`: before `InitializeConsensus`, attempt to
+        // resume from the recovery log so a crash/restart cannot double-sign a
+        // different block at the same (height, view). Only a log written for this
+        // exact `block_index` resumes; otherwise fall through to a fresh start.
+        let resumed = match self
+            .service
+            .try_load_and_resume(
+                block_index,
+                now_millis(),
+                prev_hash,
+                next_consensus,
+                BLOCK_VERSION,
+            )
+            .await
+        {
+            Ok(resumed) => resumed,
             Err(err) => {
-                info!(target: "neo", %err, block_index, "consensus not started; driver idle");
+                warn!(target: "neo", %err, block_index, "consensus recovery-log resume failed; starting fresh");
+                false
+            }
+        };
+        if resumed {
+            info!(target: "neo", block_index, "consensus resumed from recovery log");
+        } else {
+            match self.service.start_with_block_context(
+                block_index,
+                now_millis(),
+                prev_hash,
+                prev_timestamp,
+                next_consensus,
+                BLOCK_VERSION,
+            ) {
+                Ok(()) => info!(target: "neo", block_index, "consensus started"),
+                Err(err) => {
+                    info!(target: "neo", %err, block_index, "consensus not started; driver idle");
+                }
             }
         }
 
@@ -532,6 +570,7 @@ pub fn consensus_driver_task(
     settings: Arc<ProtocolSettings>,
     validators: Arc<RwLock<Vec<ValidatorInfo>>>,
     store: Arc<dyn Store>,
+    data_dir: Option<&std::path::Path>,
     inbound_rx: mpsc::Receiver<ConsensusPayload>,
 ) -> Option<impl std::future::Future<Output = ()> + Send + 'static> {
     // Generously sized: a commit emits BroadcastMessage(Commit) + BlockCommitted
@@ -550,6 +589,14 @@ pub fn consensus_driver_task(
     service.set_signer(setup.signer.clone());
     service.set_expected_block_time(setup.ms_per_block);
     service.set_max_transactions_per_block(settings.max_transactions_per_block);
+    // Crash-recovery persistence (C# `DbftSettings.RecoveryLogs`): the context is
+    // saved before this node broadcasts its own Commit and reloaded on startup.
+    // A missing data directory (in-memory node) disables it (C# `IgnoreRecoveryLogs`).
+    let state_path = recovery_log_path(data_dir);
+    if let Some(ref path) = state_path {
+        info!(target: "neo", path = %path.display(), "dBFT recovery log enabled");
+    }
+    service.set_state_path(state_path);
 
     let driver = ConsensusDriver {
         service,

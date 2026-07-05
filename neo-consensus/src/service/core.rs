@@ -1,6 +1,7 @@
 use super::ConsensusEvent;
 use crate::ConsensusSigner;
 use crate::context::{ConsensusContext, ValidatorInfo};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use zeroize::Zeroizing;
@@ -25,6 +26,13 @@ pub struct ConsensusService {
     pub(super) max_transactions_per_block: u32,
     /// Whether the service is running
     pub(super) running: bool,
+    /// Optional recovery-log file path. When set, the consensus context is
+    /// persisted to this file immediately before this node signs and broadcasts
+    /// its own Commit (C# `ConsensusService.CheckPreparations` -> `context.Save()`
+    /// before `localNode.Tell(payload)`), and reloaded on startup so a crash /
+    /// restart cannot double-sign a different block at the same (height, view).
+    /// `None` disables persistence (C# `DbftSettings.IgnoreRecoveryLogs = true`).
+    pub(super) state_path: Option<PathBuf>,
 }
 
 impl ConsensusService {
@@ -45,6 +53,7 @@ impl ConsensusService {
             event_tx,
             max_transactions_per_block: DEFAULT_MAX_TRANSACTIONS_PER_BLOCK,
             running: false,
+            state_path: None,
         }
     }
 
@@ -64,6 +73,7 @@ impl ConsensusService {
             event_tx,
             max_transactions_per_block: DEFAULT_MAX_TRANSACTIONS_PER_BLOCK,
             running: false,
+            state_path: None,
         }
     }
 }

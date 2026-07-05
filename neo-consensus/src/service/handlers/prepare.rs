@@ -314,6 +314,20 @@ impl ConsensusService {
             return Ok(());
         }
 
+        // Idempotency / crash-safety: if we have already signed our own Commit
+        // for this view (e.g. resumed from the recovery log after a restart, or
+        // re-entered via `resume`), we must NOT sign again. Re-signing would hit
+        // `add_commit` -> `AlreadyReceived` and, more importantly, must never
+        // produce a *second* commit at the same (height, view). C# `MakeCommit`
+        // returns the cached commit payload when `CommitSent`; we simply stop.
+        if self
+            .context
+            .my_index
+            .is_some_and(|idx| self.context.commits.contains_key(&idx))
+        {
+            return Ok(());
+        }
+
         // We have enough responses - send Commit
         info!(
             block_index = self.context.block_index,
@@ -337,16 +351,27 @@ impl ConsensusService {
             .await?;
         let commit_witness = payload.witness.clone();
         let commit_invocation = InvocationScript::invocation_script_from_signature(&commit_witness);
-        self.broadcast(payload)?;
+
+        // Record our own commit in the context BEFORE persisting so the saved
+        // recovery log already reflects the commit we are about to broadcast.
         if !commit_witness.is_empty() {
             self.context
                 .commit_invocations
                 .insert(my_index, commit_invocation);
         }
-
-        // Add our own commit
         self.context
             .add_commit(my_index, self.context.view_number, signature)?;
+
+        // C# `ConsensusService.CheckPreparations` calls `context.Save()` here —
+        // immediately before `localNode.Tell(payload)` — so the recovery log is
+        // durable BEFORE the Commit leaves this node. A crash after broadcast
+        // then resumes from a state that already records this commit and cannot
+        // sign a different block at the same (height, view). If persistence
+        // fails, the error propagates and the Commit is NOT broadcast, matching
+        // C# where a throwing `store.PutSync` aborts before the `Tell`.
+        self.save_context_if_configured()?;
+
+        self.broadcast(payload)?;
 
         self.check_commits()?;
 
