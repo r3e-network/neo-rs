@@ -38,7 +38,7 @@ async fn recovery_request_broadcasts_recovery_message() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    service.process_message(payload).unwrap();
+    service.process_message(payload).await.unwrap();
 
     let mut recovery_sent = None;
     while let Ok(event) = rx.try_recv() {
@@ -73,7 +73,7 @@ async fn recovery_request_ignored_by_non_selected_validator() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    service.process_message(payload).unwrap();
+    service.process_message(payload).await.unwrap();
 
     let mut recovery_sent = false;
     while let Ok(event) = rx.try_recv() {
@@ -112,7 +112,7 @@ async fn recovery_request_responds_when_commit_sent() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    service.process_message(payload).unwrap();
+    service.process_message(payload).await.unwrap();
 
     let mut recovery_sent = None;
     while let Ok(event) = rx.try_recv() {
@@ -173,7 +173,7 @@ async fn recovery_message_change_view_triggers_view_change() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    service.process_message(payload).unwrap();
+    service.process_message(payload).await.unwrap();
 
     let mut view_changed = None;
     while let Ok(event) = rx.try_recv() {
@@ -231,7 +231,7 @@ async fn recovery_message_commits_for_other_view_do_not_commit_block() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    service.process_message(payload).unwrap();
+    service.process_message(payload).await.unwrap();
 
     let mut committed = None;
     while let Ok(event) = rx.try_recv() {
@@ -284,7 +284,7 @@ async fn recovery_message_ignores_invalid_prepare_request_signature() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    service.process_message(payload).unwrap();
+    service.process_message(payload).await.unwrap();
 
     assert!(!service.context().prepare_request_received);
     assert!(service.context().prepare_responses.is_empty());
@@ -317,7 +317,7 @@ async fn recovery_message_ignores_invalid_prepare_response_signature() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    service.process_message(payload).unwrap();
+    service.process_message(payload).await.unwrap();
 
     assert!(service.context().prepare_responses.is_empty());
 }
@@ -330,7 +330,7 @@ async fn recovery_message_ignores_invalid_commit_signature() {
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
-    service.on_transactions_received(Vec::new()).unwrap();
+    service.on_transactions_received(Vec::new()).await.unwrap();
 
     let mut recovery = RecoveryMessage::new(0, 0, 1);
     recovery.commit_messages = vec![
@@ -364,7 +364,7 @@ async fn recovery_message_ignores_invalid_commit_signature() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    service.process_message(payload).unwrap();
+    service.process_message(payload).await.unwrap();
 
     let mut committed = None;
     while let Ok(event) = rx.try_recv() {
@@ -415,7 +415,7 @@ async fn recovery_message_ignores_prepare_response_with_mismatched_hash() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    service.process_message(payload).unwrap();
+    service.process_message(payload).await.unwrap();
 
     assert!(service.context().prepare_responses.is_empty());
 }
@@ -530,7 +530,7 @@ async fn recovery_message_with_commits_triggers_block_commit() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    service.process_message(payload).unwrap();
+    service.process_message(payload).await.unwrap();
 
     let mut committed = None;
     while let Ok(event) = rx.try_recv() {

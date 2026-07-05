@@ -20,6 +20,7 @@ async fn timer_tick_triggers_change_view_broadcast() {
     service.start(0, 0, UInt256::zero(), 0).unwrap();
     service
         .on_timer_tick(crate::context::BLOCK_TIME_MS * 2 + 1)
+        .await
         .unwrap();
 
     let mut change_view = None;
@@ -57,7 +58,7 @@ async fn timeout_change_view_is_not_rebroadcast_before_expected_view_timer() {
         service.context.update_last_seen_message(validator_index, 0);
     }
 
-    service.on_timer_tick(12_000).unwrap();
+    service.on_timer_tick(12_000).await.unwrap();
     let event = rx.try_recv().expect("first change view");
     assert!(matches!(
         event,
@@ -65,13 +66,13 @@ async fn timeout_change_view_is_not_rebroadcast_before_expected_view_timer() {
             if payload.message_type == ConsensusMessageType::ChangeView
     ));
 
-    service.on_timer_tick(12_999).unwrap();
+    service.on_timer_tick(12_999).await.unwrap();
     assert!(
         rx.try_recv().is_err(),
         "C# reschedules RequestChangeView by TimePerBlock << (expectedView + 1)"
     );
 
-    service.on_timer_tick(16_000).unwrap();
+    service.on_timer_tick(16_000).await.unwrap();
     let event = rx.try_recv().expect("second change view after reschedule");
     assert!(matches!(
         event,
@@ -94,26 +95,26 @@ async fn primary_requests_transactions_at_prepare_timer_once() {
         "C# schedules the primary PrepareRequest instead of requesting txs immediately"
     );
 
-    service.on_timer_tick(10_999).unwrap();
+    service.on_timer_tick(10_999).await.unwrap();
     assert!(
         rx.try_recv().is_err(),
         "timer must not fire before the TimePerBlock delay"
     );
 
-    service.on_timer_tick(11_000).unwrap();
+    service.on_timer_tick(11_000).await.unwrap();
     let event = rx.try_recv().expect("request transactions at deadline");
     assert!(matches!(
         event,
         ConsensusEvent::RequestTransactions { block_index: 0, .. }
     ));
 
-    service.on_timer_tick(11_500).unwrap();
+    service.on_timer_tick(11_500).await.unwrap();
     assert!(
         rx.try_recv().is_err(),
         "a split request/response architecture must not spam mempool requests"
     );
 
-    service.on_timer_tick(12_000).unwrap();
+    service.on_timer_tick(12_000).await.unwrap();
     let event = rx
         .try_recv()
         .expect("change view when transaction response never arrives");
@@ -133,20 +134,20 @@ async fn late_primary_prepare_timer_extends_follow_up_timeout() {
     service.set_expected_block_time(1_000);
 
     service.start(0, 10_000, UInt256::zero(), 0).unwrap();
-    service.on_timer_tick(11_250).unwrap();
+    service.on_timer_tick(11_250).await.unwrap();
     let event = rx.try_recv().expect("late prepare timer requests txs");
     assert!(matches!(
         event,
         ConsensusEvent::RequestTransactions { block_index: 0, .. }
     ));
 
-    service.on_timer_tick(12_000).unwrap();
+    service.on_timer_tick(12_000).await.unwrap();
     assert!(
         rx.try_recv().is_err(),
         "follow-up timeout is relative to the actual timer fire"
     );
 
-    service.on_timer_tick(12_250).unwrap();
+    service.on_timer_tick(12_250).await.unwrap();
     let event = rx
         .try_recv()
         .expect("late prepare timer follow-up eventually changes view");
@@ -171,7 +172,7 @@ async fn timer_after_commit_resends_recovery_message_instead_of_change_view() {
         .add_commit(1, 0, vec![0x42; 64])
         .expect("local commit");
 
-    service.on_timer_tick(12_000).unwrap();
+    service.on_timer_tick(12_000).await.unwrap();
 
     let mut recovery_message = None;
     while let Ok(event) = rx.try_recv() {
@@ -194,13 +195,13 @@ async fn timer_after_commit_resends_recovery_message_instead_of_change_view() {
     assert_eq!(payload.view_number, 0);
     assert!(service.context().change_views.is_empty());
 
-    service.on_timer_tick(12_999).unwrap();
+    service.on_timer_tick(12_999).await.unwrap();
     assert!(
         rx.try_recv().is_err(),
         "commit recovery resend should follow the C# TimePerBlock << 1 delay"
     );
 
-    service.on_timer_tick(14_000).unwrap();
+    service.on_timer_tick(14_000).await.unwrap();
     let event = rx
         .try_recv()
         .expect("periodic commit recovery resend payload");
@@ -237,16 +238,17 @@ async fn backup_timeout_with_missing_transactions_uses_tx_not_found_reason() {
     );
     sign_payload(&service, &mut payload, &keys[0]);
 
-    service.process_message(payload).unwrap();
+    service.process_message(payload).await.unwrap();
     service
         .on_transactions_received(vec![tx_hashes[0]])
+        .await
         .expect("partial transaction set");
     while rx.try_recv().is_ok() {}
 
     // Receiving the PrepareRequest extends the change-view timer (C#
     // ExtendTimerByFactor(2)): deadline = 10_000 + 2_000 + 2*1_000/M(3) = 12_666,
     // so tick past the extended deadline.
-    service.on_timer_tick(13_000).unwrap();
+    service.on_timer_tick(13_000).await.unwrap();
 
     let mut change_view = None;
     while let Ok(event) = rx.try_recv() {
@@ -302,6 +304,7 @@ async fn timeout_view_change_allows_new_prepare_request() {
 
     service
         .on_timer_tick(crate::context::BLOCK_TIME_MS)
+        .await
         .unwrap();
     let tx_request = rx.try_recv().expect("initial transaction request");
     assert!(matches!(
@@ -311,6 +314,7 @@ async fn timeout_view_change_allows_new_prepare_request() {
 
     service
         .on_timer_tick(crate::context::BLOCK_TIME_MS * 2 + 1)
+        .await
         .unwrap();
 
     let mut change_view = None;
@@ -346,7 +350,7 @@ async fn timeout_view_change_allows_new_prepare_request() {
         .context()
         .view_start_time
         .saturating_add(service.context().prepare_request_delay());
-    service.on_timer_tick(prepare_deadline).unwrap();
+    service.on_timer_tick(prepare_deadline).await.unwrap();
     let tx_request = rx
         .try_recv()
         .expect("new primary requests transactions at timer");
@@ -356,7 +360,7 @@ async fn timeout_view_change_allows_new_prepare_request() {
     ));
 
     let tx_hashes = vec![UInt256::from([0x33; 32])];
-    service.on_transactions_received(tx_hashes.clone()).unwrap();
+    service.on_transactions_received(tx_hashes.clone()).await.unwrap();
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
@@ -407,7 +411,7 @@ async fn view_change_allows_consensus_to_complete() {
             msg.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).unwrap();
+        service.process_message(payload).await.unwrap();
     }
 
     assert_eq!(service.context().view_number, 1);
@@ -418,7 +422,7 @@ async fn view_change_allows_consensus_to_complete() {
         .context()
         .view_start_time
         .saturating_add(service.context().prepare_request_delay());
-    service.on_timer_tick(prepare_deadline).unwrap();
+    service.on_timer_tick(prepare_deadline).await.unwrap();
 
     let mut requested = false;
     while let Ok(event) = rx.try_recv() {
@@ -431,7 +435,7 @@ async fn view_change_allows_consensus_to_complete() {
     assert!(requested);
 
     let tx_hashes = vec![UInt256::from([0x44; 32])];
-    service.on_transactions_received(tx_hashes.clone()).unwrap();
+    service.on_transactions_received(tx_hashes.clone()).await.unwrap();
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
@@ -460,7 +464,7 @@ async fn view_change_allows_consensus_to_complete() {
             response.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).unwrap();
+        service.process_message(payload).await.unwrap();
     }
 
     let mut commit_payload = None;
@@ -492,7 +496,7 @@ async fn view_change_allows_consensus_to_complete() {
             commit.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).unwrap();
+        service.process_message(payload).await.unwrap();
     }
 
     let mut committed = None;
@@ -532,7 +536,7 @@ async fn change_view_threshold_triggers_view_change() {
             msg.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).unwrap();
+        service.process_message(payload).await.unwrap();
     }
 
     let mut view_changed = None;
@@ -576,11 +580,12 @@ async fn recovery_request_when_more_than_f_committed() {
             commit.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).unwrap();
+        service.process_message(payload).await.unwrap();
     }
 
     service
         .request_change_view(ChangeViewReason::Timeout, 2_000)
+        .await
         .unwrap();
 
     let mut recovery_sent = false;
@@ -595,13 +600,13 @@ async fn recovery_request_when_more_than_f_committed() {
 
     assert!(recovery_sent);
 
-    service.on_timer_tick(2_999).unwrap();
+    service.on_timer_tick(2_999).await.unwrap();
     assert!(
         rx.try_recv().is_err(),
         "C# RequestChangeView reschedules before falling back to recovery"
     );
 
-    service.on_timer_tick(6_000).unwrap();
+    service.on_timer_tick(6_000).await.unwrap();
     let mut recovery_sent = false;
     while let Ok(event) = rx.try_recv() {
         if let ConsensusEvent::BroadcastMessage(payload) = event {
@@ -640,7 +645,7 @@ async fn no_view_change_after_commit_sent() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    service.process_message(payload).unwrap();
+    service.process_message(payload).await.unwrap();
 
     assert_eq!(service.context.view_number, 0);
     assert!(service.context.change_views.is_empty());
@@ -673,7 +678,7 @@ async fn m_minus_one_change_views_not_enough() {
             msg.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).unwrap();
+        service.process_message(payload).await.unwrap();
     }
 
     assert_eq!(service.context.view_number, 0);

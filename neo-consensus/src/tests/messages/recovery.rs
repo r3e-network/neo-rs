@@ -1,15 +1,15 @@
 use super::*;
 
-#[test]
-fn recovery_request_serializes_timestamp_only() {
+#[tokio::test]
+async fn recovery_request_serializes_timestamp_only() {
     let msg = RecoveryRequestMessage::new(1, 0, 0, 1234);
     let bytes = msg.serialize();
     assert_eq!(bytes.len(), 8);
     assert_eq!(u64::from_le_bytes(bytes.try_into().unwrap()), 1234);
 }
 
-#[test]
-fn recovery_message_roundtrip_minimal_without_prepare_request() {
+#[tokio::test]
+async fn recovery_message_roundtrip_minimal_without_prepare_request() {
     let mut msg = RecoveryMessage::new(100, 0, 1);
     msg.preparation_hash = Some(UInt256::from([0xAB; 32]));
     msg.preparation_messages.push(PreparationPayloadCompact {
@@ -31,8 +31,8 @@ fn recovery_message_roundtrip_minimal_without_prepare_request() {
     assert_eq!(parsed.commit_messages.len(), 1);
 }
 
-#[test]
-fn recovery_message_wire_format_bytes_without_prepare_request() {
+#[tokio::test]
+async fn recovery_message_wire_format_bytes_without_prepare_request() {
     let mut msg = RecoveryMessage::new(100, 0, 1);
     msg.change_view_messages.push(ChangeViewPayloadCompact {
         validator_index: 2,
@@ -84,8 +84,8 @@ fn recovery_message_wire_format_bytes_without_prepare_request() {
     assert_eq!(bytes, expected);
 }
 
-#[test]
-fn recovery_validate_rejects_duplicate_compact_validators_like_csharp_dictionary() {
+#[tokio::test]
+async fn recovery_validate_rejects_duplicate_compact_validators_like_csharp_dictionary() {
     let mut msg = RecoveryMessage::new(100, 0, 1);
     msg.change_view_messages.push(ChangeViewPayloadCompact {
         validator_index: 2,
@@ -104,8 +104,8 @@ fn recovery_validate_rejects_duplicate_compact_validators_like_csharp_dictionary
     assert!(matches!(err, crate::ConsensusError::DuplicateValidator(2)));
 }
 
-#[test]
-fn recovery_validate_rejects_out_of_range_compact_validators_like_csharp_verify() {
+#[tokio::test]
+async fn recovery_validate_rejects_out_of_range_compact_validators_like_csharp_verify() {
     let mut msg = RecoveryMessage::new(100, 0, 1);
     msg.commit_messages.push(CommitPayloadCompact {
         view_number: 0,
@@ -121,8 +121,8 @@ fn recovery_validate_rejects_out_of_range_compact_validators_like_csharp_verify(
     ));
 }
 
-#[test]
-fn recovery_validate_applies_embedded_prepare_request_verify_subset() {
+#[tokio::test]
+async fn recovery_validate_applies_embedded_prepare_request_verify_subset() {
     let mut msg = RecoveryMessage::new(100, 0, 1);
     msg.prepare_request_message = Some(crate::messages::PrepareRequestMessage::new(
         100,

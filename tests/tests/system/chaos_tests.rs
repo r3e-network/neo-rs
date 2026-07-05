@@ -45,7 +45,7 @@ async fn test_consensus_timeout_triggers_view_change() {
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
 
     let timeout_time = 1000 + 60_000;
-    service.on_timer_tick(timeout_time).unwrap();
+    service.on_timer_tick(timeout_time).await.unwrap();
 
     let event = tokio::time::timeout(Duration::from_millis(100), rx.recv())
         .await
@@ -72,7 +72,7 @@ async fn test_multiple_timeouts_increment_view() {
 
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
 
-    service.on_timer_tick(1000 + 60_000).unwrap();
+    service.on_timer_tick(1000 + 60_000).await.unwrap();
     let _ = rx.recv().await;
 
     assert!(service.is_running());
@@ -82,8 +82,8 @@ async fn test_multiple_timeouts_increment_view() {
 // Node Failure and Recovery Tests
 // ============================================================================
 
-#[test]
-fn test_state_trie_recovery_from_root() {
+#[tokio::test]
+async fn test_state_trie_recovery_from_root() {
     let mut trie = StateTrieManager::new(true);
     let mut roots = Vec::new();
 
@@ -110,8 +110,8 @@ fn test_state_trie_recovery_from_root() {
 // State Corruption Detection Tests
 // ============================================================================
 
-#[test]
-fn test_state_root_mismatch_detection() {
+#[tokio::test]
+async fn test_state_root_mismatch_detection() {
     let mut trie1 = StateTrieManager::new(false);
     let mut trie2 = StateTrieManager::new(false);
 
@@ -135,8 +135,8 @@ fn test_state_root_mismatch_detection() {
     assert_ne!(root1, root2_modified);
 }
 
-#[test]
-fn test_detect_missing_state_changes() {
+#[tokio::test]
+async fn test_detect_missing_state_changes() {
     let mut trie1 = StateTrieManager::new(false);
     let mut trie2 = StateTrieManager::new(false);
 
@@ -205,8 +205,8 @@ async fn test_concurrent_state_modifications() {
 // Edge Case Tests
 // ============================================================================
 
-#[test]
-fn test_state_with_many_contracts() {
+#[tokio::test]
+async fn test_state_with_many_contracts() {
     let mut trie = StateTrieManager::new(false);
 
     let mut changes = StateChanges::new();

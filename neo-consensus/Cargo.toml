@@ -24,6 +24,7 @@ neo-vm-rs = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }
+async-trait = { workspace = true }
 
 # Serialization
 serde = { workspace = true }

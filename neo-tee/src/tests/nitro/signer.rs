@@ -42,8 +42,8 @@ fn can_sign_matches_only_its_script_hash() {
     assert!(!signer.can_sign(&UInt160::zero()));
 }
 
-#[test]
-fn sign_forwards_and_returns_canonical_signature() {
+#[tokio::test]
+async fn sign_forwards_and_returns_canonical_signature() {
     // The mock enclave signs with a known key and returns the 64-byte sig.
     let (private_key, public_key, sh) = test_identity();
     let pk_for_handler = public_key.clone();
@@ -69,7 +69,7 @@ fn sign_forwards_and_returns_canonical_signature() {
     let signer = NitroEnclaveSigner::new(transport, public_key.clone(), sh);
 
     let data = b"network_le|block_hash bytes here";
-    let sig = signer.sign(data, &sh).unwrap();
+    let sig = signer.sign(data, &sh).await.unwrap();
     assert_eq!(sig.len(), 64);
 
     // The returned signature must verify over SHA-256(data) under the pubkey.
@@ -85,20 +85,20 @@ fn sign_forwards_and_returns_canonical_signature() {
     assert!(verifying, "returned signature must verify under the pubkey");
 }
 
-#[test]
-fn sign_rejects_wrong_script_hash() {
+#[tokio::test]
+async fn sign_rejects_wrong_script_hash() {
     let (_priv, public_key, sh) = test_identity();
     let transport = Arc::new(MockTransport::new(|_| {
         Ok(EnclaveResponse::Signature(vec![0u8; 64]))
     }));
     let signer = NitroEnclaveSigner::new(transport, public_key, sh);
 
-    let err = signer.sign(b"data", &UInt160::zero()).unwrap_err();
+    let err = signer.sign(b"data", &UInt160::zero()).await.unwrap_err();
     assert!(format!("{err}").contains("unknown script hash"));
 }
 
-#[test]
-fn sign_propagates_enclave_error() {
+#[tokio::test]
+async fn sign_propagates_enclave_error() {
     let (_priv, public_key, sh) = test_identity();
     let transport = Arc::new(MockTransport::new(|_| {
         Ok(EnclaveResponse::Error {
@@ -106,18 +106,18 @@ fn sign_propagates_enclave_error() {
         })
     }));
     let signer = NitroEnclaveSigner::new(transport, public_key, sh);
-    let err = signer.sign(b"data", &sh).unwrap_err();
+    let err = signer.sign(b"data", &sh).await.unwrap_err();
     assert!(format!("{err}").contains("enclave busy"));
 }
 
-#[test]
-fn sign_rejects_wrong_length_signature() {
+#[tokio::test]
+async fn sign_rejects_wrong_length_signature() {
     let (_priv, public_key, sh) = test_identity();
     let transport = Arc::new(MockTransport::new(|_| {
         Ok(EnclaveResponse::Signature(vec![0u8; 10]))
     }));
     let signer = NitroEnclaveSigner::new(transport, public_key, sh);
-    let err = signer.sign(b"data", &sh).unwrap_err();
+    let err = signer.sign(b"data", &sh).await.unwrap_err();
     assert!(format!("{err}").contains("signature length"));
 }
 

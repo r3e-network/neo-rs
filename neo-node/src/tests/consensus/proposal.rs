@@ -418,6 +418,7 @@ async fn proposal_resolution_requests_change_view_for_invalid_unverified_transac
     );
     service
         .resume_with_next_consensus(10_000, UInt256::zero(), UInt160::zero(), 0)
+        .await
         .expect("resume backup context");
 
     let (blockchain, _blockchain_rx) = BlockchainHandle::with_capacity();
@@ -527,6 +528,7 @@ async fn proposal_resolution_requests_block_rejected_without_prepare_response_fo
     );
     service
         .resume_with_next_consensus(10_000, UInt256::zero(), UInt160::zero(), 0)
+        .await
         .expect("resume backup context");
 
     let (blockchain, _blockchain_rx) = BlockchainHandle::with_capacity();

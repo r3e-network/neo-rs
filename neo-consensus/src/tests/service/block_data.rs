@@ -12,8 +12,8 @@ fn test_pubkey(byte: u8) -> ECPoint {
 /// carries the correct Merkle root, `NextConsensus` (= the 1-of-1 multi-sig
 /// script hash), and a witness pairing that multi-sig with the pushed
 /// commit signature.
-#[test]
-fn assemble_block_builds_header_and_multisig_witness() {
+#[tokio::test]
+async fn assemble_block_builds_header_and_multisig_witness() {
     let pubkey = test_pubkey(1);
     let signature = vec![0xABu8; 64];
     let data = BlockData {
@@ -65,8 +65,8 @@ fn assemble_block_builds_header_and_multisig_witness() {
 
 /// Assembly fails cleanly when fewer commit signatures than required are
 /// present (rather than producing an unverifiable witness).
-#[test]
-fn assemble_block_rejects_insufficient_signatures() {
+#[tokio::test]
+async fn assemble_block_rejects_insufficient_signatures() {
     let data = BlockData {
         block_index: 2,
         timestamp: 1,
@@ -81,8 +81,8 @@ fn assemble_block_rejects_insufficient_signatures() {
     assert!(data.assemble_block(0, UInt256::zero(), Vec::new()).is_err());
 }
 
-#[test]
-fn assemble_block_uses_committed_next_consensus_address() {
+#[tokio::test]
+async fn assemble_block_uses_committed_next_consensus_address() {
     let pubkey = test_pubkey(1);
     let committed_next_consensus = UInt160::from_bytes(&[0x42; 20]).expect("test next consensus");
     let data = BlockData {

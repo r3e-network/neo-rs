@@ -34,7 +34,7 @@ impl ConsensusService {
     }
 
     /// Called when transactions are received from mempool
-    pub fn on_transactions_received(&mut self, tx_hashes: Vec<UInt256>) -> ConsensusResult<()> {
+    pub async fn on_transactions_received(&mut self, tx_hashes: Vec<UInt256>) -> ConsensusResult<()> {
         if !self.running {
             return Ok(());
         }
@@ -75,8 +75,9 @@ impl ConsensusService {
                 tx_hashes,
             );
 
-            let payload =
-                self.create_payload(ConsensusMessageType::PrepareRequest, msg.serialize())?;
+            let payload = self
+                .create_payload(ConsensusMessageType::PrepareRequest, msg.serialize())
+                .await?;
 
             // Cache the primary PrepareRequest payload hash (ExtensiblePayload.Hash).
             if let Ok(hash) = self.dbft_payload_hash(&payload) {
@@ -118,7 +119,7 @@ impl ConsensusService {
         }
 
         if self.context.proposed_tx_hashes.is_empty() {
-            self.send_prepare_response()?;
+            self.send_prepare_response().await?;
             return Ok(());
         }
 
@@ -131,7 +132,7 @@ impl ConsensusService {
             .iter()
             .all(|hash| available.contains(hash));
         if all_present {
-            self.send_prepare_response()?;
+            self.send_prepare_response().await?;
         }
 
         Ok(())

@@ -30,8 +30,8 @@ fn message_hash(index: u32) -> UInt256 {
     UInt256::from_bytes(&hash_bytes).unwrap()
 }
 
-#[test]
-fn test_consensus_context_new() {
+#[tokio::test]
+async fn test_consensus_context_new() {
     let validators = create_test_validators(7);
     let ctx = ConsensusContext::new(100, validators, Some(0), None);
 
@@ -41,8 +41,8 @@ fn test_consensus_context_new() {
     assert_eq!(ctx.my_index, Some(0));
 }
 
-#[test]
-fn test_f_and_m_calculations() {
+#[tokio::test]
+async fn test_f_and_m_calculations() {
     // 7 validators: f = 2, M = 5
     let validators = create_test_validators(7);
     let ctx = ConsensusContext::new(0, validators, None, None);
@@ -62,8 +62,8 @@ fn test_f_and_m_calculations() {
     assert_eq!(ctx.m(), 15);
 }
 
-#[test]
-fn test_primary_index() {
+#[tokio::test]
+async fn test_primary_index() {
     let validators = create_test_validators(7);
     let mut ctx = ConsensusContext::new(0, validators, Some(0), None);
 
@@ -82,8 +82,8 @@ fn test_primary_index() {
     assert_eq!(ctx.primary_index(), 0);
 }
 
-#[test]
-fn test_has_enough_responses() {
+#[tokio::test]
+async fn test_has_enough_responses() {
     let validators = create_test_validators(7);
     let mut ctx = ConsensusContext::new(0, validators, Some(0), None);
 
@@ -100,8 +100,8 @@ fn test_has_enough_responses() {
     assert!(ctx.has_enough_prepare_responses()); // 5 >= 5
 }
 
-#[test]
-fn test_missing_proposed_transaction_tracking() {
+#[tokio::test]
+async fn test_missing_proposed_transaction_tracking() {
     let validators = create_test_validators(4);
     let mut ctx = ConsensusContext::new(0, validators, Some(1), Some(1_000));
     let first = UInt256::from([0x01; 32]);
@@ -118,8 +118,8 @@ fn test_missing_proposed_transaction_tracking() {
     assert!(!ctx.has_missing_proposed_transactions());
 }
 
-#[test]
-fn test_reset_for_new_view() {
+#[tokio::test]
+async fn test_reset_for_new_view() {
     let validators = create_test_validators(7);
     let mut ctx = ConsensusContext::new(0, validators, Some(1), None);
 
@@ -137,8 +137,8 @@ fn test_reset_for_new_view() {
     assert!(!ctx.commits.is_empty());
 }
 
-#[test]
-fn test_reset_for_new_block_initializes_last_seen_messages() {
+#[tokio::test]
+async fn test_reset_for_new_block_initializes_last_seen_messages() {
     let validators = create_test_validators(4);
     let mut ctx = ConsensusContext::new(0, validators, Some(2), None);
 
@@ -151,8 +151,8 @@ fn test_reset_for_new_block_initializes_last_seen_messages() {
     assert_eq!(ctx.count_failed(), 0);
 }
 
-#[test]
-fn test_reset_for_new_block_preserves_last_seen_messages() {
+#[tokio::test]
+async fn test_reset_for_new_block_preserves_last_seen_messages() {
     let validators = create_test_validators(4);
     let mut ctx = ConsensusContext::new(0, validators, Some(2), None);
 
@@ -169,8 +169,8 @@ fn test_reset_for_new_block_preserves_last_seen_messages() {
     assert_eq!(ctx.count_failed(), 2);
 }
 
-#[test]
-fn test_timeout_calculation() {
+#[tokio::test]
+async fn test_timeout_calculation() {
     let validators = create_test_validators(7);
     let mut ctx = ConsensusContext::new(0, validators, None, None);
 
@@ -204,8 +204,8 @@ fn test_timeout_calculation() {
     assert_eq!(ctx.get_timeout(), BLOCK_TIME_MS * 2048);
 }
 
-#[test]
-fn extend_timer_by_factor_pushes_the_change_view_deadline_later() {
+#[tokio::test]
+async fn extend_timer_by_factor_pushes_the_change_view_deadline_later() {
     let validators = create_test_validators(7);
     // my_index = Some(0): a validator (not watch-only), M = 7 - f(2) = 5.
     let mut ctx = ConsensusContext::new(0, validators, Some(0), None);
@@ -239,8 +239,8 @@ fn extend_timer_by_factor_pushes_the_change_view_deadline_later() {
     assert_eq!(ctx.timer_extension, 0);
 }
 
-#[test]
-fn test_save_and_load_roundtrip() {
+#[tokio::test]
+async fn test_save_and_load_roundtrip() {
     use std::env;
 
     // Create a test context with some state
@@ -379,8 +379,8 @@ fn test_save_and_load_roundtrip() {
     let _ = std::fs::remove_file(&temp_path);
 }
 
-#[test]
-fn test_save_empty_state() {
+#[tokio::test]
+async fn test_save_empty_state() {
     use std::env;
 
     // Create a minimal context
@@ -415,8 +415,8 @@ fn test_save_empty_state() {
     let _ = std::fs::remove_file(&temp_path);
 }
 
-#[test]
-fn test_save_atomic_write() {
+#[tokio::test]
+async fn test_save_atomic_write() {
     use std::env;
 
     let validators = create_test_validators(4);
@@ -439,8 +439,8 @@ fn test_save_atomic_write() {
     let _ = std::fs::remove_file(&temp_path);
 }
 
-#[test]
-fn test_load_nonexistent_file() {
+#[tokio::test]
+async fn test_load_nonexistent_file() {
     use std::env;
 
     let validators = create_test_validators(4);
@@ -456,8 +456,8 @@ fn test_load_nonexistent_file() {
     }
 }
 
-#[test]
-fn test_load_corrupted_file() {
+#[tokio::test]
+async fn test_load_corrupted_file() {
     use std::env;
 
     let validators = create_test_validators(4);
@@ -480,8 +480,8 @@ fn test_load_corrupted_file() {
     let _ = std::fs::remove_file(&corrupted_path);
 }
 
-#[test]
-fn test_count_committed() {
+#[tokio::test]
+async fn test_count_committed() {
     let validators = create_test_validators(7);
     let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
@@ -497,8 +497,8 @@ fn test_count_committed() {
     assert_eq!(ctx.count_committed(), 3);
 }
 
-#[test]
-fn test_count_failed_empty() {
+#[tokio::test]
+async fn test_count_failed_empty() {
     let validators = create_test_validators(7);
     let ctx = ConsensusContext::new(100, validators, Some(0), None);
 
@@ -506,8 +506,8 @@ fn test_count_failed_empty() {
     assert_eq!(ctx.count_failed(), 0);
 }
 
-#[test]
-fn test_count_failed_with_old_messages() {
+#[tokio::test]
+async fn test_count_failed_with_old_messages() {
     let validators = create_test_validators(7);
     let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
@@ -522,8 +522,8 @@ fn test_count_failed_with_old_messages() {
     assert_eq!(ctx.count_failed(), 5);
 }
 
-#[test]
-fn test_count_failed_threshold() {
+#[tokio::test]
+async fn test_count_failed_threshold() {
     let validators = create_test_validators(4);
     let mut ctx = ConsensusContext::new(10, validators, Some(0), None);
 
@@ -539,8 +539,8 @@ fn test_count_failed_threshold() {
     assert_eq!(ctx.count_failed(), 2); // Validators 2 and 3
 }
 
-#[test]
-fn test_more_than_f_nodes_committed_or_lost() {
+#[tokio::test]
+async fn test_more_than_f_nodes_committed_or_lost() {
     // 7 validators: f = 2, M = 5
     let validators = create_test_validators(7);
     let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
@@ -561,8 +561,8 @@ fn test_more_than_f_nodes_committed_or_lost() {
     assert!(ctx.more_than_f_nodes_committed_or_lost());
 }
 
-#[test]
-fn test_not_accepting_payloads_due_to_view_changing() {
+#[tokio::test]
+async fn test_not_accepting_payloads_due_to_view_changing() {
     // 4 validators: f = 1, M = 3
     let validators = create_test_validators(4);
     let mut ctx = ConsensusContext::new(100, validators, Some(1), None);
@@ -582,8 +582,8 @@ fn test_not_accepting_payloads_due_to_view_changing() {
     assert!(!ctx.not_accepting_payloads_due_to_view_changing());
 }
 
-#[test]
-fn test_more_than_f_nodes_with_failed() {
+#[tokio::test]
+async fn test_more_than_f_nodes_with_failed() {
     // 7 validators: f = 2, M = 5
     let validators = create_test_validators(7);
     let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
@@ -607,8 +607,8 @@ fn test_more_than_f_nodes_with_failed() {
     assert!(ctx.more_than_f_nodes_committed_or_lost());
 }
 
-#[test]
-fn test_more_than_f_nodes_edge_case() {
+#[tokio::test]
+async fn test_more_than_f_nodes_edge_case() {
     // 4 validators: f = 1, M = 3
     let validators = create_test_validators(4);
     let mut ctx = ConsensusContext::new(50, validators, Some(0), None);
@@ -629,8 +629,8 @@ fn test_more_than_f_nodes_edge_case() {
     assert!(ctx.more_than_f_nodes_committed_or_lost());
 }
 
-#[test]
-fn test_update_last_seen_message() {
+#[tokio::test]
+async fn test_update_last_seen_message() {
     let validators = create_test_validators(4);
     let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
@@ -647,8 +647,8 @@ fn test_update_last_seen_message() {
     assert_eq!(ctx.last_seen_messages.get(&0), Some(&102));
 }
 
-#[test]
-fn test_message_hash_caching() {
+#[tokio::test]
+async fn test_message_hash_caching() {
     let validators = create_test_validators(4);
     let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
@@ -675,8 +675,8 @@ fn test_message_hash_caching() {
     assert!(ctx.has_seen_message(&hash1));
 }
 
-#[test]
-fn test_message_cache_cleared_on_new_block() {
+#[tokio::test]
+async fn test_message_cache_cleared_on_new_block() {
     let validators = create_test_validators(4);
     let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
@@ -697,8 +697,8 @@ fn test_message_cache_cleared_on_new_block() {
     assert_eq!(ctx.block_index, 101);
 }
 
-#[test]
-fn test_message_cache_not_cleared_on_view_change() {
+#[tokio::test]
+async fn test_message_cache_not_cleared_on_view_change() {
     let validators = create_test_validators(4);
     let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
@@ -715,8 +715,8 @@ fn test_message_cache_not_cleared_on_view_change() {
     assert_eq!(ctx.view_number, 1);
 }
 
-#[test]
-fn test_message_cache_prevents_replay() {
+#[tokio::test]
+async fn test_message_cache_prevents_replay() {
     let validators = create_test_validators(7);
     let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
@@ -731,8 +731,8 @@ fn test_message_cache_prevents_replay() {
     assert!(ctx.has_seen_message(&msg_hash));
 }
 
-#[test]
-fn test_message_cache_lru_limit() {
+#[tokio::test]
+async fn test_message_cache_lru_limit() {
     let validators = create_test_validators(4);
     let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
@@ -755,8 +755,8 @@ fn test_message_cache_lru_limit() {
     assert_eq!(ctx.seen_message_hashes.len(), MAX_MESSAGE_CACHE_SIZE);
 }
 
-#[test]
-fn test_message_cache_duplicate_and_contains_do_not_refresh_lru_order() {
+#[tokio::test]
+async fn test_message_cache_duplicate_and_contains_do_not_refresh_lru_order() {
     let validators = create_test_validators(4);
     let mut ctx = ConsensusContext::new(100, validators, Some(0), None);
 
@@ -777,8 +777,8 @@ fn test_message_cache_duplicate_and_contains_do_not_refresh_lru_order() {
     assert!(ctx.has_seen_message(&overflow_hash));
 }
 
-#[test]
-fn invalid_transactions_skip_set_uses_f_threshold_and_clears_per_block() {
+#[tokio::test]
+async fn invalid_transactions_skip_set_uses_f_threshold_and_clears_per_block() {
     // 4 validators => F = (4-1)/3 = 1, so a tx must be reported by MORE THAN 1
     // distinct validator (>= 2) before the primary skips it (C# count > F).
     let mut ctx = ConsensusContext::new(10, create_test_validators(4), Some(0), None);

@@ -70,11 +70,11 @@ async fn test_message_deduplication() {
     sign_payload(&service, &mut payload, &keys[2]);
     let msg_hash = service.dbft_payload_hash(&payload).unwrap();
 
-    service.process_message(payload.clone()).unwrap();
+    service.process_message(payload.clone()).await.unwrap();
     assert!(service.context().has_seen_message(&msg_hash));
     assert!(service.context().prepare_request_received);
 
-    service.process_message(payload).unwrap();
+    service.process_message(payload).await.unwrap();
 
     drop(service);
     let mut events = Vec::new();
@@ -110,11 +110,11 @@ async fn test_message_cache_cleared_on_new_block() {
         vec![1, 2, 3, 4],
     );
 
-    let _ = service.process_message(payload.clone());
+    let _ = service.process_message(payload.clone()).await;
 
     service.start(101, 2000, UInt256::zero(), 0).unwrap();
 
-    let result = service.process_message(payload);
+    let result = service.process_message(payload).await;
     assert!(matches!(result, Err(ConsensusError::WrongBlock { .. })));
 }
 
@@ -144,7 +144,7 @@ async fn test_replay_attack_prevention() {
     // property: a forged-witness payload must not silence a later genuine signed
     // message that hashes to the same value. (Valid-message dedup is covered by
     // `test_message_deduplication`.)
-    let result = service.process_message(payload);
+    let result = service.process_message(payload).await;
     assert!(matches!(
         result,
         Err(ConsensusError::SignatureVerificationFailed { .. })
@@ -171,7 +171,7 @@ async fn invalid_signature_does_not_mark_validator_seen() {
 
     let prior_seen = service.context().last_seen_messages.get(&1).copied();
 
-    let result = service.process_message(payload);
+    let result = service.process_message(payload).await;
     assert!(matches!(
         result,
         Err(ConsensusError::SignatureVerificationFailed { .. })
@@ -201,7 +201,7 @@ async fn invalid_validator_index_rejected() {
         msg.serialize(),
     );
 
-    let result = service.process_message(payload);
+    let result = service.process_message(payload).await;
     assert!(matches!(
         result,
         Err(ConsensusError::InvalidValidatorIndex(_))
@@ -219,6 +219,7 @@ async fn backup_on_transactions_received_is_noop() {
 
     service
         .on_transactions_received(vec![UInt256::from([0x11; 32])])
+        .await
         .unwrap();
 
     assert!(rx.try_recv().is_err());

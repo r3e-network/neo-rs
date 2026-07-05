@@ -1447,6 +1447,99 @@ as a dependency (one-way, no cycle).
 - Workspace default test count: 3342 (was 3346 — 4 PKCS#11 tests now behind
   `--features pkcs11`, all pass when feature is enabled)
 - Architecture health score: 9.5 → 9.5
+
+---
+
+### ADR-031: Async ConsensusSigner + await_wallet_future deadlock fix
+
+**Status**: Accepted (implemented)
+
+**Context**: The deep audit (`.planning/codebase/deep-audit-2026-07-04.md` Theme F)
+found two async/blocking correctness issues:
+
+1. **F1 — Sync `ConsensusSigner::sign` blocking the tokio worker** (Finding F1):
+   `ConsensusSigner::sign` was `fn sign(&self, ...) -> ConsensusResult<Vec<u8>>`
+   (sync), but the production signers make blocking network/HSM round-trips:
+   - `AzureKeyVaultSigner` used `reqwest::blocking::Client` with a 10s timeout
+   - `NitroEnclaveSigner` does a VSOCK transport request (blocks)
+   - `Pkcs11Signer` does C FFI calls to HSM hardware (blocks)
+   - `GcpKmsSigner` is a stub (no blocking)
+
+   The `ConsensusService` state machine is sync and called directly from the
+   neo-node async `tokio::select!` loop. When `sign()` was called, it blocked
+   the tokio worker thread for up to 10s (Azure timeout), starving all other
+   async tasks on that worker.
+
+2. **F2 — `await_wallet_future` deadlock risk** (Finding F2):
+   `neo-rpc/src/server/rpc_server_wallet/mod.rs:264` took a
+   `Pin<Box<dyn Future>>` and, when the host was a current-thread runtime,
+   spawned a fresh `CurrentThread` runtime per call. If the wallet future
+   depended on the parent runtime's reactor (e.g. a `tokio::time::Sleep` or
+   an mpsc receiver), the parent thread would block waiting for the spawned
+   runtime, which in turn could never drive the parent's resources — a silent
+   deadlock.
+
+**Decision**:
+
+**F1**: Make `ConsensusSigner::sign` async via `#[async_trait]`. Cascade the
+async signature through the entire ConsensusService call chain:
+
+- `ConsensusSigner::sign` → `async fn sign` (trait + `Arc<dyn>` blanket impl)
+- `ConsensusService::sign` / `sign_block_hash` / `create_payload` → `async fn`
+- All handlers that sign: `on_prepare_request`, `on_prepare_response`,
+  `send_prepare_response`, `check_prepare_responses`, `on_commit`,
+  `on_change_view`, `request_change_view`, `request_recovery`, `change_view`,
+  `broadcast_change_agreement`, `on_recovery_request`, `on_recovery_message`,
+  `reprocess_recovery_payload`, `maybe_send_recovery_response`,
+  `resend_recovery_message`, `on_transactions_received` → all `async fn`
+- `process_message`, `on_timer_tick`, `resume`, `resume_with_next_consensus`
+  → `async fn`
+- neo-node driver: `.await` added to all async ConsensusService calls
+
+Signer implementation strategy:
+- **Software signer** (local ECDSA): stays sync inside async fn (< 1ms CPU,
+  not wrapped in `spawn_blocking`)
+- **NitroEnclaveSigner**: `spawn_blocking` wrapping the blocking VSOCK transport
+- **Pkcs11Signer**: `spawn_blocking` wrapping the mpsc channel to the HSM worker
+- **AzureKeyVaultSigner**: switched from `reqwest::blocking::Client` to async
+  `reqwest::Client` (native async I/O, no `spawn_blocking` needed)
+- **GcpKmsSigner**: trivially async (stub)
+
+**F2**: Remove the `RuntimeFlavor::CurrentThread` spawn path from
+`await_wallet_future`. Now always uses `block_in_place` when a runtime handle
+exists. `block_in_place` panics on a current-thread runtime — this is a loud,
+immediate failure that tells the operator to use a multi-thread runtime,
+rather than a silent hang. When no runtime is present, creates a temporary
+current-thread runtime (safe — no parent reactor to deadlock against).
+
+**Trade-offs**:
+- **Gaining**: HSM/network signers no longer block the tokio worker thread.
+  Azure signer uses native async I/O. The `await_wallet_future` deadlock path
+  is eliminated. The async trait seam enables future async signer backends
+  (e.g. a native GCP KMS async client) without another trait change.
+- **Giving up**: `async_trait` adds a `Pin<Box<dyn Future>>` allocation per
+  `sign()` call (acceptable — signing is called ~once per block, not in a
+  hot loop). The entire ConsensusService method chain is now async, which
+  means all test functions touching it are `#[tokio::test] async fn`. The
+  `block_in_place` panic on current-thread runtime is a deliberate trade:
+  loud failure > silent deadlock.
+- **Reversibility**: Medium — the async cascade touches ~20 files. Reverting
+  would require re-adding `spawn_blocking` at each call site or going back to
+  sync blocking.
+
+**Consequences**:
+- `ConsensusSigner::sign` is `async fn` (was `fn`)
+- All ConsensusService methods that transitively sign are `async fn`
+- `neo-consensus` gained `async-trait` dependency
+- `neo-hsm` reqwest switched from `blocking` to async; gained `tokio` (rt) dep
+- `neo-tee` tokio gained `macros` + `rt` features
+- `AzureKeyVaultSigner::new` uses async reqwest builder
+- `await_wallet_future` no longer spawns a CurrentThread runtime (deadlock fix)
+- 12 test files converted from `#[test] fn` to `#[tokio::test] async fn`
+- Workspace test count: 3343 (was 3342 — 1 new test for multi-thread runtime)
+- All test suites pass: workspace 3343, neo-consensus 137, neo-rpc server 655,
+  neo-hsm pkcs11 4, neo-tee nitro 93, layer_boundary 20
+- Architecture health score: 9.5 → 9.6 (correctness fix on hot path)
 ### ADR-028: Native contract support layer — codec, engine, and settings helpers
 
 **Status**: Accepted (implemented)

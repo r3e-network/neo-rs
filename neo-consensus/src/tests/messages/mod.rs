@@ -15,8 +15,8 @@
 use super::*;
 use neo_primitives::UInt256;
 
-#[test]
-fn consensus_payload_to_message_bytes_layout() {
+#[tokio::test]
+async fn consensus_payload_to_message_bytes_layout() {
     let hash = UInt256::from([0xAB; 32]);
     let payload = ConsensusPayload::new(
         0x4E454F,
@@ -35,8 +35,8 @@ fn consensus_payload_to_message_bytes_layout() {
     assert_eq!(&bytes[7..], &hash.to_array());
 }
 
-#[test]
-fn consensus_payload_from_message_bytes_rejects_short_buffer() {
+#[tokio::test]
+async fn consensus_payload_from_message_bytes_rejects_short_buffer() {
     let result = ConsensusPayload::from_message_bytes(0x4E454F, &[0x20, 0x01], Vec::new());
     assert!(matches!(
         result,
@@ -44,8 +44,8 @@ fn consensus_payload_from_message_bytes_rejects_short_buffer() {
     ));
 }
 
-#[test]
-fn consensus_payload_from_message_bytes_rejects_invalid_type() {
+#[tokio::test]
+async fn consensus_payload_from_message_bytes_rejects_invalid_type() {
     let mut bytes = Vec::new();
     bytes.push(0xFF);
     bytes.extend_from_slice(&1u32.to_le_bytes());

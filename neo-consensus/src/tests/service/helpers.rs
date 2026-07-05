@@ -107,7 +107,7 @@ impl PersistCompletedHarness {
         std::mem::take(&mut self.events)
     }
 
-    pub(super) fn fire_primary_prepare_timers(&mut self) -> ConsensusResult<()> {
+    pub(super) async fn fire_primary_prepare_timers(&mut self) -> ConsensusResult<()> {
         for service in &mut self.services {
             let deadline = {
                 let context = service.context();
@@ -126,7 +126,7 @@ impl PersistCompletedHarness {
             };
 
             if let Some(deadline) = deadline {
-                service.on_timer_tick(deadline)?;
+                service.on_timer_tick(deadline).await?;
             }
         }
 
@@ -135,37 +135,37 @@ impl PersistCompletedHarness {
 
     pub(super) async fn drive_until_idle(&mut self, max_iters: usize) -> ConsensusResult<()> {
         for _ in 0..max_iters {
-            if !self.drive_once()? {
+            if !self.drive_once().await? {
                 break;
             }
         }
         Ok(())
     }
 
-    pub(super) fn drive_once(&mut self) -> ConsensusResult<bool> {
+    pub(super) async fn drive_once(&mut self) -> ConsensusResult<bool> {
         let mut progressed = false;
         for idx in 0..self.services.len() {
             while let Ok(event) = self.receivers[idx].try_recv() {
                 progressed = true;
-                self.handle_event(idx, event)?;
+                self.handle_event(idx, event).await?;
             }
         }
         Ok(progressed)
     }
 
-    pub(super) fn handle_event(
+    pub(super) async fn handle_event(
         &mut self,
         sender_index: usize,
         event: ConsensusEvent,
     ) -> ConsensusResult<()> {
         match &event {
             ConsensusEvent::RequestTransactions { .. } => {
-                self.services[sender_index].on_transactions_received(Vec::new())?;
+                self.services[sender_index].on_transactions_received(Vec::new()).await?;
             }
             ConsensusEvent::RequestProposalTransactions {
                 transaction_hashes, ..
             } => {
-                self.services[sender_index].on_transactions_received(transaction_hashes.clone())?;
+                self.services[sender_index].on_transactions_received(transaction_hashes.clone()).await?;
             }
             ConsensusEvent::BroadcastMessage(payload) => {
                 let maybe_prepare = if payload.message_type == ConsensusMessageType::PrepareRequest
@@ -184,9 +184,9 @@ impl PersistCompletedHarness {
                     if idx == sender_index {
                         continue;
                     }
-                    service.process_message(payload.clone())?;
+                    service.process_message(payload.clone()).await?;
                     if let Some(ref prepare) = maybe_prepare {
-                        service.on_transactions_received(prepare.transaction_hashes.clone())?;
+                        service.on_transactions_received(prepare.transaction_hashes.clone()).await?;
                     }
                 }
             }

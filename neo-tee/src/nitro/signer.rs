@@ -27,6 +27,7 @@
 
 use crate::error::TeeError;
 use crate::nitro::vsock::{EnclaveRequest, EnclaveResponse, VsockTransport};
+use async_trait::async_trait;
 use neo_consensus::{ConsensusError, ConsensusResult, ConsensusSigner};
 use neo_crypto::Secp256r1Crypto;
 use neo_primitives::UInt160;
@@ -123,25 +124,33 @@ impl NitroEnclaveSigner {
     }
 }
 
+#[async_trait]
 impl ConsensusSigner for NitroEnclaveSigner {
     fn can_sign(&self, script_hash: &UInt160) -> bool {
         script_hash == &self.script_hash
     }
 
-    fn sign(&self, data: &[u8], script_hash: &UInt160) -> ConsensusResult<Vec<u8>> {
+    async fn sign(&self, data: &[u8], script_hash: &UInt160) -> ConsensusResult<Vec<u8>> {
         if script_hash != &self.script_hash {
             return Err(ConsensusError::state_error(
                 "nitro: unknown script hash for this signer",
             ));
         }
 
-        let response = self
-            .transport
-            .request(&EnclaveRequest::SignBlock {
-                sign_data: data.to_vec(),
-                script_hash: self.script_hash.to_array(),
+        // The VSOCK transport is synchronous (blocking I/O). Move it onto a
+        // blocking thread so the tokio worker is not stalled.
+        let transport = Arc::clone(&self.transport);
+        let script_hash_arr = self.script_hash.to_array();
+        let sign_data = data.to_vec();
+        let response = tokio::task::spawn_blocking(move || {
+            transport.request(&EnclaveRequest::SignBlock {
+                sign_data,
+                script_hash: script_hash_arr,
             })
-            .map_err(|e| ConsensusError::signature_failed(format!("nitro transport: {e}")))?;
+        })
+        .await
+        .map_err(|e| ConsensusError::state_error(format!("nitro sign task: {e}")))?
+        .map_err(|e| ConsensusError::signature_failed(format!("nitro transport: {e}")))?;
 
         let raw = match response {
             EnclaveResponse::Signature(sig) => sig,

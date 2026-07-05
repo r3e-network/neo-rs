@@ -9,7 +9,7 @@ use tracing::{debug, info, warn};
 
 impl ConsensusService {
     /// Handles `PrepareRequest` message
-    pub(in crate::service) fn on_prepare_request(
+    pub(in crate::service) async fn on_prepare_request(
         &mut self,
         payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {
@@ -140,7 +140,7 @@ impl ConsensusService {
 
         // If there are no transactions, respond immediately.
         if self.context.proposed_tx_hashes.is_empty() {
-            self.send_prepare_response()?;
+            self.send_prepare_response().await?;
         } else if self.context.is_backup() {
             self.send_event(ConsensusEvent::RequestProposalTransactions {
                 block_index: self.context.block_index,
@@ -152,7 +152,7 @@ impl ConsensusService {
     }
 
     /// Handles `PrepareResponse` message
-    pub(in crate::service) fn on_prepare_response(
+    pub(in crate::service) async fn on_prepare_response(
         &mut self,
         payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {
@@ -230,13 +230,13 @@ impl ConsensusService {
         // extends the change-view timer (factor 2).
         self.context.extend_timer_by_factor(2);
 
-        self.check_prepare_responses()?;
+        self.check_prepare_responses().await?;
 
         Ok(())
     }
 
     /// Sends our `PrepareResponse` if needed and not already sent.
-    pub(in crate::service) fn send_prepare_response(&mut self) -> ConsensusResult<()> {
+    pub(in crate::service) async fn send_prepare_response(&mut self) -> ConsensusResult<()> {
         if self.context.is_primary() {
             return Ok(());
         }
@@ -259,7 +259,8 @@ impl ConsensusService {
         );
 
         let response_payload =
-            self.create_payload(ConsensusMessageType::PrepareResponse, response.serialize())?;
+            self.create_payload(ConsensusMessageType::PrepareResponse, response.serialize())
+                .await?;
         let my_witness = response_payload.witness.clone();
         let invocation_script = InvocationScript::invocation_script_from_signature(&my_witness);
         self.broadcast(response_payload)?;
@@ -268,13 +269,13 @@ impl ConsensusService {
         self.context
             .add_prepare_response(my_index, invocation_script, Some(preparation_hash))?;
 
-        self.check_prepare_responses()?;
+        self.check_prepare_responses().await?;
 
         Ok(())
     }
 
     /// Checks if we have enough prepare responses to send commit
-    pub(in crate::service) fn check_prepare_responses(&mut self) -> ConsensusResult<()> {
+    pub(in crate::service) async fn check_prepare_responses(&mut self) -> ConsensusResult<()> {
         // C# calls `CheckPreparations` (→ send Commit) only when
         // `context.RequestSentOrReceived` — i.e. the PrepareRequest has been sent
         // (primary) or received (backup). Without this gate, M PrepareResponses
@@ -321,7 +322,7 @@ impl ConsensusService {
         );
 
         let block_hash = self.context.proposed_block_hash.unwrap_or_default();
-        let signature = self.sign_block_hash(&block_hash)?;
+        let signature = self.sign_block_hash(&block_hash).await?;
 
         let my_index = self.my_index()?;
         let commit = CommitMessage::new(
@@ -331,7 +332,9 @@ impl ConsensusService {
             signature.clone(),
         );
 
-        let payload = self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
+        let payload = self
+            .create_payload(ConsensusMessageType::Commit, commit.serialize())
+            .await?;
         let commit_witness = payload.witness.clone();
         let commit_invocation = InvocationScript::invocation_script_from_signature(&commit_witness);
         self.broadcast(payload)?;

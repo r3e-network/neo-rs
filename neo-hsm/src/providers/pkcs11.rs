@@ -37,6 +37,7 @@
 
 use crate::config::{HsmConfig, SigFormat, profile};
 use crate::error::{HsmError, HsmResult};
+use async_trait::async_trait;
 use neo_consensus::ConsensusSigner;
 use neo_consensus::error::ConsensusError;
 use neo_crypto::{Crypto, Secp256r1Crypto};
@@ -412,18 +413,49 @@ impl Drop for Pkcs11Signer {
     }
 }
 
+#[async_trait]
 impl ConsensusSigner for Pkcs11Signer {
     fn can_sign(&self, script_hash: &UInt160) -> bool {
         *script_hash == self.script_hash
     }
 
-    fn sign(&self, data: &[u8], script_hash: &UInt160) -> Result<Vec<u8>, ConsensusError> {
+    async fn sign(&self, data: &[u8], script_hash: &UInt160) -> Result<Vec<u8>, ConsensusError> {
         if !self.can_sign(script_hash) {
             return Err(ConsensusError::state_error(format!(
                 "hsm-pkcs11: unknown script hash {script_hash}"
             )));
         }
-        self.do_sign(data).map_err(ConsensusError::from)
+
+        // Clone the channel-capable fields so the blocking work can run on a
+        // dedicated thread without borrowing `self`.
+        let tx = self.tx.clone();
+        let key_handle = self.key_handle;
+        let sig_format = self.sig_format;
+        let data = data.to_vec();
+
+        tokio::task::spawn_blocking(move || {
+            // Neo's consensus signs SHA-256(data); CKM_ECDSA expects the raw digest.
+            let digest = Crypto::sha256(&data);
+
+            let (reply_tx, reply_rx) = mpsc::channel();
+            tx.send(WorkerCmd::Sign {
+                digest,
+                key: key_handle,
+                reply: reply_tx,
+            })
+            .map_err(|_| HsmError::Disconnected)?;
+
+            // Bounded wait — a stalled HSM must not wedge the dBFT driver.
+            let raw = reply_rx
+                .recv_timeout(SIGN_TIMEOUT)
+                .map_err(|_| HsmError::Timeout(SIGN_TIMEOUT))??;
+
+            // Post-process: DER → r||s (GCP), then low-s normalize (all providers).
+            finalize_signature(&raw, sig_format)
+        })
+        .await
+        .map_err(|e| ConsensusError::state_error(format!("pkcs11 sign task: {e}")))?
+        .map_err(ConsensusError::from)
     }
 }
 

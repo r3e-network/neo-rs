@@ -1,60 +1,63 @@
-# Phase 1 Delivery Summary — Deep Architecture Refactor
+# Phase 1-3 Delivery Summary — Deep Architecture Refactor
 
-**Commit**: `b8afcc0` — Phase 1: Dead code excision + native contract support layer
-**Date**: 2026-07-04
-**ADRs**: ADR-027 (dead code excision), ADR-028 (native contract support layer)
+**Commits**: `b8afcc0` (Phase 1) → `a6d7a7a` (Phase 2) → `c5f2c7e` (Phase 3)
+**Date**: 2026-07-05
+**ADRs**: ADR-027 through ADR-030
 
 ## TL;DR
 
-Deleted 2 dead crates, 6 dead traits, and consolidated ~265 lines of duplicated
-boilerplate into 3 support modules. Workspace went from 28 → 26 crates.
-Architecture health score 9.4 → 9.5. All 3346 tests pass.
+3 of 4 phases complete. Deleted 2 dead crates, 6 dead traits, consolidated ~500 lines of duplicated boilerplate, flipped HSM FFI default off, resolved ConsensusService name collision, and decoupled neo-wallets from the execution engine. Workspace: 28 → 26 production crates + 1 test crate. 3342 tests pass (0 failures).
 
-## What Was Done
+## Phase Summary
 
-### Phase 1.1 — Dead Code Excision (ADR-027)
+| Phase | Commit | ADR | Key Changes | Tests |
+|-------|--------|-----|-------------|-------|
+| 1 | b8afcc0 | 027, 028 | Delete neo-static-files + neo-engine; 6 dead traits; native contract support layer | 3346 ✅ |
+| 2 | a6d7a7a | 029 | now_millis, elapsed_us, invocation_from_signature, impl_error_from_struct!, neo-test-fixtures | 3346 ✅ |
+| 3 | c5f2c7e | 030 | neo-hsm default flip, ConsensusApi rename, Nep17MetadataReader extraction | 3342 ✅ |
 
-| Action | Detail |
-|--------|--------|
-| Deleted `neo-static-files` crate | L1c orphan — 0 production consumers. Real cold-archive code lives in `neo-blockchain/src/ledger/static_archive.rs` |
-| Deleted `neo-engine` crate | L3 — entire public state API had 0 production callers. `BlockchainEngineAdapter` was never instantiated. `ValidateStage` + `PipelineStage` traits moved to `neo-blockchain/src/pipeline/stage_traits.rs` |
-| Deleted 6 dead traits | `AsyncSystemContext`, `ApplicationEngineProvider`, `SignerProvider`, `AccountLike`, `MessageReceivedHandler`, `MessageLike`, `ConsensusMessage`, `Box<dyn ConsensusSigner>` impl |
-| Restructured `OracleNodeProvider` | 0-method marker trait → 3 explicit fields (`config`, `store`, `tx`) on `OracleService` |
-| Correctly kept 2 traits | `WalletChangedHandler` (has prod impl in OracleService) and `BlockLike` (has prod impl on Block) — audit was wrong about these |
+## Cumulative Changes
 
-### Phase 1.2 — Native Contract Support Layer (ADR-028)
+### Crates Deleted (2)
+- `neo-static-files` — 0 production consumers
+- `neo-engine` — entire public state API had 0 production callers
 
-| File | Purpose | Sites Consolidated |
-|------|---------|-------------------|
-| `support/codec.rs` | `decode_stack_value`, `encode_storage_struct`, `StructDecoder` | 14 decode + 12 encode + 8 from_stack_value |
-| `support/engine.rs` | `require_persisting_block` | 4 sites |
-| `support/settings.rs` | `read_hardfork_gated_u32_setting` + i64 helpers | 3 snapshot readers + 12 BigInt→i64 sites |
+### Crates Created (1)
+- `neo-test-fixtures` — dev-only shared test builders
 
-19 production files + 8 test files migrated. Data encoding is byte-identical.
+### Traits Deleted (6)
+- `AsyncSystemContext`, `ApplicationEngineProvider`, `SignerProvider`, `AccountLike`, `MessageReceivedHandler`, `MessageLike`, `ConsensusMessage`, `Box<dyn ConsensusSigner>` impl, `OracleNodeProvider`
 
-## Verification
+### Traits Renamed (1)
+- `ConsensusService` → `ConsensusApi` (trait only; struct in neo-consensus unchanged)
 
-| Check | Result |
-|-------|--------|
-| `cargo check --workspace --tests` | ✅ 0 errors, 0 warnings |
-| `cargo test --workspace` | ✅ 3346 passed, 0 failed |
-| `cargo test -p neo-native-contracts` | ✅ 377 passed, 0 failed |
-| `cargo test -p neo-tests --test layer_boundary_tests` | ✅ 20/20 pass |
+### Traits Created (1)
+- `Nep17MetadataReader` in neo-runtime (decouples neo-wallets from neo-execution)
 
-## File Changes
+### Support Modules Created (6)
+- `neo-blockchain/src/pipeline/stage_traits.rs` — ValidateStage + PipelineStage (from neo-engine)
+- `neo-native-contracts/src/support/codec.rs` — StackValue encode/decode helpers
+- `neo-native-contracts/src/support/engine.rs` — require_persisting_block
+- `neo-native-contracts/src/support/settings.rs` — hardfork-gated setting readers
+- `neo-runtime/src/time.rs` — elapsed_us/elapsed_millis with saturating conversion
+- `neo-runtime/src/service/nep17.rs` — Nep17MetadataReader trait
 
-- **Deleted**: `neo-static-files/` (entire directory), `neo-engine/` (entire directory),
-  `neo-blockchain/src/service/engine_adapter.rs`, `neo-execution/src/runtime/engine_provider.rs`
-- **Created**: `neo-blockchain/src/pipeline/stage_traits.rs`,
-  `neo-native-contracts/src/support/codec.rs`, `support/engine.rs`, `support/settings.rs`
-- **Modified**: 19 production files in neo-native-contracts, 8 test files,
-  `Cargo.toml`, `Dockerfile`, `layer_boundary_tests.rs`, `design.md`
-- **Total diff**: 265 files changed, +2263 / -3272 lines (net -1009 lines)
+### Macros Extended (1)
+- `impl_error_from_struct!` — new macro for struct-variant CoreError conversions (13 sites migrated)
 
-## Next Steps (Approved, Not Yet Executed)
+### Dependency Changes
+- `neo-blockchain` no longer depends on `neo-engine` (deleted)
+- `neo-wallets` no longer depends on `neo-execution` (replaced with `neo-runtime`)
+- `neo-execution` now depends on `neo-runtime` (one-way, no cycle)
+- `neo-hsm` default features: `[]` (was `["pkcs11"]`)
+- `neo-node` hsm feature: `["dep:neo-hsm", "neo-hsm/pkcs11"]`
 
-- **Phase 2**: Cross-crate helpers (`now_millis`, `elapsed_us`, `invocation_script`,
-  `impl_error_from` macro) + `neo-test-fixtures` dev crate
-- **Phase 3**: Split `neo-rpc` (275 files) into api/client/server + architecture
-  honesty renames
-- **Phase 4**: Async signer correctness (`ConsensusSigner::sign` → async)
+## Remaining: Phase 4 (Async Signer Correctness)
+
+**Status**: Approved, not yet executed
+
+**Scope**:
+- F1: `ConsensusSigner::sign` is sync but production signers (NitroEnclave, Pkcs11, AzureKeyVault, GcpKms) block on network/HSM round-trips. Change to `async fn` or split sync/async variants.
+- F2: `await_wallet_future` in neo-rpc spawns a fresh CurrentThread runtime per call — restructure to `async fn` with `impl Future`.
+
+**Risk**: HIGH — touches consensus signing hot path. But current behavior is a correctness/performance bug (sync blocking on network in consensus task).

@@ -28,6 +28,7 @@
 //! crate (GA'd 2026-05).
 
 use crate::error::{HsmError, HsmResult};
+use async_trait::async_trait;
 use neo_consensus::ConsensusSigner;
 use neo_consensus::error::ConsensusError;
 use neo_crypto::{Crypto, Secp256r1Crypto};
@@ -71,11 +72,11 @@ impl Default for AzureKeyVaultConfig {
 
 /// Azure Key Vault / Managed HSM native REST signer.
 ///
-/// Uses `reqwest` blocking for synchronous `ConsensusSigner::sign` compliance.
+/// Uses async `reqwest::Client` for non-blocking `ConsensusSigner::sign`.
 /// Bearer token is sourced from the `AZURE_BEARER_TOKEN` environment variable.
 pub struct AzureKeyVaultSigner {
     cfg: AzureKeyVaultConfig,
-    client: reqwest::blocking::Client,
+    client: reqwest::Client,
 }
 
 impl AzureKeyVaultSigner {
@@ -90,15 +91,15 @@ impl AzureKeyVaultSigner {
         if cfg.key_name.is_empty() {
             return Err(HsmError::Init("azure: key_name must not be empty".into()));
         }
-        let client = reqwest::blocking::Client::builder()
+        let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .build()
             .map_err(|e| HsmError::Init(format!("azure: reqwest client: {e}")))?;
         Ok(Self { cfg, client })
     }
 
-    /// Perform the REST sign call and return the 64-byte low-s `r‖s`.
-    fn rest_sign(&self, data: &[u8]) -> HsmResult<Vec<u8>> {
+    /// Perform the async REST sign call and return the 64-byte low-s `r‖s`.
+    async fn rest_sign(&self, data: &[u8]) -> HsmResult<Vec<u8>> {
         let bearer = std::env::var("AZURE_BEARER_TOKEN")
             .map_err(|_| HsmError::Init("azure: AZURE_BEARER_TOKEN env var not set".into()))?;
 
@@ -136,16 +137,17 @@ impl AzureKeyVaultSigner {
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
+            .await
             .map_err(HsmError::AzureHttp)?;
 
         if !resp.status().is_success() {
             let status = resp.status();
-            let text = resp.text().unwrap_or_default();
+            let text = resp.text().await.unwrap_or_default();
             return Err(HsmError::Sign(format!("azure: HTTP {status}: {text}")));
         }
 
         // Parse {"value":"<base64url raw r||s>"}
-        let json: serde_json::Value = resp.json().map_err(HsmError::AzureHttp)?;
+        let json: serde_json::Value = resp.json().await.map_err(HsmError::AzureHttp)?;
         let sig_b64 = json["value"]
             .as_str()
             .ok_or_else(|| HsmError::Sign("azure: missing 'value' in response".into()))?;
@@ -170,17 +172,18 @@ impl AzureKeyVaultSigner {
     }
 }
 
+#[async_trait]
 impl ConsensusSigner for AzureKeyVaultSigner {
     fn can_sign(&self, script_hash: &UInt160) -> bool {
         *script_hash == self.cfg.script_hash
     }
 
-    fn sign(&self, data: &[u8], script_hash: &UInt160) -> Result<Vec<u8>, ConsensusError> {
+    async fn sign(&self, data: &[u8], script_hash: &UInt160) -> Result<Vec<u8>, ConsensusError> {
         if !self.can_sign(script_hash) {
             return Err(ConsensusError::state_error(format!(
                 "hsm-azure: unknown script hash {script_hash}"
             )));
         }
-        self.rest_sign(data).map_err(ConsensusError::from)
+        self.rest_sign(data).await.map_err(ConsensusError::from)
     }
 }

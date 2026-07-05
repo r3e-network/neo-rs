@@ -73,7 +73,7 @@ impl ConsensusService {
     /// Resumes consensus from a recovered context.
     ///
     /// This restores transient fields that are not persisted and continues the round.
-    pub fn resume(
+    pub async fn resume(
         &mut self,
         timestamp: u64,
         prev_hash: UInt256,
@@ -81,12 +81,12 @@ impl ConsensusService {
     ) -> ConsensusResult<()> {
         let next_consensus =
             ConsensusBlockFields::compute_next_consensus_address(&self.context.validators);
-        self.resume_with_next_consensus(timestamp, prev_hash, next_consensus, version)
+        self.resume_with_next_consensus(timestamp, prev_hash, next_consensus, version).await
     }
 
     /// Resumes consensus from a recovered context with the header `NextConsensus`
     /// supplied by the caller.
-    pub fn resume_with_next_consensus(
+    pub async fn resume_with_next_consensus(
         &mut self,
         timestamp: u64,
         prev_hash: UInt256,
@@ -108,14 +108,14 @@ impl ConsensusService {
         };
         self.running = true;
 
-        self.check_prepare_responses()?;
+        self.check_prepare_responses().await?;
         self.check_commits()?;
 
         Ok(())
     }
 
     /// Processes a consensus message
-    pub fn process_message(&mut self, payload: ConsensusPayload) -> ConsensusResult<()> {
+    pub async fn process_message(&mut self, payload: ConsensusPayload) -> ConsensusResult<()> {
         if !self.running {
             return Ok(());
         }
@@ -187,22 +187,22 @@ impl ConsensusService {
 
         match payload.message_type {
             ConsensusMessageType::PrepareRequest => {
-                self.on_prepare_request(&payload)?;
+                self.on_prepare_request(&payload).await?;
             }
             ConsensusMessageType::PrepareResponse => {
-                self.on_prepare_response(&payload)?;
+                self.on_prepare_response(&payload).await?;
             }
             ConsensusMessageType::Commit => {
-                self.on_commit(&payload)?;
+                self.on_commit(&payload).await?;
             }
             ConsensusMessageType::ChangeView => {
-                self.on_change_view(&payload)?;
+                self.on_change_view(&payload).await?;
             }
             ConsensusMessageType::RecoveryRequest => {
-                self.on_recovery_request(&payload)?;
+                self.on_recovery_request(&payload).await?;
             }
             ConsensusMessageType::RecoveryMessage => {
-                self.on_recovery_message(&payload)?;
+                self.on_recovery_message(&payload).await?;
             }
         }
 
@@ -217,7 +217,7 @@ impl ConsensusService {
     }
 
     /// Handles timer tick for timeout detection
-    pub fn on_timer_tick(&mut self, timestamp: u64) -> ConsensusResult<()> {
+    pub async fn on_timer_tick(&mut self, timestamp: u64) -> ConsensusResult<()> {
         if !self.running {
             return Ok(());
         }
@@ -235,7 +235,7 @@ impl ConsensusService {
             );
 
             if should_resend {
-                self.resend_recovery_message()?;
+                self.resend_recovery_message().await?;
                 self.context.commit_recovery_sent_at = Some(timestamp);
             }
             return Ok(());
@@ -279,7 +279,7 @@ impl ConsensusService {
             } else {
                 ChangeViewReason::Timeout
             };
-            self.request_change_view(reason, timestamp)?;
+            self.request_change_view(reason, timestamp).await?;
         }
 
         Ok(())

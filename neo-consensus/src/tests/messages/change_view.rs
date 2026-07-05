@@ -1,7 +1,7 @@
 use super::*;
 
-#[test]
-fn test_change_view_new() {
+#[tokio::test]
+async fn test_change_view_new() {
     let msg = ChangeViewMessage::new(100, 0, 1, 1000, ChangeViewReason::Timeout);
 
     assert_eq!(msg.block_index, 100);
@@ -11,8 +11,8 @@ fn test_change_view_new() {
     assert_eq!(msg.reason, ChangeViewReason::Timeout);
 }
 
-#[test]
-fn test_change_view_serialize() {
+#[tokio::test]
+async fn test_change_view_serialize() {
     let msg = ChangeViewMessage::new(100, 0, 1, 1000, ChangeViewReason::Timeout);
     let data = msg.serialize();
 
@@ -20,8 +20,8 @@ fn test_change_view_serialize() {
     assert_eq!(data.len(), 9);
 }
 
-#[test]
-fn test_change_view_wire_format_bytes() {
+#[tokio::test]
+async fn test_change_view_wire_format_bytes() {
     let timestamp = 0x0102_0304_0506_0708u64;
     let msg = ChangeViewMessage::new(100, 7, 1, timestamp, ChangeViewReason::TxNotFound);
     let data = msg.serialize();
@@ -32,8 +32,8 @@ fn test_change_view_wire_format_bytes() {
     assert_eq!(data, expected);
 }
 
-#[test]
-fn test_change_view_validate() {
+#[tokio::test]
+async fn test_change_view_validate() {
     let valid = ChangeViewMessage::new(100, 0, 1, 1000, ChangeViewReason::Timeout);
     assert!(valid.validate().is_ok());
 
@@ -42,8 +42,8 @@ fn test_change_view_validate() {
     assert!(overflow.validate().is_err());
 }
 
-#[test]
-fn test_change_view_serialize_deserialize_roundtrip() {
+#[tokio::test]
+async fn test_change_view_serialize_deserialize_roundtrip() {
     let msg = ChangeViewMessage::new(100, 0, 1, 12345678, ChangeViewReason::TxNotFound);
     let data = msg.serialize();
 
@@ -57,15 +57,15 @@ fn test_change_view_serialize_deserialize_roundtrip() {
     assert_eq!(parsed.reason, ChangeViewReason::TxNotFound);
 }
 
-#[test]
-fn test_change_view_deserialize_too_short() {
+#[tokio::test]
+async fn test_change_view_deserialize_too_short() {
     let data = vec![0u8; 5]; // Too short
     let result = ChangeViewMessage::deserialize(&data, 100, 0, 1);
     assert!(result.is_err());
 }
 
-#[test]
-fn test_change_view_wire_is_timestamp_reason_only_for_all_reasons() {
+#[tokio::test]
+async fn test_change_view_wire_is_timestamp_reason_only_for_all_reasons() {
     // C# `DBFTPlugin` ChangeView.Serialize writes ONLY Timestamp(8)+Reason(1)
     // (Size = base + sizeof(ulong) + sizeof(ChangeViewReason)) — there is no
     // RejectedHashes/InvalidTransactions payload for ANY reason, including

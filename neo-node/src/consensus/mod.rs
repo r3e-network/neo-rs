@@ -348,7 +348,7 @@ impl ConsensusDriver {
                     ) {
                         continue;
                     }
-                    if let Err(err) = self.service.process_message(payload) {
+                    if let Err(err) = self.service.process_message(payload).await {
                         warn!(target: "neo", %err, "consensus rejected inbound payload");
                     }
                 }
@@ -387,7 +387,7 @@ impl ConsensusDriver {
                 }
                 // View-timeout tick (the real deadline lives inside the context).
                 _ = ticker.tick() => {
-                    if let Err(err) = self.service.on_timer_tick(now_millis()) {
+                    if let Err(err) = self.service.on_timer_tick(now_millis()).await {
                         warn!(target: "neo", %err, "consensus timer tick failed");
                     }
                 }
@@ -423,7 +423,7 @@ impl ConsensusDriver {
                         &invalid_tx_hashes,
                     )
                 };
-                if let Err(err) = self.service.on_transactions_received(hashes) {
+                if let Err(err) = self.service.on_transactions_received(hashes).await {
                     warn!(target: "neo", %err, "consensus on_transactions_received failed");
                 }
             }
@@ -444,11 +444,12 @@ impl ConsensusDriver {
                 if let Err(err) = self
                     .service
                     .on_transactions_received(availability.available)
+                    .await
                 {
                     warn!(target: "neo", %err, "consensus on_transactions_received failed");
                 }
                 if let Some(reason) = availability.rejection_reason {
-                    if let Err(err) = self.service.request_change_view(reason, now_millis()) {
+                    if let Err(err) = self.service.request_change_view(reason, now_millis()).await {
                         warn!(target: "neo", %err, ?reason, "consensus request_change_view failed");
                     }
                 }

@@ -24,8 +24,8 @@ fn empty_child_block(parent: &Block, index: u32) -> Block {
     Block::from_parts(header, Vec::new())
 }
 
-#[test]
-fn native_ledger_records_survive_store_cache_reopen() {
+#[tokio::test]
+async fn native_ledger_records_survive_store_cache_reopen() {
     neo_native_contracts::install();
 
     let settings = ProtocolSettings::default();

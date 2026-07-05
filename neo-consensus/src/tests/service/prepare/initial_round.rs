@@ -14,7 +14,7 @@ async fn primary_requests_configured_transaction_limit() {
         .context()
         .view_start_time
         .saturating_add(service.context().prepare_request_delay());
-    service.on_timer_tick(deadline).unwrap();
+    service.on_timer_tick(deadline).await.unwrap();
 
     let event = rx.try_recv().expect("transaction request");
     assert!(matches!(
@@ -35,7 +35,7 @@ async fn consensus_round_emits_block_committed() {
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
-    service.on_transactions_received(Vec::new()).unwrap();
+    service.on_transactions_received(Vec::new()).await.unwrap();
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
@@ -64,7 +64,7 @@ async fn consensus_round_emits_block_committed() {
             response.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).unwrap();
+        service.process_message(payload).await.unwrap();
     }
 
     let block_hash = service.context().proposed_block_hash.expect("block hash");
@@ -81,7 +81,7 @@ async fn consensus_round_emits_block_committed() {
             commit.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).unwrap();
+        service.process_message(payload).await.unwrap();
     }
 
     let mut committed = None;
@@ -116,7 +116,7 @@ async fn prepare_request_with_wrong_primary_rejected() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    let result = service.process_message(payload);
+    let result = service.process_message(payload).await;
     assert!(matches!(result, Err(ConsensusError::InvalidPrimary { .. })));
 }
 
@@ -133,7 +133,7 @@ async fn primary_prepare_request_timestamp_is_after_previous_header() {
         .unwrap();
     while rx.try_recv().is_ok() {}
 
-    service.on_transactions_received(Vec::new()).unwrap();
+    service.on_transactions_received(Vec::new()).await.unwrap();
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {

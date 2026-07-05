@@ -7,7 +7,7 @@ use tracing::{debug, info, warn};
 
 impl ConsensusService {
     /// Handles `ChangeView` message
-    pub(in crate::service) fn on_change_view(
+    pub(in crate::service) async fn on_change_view(
         &mut self,
         payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {
@@ -62,7 +62,7 @@ impl ConsensusService {
 
         // If the ChangeView targets a view we already passed, treat it as a recovery request.
         if new_view <= self.context.view_number {
-            self.maybe_send_recovery_response(payload.validator_index)?;
+            self.maybe_send_recovery_response(payload.validator_index).await?;
         }
 
         let commit_sent = self
@@ -91,7 +91,7 @@ impl ConsensusService {
 
         // Check if we have enough change view requests
         if self.context.has_enough_change_views(new_view) {
-            self.change_view(new_view, timestamp)?;
+            self.change_view(new_view, timestamp).await?;
         }
 
         Ok(())
@@ -104,7 +104,7 @@ impl ConsensusService {
     /// - Otherwise, send a normal `ChangeView` message
     ///
     /// This prevents network splits when nodes are already committed or failed.
-    pub fn request_change_view(
+    pub async fn request_change_view(
         &mut self,
         reason: ChangeViewReason,
         timestamp: u64,
@@ -124,7 +124,7 @@ impl ConsensusService {
                 f = self.context.f(),
                 "More than F nodes committed or lost, requesting recovery instead of change view"
             );
-            return self.request_recovery();
+            return self.request_recovery().await;
         }
 
         warn!(
@@ -150,7 +150,9 @@ impl ConsensusService {
             reason,
         );
 
-        let payload = self.create_payload(ConsensusMessageType::ChangeView, msg.serialize())?;
+        let payload = self
+            .create_payload(ConsensusMessageType::ChangeView, msg.serialize())
+            .await?;
         if !payload.witness.is_empty() {
             self.context.change_view_invocations.insert(
                 self.my_index()?,
@@ -161,7 +163,7 @@ impl ConsensusService {
 
         // Check if we already have enough
         if self.context.has_enough_change_views(new_view) {
-            self.change_view(new_view, timestamp)?;
+            self.change_view(new_view, timestamp).await?;
         }
 
         Ok(())
@@ -172,7 +174,7 @@ impl ConsensusService {
     /// This is called instead of change view when more than F nodes have
     /// committed or are lost. It broadcasts a `RecoveryRequest` to get the
     /// current consensus state from other nodes.
-    pub fn request_recovery(&mut self) -> ConsensusResult<()> {
+    pub async fn request_recovery(&mut self) -> ConsensusResult<()> {
         let timestamp = current_timestamp();
 
         info!(
@@ -188,17 +190,19 @@ impl ConsensusService {
             timestamp,
         );
 
-        let payload = self.create_payload(
-            ConsensusMessageType::RecoveryRequest,
-            recovery_request.serialize(),
-        )?;
+        let payload = self
+            .create_payload(
+                ConsensusMessageType::RecoveryRequest,
+                recovery_request.serialize(),
+            )
+            .await?;
         self.broadcast(payload)?;
 
         Ok(())
     }
 
     /// Changes to a new view
-    fn change_view(&mut self, new_view: u8, timestamp: u64) -> ConsensusResult<()> {
+    async fn change_view(&mut self, new_view: u8, timestamp: u64) -> ConsensusResult<()> {
         let old_view = self.context.view_number;
 
         // Never move the view backward (or re-enter the current view). C#
@@ -228,7 +232,7 @@ impl ConsensusService {
                 .get(&my_index)
                 .is_some_and(|(agreed_view, _)| *agreed_view >= new_view);
             if !already_agreed {
-                self.broadcast_change_agreement(timestamp)?;
+                self.broadcast_change_agreement(timestamp).await?;
             }
         }
 
@@ -246,7 +250,7 @@ impl ConsensusService {
     /// Broadcasts this node's own `ChangeView(ChangeAgreement)` for the current
     /// view (`NewViewNumber = ViewNumber + 1`), mirroring C#
     /// `MakeChangeView(ChangeViewReason.ChangeAgreement)` in `CheckExpectedView`.
-    fn broadcast_change_agreement(&mut self, timestamp: u64) -> ConsensusResult<()> {
+    async fn broadcast_change_agreement(&mut self, timestamp: u64) -> ConsensusResult<()> {
         let my_index = self.my_index()?;
         let new_view = self.context.view_number.saturating_add(1);
         self.context.add_change_view(
@@ -262,7 +266,9 @@ impl ConsensusService {
             timestamp,
             ChangeViewReason::ChangeAgreement,
         );
-        let payload = self.create_payload(ConsensusMessageType::ChangeView, msg.serialize())?;
+        let payload = self
+            .create_payload(ConsensusMessageType::ChangeView, msg.serialize())
+            .await?;
         if !payload.witness.is_empty() {
             self.context.change_view_invocations.insert(
                 my_index,

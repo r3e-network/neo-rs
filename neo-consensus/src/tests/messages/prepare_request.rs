@@ -1,7 +1,7 @@
 use super::*;
 
-#[test]
-fn test_prepare_request_new() {
+#[tokio::test]
+async fn test_prepare_request_new() {
     let msg = PrepareRequestMessage::new(
         100,
         0,
@@ -23,8 +23,8 @@ fn test_prepare_request_new() {
     assert_eq!(msg.transaction_hashes.len(), 1);
 }
 
-#[test]
-fn test_prepare_request_serialize() {
+#[tokio::test]
+async fn test_prepare_request_serialize() {
     let msg = PrepareRequestMessage::new(100, 0, 0, 0, UInt256::zero(), 1000, 1, vec![]);
     let data = msg.serialize();
 
@@ -32,8 +32,8 @@ fn test_prepare_request_serialize() {
     assert_eq!(data.len(), 53);
 }
 
-#[test]
-fn test_prepare_request_wire_format_bytes() {
+#[tokio::test]
+async fn test_prepare_request_wire_format_bytes() {
     let prev_hash = UInt256::from([0xAAu8; 32]);
     let tx1 = UInt256::from([0x01u8; 32]);
     let tx2 = UInt256::from([0x02u8; 32]);
@@ -55,16 +55,16 @@ fn test_prepare_request_wire_format_bytes() {
     assert_eq!(data, expected);
 }
 
-#[test]
-fn test_prepare_request_validate() {
+#[tokio::test]
+async fn test_prepare_request_validate() {
     let msg = PrepareRequestMessage::new(100, 0, 0, 0, UInt256::zero(), 1000, 1, vec![]);
 
     assert!(msg.validate(0, 512).is_ok());
     assert!(msg.validate(1, 512).is_err());
 }
 
-#[test]
-fn test_prepare_request_validate_rejects_too_many_transactions() {
+#[tokio::test]
+async fn test_prepare_request_validate_rejects_too_many_transactions() {
     let tx_hashes = vec![UInt256::from([0x01; 32]), UInt256::from([0x02; 32])];
     let msg = PrepareRequestMessage::new(100, 0, 0, 0, UInt256::zero(), 1000, 1, tx_hashes);
 

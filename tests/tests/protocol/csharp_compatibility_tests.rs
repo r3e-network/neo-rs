@@ -35,8 +35,8 @@ fn load_mainnet_block_1000() -> Vec<u8> {
     hex::decode(hex.trim()).expect("valid hex")
 }
 
-#[test]
-fn csharp_native_contract_hashes_match() {
+#[tokio::test]
+async fn csharp_native_contract_hashes_match() {
     use neo_primitives::UInt160;
 
     let cm = UInt160::parse("0xfffdc93764dbaddd97c48f252a53ea4643faa3fd").unwrap();
@@ -67,8 +67,8 @@ fn csharp_native_contract_hashes_match() {
     assert_eq!(neo_native_contracts::Treasury::script_hash(), treasury);
 }
 
-#[test]
-fn csharp_native_contract_ids_match() {
+#[tokio::test]
+async fn csharp_native_contract_ids_match() {
     assert_eq!(ContractManagement::ID, -1);
     assert_eq!(neo_native_contracts::StdLib::ID, -2);
     assert_eq!(neo_native_contracts::CryptoLib::ID, -3);
@@ -89,8 +89,8 @@ fn csharp_native_contract_ids_match() {
 // `NativeContract` impls, where the derivations are private and covered by
 // each contract's own unit tests), and one of them encoded a wrong format
 // (GAS total-supply is `Prefix_TotalSupply` = `[0x0B]`, not `[0x14] + 32·0`).
-#[test]
-fn ledger_storage_keys_match_csharp() {
+#[tokio::test]
+async fn ledger_storage_keys_match_csharp() {
     use neo_storage::StorageKey;
     let cb = StorageKey::new(LedgerContract::ID, vec![12]);
     assert_eq!(cb.key()[0], 12); // PREFIX_CURRENT_BLOCK
@@ -103,8 +103,8 @@ fn ledger_storage_keys_match_csharp() {
     assert_eq!(bh.key()[0], 9); // PREFIX_BLOCK_HASH
 }
 
-#[test]
-fn sha256_empty_matches_csharp() {
+#[tokio::test]
+async fn sha256_empty_matches_csharp() {
     let h = Crypto::sha256(&[]);
     assert_eq!(
         h.to_vec(),
@@ -116,8 +116,8 @@ fn sha256_empty_matches_csharp() {
     );
 }
 
-#[test]
-fn sha256_abc_matches_csharp() {
+#[tokio::test]
+async fn sha256_abc_matches_csharp() {
     let h = Crypto::sha256(b"abc");
     // .NET SHA256("abc") = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
     assert_eq!(
@@ -130,8 +130,8 @@ fn sha256_abc_matches_csharp() {
     );
 }
 
-#[test]
-fn mainnet_block_1000_fixture_deserializes_and_hashes_like_csharp() {
+#[tokio::test]
+async fn mainnet_block_1000_fixture_deserializes_and_hashes_like_csharp() {
     // The fixture file is the byte-exact C# mainnet block 1000 wire payload.
     // This is a real compatibility check: it must decode through the Rust
     // `Block` payload implementation, consume every byte, and hash to the
@@ -150,8 +150,8 @@ fn mainnet_block_1000_fixture_deserializes_and_hashes_like_csharp() {
     assert!(block.verify_merkle_root());
 }
 
-#[test]
-fn block_serialize_roundtrip_synthesised() {
+#[tokio::test]
+async fn block_serialize_roundtrip_synthesised() {
     // Build a minimal block with an empty transaction list (the C#
     // wire format starts with `header + var_int(0)` for empty
     // blocks). Serialise it, deserialise it, and verify the bytes

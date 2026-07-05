@@ -11,7 +11,7 @@ use tracing::{debug, info, warn};
 
 impl ConsensusService {
     /// Handles `RecoveryRequest` message
-    pub(in crate::service) fn on_recovery_request(
+    pub(in crate::service) async fn on_recovery_request(
         &mut self,
         payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {
@@ -49,15 +49,16 @@ impl ConsensusService {
         // Build and send recovery message with current state
         let recovery = self.build_recovery_message()?;
 
-        let payload =
-            self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize()?)?;
+        let payload = self
+            .create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize()?)
+            .await?;
         self.broadcast(payload)?;
 
         Ok(())
     }
 
     /// Handles `RecoveryMessage`
-    pub(in crate::service) fn on_recovery_message(
+    pub(in crate::service) async fn on_recovery_message(
         &mut self,
         payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {
@@ -171,7 +172,7 @@ impl ConsensusService {
                     data: msg.serialize(),
                     witness: signature.to_vec(),
                 };
-                self.reprocess_recovery_payload(recovered);
+                self.reprocess_recovery_payload(recovered).await;
             }
 
             return Ok(());
@@ -202,7 +203,7 @@ impl ConsensusService {
                                 data: prep_req.serialize(),
                                 witness: signature.to_vec(),
                             };
-                            self.reprocess_recovery_payload(recovered);
+                            self.reprocess_recovery_payload(recovered).await;
                         }
                     }
                 }
@@ -246,7 +247,7 @@ impl ConsensusService {
                         data: msg.serialize(),
                         witness: signature.to_vec(),
                     };
-                    self.reprocess_recovery_payload(recovered);
+                    self.reprocess_recovery_payload(recovered).await;
                 }
             }
         }
@@ -276,7 +277,7 @@ impl ConsensusService {
                     data: msg.serialize(),
                     witness: signature.to_vec(),
                 };
-                self.reprocess_recovery_payload(recovered);
+                self.reprocess_recovery_payload(recovered).await;
             }
         }
 
@@ -303,7 +304,7 @@ impl ConsensusService {
                 );
                 // Create and broadcast commit message
                 let block_hash = self.context.proposed_block_hash.unwrap_or_default();
-                let signature = self.sign_block_hash(&block_hash)?;
+                let signature = self.sign_block_hash(&block_hash).await?;
 
                 let commit = CommitMessage::new(
                     self.context.block_index,
@@ -312,8 +313,9 @@ impl ConsensusService {
                     signature.clone(),
                 );
 
-                let payload =
-                    self.create_payload(ConsensusMessageType::Commit, commit.serialize())?;
+                let payload = self
+                    .create_payload(ConsensusMessageType::Commit, commit.serialize())
+                    .await?;
                 let commit_witness = payload.witness.clone();
                 let commit_invocation =
                     InvocationScript::invocation_script_from_signature(&commit_witness);
@@ -334,12 +336,12 @@ impl ConsensusService {
         Ok(())
     }
 
-    pub(in crate::service) fn reprocess_recovery_payload(&mut self, payload: ConsensusPayload) {
+    pub(in crate::service) async fn reprocess_recovery_payload(&mut self, payload: ConsensusPayload) {
         let result = match payload.message_type {
-            ConsensusMessageType::ChangeView => self.on_change_view(&payload),
-            ConsensusMessageType::PrepareRequest => self.on_prepare_request(&payload),
-            ConsensusMessageType::PrepareResponse => self.on_prepare_response(&payload),
-            ConsensusMessageType::Commit => self.on_commit(&payload),
+            ConsensusMessageType::ChangeView => self.on_change_view(&payload).await,
+            ConsensusMessageType::PrepareRequest => self.on_prepare_request(&payload).await,
+            ConsensusMessageType::PrepareResponse => self.on_prepare_response(&payload).await,
+            ConsensusMessageType::Commit => self.on_commit(&payload).await,
             _ => Ok(()),
         };
         if let Err(err) = result {
@@ -377,7 +379,7 @@ impl ConsensusService {
         Ok(false)
     }
 
-    pub(in crate::service) fn maybe_send_recovery_response(
+    pub(in crate::service) async fn maybe_send_recovery_response(
         &mut self,
         requester_index: u8,
     ) -> ConsensusResult<()> {
@@ -387,17 +389,19 @@ impl ConsensusService {
 
         let recovery = self.build_recovery_message()?;
 
-        let payload =
-            self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize()?)?;
+        let payload = self
+            .create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize()?)
+            .await?;
         self.broadcast(payload)?;
         Ok(())
     }
 
-    pub(in crate::service) fn resend_recovery_message(&mut self) -> ConsensusResult<()> {
+    pub(in crate::service) async fn resend_recovery_message(&mut self) -> ConsensusResult<()> {
         let recovery = self.build_recovery_message()?;
 
-        let payload =
-            self.create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize()?)?;
+        let payload = self
+            .create_payload(ConsensusMessageType::RecoveryMessage, recovery.serialize()?)
+            .await?;
         self.broadcast(payload)?;
         Ok(())
     }

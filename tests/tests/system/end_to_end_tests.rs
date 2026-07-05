@@ -17,8 +17,8 @@ use neo_tests::state::MemoryWorldState;
 // State Root Calculation Tests
 // ============================================================================
 
-#[test]
-fn test_state_root_determinism() {
+#[tokio::test]
+async fn test_state_root_determinism() {
     let mut trie1 = StateTrieManager::new(false);
     let mut trie2 = StateTrieManager::new(false);
 
@@ -33,8 +33,8 @@ fn test_state_root_determinism() {
     assert_eq!(root1, root2, "Same changes should produce same root");
 }
 
-#[test]
-fn test_state_root_order_independence() {
+#[tokio::test]
+async fn test_state_root_order_independence() {
     let mut trie1 = StateTrieManager::new(false);
     let mut trie2 = StateTrieManager::new(false);
 
@@ -62,8 +62,8 @@ fn test_state_root_order_independence() {
     assert_eq!(root1, root2, "Order of changes shouldn't affect root");
 }
 
-#[test]
-fn test_state_root_different_values() {
+#[tokio::test]
+async fn test_state_root_different_values() {
     let mut trie1 = StateTrieManager::new(false);
     let mut trie2 = StateTrieManager::new(false);
 
@@ -92,8 +92,8 @@ fn test_state_root_different_values() {
 // Crypto Integration Tests
 // ============================================================================
 
-#[test]
-fn test_block_hash_calculation() {
+#[tokio::test]
+async fn test_block_hash_calculation() {
     let mut data = Vec::new();
     data.extend_from_slice(&0u32.to_le_bytes());
     data.extend_from_slice(&UInt256::zero().to_bytes());
@@ -108,8 +108,8 @@ fn test_block_hash_calculation() {
     assert_ne!(block_hash, UInt256::zero());
 }
 
-#[test]
-fn test_merkle_root_calculation() {
+#[tokio::test]
+async fn test_merkle_root_calculation() {
     let empty_merkle = UInt256::zero();
     let tx_hash = UInt256::from([0x01u8; 32]);
     let single_merkle = tx_hash;
@@ -152,8 +152,8 @@ async fn test_concurrent_state_commits() {
 // Performance Sanity Tests
 // ============================================================================
 
-#[test]
-fn test_state_trie_performance_1000_keys() {
+#[tokio::test]
+async fn test_state_trie_performance_1000_keys() {
     let mut trie = StateTrieManager::new(false);
 
     let start = std::time::Instant::now();

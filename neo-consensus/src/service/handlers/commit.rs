@@ -7,8 +7,13 @@ use neo_primitives::UInt256;
 use tracing::{debug, info, warn};
 
 impl ConsensusService {
-    /// Handles Commit message
-    pub(in crate::service) fn on_commit(
+    /// Handles Commit message.
+    ///
+    /// This method is `async` for consistency with the other handlers (it is
+    /// called from `reprocess_recovery_payload` whose match arms must all
+    /// return the same future type). `on_commit` itself does not perform any
+    /// async I/O — `check_commits` is sync.
+    pub(in crate::service) async fn on_commit(
         &mut self,
         payload: &ConsensusPayload,
     ) -> ConsensusResult<()> {

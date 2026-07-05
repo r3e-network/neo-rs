@@ -10,7 +10,7 @@ async fn prepare_responses_trigger_commit_broadcast() {
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
     while rx.try_recv().is_ok() {}
 
-    service.on_transactions_received(Vec::new()).unwrap();
+    service.on_transactions_received(Vec::new()).await.unwrap();
 
     let prepare_payload = loop {
         match rx.try_recv() {
@@ -40,7 +40,7 @@ async fn prepare_responses_trigger_commit_broadcast() {
             response.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).unwrap();
+        service.process_message(payload).await.unwrap();
     }
 
     let mut commit_payload = None;
@@ -69,7 +69,7 @@ async fn commits_reach_threshold_emit_block_committed() {
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
-    service.on_transactions_received(Vec::new()).unwrap();
+    service.on_transactions_received(Vec::new()).await.unwrap();
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
@@ -98,7 +98,7 @@ async fn commits_reach_threshold_emit_block_committed() {
             response.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).unwrap();
+        service.process_message(payload).await.unwrap();
     }
 
     let block_hash = service.context().proposed_block_hash.expect("block hash");
@@ -115,7 +115,7 @@ async fn commits_reach_threshold_emit_block_committed() {
             commit.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).unwrap();
+        service.process_message(payload).await.unwrap();
     }
 
     let mut committed = None;
@@ -143,7 +143,7 @@ async fn committed_round_assembles_into_the_agreed_block() {
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
-    service.on_transactions_received(Vec::new()).unwrap();
+    service.on_transactions_received(Vec::new()).await.unwrap();
 
     // Drain until the primary's PrepareRequest has been emitted.
     while let Ok(event) = rx.try_recv() {
@@ -170,7 +170,7 @@ async fn committed_round_assembles_into_the_agreed_block() {
             response.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).unwrap();
+        service.process_message(payload).await.unwrap();
     }
 
     let block_hash = service
@@ -191,7 +191,7 @@ async fn committed_round_assembles_into_the_agreed_block() {
             commit.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).unwrap();
+        service.process_message(payload).await.unwrap();
     }
 
     let mut block_data = None;

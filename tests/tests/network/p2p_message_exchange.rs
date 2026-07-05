@@ -13,8 +13,8 @@
 use neo_network::VerifyResult;
 use neo_network::{MessageCommand, MessageFlags};
 
-#[test]
-fn message_command_byte_conversion_round_trips() {
+#[tokio::test]
+async fn message_command_byte_conversion_round_trips() {
     let commands = [
         MessageCommand::Version,
         MessageCommand::Verack,
@@ -44,14 +44,14 @@ fn message_command_byte_conversion_round_trips() {
     }
 }
 
-#[test]
-fn message_flags_compression_predicate() {
+#[tokio::test]
+async fn message_flags_compression_predicate() {
     assert!(!MessageFlags::NONE.is_compressed());
     assert!(MessageFlags::COMPRESSED.is_compressed());
 }
 
-#[test]
-fn verify_result_variants_round_trip() {
+#[tokio::test]
+async fn verify_result_variants_round_trip() {
     let results = [
         VerifyResult::Succeed,
         VerifyResult::AlreadyExists,

@@ -1,7 +1,7 @@
 use super::*;
 
-#[test]
-fn test_change_view_reason_values() {
+#[tokio::test]
+async fn test_change_view_reason_values() {
     assert_eq!(ChangeViewReason::Timeout as u8, 0x0);
     assert_eq!(ChangeViewReason::ChangeAgreement as u8, 0x1);
     assert_eq!(ChangeViewReason::TxNotFound as u8, 0x2);
@@ -10,8 +10,8 @@ fn test_change_view_reason_values() {
     assert_eq!(ChangeViewReason::BlockRejectedByPolicy as u8, 0x5);
 }
 
-#[test]
-fn test_change_view_reason_from_byte() {
+#[tokio::test]
+async fn test_change_view_reason_from_byte() {
     assert_eq!(
         ChangeViewReason::from_byte(0x0),
         Some(ChangeViewReason::Timeout)
@@ -23,8 +23,8 @@ fn test_change_view_reason_from_byte() {
     assert_eq!(ChangeViewReason::from_byte(0x99), None);
 }
 
-#[test]
-fn test_change_view_reason_roundtrip() {
+#[tokio::test]
+async fn test_change_view_reason_roundtrip() {
     for reason in [
         ChangeViewReason::Timeout,
         ChangeViewReason::ChangeAgreement,
@@ -39,13 +39,13 @@ fn test_change_view_reason_roundtrip() {
     }
 }
 
-#[test]
-fn test_change_view_reason_default() {
+#[tokio::test]
+async fn test_change_view_reason_default() {
     assert_eq!(ChangeViewReason::default(), ChangeViewReason::Timeout);
 }
 
-#[test]
-fn test_change_view_reason_display() {
+#[tokio::test]
+async fn test_change_view_reason_display() {
     assert_eq!(ChangeViewReason::Timeout.to_string(), "Timeout");
     assert_eq!(ChangeViewReason::TxNotFound.to_string(), "TxNotFound");
 }

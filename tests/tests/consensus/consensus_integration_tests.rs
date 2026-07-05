@@ -104,14 +104,14 @@ fn create_consensus_service(
     (service, rx)
 }
 
-fn fire_primary_prepare_timer(service: &mut ConsensusService) {
+async fn fire_primary_prepare_timer(service: &mut ConsensusService) {
     let deadline = {
         let context = service.context();
         context
             .view_start_time
             .saturating_add(context.prepare_request_delay())
     };
-    service.on_timer_tick(deadline).unwrap();
+    service.on_timer_tick(deadline).await.unwrap();
 }
 
 // ============================================================================
@@ -192,7 +192,7 @@ async fn test_consensus_wrong_block_index_rejected() {
         vec![],
     );
 
-    let result = service.process_message(payload);
+    let result = service.process_message(payload).await;
     assert!(result.is_err());
 }
 
@@ -216,7 +216,7 @@ async fn test_consensus_wrong_view_ignored() {
     );
     sign_consensus_payload(&mut payload, &validators, &keys[0]);
 
-    let result = service.process_message(payload);
+    let result = service.process_message(payload).await;
     assert!(result.is_ok());
     assert_eq!(service.context().view_number, 0);
     assert!(service.context().prepare_responses.is_empty());
@@ -238,7 +238,7 @@ async fn test_consensus_prepare_request_from_non_primary_rejected() {
         vec![],
     );
 
-    let result = service.process_message(payload);
+    let result = service.process_message(payload).await;
     assert!(result.is_err());
 }
 
@@ -255,7 +255,7 @@ async fn test_primary_requests_transactions_on_prepare_timer() {
     assert!(rx.try_recv().is_err());
 
     // Primary should request transactions when the PrepareRequest timer fires.
-    fire_primary_prepare_timer(&mut service);
+    fire_primary_prepare_timer(&mut service).await;
     let event = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv())
         .await
         .expect("timeout")
@@ -280,13 +280,13 @@ async fn test_transactions_received_triggers_prepare_request() {
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
 
     // Drain the RequestTransactions event
-    fire_primary_prepare_timer(&mut service);
+    fire_primary_prepare_timer(&mut service).await;
     let _ = rx.recv().await;
 
     // Simulate receiving transactions
     let tx_hashes = vec![UInt256::from([0x01u8; 32]), UInt256::from([0x02u8; 32])];
 
-    service.on_transactions_received(tx_hashes).unwrap();
+    service.on_transactions_received(tx_hashes).await.unwrap();
 
     // Should broadcast PrepareRequest
     let event = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv())
@@ -315,7 +315,7 @@ async fn test_timeout_triggers_view_change() {
 
     // Simulate timeout by calling on_timer_tick with future timestamp
     let future_time = 1000 + 60_000; // 60 seconds later
-    service.on_timer_tick(future_time).unwrap();
+    service.on_timer_tick(future_time).await.unwrap();
 
     // Should broadcast ChangeView message
     let event = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv())
@@ -413,11 +413,11 @@ async fn test_consensus_handles_empty_transaction_list() {
     service.start(0, 1000, UInt256::zero(), 0).unwrap();
 
     // Drain RequestTransactions
-    fire_primary_prepare_timer(&mut service);
+    fire_primary_prepare_timer(&mut service).await;
     let _ = rx.recv().await;
 
     // Send empty transaction list
-    let result = service.on_transactions_received(vec![]);
+    let result = service.on_transactions_received(vec![]).await;
     assert!(result.is_ok());
 }
 
@@ -433,7 +433,7 @@ async fn test_consensus_single_validator_network() {
     assert_eq!(service.context().validator_count(), 1);
 
     // Should request transactions when the PrepareRequest timer fires.
-    fire_primary_prepare_timer(&mut service);
+    fire_primary_prepare_timer(&mut service).await;
     let event = rx.recv().await.expect("event");
     assert!(matches!(event, ConsensusEvent::RequestTransactions { .. }));
 }

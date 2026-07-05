@@ -35,7 +35,7 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::runtime::{Builder as RuntimeBuilder, Handle, RuntimeFlavor};
+use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 use zeroize::Zeroizing;
 
 use crate::server::rpc_error::RpcError;
@@ -264,27 +264,22 @@ impl RpcServerWallet {
     fn await_wallet_future<T: Send + 'static>(
         future: Pin<Box<dyn Future<Output = WalletResult<T>> + Send>>,
     ) -> Result<T, RpcException> {
+        // The RPC handlers are synchronous, so we must block on the wallet
+        // future here. When a tokio runtime is available we always use
+        // `block_in_place`, which is safe on a multi-thread runtime.
+        //
+        // The previous code spawned a fresh `CurrentThread` runtime when the
+        // host was a current-thread runtime. That path could silently deadlock:
+        // if the wallet future depended on the parent runtime's reactor (e.g.
+        // a `tokio::time::Sleep` or an mpsc receiver), the parent thread would
+        // block waiting for the spawned runtime, which in turn could never
+        // drive the parent's resources.
+        //
+        // `block_in_place` panics on a current-thread runtime — but that is a
+        // loud, immediate failure that tells the operator to configure the RPC
+        // server with a multi-thread runtime, rather than a silent hang.
         let result = if let Ok(handle) = Handle::try_current() {
-            match handle.runtime_flavor() {
-                RuntimeFlavor::CurrentThread => std::thread::spawn(move || {
-                    RuntimeBuilder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .map_err(|err| WalletError::Other(err.to_string()))?
-                        .block_on(future)
-                })
-                .join()
-                .map_err(|_| {
-                    RpcException::from(
-                        RpcError::internal_server_error()
-                            .with_data("wallet runtime thread panicked"),
-                    )
-                })?,
-                RuntimeFlavor::MultiThread => {
-                    tokio::task::block_in_place(move || handle.block_on(future))
-                }
-                _ => tokio::task::block_in_place(move || handle.block_on(future)),
-            }
+            tokio::task::block_in_place(move || handle.block_on(future))
         } else {
             RuntimeBuilder::new_current_thread()
                 .enable_all()

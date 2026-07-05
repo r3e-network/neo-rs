@@ -17,14 +17,14 @@ use neo_tests::state::{
 // WorldState Tests
 // ============================================================================
 
-#[test]
-fn test_memory_world_state_creation() {
+#[tokio::test]
+async fn test_memory_world_state_creation() {
     let state = MemoryWorldState::new();
     assert_eq!(state.height(), 0);
 }
 
-#[test]
-fn test_world_state_commit() {
+#[tokio::test]
+async fn test_world_state_commit() {
     let mut state = MemoryWorldState::new();
 
     let mut changes = StateChanges::new();
@@ -37,8 +37,8 @@ fn test_world_state_commit() {
     state.commit(changes).unwrap();
 }
 
-#[test]
-fn test_world_state_multiple_commits() {
+#[tokio::test]
+async fn test_world_state_multiple_commits() {
     let mut state = MemoryWorldState::new();
 
     let mut changes1 = StateChanges::new();
@@ -60,21 +60,21 @@ fn test_world_state_multiple_commits() {
 // StateTrieManager Tests
 // ============================================================================
 
-#[test]
-fn test_state_trie_manager_creation() {
+#[tokio::test]
+async fn test_state_trie_manager_creation() {
     let trie = StateTrieManager::new(false);
     assert!(trie.root_hash().is_none());
     assert_eq!(trie.current_index(), 0);
 }
 
-#[test]
-fn test_state_trie_manager_full_state_mode() {
+#[tokio::test]
+async fn test_state_trie_manager_full_state_mode() {
     let trie = StateTrieManager::new(true);
     assert!(trie.root_hash().is_none());
 }
 
-#[test]
-fn test_state_trie_apply_changes() {
+#[tokio::test]
+async fn test_state_trie_apply_changes() {
     let mut trie = StateTrieManager::new(false);
 
     let mut changes = StateChanges::new();
@@ -89,8 +89,8 @@ fn test_state_trie_apply_changes() {
     assert_eq!(trie.current_index(), 1);
 }
 
-#[test]
-fn test_state_trie_incremental_blocks() {
+#[tokio::test]
+async fn test_state_trie_incremental_blocks() {
     let mut trie = StateTrieManager::new(false);
     let mut roots = Vec::new();
 
@@ -116,8 +116,8 @@ fn test_state_trie_incremental_blocks() {
     assert_eq!(trie.current_index(), 5);
 }
 
-#[test]
-fn test_state_trie_reset_to_root() {
+#[tokio::test]
+async fn test_state_trie_reset_to_root() {
     let mut trie = StateTrieManager::new(false);
 
     let mut changes = StateChanges::new();
@@ -140,8 +140,8 @@ fn test_state_trie_reset_to_root() {
     assert_eq!(trie.root_hash(), Some(root1));
 }
 
-#[test]
-fn test_state_trie_empty_changes() {
+#[tokio::test]
+async fn test_state_trie_empty_changes() {
     let mut trie = StateTrieManager::new(false);
 
     let changes = StateChanges::new();
@@ -155,22 +155,22 @@ fn test_state_trie_empty_changes() {
 // Mempool Tests
 // ============================================================================
 
-#[test]
-fn test_mempool_creation() {
+#[tokio::test]
+async fn test_mempool_creation() {
     let mempool = Mempool::new();
     assert_eq!(mempool.len(), 0);
     assert!(mempool.is_empty());
 }
 
-#[test]
-fn test_mempool_with_config() {
+#[tokio::test]
+async fn test_mempool_with_config() {
     let config = MempoolConfig::default();
     let mempool = Mempool::with_config(config);
     assert!(mempool.is_empty());
 }
 
-#[test]
-fn test_mempool_get_top() {
+#[tokio::test]
+async fn test_mempool_get_top() {
     let mempool = Mempool::new();
 
     let top = mempool.get_top(10);
@@ -181,8 +181,8 @@ fn test_mempool_get_top() {
 // Cross-Layer Integration Tests
 // ============================================================================
 
-#[test]
-fn test_state_changes_to_world_state() {
+#[tokio::test]
+async fn test_state_changes_to_world_state() {
     let mut world_state = MemoryWorldState::new();
     let mut trie = StateTrieManager::new(false);
 
@@ -202,21 +202,21 @@ fn test_state_changes_to_world_state() {
 // Edge Case Tests
 // ============================================================================
 
-#[test]
-fn test_storage_key_with_empty_key() {
+#[tokio::test]
+async fn test_storage_key_with_empty_key() {
     let key = StorageKey::new(UInt160::default(), vec![]);
     assert!(key.key.is_empty());
 }
 
-#[test]
-fn test_storage_item_with_large_value() {
+#[tokio::test]
+async fn test_storage_item_with_large_value() {
     let large_value = vec![0xFFu8; 65536];
     let item = StorageItem::new(large_value.clone());
     assert_eq!(item.value.len(), 65536);
 }
 
-#[test]
-fn test_state_changes_deletion() {
+#[tokio::test]
+async fn test_state_changes_deletion() {
     let mut state = MemoryWorldState::new();
 
     let contract = UInt160::from([0x01u8; 20]);
@@ -233,8 +233,8 @@ fn test_state_changes_deletion() {
     state.commit(delete_changes).unwrap();
 }
 
-#[test]
-fn test_multiple_state_changes_batched() {
+#[tokio::test]
+async fn test_multiple_state_changes_batched() {
     let mut state = MemoryWorldState::new();
 
     let contract = UInt160::from([0x01u8; 20]);
@@ -253,8 +253,8 @@ fn test_multiple_state_changes_batched() {
 // Performance Sanity Tests
 // ============================================================================
 
-#[test]
-fn test_state_trie_performance_1000_keys() {
+#[tokio::test]
+async fn test_state_trie_performance_1000_keys() {
     let mut trie = StateTrieManager::new(false);
 
     let start = std::time::Instant::now();

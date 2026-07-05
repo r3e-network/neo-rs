@@ -10,8 +10,8 @@ use tokio::sync::mpsc;
 
 use super::super::helpers::{ConsensusBlockFields, current_timestamp};
 
-#[test]
-fn consensus_merkle_root_matches_core_merkle_tree() {
+#[tokio::test]
+async fn consensus_merkle_root_matches_core_merkle_tree() {
     assert_eq!(
         ConsensusBlockFields::compute_merkle_root(&[]),
         UInt256::zero()

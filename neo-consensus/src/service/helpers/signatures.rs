@@ -34,11 +34,15 @@ impl ConsensusService {
             .ok_or(ConsensusError::InvalidValidatorIndex(my_index))
     }
 
-    /// Signs data with the private key using secp256r1 ECDSA
-    pub(in crate::service) fn sign(&self, data: &[u8]) -> ConsensusResult<Vec<u8>> {
+    /// Signs data with the private key using secp256r1 ECDSA.
+    ///
+    /// This method is `async` because the HSM signer path (`self.signer`) may
+    /// perform blocking network/HSM round-trips. The software signer path
+    /// (local ECDSA) stays as sync work inside the async fn (< 1 ms CPU).
+    pub(in crate::service) async fn sign(&self, data: &[u8]) -> ConsensusResult<Vec<u8>> {
         if let Some(signer) = &self.signer {
             let script_hash = self.my_script_hash()?;
-            let signature = signer.sign(data, &script_hash)?;
+            let signature = signer.sign(data, &script_hash).await?;
             if signature.len() != 64 {
                 return Err(ConsensusError::InvalidSignatureLength {
                     expected: 64,
@@ -67,12 +71,15 @@ impl ConsensusService {
             })
     }
 
-    /// Signs a block hash
-    pub(in crate::service) fn sign_block_hash(&self, hash: &UInt256) -> ConsensusResult<Vec<u8>> {
+    /// Signs a block hash.
+    pub(in crate::service) async fn sign_block_hash(
+        &self,
+        hash: &UInt256,
+    ) -> ConsensusResult<Vec<u8>> {
         let mut sign_data = Vec::with_capacity(4 + 32);
         sign_data.extend_from_slice(&self.network.to_le_bytes());
         sign_data.extend_from_slice(&hash.as_bytes());
-        self.sign(&sign_data)
+        self.sign(&sign_data).await
     }
 
     /// Verifies a signature against a public key

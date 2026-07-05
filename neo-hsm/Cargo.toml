@@ -37,6 +37,12 @@ neo-consensus  = { workspace = true }
 neo-error      = { workspace = true }
 neo-vm         = { workspace = true }
 
+# Async trait support for ConsensusSigner impl
+async-trait = { workspace = true }
+
+# Async runtime (spawn_blocking for PKCS#11 HSM calls)
+tokio = { workspace = true, features = ["rt"] }
+
 # PKCS#11 v2.40 wrapper (feature-gated; all three clouds via their .so)
 cryptoki = { version = "0.12", optional = true }
 
@@ -46,8 +52,8 @@ cryptoki = { version = "0.12", optional = true }
 # for Signature::from_der and Signature::from_slice.
 p256 = { version = "0.13", features = ["ecdsa"] }
 
-# HTTP client for azure native feature
-reqwest = { version = "0.12", features = ["json", "blocking"], optional = true }
+# HTTP client for azure native feature (async; no blocking feature needed)
+reqwest = { version = "0.12", features = ["json"], optional = true }
 
 # base64url for Azure Key Vault REST request/response
 base64 = { version = "0.22", optional = true }

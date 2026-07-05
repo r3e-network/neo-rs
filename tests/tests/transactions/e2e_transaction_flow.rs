@@ -36,8 +36,8 @@ fn create_signed_transaction(
     tx
 }
 
-#[test]
-fn test_transaction_creation_basic() {
+#[tokio::test]
+async fn test_transaction_creation_basic() {
     let (sender, _) = create_test_account(1000, 10000);
     let script = vec![OpCode::PUSH1.byte(), OpCode::RET.byte()];
 
@@ -52,8 +52,8 @@ fn test_transaction_creation_basic() {
     assert_eq!(tx.sender(), Some(sender));
 }
 
-#[test]
-fn test_transaction_hash_unique() {
+#[tokio::test]
+async fn test_transaction_hash_unique() {
     let (sender, _) = create_test_account(1000, 10000);
 
     let tx1 = create_signed_transaction(sender, vec![OpCode::PUSH1.byte()], 100, 1000, 500);
@@ -73,8 +73,8 @@ fn test_transaction_hash_unique() {
     );
 }
 
-#[test]
-fn test_transaction_serialization_roundtrip() {
+#[tokio::test]
+async fn test_transaction_serialization_roundtrip() {
     use neo_payloads::Witness;
 
     let (sender, _) = create_test_account(1000, 10000);
@@ -99,8 +99,8 @@ fn test_transaction_serialization_roundtrip() {
     assert_eq!(original.valid_until_block(), restored.valid_until_block());
 }
 
-#[test]
-fn test_transaction_validation_fees() {
+#[tokio::test]
+async fn test_transaction_validation_fees() {
     let (sender, _) = create_test_account(1000, 10000);
 
     let tx_no_fees = create_signed_transaction(sender, vec![OpCode::RET.byte()], 100, 0, 0);
@@ -113,8 +113,8 @@ fn test_transaction_validation_fees() {
     assert!(tx_with_fees.network_fee() > 0);
 }
 
-#[test]
-fn test_mempool_basic_operations() {
+#[tokio::test]
+async fn test_mempool_basic_operations() {
     let _mempool = Mempool::new();
     assert_eq!(_mempool.len(), 0);
     assert!(_mempool.is_empty());
@@ -123,8 +123,8 @@ fn test_mempool_basic_operations() {
     assert!(top.is_empty());
 }
 
-#[test]
-fn test_mempool_with_config() {
+#[tokio::test]
+async fn test_mempool_with_config() {
     let config = MempoolConfig {
         max_transactions: 100,
         max_per_sender: 10,
@@ -136,8 +136,8 @@ fn test_mempool_with_config() {
     assert!(mempool.is_empty());
 }
 
-#[test]
-fn test_transaction_state_changes() {
+#[tokio::test]
+async fn test_transaction_state_changes() {
     let mut world_state = MemoryWorldState::new();
 
     let sender = UInt160::from([0x01u8; 20]);
@@ -156,8 +156,8 @@ fn test_transaction_state_changes() {
     assert_eq!(sender_state.gas_balance(), 100_000_000);
 }
 
-#[test]
-fn test_contract_storage_updates() {
+#[tokio::test]
+async fn test_contract_storage_updates() {
     let mut world_state = MemoryWorldState::new();
 
     let contract = UInt160::from([0x01u8; 20]);
@@ -216,8 +216,8 @@ async fn test_concurrent_transaction_processing() {
     }
 }
 
-#[test]
-fn test_transaction_fee_calculation() {
+#[tokio::test]
+async fn test_transaction_fee_calculation() {
     let (sender, _) = create_test_account(1000, 10000);
 
     let tx = create_signed_transaction(sender, vec![OpCode::RET.byte()], 100, 1_000_000, 500_000);
@@ -229,8 +229,8 @@ fn test_transaction_fee_calculation() {
     );
 }
 
-#[test]
-fn test_transaction_with_multiple_signers() {
+#[tokio::test]
+async fn test_transaction_with_multiple_signers() {
     let (sender1, _) = create_test_account(1000, 10000);
     let sender2 = UInt160::from([0x02u8; 20]);
 
@@ -247,8 +247,8 @@ fn test_transaction_with_multiple_signers() {
     assert_eq!(tx.sender(), Some(sender1), "First signer is sender");
 }
 
-#[test]
-fn test_transaction_with_high_priority_attribute() {
+#[tokio::test]
+async fn test_transaction_with_high_priority_attribute() {
     let (sender, _) = create_test_account(1000, 10000);
 
     let mut tx = Transaction::new();
@@ -263,8 +263,8 @@ fn test_transaction_with_high_priority_attribute() {
     assert_eq!(tx.attributes().len(), 1);
 }
 
-#[test]
-fn test_empty_transaction_rejected() {
+#[tokio::test]
+async fn test_empty_transaction_rejected() {
     let tx = Transaction::new();
 
     assert!(tx.signers().is_empty());
@@ -273,8 +273,8 @@ fn test_empty_transaction_rejected() {
     assert_eq!(tx.network_fee(), 0);
 }
 
-#[test]
-fn test_transaction_valid_until_far_future() {
+#[tokio::test]
+async fn test_transaction_valid_until_far_future() {
     let (sender, _) = create_test_account(1000, 10000);
 
     let tx = create_signed_transaction(sender, vec![OpCode::RET.byte()], u32::MAX, 1000, 500);

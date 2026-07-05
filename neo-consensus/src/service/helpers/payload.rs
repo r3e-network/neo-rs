@@ -5,8 +5,11 @@ use crate::{ConsensusError, ConsensusMessageType, ConsensusResult};
 use tracing::debug;
 
 impl ConsensusService {
-    /// Creates a consensus payload
-    pub(in crate::service) fn create_payload(
+    /// Creates a consensus payload.
+    ///
+    /// This method is `async` because it calls `self.sign()` which may perform
+    /// a blocking HSM/network round-trip.
+    pub(in crate::service) async fn create_payload(
         &self,
         msg_type: ConsensusMessageType,
         data: Vec<u8>,
@@ -23,7 +26,7 @@ impl ConsensusService {
         // Sign the payload as an ExtensiblePayload ("dBFT") Verifiable:
         // signature is over `[network:4][payload_hash:32]`.
         if let Ok(sign_data) = self.dbft_sign_data(&payload) {
-            match self.sign(&sign_data) {
+            match self.sign(&sign_data).await {
                 Ok(signature) => payload.set_witness(signature),
                 Err(err) => {
                     debug!(error = %err, "Consensus payload signing failed");

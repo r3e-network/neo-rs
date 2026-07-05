@@ -1,7 +1,7 @@
 use super::*;
 
-#[test]
-fn test_prepare_response_new() {
+#[tokio::test]
+async fn test_prepare_response_new() {
     let hash = UInt256::zero();
     let msg = PrepareResponseMessage::new(100, 0, 1, hash);
 
@@ -11,16 +11,16 @@ fn test_prepare_response_new() {
     assert_eq!(msg.preparation_hash, hash);
 }
 
-#[test]
-fn test_prepare_response_serialize() {
+#[tokio::test]
+async fn test_prepare_response_serialize() {
     let msg = PrepareResponseMessage::new(100, 0, 1, UInt256::zero());
     let data = msg.serialize();
 
     assert_eq!(data.len(), 32); // UInt256 is 32 bytes
 }
 
-#[test]
-fn test_prepare_response_validate() {
+#[tokio::test]
+async fn test_prepare_response_validate() {
     let hash = UInt256::zero();
     let msg = PrepareResponseMessage::new(100, 0, 1, hash);
 

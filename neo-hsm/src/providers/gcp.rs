@@ -21,6 +21,7 @@
 //! is fully implemented and requires no additional SDK crates.
 
 use crate::error::{HsmError, HsmResult};
+use async_trait::async_trait;
 use neo_consensus::ConsensusSigner;
 use neo_consensus::error::ConsensusError;
 use neo_primitives::UInt160;
@@ -55,12 +56,13 @@ impl GcpKmsSigner {
     }
 }
 
+#[async_trait]
 impl ConsensusSigner for GcpKmsSigner {
     fn can_sign(&self, script_hash: &UInt160) -> bool {
         *script_hash == self.cfg.script_hash
     }
 
-    fn sign(&self, _data: &[u8], script_hash: &UInt160) -> Result<Vec<u8>, ConsensusError> {
+    async fn sign(&self, _data: &[u8], script_hash: &UInt160) -> Result<Vec<u8>, ConsensusError> {
         if !self.can_sign(script_hash) {
             return Err(ConsensusError::state_error(format!(
                 "hsm-gcp: unknown script hash {script_hash}"

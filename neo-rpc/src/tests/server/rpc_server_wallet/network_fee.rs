@@ -12,17 +12,34 @@ fn calculate_network_fee_requires_payload() {
 }
 
 #[test]
-fn await_wallet_future_supports_current_thread_runtime() {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+fn await_wallet_future_works_on_multi_thread_runtime() {
+    // The RPC server must run on a multi-thread runtime so that
+    // `block_in_place` can safely block on wallet futures. The previous
+    // CurrentThread spawn path was removed because it could silently deadlock
+    // when the wallet future depended on the parent runtime's reactor.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
         .enable_all()
         .build()
-        .expect("current-thread runtime");
+        .expect("multi-thread runtime");
 
     let result = runtime.block_on(async {
         RpcServerWallet::await_wallet_future(Box::pin(async { Ok::<i32, WalletError>(7) }))
     });
 
     assert_eq!(result.expect("await_wallet_future result"), 7);
+}
+
+#[test]
+fn await_wallet_future_works_without_runtime() {
+    // When no tokio runtime is available (e.g. called from a plain sync
+    // context), `await_wallet_future` creates a temporary current-thread
+    // runtime and blocks on the future directly.
+    let result = RpcServerWallet::await_wallet_future(Box::pin(async {
+        Ok::<i32, WalletError>(42)
+    }));
+
+    assert_eq!(result.expect("await_wallet_future result"), 42);
 }
 
 #[test]

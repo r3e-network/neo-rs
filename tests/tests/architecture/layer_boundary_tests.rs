@@ -165,8 +165,8 @@ fn parse_workspace_string_array(workspace_root: &Path, key: &str) -> Vec<String>
         .collect()
 }
 
-#[test]
-fn test_layer_0_has_no_neo_dependencies() {
+#[tokio::test]
+async fn test_layer_0_has_no_neo_dependencies() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
 
     // The only crate with NO neo-* dependencies is neo-primitives. The other
@@ -192,8 +192,8 @@ fn test_layer_0_has_no_neo_dependencies() {
     }
 }
 
-#[test]
-fn test_storage_only_depends_on_primitives() {
+#[tokio::test]
+async fn test_storage_only_depends_on_primitives() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let cargo_toml = workspace_root.join("neo-storage").join("Cargo.toml");
 
@@ -217,8 +217,8 @@ fn test_storage_only_depends_on_primitives() {
     }
 }
 
-#[test]
-fn test_neo_io_only_depends_on_primitives() {
+#[tokio::test]
+async fn test_neo_io_only_depends_on_primitives() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let cargo_toml = workspace_root.join("neo-io").join("Cargo.toml");
 
@@ -238,8 +238,8 @@ fn test_neo_io_only_depends_on_primitives() {
     }
 }
 
-#[test]
-fn test_crypto_only_depends_on_layer_0() {
+#[tokio::test]
+async fn test_crypto_only_depends_on_layer_0() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let cargo_toml = workspace_root.join("neo-crypto").join("Cargo.toml");
 
@@ -261,8 +261,8 @@ fn test_crypto_only_depends_on_layer_0() {
     }
 }
 
-#[test]
-fn test_all_neo_crates_are_classified() {
+#[tokio::test]
+async fn test_all_neo_crates_are_classified() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let crates = get_workspace_crates(workspace_root);
     let unclassified = crates
@@ -277,8 +277,8 @@ fn test_all_neo_crates_are_classified() {
     );
 }
 
-#[test]
-fn test_development_workspace_crates_are_not_publishable() {
+#[tokio::test]
+async fn test_development_workspace_crates_are_not_publishable() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let dev_crates = [
         ("tests/Cargo.toml", "neo-tests"),
@@ -306,8 +306,8 @@ fn test_development_workspace_crates_are_not_publishable() {
     }
 }
 
-#[test]
-fn test_workspace_members_use_central_lint_policy() {
+#[tokio::test]
+async fn test_workspace_members_use_central_lint_policy() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let workspace_members = parse_workspace_string_array(workspace_root, "members");
     let mut violations = Vec::new();
@@ -333,8 +333,8 @@ fn test_workspace_members_use_central_lint_policy() {
     );
 }
 
-#[test]
-fn test_workspace_dependencies_match_runtime_workspace_members() {
+#[tokio::test]
+async fn test_workspace_dependencies_match_runtime_workspace_members() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let root_manifest = read_toml_manifest(&workspace_root.join("Cargo.toml"));
     let workspace_members = parse_workspace_string_array(workspace_root, "members");
@@ -428,8 +428,8 @@ fn test_workspace_dependencies_match_runtime_workspace_members() {
     );
 }
 
-#[test]
-fn test_development_workspace_crates_are_not_default_members() {
+#[tokio::test]
+async fn test_development_workspace_crates_are_not_default_members() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let workspace_members = parse_workspace_string_array(workspace_root, "members");
     let default_members = parse_workspace_string_array(workspace_root, "default-members");
@@ -471,8 +471,8 @@ fn test_development_workspace_crates_are_not_default_members() {
     }
 }
 
-#[test]
-fn test_standalone_directories_remain_excluded_from_workspace() {
+#[tokio::test]
+async fn test_standalone_directories_remain_excluded_from_workspace() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let workspace_members = parse_workspace_string_array(workspace_root, "members");
     let excluded_entries = parse_workspace_string_array(workspace_root, "exclude");
@@ -495,8 +495,8 @@ fn test_standalone_directories_remain_excluded_from_workspace() {
     }
 }
 
-#[test]
-fn test_no_upward_dependencies() {
+#[tokio::test]
+async fn test_no_upward_dependencies() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let crates = get_workspace_crates(workspace_root);
 
@@ -533,8 +533,8 @@ fn test_no_upward_dependencies() {
     );
 }
 
-#[test]
-fn test_runtime_vocabulary_stays_below_composition_root() {
+#[tokio::test]
+async fn test_runtime_vocabulary_stays_below_composition_root() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
 
     let runtime_deps =
@@ -562,8 +562,8 @@ fn test_runtime_vocabulary_stays_below_composition_root() {
     }
 }
 
-#[test]
-fn test_indexer_remains_reusable_node_service_not_rpc_submodule() {
+#[tokio::test]
+async fn test_indexer_remains_reusable_node_service_not_rpc_submodule() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     assert_eq!(
         Layer::from_crate_name("neo-indexer"),
@@ -609,8 +609,8 @@ fn test_indexer_remains_reusable_node_service_not_rpc_submodule() {
     );
 }
 
-#[test]
-fn test_active_architecture_docs_do_not_reference_retired_crates() {
+#[tokio::test]
+async fn test_active_architecture_docs_do_not_reference_retired_crates() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let checked_files = [
         "Cargo.toml",
@@ -665,8 +665,8 @@ fn test_active_architecture_docs_do_not_reference_retired_crates() {
     );
 }
 
-#[test]
-fn test_no_circular_dependencies() {
+#[tokio::test]
+async fn test_no_circular_dependencies() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let crates = get_workspace_crates(workspace_root);
 
@@ -731,8 +731,8 @@ fn test_no_circular_dependencies() {
 // Cross-Layer Type Compatibility Tests
 // ============================================================================
 
-#[test]
-fn test_primitives_types_usable() {
+#[tokio::test]
+async fn test_primitives_types_usable() {
     use neo_primitives::{UInt160, UInt256};
 
     let hash160 = UInt160::zero();
@@ -749,8 +749,8 @@ fn test_primitives_types_usable() {
     assert_eq!(hex256.len(), 64); // 32 bytes * 2
 }
 
-#[test]
-fn test_io_serialization_with_primitives() {
+#[tokio::test]
+async fn test_io_serialization_with_primitives() {
     use neo_io::{BinaryWriter, MemoryReader, Serializable};
     use neo_primitives::{UInt160, UInt256};
 
@@ -779,8 +779,8 @@ fn test_io_serialization_with_primitives() {
     assert_eq!(original_256, restored_256);
 }
 
-#[test]
-fn test_crypto_hash_functions() {
+#[tokio::test]
+async fn test_crypto_hash_functions() {
     use neo_crypto::Crypto;
     use neo_primitives::UInt256;
 
@@ -795,8 +795,8 @@ fn test_crypto_hash_functions() {
     assert_eq!(hash_uint.to_bytes(), hash);
 }
 
-#[test]
-fn test_storage_key_builder() {
+#[tokio::test]
+async fn test_storage_key_builder() {
     use neo_storage::KeyBuilder;
 
     // Verify storage key building works
@@ -809,8 +809,8 @@ fn test_storage_key_builder() {
     assert!(!key.is_empty());
 }
 
-#[test]
-fn test_json_object_creation() {
+#[tokio::test]
+async fn test_json_object_creation() {
     use neo_serialization::json::{JObject, JToken};
 
     // Test JObject creation and property access

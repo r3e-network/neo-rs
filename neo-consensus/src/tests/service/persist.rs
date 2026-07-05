@@ -12,6 +12,7 @@ async fn persist_completed_starts_consensus_round() {
         .expect("persist completed");
     harness
         .fire_primary_prepare_timers()
+        .await
         .expect("primary prepare timer");
     harness.drive_until_idle(50).await.expect("drive");
 
@@ -30,6 +31,7 @@ async fn persist_completed_multiple_rounds() {
             .expect("persist completed");
         harness
             .fire_primary_prepare_timers()
+            .await
             .expect("primary prepare timer");
         harness.drive_until_idle(50).await.expect("drive");
 
@@ -49,6 +51,7 @@ async fn persist_completed_round_emits_block_committed() {
         .expect("persist completed");
     harness
         .fire_primary_prepare_timers()
+        .await
         .expect("primary prepare timer");
     harness.drive_until_idle(200).await.expect("drive");
 

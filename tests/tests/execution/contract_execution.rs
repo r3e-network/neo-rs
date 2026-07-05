@@ -17,8 +17,8 @@ fn top_int(result: &ExecutionResult) -> BigInt {
     }
 }
 
-#[test]
-fn test_vm_simple_push_and_return() {
+#[tokio::test]
+async fn test_vm_simple_push_and_return() {
     let script = vec![OpCode::PUSH1.byte(), OpCode::RET.byte()];
     let result = run_script(&script);
     assert_eq!(result.state, VmState::Halt);
@@ -26,8 +26,8 @@ fn test_vm_simple_push_and_return() {
     assert_eq!(val, BigInt::from(1), "PUSH1 should produce 1");
 }
 
-#[test]
-fn test_vm_arithmetic_add() {
+#[tokio::test]
+async fn test_vm_arithmetic_add() {
     // PUSH2, PUSH3, ADD, RET
     let script = vec![
         OpCode::PUSH2.byte(),
@@ -41,8 +41,8 @@ fn test_vm_arithmetic_add() {
     assert_eq!(val, BigInt::from(5), "PUSH2 + PUSH3 should equal 5");
 }
 
-#[test]
-fn test_vm_arithmetic_sub() {
+#[tokio::test]
+async fn test_vm_arithmetic_sub() {
     let script = vec![
         OpCode::PUSH5.byte(),
         OpCode::PUSH8.byte(),
@@ -55,8 +55,8 @@ fn test_vm_arithmetic_sub() {
     assert_eq!(val, BigInt::from(-3), "PUSH5 - PUSH8 should equal -3");
 }
 
-#[test]
-fn test_vm_arithmetic_mul() {
+#[tokio::test]
+async fn test_vm_arithmetic_mul() {
     let script = vec![
         OpCode::PUSH6.byte(),
         OpCode::PUSH7.byte(),
@@ -69,8 +69,8 @@ fn test_vm_arithmetic_mul() {
     assert_eq!(val, BigInt::from(42), "PUSH6 * PUSH7 should equal 42");
 }
 
-#[test]
-fn test_contract_storage_basic() {
+#[tokio::test]
+async fn test_contract_storage_basic() {
     let mut world_state = MemoryWorldState::new();
     let contract = UInt160::from([0x01u8; 20]);
 
@@ -86,8 +86,8 @@ fn test_contract_storage_basic() {
     assert_eq!(retrieved.unwrap().as_bytes(), &[0x00, 0x00, 0x00, 0x01]);
 }
 
-#[test]
-fn test_contract_storage_update() {
+#[tokio::test]
+async fn test_contract_storage_update() {
     let mut world_state = MemoryWorldState::new();
     let contract = UInt160::from([0x01u8; 20]);
     let key = StorageKey::new(contract, vec![0x01]);
@@ -106,8 +106,8 @@ fn test_contract_storage_update() {
     assert_eq!(retrieved.as_bytes(), &[0x02]);
 }
 
-#[test]
-fn test_contract_storage_deletion() {
+#[tokio::test]
+async fn test_contract_storage_deletion() {
     let mut world_state = MemoryWorldState::new();
     let contract = UInt160::from([0x01u8; 20]);
     let key = StorageKey::new(contract, vec![0x01]);
@@ -126,8 +126,8 @@ fn test_contract_storage_deletion() {
     assert!(world_state.get_storage(&key).unwrap().is_none());
 }
 
-#[test]
-fn test_vm_gas_consumption_basic() {
+#[tokio::test]
+async fn test_vm_gas_consumption_basic() {
     let script = vec![
         OpCode::PUSH1.byte(),
         OpCode::PUSH2.byte(),
@@ -140,20 +140,20 @@ fn test_vm_gas_consumption_basic() {
     assert!(result.fault_message.is_none());
 }
 
-#[test]
-fn test_vm_stack_underflow() {
+#[tokio::test]
+async fn test_vm_stack_underflow() {
     let script = vec![OpCode::ADD.byte(), OpCode::RET.byte()];
     assert!(interpret(&script).is_err());
 }
 
-#[test]
-fn test_vm_invalid_opcode() {
+#[tokio::test]
+async fn test_vm_invalid_opcode() {
     let script = vec![0xFF, 0xFF, OpCode::RET.byte()];
     assert!(interpret(&script).is_err());
 }
 
-#[test]
-fn test_contract_state_consistency() {
+#[tokio::test]
+async fn test_contract_state_consistency() {
     let mut world_state = MemoryWorldState::new();
     let contract = UInt160::from([0x01u8; 20]);
 
@@ -172,8 +172,8 @@ fn test_contract_state_consistency() {
     }
 }
 
-#[test]
-fn test_contract_storage_large_value() {
+#[tokio::test]
+async fn test_contract_storage_large_value() {
     let mut world_state = MemoryWorldState::new();
     let contract = UInt160::from([0x01u8; 20]);
     let key = StorageKey::new(contract, vec![0x01]);
@@ -189,8 +189,8 @@ fn test_contract_storage_large_value() {
     assert_eq!(retrieved.as_bytes().len(), 65536);
 }
 
-#[test]
-fn test_contract_storage_many_keys() {
+#[tokio::test]
+async fn test_contract_storage_many_keys() {
     let mut world_state = MemoryWorldState::new();
     let contract = UInt160::from([0x01u8; 20]);
 

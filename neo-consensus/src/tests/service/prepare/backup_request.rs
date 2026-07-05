@@ -22,7 +22,7 @@ async fn backup_prepare_request_with_transactions_requests_exact_hashes() {
     );
     sign_payload(&service, &mut payload, &keys[0]);
 
-    service.process_message(payload).unwrap();
+    service.process_message(payload).await.unwrap();
 
     let event = rx.try_recv().expect("proposal transaction request");
     assert!(matches!(
@@ -57,7 +57,7 @@ async fn backup_rejects_prepare_request_above_protocol_transaction_limit() {
     );
     sign_payload(&service, &mut payload, &keys[0]);
 
-    let result = service.process_message(payload);
+    let result = service.process_message(payload).await;
     assert!(matches!(
         result,
         Err(ConsensusError::InvalidProposal { message }) if message.contains("MaxTransactionsPerBlock")
@@ -87,7 +87,7 @@ async fn backup_rejects_prepare_request_not_after_previous_timestamp() {
     );
     sign_payload(&service, &mut payload, &keys[0]);
 
-    let result = service.process_message(payload);
+    let result = service.process_message(payload).await;
     assert!(matches!(
         result,
         Err(ConsensusError::InvalidProposal { message }) if message.contains("timestamp")
@@ -128,7 +128,7 @@ async fn backup_rejects_prepare_request_too_far_in_future() {
     );
     sign_payload(&service, &mut payload, &keys[0]);
 
-    let result = service.process_message(payload);
+    let result = service.process_message(payload).await;
     assert!(matches!(
         result,
         Err(ConsensusError::InvalidProposal { message }) if message.contains("timestamp")
@@ -160,7 +160,7 @@ async fn backup_rejects_prepare_request_with_wrong_prev_hash() {
     );
     sign_payload(&service, &mut payload, &keys[0]);
 
-    let result = service.process_message(payload);
+    let result = service.process_message(payload).await;
     assert!(matches!(
         result,
         Err(ConsensusError::InvalidProposal { message }) if message.contains("prev_hash")

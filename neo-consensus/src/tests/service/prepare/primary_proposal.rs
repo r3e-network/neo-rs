@@ -33,7 +33,7 @@ async fn commit_threshold_waits_for_all_proposal_transactions() {
     );
     sign_payload(&service, &mut prepare_payload, &keys[0]);
 
-    service.process_message(prepare_payload).unwrap();
+    service.process_message(prepare_payload).await.unwrap();
     assert!(service.context().has_missing_proposed_transactions());
 
     for validator_index in [0u8, 1, 3] {
@@ -48,7 +48,7 @@ async fn commit_threshold_waits_for_all_proposal_transactions() {
             commit.serialize(),
         );
         sign_payload(&service, &mut payload, &keys[validator_index as usize]);
-        service.process_message(payload).unwrap();
+        service.process_message(payload).await.unwrap();
     }
 
     assert!(service.context().has_enough_commits());
@@ -69,7 +69,7 @@ async fn prepare_response_duplicate_from_same_validator_rejected() {
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
-    service.on_transactions_received(Vec::new()).unwrap();
+    service.on_transactions_received(Vec::new()).await.unwrap();
 
     let preparation_hash = service
         .context()
@@ -87,7 +87,7 @@ async fn prepare_response_duplicate_from_same_validator_rejected() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    assert!(service.process_message(payload).is_ok());
+    assert!(service.process_message(payload).await.is_ok());
 
     let wrong_hash = UInt256::from_bytes(&[0x22; 32]).expect("hash");
     let conflicting_response = PrepareResponseMessage::new(0, 0, 1, wrong_hash);
@@ -101,7 +101,7 @@ async fn prepare_response_duplicate_from_same_validator_rejected() {
     );
     sign_payload(&service, &mut conflicting_payload, &keys[1]);
 
-    let result = service.process_message(conflicting_payload);
+    let result = service.process_message(conflicting_payload).await;
     assert!(matches!(result, Err(ConsensusError::AlreadyReceived(1))));
 }
 
@@ -113,7 +113,7 @@ async fn byzantine_conflicting_prepare_responses_do_not_replace_first() {
     let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
 
     service.start(0, 1_000, UInt256::zero(), 0).unwrap();
-    service.on_transactions_received(Vec::new()).unwrap();
+    service.on_transactions_received(Vec::new()).await.unwrap();
 
     let preparation_hash = service
         .context()
@@ -130,7 +130,7 @@ async fn byzantine_conflicting_prepare_responses_do_not_replace_first() {
         response.serialize(),
     );
     sign_payload(&service, &mut payload, &keys[1]);
-    assert!(service.process_message(payload).is_ok());
+    assert!(service.process_message(payload).await.is_ok());
 
     let wrong_hash = UInt256::from_bytes(&[0x22; 32]).expect("hash");
     let conflicting_response = PrepareResponseMessage::new(0, 0, 1, wrong_hash);
@@ -144,7 +144,7 @@ async fn byzantine_conflicting_prepare_responses_do_not_replace_first() {
     );
     sign_payload(&service, &mut conflicting_payload, &keys[1]);
 
-    let result = service.process_message(conflicting_payload);
+    let result = service.process_message(conflicting_payload).await;
     assert!(matches!(result, Err(ConsensusError::AlreadyReceived(1))));
 
     assert_eq!(service.context().prepare_responses.len(), 1);
@@ -171,7 +171,7 @@ async fn prepare_response_with_wrong_block_rejected() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    let result = service.process_message(payload);
+    let result = service.process_message(payload).await;
     assert!(matches!(result, Err(ConsensusError::WrongBlock { .. })));
 }
 
@@ -195,7 +195,7 @@ async fn prepare_response_with_future_block_is_ignored() {
     );
     sign_payload(&service, &mut payload, &keys[1]);
 
-    assert!(service.process_message(payload).is_ok());
+    assert!(service.process_message(payload).await.is_ok());
     assert!(service.context().prepare_responses.is_empty());
 }
 
@@ -210,7 +210,7 @@ async fn primary_broadcasts_prepare_request_with_transactions() {
     while rx.try_recv().is_ok() {}
 
     let tx_hashes = vec![UInt256::from([0x11; 32]), UInt256::from([0x22; 32])];
-    service.on_transactions_received(tx_hashes.clone()).unwrap();
+    service.on_transactions_received(tx_hashes.clone()).await.unwrap();
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
@@ -271,7 +271,7 @@ async fn primary_truncates_prepare_request_to_protocol_transaction_limit() {
     while rx.try_recv().is_ok() {}
 
     let tx_hashes = vec![UInt256::from([0x11; 32]), UInt256::from([0x22; 32])];
-    service.on_transactions_received(tx_hashes.clone()).unwrap();
+    service.on_transactions_received(tx_hashes.clone()).await.unwrap();
 
     let mut prepare_payload = None;
     while let Ok(event) = rx.try_recv() {
@@ -310,6 +310,7 @@ async fn multi_round_prepare_requests_rotate_primary() {
     let first_txs = vec![UInt256::from([0x10; 32])];
     service0
         .on_transactions_received(first_txs.clone())
+        .await
         .unwrap();
 
     let mut first_prepare = None;
@@ -342,6 +343,7 @@ async fn multi_round_prepare_requests_rotate_primary() {
     let second_txs = vec![UInt256::from([0x20; 32])];
     service1
         .on_transactions_received(second_txs.clone())
+        .await
         .unwrap();
 
     let mut second_prepare = None;

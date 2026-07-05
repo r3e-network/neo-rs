@@ -41,7 +41,7 @@ aes-gcm = { workspace = true }
 zeroize = { workspace = true }
 parking_lot = { workspace = true }
 async-trait = { workspace = true }
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["macros", "rt", "sync"] }
 tracing = { workspace = true }
 libloading = { workspace = true }
 
