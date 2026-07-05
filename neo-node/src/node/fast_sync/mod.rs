@@ -13,6 +13,7 @@
 //!
 //! - `package`: Fast-sync package metadata, cache, and archive helpers.
 //! - `reference`: Reference RPC verification helpers for fast-sync imports.
+//! - `report`: Machine-readable import reports and throughput classification.
 
 use super::config::NodeConfig;
 use anyhow::Context;
@@ -21,19 +22,24 @@ use neo_primitives::UInt256;
 use neo_state_service::StateStore;
 use neo_state_service::commit_handlers::StateServiceCommitHandlers;
 use neo_storage::persistence::store::Store;
-use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::info;
 
 mod package;
 mod reference;
+mod report;
 
 use package::{
     FastSyncPackage, ensure_chain_acc_extracted, ensure_package_cached, fetch_latest_package,
 };
-
-const FAST_SYNC_FLOOR_BPS: f64 = 1500.0;
+pub(super) use report::write_fast_sync_report_sidecar;
+use report::{
+    FastSyncBlockReferenceProof, FastSyncReferenceReport, FastSyncReport,
+    FastSyncStateRootReferenceProof, log_fast_sync_throughput,
+};
+#[cfg(test)]
+use report::{FastSyncThroughputStatus, fast_sync_throughput_status};
 
 pub(super) async fn run_fast_sync_report(
     blockchain: &BlockchainHandle,
@@ -109,314 +115,6 @@ pub(super) async fn run_fast_sync_report(
         report,
         reference_report,
     ))
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub(super) struct FastSyncReport {
-    pub(super) package: FastSyncPackageReport,
-    pub(super) import: FastSyncImportReport,
-    pub(super) hot_metrics: FastSyncHotMetricsReport,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) reference: Option<FastSyncReferenceReport>,
-}
-
-impl FastSyncReport {
-    fn from_parts(
-        package: &FastSyncPackage,
-        zip_path: &Path,
-        chain_path: &Path,
-        import: super::chain_acc::ChainAccImportReport,
-        reference: Option<FastSyncReferenceReport>,
-    ) -> Self {
-        let hot_metrics = import.hot_metrics;
-        Self {
-            package: FastSyncPackageReport {
-                network: package.network_key.to_string(),
-                url: package.url.clone(),
-                md5: package.md5.clone(),
-                start_height: package.start,
-                end_height: package.end,
-                filename: package.filename.clone(),
-                zip_path: zip_path.display().to_string(),
-                chain_path: chain_path.display().to_string(),
-            },
-            import: FastSyncImportReport {
-                imported_blocks: import.imported,
-                final_height: import.last_imported_tip.map(|tip| tip.height),
-                final_hash: import.last_imported_tip.map(|tip| tip.hash.to_string()),
-                elapsed_seconds: import.elapsed_seconds,
-                driver_elapsed_seconds: import.driver_elapsed_seconds,
-                chain_acc_read_seconds: import.chain_acc_read_seconds,
-                chain_acc_validate_seconds: import.chain_acc_validate_seconds,
-                average_blocks_per_second: import.average_blocks_per_second,
-                empty_blocks: import.empty_blocks,
-                empty_only_blocks: import.empty_only_blocks,
-                empty_block_import_seconds: import.empty_block_import_seconds,
-                empty_blocks_per_second: import.empty_blocks_per_second,
-                transaction_blocks: import.transaction_blocks,
-                transactions: import.transactions,
-                transaction_block_import_seconds: import.transaction_block_import_seconds,
-                transaction_block_clone_seconds: import.transaction_block_clone_seconds,
-                transaction_ledger_insert_seconds: import.transaction_ledger_insert_seconds,
-                transaction_committed_hook_seconds: import.transaction_committed_hook_seconds,
-                transaction_blocks_per_second: import.transaction_blocks_per_second,
-                finalization_seconds: import.finalization_seconds,
-                finalization_commit_handlers_seconds: import.finalization_commit_handlers_seconds,
-                finalization_store_commit_seconds: import.finalization_store_commit_seconds,
-                unclassified_import_seconds: import.unclassified_import_seconds,
-                throughput_status: fast_sync_throughput_status(&import),
-            },
-            hot_metrics: FastSyncHotMetricsReport {
-                state_service_mpt_apply_attempts: hot_metrics.state_service_mpt_apply_attempts,
-                state_service_mpt_apply_failures: hot_metrics.state_service_mpt_apply_failures,
-                state_service_mpt_apply_height: hot_metrics.state_service_mpt_apply_height,
-                state_service_mpt_avg_total_us: hot_metrics.state_service_mpt_avg_total_us,
-                state_service_mpt_avg_project_us: hot_metrics.state_service_mpt_avg_project_us,
-                state_service_mpt_avg_trie_us: hot_metrics.state_service_mpt_avg_trie_us,
-                state_service_mpt_avg_changes: hot_metrics.state_service_mpt_avg_changes,
-                state_service_mpt_enqueue_blocking_avg_us: hot_metrics
-                    .state_service_mpt_enqueue_blocking_avg_us,
-                state_service_mpt_queue_wait_avg_us: hot_metrics
-                    .state_service_mpt_queue_wait_avg_us,
-                state_service_mpt_mutate_changes_avg_us: hot_metrics
-                    .state_service_mpt_mutate_changes_avg_us,
-                state_service_mpt_root_hash_avg_us: hot_metrics.state_service_mpt_root_hash_avg_us,
-                state_service_mpt_trie_commit_avg_us: hot_metrics
-                    .state_service_mpt_trie_commit_avg_us,
-                state_service_mpt_backing_commit_avg_us: hot_metrics
-                    .state_service_mpt_backing_commit_avg_us,
-                state_service_mpt_publish_generation_avg_us: hot_metrics
-                    .state_service_mpt_publish_generation_avg_us,
-                state_service_mpt_overlay_entries_avg: hot_metrics
-                    .state_service_mpt_overlay_entries_avg,
-                state_service_mpt_batch_blocks_avg: hot_metrics.state_service_mpt_batch_blocks_avg,
-                native_persist_avg_total_us: hot_metrics.native_persist_avg_total_us,
-                native_persist_tx_hot_stage: hot_metrics.native_persist_tx_hot_stage.to_string(),
-                native_persist_tx_hot_stage_avg_us: hot_metrics.native_persist_tx_hot_stage_avg_us,
-                native_persist_tx_stages: neo_runtime::sync_metrics::native_persist_tx_stage_stats(
-                )
-                .into_iter()
-                .map(FastSyncStageMetricReport::from_native_tx_stage)
-                .collect(),
-                rocksdb_batch_avg_flush_duration_ms: hot_metrics
-                    .rocksdb_batch_avg_flush_duration_ms,
-                rocksdb_batch_pending_operations: hot_metrics.rocksdb_batch_pending_operations,
-            },
-            reference,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(super) struct FastSyncPackageReport {
-    pub(super) network: String,
-    pub(super) url: String,
-    pub(super) md5: String,
-    pub(super) start_height: u32,
-    pub(super) end_height: u32,
-    pub(super) filename: String,
-    pub(super) zip_path: String,
-    pub(super) chain_path: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub(super) struct FastSyncImportReport {
-    pub(super) imported_blocks: u64,
-    pub(super) final_height: Option<u32>,
-    pub(super) final_hash: Option<String>,
-    pub(super) elapsed_seconds: f64,
-    pub(super) driver_elapsed_seconds: f64,
-    pub(super) chain_acc_read_seconds: f64,
-    pub(super) chain_acc_validate_seconds: f64,
-    pub(super) average_blocks_per_second: f64,
-    pub(super) empty_blocks: u64,
-    pub(super) empty_only_blocks: u64,
-    pub(super) empty_block_import_seconds: f64,
-    pub(super) empty_blocks_per_second: f64,
-    pub(super) transaction_blocks: u64,
-    pub(super) transactions: u64,
-    pub(super) transaction_block_import_seconds: f64,
-    pub(super) transaction_block_clone_seconds: f64,
-    pub(super) transaction_ledger_insert_seconds: f64,
-    pub(super) transaction_committed_hook_seconds: f64,
-    pub(super) transaction_blocks_per_second: f64,
-    pub(super) finalization_seconds: f64,
-    pub(super) finalization_commit_handlers_seconds: f64,
-    pub(super) finalization_store_commit_seconds: f64,
-    pub(super) unclassified_import_seconds: f64,
-    pub(super) throughput_status: FastSyncThroughputStatus,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(super) struct FastSyncHotMetricsReport {
-    pub(super) state_service_mpt_apply_attempts: u64,
-    pub(super) state_service_mpt_apply_failures: u64,
-    pub(super) state_service_mpt_apply_height: u64,
-    pub(super) state_service_mpt_avg_total_us: u64,
-    pub(super) state_service_mpt_avg_project_us: u64,
-    pub(super) state_service_mpt_avg_trie_us: u64,
-    pub(super) state_service_mpt_avg_changes: u64,
-    pub(super) state_service_mpt_enqueue_blocking_avg_us: u64,
-    pub(super) state_service_mpt_queue_wait_avg_us: u64,
-    pub(super) state_service_mpt_mutate_changes_avg_us: u64,
-    pub(super) state_service_mpt_root_hash_avg_us: u64,
-    pub(super) state_service_mpt_trie_commit_avg_us: u64,
-    pub(super) state_service_mpt_backing_commit_avg_us: u64,
-    pub(super) state_service_mpt_publish_generation_avg_us: u64,
-    pub(super) state_service_mpt_overlay_entries_avg: u64,
-    pub(super) state_service_mpt_batch_blocks_avg: u64,
-    pub(super) native_persist_avg_total_us: u64,
-    pub(super) native_persist_tx_hot_stage: String,
-    pub(super) native_persist_tx_hot_stage_avg_us: u64,
-    pub(super) native_persist_tx_stages: Vec<FastSyncStageMetricReport>,
-    pub(super) rocksdb_batch_avg_flush_duration_ms: u64,
-    pub(super) rocksdb_batch_pending_operations: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(super) struct FastSyncStageMetricReport {
-    pub(super) stage: String,
-    pub(super) calls: u64,
-    pub(super) avg_us: u64,
-}
-
-impl FastSyncStageMetricReport {
-    fn from_native_tx_stage(stat: neo_runtime::sync_metrics::NativePersistTxStageStats) -> Self {
-        Self {
-            stage: stat.stage.to_string(),
-            calls: stat.calls,
-            avg_us: stat.avg_us,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct FastSyncBlockReferenceProof {
-    pub(super) height: u32,
-    pub(super) hash: UInt256,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct FastSyncStateRootReferenceProof {
-    pub(super) height: u32,
-    pub(super) root_hash: UInt256,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(super) struct FastSyncReferenceReport {
-    pub(super) endpoint: String,
-    pub(super) block_height: u32,
-    pub(super) block_hash: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) state_root_height: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) state_root_hash: Option<String>,
-}
-
-impl FastSyncReferenceReport {
-    fn from_proofs(
-        endpoint: &str,
-        block: FastSyncBlockReferenceProof,
-        state_root: Option<FastSyncStateRootReferenceProof>,
-    ) -> Self {
-        Self {
-            endpoint: endpoint.to_string(),
-            block_height: block.height,
-            block_hash: block.hash.to_string(),
-            state_root_height: state_root.map(|proof| proof.height),
-            state_root_hash: state_root.map(|proof| proof.root_hash.to_string()),
-        }
-    }
-}
-
-pub(super) fn write_fast_sync_report_sidecar(
-    path: &Path,
-    report: &FastSyncReport,
-) -> anyhow::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating fast-sync report directory {}", parent.display()))?;
-    }
-    let payload = serde_json::to_vec_pretty(report).context("serializing fast-sync report")?;
-    std::fs::write(path, payload)
-        .with_context(|| format!("writing fast-sync report {}", path.display()))
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub(super) enum FastSyncThroughputStatus {
-    NoImport,
-    NoTransactionProof,
-    BelowTarget,
-    MeetsFloor,
-}
-
-pub(super) fn fast_sync_throughput_status(
-    report: &super::chain_acc::ChainAccImportReport,
-) -> FastSyncThroughputStatus {
-    if report.imported == 0 {
-        return FastSyncThroughputStatus::NoImport;
-    }
-    if report.transaction_blocks == 0 {
-        return FastSyncThroughputStatus::NoTransactionProof;
-    }
-    if report.transaction_blocks_per_second < FAST_SYNC_FLOOR_BPS {
-        FastSyncThroughputStatus::BelowTarget
-    } else {
-        FastSyncThroughputStatus::MeetsFloor
-    }
-}
-
-fn log_fast_sync_throughput(
-    package: &FastSyncPackage,
-    report: &super::chain_acc::ChainAccImportReport,
-) {
-    let status = fast_sync_throughput_status(report);
-    match status {
-        FastSyncThroughputStatus::BelowTarget => warn!(
-            target: "neo::fast_sync",
-            package = %package.filename,
-            imported = report.imported,
-            elapsed_seconds = report.elapsed_seconds,
-            average_blocks_per_second = report.average_blocks_per_second,
-            transaction_blocks = report.transaction_blocks,
-            transaction_blocks_per_second = report.transaction_blocks_per_second,
-            floor_bps = FAST_SYNC_FLOOR_BPS,
-            "fast-sync package import finished below transaction-bearing throughput floor"
-        ),
-        FastSyncThroughputStatus::NoImport => info!(
-            target: "neo::fast_sync",
-            package = %package.filename,
-            imported = report.imported,
-            elapsed_seconds = report.elapsed_seconds,
-            average_blocks_per_second = report.average_blocks_per_second,
-            floor_bps = FAST_SYNC_FLOOR_BPS,
-            "fast-sync package import skipped because local ledger already covers requested range"
-        ),
-        FastSyncThroughputStatus::NoTransactionProof => warn!(
-            target: "neo::fast_sync",
-            package = %package.filename,
-            imported = report.imported,
-            elapsed_seconds = report.elapsed_seconds,
-            average_blocks_per_second = report.average_blocks_per_second,
-            empty_blocks = report.empty_blocks,
-            empty_blocks_per_second = report.empty_blocks_per_second,
-            floor_bps = FAST_SYNC_FLOOR_BPS,
-            "fast-sync package import has no transaction-bearing speed proof"
-        ),
-        FastSyncThroughputStatus::MeetsFloor => info!(
-            target: "neo::fast_sync",
-            package = %package.filename,
-            imported = report.imported,
-            elapsed_seconds = report.elapsed_seconds,
-            average_blocks_per_second = report.average_blocks_per_second,
-            transaction_blocks = report.transaction_blocks,
-            transaction_blocks_per_second = report.transaction_blocks_per_second,
-            floor_bps = FAST_SYNC_FLOOR_BPS,
-            status = ?status,
-            "fast-sync package import throughput summary"
-        ),
-    }
 }
 
 fn validate_fast_sync_preflight(
