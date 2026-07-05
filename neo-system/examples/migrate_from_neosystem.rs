@@ -6,9 +6,8 @@
 //!
 //! The example does not actually run a real blockchain service
 //! (those require a backing ledger / header cache / mempool). It
-//! just constructs the handles via their low-level
-//! `with_capacity()` / `channel()` constructors and the [`Node`]
-//! to show the migration path.
+//! just constructs the handles via their low-level `with_capacity()` /
+//! `channel()` constructors and the [`Node`] to show the migration path.
 
 use neo_blockchain::BlockchainHandle;
 use neo_config::ProtocolSettings;
@@ -27,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ```ignore
     // use neo_core::neo_system::NeoSystem;
     // let system = NeoSystem::new(protocol_settings, None, None).await?;
-    // system.blockchain_actor.tell(cmd).await?;
+    // system.blockchain_actor.tell(cmd).await?; // legacy untyped command send
     // system.shutdown().await?;
     // ```
 

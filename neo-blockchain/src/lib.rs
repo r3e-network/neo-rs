@@ -53,11 +53,10 @@ pub use messages::{
 
 // Re-exports for the public surface of the crate.
 //
-// The runtime crate (`neo-runtime`) already owns the *trait-level* service
-// types — `BlockchainCommand` (request/response), `BlockchainEvent`, and
-// `BlockchainHandle` (the mpsc / broadcast channel wrapper). The canonical
-// home for those types is `neo-runtime`; we re-export them here so the
-// crate's public surface is self-contained.
+// The runtime crate (`neo-runtime`) owns trait-level service contracts and
+// broadcast event defaults. `neo-blockchain` owns the concrete command loop,
+// command enum, and handle because it is the only crate allowed to translate
+// public typed methods into service-loop commands.
 pub mod blockchain {
     //! Re-exports of the runtime's shared blockchain types. The command channel
     //! and handle are owned by this crate (`BlockchainCommand` / `handle.rs`);

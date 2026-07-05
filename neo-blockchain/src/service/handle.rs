@@ -5,18 +5,20 @@
 //! `Clone`, `Send`, and `Sync`; the only state it owns is the two
 //! channels the service loop reads from.
 //!
-//! The handle has *two* styles of API:
+//! The handle has *two* styles of typed API:
 //!
-//! 1. **Fire-and-forget commands** ([`BlockchainHandle::tell`],
-//!    [`BlockchainHandle::submit_inventory_blocks`]): send a
-//!    [`crate::BlockchainCommand`] down the `mpsc::Sender` without
-//!    waiting for a reply.
+//! 1. **Inventory/lifecycle commands**
+//!    ([`BlockchainHandle::submit_inventory_blocks`],
+//!    [`BlockchainHandle::submit_inventory_block`],
+//!    [`BlockchainHandle::submit_inventory_extensible`],
+//!    [`BlockchainHandle::initialize`]): send one-way service work without
+//!    exposing [`crate::BlockchainCommand`] to the caller.
 //! 2. **Request/response** ([`BlockchainHandle::import_block`],
 //!    [`BlockchainHandle::get_block`], [`BlockchainHandle::get_block_by_height`],
 //!    [`BlockchainHandle::get_height`]): translate the method call into a
 //!    `BlockchainCommand::ImportBlock` / `GetBlock` / … command and await the
-//!    `oneshot` reply. These read like normal `async fn`s rather than
-//!    `tell(Command::Variant { … })` boilerplate.
+//!    `oneshot` reply. These read like normal `async fn`s rather than command
+//!    construction boilerplate.
 //!
 //! Both layers share the same channel and the same service loop: there
 //! is exactly one `BlockchainCommand` stream, dispatched by a single
@@ -101,24 +103,6 @@ impl BlockchainHandle {
     /// [`Self::channel`].
     pub fn subscribe(&self) -> broadcast::Receiver<crate::RuntimeEvent> {
         self.event_tx.subscribe()
-    }
-
-    /// Send a [`BlockchainCommand`] without awaiting a reply. Prefer the typed
-    /// request/response methods ([`Self::import_block`],
-    /// [`Self::get_block`], …) when the command has a natural reply.
-    pub async fn tell(
-        &self,
-        command: BlockchainCommand,
-    ) -> Result<(), mpsc::error::SendError<BlockchainCommand>> {
-        self.cmd_tx.send(command).await
-    }
-
-    /// Try to send a command without awaiting the channel.
-    pub fn try_tell(
-        &self,
-        command: BlockchainCommand,
-    ) -> Result<(), mpsc::error::TrySendError<BlockchainCommand>> {
-        self.cmd_tx.try_send(command)
     }
 
     /// Submit a peer-relayed inventory block burst to the live sync path.
