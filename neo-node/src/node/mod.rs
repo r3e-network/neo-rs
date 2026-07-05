@@ -1119,6 +1119,7 @@ async fn build_node(
             network.clone(),
             Arc::clone(&settings),
             Arc::clone(&store),
+            Arc::clone(&native_contract_provider),
             state_store,
             inbound_rx,
         );

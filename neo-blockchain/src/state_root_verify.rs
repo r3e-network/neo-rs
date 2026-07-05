@@ -8,12 +8,17 @@
 //! This lives in `neo-blockchain` (which already depends on `neo-native-contracts`,
 //! `neo-execution`, and `neo-vm`) rather than in the light `neo-state-service`
 //! crate, and wraps the [`StateRoot`] in a `VerifiableExt` newtype so the tested,
-//! engine-based witness verification ([`neo_execution::Helper::verify_witnesses`])
-//! is reused instead of hand-rolling signature checks.
+//! engine-based witness verification
+//! ([`neo_execution::Helper::verify_witnesses_with_native_provider`]) is reused
+//! instead of hand-rolling signature checks. The provider-aware entry point is
+//! the architecture boundary; [`verify_state_root`] is retained as the legacy
+//! compatibility wrapper for callers that have not been wired with an explicit
+//! native-contract provider yet.
 
 use neo_config::ProtocolSettings;
 use neo_crypto::Crypto;
 use neo_execution::Helper;
+use neo_execution::native_contract_provider::{NativeContractLookup, NativeContractProvider};
 use neo_native_contracts::{Role, RoleManagement};
 use neo_payloads::{VerifiableExt, Witness};
 use neo_primitives::error::PrimitiveResult;
@@ -21,6 +26,7 @@ use neo_primitives::{UInt160, UInt256, Verifiable};
 use neo_state_service::StateRoot;
 use neo_storage::DataCache;
 use neo_vm::script_builder::RedeemScript;
+use std::sync::Arc;
 
 /// Max GAS for state-root witness verification (C# `StateRoot.Verify`: 2 GAS).
 const STATE_ROOT_VERIFY_GAS: i64 = 2_0000_0000;
@@ -76,14 +82,36 @@ pub fn verify_state_root(
     settings: &ProtocolSettings,
     snapshot: &DataCache,
 ) -> bool {
+    verify_state_root_with_native_provider(
+        state_root,
+        settings,
+        snapshot,
+        NativeContractLookup::native_contract_provider(),
+    )
+}
+
+/// Verifies a signed [`StateRoot`] using an explicit native-contract provider.
+///
+/// Callers that already own composition or persistence resources should prefer
+/// this entry point so state-root witness verification stays bound to the same
+/// native-contract set as the surrounding node service. The legacy
+/// [`verify_state_root`] wrapper only exists for paths that still rely on the
+/// process-global compatibility bridge.
+pub fn verify_state_root_with_native_provider(
+    state_root: &StateRoot,
+    settings: &ProtocolSettings,
+    snapshot: &DataCache,
+    native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+) -> bool {
     if state_root.witness().is_none() {
         return false;
     }
-    Helper::verify_witnesses(
+    Helper::verify_witnesses_with_native_provider(
         &VerifiableStateRoot(state_root.clone()),
         settings,
         snapshot,
         STATE_ROOT_VERIFY_GAS,
+        native_contract_provider,
     )
 }
 

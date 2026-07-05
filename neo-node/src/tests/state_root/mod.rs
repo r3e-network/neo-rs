@@ -111,3 +111,20 @@ fn sender_rotates_backward_with_each_retry() {
     // Wraps past zero without panicking.
     assert_eq!(StateRootDriver::sender_index(2, 5, 7), 4); // (2-5)=-3 -> 4
 }
+
+#[test]
+fn driver_verifies_signed_roots_with_explicit_native_provider() {
+    let source = include_str!("../../state_root/mod.rs");
+    assert!(
+        source.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
+        "StateRootDriver must own the native provider captured at node startup"
+    );
+    assert!(
+        source.contains("verify_state_root_with_native_provider"),
+        "inbound signed StateRoot verification must use the explicit-provider verifier"
+    );
+    assert!(
+        source.contains("Some(Arc::clone(&self.native_contract_provider))"),
+        "StateRootDriver must pass its captured provider into state-root verification"
+    );
+}

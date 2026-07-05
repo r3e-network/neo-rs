@@ -8,8 +8,9 @@
 //! layers but must not define protocol bytes, storage formats, consensus rules,
 //! or VM semantics. The deterministic vote/aggregate/verify core lives in
 //! `neo-blockchain` ([`neo_blockchain::StateRootVoteCollector`],
-//! [`neo_blockchain::verify_state_root`]); this module is the node-side driver
-//! that feeds it network payloads and persists the finalized signed root.
+//! [`neo_blockchain::verify_state_root_with_native_provider`]); this module is
+//! the node-side driver that feeds it network payloads and persists the
+//! finalized signed root.
 //!
 //! ## C# reference
 //!
@@ -30,9 +31,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use neo_blockchain::{BlockchainHandle, RuntimeEvent, StateRootVoteCollector, verify_state_root};
+use neo_blockchain::{
+    BlockchainHandle, RuntimeEvent, StateRootVoteCollector, verify_state_root_with_native_provider,
+};
 use neo_config::ProtocolSettings;
 use neo_crypto::{ECPoint, Secp256r1Crypto};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::{MemoryReader, Serializable, SerializableExtensions};
 use neo_native_contracts::{Role, RoleManagement};
 use neo_network::NetworkHandle;
@@ -182,6 +186,8 @@ struct StateRootDriver {
     settings: Arc<ProtocolSettings>,
     /// Chain store: `RoleManagement` designations are read from a fresh snapshot.
     store: Arc<dyn Store>,
+    /// Native contract provider captured at node startup for witness verification.
+    native_contract_provider: Arc<dyn NativeContractProvider>,
     /// Local computed roots + persisted signed roots.
     state_store: Arc<StateStore>,
     inbound_rx: mpsc::Receiver<ExtensiblePayload>,
@@ -427,7 +433,12 @@ impl StateRootDriver {
                 };
                 let root_index = root.index();
                 let snapshot = self.fresh_chain_snapshot();
-                if !verify_state_root(&root, &self.settings, &snapshot) {
+                if !verify_state_root_with_native_provider(
+                    &root,
+                    &self.settings,
+                    &snapshot,
+                    Some(Arc::clone(&self.native_contract_provider)),
+                ) {
                     warn!(target: "neo::state_root", root_index, "rejected unverifiable signed state root");
                     return;
                 }
@@ -499,6 +510,7 @@ pub fn state_root_driver_task(
     network: NetworkHandle,
     settings: Arc<ProtocolSettings>,
     store: Arc<dyn Store>,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
     state_store: Arc<StateStore>,
     inbound_rx: mpsc::Receiver<ExtensiblePayload>,
 ) -> impl std::future::Future<Output = ()> + Send + 'static {
@@ -508,6 +520,7 @@ pub fn state_root_driver_task(
         network,
         settings,
         store,
+        native_contract_provider,
         state_store,
         inbound_rx,
         collector: StateRootVoteCollector::new(),
