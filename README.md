@@ -57,9 +57,9 @@ flowchart TD
     PLUG["<b>Plugin / RPC Boundary</b><br/>neo-rpc · neo-oracle-service"]
     COMP["<b>Composition</b><br/>neo-system"]
     NODE["<b>Node Services</b><br/>neo-blockchain · neo-network · neo-wallets<br/>neo-indexer · neo-tee"]
-    DOM["<b>Domain Services</b><br/>neo-runtime · neo-execution · neo-native-contracts<br/>neo-state-service · neo-mempool · neo-engine"]
+    DOM["<b>Domain Services</b><br/>neo-runtime · neo-execution · neo-native-contracts<br/>neo-state-service · neo-mempool"]
     PROTO["<b>Protocol</b><br/>neo-payloads · neo-consensus · neo-hsm"]
-    INF["<b>Infrastructure</b><br/>neo-io · neo-error · neo-crypto · neo-storage<br/>neo-static-files · neo-config · neo-vm · neo-serialization · neo-manifest"]
+    INF["<b>Infrastructure</b><br/>neo-io · neo-error · neo-crypto · neo-storage<br/>neo-config · neo-vm · neo-serialization · neo-manifest"]
     FND["<b>Foundation</b><br/>neo-primitives"]
     APP --> PLUG --> COMP --> NODE --> DOM --> PROTO --> INF --> FND
 ```
@@ -152,12 +152,12 @@ developers → *architecture → dataflow → protocol-compatibility → rpc-api
 neo-rs/
 ├── neo-primitives                          # L0 Foundation — primitive types
 ├── neo-io, neo-error, neo-crypto,          # L1 Infrastructure
-│   neo-storage, neo-static-files, neo-config,
+│   neo-storage, neo-config,
 │   neo-vm, neo-serialization, neo-manifest
 ├── neo-payloads, neo-consensus, neo-hsm    # L2 Protocol
 ├── neo-runtime, neo-execution,             # L3 Domain Services
 │   neo-native-contracts, neo-state-service,
-│   neo-mempool, neo-engine
+│   neo-mempool
 ├── neo-blockchain, neo-network, neo-wallets,# L4 Node Services
 │   neo-indexer, neo-tee
 ├── neo-system                              # L5 Composition

@@ -1,15 +1,17 @@
 # neo-rs Deep Refactor — Project State
 
-**Last updated**: 2026-07-04 (Phase 1.1 complete, Phase 1.2 in progress)
-**Current phase**: Phase 1 — Dead Code Excision + Native Contract Support Layer
+**Last updated**: 2026-07-05
+**Current phase**: Complete (Phase 5 cleanup landed)
 
 ---
 
 ## Position
 
-- **Phase**: 1 of 4
-- **Plan**: 1.2 (Native contract support layer) — in progress (engineer agent running)
-- **Completed**: Plan 1.1 (Dead code excision) — ADR-027 written, 3346 tests pass
+- **Phase**: All 4 refactor phases complete, plus a Phase-5 cleanup pass.
+- **Refactor phases (ADR-027..031)**: b8afcc0 (Phase 1), a6d7a7a (Phase 2),
+  504e8ed (Phase 3), f71b431 (Phase 4) — all landed.
+- **Phase-5 cleanup**: 5b829e6 (ADR-032 dead-scaffolding excision), 41134a9
+  (hygiene) — landed.
 
 ## Key Decisions (this project)
 
@@ -42,3 +44,6 @@ None currently.
   This collapses the L3 trait-crate split that ADR-007 only renamed.
 - Phase 3 B2 (neo-rpc split) is the largest single structural change. If
   context budget gets tight, defer B2 to a follow-up session.
+- A7 (MempoolLike) and G4 (StoreConfigBundle) were deliberately SKIPPED as
+  net-negative (documented test-injection seam / trivial forwarding); B2
+  (neo-rpc split) and B3 (native-contracts split) remain DEFERRED.

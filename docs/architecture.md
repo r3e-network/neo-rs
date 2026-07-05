@@ -15,7 +15,7 @@ default store, RocksDB as a supported fallback, and in-memory storage for tests.
 
 ## Layered architecture
 
-The workspace is strictly layered into **7 layers, 28 production crates**.
+The workspace is strictly layered into **7 layers, 26 production crates + 1 dev test crate (neo-test-fixtures)**.
 Dependencies point **downward** only: the foundation crate has no `neo-*`
 dependencies, infrastructure crates only depend on lower infrastructure/foundation
 crates, and each higher layer builds on the ones below it. This keeps the
@@ -51,7 +51,6 @@ flowchart TD
         natives[neo-native-contracts]
         state[neo-state-service]
         mempool[neo-mempool]
-        engine[neo-engine<br/>pipeline abstraction]
     end
 
     subgraph PROTO["Protocol Layer"]
@@ -65,7 +64,6 @@ flowchart TD
         error[neo-error]
         crypto[neo-crypto]
         storage[neo-storage]
-        static_files[neo-static-files<br/>cold finalized data]
         config[neo-config]
         vm[neo-vm]
         serialization[neo-serialization]
@@ -105,7 +103,6 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-error | Infrastructure | Authoritative `CoreError` / `CoreResult` error types for the workspace. |
 | neo-crypto | Infrastructure | Hashing, secp256r1 ECC, signatures, BLS12-381. |
 | neo-storage | Infrastructure | `Store` traits, `DataCache`, typed table codecs, MDBX/RocksDB adapters, and in-memory providers. |
-| neo-static-files | Infrastructure | Append-only cold segment files for finalized block, transaction, receipt, and archived state-root payload bytes. Ledger-specific hot/cold provider scaffolding lives under `neo-blockchain::ledger::static_archive`. |
 | neo-config | Infrastructure | Node and protocol configuration (TOML-backed settings). |
 | neo-vm | Infrastructure | Stateful NeoVM host (execution engine, contexts, reference-counted stack items) over `neo-vm-rs`. |
 | neo-serialization | Infrastructure | Compression, binary and JSON stack-item codecs, JSONPath, in-memory storage providers. |
@@ -118,7 +115,6 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-native-contracts | Domain service | NEO, GAS, Policy, Oracle, Notary, StdLib, CryptoLib, RoleManagement, ContractManagement, Ledger, plus shared native infrastructure. |
 | neo-state-service | Domain service | MPT state root, state root cache, state store, immutable state-provider views, block-commit pipeline. |
 | neo-mempool | Domain service | Transaction memory pool, pool items, transaction router, per-block verification context. |
-| neo-engine | Domain service | Block processing pipeline abstraction: `EnginePipeline` trait, `PipelineStage` stages (validate → execute → persist → commit), in-memory state tracking. Bridges `neo-runtime` service traits and `neo-blockchain` concrete implementation via `BlockchainEngineAdapter`. |
 | neo-blockchain | Node service | `Blockchain` service, `LedgerContext`, `HeaderCache`, provider-style ledger reads, cold archive scaffolding, pruning checkpoints, block processing. |
 | neo-network | Node service | P2P host: `LocalNode`, `RemoteNode`, `TaskManager` services. |
 | neo-wallets | Node service | NEP-6 wallets, BIP-32/BIP-39 key derivation, keypairs, accounts, witness scripts. |
@@ -130,12 +126,13 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-node | Application | The node daemon binary (TOML config, storage, P2P, RPC, consensus wiring). |
 | neo-gui | Application | Native desktop manager that talks to a running node over JSON-RPC. |
 
-The current workspace has 28 production workspace members plus 2 development-only members.
-The development-only members are not part of the running node: `tests`
-(cross-crate integration tests) and `benches-package` (Criterion benchmarks).
+The current workspace has 26 production workspace members plus development-only
+members. The development-only members are not part of the running node:
+`neo-test-fixtures` (shared test builders), `tests` (cross-crate integration
+tests), and `benches-package` (Criterion benchmarks).
 The pure VM semantics live in `neo-vm-rs`, an external sibling crate referenced
 by path from `neo-vm`. For the full ADR log and evolution roadmap, see
-[`design.md`](../design.md) (15 ADRs covering RPC decoupling, engine integration,
+[`design.md`](../design.md) (32 ADRs covering RPC decoupling, engine integration,
 error unification, oracle decoupling, dead dependency cleanup, pipeline strategy,
 error type policy, MPT layering, and more).
 
@@ -153,7 +150,6 @@ small-crate candidates were checked against the dependency layers above:
 | `neo-error` into another foundation crate | Small but central `CoreError` / `CoreResult` vocabulary. | **Do not merge.** It deliberately sits near the bottom of the graph so storage, crypto, execution, RPC, and node services share one error type without cycles. |
 | `neo-config` into `neo-node` or `neo-system` | TOML-backed protocol, network, storage, RPC, and service configuration shared across daemon startup and reusable node services. | **Do not merge.** It is operator-facing configuration vocabulary; merging upward would make lower services depend on process/composition concerns just to parse or validate settings. |
 | `neo-manifest` into `neo-execution` or `neo-native-contracts` | Contract ABI, NEF files, method tokens, call flags, and validator attributes shared by execution, RPC, wallets, and native-contract metadata. | **Do not merge.** Manifest/ABI data is protocol vocabulary, not execution ownership; merging it upward would make independent tools and RPC paths pull in execution or native-contract internals. |
-| `neo-static-files` into `neo-storage` or `neo-node` | Append-only cold storage provider for finalized block, transaction, receipt, and archived state-root payloads. | **Do not merge.** It is an infrastructure performance component behind provider traits; keeping it separate preserves the hot `Store` abstraction while allowing cold-file recovery and format tests to evolve without pulling node process policy into storage. |
 | `neo-system` into `neo-node` | Embeddable composition root, node lifecycle, service registry, and cross-service wiring used by the daemon and integration surfaces. | **Do not merge.** The daemon owns CLI/process policy, while `neo-system` should remain reusable node assembly that tests, RPC/indexer wiring, and future service hosts can embed without pulling in the binary. |
 | `neo-indexer` into `neo-rpc` | Query-oriented service used by RPC, but owned by the node lifecycle and optionally registered in `neo-system::ServiceRegistry`. | **Do not merge.** Keeping it as a node service allows RPC, daemon startup, and future REST/worker surfaces to share the same read model. |
 | `neo-hsm` into `neo-consensus` or `neo-node` | Optional validator signing backends for PKCS#11, Azure, and GCP HSM integrations. | **Do not merge.** HSM support is an operator/security boundary with heavyweight and feature-specific dependencies; consensus should remain about the protocol while signer providers stay replaceable. |
@@ -180,7 +176,7 @@ The detailed rules for this style live in
 
 ## Key design decisions
 
-> The full ADR log lives in [`design.md`](../design.md) — 15 ADRs covering
+> The full ADR log lives in [`design.md`](../design.md) — 32 ADRs covering
 > RPC decoupling, engine integration, error unification, oracle decoupling,
 > dead dependency cleanup, pipeline strategy, error type policy, MPT layering,
 > doc management, runtime versioning, and native contract registry. The
@@ -218,14 +214,13 @@ The detailed rules for this style live in
   `NeoEngine` in ADR-007, sealed in ADR-021) is the consensus↔execution
   interface, modeled after reth's `Engine` trait.
 
-- **Pipeline abstraction with adapter bridge.** `neo-engine` defines the
-  `EnginePipeline` trait and `PipelineStage` stages (validate → execute →
-  persist → commit). The concrete block processing lives in
-  `neo-blockchain::BlockchainService`. `BlockchainEngineAdapter` bridges
-  `EnginePipeline` → `BlockchainHandle` so external consumers get a trait
-  boundary without touching the monolithic service. ADR-010 defines a 4-phase
-  migration to unify the two pipeline vocabularies; ADR-009 documents the
-  current overlap as accepted tech debt.
+- **Pipeline stage traits.** The pipeline stage traits (`ValidateStage`,
+  `PipelineStage`) live in `neo-blockchain::pipeline::stage_traits`, alongside
+  their one concrete implementation, `NeoValidateStage`. The concrete block
+  processing lives in `neo-blockchain::BlockchainService`. The former
+  `neo-engine` crate and its `BlockchainEngineAdapter` bridge were removed in
+  ADR-027 as never-instantiated dead code; ADR-009/ADR-010 record the earlier
+  pipeline-vocabulary overlap that this excision resolved.
 
 - **Supervised daemon tasks.** `neo-node` classifies long-running background
   work as essential or normal. Essential task failure requests node shutdown;
@@ -317,11 +312,11 @@ and headers through execution (`neo-execution`, L3) and the state-commit pipelin
 transactions; consensus (`neo-consensus`, L2, when enabled) drives block
 production; and `neo-rpc` (L6) serves the JSON-RPC surface to clients. The
 `EngineApi` trait (L3, in `neo-runtime`) is the typed interface between consensus
-and execution, bridged by `BlockchainEngineAdapter` (L4) to the concrete
-`BlockchainService`.
+and execution, implemented by the concrete `BlockchainService` (L4); the
+pipeline stage traits it drives live in `neo-blockchain::pipeline::stage_traits`.
 
 For a step-by-step trace of how a block and a transaction move through these
 services — including the P2P sync path, execution, state-root commit, and RPC
-query path — see [dataflow.md](dataflow.md). For the 15 ADRs documenting every
+query path — see [dataflow.md](dataflow.md). For the 32 ADRs documenting every
 architectural decision and the 4-phase evolution roadmap, see
 [design.md](../design.md).
