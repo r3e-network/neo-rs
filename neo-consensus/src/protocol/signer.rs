@@ -37,7 +37,7 @@
 //! ```
 //!
 //! Production implementations live in `neo-hsm` (PKCS#11, Azure Key Vault, GCP
-//! KMS) and `neo-tee` (Nitro Enclave), plus the in-process software signer.
+//! KMS), plus the in-process software signer.
 
 use crate::ConsensusResult;
 use async_trait::async_trait;

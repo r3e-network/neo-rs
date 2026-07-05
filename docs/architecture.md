@@ -42,7 +42,6 @@ flowchart TD
         network[neo-network]
         wallets[neo-wallets]
         indexer[neo-indexer]
-        tee[neo-tee<br/>optional TEE]
     end
 
     subgraph DOM["Domain Service Layer"]
@@ -119,15 +118,14 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-network | Node service | P2P host: `LocalNode`, `RemoteNode`, `TaskManager` services. |
 | neo-wallets | Node service | NEP-6 wallets, BIP-32/BIP-39 key derivation, keypairs, accounts, witness scripts. |
 | neo-indexer | Node service | Read-side block, transaction, signer-account, and notification indexing for service-style RPC queries. |
-| neo-tee | Node service | Optional Trusted Execution Environment support (feature-gated). |
 | neo-system | Composition | `Node` orchestrator / composition root that wires the services together. |
 | neo-oracle-service | Plugin/RPC boundary | Oracle request fulfilment over HTTPS and NeoFS. |
 | neo-rpc | Plugin/RPC boundary | `jsonrpsee` JSON-RPC server and client, plus optional ApplicationLogs, TokensTracker, NeoIndexer, and Oracle method groups. |
 | neo-node | Application | The node daemon binary (TOML config, storage, P2P, RPC, consensus wiring). |
 | neo-gui | Application | Native desktop manager that talks to a running node over JSON-RPC. |
 
-The current workspace has 26 production workspace members plus development-only
-members. The development-only members are not part of the running node:
+The current workspace has 26 production workspace members plus 2 development-only members.
+The development-only members are not part of the running node:
 `neo-test-fixtures` (shared test builders), `tests` (cross-crate integration
 tests), and `benches-package` (Criterion benchmarks).
 The pure VM semantics live in `neo-vm-rs`, an external sibling crate referenced
@@ -153,7 +151,6 @@ small-crate candidates were checked against the dependency layers above:
 | `neo-system` into `neo-node` | Embeddable composition root, node lifecycle, service registry, and cross-service wiring used by the daemon and integration surfaces. | **Do not merge.** The daemon owns CLI/process policy, while `neo-system` should remain reusable node assembly that tests, RPC/indexer wiring, and future service hosts can embed without pulling in the binary. |
 | `neo-indexer` into `neo-rpc` | Query-oriented service used by RPC, but owned by the node lifecycle and optionally registered in `neo-system::ServiceRegistry`. | **Do not merge.** Keeping it as a node service allows RPC, daemon startup, and future REST/worker surfaces to share the same read model. |
 | `neo-hsm` into `neo-consensus` or `neo-node` | Optional validator signing backends for PKCS#11, Azure, and GCP HSM integrations. | **Do not merge.** HSM support is an operator/security boundary with heavyweight and feature-specific dependencies; consensus should remain about the protocol while signer providers stay replaceable. |
-| `neo-tee` into `neo-node` or consensus crates | Optional SGX/Nitro TEE support, sealed wallets, attestation, and fair-ordering helpers. | **Do not merge.** TEE code is hardware and deployment specific, with simulation and enclave features; isolating it keeps normal node builds smaller and keeps sensitive runtime assumptions out of the core node. |
 | `neo-oracle-service` into `neo-rpc` or `neo-native-contracts` | Off-chain oracle worker for HTTPS/NeoFS fetching, response transaction assembly, and request lifecycle processing. | **Do not merge.** The native Oracle contract must stay deterministic on-chain state, RPC is just an API boundary, and the oracle worker has its own network I/O, retries, signing, and service lifecycle. |
 | Development crates `tests` / `benches-package` | Workspace-only verification and benchmark targets. | **Keep separate.** They are not linked into the node and keep dev-only dependencies out of production crates. |
 

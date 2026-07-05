@@ -71,7 +71,6 @@ pub use execution_context_state::ExecutionContextState;
 pub use hardfork_activable::HardforkActivable;
 pub use helper::Helper;
 pub use interoperable::Interoperable;
-pub use max_length_attribute::MaxLengthAttribute;
 pub use native_contract::{NativeContract, NativeEvent, NativeMethod, is_active_for};
 pub use native_contract_cache::{NativeContractsCache, NativeContractsCacheEntry};
 pub use native_registry::NativeRegistry;
@@ -83,7 +82,6 @@ pub use storage_item_ext::StorageItemExt;
 
 pub use contracts::{
     contract, contract_parameter, contract_parameters_context, contract_state, deployed_contract,
-    max_length_attribute,
 };
 pub use interop::{
     application_engine_contract, application_engine_crypto, application_engine_helper,

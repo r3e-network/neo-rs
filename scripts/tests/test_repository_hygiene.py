@@ -319,7 +319,6 @@ class RepositoryHygieneTests(unittest.TestCase):
             REPO_ROOT / "neo-state-service" / "src" / "tests": set(),
             REPO_ROOT / "neo-storage" / "src" / "tests": set(),
             REPO_ROOT / "neo-system" / "src" / "tests": set(),
-            REPO_ROOT / "neo-tee" / "src" / "tests": set(),
             REPO_ROOT / "neo-vm" / "src" / "tests": set(),
             REPO_ROOT / "neo-wallets" / "src" / "tests": set(),
         }

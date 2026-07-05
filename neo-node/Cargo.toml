@@ -23,18 +23,12 @@ path = "src/bin/neo-db-probe.rs"
 
 [features]
 default = []
-# Optional TEE (Trusted Execution Environment) support.
-tee = ["dep:neo-tee"]
-# Enable TEE with SGX hardware (requires `tee`).
-tee-sgx = ["tee", "neo-tee/sgx-hw"]
 # Optional HSM-backed consensus signing (PKCS#11: AWS/Azure/GCP).
 hsm = ["dep:neo-hsm", "neo-hsm/pkcs11"]
 
 [dependencies]
 neo-vm-rs = { workspace = true }
 
-# TEE integration (feature-gated)
-neo-tee = { workspace = true, optional = true }
 # HSM-backed consensus signer (feature-gated)
 neo-hsm = { workspace = true, optional = true }
 

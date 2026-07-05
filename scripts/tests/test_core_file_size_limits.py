@@ -43,15 +43,6 @@ class CoreFileSizeLimitTests(unittest.TestCase):
             "Verification primitives should keep core witness/context/snapshot traits separate from mock regression tests",
         )
 
-    def test_nitro_attestation_keeps_parser_and_cbor_regressions_split(self):
-        self.assert_file_limits(
-            {
-                REPO_ROOT / "neo-tee" / "src" / "nitro" / "attestation.rs": 470,
-                REPO_ROOT / "neo-tee" / "src" / "nitro" / "attestation" / "tests.rs": 260,
-            },
-            "Nitro attestation should keep COSE/CBOR parser and structural validation runtime separate from synthetic regression fixtures",
-        )
-
     def test_vm_evaluation_stack_keeps_runtime_and_stack_regressions_split(self):
         self.assert_file_limits(
             {
@@ -68,15 +59,6 @@ class CoreFileSizeLimitTests(unittest.TestCase):
                 REPO_ROOT / "neo-hsm" / "src" / "pkcs11" / "tests.rs": 120,
             },
             "PKCS#11 HSM signer should keep runtime worker/signing code separate from DER/point/script codec regressions",
-        )
-
-    def test_tee_attestation_service_keeps_runtime_and_identity_regressions_split(self):
-        self.assert_file_limits(
-            {
-                REPO_ROOT / "neo-tee" / "src" / "attestation" / "service.rs": 470,
-                REPO_ROOT / "neo-tee" / "src" / "attestation" / "service" / "tests.rs": 260,
-            },
-            "TEE attestation service should keep report generation and verification runtime separate from identity/config regression tests",
         )
 
     def test_block_validation_keeps_stateless_runtime_and_limit_regressions_split(self):

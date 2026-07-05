@@ -7,7 +7,7 @@
 //! Layer 1 (Infrastructure): neo-io, neo-error, neo-crypto, neo-storage, neo-config, neo-vm, neo-serialization, neo-manifest
 //! Layer 2 (Protocol): neo-payloads, neo-consensus, neo-hsm
 //! Layer 3 (Domain services): neo-execution, neo-native-contracts, neo-mempool, neo-state-service, neo-runtime
-//! Layer 4 (Node services): neo-blockchain, neo-network, neo-wallets, neo-indexer, neo-tee
+//! Layer 4 (Node services): neo-blockchain, neo-network, neo-wallets, neo-indexer
 //! Layer 5 (Composition): neo-system
 //! Layer 6 (Plugin/RPC boundary): neo-oracle-service, neo-rpc
 //! Layer 7 (Applications): neo-node, neo-gui
@@ -49,7 +49,7 @@ impl Layer {
             | "neo-state-service"
             | "neo-runtime" => Some(Layer::DomainServices),
             // Layer 4: Long-running or queryable node services.
-            "neo-blockchain" | "neo-network" | "neo-wallets" | "neo-indexer" | "neo-tee" => {
+            "neo-blockchain" | "neo-network" | "neo-wallets" | "neo-indexer" => {
                 Some(Layer::NodeServices)
             }
             // Layer 5: Node composition root.

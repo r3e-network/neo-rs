@@ -19,7 +19,6 @@ CONSOLIDATION_CANDIDATES = {
     "neo-oracle-service",
     "neo-runtime",
     "neo-system",
-    "neo-tee",
     "benches-package",
     "tests",
 }

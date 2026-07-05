@@ -56,7 +56,7 @@ flowchart TD
     APP["<b>Application</b><br/>neo-node (daemon) · neo-gui (desktop, excluded)"]
     PLUG["<b>Plugin / RPC Boundary</b><br/>neo-rpc · neo-oracle-service"]
     COMP["<b>Composition</b><br/>neo-system"]
-    NODE["<b>Node Services</b><br/>neo-blockchain · neo-network · neo-wallets<br/>neo-indexer · neo-tee"]
+    NODE["<b>Node Services</b><br/>neo-blockchain · neo-network · neo-wallets<br/>neo-indexer"]
     DOM["<b>Domain Services</b><br/>neo-runtime · neo-execution · neo-native-contracts<br/>neo-state-service · neo-mempool"]
     PROTO["<b>Protocol</b><br/>neo-payloads · neo-consensus · neo-hsm"]
     INF["<b>Infrastructure</b><br/>neo-io · neo-error · neo-crypto · neo-storage<br/>neo-config · neo-vm · neo-serialization · neo-manifest"]
@@ -159,7 +159,7 @@ neo-rs/
 │   neo-native-contracts, neo-state-service,
 │   neo-mempool
 ├── neo-blockchain, neo-network, neo-wallets,# L4 Node Services
-│   neo-indexer, neo-tee
+│   neo-indexer
 ├── neo-system                              # L5 Composition
 ├── neo-rpc, neo-oracle-service             # L6 Plugin / RPC Boundary
 ├── neo-node                                # L7 Application (daemon binary)

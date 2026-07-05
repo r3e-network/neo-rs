@@ -61,7 +61,6 @@ COPY neo-blockchain/ neo-blockchain/
 COPY neo-network/ neo-network/
 COPY neo-wallets/ neo-wallets/
 COPY neo-indexer/ neo-indexer/
-COPY neo-tee/ neo-tee/
 COPY neo-system/ neo-system/
 COPY neo-rpc/ neo-rpc/
 COPY neo-oracle-service/ neo-oracle-service/

@@ -52,8 +52,6 @@ members = [
     "neo-wallets",
     # Read-side block, transaction, account, and notification indexing.
     "neo-indexer",
-    # Optional Trusted Execution Environment support.
-    "neo-tee",
 
     # === Composition Layer ===
     # Embeddable node composition root.
@@ -182,7 +180,6 @@ neo-blockchain = { path = "neo-blockchain", version = "0.10.0" }
 neo-network = { path = "neo-network", version = "0.10.0" }
 neo-wallets = { path = "neo-wallets", version = "0.10.0" }
 neo-indexer = { path = "neo-indexer", version = "0.10.0" }
-neo-tee = { path = "neo-tee", version = "0.10.0" }
 
 # Composition layer
 neo-system = { path = "neo-system", version = "0.10.0" }

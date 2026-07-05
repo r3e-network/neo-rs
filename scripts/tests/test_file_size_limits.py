@@ -252,25 +252,6 @@ class FileSizeLimitTests(unittest.TestCase):
                     "RpcClient should keep HTTP transport, chain queries, token/contract queries, and transaction submission in focused modules",
                 )
 
-    def test_attestation_report_keeps_validation_and_quote_regressions_split(self):
-        limits = {
-            REPO_ROOT / "neo-tee" / "src" / "attestation" / "report.rs": 660,
-            REPO_ROOT / "neo-tee" / "src" / "attestation" / "report" / "tests.rs": 220,
-        }
-
-        for path, max_lines in limits.items():
-            with self.subTest(path=path.relative_to(REPO_ROOT)):
-                self.assertTrue(
-                    path.exists(),
-                    f"{path.relative_to(REPO_ROOT)} should exist after splitting attestation report regression tests",
-                )
-                line_count = len(path.read_text(encoding="utf-8").splitlines())
-                self.assertLessEqual(
-                    line_count,
-                    max_lines,
-                    "AttestationReport should keep quote parsing and validation runtime logic separate from SGX regression tests",
-                )
-
     def test_indexer_entrypoint_keeps_service_headroom(self):
         path = REPO_ROOT / "neo-indexer" / "src" / "indexer.rs"
 

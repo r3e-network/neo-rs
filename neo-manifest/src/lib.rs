@@ -14,7 +14,6 @@
 //!   types.
 //! - `method_token`: NEF method-token records.
 //! - `nef_file`: NEF file records and checksum logic.
-//! - `validator_attribute`: validator attribute records.
 
 #![doc(html_root_url = "https://docs.rs/neo-manifest/0.10.0")]
 
@@ -25,8 +24,6 @@ pub mod manifest;
 pub mod method_token;
 #[path = "nef/nef_file.rs"]
 pub mod nef_file;
-#[path = "protocol/validator_attribute.rs"]
-pub mod validator_attribute;
 
 pub use call_flags::CallFlags;
 pub use manifest::{
@@ -36,4 +33,3 @@ pub use manifest::{
 };
 pub use method_token::MethodToken;
 pub use nef_file::NefFile;
-pub use validator_attribute::ValidatorAttribute;
