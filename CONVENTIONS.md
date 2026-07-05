@@ -155,9 +155,12 @@ hand-written.
 
 ## Naming & API Idioms
 
-- Constructors: `new()` infallible, `try_new()` fallible, `with_*()` variant,
+- Constructors: `new()` **MAY** be fallible; reserve `try_new()` only where an
+  infallible `new()` also exists on the same type. `with_*()` variant,
   `from_*()` conversion. `create_*` only for C#-parity factory mirrors.
 - Getters are bare `field()` (no `get_` prefix); setters are `set_field()`.
+  Exception: `neo-rpc/src/client/**` accessor names deliberately mirror
+  JSON-RPC method names (`get_*`) and are exempt from the bare-accessor rule.
 - Conversions: `as_*` cheap borrow / `to_*` owned clone / `into_*` consuming.
 - Extension traits end in `*Ext`; predicates use `is_`/`has_`/`can_`.
 

@@ -22,12 +22,12 @@ every page to what you will learn from it.
 | [configuration.md](./configuration.md) | Every TOML section and key the daemon reads (`[network]`, `[storage]`, `[p2p]`, `[rpc]`, `[consensus]`, `[blockchain]`, `[mempool]`, `[state_service]`, `[indexer]`, `[application_logs]`, `[tokens_tracker]`, `[telemetry.metrics]`, `[logging]`, `[observability]`), preset-plus-override behavior, environment variables, and operational overrides. |
 | [operations.md](./operations.md) | Running in production: systemd and Docker deployment, storage sizing, health checks via RPC, observability, security hardening, backups, upgrades, and incident response. |
 | [rpc-api.md](./rpc-api.md) | The JSON-RPC 2.0 surface (~55 methods) grouped by domain — blockchain, smart-contract invocation, state and MPT proofs, node/network, wallet, plugins — with parameters, request/response shape, and curl examples. |
-| [architecture.md](./architecture.md) | The 7-layer workspace design (Foundation → Infrastructure → Protocol → Domain service → Node service → Composition → Plugin/RPC boundary → Application), a crate reference table for all 28 production crates, and the key design decisions (two-tier VM, supervised async services, block-import queue, typed storage tables, provider factories, pipeline abstraction, MPT layering, C# parity). |
+| [architecture.md](./architecture.md) | The 7-layer workspace design (Foundation → Infrastructure → Protocol → Domain service → Node service → Composition → Plugin/RPC boundary → Application), a crate reference table for all 26 production crates (+ neo-test-fixtures dev crate), and the key design decisions (two-tier VM, supervised async services, block-import queue, typed storage tables, provider factories, pipeline abstraction, MPT layering, C# parity). |
 | [dataflow.md](./dataflow.md) | How data and control move at runtime: startup/composition, block ingestion, transaction lifecycle, a dBFT consensus round, RPC request handling, state/storage overlays, typed table reads, and hot/cold provider routing — each with a diagram. |
 | [protocol-compatibility.md](./protocol-compatibility.md) | What "byte-for-byte C# parity" means, the 11 native contracts, the 7 hardforks with MainNet/TestNet activation heights, supported subsystems (consensus, VM, NEP standards, P2P), and the cryptography stack. |
 | [coding-design-architecture-guidance.md](./coding-design-architecture-guidance.md) | Coding/design rules for high-level domain flows, fluent workflow APIs, layer-by-layer abstraction, module organization, and when to use generics versus `dyn Trait`. |
 | [style-conformance-audit.md](./style-conformance-audit.md) | Repeatable crate-by-crate audit checklist and remediation plan for enforcing the coding/design/architecture guidance. |
-| [../design.md](../design.md) | 15 Architecture Decision Records (ADRs), reth/polkadot pattern comparison, and the 4-phase evolution roadmap. The authoritative source for architectural decisions and future plans. |
+| [../design.md](../design.md) | The full Architecture Decision Record (ADR) log, reth/polkadot pattern comparison, and the 4-phase evolution roadmap. The authoritative source for architectural decisions and future plans. |
 
 ## Learning paths
 
@@ -43,11 +43,11 @@ live in [operations.md](./operations.md).
 
 ### New developer (understand the system)
 
-1. [architecture.md](./architecture.md) — the 7 layers, 28 crates, and design decisions.
+1. [architecture.md](./architecture.md) — the 7 layers, 26 production crates (+ neo-test-fixtures dev crate), and design decisions.
 2. [dataflow.md](./dataflow.md) — how blocks, transactions, and queries flow through the services.
 3. [protocol-compatibility.md](./protocol-compatibility.md) — the protocol surface, native contracts, and hardforks the node must match.
 4. [rpc-api.md](./rpc-api.md) — the external interface clients use to drive the node.
-5. [../design.md](../design.md) — the 15 ADRs and evolution roadmap for architectural depth.
+5. [../design.md](../design.md) — the full ADR log and evolution roadmap for architectural depth.
 6. [coding-design-architecture-guidance.md](./coding-design-architecture-guidance.md) — how to keep top-level code readable while hiding lower-level mechanics behind focused Rust APIs.
 7. [style-conformance-audit.md](./style-conformance-audit.md) — how to audit and phase remediation across crates without turning style work into unsafe churn.
 

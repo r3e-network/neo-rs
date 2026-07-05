@@ -49,43 +49,43 @@ crate-name/
 
 ### Module Declaration Order
 
+The `lib.rs` header is the crate-doc comment (`//!`), not inline lint
+attributes — lints are inherited from `workspace.lints` (see `CONVENTIONS.md`).
+The doc header carries three fixed sections: a one-line summary, `## Boundary`
+(what the crate owns and must not do), and `## Contents` (one bullet per
+module). Then `#![doc(html_root_url = …)]`, then module declarations, then the
+public re-exports.
+
 ```rust
-// 1. Crate-level attributes and documentation
-#![warn(missing_docs)]
-#![warn(rustdoc::missing_crate_level_docs)]
-
-//! # Crate Name
+//! # neo-crate-name
 //!
-//! One-line description of the crate.
+//! One-line description of what this crate provides.
 //!
-//! ## Overview
+//! ## Boundary
 //!
-//! Detailed description of what this crate provides.
+//! What this crate owns, and what it must not do (persist blocks, run
+//! consensus, expose RPC transport, etc.).
+//!
+//! ## Contents
+//!
+//! - `module_a`: What this module is responsible for.
+//! - `module_b`: What this module is responsible for.
 
-// 2. External crate imports (sorted alphabetically)
-extern crate std;
+#![doc(html_root_url = "https://docs.rs/neo-crate-name/0.10.0")]
 
-// 3. Internal crate self-reference (if needed)
-extern crate self as neo_crate_name;
+// Module declarations (private mod, then feature-gated).
+mod module_a;
+mod module_b;
 
-// 4. Module declarations (grouped by category)
-// Core modules
-pub mod core_module;
-pub mod types;
-
-// Feature-gated modules
 #[cfg(feature = "runtime")]
-pub mod runtime;
+mod runtime;
 
-// Private modules
-mod internal;
+// Public re-exports (the crate's API surface).
+pub use module_a::{TypeA, helper_a};
+pub use module_b::{TypeB, helper_b};
 
-// 5. Re-exports (public API)
-pub use types::{TypeA, TypeB};
-
-// 6. Private implementation
-#[cfg(test)]
-mod tests;
+#[cfg(feature = "runtime")]
+pub use runtime::RuntimeType;
 ```
 
 ### Import Organization

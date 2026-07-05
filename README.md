@@ -47,9 +47,9 @@ See [docs/protocol-compatibility.md](./docs/protocol-compatibility.md) for the p
 
 ## Architecture at a glance
 
-The workspace is organized into **7 layers, 28 production crates** (plus 2
-dev-only crates) so dependencies flow strictly downward — Foundation crates
-know nothing of the services above them.
+The workspace is organized into **7 layers, 26 production crates** (plus the
+`neo-test-fixtures` dev crate) so dependencies flow strictly downward —
+Foundation crates know nothing of the services above them.
 
 ```mermaid
 flowchart TD
@@ -68,7 +68,7 @@ The architecture follows patterns from **reth** (provider traits, sealed
 `NodeTypes`/`NodeComponents` traits, `EngineApi`, pipeline stage abstraction,
 feature-gated RPC) and **Polkadot/Substrate** (bounded context layers,
 per-domain error types, service trait composition). See [`design.md`](./design.md)
-for the 23 ADRs and the 4-phase evolution roadmap, and [docs/architecture.md](./docs/architecture.md)
+for the full ADR log and the 4-phase evolution roadmap, and [docs/architecture.md](./docs/architecture.md)
 for the full crate reference. How a block, transaction, and consensus round
 flow through these crates: [docs/dataflow.md](./docs/dataflow.md).
 
@@ -141,7 +141,7 @@ you can understand the whole node without reading source.
 | [Protocol & compatibility](./docs/protocol-compatibility.md) | Neo N3 v3.10.0 parity, native contracts, hardforks |
 | [Operations](./docs/operations.md) | Deploy, monitor, secure, back up, and upgrade |
 | [Coding/design guidance](./docs/coding-design-architecture-guidance.md) | High-level domain-flow style, fluent APIs, abstraction layers, module organization |
-| [Architecture design (ADR)](./design.md) | 15 ADRs, reth/polkadot comparison, 4-phase evolution roadmap |
+| [Architecture design (ADR)](./design.md) | Full ADR log, reth/polkadot comparison, 4-phase evolution roadmap |
 
 **Learning paths:** operators → *getting-started → configuration → operations*;
 developers → *architecture → dataflow → protocol-compatibility → rpc-api*.
@@ -163,7 +163,7 @@ neo-rs/
 ├── neo-system                              # L5 Composition
 ├── neo-rpc, neo-oracle-service             # L6 Plugin / RPC Boundary
 ├── neo-node                                # L7 Application (daemon binary)
-├── design.md                               # 15 ADRs + evolution roadmap
+├── design.md                               # full ADR log + evolution roadmap
 ├── config/                                 # mainnet/testnet TOML configs
 ├── docs/                                   # the documentation system
 └── tests/ (neo-tests), benches-package/    # dev-only: integration tests, benchmarks

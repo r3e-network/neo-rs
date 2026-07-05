@@ -1,7 +1,7 @@
 # neo-rs Architecture Design Document
 
-**Version**: 3.0
-**Date**: 2026-07-04
+**Version**: 4.0
+**Date**: 2026-07-05
 **Author**: Software Architect
 **Status**: Active
 
@@ -16,10 +16,13 @@ that is professional, consistent, and ready for long-term evolution.
 
 **Architecture health score**: 9.5/10 (up from 9.4 after ADR-027 dead code excision)
 
-The V4 update adds a deep-dive audit across three dimensions (trait design,
-code duplication, async/concurrency safety), 4 new ADRs (016-019), and fixes
-1 critical issue (HSM redeem script hardcoding) and 4 major issues (error
-semantic loss, name collisions, Debug bounds).
+The ADR log now spans ADR-001 through ADR-032. Beyond the early trait-design,
+duplication, and async/concurrency audits (ADR-016 through ADR-019), later ADRs
+cover store-surface reduction and trait sealing (ADR-020, ADR-021), dead-code
+excision (ADR-022, ADR-027, ADR-028, ADR-032), hex/KeyBuilder consolidation
+(ADR-024, ADR-025), cross-crate helpers and test fixtures (ADR-029), the
+neo-hsm default flip and ConsensusApi rename (ADR-030), and the async
+ConsensusSigner deadlock fix (ADR-031).
 
 ---
 
@@ -1267,10 +1270,10 @@ Validation is split into:
 | Crate responsibility overlap | 3 documented (ADR-007, ADR-008, ADR-009) |
 | Naming collisions | Resolved (NeoEngine→EngineApi ADR-007, P2pError/StoreFactory ADR-018) |
 | MPT layering | Documented (ADR-012) — not duplication |
-| doc(html_root_url) versions | All 12 crates at 0.10.0 (ADR-013) |
+| doc(html_root_url) versions | All 11 crates at 0.10.0 (ADR-013) |
 | Redundant inline lints | Removed (tokens_tracker module) |
 | reth/polkadot comparison | Documented (8 patterns adopted, 4 deferred) |
-| Evolution roadmap | 4 phases, 26 ADRs total |
+| Evolution roadmap | 4 phases, full ADR log (ADR-001 through ADR-032) |
 | Debug trait bounds | Consistent across all service traits (ADR-019) |
 | HSM redeem script | Delegates to canonical neo-vm impl (ADR-016) |
 | Async/concurrency safety | Excellent — 0 Critical/Major issues (ADR audit) |
