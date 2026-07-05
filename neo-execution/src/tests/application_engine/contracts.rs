@@ -263,6 +263,35 @@ fn native_method_storage_fee_is_charged_in_datoshi() {
 }
 
 #[test]
+fn native_call_uses_provider_captured_at_engine_creation() {
+    let _provider_guard = lock_provider();
+    let native = Arc::new(MeteredNativeContract::new(50));
+    let native_hash = native.hash();
+    let provider = Arc::new(SingleNativeProvider { native }) as Arc<dyn NativeContractProvider>;
+
+    let mut engine = NativeContractLookup::with_scoped_provider(provider, || {
+        ApplicationEngine::new(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            None,
+        )
+    })
+    .expect("engine");
+
+    NativeContractLookup::install_provider(Arc::new(EmptyProvider));
+
+    engine
+        .call_native_contract(native_hash, "metered", &[])
+        .expect("native method should use provider captured at engine creation");
+
+    assert_eq!(engine.fee_consumed(), 50 * 100_000);
+}
+
+#[test]
 fn call_contract_uses_execution_state_script_hash_for_caller() {
     let _provider_guard = lock_provider();
     install_allowing_policy();

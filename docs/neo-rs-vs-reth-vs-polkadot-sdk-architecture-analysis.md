@@ -343,10 +343,13 @@ Native Rust NeoVM — no WASM. `ApplicationEngine` with per-tx child caches.
 `neo-system::NodeBuilder` now makes the provider an explicit composition-root
 dependency. The daemon constructs the standard provider once before genesis
 initialization, installs it into the `neo-execution` lookup seam, and passes the
-same `Arc` into `NodeBuilder`; headless/test construction still falls back to
-the builder's standard provider default. NeoVM host-call dispatch still resolves
-through the process-global `OnceLock` (`neo-execution`
-`native_contract_provider.rs`) rather than receiving the provider directly.
+same `Arc` into `NodeBuilder`; headless/test construction still falls back to the
+builder's standard provider default. `ApplicationEngine` now captures the
+installed or scoped provider at construction and uses that stable handle for
+direct native calls, policy reads, current-index reads, and whitelisted-fee
+checks. Some host-call helpers still resolve through the process-global
+compatibility bridge in
+`neo-execution/src/native/native_contract_provider.rs`.
 
 ### Polkadot SDK innovations
 
@@ -365,10 +368,11 @@ through the process-global `OnceLock` (`neo-execution`
 2. **Partial:** `NativeContractProvider` is now an explicit `NodeBuilder` field,
    so the composition root chooses the provider. The daemon now reuses one
    standard provider for early genesis/native persistence and the composed
-   `Node`. But native dispatch still resolves through a process-global
-   `OnceLock` (`neo-execution/src/native/native_contract_provider.rs`).
-   Remaining step: thread the injected `Arc<dyn NativeContractProvider>` to the
-   NeoVM host-call sites instead of reading it back from the global.
+   `Node`, and `ApplicationEngine` captures the provider during construction for
+   direct native calls, policy reads, current-index reads, and fee whitelist
+   checks. Remaining step: thread the captured `Arc<dyn NativeContractProvider>`
+   through the unconverted helper/syscall paths instead of reading them back
+   from `NativeContractLookup`.
 3. Consider WASM runtime for future sidechain/feature-gate support.
 
 ---

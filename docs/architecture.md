@@ -252,12 +252,17 @@ The detailed rules for this style live in
   assignments and yields `BlockDownloadBatch` values.
 
 - **Native dispatch is explicit at composition.** `neo-execution` still owns the
-  low-level `NativeContractProvider` lookup seam so the engine does not depend
-  on `neo-native-contracts`, but `neo-system::NodeBuilder` now accepts and stores
+  low-level `NativeContractProvider` seam so the engine does not depend on
+  `neo-native-contracts`, but `neo-system::NodeBuilder` now accepts and stores
   the provider as an explicit dependency. The daemon builds the standard Neo N3
   provider once before genesis initialization, installs it into the legacy
-  `neo-execution` lookup seam, and passes the same `Arc` into `NodeBuilder` so
-  the composed `Node` exposes the provider object that native execution uses.
+  `neo-execution` lookup seam, and passes the same `Arc` into `NodeBuilder`.
+  `ApplicationEngine` now captures the installed or scoped provider at
+  construction and uses that stable handle for direct native calls, policy
+  reads, current-index reads, and whitelisted-fee checks. The process-global
+  lookup remains only as a compatibility bridge for standalone callers and
+  unconverted helper/syscall paths (`contracts`, `load_execute_storage`,
+  `witness_and_misc`, runtime helpers, and blockchain native persistence).
   Headless/test construction can still omit the provider and let the builder
   install the standard default. ADR-015 proposes a builder pattern for future
   extensibility.

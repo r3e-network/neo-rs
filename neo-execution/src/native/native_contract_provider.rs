@@ -1,31 +1,35 @@
 //! Native contract provider — the seam between the abstract engine and the
 //! concrete native-contract implementations.
 //!
-//! The application engine in [`crate::ApplicationEngine`] needs to look
-//! up native contracts (NEO, GAS, Policy, ContractManagement, …) by
-//! hash, but the engine itself lives in `neo-execution` while the
-//! concrete implementations live in `neo-native-contracts`. To avoid
-//! the resulting crate-cycle, this module exposes a `NativeContractProvider`
-//! trait that:
+//! The application engine in [`crate::ApplicationEngine`] needs to look up
+//! native contracts (NEO, GAS, Policy, ContractManagement, ...) by hash, but
+//! the engine itself lives in `neo-execution` while the concrete
+//! implementations live in `neo-native-contracts`. To avoid the resulting
+//! crate-cycle, this module exposes a `NativeContractProvider` trait that:
 //!
 //! - is **defined** in `neo-execution` (the consumer);
 //! - is **implemented** in `neo-native-contracts` (the provider); and
-//! - is **registered globally** at process startup, so the engine can
-//!   look it up without depending on `neo-native-contracts` directly.
+//! - is installed by the composition root and captured by new application
+//!   engines where the host-call path has been converted away from ambient
+//!   lookup.
 //!
-//! The contract:
+//! The process-global slot is a compatibility bridge for standalone callers
+//! and the remaining unconverted helper paths. New execution paths should pass
+//! or capture the provider explicitly so one engine cannot observe a provider
+//! replacement made by another replay, test, or embedded node.
+//!
+//! Typical startup and engine construction:
 //!
 //! ```ignore
-//! // In neo-native-contracts (or a binary):
-//! neo_native_contracts::install_provider(Arc::new(MyProvider::new()));
+//! // In neo-system / neo-node composition:
+//! let provider = Arc::new(StandardNativeContractProvider::new(settings));
+//! neo_native_contracts::install_provider(provider.clone());
+//! let node = NodeBuilder::new().with_native_contract_provider(provider).build()?;
 //!
-//! // In neo-execution (the engine):
-//! let provider = native_contract_provider();
-//! if let Some(provider) = provider {
-//!     if let Some(contract) = provider.get_native_contract(&hash) {
-//!         // ...
-//!     }
-//! }
+//! // In tests or replay batches that need a temporary provider:
+//! let engine = NativeContractLookup::with_scoped_provider(provider, || {
+//!     ApplicationEngine::new(...)
+//! })?;
 //! ```
 //!
 //! The trait is intentionally narrow — it only exposes the operations

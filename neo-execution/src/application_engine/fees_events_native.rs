@@ -206,19 +206,12 @@ impl ApplicationEngine {
     ) -> CoreResult<Vec<u8>> {
         self.refresh_context_tracking()?;
 
-        // Resolve the native contract from the engine-local registry, falling
-        // back to the globally-installed native-contract provider (the seam to
-        // `neo-native-contracts`, which cannot be a direct dependency without a
-        // crate cycle). Without an installed provider the fallback is a no-op,
-        // preserving the previous "not found" behaviour.
+        // Resolve from the engine-local registry first, then the provider
+        // captured when this engine was constructed. The process-global
+        // fallback remains inside `native_contract_provider()` for standalone
+        // callers during the gradual migration.
         let native = self
-            .native_registry
-            .get(&contract_hash)
-            .or_else(|| {
-                crate::native_contract_provider::NativeContractLookup::get_native_contract(
-                    &contract_hash,
-                )
-            })
+            .native_contract_by_hash(&contract_hash)
             .ok_or_else(|| CoreError::not_found(contract_hash.to_string()))?;
 
         let block_height = self.current_block_index();
@@ -267,16 +260,23 @@ impl ApplicationEngine {
         if self
             .protocol_settings
             .is_hardfork_enabled(Hardfork::HfFaun, block_height)
-            && crate::native_contract_provider::NativeContractLookup::get_whitelisted_fee_for_policy(
-                self.snapshot_cache.as_ref(),
-                &contract_hash,
-                method,
-                args.len() as u32,
-            )?
-            .is_some()
-            {
-                is_whitelisted = true;
-            }
+            && self
+                .native_contract_provider()
+                .and_then(|provider| provider.get_native_contract_by_name("PolicyContract"))
+                .map(|policy| {
+                    policy.whitelisted_fee(
+                        self.snapshot_cache.as_ref(),
+                        &contract_hash,
+                        method,
+                        args.len() as u32,
+                    )
+                })
+                .transpose()?
+                .flatten()
+                .is_some()
+        {
+            is_whitelisted = true;
+        }
 
         if !is_whitelisted {
             // Charge native contract fees upfront (matches C# NativeContract.Invoke).

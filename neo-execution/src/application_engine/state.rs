@@ -106,6 +106,8 @@ impl ApplicationEngine {
             notifications: Vec::new(),
             logs: Vec::new(),
             native_registry: NativeRegistry::new(),
+            native_contract_provider:
+                crate::native_contract_provider::NativeContractLookup::native_contract_provider(),
             native_contract_cache: Arc::new(Mutex::new(NativeContractsCache::default())),
             contracts: HashMap::new(),
             storage_iterators: HashMap::new(),
@@ -189,6 +191,8 @@ impl ApplicationEngine {
             notifications: Vec::new(),
             logs: Vec::new(),
             native_registry: NativeRegistry::new(),
+            native_contract_provider:
+                crate::native_contract_provider::NativeContractLookup::native_contract_provider(),
             native_contract_cache,
             contracts,
             storage_iterators: HashMap::new(),
@@ -428,9 +432,12 @@ impl ApplicationEngine {
             return block.header.index();
         }
 
-        crate::native_contract_provider::NativeContractLookup::lookup_current_block_index(
-            self.snapshot_cache.as_ref(),
-        )
+        let Some(provider) = self.native_contract_provider() else {
+            return 0;
+        };
+        provider
+            .current_block_index(self.snapshot_cache.as_ref())
+            .unwrap_or(0)
     }
 
     /// Returns the timestamp of the block currently being persisted.
@@ -612,6 +619,30 @@ impl ApplicationEngine {
         Arc::clone(&self.native_contract_cache)
     }
 
+    pub(super) fn native_contract_provider(
+        &self,
+    ) -> Option<Arc<dyn crate::native_contract_provider::NativeContractProvider>> {
+        self.native_contract_provider.clone().or_else(|| {
+            crate::native_contract_provider::NativeContractLookup::native_contract_provider()
+        })
+    }
+
+    pub(super) fn native_contract_by_hash(
+        &self,
+        hash: &UInt160,
+    ) -> Option<Arc<dyn NativeContract>> {
+        self.native_registry
+            .get(hash)
+            .or_else(|| self.native_contract_provider()?.get_native_contract(hash))
+    }
+
+    pub(super) fn native_contract_by_name(&self, name: &str) -> Option<Arc<dyn NativeContract>> {
+        self.native_registry.get_by_name(name).or_else(|| {
+            self.native_contract_provider()?
+                .get_native_contract_by_name(name)
+        })
+    }
+
     /// Returns a shared handle to the native-contract cache.
     pub fn native_contract_cache_handle(&self) -> Arc<Mutex<NativeContractsCache>> {
         Arc::clone(&self.native_contract_cache)
@@ -628,17 +659,10 @@ impl ApplicationEngine {
     }
 
     pub(super) fn policy_contract(&self) -> Option<Arc<dyn NativeContract>> {
-        // Native contracts are served by the globally-installed provider; the
-        // engine's own `native_registry` is empty in the normal execution path
-        // (only `call_native_contract` consulted the provider as a fallback).
-        // Without the same fallback here, `policy_contract()` returns `None`,
-        // `refresh_policy_settings` silently no-ops, and execution keeps the
-        // hardcoded default ExecFeeFactor/StoragePrice instead of the values in
-        // state — a consensus divergence once governance changes them (e.g.
-        // MainNet lowered ExecFeeFactor 30 -> 15).
-        let policy =
-            crate::native_contract_provider::NativeContractLookup::lookup_policy_contract()?;
-        Some(self.native_registry.get(&policy.hash()).unwrap_or(policy))
+        // Prefer the provider captured when this engine was constructed. The
+        // global fallback remains for standalone callers during the gradual
+        // migration away from process-global native dispatch.
+        self.native_contract_by_name("PolicyContract")
     }
 
     pub(super) fn get_contract(&self, hash: &UInt160) -> Option<&ContractState> {

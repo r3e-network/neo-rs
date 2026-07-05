@@ -54,6 +54,7 @@ use neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
 
 use crate::NotifyEventArgs;
 use crate::StorageContext;
+use crate::native_contract_provider::NativeContractProvider;
 use crate::{NativeContract, NativeContractsCache, NativeRegistry};
 use neo_payloads::WitnessCondition;
 use neo_primitives::TriggerType;
@@ -165,6 +166,7 @@ pub struct ApplicationEngine {
     notifications: Vec<NotifyEventArgs>,
     logs: Vec<LogEventArgs>,
     native_registry: NativeRegistry,
+    native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
     native_contract_cache: Arc<Mutex<NativeContractsCache>>,
     contracts: HashMap<UInt160, ContractState>,
     storage_iterators: HashMap<u32, StorageIterator>,
