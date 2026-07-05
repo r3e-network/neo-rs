@@ -85,10 +85,9 @@ pub(crate) fn put_required_i64_setting_key(
 /// `BigInteger` under `key`, falling back to `default` when the key is absent
 /// (the C# pre-genesis missing-key fallback).
 ///
-/// Replaces 3 `get_max_*_snapshot` functions in `PolicyContract::storage`:
+/// Replaces 2 `get_max_*_snapshot` functions in `PolicyContract::storage`:
 /// - `get_max_valid_until_block_increment_snapshot` (HfEchidna)
 /// - `get_max_traceable_blocks_snapshot` (HfEchidna)
-/// - `get_max_transactions_per_block_snapshot` (HfGorgon)
 ///
 /// The "current block is missing" fallback mirrors the C# extension's
 /// pre-genesis behaviour: when the ledger has no current block (e.g. during

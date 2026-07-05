@@ -57,7 +57,6 @@ fn native_manifest_safe_flags_pin_csharp_attributes() {
             s("getExecPicoFeeFactor", 0),
             s("getFeePerByte", 0),
             s("getMaxTraceableBlocks", 0),
-            s("getMaxTransactionsPerBlock", 0),
             s("getMaxValidUntilBlockIncrement", 0),
             s("getMillisecondsPerBlock", 0),
             s("getStoragePrice", 0),
