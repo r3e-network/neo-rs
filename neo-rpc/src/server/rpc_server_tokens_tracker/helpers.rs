@@ -17,7 +17,6 @@ use neo_vm_rs::VmState as VMState;
 use num_traits::ToPrimitive;
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::RpcServer;
 
@@ -264,8 +263,5 @@ pub(super) fn emit_contract_call_with_arg(
 }
 
 pub(super) fn current_time_millis() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(0)
+    neo_primitives::time::now_millis()
 }

@@ -391,7 +391,7 @@ impl NativeContract for NeoToken {
         if !Self::should_refresh_committee(block_index, committee_count) {
             sync_metrics::record_neo_token_onpersist_stage(
                 NeoTokenOnPersistStage::Skip,
-                elapsed_us(total_start),
+                neo_runtime::time::elapsed_us(total_start.elapsed()),
             );
             return Ok(());
         }
@@ -404,14 +404,14 @@ impl NativeContract for NeoToken {
         let prev_committee = self.read_committee_with_votes(&snapshot)?;
         sync_metrics::record_neo_token_onpersist_stage(
             NeoTokenOnPersistStage::ReadCachedCommittee,
-            elapsed_us(stage_start),
+            neo_runtime::time::elapsed_us(stage_start.elapsed()),
         );
 
         let stage_start = Instant::now();
         let new_committee = self.compute_committee_members(&snapshot, &settings)?;
         sync_metrics::record_neo_token_onpersist_stage(
             NeoTokenOnPersistStage::ComputeCommittee,
-            elapsed_us(stage_start),
+            neo_runtime::time::elapsed_us(stage_start.elapsed()),
         );
 
         let stage_start = Instant::now();
@@ -421,7 +421,7 @@ impl NativeContract for NeoToken {
         );
         sync_metrics::record_neo_token_onpersist_stage(
             NeoTokenOnPersistStage::WriteCommittee,
-            elapsed_us(stage_start),
+            neo_runtime::time::elapsed_us(stage_start.elapsed()),
         );
 
         // Hardfork check for https://github.com/neo-project/neo/pull/3158.
@@ -434,7 +434,7 @@ impl NativeContract for NeoToken {
             if committee_changed {
                 sync_metrics::record_neo_token_onpersist_stage(
                     NeoTokenOnPersistStage::CompareCommittee,
-                    elapsed_us(stage_start),
+                    neo_runtime::time::elapsed_us(stage_start.elapsed()),
                 );
                 let stage_start = Instant::now();
                 let prev_key_item = Self::points_to_stack_item(prev_keys.iter().copied())?;
@@ -452,19 +452,19 @@ impl NativeContract for NeoToken {
                     })?;
                 sync_metrics::record_neo_token_onpersist_stage(
                     NeoTokenOnPersistStage::NotifyCommitteeChanged,
-                    elapsed_us(stage_start),
+                    neo_runtime::time::elapsed_us(stage_start.elapsed()),
                 );
             }
         }
         if !committee_changed {
             sync_metrics::record_neo_token_onpersist_stage(
                 NeoTokenOnPersistStage::CompareCommittee,
-                elapsed_us(stage_start),
+                neo_runtime::time::elapsed_us(stage_start.elapsed()),
             );
         }
         sync_metrics::record_neo_token_onpersist_stage(
             NeoTokenOnPersistStage::RefreshTotal,
-            elapsed_us(refresh_start),
+            neo_runtime::time::elapsed_us(refresh_start.elapsed()),
         );
         Ok(())
     }
@@ -567,10 +567,6 @@ impl NativeContract for NeoToken {
 #[cfg(test)]
 #[path = "../tests/neo_token/mod.rs"]
 mod tests;
-
-fn elapsed_us(start: Instant) -> u64 {
-    start.elapsed().as_micros().min(u64::MAX as u128) as u64
-}
 
 fn count_heights_with_residue(start: u32, end: u32, modulus: u32, residue: u32) -> u64 {
     if start > end || modulus == 0 {

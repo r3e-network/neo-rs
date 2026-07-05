@@ -82,14 +82,11 @@ fn sign_data(tx: &Transaction, network: u32) -> Option<Vec<u8>> {
 
 /// C# `Transaction.IsSingleSignatureInvocationScript` —
 /// `PUSHDATA1 64 ‖ 64-byte signature`, exactly 66 bytes.
+///
+/// Delegates to the single canonical parser in `neo-vm` so the mempool cannot
+/// drift from the shared `PUSHDATA1 0x40 <64-byte sig>` shape check.
 fn single_signature_invocation(invocation: &[u8]) -> Option<&[u8]> {
-    if invocation.len() != 66 {
-        return None;
-    }
-    if invocation[0] != neo_vm_rs::OpCode::PUSHDATA1.byte() || invocation[1] != 64 {
-        return None;
-    }
-    Some(&invocation[2..66])
+    neo_vm::script_builder::signature_from_invocation(invocation)
 }
 
 /// The full C# `Transaction.Verify`: state-independent first, then

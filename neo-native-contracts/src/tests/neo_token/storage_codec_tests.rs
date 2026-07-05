@@ -331,7 +331,7 @@ fn neo_storage_codecs_use_stack_value_projection() {
     let signature_account_cache = slice_between(
         candidate_source,
         "fn candidate_signature_account",
-        "fn elapsed_us",
+        "fn committee_candidate_order",
     );
     assert!(
         !signature_account_cache.contains("pubkey.to_bytes()"),

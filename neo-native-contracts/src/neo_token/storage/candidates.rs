@@ -3,7 +3,6 @@ use neo_runtime::sync_metrics::{self, NeoTokenCommitteeCandidateCount};
 use std::{
     collections::{HashMap, HashSet},
     sync::{OnceLock, RwLock},
-    time::Instant,
 };
 
 static CANDIDATE_SIGNATURE_ACCOUNT_CACHE: OnceLock<RwLock<HashMap<ECPoint, UInt160>>> =
@@ -87,10 +86,6 @@ pub(crate) fn candidate_signature_account(pubkey: &ECPoint) -> UInt160 {
         .unwrap_or_else(|e| e.into_inner())
         .entry(pubkey.clone())
         .or_insert(account)
-}
-
-pub(super) fn elapsed_us(start: Instant) -> u64 {
-    start.elapsed().as_micros().min(u64::MAX as u128) as u64
 }
 
 pub(super) fn push_top_committee_candidate(

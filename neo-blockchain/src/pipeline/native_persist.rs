@@ -103,7 +103,10 @@ fn record_tx_stage(
     stage: neo_runtime::sync_metrics::NativePersistTxStage,
     start: std::time::Instant,
 ) {
-    neo_runtime::sync_metrics::record_native_persist_tx_stage(stage, elapsed_us(start));
+    neo_runtime::sync_metrics::record_native_persist_tx_stage(
+        stage,
+        neo_runtime::time::elapsed_us(start.elapsed()),
+    );
 }
 
 impl TraceTxFilter {
@@ -300,8 +303,8 @@ impl StagedNativePersist {
     pub fn commit(&self) {
         let cache_commit_start = std::time::Instant::now();
         self.snapshot.commit();
-        let cache_commit_us = elapsed_us(cache_commit_start);
-        let total_us = elapsed_us(self.total_start);
+        let cache_commit_us = neo_runtime::time::elapsed_us(cache_commit_start.elapsed());
+        let total_us = neo_runtime::time::elapsed_us(self.total_start.elapsed());
         neo_runtime::sync_metrics::record_native_persist(
             self.block_index as u64,
             self.n_tx as u64,
@@ -438,7 +441,7 @@ fn run_native_persist_hooks(
         neo_runtime::sync_metrics::record_native_contract_hook(
             metric_hook,
             contract.id(),
-            elapsed_us(hook_start),
+            neo_runtime::time::elapsed_us(hook_start.elapsed()),
         );
         result.map_err(|e| {
             CoreError::invalid_operation(format!(
@@ -578,7 +581,7 @@ fn stage_block_natives_with_resources_inner(
     }
     let native_contract_cache = engine.native_contract_cache_handle();
     drop(engine);
-    let onpersist_us = elapsed_us(onpersist_start);
+    let onpersist_us = neo_runtime::time::elapsed_us(onpersist_start.elapsed());
 
     // --- Transaction stage (C# Blockchain.Persist:433-453) ---
     // Each transaction runs in its own Application-trigger engine with
@@ -733,7 +736,7 @@ fn stage_block_natives_with_resources_inner(
             stage_start,
         );
     }
-    let tx_us = elapsed_us(tx_start);
+    let tx_us = neo_runtime::time::elapsed_us(tx_start.elapsed());
 
     // --- PostPersist stage (C# TriggerType.PostPersist engine, gas 0) ---
     let postpersist_start = std::time::Instant::now();
@@ -761,7 +764,7 @@ fn stage_block_natives_with_resources_inner(
             .push(application_executed(&engine, None, VMState::HALT));
     }
     drop(engine);
-    let postpersist_us = elapsed_us(postpersist_start);
+    let postpersist_us = neo_runtime::time::elapsed_us(postpersist_start.elapsed());
 
     Ok(StagedNativePersist {
         snapshot: block_cache,
@@ -773,10 +776,6 @@ fn stage_block_natives_with_resources_inner(
         postpersist_us,
         total_start,
     })
-}
-
-fn elapsed_us(start: std::time::Instant) -> u64 {
-    start.elapsed().as_micros().min(u64::MAX as u128) as u64
 }
 
 /// Builds the C# `ApplicationExecuted` record for a finished engine.

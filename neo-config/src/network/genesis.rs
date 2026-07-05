@@ -241,10 +241,7 @@ impl GenesisConfig {
         Self {
             // A pre-1970 system clock is the only failure mode here; fall back to 0
             // rather than panicking inside a public constructor.
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0),
+            timestamp: neo_primitives::time::now_millis(),
             validators: vec![GenesisValidator {
                 public_key: validator_pubkey.to_string(),
                 name: Some("Local Validator".to_string()),

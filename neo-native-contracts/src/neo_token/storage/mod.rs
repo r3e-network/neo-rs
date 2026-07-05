@@ -24,7 +24,7 @@ mod views;
 
 pub(crate) use candidates::candidate_signature_account;
 use candidates::{
-    CandidateScanCounts, candidate_is_blocked, candidate_is_blocked_in, elapsed_us,
+    CandidateScanCounts, candidate_is_blocked, candidate_is_blocked_in,
     push_top_committee_candidate,
 };
 pub(crate) use views::CachedCommittee;
@@ -520,7 +520,7 @@ impl NeoToken {
         let voters_count = self.read_voters_count(snapshot);
         sync_metrics::record_neo_token_committee_compute_stage(
             NeoTokenCommitteeComputeStage::ReadVotersCount,
-            elapsed_us(stage_start),
+            neo_runtime::time::elapsed_us(stage_start.elapsed()),
         );
         let committee_count = settings.committee_members_count();
         if committee_count == 0 {
@@ -569,7 +569,7 @@ impl NeoToken {
             .collect();
         sync_metrics::record_neo_token_committee_compute_stage(
             NeoTokenCommitteeComputeStage::StandbyLookup,
-            elapsed_us(stage_start),
+            neo_runtime::time::elapsed_us(stage_start.elapsed()),
         );
         members
     }
@@ -588,7 +588,7 @@ impl NeoToken {
         let blocked_accounts = crate::PolicyContract::blocked_accounts_snapshot(snapshot);
         sync_metrics::record_neo_token_committee_compute_stage(
             NeoTokenCommitteeComputeStage::CandidateBlockedPrefetch,
-            elapsed_us(stage_start),
+            neo_runtime::time::elapsed_us(stage_start.elapsed()),
         );
         for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
             counts.storage_entries += 1;
@@ -601,7 +601,7 @@ impl NeoToken {
             let state = Self::decode_candidate_state(&item.value_bytes());
             sync_metrics::record_neo_token_committee_compute_stage(
                 NeoTokenCommitteeComputeStage::CandidateStateDecode,
-                elapsed_us(stage_start),
+                neo_runtime::time::elapsed_us(stage_start.elapsed()),
             );
             let (registered, votes) = match state {
                 Ok(state) => state,
@@ -610,7 +610,7 @@ impl NeoToken {
                     let pubkey = ECPoint::from_bytes(&key_bytes[1..34]);
                     sync_metrics::record_neo_token_committee_compute_stage(
                         NeoTokenCommitteeComputeStage::CandidatePubkeyDecode,
-                        elapsed_us(stage_start),
+                        neo_runtime::time::elapsed_us(stage_start.elapsed()),
                     );
                     if pubkey.is_err() {
                         counts.malformed_keys += 1;
@@ -628,7 +628,7 @@ impl NeoToken {
             let pubkey = ECPoint::from_bytes(&key_bytes[1..34]);
             sync_metrics::record_neo_token_committee_compute_stage(
                 NeoTokenCommitteeComputeStage::CandidatePubkeyDecode,
-                elapsed_us(stage_start),
+                neo_runtime::time::elapsed_us(stage_start.elapsed()),
             );
             let Ok(pubkey) = pubkey else {
                 counts.malformed_keys += 1;
@@ -638,7 +638,7 @@ impl NeoToken {
             let blocked = candidate_is_blocked_in(&blocked_accounts, &pubkey);
             sync_metrics::record_neo_token_committee_compute_stage(
                 NeoTokenCommitteeComputeStage::CandidateBlockedLookup,
-                elapsed_us(stage_start),
+                neo_runtime::time::elapsed_us(stage_start.elapsed()),
             );
             if blocked {
                 counts.blocked_registered += 1;
@@ -650,13 +650,13 @@ impl NeoToken {
             push_top_committee_candidate(&mut top, limit, (pubkey, votes));
             sync_metrics::record_neo_token_committee_compute_stage(
                 NeoTokenCommitteeComputeStage::TopCandidateMaintenance,
-                elapsed_us(stage_start),
+                neo_runtime::time::elapsed_us(stage_start.elapsed()),
             );
         }
         counts.record(top.len() as u64);
         sync_metrics::record_neo_token_committee_compute_stage(
             NeoTokenCommitteeComputeStage::CandidateScanTotal,
-            elapsed_us(total_start),
+            neo_runtime::time::elapsed_us(total_start.elapsed()),
         );
         Ok((eligible_count, top))
     }
