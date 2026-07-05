@@ -10,8 +10,10 @@
 //!
 //! ## Contents
 //!
+//! - `batch`: batch accounting and dispatch helpers.
 //! - `format`: chain.acc file format readers and validation helpers.
 //! - `metrics`: Metrics collection and progress-reporting helpers.
+//! - `range`: Expected-range, resume, and continuity validation helpers.
 
 use std::io::{BufReader, Read, Seek};
 use std::path::Path;
@@ -20,18 +22,29 @@ use std::time::Instant;
 
 #[cfg(test)]
 use neo_blockchain::command::ImportBlocksReply;
-use neo_blockchain::command::ImportBlocksStats;
 use neo_blockchain::handle::BlockchainHandle;
 use neo_payloads::block::Block;
 use neo_storage::persistence::store::Store;
 use tracing::info;
 
+mod batch;
 mod format;
 mod metrics;
+mod range;
+use batch::{
+    ChainAccImportComposition, PendingChainAccBatch, import_chain_acc_batch, take_import_batch,
+};
 use format::{read_chain_acc_header, read_next_chain_acc_block, skip_chain_acc_records};
 use metrics::{
     ChainAccImportProgress, NativePersistTxStageImportMetrics, RocksDbBatchImportMetrics,
     StateServiceMptImportMetrics, should_log_import_progress,
+};
+use range::{
+    bounded_chain_acc_import_range, chain_acc_import_record_count, chain_acc_records_to_skip,
+    count_only_stop_height_exceeded, count_only_stop_height_reached, expected_chain_acc_count,
+    expected_chain_acc_first_prev_hash, resume_chain_acc_import_range,
+    validate_chain_acc_block_height, validate_chain_acc_count, validate_chain_acc_first_prev_hash,
+    validate_chain_acc_internal_prev_hash,
 };
 
 /// The mixed-block batch size for trusted `chain.acc` Import commands.
@@ -532,230 +545,6 @@ where
     })
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct PendingChainAccBatch {
-    len: usize,
-    composition: ChainAccImportComposition,
-    tip: Option<LocalLedgerTip>,
-}
-
-impl PendingChainAccBatch {
-    fn clear(&mut self) {
-        *self = Self::default();
-    }
-
-    fn record_pushed(&mut self, block: &Block) {
-        self.len += 1;
-        self.tip = Some(LocalLedgerTip {
-            height: block.index(),
-            hash: block.hash(),
-        });
-        let tx_count = block.transactions.len() as u64;
-        if tx_count == 0 {
-            self.composition.empty_blocks += 1;
-        } else {
-            self.composition.transaction_blocks += 1;
-            self.composition.transactions += tx_count;
-        }
-    }
-
-    #[cfg(test)]
-    fn is_empty_only(&self) -> bool {
-        self.len > 0 && self.composition.is_empty_only()
-    }
-
-    fn should_flush(&self, batch_len: usize) -> bool {
-        debug_assert_eq!(self.len, batch_len);
-        batch_len >= IMPORT_BATCH_SIZE
-    }
-}
-
-struct ChainAccBatchImportResult {
-    len: usize,
-    imported: usize,
-    elapsed: std::time::Duration,
-    composition: ChainAccImportComposition,
-    stats: ImportBlocksStats,
-    tip: Option<LocalLedgerTip>,
-}
-
-impl ChainAccBatchImportResult {
-    fn fully_imported(&self) -> bool {
-        self.imported == self.len
-    }
-}
-
-async fn import_chain_acc_batch(
-    handle: &BlockchainHandle,
-    batch_blocks: Vec<Block>,
-    composition: ChainAccImportComposition,
-    tip: Option<LocalLedgerTip>,
-    verify: bool,
-) -> anyhow::Result<ChainAccBatchImportResult> {
-    let len = batch_blocks.len();
-    let start = Instant::now();
-    let reply = handle
-        .import_blocks_bulk_detailed(batch_blocks, verify)
-        .await?;
-    let elapsed = start.elapsed();
-    if let Some(error) = reply.error {
-        anyhow::bail!(
-            "block import finalization failed after importing {} blocks: {error}",
-            reply.imported
-        );
-    }
-    Ok(ChainAccBatchImportResult {
-        len,
-        imported: reply.imported,
-        elapsed,
-        composition,
-        stats: reply.stats,
-        tip,
-    })
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct ChainAccImportComposition {
-    empty_blocks: u64,
-    empty_only_blocks: u64,
-    empty_fast_path_blocks: u64,
-    transaction_blocks: u64,
-    transactions: u64,
-    empty_elapsed: std::time::Duration,
-    transaction_elapsed: std::time::Duration,
-    transaction_block_clone_elapsed: std::time::Duration,
-    transaction_ledger_insert_elapsed: std::time::Duration,
-    transaction_committed_hook_elapsed: std::time::Duration,
-    finalization_elapsed: std::time::Duration,
-    finalization_commit_handlers_elapsed: std::time::Duration,
-    finalization_store_commit_elapsed: std::time::Duration,
-}
-
-impl ChainAccImportComposition {
-    #[cfg(test)]
-    fn has_transaction_blocks(&self) -> bool {
-        self.transaction_blocks > 0
-    }
-
-    #[cfg(test)]
-    fn is_empty_only(&self) -> bool {
-        self.empty_blocks > 0 && !self.has_transaction_blocks()
-    }
-
-    fn record_imported(
-        &mut self,
-        batch: Self,
-        imported: usize,
-        elapsed: std::time::Duration,
-        stats: ImportBlocksStats,
-    ) {
-        if imported == 0 {
-            return;
-        }
-        let imported = imported as u64;
-        let batch_blocks = batch.empty_blocks + batch.transaction_blocks;
-        if imported >= batch_blocks {
-            self.empty_blocks += batch.empty_blocks;
-            self.transaction_blocks += batch.transaction_blocks;
-            self.transactions += batch.transactions;
-            if stats.has_composition() {
-                if stats.empty_blocks > 0 {
-                    let empty_blocks = stats.empty_blocks as u64;
-                    self.empty_fast_path_blocks += empty_blocks;
-                    if stats.transaction_blocks == 0 {
-                        self.empty_only_blocks += empty_blocks;
-                    }
-                    self.empty_elapsed += stats.empty_elapsed;
-                }
-                if stats.transaction_blocks > 0 {
-                    self.transaction_elapsed += stats.transaction_elapsed;
-                    self.transaction_block_clone_elapsed += stats.transaction_block_clone_elapsed;
-                    self.transaction_ledger_insert_elapsed +=
-                        stats.transaction_ledger_insert_elapsed;
-                    self.transaction_committed_hook_elapsed +=
-                        stats.transaction_committed_hook_elapsed;
-                }
-                self.finalization_elapsed += stats.finalization_elapsed;
-                self.finalization_commit_handlers_elapsed +=
-                    stats.finalization_commit_handlers_elapsed;
-                self.finalization_store_commit_elapsed += stats.finalization_store_commit_elapsed;
-            } else if batch.transaction_blocks > 0 {
-                self.transaction_elapsed += elapsed;
-            } else if batch.empty_blocks > 0 {
-                self.empty_only_blocks += batch.empty_blocks;
-                self.empty_fast_path_blocks += batch.empty_blocks;
-                self.empty_elapsed += elapsed;
-            }
-        }
-    }
-
-    fn empty_block_import_seconds(&self) -> f64 {
-        self.empty_elapsed.as_secs_f64()
-    }
-
-    fn empty_blocks_per_second(&self) -> f64 {
-        let elapsed = self.empty_block_import_seconds();
-        if elapsed > 0.0 {
-            self.empty_fast_path_blocks as f64 / elapsed
-        } else {
-            0.0
-        }
-    }
-
-    fn transaction_block_import_seconds(&self) -> f64 {
-        self.transaction_elapsed.as_secs_f64()
-    }
-
-    fn transaction_block_clone_seconds(&self) -> f64 {
-        self.transaction_block_clone_elapsed.as_secs_f64()
-    }
-
-    fn transaction_ledger_insert_seconds(&self) -> f64 {
-        self.transaction_ledger_insert_elapsed.as_secs_f64()
-    }
-
-    fn transaction_committed_hook_seconds(&self) -> f64 {
-        self.transaction_committed_hook_elapsed.as_secs_f64()
-    }
-
-    fn transaction_blocks_per_second(&self) -> f64 {
-        let elapsed = self.transaction_block_import_seconds();
-        if elapsed > 0.0 {
-            self.transaction_blocks as f64 / elapsed
-        } else {
-            0.0
-        }
-    }
-
-    fn finalization_seconds(&self) -> f64 {
-        self.finalization_elapsed.as_secs_f64()
-    }
-
-    fn finalization_commit_handlers_seconds(&self) -> f64 {
-        self.finalization_commit_handlers_elapsed.as_secs_f64()
-    }
-
-    fn finalization_store_commit_seconds(&self) -> f64 {
-        self.finalization_store_commit_elapsed.as_secs_f64()
-    }
-
-    fn accounted_elapsed(&self) -> std::time::Duration {
-        self.empty_elapsed
-            + self.transaction_elapsed
-            + self.transaction_block_clone_elapsed
-            + self.transaction_ledger_insert_elapsed
-            + self.transaction_committed_hook_elapsed
-            + self.finalization_elapsed
-    }
-
-    fn unclassified_import_seconds(&self, total: std::time::Duration) -> f64 {
-        total
-            .checked_sub(self.accounted_elapsed())
-            .unwrap_or_default()
-            .as_secs_f64()
-    }
-}
-
 impl ImportHotMetrics {
     fn from_snapshots(
         state_service: &StateServiceMptImportMetrics,
@@ -787,292 +576,6 @@ impl ImportHotMetrics {
                 .map_or(0, |metrics| metrics.pending_operations),
         }
     }
-}
-
-fn take_import_batch(batch: &mut Vec<Block>, more_blocks_remain: bool) -> Vec<Block> {
-    if more_blocks_remain {
-        let next_batch = Vec::with_capacity(batch.capacity().max(IMPORT_BATCH_SIZE));
-        std::mem::replace(batch, next_batch)
-    } else {
-        std::mem::take(batch)
-    }
-}
-
-fn validate_chain_acc_count(count: usize, range: ChainAccExpectedRange) -> anyhow::Result<()> {
-    let expected_count = expected_chain_acc_count(range)?;
-    if count != expected_count {
-        anyhow::bail!(
-            "chain.acc count mismatch for expected range {}..={}: expected {expected_count} blocks, file has {count}",
-            range.start_height,
-            range.end_height
-        );
-    }
-    Ok(())
-}
-
-fn bounded_chain_acc_import_range(
-    expected_range: Option<ChainAccExpectedRange>,
-    header_start_height: Option<u32>,
-    stop_at_height: Option<u32>,
-) -> Option<ChainAccExpectedRange> {
-    if let Some(range) = expected_range {
-        let Some(stop_at_height) = stop_at_height else {
-            return Some(range);
-        };
-        if stop_at_height < range.start_height {
-            return None;
-        }
-        return Some(ChainAccExpectedRange {
-            start_height: range.start_height,
-            end_height: range.end_height.min(stop_at_height),
-        });
-    }
-
-    let start_height = header_start_height?;
-    let stop_at_height = stop_at_height?;
-    if stop_at_height < start_height {
-        return None;
-    }
-    Some(ChainAccExpectedRange {
-        start_height,
-        end_height: stop_at_height,
-    })
-}
-
-fn resume_chain_acc_import_range(
-    import_range: Option<ChainAccExpectedRange>,
-    local_tip: Option<&LocalLedgerTip>,
-) -> anyhow::Result<Option<ChainAccExpectedRange>> {
-    let Some(range) = import_range else {
-        return Ok(None);
-    };
-    let Some(local_tip) = local_tip else {
-        return Ok(Some(range));
-    };
-
-    if local_tip.height >= range.end_height {
-        return Ok(None);
-    }
-    if local_tip.height < range.start_height {
-        let Some(expected_previous_height) = range.start_height.checked_sub(1) else {
-            return Ok(Some(range));
-        };
-        if local_tip.height != expected_previous_height {
-            anyhow::bail!(
-                "chain.acc expected range {}..={} requires local ledger tip at height {expected_previous_height} or inside the range, got {}",
-                range.start_height,
-                range.end_height,
-                local_tip.height
-            );
-        }
-        return Ok(Some(range));
-    }
-
-    let start_height = local_tip.height.checked_add(1).ok_or_else(|| {
-        anyhow::anyhow!(
-            "local ledger tip height {} cannot be advanced for chain.acc resume",
-            local_tip.height
-        )
-    })?;
-    Ok(Some(ChainAccExpectedRange {
-        start_height,
-        end_height: range.end_height,
-    }))
-}
-
-fn chain_acc_import_record_count(
-    file_count: usize,
-    expected_range: Option<ChainAccExpectedRange>,
-    import_range: Option<ChainAccExpectedRange>,
-    stop_at_height: Option<u32>,
-) -> anyhow::Result<usize> {
-    match (expected_range, import_range) {
-        (Some(_), Some(range)) => expected_chain_acc_count(range),
-        (Some(_), None) => Ok(0),
-        (None, Some(range)) => expected_chain_acc_count(range).map(|count| count.min(file_count)),
-        (None, None) if stop_at_height.is_some() => Ok(file_count),
-        (None, _) => Ok(file_count),
-    }
-}
-
-fn chain_acc_records_to_skip(
-    file_count: usize,
-    expected_range: Option<ChainAccExpectedRange>,
-    header_start_height: Option<u32>,
-    import_range: Option<ChainAccExpectedRange>,
-) -> anyhow::Result<usize> {
-    let Some(import_range) = import_range else {
-        return Ok(0);
-    };
-    let Some(file_start_height) = expected_range
-        .map(|range| range.start_height)
-        .or(header_start_height)
-    else {
-        return Ok(0);
-    };
-    let skip = import_range
-        .start_height
-        .checked_sub(file_start_height)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "chain.acc import start {} is before file start {file_start_height}",
-                import_range.start_height
-            )
-        })? as usize;
-    if skip > file_count {
-        anyhow::bail!(
-            "chain.acc import start {} skips {skip} records, but file has only {file_count} records",
-            import_range.start_height
-        );
-    }
-    Ok(skip)
-}
-
-fn count_only_stop_height_reached(
-    expected_range: Option<ChainAccExpectedRange>,
-    stop_at_height: Option<u32>,
-    block_height: u32,
-) -> bool {
-    expected_range.is_none() && stop_at_height.is_some_and(|target| block_height >= target)
-}
-
-fn count_only_stop_height_exceeded(
-    expected_range: Option<ChainAccExpectedRange>,
-    stop_at_height: Option<u32>,
-    block_height: u32,
-) -> bool {
-    expected_range.is_none() && stop_at_height.is_some_and(|target| block_height > target)
-}
-
-fn validate_chain_acc_block_height(
-    record: usize,
-    height: u32,
-    header_start_height: Option<u32>,
-    expected_range: Option<ChainAccExpectedRange>,
-    expected_count: Option<usize>,
-    previous_height: &mut Option<u32>,
-) -> anyhow::Result<()> {
-    if record == 0 {
-        if let Some(expected_first_height) = expected_range
-            .map(|range| range.start_height)
-            .or(header_start_height)
-        {
-            if height != expected_first_height {
-                anyhow::bail!(
-                    "chain.acc first block height mismatch: expected {expected_first_height}, got {height}"
-                );
-            }
-        }
-    } else if let Some(previous) = previous_height {
-        if height != previous.saturating_add(1) {
-            anyhow::bail!(
-                "chain.acc block heights are not contiguous at record {record}: expected {}, got {height}",
-                previous.saturating_add(1)
-            );
-        }
-    }
-
-    if let (Some(range), Some(expected_count)) = (expected_range, expected_count) {
-        if record + 1 == expected_count && height != range.end_height {
-            anyhow::bail!(
-                "chain.acc last block height mismatch: expected {}, got {height}",
-                range.end_height
-            );
-        }
-    }
-
-    *previous_height = Some(height);
-    Ok(())
-}
-
-fn expected_chain_acc_first_prev_hash(
-    expected_range: Option<ChainAccExpectedRange>,
-    local_tip: Option<&LocalLedgerTip>,
-) -> anyhow::Result<Option<neo_primitives::UInt256>> {
-    let Some(range) = expected_range else {
-        return Ok(None);
-    };
-    if range.start_height == 0 {
-        return Ok(None);
-    }
-    let Some(local_tip) = local_tip else {
-        anyhow::bail!(
-            "chain.acc partial expected range {}..={} requires local storage for previous hash validation",
-            range.start_height,
-            range.end_height
-        );
-    };
-    let expected_previous_height = range.start_height.checked_sub(1).ok_or_else(|| {
-        anyhow::anyhow!(
-            "chain.acc expected range is invalid: {}..={}",
-            range.start_height,
-            range.end_height
-        )
-    })?;
-    if local_tip.height != expected_previous_height {
-        anyhow::bail!(
-            "chain.acc partial expected range {}..={} requires local ledger tip at height {expected_previous_height}, got {}",
-            range.start_height,
-            range.end_height,
-            local_tip.height
-        );
-    }
-    Ok(Some(local_tip.hash))
-}
-
-fn validate_chain_acc_first_prev_hash(
-    record: usize,
-    block: &Block,
-    expected_prev_hash: Option<&neo_primitives::UInt256>,
-) -> anyhow::Result<()> {
-    let Some(expected_prev_hash) = expected_prev_hash else {
-        return Ok(());
-    };
-    if record != 0 {
-        return Ok(());
-    }
-    if block.prev_hash() != expected_prev_hash {
-        anyhow::bail!(
-            "chain.acc previous hash mismatch at first imported block {}: expected local tip hash {}, got {}",
-            block.index(),
-            expected_prev_hash,
-            block.prev_hash()
-        );
-    }
-    Ok(())
-}
-
-fn validate_chain_acc_internal_prev_hash(
-    record: usize,
-    block: &Block,
-    previous_hash: Option<&neo_primitives::UInt256>,
-) -> anyhow::Result<()> {
-    let Some(previous_hash) = previous_hash else {
-        return Ok(());
-    };
-    if block.prev_hash() != previous_hash {
-        anyhow::bail!(
-            "chain.acc previous hash mismatch at record {record}, block {}: expected previous block hash {}, got {}",
-            block.index(),
-            previous_hash,
-            block.prev_hash()
-        );
-    }
-    Ok(())
-}
-
-fn expected_chain_acc_count(range: ChainAccExpectedRange) -> anyhow::Result<usize> {
-    Ok(range
-        .end_height
-        .checked_sub(range.start_height)
-        .and_then(|span| span.checked_add(1))
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "chain.acc expected range is invalid: {}..={}",
-                range.start_height,
-                range.end_height
-            )
-        })? as usize)
 }
 
 #[cfg(test)]
@@ -2307,7 +1810,7 @@ mod tests {
 
     #[test]
     fn chain_acc_batch_import_uses_tracked_composition_without_rescanning_blocks() {
-        let source = include_str!("mod.rs");
+        let source = include_str!("batch.rs");
         let batch_import = source
             .split("async fn import_chain_acc_batch")
             .nth(1)
@@ -2325,7 +1828,7 @@ mod tests {
 
     #[test]
     fn pending_chain_acc_batch_derives_transaction_presence_from_composition() {
-        let source = include_str!("mod.rs");
+        let source = include_str!("batch.rs");
         let pending_batch = source
             .split("struct PendingChainAccBatch")
             .nth(1)
@@ -2340,7 +1843,7 @@ mod tests {
 
     #[test]
     fn chain_acc_batch_import_uses_tracked_tip_without_rehashing_last_block() {
-        let source = include_str!("mod.rs");
+        let source = include_str!("batch.rs");
         let batch_import = source
             .split("async fn import_chain_acc_batch")
             .nth(1)
