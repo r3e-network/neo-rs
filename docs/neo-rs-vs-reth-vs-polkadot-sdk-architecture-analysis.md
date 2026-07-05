@@ -341,11 +341,12 @@ pub trait BlockDownloader:
 Native Rust NeoVM — no WASM. `ApplicationEngine` with per-tx child caches.
 `NativeContractProvider` remains the lower-level execution seam, but
 `neo-system::NodeBuilder` now makes the provider an explicit composition-root
-dependency and installs the standard provider by default only after required
-services validate. Note that `build()` installs the provider into a
-process-global `OnceLock` (`neo-execution` `native_contract_provider.rs`), and
-NeoVM host-call dispatch still resolves through that global rather than the
-injected `Arc`.
+dependency. The daemon constructs the standard provider once before genesis
+initialization, installs it into the `neo-execution` lookup seam, and passes the
+same `Arc` into `NodeBuilder`; headless/test construction still falls back to
+the builder's standard provider default. NeoVM host-call dispatch still resolves
+through the process-global `OnceLock` (`neo-execution`
+`native_contract_provider.rs`) rather than receiving the provider directly.
 
 ### Polkadot SDK innovations
 
@@ -362,12 +363,12 @@ injected `Arc`.
 
 1. Keep native execution (NeoVM in Rust is already fast).
 2. **Partial:** `NativeContractProvider` is now an explicit `NodeBuilder` field,
-   so the composition root chooses the provider. But native dispatch still
-   resolves through a process-global `OnceLock`
-   (`neo-execution/src/native/native_contract_provider.rs`) that `build()`
-   installs the injected provider into. Remaining step: thread the injected
-   `Arc<dyn NativeContractProvider>` to the NeoVM host-call sites instead of
-   reading it back from the global.
+   so the composition root chooses the provider. The daemon now reuses one
+   standard provider for early genesis/native persistence and the composed
+   `Node`. But native dispatch still resolves through a process-global
+   `OnceLock` (`neo-execution/src/native/native_contract_provider.rs`).
+   Remaining step: thread the injected `Arc<dyn NativeContractProvider>` to the
+   NeoVM host-call sites instead of reading it back from the global.
 3. Consider WASM runtime for future sidechain/feature-gate support.
 
 ---

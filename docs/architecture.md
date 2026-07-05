@@ -254,10 +254,13 @@ The detailed rules for this style live in
 - **Native dispatch is explicit at composition.** `neo-execution` still owns the
   low-level `NativeContractProvider` lookup seam so the engine does not depend
   on `neo-native-contracts`, but `neo-system::NodeBuilder` now accepts and stores
-  the provider as an explicit dependency. The standard Neo N3 provider is
-  installed by default only after required services validate, so failed
-  composition does not mutate native dispatch state. ADR-015 proposes a builder
-  pattern for future extensibility.
+  the provider as an explicit dependency. The daemon builds the standard Neo N3
+  provider once before genesis initialization, installs it into the legacy
+  `neo-execution` lookup seam, and passes the same `Arc` into `NodeBuilder` so
+  the composed `Node` exposes the provider object that native execution uses.
+  Headless/test construction can still omit the provider and let the builder
+  install the standard default. ADR-015 proposes a builder pattern for future
+  extensibility.
 
 - **Error type policy.** `neo-error` owns the authoritative `CoreError` /
   `CoreResult`. ADR-011 formalizes the split: 17 crates with domain-specific

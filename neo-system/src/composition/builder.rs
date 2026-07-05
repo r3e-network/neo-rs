@@ -5,14 +5,13 @@
 //! no `Option::unwrap` in any public method, so a partially
 //! configured builder is always safe to drop.
 //!
-//! The required components — storage, the blockchain and network
-//! handles, and the native contract provider — are validated at
-//! [`NodeBuilder::build`], which null-checks each concrete field and
-//! returns a descriptive missing-service / missing-config error when
-//! one is absent. There are no trait-object executor / consensus /
-//! engine fields to compose: those were removed in ADR-032 / ADR-033.
-//! The native contract provider defaults to the standard provider when
-//! not supplied.
+//! The required components — storage plus the blockchain and network handles —
+//! are validated at [`NodeBuilder::build`], which null-checks each concrete
+//! field and returns a descriptive missing-service / missing-config error when
+//! one is absent. There are no trait-object executor / consensus / engine
+//! fields to compose: those were removed in ADR-032 / ADR-033. The native
+//! contract provider can be supplied explicitly by a composition root; when it
+//! is not supplied, the builder installs the standard Neo N3 provider.
 
 use std::sync::Arc;
 use tracing::debug;

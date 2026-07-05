@@ -36,6 +36,7 @@
 
 use clap::Parser;
 use neo_config::ProtocolSettings;
+use neo_execution::native_contract_provider::{NativeContractLookup, NativeContractProvider};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -799,8 +800,13 @@ async fn build_node(
         }
     }
 
-    // Natives are dispatched through the global provider.
-    neo_native_contracts::install();
+    // Native dispatch must be available before genesis initialization, and the
+    // composed Node should expose the same provider object. Build it once here,
+    // install it for the legacy neo-execution lookup seam, then hand the same
+    // Arc to NodeBuilder instead of letting the builder create a second one.
+    let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new())
+        as Arc<dyn NativeContractProvider>;
+    NativeContractLookup::install_provider(Arc::clone(&native_contract_provider));
 
     let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
@@ -1201,6 +1207,7 @@ async fn build_node(
             .with_mempool(mempool)
             .with_header_cache(header_cache)
             .with_services(service_registry)
+            .with_native_contract_provider(native_contract_provider)
             .build()
             .map_err(|e| anyhow::anyhow!("node build failed: {e}"))?,
     );

@@ -263,7 +263,7 @@ impl NativePersistResources {
         let provider = NativeContractLookup::native_contract_provider().ok_or_else(|| {
             CoreError::invalid_operation(
                 "persist_block_natives requires the native-contract provider \
-                 (call neo_native_contracts::install() at startup)",
+                 (install a NativeContractProvider at startup)",
             )
         })?;
         Ok(Self::from_provider(provider))
@@ -466,9 +466,8 @@ fn run_native_persist_hooks(
 /// docs). Committing `snapshot` itself to the backing store remains
 /// the caller's responsibility.
 ///
-/// Requires the global native-contract provider to be installed
-/// (`neo_native_contracts::install()`), like every engine-based
-/// execution path.
+/// Requires the global native-contract provider to be installed, like every
+/// engine-based execution path.
 pub fn persist_block_natives(
     snapshot: Arc<DataCache>,
     block: Arc<Block>,
