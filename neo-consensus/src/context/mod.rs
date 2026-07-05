@@ -453,6 +453,12 @@ impl ConsensusContext {
     }
 
     /// Records which proposed transactions are locally available.
+    ///
+    /// This REPLACES the availability set with the intersection of `tx_hashes`
+    /// and the proposal. Used for the one-shot snapshot fill at PrepareRequest
+    /// time (C# `OnPrepareRequestReceived` bulk mempool scan). For an
+    /// incrementally-arriving single transaction (C# `OnTransaction`), use
+    /// [`mark_transaction_available`] instead, which is additive.
     pub fn mark_available_transactions<I>(&mut self, tx_hashes: I)
     where
         I: IntoIterator<Item = UInt256>,
@@ -463,6 +469,33 @@ impl ConsensusContext {
                 self.available_tx_hashes.insert(hash);
             }
         }
+    }
+
+    /// Additively records that a single proposed transaction is now locally
+    /// available (C# `ConsensusService.AddTransaction` populating
+    /// `context.Transactions[tx.Hash]`). Unlike [`mark_available_transactions`]
+    /// this never clears prior availability, so a late-arriving transaction
+    /// (C# `OnTransaction`) accumulates toward completeness instead of resetting
+    /// it. Returns `true` if `hash` belongs to the current proposal and was not
+    /// already recorded (i.e. this call made progress).
+    pub fn mark_transaction_available(&mut self, hash: UInt256) -> bool {
+        if !self.proposed_tx_hashes.contains(&hash) {
+            return false;
+        }
+        self.available_tx_hashes.insert(hash)
+    }
+
+    /// Returns true when `hash` is one of the current proposal's transactions.
+    #[must_use]
+    pub fn is_proposed_transaction(&self, hash: &UInt256) -> bool {
+        self.proposed_tx_hashes.contains(hash)
+    }
+
+    /// Returns true when the proposed transaction `hash` is already recorded as
+    /// locally available for this view (C# `context.Transactions.ContainsKey`).
+    #[must_use]
+    pub fn has_available_transaction(&self, hash: &UInt256) -> bool {
+        self.available_tx_hashes.contains(hash)
     }
 
     /// Returns true when a proposal references transactions this node has not received.

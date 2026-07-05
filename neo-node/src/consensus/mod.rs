@@ -256,6 +256,11 @@ struct ConsensusDriver {
     service: ConsensusService,
     event_rx: mpsc::Receiver<ConsensusEvent>,
     inbound_rx: mpsc::Receiver<ConsensusPayload>,
+    /// Hashes of transactions freshly accepted into the mempool (from peer
+    /// relay or local submission). Feeds the C# `ConsensusService.OnTransaction`
+    /// late-transaction path so a backup that was missing a proposal
+    /// transaction can resume the round when it finally arrives.
+    tx_feed_rx: mpsc::Receiver<UInt256>,
     blockchain: BlockchainHandle,
     mempool: Arc<MemoryPool>,
     network: NetworkHandle,
@@ -404,6 +409,14 @@ impl ConsensusDriver {
                         warn!(target: "neo", %err, "consensus rejected inbound payload");
                     }
                 }
+                // Late-transaction feed (C# `ConsensusService.OnTransaction`):
+                // a transaction just landed in the mempool. If this backup is
+                // waiting on it for the current proposal, feed it in so the
+                // round can resume instead of degrading to a view change.
+                maybe_tx = self.tx_feed_rx.recv() => {
+                    let Some(tx_hash) = maybe_tx else { break };
+                    self.on_transaction_feed(tx_hash).await;
+                }
                 // A block persisted (locally committed or peer-synced) → next round.
                 ev = persist_rx.recv() => {
                     match ev {
@@ -448,6 +461,28 @@ impl ConsensusDriver {
         info!(target: "neo", "consensus driver loop exited");
     }
 
+    /// Feeds a freshly-accepted mempool transaction into the consensus state
+    /// machine (C# `ConsensusService.OnTransaction`). If the transaction is one
+    /// the current proposal is waiting for, caches its full body for commit-time
+    /// block assembly and hands the hash to the service, which resumes the round
+    /// (sends the backup's PrepareResponse, re-checks the commit threshold) once
+    /// the last missing transaction arrives.
+    async fn on_transaction_feed(&mut self, tx_hash: UInt256) {
+        // Cache the full transaction for commit-time block assembly: the backup
+        // pulled it via GetData into the mempool, and the committed-block path
+        // resolves hashes from `proposal_txs` first, then the mempool. Populate
+        // the cache now so a later mempool eviction cannot lose a transaction we
+        // committed to.
+        if self.service.context().is_proposed_transaction(&tx_hash) {
+            if let Some(item) = self.mempool.get(&tx_hash) {
+                self.proposal_txs.insert(tx_hash, item.transaction);
+            }
+        }
+        if let Err(err) = self.service.on_transaction(tx_hash).await {
+            warn!(target: "neo", %err, "consensus on_transaction failed");
+        }
+    }
+
     async fn on_consensus_event(&mut self, event: ConsensusEvent, snapshot: &DataCache) {
         match event {
             ConsensusEvent::BroadcastMessage(payload) => {
@@ -475,6 +510,25 @@ impl ConsensusDriver {
                         &invalid_tx_hashes,
                     )
                 };
+                // C# `ConsensusService.SendPrepareRequest`: right after the
+                // primary broadcasts its `PrepareRequest` it announces the
+                // proposal's transaction hashes via `Inv(TX)`, so any backup
+                // that lacks a referenced transaction pulls it (each peer's
+                // `Inv` handler auto-issues `GetData` for hashes it does not
+                // hold). Without this a slow-to-propagate transaction strands
+                // backups and forces a view change. `on_transactions_received`
+                // below builds + broadcasts the `PrepareRequest`; announce the
+                // same hashes here (C# order is PrepareRequest then Inv, but
+                // both are async fire-and-forget on the wire).
+                if !hashes.is_empty() {
+                    if let Err(err) = self
+                        .network
+                        .broadcast_inv(neo_network::InventoryType::Transaction, hashes.clone())
+                        .await
+                    {
+                        warn!(target: "neo", %err, "consensus proposal Inv(TX) broadcast failed");
+                    }
+                }
                 if let Err(err) = self.service.on_transactions_received(hashes).await {
                     warn!(target: "neo", %err, "consensus on_transactions_received failed");
                 }
@@ -572,6 +626,7 @@ pub fn consensus_driver_task(
     store: Arc<dyn Store>,
     data_dir: Option<&std::path::Path>,
     inbound_rx: mpsc::Receiver<ConsensusPayload>,
+    tx_feed_rx: mpsc::Receiver<UInt256>,
 ) -> Option<impl std::future::Future<Output = ()> + Send + 'static> {
     // Generously sized: a commit emits BroadcastMessage(Commit) + BlockCommitted
     // back-to-back via the consensus crate's non-blocking try_send.
@@ -602,6 +657,7 @@ pub fn consensus_driver_task(
         service,
         event_rx,
         inbound_rx,
+        tx_feed_rx,
         blockchain,
         mempool,
         network,

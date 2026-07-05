@@ -424,10 +424,12 @@ async fn proposal_resolution_requests_change_view_for_invalid_unverified_transac
     let (blockchain, _blockchain_rx) = BlockchainHandle::with_capacity();
     let (network, _network_rx, _network_events) = NetworkHandle::channel(16, 16);
     let (_inbound_tx, inbound_rx) = mpsc::channel(16);
+    let (_tx_feed_tx, tx_feed_rx) = mpsc::channel(16);
     let mut driver = ConsensusDriver {
         service,
         event_rx,
         inbound_rx,
+        tx_feed_rx,
         blockchain,
         mempool: pool,
         network,
@@ -534,10 +536,12 @@ async fn proposal_resolution_requests_block_rejected_without_prepare_response_fo
     let (blockchain, _blockchain_rx) = BlockchainHandle::with_capacity();
     let (network, _network_rx, _network_events) = NetworkHandle::channel(16, 16);
     let (_inbound_tx, inbound_rx) = mpsc::channel(16);
+    let (_tx_feed_tx, tx_feed_rx) = mpsc::channel(16);
     let mut driver = ConsensusDriver {
         service,
         event_rx,
         inbound_rx,
+        tx_feed_rx,
         blockchain,
         mempool: pool,
         network,
@@ -586,6 +590,173 @@ async fn proposal_resolution_requests_block_rejected_without_prepare_response_fo
     assert!(
         !sent_prepare_response,
         "C# CheckPrepareResponse requests BlockRejectedByPolicy before sending PrepareResponse"
+    );
+}
+
+/// C# `ConsensusService.SendPrepareRequest`: right after the primary broadcasts
+/// its `PrepareRequest` it announces the proposal transaction hashes via
+/// `Inv(TX)` so backups can pull any they lack. The driver's `RequestTransactions`
+/// handler must emit that `BroadcastInv(Transaction, hashes)` for the selected
+/// proposal transactions.
+#[tokio::test]
+async fn primary_request_transactions_broadcasts_inv_of_proposal_hashes() {
+    neo_native_contracts::install();
+    let settings = Arc::new(ProtocolSettings::default());
+    let snapshot = DataCache::new(false);
+    let pool = Arc::new(MemoryPool::new(&settings));
+    seed_current_block(&snapshot, 0);
+    set_zero_policy_fee(&snapshot, 10);
+    set_zero_policy_fee(&snapshot, 18);
+
+    let tx = signed_zero_fee_tx(&settings, 0x42);
+    let tx_hash = tx.hash();
+    assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Succeed);
+
+    let (validators, consensus_keys) = consensus_test_validators(4);
+    let (event_tx, event_rx) = mpsc::channel(16);
+    // Primary for view 0 at block 0 is validator index 0.
+    let mut context = ConsensusContext::new(0, validators.clone(), Some(0), Some(1_000));
+    context.state = neo_consensus::ConsensusState::Primary;
+    let service = ConsensusService::with_context(
+        settings.network,
+        context,
+        consensus_keys[0].to_vec(),
+        event_tx,
+    );
+
+    let (blockchain, _blockchain_rx) = BlockchainHandle::with_capacity();
+    let (network, mut network_rx, _network_events) = NetworkHandle::channel(16, 16);
+    let (_inbound_tx, inbound_rx) = mpsc::channel(16);
+    let (_tx_feed_tx, tx_feed_rx) = mpsc::channel(16);
+    let mut driver = ConsensusDriver {
+        service,
+        event_rx,
+        inbound_rx,
+        tx_feed_rx,
+        blockchain,
+        mempool: pool,
+        network,
+        settings,
+        validators: Arc::new(RwLock::new(validators.clone())),
+        public_key: validators[0].public_key.clone(),
+        store: Arc::new(neo_storage::persistence::providers::memory_store::MemoryStore::new()),
+        current_prev_hash: UInt256::default(),
+        proposal_txs: HashMap::new(),
+    };
+
+    driver
+        .on_consensus_event(
+            ConsensusEvent::RequestTransactions {
+                block_index: 0,
+                max_count: 512,
+                invalid_tx_hashes: Vec::new(),
+            },
+            &snapshot,
+        )
+        .await;
+
+    // The primary broadcast an Inv(TX) announcing the proposal transaction.
+    let mut inv_hashes = None;
+    while let Ok(command) = network_rx.try_recv() {
+        if let neo_network::NetworkCommand::BroadcastInv {
+            inventory_type,
+            hashes,
+        } = command
+        {
+            assert_eq!(inventory_type, neo_network::InventoryType::Transaction);
+            inv_hashes = Some(hashes);
+            break;
+        }
+    }
+    assert_eq!(
+        inv_hashes,
+        Some(vec![tx_hash]),
+        "primary must announce the proposal transaction hashes via Inv(TX)"
+    );
+}
+
+/// End-to-end driver wiring for the late-transaction feed (C#
+/// `ConsensusService.OnTransaction`): a backup that received a `PrepareRequest`
+/// for a transaction it lacked resumes the round — sending its PrepareResponse
+/// and caching the transaction body for assembly — when the driver's
+/// `tx_feed` arm delivers the transaction after it lands in the mempool.
+#[tokio::test]
+async fn tx_feed_resumes_backup_and_caches_transaction() {
+    neo_native_contracts::install();
+    let settings = Arc::new(ProtocolSettings::default());
+    let snapshot = DataCache::new(false);
+    let pool = Arc::new(MemoryPool::new(&settings));
+    seed_current_block(&snapshot, 0);
+    set_zero_policy_fee(&snapshot, 10);
+    set_zero_policy_fee(&snapshot, 18);
+
+    // The proposal references one transaction the backup does not have yet.
+    let tx = signed_zero_fee_tx(&settings, 0x43);
+    let tx_hash = tx.hash();
+
+    let (validators, consensus_keys) = consensus_test_validators(4);
+    let (event_tx, event_rx) = mpsc::channel(16);
+    // Backup index 1 that has received a PrepareRequest naming `tx_hash`.
+    let mut context = ConsensusContext::new(0, validators.clone(), Some(1), Some(1_000));
+    context.prepare_request_received = true;
+    context.proposed_tx_hashes = vec![tx_hash];
+    let mut service = ConsensusService::with_context(
+        settings.network,
+        context,
+        consensus_keys[1].to_vec(),
+        event_tx,
+    );
+    service
+        .resume_with_next_consensus(10_000, UInt256::zero(), UInt160::zero(), 0)
+        .await
+        .expect("resume backup context");
+    // The proposal transaction is still missing → the backup is blocked.
+    assert!(service.context().has_missing_proposed_transactions());
+
+    let (blockchain, _blockchain_rx) = BlockchainHandle::with_capacity();
+    let (network, _network_rx, _network_events) = NetworkHandle::channel(16, 16);
+    let (_inbound_tx, inbound_rx) = mpsc::channel(16);
+    let (_tx_feed_tx, tx_feed_rx) = mpsc::channel(16);
+    let mut driver = ConsensusDriver {
+        service,
+        event_rx,
+        inbound_rx,
+        tx_feed_rx,
+        blockchain,
+        mempool: Arc::clone(&pool),
+        network,
+        settings: Arc::clone(&settings),
+        validators: Arc::new(RwLock::new(validators.clone())),
+        public_key: validators[1].public_key.clone(),
+        store: Arc::new(neo_storage::persistence::providers::memory_store::MemoryStore::new()),
+        current_prev_hash: UInt256::default(),
+        proposal_txs: HashMap::new(),
+    };
+
+    // The transaction propagates and is admitted to the mempool (the backup
+    // pulled it via GetData after the primary's Inv), then the driver feeds it.
+    assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Succeed);
+    driver.on_transaction_feed(tx_hash).await;
+
+    // The round resumed: the transaction is now available, its body is cached
+    // for assembly, and the backup broadcast its PrepareResponse.
+    assert!(!driver.service.context().has_missing_proposed_transactions());
+    assert!(
+        driver.proposal_txs.contains_key(&tx_hash),
+        "the fed transaction body is cached for commit-time assembly"
+    );
+
+    let mut sent_prepare_response = false;
+    while let Ok(event) = driver.event_rx.try_recv() {
+        if let ConsensusEvent::BroadcastMessage(payload) = event {
+            if payload.message_type == ConsensusMessageType::PrepareResponse {
+                sent_prepare_response = true;
+            }
+        }
+    }
+    assert!(
+        sent_prepare_response,
+        "backup resumes and sends its PrepareResponse once the missing tx is fed"
     );
 }
 

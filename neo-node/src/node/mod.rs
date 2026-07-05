@@ -246,6 +246,7 @@ async fn handle_inbound_inventory_item(
     consensus_inbound_tx: &Option<
         tokio::sync::mpsc::Sender<neo_consensus::messages::ConsensusPayload>,
     >,
+    consensus_tx_feed_tx: &Option<tokio::sync::mpsc::Sender<neo_primitives::UInt256>>,
     state_root_inbound_tx: &Option<tokio::sync::mpsc::Sender<neo_payloads::ExtensiblePayload>>,
     pending_blocks: &mut Vec<Arc<neo_payloads::Block>>,
 ) {
@@ -268,6 +269,13 @@ async fn handle_inbound_inventory_item(
                     let _ = relay
                         .broadcast_inv(neo_network::InventoryType::Transaction, vec![reply.hash])
                         .await;
+                    // C# `ConsensusService.OnTransaction`: a freshly-accepted
+                    // transaction is fed to the consensus state machine so a
+                    // backup missing a proposal transaction can resume the round
+                    // when it lands rather than degrading to a view change.
+                    if let Some(feed) = consensus_tx_feed_tx {
+                        let _ = feed.send(reply.hash).await;
+                    }
                 }
             }
         }
@@ -946,6 +954,17 @@ async fn build_node(
     } else {
         (None, None)
     };
+    // Late-transaction feed (C# `ConsensusService.OnTransaction`): the inventory
+    // forwarder pushes the hash of every freshly-accepted mempool transaction
+    // here, and the consensus driver feeds it into the state machine so a backup
+    // waiting on a proposal transaction can resume the round when it arrives
+    // rather than view-changing on `TxNotFound`.
+    let (consensus_tx_feed_tx, consensus_tx_feed_rx) = if consensus_configured {
+        let (tx, rx) = tokio::sync::mpsc::channel::<neo_primitives::UInt256>(1024);
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
 
     // ----- signed StateRoot (StateValidators) participation -----
     // The driver runs whenever the state service is enabled: validators sign +
@@ -1002,6 +1021,7 @@ async fn build_node(
         let relay = network.clone();
         let consensus_decode = consensus_decode.clone();
         let consensus_inbound_tx = consensus_inbound_tx.clone();
+        let consensus_tx_feed_tx = consensus_tx_feed_tx.clone();
         let state_root_inbound_tx = state_root_inbound_tx.clone();
         spawn_daemon_task(
             &mut handles,
@@ -1031,6 +1051,7 @@ async fn build_node(
                                 &relay,
                                 &consensus_decode,
                                 &consensus_inbound_tx,
+                                &consensus_tx_feed_tx,
                                 &state_root_inbound_tx,
                                 &mut pending_blocks,
                             ).await;
@@ -1050,9 +1071,10 @@ async fn build_node(
     // Spawn the round-driving task now that the network relay handle exists.
     // A configured key that is not in the current validator set stays idle but
     // keeps tracking imports so it can participate after a committee change.
-    if let (Some(setup), Some(inbound_rx)) = (
+    if let (Some(setup), Some(inbound_rx), Some(tx_feed_rx)) = (
         consensus_setup.filter(|_| ledger_mode.uses_local_replay_services()),
         consensus_inbound_rx,
+        consensus_tx_feed_rx,
     ) {
         // dBFT recovery-log directory: the persistent data directory (same
         // resolution as the ledger store), or `None` for an in-memory node —
@@ -1070,6 +1092,7 @@ async fn build_node(
             Arc::clone(&store),
             consensus_data_dir.as_deref(),
             inbound_rx,
+            tx_feed_rx,
         ) {
             info!(target: "neo", "dBFT consensus driver started (validator node)");
             spawn_daemon_task(

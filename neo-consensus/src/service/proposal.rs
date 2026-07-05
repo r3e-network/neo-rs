@@ -140,4 +140,81 @@ impl ConsensusService {
 
         Ok(())
     }
+
+    /// Late-transaction feed: a single transaction arrived (from the mempool /
+    /// peer relay) AFTER this backup received the primary's `PrepareRequest`.
+    ///
+    /// This is the port of C# `ConsensusService.OnTransaction(Transaction)`
+    /// (ConsensusService.cs). C# subscribes the consensus service to the
+    /// mempool relay and, for each arriving transaction the current proposal is
+    /// still waiting for, records it in `context.Transactions` and re-runs the
+    /// gated preparation check — so when the LAST missing transaction arrives
+    /// the round proceeds exactly as if all transactions had been present at
+    /// `PrepareRequest` time (sends the `PrepareResponse`, then re-checks the
+    /// commit threshold). Without this a backup that lacked a proposal
+    /// transaction could only wait out the view timer and view-change, losing
+    /// liveness on every incompletely-propagated round.
+    ///
+    /// Guards mirror C# `OnTransaction` exactly:
+    /// - only a backup that has received a `PrepareRequest` acts
+    ///   (`IsBackup && RequestSentOrReceived`);
+    /// - skip while a view change is in progress
+    ///   (`NotAcceptingPayloadsDueToViewChanging`);
+    /// - skip if the block was already produced (`BlockSent`, modeled as
+    ///   `state == Committed`);
+    /// - skip a transaction already recorded (`context.Transactions.ContainsKey`)
+    ///   or one not referenced by the proposal (`!TransactionHashes.Contains`).
+    ///
+    /// Note: C# additionally short-circuits on `ResponseSent`. We deliberately
+    /// do NOT, because a backup may have sent its `PrepareResponse` yet stalled
+    /// at the commit gate (`check_prepare_responses` returns early while
+    /// `has_missing_proposed_transactions()`); feeding the final missing
+    /// transaction must still re-drive the commit check. `send_prepare_response`
+    /// is idempotent (it early-returns once our response is recorded), so
+    /// re-entry never double-sends.
+    pub async fn on_transaction(&mut self, tx_hash: UInt256) -> ConsensusResult<()> {
+        if !self.running {
+            return Ok(());
+        }
+        // IsBackup && RequestSentOrReceived (C# `OnTransaction` guard).
+        if !self.context.is_backup() || !self.context.prepare_request_received {
+            return Ok(());
+        }
+        // NotAcceptingPayloadsDueToViewChanging (C# `OnTransaction` guard).
+        if self.context.not_accepting_payloads_due_to_view_changing() {
+            return Ok(());
+        }
+        // BlockSent (C# `OnTransaction` guard) — modeled as Committed state.
+        if self.context.state == crate::context::ConsensusState::Committed {
+            return Ok(());
+        }
+        // context.Transactions.ContainsKey(hash) — already have it.
+        if self.context.has_available_transaction(&tx_hash) {
+            return Ok(());
+        }
+        // !context.TransactionHashes.Contains(hash) — not part of this proposal.
+        if !self.context.is_proposed_transaction(&tx_hash) {
+            return Ok(());
+        }
+
+        // C# `AddTransaction`: record it, then `CheckPrepareResponse`.
+        if !self.context.mark_transaction_available(tx_hash) {
+            return Ok(());
+        }
+
+        // C# `CheckPrepareResponse`: once every proposed transaction is present,
+        // send our `PrepareResponse` (idempotent) and re-check the commit
+        // threshold. If transactions are still missing, both calls no-op via
+        // their internal gates and we simply wait for the next arrival.
+        if !self.context.has_missing_proposed_transactions() {
+            self.send_prepare_response().await?;
+            // `send_prepare_response` already calls `check_prepare_responses`
+            // when it sends, but not when our response was previously recorded.
+            // Re-drive it explicitly so a backup that already responded but
+            // stalled on missing transactions can now sign its Commit.
+            self.check_prepare_responses().await?;
+        }
+
+        Ok(())
+    }
 }
