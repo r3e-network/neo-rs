@@ -56,7 +56,7 @@ p256 = { version = "0.13", features = ["ecdsa"] }
 reqwest = { version = "0.12", features = ["json"], optional = true }
 
 # base64url for Azure Key Vault REST request/response
-base64 = { version = "0.22", optional = true }
+base64 = { workspace = true, optional = true }
 
 # JSON for Azure Key Vault REST bodies
 serde_json = { workspace = true, optional = true }

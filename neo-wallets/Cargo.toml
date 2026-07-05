@@ -26,7 +26,6 @@ neo-runtime = { workspace = true }
 neo-native-contracts = { workspace = true }
 neo-manifest = { workspace = true }
 neo-vm = { workspace = true }
-neo-vm-rs = { workspace = true }
 
 # External
 async-trait = { workspace = true }
@@ -48,6 +47,7 @@ rand = { workspace = true }
 
 [dev-dependencies]
 neo-execution = { workspace = true }
+neo-vm-rs = { workspace = true }
 
 [lints]
 workspace = true

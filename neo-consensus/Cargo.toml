@@ -19,8 +19,6 @@ neo-primitives = { workspace = true }
 neo-error = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
-# ScriptBuilder + VM host live in neo-core/src/neo_vm; pure semantics in neo-vm-rs
-neo-vm-rs = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }

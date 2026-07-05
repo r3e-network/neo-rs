@@ -2362,7 +2362,6 @@ dependencies = [
  "neo-payloads",
  "neo-primitives",
  "neo-vm",
- "neo-vm-rs",
  "rand 0.8.6",
  "serde",
  "thiserror 2.0.18",
@@ -2433,7 +2432,6 @@ dependencies = [
  "hashbrown 0.14.5",
  "hex",
  "indexmap 2.8.0",
- "k256",
  "lru",
  "neo-config",
  "neo-crypto",
@@ -2453,16 +2451,13 @@ dependencies = [
  "parking_lot",
  "rand 0.8.6",
  "ripemd",
- "secp256k1",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "sha3",
  "smallvec",
  "thiserror 2.0.18",
- "toml",
  "tracing",
- "url",
 ]
 
 [[package]]
