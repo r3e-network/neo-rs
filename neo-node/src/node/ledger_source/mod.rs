@@ -305,7 +305,8 @@ fn decode_remote_serialized_with<T>(
             .with_context(|| format!("decoding remote ledger {label} base64"))?,
         RemotePayloadEncoding::Hex => {
             let hex_text = text.strip_prefix("0x").unwrap_or(text);
-            hex_util::decode_hex(hex_text).with_context(|| format!("decoding remote ledger {label} hex"))?
+            hex_util::decode_hex(hex_text)
+                .with_context(|| format!("decoding remote ledger {label} hex"))?
         }
     };
     deserialize(&bytes)

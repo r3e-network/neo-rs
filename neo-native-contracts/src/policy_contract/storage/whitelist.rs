@@ -38,8 +38,7 @@ impl PolicyContract {
     pub(in crate::policy_contract) fn decode_whitelisted_contract(
         value: &[u8],
     ) -> CoreResult<WhitelistedContractView> {
-        let decoded =
-            crate::support::codec::decode_stack_value(value, "whitelisted contract")?;
+        let decoded = crate::support::codec::decode_stack_value(value, "whitelisted contract")?;
         WhitelistedContractView::from_stack_value(decoded)
     }
 
@@ -136,15 +135,12 @@ impl WhitelistedContractView {
     }
 
     pub(super) fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
-            vec![
-                StackValue::ByteString(self.contract_hash.to_bytes()),
-                StackValue::ByteString(self.method.as_bytes().to_vec()),
-                StackValue::Integer(i64::from(self.arg_count)),
-                StackValue::Integer(self.fixed_fee),
-            ],
-        )
+        StackValue::Struct(vec![
+            StackValue::ByteString(self.contract_hash.to_bytes()),
+            StackValue::ByteString(self.method.as_bytes().to_vec()),
+            StackValue::Integer(i64::from(self.arg_count)),
+            StackValue::Integer(self.fixed_fee),
+        ])
     }
 }
 

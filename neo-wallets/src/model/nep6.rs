@@ -10,12 +10,12 @@ use crate::wallet::{Wallet, WalletError, WalletResult};
 use crate::wallet_account::{StandardWalletAccount, WalletAccount};
 use crate::wallet_helper::WalletAddress;
 use async_trait::async_trait;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
-use neo_vm::Contract;
 use neo_payloads::{Transaction, Witness};
 use neo_primitives::ContractParameterType;
 use neo_primitives::{UInt160, UInt256};
+use neo_vm::Contract;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -814,7 +814,11 @@ impl Nep6Contract {
         })
     }
 
-    fn to_file(contract: &Contract, parameter_names: &[String], deployed: bool) -> Nep6ContractFile {
+    fn to_file(
+        contract: &Contract,
+        parameter_names: &[String],
+        deployed: bool,
+    ) -> Nep6ContractFile {
         let parameters = contract
             .parameter_list
             .iter()

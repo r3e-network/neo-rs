@@ -521,13 +521,12 @@ impl CommitteeParser {
             if trimmed.is_empty() {
                 continue;
             }
-            let bytes =
-                neo_primitives::hex_util::decode_hex(trimmed).map_err(|err| {
-                    ProtocolConfigError::InvalidCommitteeEntry {
-                        entry: entry.clone(),
-                        reason: format!("invalid hex: {err}"),
-                    }
-                })?;
+            let bytes = neo_primitives::hex_util::decode_hex(trimmed).map_err(|err| {
+                ProtocolConfigError::InvalidCommitteeEntry {
+                    entry: entry.clone(),
+                    reason: format!("invalid hex: {err}"),
+                }
+            })?;
             let point = ECPoint::from_bytes(&bytes).map_err(|e| {
                 ProtocolConfigError::InvalidCommitteeEntry {
                     entry: entry.clone(),

@@ -103,12 +103,10 @@ impl From<StorageError> for neo_error::CoreError {
     fn from(err: StorageError) -> Self {
         match err {
             StorageError::KeyNotFound { key } => neo_error::CoreError::NotFound { resource: key },
-            StorageError::ReadOnly => {
-                neo_error::CoreError::InvalidOperation { message: "Storage is read-only".into() }
-            }
-            StorageError::Serialization { message } => {
-                neo_error::CoreError::Codec { message }
-            }
+            StorageError::ReadOnly => neo_error::CoreError::InvalidOperation {
+                message: "Storage is read-only".into(),
+            },
+            StorageError::Serialization { message } => neo_error::CoreError::Codec { message },
             StorageError::Backend { message } => neo_error::CoreError::Io { message },
             StorageError::InvalidOperation { message } => {
                 neo_error::CoreError::InvalidOperation { message }

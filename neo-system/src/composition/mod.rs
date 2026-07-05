@@ -21,8 +21,8 @@ pub mod node;
 pub mod wallet_provider;
 
 pub use builder::NodeBuilder;
-pub use node::Node;
 pub use neo_runtime::ServiceRegistry;
+pub use node::Node;
 pub use wallet_provider::WalletProvider;
 
 /// Serializes tests across this module tree that touch the process-global native

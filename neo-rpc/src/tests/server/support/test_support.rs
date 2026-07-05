@@ -129,7 +129,8 @@ impl MempoolLike for NodeMempoolAdapter {
             Ok(false) => {}
             Err(_) => return VerifyResult::Invalid,
         }
-        self.pool.try_add_cached(tx.clone(), store.data_cache(), cached_state_independent)
+        self.pool
+            .try_add_cached(tx.clone(), store.data_cache(), cached_state_independent)
     }
 }
 

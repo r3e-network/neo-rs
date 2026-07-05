@@ -22,17 +22,17 @@ use neo_vm::Interoperable;
 use neo_vm_rs::StackValue;
 
 /// Structural equality for StackValue that ignores the reference-identity ids
-/// on compound variants (neo-vm-rs 0.2.0 compares compounds by id; tests want
-/// value equality). The id is not serialized, so structural equality is the
-/// correct notion for round-trip / shape assertions.
+/// on compound variants. Collection identity is not part of serialized
+/// stack data, so structural equality is the correct notion for round-trip / shape
+/// assertions.
 fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
     use neo_vm_rs::StackValue::*;
     match (a, b) {
-        (Buffer(_, x), Buffer(_, y)) => x == y,
-        (Array(_, x), Array(_, y)) | (Struct(_, x), Struct(_, y)) => {
+        (Buffer(x), Buffer(y)) => x == y,
+        (Array(x), Array(y)) | (Struct(x), Struct(y)) => {
             x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
         }
-        (Map(_, x), Map(_, y)) => {
+        (Map(x), Map(y)) => {
             x.len() == y.len()
                 && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
                     stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
@@ -143,7 +143,6 @@ fn encode_node_list_sorts_and_round_trips() {
     let mut expected = input.clone();
     expected.sort();
     let expected_value = StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
         expected
             .iter()
             .map(|point| StackValue::ByteString(point.to_bytes()))
@@ -165,13 +164,10 @@ fn node_list_interoperable_projection_matches_csharp_shape() {
     .unwrap();
     let nodes = vec![a.clone(), b.clone()];
     let state = NodeList::new(nodes.clone());
-    let expected_value = StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
-        vec![
-            StackValue::ByteString(a.to_bytes()),
-            StackValue::ByteString(b.to_bytes()),
-        ],
-    );
+    let expected_value = StackValue::Array(vec![
+        StackValue::ByteString(a.to_bytes()),
+        StackValue::ByteString(b.to_bytes()),
+    ]);
 
     let trait_value = Interoperable::to_stack_value(&state).unwrap();
     assert!(
@@ -219,11 +215,8 @@ fn node_list_storage_codecs_use_stack_value_projection() {
 #[test]
 fn parse_nodes_arg_enforces_1_to_32() {
     // Empty array -> rejected.
-    let empty = BinarySerializer::serialize_stack_value_default(&StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
-        Vec::new(),
-    ))
-    .unwrap();
+    let empty =
+        BinarySerializer::serialize_stack_value_default(&StackValue::Array(Vec::new())).unwrap();
     assert!(node_list::parse_nodes_arg(&empty).is_err());
     // One valid node -> accepted.
     let one = node_list::encode_node_list(&[sample_point()]).unwrap();
@@ -267,10 +260,9 @@ fn designation_backward_seek_picks_most_recent() {
     );
 
     // Designate the Oracle role at index 10 (a 1-element node list).
-    let list = BinarySerializer::serialize_stack_value_default(&StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
-        vec![StackValue::ByteString(point.to_bytes())],
-    ))
+    let list = BinarySerializer::serialize_stack_value_default(&StackValue::Array(vec![
+        StackValue::ByteString(point.to_bytes()),
+    ]))
     .unwrap();
     cache.add(
         RoleManagement::designation_key(Role::Oracle.as_byte(), 10),

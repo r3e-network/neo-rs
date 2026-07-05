@@ -2,9 +2,9 @@ use super::super::{
     ExpiringSet, FINISHED_CACHE_TTL, OracleDedupState, OracleService, OracleServiceError,
     OracleServiceSettings, OracleStatus,
 };
-use neo_runtime::{ConfigProvider, StoreProvider, TxAdmission};
 #[cfg(feature = "oracle")]
 use super::super::{OracleHttpsProtocol, OracleNeoFsProtocol};
+use neo_runtime::{ConfigProvider, StoreProvider, TxAdmission};
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 #[cfg(feature = "oracle")]

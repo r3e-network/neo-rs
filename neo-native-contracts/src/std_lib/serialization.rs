@@ -43,7 +43,10 @@ pub(super) fn json_serialize_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
 /// truncating cast (`1e30` -> 1000000000000000019884624838656), post-Basilisk parse
 /// the decimal string (`1e30` -> 10^30). Replaying a block below the Basilisk height
 /// with the wrong flag diverges from C# on any number whose magnitude exceeds 2^53.
-pub(super) fn json_deserialize_impl(args: &[Vec<u8>], basilisk_active: bool) -> CoreResult<Vec<u8>> {
+pub(super) fn json_deserialize_impl(
+    args: &[Vec<u8>],
+    basilisk_active: bool,
+) -> CoreResult<Vec<u8>> {
     StdLib::arg_bytes(args, "jsonDeserialize").and_then(|json| {
         let limits = ExecutionEngineLimits::default();
         let item =

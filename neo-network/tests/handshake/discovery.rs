@@ -52,11 +52,7 @@ fn addr_message(endpoints: &[SocketAddr]) -> Message {
     let entries: Vec<NetworkAddressWithTime> = endpoints
         .iter()
         .map(|ep| {
-            NetworkAddressWithTime::new(
-                0,
-                ep.ip(),
-                vec![NodeCapability::tcp_server(ep.port())],
-            )
+            NetworkAddressWithTime::new(0, ep.ip(), vec![NodeCapability::tcp_server(ep.port())])
         })
         .collect();
     let payload = AddrPayload::create(entries);
@@ -70,7 +66,9 @@ fn addr_message(endpoints: &[SocketAddr]) -> Message {
 async fn below_min_desired_sends_getaddr_then_dials_addr_reply() {
     // A second listener stands in for the peer the `Addr` reply advertises;
     // the node under test must dial it after ingesting the reply.
-    let advertised_listener = TcpListener::bind("127.0.0.1:0").await.expect("bind advertised");
+    let advertised_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind advertised");
     let advertised_addr = advertised_listener.local_addr().expect("advertised addr");
 
     // min_desired = 2 so a single connected peer keeps the node hungry.
@@ -113,7 +111,9 @@ async fn below_min_desired_sends_getaddr_then_dials_addr_reply() {
 /// dial an endpoint it never asked for.
 #[tokio::test]
 async fn unsolicited_addr_is_ignored() {
-    let advertised_listener = TcpListener::bind("127.0.0.1:0").await.expect("bind advertised");
+    let advertised_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind advertised");
     let advertised_addr = advertised_listener.local_addr().expect("advertised addr");
 
     // min_desired = 1 so a single connected peer already satisfies the node
@@ -136,8 +136,8 @@ async fn unsolicited_addr_is_ignored() {
         .expect("send addr");
 
     // No inbound connection should reach the advertised listener.
-    let accepted = tokio::time::timeout(Duration::from_millis(500), advertised_listener.accept())
-        .await;
+    let accepted =
+        tokio::time::timeout(Duration::from_millis(500), advertised_listener.accept()).await;
     assert!(
         accepted.is_err(),
         "an unsolicited addr must not cause the node to dial"

@@ -1,8 +1,8 @@
 use super::*;
 use neo_config::ProtocolSettings;
+use neo_execution::Nep17MetadataReaderImpl;
 use neo_execution::contract_state::ContractState;
 use neo_execution::native_contract::{NativeContract, build_native_contract_state};
-use neo_execution::Nep17MetadataReaderImpl;
 use neo_native_contracts::{GasToken, NeoToken};
 use neo_storage::{DataCache, StorageItem, StorageKey};
 

@@ -38,7 +38,11 @@ impl TokensTracker {
     /// * `settings` - Tracker configuration
     /// * `db` - Database store for balance/transfer data
     /// * `protocol_settings` - Protocol settings (for VM execution)
-    pub fn new(settings: TokensTrackerSettings, db: Arc<dyn Store>, protocol_settings: Arc<ProtocolSettings>) -> Self {
+    pub fn new(
+        settings: TokensTrackerSettings,
+        db: Arc<dyn Store>,
+        protocol_settings: Arc<ProtocolSettings>,
+    ) -> Self {
         let mut trackers: Vec<Box<dyn Tracker>> = Vec::new();
 
         if settings.enabled_nep17() {

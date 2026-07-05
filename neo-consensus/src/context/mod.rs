@@ -585,11 +585,7 @@ impl ConsensusContext {
     pub fn expected_block_size(&self) -> usize {
         let tx_count = self.available_tx_metrics.len();
         let base = self.expected_block_size_without_transactions(tx_count);
-        let tx_bytes: usize = self
-            .available_tx_metrics
-            .values()
-            .map(|m| m.size)
-            .sum();
+        let tx_bytes: usize = self.available_tx_metrics.values().map(|m| m.size).sum();
         base.saturating_add(tx_bytes)
     }
 
@@ -618,8 +614,11 @@ impl ConsensusContext {
         // sorted validator keys (C# `Contract.CreateMultiSigRedeemScript`).
         let n = self.validators.len();
         let m = RedeemScript::bft_threshold(n);
-        let mut sorted: Vec<neo_crypto::ECPoint> =
-            self.validators.iter().map(|v| v.public_key.clone()).collect();
+        let mut sorted: Vec<neo_crypto::ECPoint> = self
+            .validators
+            .iter()
+            .map(|v| v.public_key.clone())
+            .collect();
         sorted.sort();
         let mut verification = ScriptBuilder::new();
         verification.emit_push_int(m as i64);
@@ -639,8 +638,7 @@ impl ConsensusContext {
             invocation.emit_push(&signature_placeholder);
         }
 
-        let witness =
-            Witness::new_with_scripts(invocation.to_array(), verification.to_array());
+        let witness = Witness::new_with_scripts(invocation.to_array(), verification.to_array());
 
         // C# GetExpectedBlockSizeWithoutTransactions field layout.
         4               // Version (uint)

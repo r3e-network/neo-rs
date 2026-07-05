@@ -7,6 +7,4 @@
 
 mod types;
 
-pub use types::{
-    ConfigProvider, NeoNodeTypes, NodeTypes, StoreProvider, TxAdmission,
-};
+pub use types::{ConfigProvider, NeoNodeTypes, NodeTypes, StoreProvider, TxAdmission};

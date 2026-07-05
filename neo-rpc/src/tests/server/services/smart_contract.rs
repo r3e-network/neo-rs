@@ -118,10 +118,7 @@ impl Wallet for TestWallet {
         vec![Arc::clone(&self.account)]
     }
 
-    async fn available_balance(
-        &self,
-        _asset_id: &neo_primitives::UInt256,
-    ) -> WalletResult<i64> {
+    async fn available_balance(&self, _asset_id: &neo_primitives::UInt256) -> WalletResult<i64> {
         Err(WalletError::Other("not supported".to_string()))
     }
 

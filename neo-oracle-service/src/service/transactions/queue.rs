@@ -192,10 +192,7 @@ impl OracleService {
         }
         tx_mut.set_witnesses(witnesses);
 
-        if let Err(error) = self
-            .tx
-            .try_enqueue_preverify(tx_mut, true, snapshot)
-        {
+        if let Err(error) = self.tx.try_enqueue_preverify(tx_mut, true, snapshot) {
             warn!(target: "neo::oracle", %error, "failed to relay oracle response tx");
             return false;
         }

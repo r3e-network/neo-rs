@@ -149,7 +149,10 @@ impl TransactionManager {
     /// Matches C# `AddWitness` with `UInt160`.
     ///
     /// Note: Contract lookup requires an RPC call; use [`Self::add_witness_with_hash_async`].
-    pub fn add_witness_with_hash(&mut self, script_hash: &UInt160) -> Result<&mut Self, RpcClientError> {
+    pub fn add_witness_with_hash(
+        &mut self,
+        script_hash: &UInt160,
+    ) -> Result<&mut Self, RpcClientError> {
         let contract = Contract::create_with_hash(*script_hash, Vec::new());
         self.add_witness(contract)
     }

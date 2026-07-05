@@ -31,9 +31,7 @@ pub(crate) fn read_optional_i64_setting_key(
             .to_i64()
             .map(Some)
             .ok_or_else(|| {
-                CoreError::invalid_operation(format!(
-                    "{setting} storage integer out of range"
-                ))
+                CoreError::invalid_operation(format!("{setting} storage integer out of range"))
             }),
         None => Ok(None),
     }
@@ -48,9 +46,8 @@ pub(crate) fn read_required_i64_setting_key(
     key: StorageKey,
     setting: &str,
 ) -> CoreResult<i64> {
-    read_optional_i64_setting_key(snapshot, key, setting)?.ok_or_else(|| {
-        CoreError::invalid_operation(format!("{setting} storage is missing"))
-    })
+    read_optional_i64_setting_key(snapshot, key, setting)?
+        .ok_or_else(|| CoreError::invalid_operation(format!("{setting} storage is missing")))
 }
 
 /// Overwrites a required i64 setting under `key`.

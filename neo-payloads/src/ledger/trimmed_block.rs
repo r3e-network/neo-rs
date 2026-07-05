@@ -70,25 +70,22 @@ impl TrimmedBlock {
             StackValue::BigInteger(num_bigint::BigInt::from(value).to_signed_bytes_le())
         };
 
-        StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
-            vec![
-                // Computed property: Header.Hash.ToArray().
-                StackValue::ByteString(self.header.hash().to_bytes()),
-                // BlockBase properties.
-                StackValue::Integer(i64::from(self.header.version())),
-                StackValue::ByteString(self.header.prev_hash().to_bytes()),
-                StackValue::ByteString(self.header.merkle_root().to_bytes()),
-                unsigned_integer(self.header.timestamp()),
-                unsigned_integer(self.header.nonce()),
-                StackValue::Integer(i64::from(self.header.index())),
-                StackValue::Integer(i64::from(self.header.primary_index())),
-                StackValue::ByteString(self.header.next_consensus().to_bytes()),
-                // Block property: Hashes.Length (C# `int`; always non-negative and
-                // bounded by MAX_TRANSACTION_HASHES).
-                StackValue::Integer(self.hashes.len() as i64),
-            ],
-        )
+        StackValue::Array(vec![
+            // Computed property: Header.Hash.ToArray().
+            StackValue::ByteString(self.header.hash().to_bytes()),
+            // BlockBase properties.
+            StackValue::Integer(i64::from(self.header.version())),
+            StackValue::ByteString(self.header.prev_hash().to_bytes()),
+            StackValue::ByteString(self.header.merkle_root().to_bytes()),
+            unsigned_integer(self.header.timestamp()),
+            unsigned_integer(self.header.nonce()),
+            StackValue::Integer(i64::from(self.header.index())),
+            StackValue::Integer(i64::from(self.header.primary_index())),
+            StackValue::ByteString(self.header.next_consensus().to_bytes()),
+            // Block property: Hashes.Length (C# `int`; always non-negative and
+            // bounded by MAX_TRANSACTION_HASHES).
+            StackValue::Integer(self.hashes.len() as i64),
+        ])
     }
 }
 

@@ -15,8 +15,7 @@ const GENESIS_TIMESTAMP: u64 = 1_468_595_301_000;
 #[tokio::test(flavor = "multi_thread")]
 async fn stateless_invoke_builds_dummy_persisting_block() {
     let settings = ProtocolSettings::default();
-    let expected_timestamp =
-        GENESIS_TIMESTAMP + u64::from(settings.milliseconds_per_block);
+    let expected_timestamp = GENESIS_TIMESTAMP + u64::from(settings.milliseconds_per_block);
     let system = crate::server::test_support::test_system(settings);
 
     // SYSCALL System.Runtime.GetTime ; RET
@@ -91,9 +90,7 @@ async fn session_valid_until_block_uses_policy_aware_increment() {
     .expect("session");
 
     let engine = session.engine();
-    let container = engine
-        .script_container()
-        .expect("tx container present");
+    let container = engine.script_container().expect("tx container present");
     let tx = container
         .as_any()
         .downcast_ref::<neo_payloads::transaction::Transaction>()

@@ -380,7 +380,6 @@ impl Pkcs11Signer {
 
         Ok((session, priv_handle, compressed_pubkey, script_hash))
     }
-
 }
 
 impl Drop for Pkcs11Signer {

@@ -125,9 +125,7 @@ fn build_signed_transaction_with(
 
 fn single_validator_settings(keypair: &KeyPair) -> ProtocolSettings {
     let mut settings = ProtocolSettings::default();
-    let validator = keypair
-        .public_key_point()
-        .expect("validator public key");
+    let validator = keypair.public_key_point().expect("validator public key");
     settings.standby_committee = vec![validator];
     settings.validators_count = 1;
     settings

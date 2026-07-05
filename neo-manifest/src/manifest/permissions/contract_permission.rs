@@ -147,18 +147,15 @@ impl ContractPermission {
 
     /// Converts to a neo-vm-rs stack value (matches C# `ContractPermission.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
-            vec![
-                self.contract.to_stack_value(),
-                self.methods.to_stack_value(),
-            ],
-        )
+        StackValue::Struct(vec![
+            self.contract.to_stack_value(),
+            self.methods.to_stack_value(),
+        ])
     }
 
     /// Updates this permission from a neo-vm-rs stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
-        let StackValue::Struct(_, items) = stack_value else {
+        let StackValue::Struct(items) = stack_value else {
             return Err(CoreError::invalid_format(
                 "ContractPermission expects Struct stack value",
             ));

@@ -37,8 +37,8 @@ use neo_io::{MemoryReader, Serializable, SerializableExtensions};
 use neo_native_contracts::{Role, RoleManagement};
 use neo_network::NetworkHandle;
 use neo_payloads::{ExtensiblePayload, Witness};
-use neo_primitives::{UInt160, hex_util};
 use neo_primitives::time::now_millis;
+use neo_primitives::{UInt160, hex_util};
 use neo_state_service::{
     MessageType, STATE_SERVICE_CATEGORY, StateRoot, StateStore, StateStoreLookup, Vote,
 };
@@ -94,7 +94,9 @@ fn build_extensible(
     sign_data[4..].copy_from_slice(&hash.to_bytes());
     let signature = Secp256r1Crypto::sign(&sign_data, private_key).ok()?;
     ext.witness = Witness::new_with_scripts(
-        ScriptBuilder::new().invocation_from_signature(&signature).to_array(),
+        ScriptBuilder::new()
+            .invocation_from_signature(&signature)
+            .to_array(),
         redeem,
     );
     Some(ext)

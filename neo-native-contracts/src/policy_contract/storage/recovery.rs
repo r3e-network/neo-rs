@@ -21,10 +21,8 @@ impl PolicyContract {
         let item = snapshot.get(&key).ok_or_else(|| {
             CoreError::invalid_operation("NeoToken committee cache is not initialized")
         })?;
-        let decoded = crate::support::codec::decode_stack_value(
-            &item.value_bytes(),
-            "committee cache",
-        )?;
+        let decoded =
+            crate::support::codec::decode_stack_value(&item.value_bytes(), "committee cache")?;
         let committee = crate::neo_token::CachedCommittee::from_stack_value(decoded)?;
         let mut points = committee
             .into_members()

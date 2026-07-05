@@ -54,7 +54,12 @@ impl ConsensusService {
     /// system fee for its `CheckPrepareResponse` policy checks. Mirrors C#
     /// `ConsensusContext.Transactions[hash] = tx`, but keeps the consensus crate
     /// hash-only by carrying just the two policy-relevant metrics.
-    pub fn record_transaction_metrics(&mut self, hash: neo_primitives::UInt256, size: usize, system_fee: i64) {
+    pub fn record_transaction_metrics(
+        &mut self,
+        hash: neo_primitives::UInt256,
+        size: usize,
+        system_fee: i64,
+    ) {
         self.context
             .record_transaction_metrics(hash, crate::context::TxMetrics { size, system_fee });
     }

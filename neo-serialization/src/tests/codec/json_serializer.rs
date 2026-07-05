@@ -103,10 +103,16 @@ fn deserialize_large_integer_rounds_through_double_like_csharp() {
     let de_int = |s: &str| de(s).unwrap().as_int().unwrap();
     assert_eq!(de_int("42"), BigInt::from(42));
     // 2^53 is exactly representable as f64.
-    assert_eq!(de_int("9007199254740992"), BigInt::from(9007199254740992i64));
+    assert_eq!(
+        de_int("9007199254740992"),
+        BigInt::from(9007199254740992i64)
+    );
     // 2^53 + 1 is NOT representable; the nearest double is 2^53, so C# (and now
     // this node) yields 9007199254740992, NOT the exact 9007199254740993.
-    assert_eq!(de_int("9007199254740993"), BigInt::from(9007199254740992i64));
+    assert_eq!(
+        de_int("9007199254740993"),
+        BigInt::from(9007199254740992i64)
+    );
 }
 
 #[test]

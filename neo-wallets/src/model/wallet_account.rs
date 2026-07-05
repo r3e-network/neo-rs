@@ -8,10 +8,10 @@ use crate::key_pair::KeyPair;
 use crate::wallet::{WalletError, WalletResult};
 use crate::wallet_helper::WalletAddress;
 use neo_config::ProtocolSettings;
-use neo_vm::Contract;
 use neo_payloads::Transaction;
 use neo_payloads::Witness;
 use neo_primitives::UInt160;
+use neo_vm::Contract;
 use std::sync::Arc;
 
 /// Common interface shared by all wallet-backed accounts.

@@ -18,9 +18,18 @@ fn encode_hex_produces_lowercase() {
 
 #[test]
 fn decode_hex_strips_prefix() {
-    assert_eq!(decode_hex("deadbeef").unwrap(), vec![0xDE, 0xAD, 0xBE, 0xEF]);
-    assert_eq!(decode_hex("0xdeadbeef").unwrap(), vec![0xDE, 0xAD, 0xBE, 0xEF]);
-    assert_eq!(decode_hex("0XDEADBEEF").unwrap(), vec![0xDE, 0xAD, 0xBE, 0xEF]);
+    assert_eq!(
+        decode_hex("deadbeef").unwrap(),
+        vec![0xDE, 0xAD, 0xBE, 0xEF]
+    );
+    assert_eq!(
+        decode_hex("0xdeadbeef").unwrap(),
+        vec![0xDE, 0xAD, 0xBE, 0xEF]
+    );
+    assert_eq!(
+        decode_hex("0XDEADBEEF").unwrap(),
+        vec![0xDE, 0xAD, 0xBE, 0xEF]
+    );
     assert_eq!(decode_hex("").unwrap(), Vec::<u8>::new());
 }
 
@@ -40,8 +49,14 @@ fn encode_reversed_hex_reverses_and_prefixes() {
 #[test]
 fn decode_reversed_hex_reverses_after_decode() {
     // "0xefbeadde" -> strip prefix -> decode -> [0xEF, 0xBE, 0xAD, 0xDE] -> reverse -> [0xDE, 0xAD, 0xBE, 0xEF]
-    assert_eq!(decode_reversed_hex("0xefbeadde").unwrap(), vec![0xDE, 0xAD, 0xBE, 0xEF]);
-    assert_eq!(decode_reversed_hex("efbeadde").unwrap(), vec![0xDE, 0xAD, 0xBE, 0xEF]);
+    assert_eq!(
+        decode_reversed_hex("0xefbeadde").unwrap(),
+        vec![0xDE, 0xAD, 0xBE, 0xEF]
+    );
+    assert_eq!(
+        decode_reversed_hex("efbeadde").unwrap(),
+        vec![0xDE, 0xAD, 0xBE, 0xEF]
+    );
 }
 
 #[test]

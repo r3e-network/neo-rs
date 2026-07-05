@@ -1,5 +1,6 @@
 use super::*;
 // `invocation_script`/`verification_script` on `Witness` are trait methods.
+use neo_execution::native_contract_provider::{NativeProviderTestGuard, lock_native_provider};
 use neo_manifest::{ContractManifest, ContractMethodDescriptor, NefFile};
 use neo_primitives::Witness as _;
 use neo_serialization::BinarySerializer;
@@ -7,9 +8,6 @@ use neo_storage::StorageKey;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
-use neo_execution::native_contract_provider::{
-    lock_native_provider, NativeProviderTestGuard,
-};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// NEO `Prefix_Committee` (C# NeoToken).

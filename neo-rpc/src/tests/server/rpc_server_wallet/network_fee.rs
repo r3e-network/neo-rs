@@ -35,9 +35,8 @@ fn await_wallet_future_works_without_runtime() {
     // When no tokio runtime is available (e.g. called from a plain sync
     // context), `await_wallet_future` creates a temporary current-thread
     // runtime and blocks on the future directly.
-    let result = RpcServerWallet::await_wallet_future(Box::pin(async {
-        Ok::<i32, WalletError>(42)
-    }));
+    let result =
+        RpcServerWallet::await_wallet_future(Box::pin(async { Ok::<i32, WalletError>(42) }));
 
     assert_eq!(result.expect("await_wallet_future result"), 42);
 }

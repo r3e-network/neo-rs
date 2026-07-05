@@ -15,9 +15,9 @@ pub(crate) use nep::{
 };
 pub use parsing::JsonParseError;
 pub use parsing::optional_string;
-pub(crate) use parsing::{base64_string_token, optional_base64_field_lossy};
 #[cfg(feature = "server")]
 pub(crate) use parsing::parse_script_hash_or_address_inner;
+pub(crate) use parsing::{base64_string_token, optional_base64_field_lossy};
 #[allow(unused_imports)]
 pub use parsing::{
     cloned_token_array, empty_array, insert_optional_string, jtoken_to_serde, object_array,

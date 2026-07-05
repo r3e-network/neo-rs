@@ -1,0 +1,360 @@
+//! Shared staged-sync policy and checkpoint primitives.
+//!
+//! This module defines reusable contracts for sync-stage progress, commit
+//! policy, and ordered block-batch import. It intentionally does not download
+//! blocks, execute NeoVM scripts, write storage, or choose a fork.
+
+use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use neo_payloads::Block;
+use parking_lot::RwLock;
+
+use crate::{BlockBatchImportOutcome, BlockImport, BlockOrigin, ServiceError, ServiceResult};
+
+/// Stable sync-stage identifiers.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SyncStageKind {
+    /// Header download and verification.
+    Headers,
+    /// Body or full-block download.
+    Bodies,
+    /// Stateless preverification before ordered import.
+    Preverify,
+    /// Ordered canonical block import.
+    Import,
+    /// Transaction execution and native persistence.
+    Execute,
+    /// State-root/MPT projection.
+    StateRoot,
+    /// Ledger/RPC secondary indexes.
+    Index,
+    /// Pruning or hot/cold movement after consumer acknowledgements.
+    Prune,
+}
+
+impl SyncStageKind {
+    /// Stable lowercase stage name used for metrics labels and checkpoint keys.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Headers => "headers",
+            Self::Bodies => "bodies",
+            Self::Preverify => "preverify",
+            Self::Import => "import",
+            Self::Execute => "execute",
+            Self::StateRoot => "state_root",
+            Self::Index => "index",
+            Self::Prune => "prune",
+        }
+    }
+}
+
+/// Durable progress marker for one sync stage.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SyncStageCheckpoint {
+    /// Stage this checkpoint belongs to.
+    pub stage: SyncStageKind,
+    /// Highest canonical block height durably completed by the stage.
+    pub height: u32,
+    /// Number of blocks processed since the stage started or was reset.
+    pub processed_blocks: u64,
+    /// Approximate number of changed bytes flushed by this checkpoint.
+    pub changed_bytes: u64,
+}
+
+impl SyncStageCheckpoint {
+    /// Construct a checkpoint at `height` for `stage`.
+    #[must_use]
+    pub const fn new(stage: SyncStageKind, height: u32) -> Self {
+        Self {
+            stage,
+            height,
+            processed_blocks: 0,
+            changed_bytes: 0,
+        }
+    }
+
+    /// Attach aggregate processed-block and changed-byte counters.
+    #[must_use]
+    pub const fn with_counters(mut self, processed_blocks: u64, changed_bytes: u64) -> Self {
+        self.processed_blocks = processed_blocks;
+        self.changed_bytes = changed_bytes;
+        self
+    }
+}
+
+/// Current in-memory progress for a stage since its last durable checkpoint.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct StageProgress {
+    /// Blocks processed since the last commit.
+    pub blocks: u64,
+    /// Changed key/value operations or bytes, depending on the stage.
+    pub changes: u64,
+    /// Cumulative GAS executed by the stage window.
+    pub cumulative_gas: u64,
+    /// Wall-clock time since the stage window began.
+    pub elapsed: Duration,
+}
+
+impl StageProgress {
+    /// Construct progress from block count only.
+    #[must_use]
+    pub const fn blocks(blocks: u64) -> Self {
+        Self {
+            blocks,
+            changes: 0,
+            cumulative_gas: 0,
+            elapsed: Duration::ZERO,
+        }
+    }
+}
+
+/// Reth-style commit policy for sync stages.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CommitPolicy {
+    /// Commit after this many blocks, when set.
+    pub max_blocks: Option<u64>,
+    /// Commit after this many changes/bytes, when set.
+    pub max_changes: Option<u64>,
+    /// Commit after this much cumulative GAS, when set.
+    pub max_cumulative_gas: Option<u64>,
+    /// Commit after this much wall-clock time, when set.
+    pub max_duration: Option<Duration>,
+}
+
+impl CommitPolicy {
+    /// Construct an empty policy. It never fires until a threshold is set.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            max_blocks: None,
+            max_changes: None,
+            max_cumulative_gas: None,
+            max_duration: None,
+        }
+    }
+
+    /// Set the block threshold.
+    #[must_use]
+    pub const fn with_max_blocks(mut self, max_blocks: u64) -> Self {
+        self.max_blocks = Some(max_blocks);
+        self
+    }
+
+    /// Set the change/byte threshold.
+    #[must_use]
+    pub const fn with_max_changes(mut self, max_changes: u64) -> Self {
+        self.max_changes = Some(max_changes);
+        self
+    }
+
+    /// Set the cumulative GAS threshold.
+    #[must_use]
+    pub const fn with_max_cumulative_gas(mut self, max_cumulative_gas: u64) -> Self {
+        self.max_cumulative_gas = Some(max_cumulative_gas);
+        self
+    }
+
+    /// Set the elapsed-time threshold.
+    #[must_use]
+    pub const fn with_max_duration(mut self, max_duration: Duration) -> Self {
+        self.max_duration = Some(max_duration);
+        self
+    }
+
+    /// Returns `true` when any configured threshold has fired.
+    #[must_use]
+    pub fn should_commit(self, progress: StageProgress) -> bool {
+        self.max_blocks.is_some_and(|max| progress.blocks >= max)
+            || self.max_changes.is_some_and(|max| progress.changes >= max)
+            || self
+                .max_cumulative_gas
+                .is_some_and(|max| progress.cumulative_gas >= max)
+            || self.max_duration.is_some_and(|max| progress.elapsed >= max)
+    }
+}
+
+/// Provider-neutral checkpoint persistence seam for sync stages.
+pub trait SyncStageCheckpointStore: Send + Sync {
+    /// Read the latest checkpoint for `stage`.
+    fn checkpoint(&self, stage: SyncStageKind) -> ServiceResult<Option<SyncStageCheckpoint>>;
+
+    /// Persist a checkpoint for its stage.
+    fn put_checkpoint(&self, checkpoint: SyncStageCheckpoint) -> ServiceResult<()>;
+}
+
+/// In-memory checkpoint store for tests and composition scaffolding.
+#[derive(Debug, Default)]
+pub struct InMemorySyncStageCheckpointStore {
+    checkpoints: RwLock<BTreeMap<SyncStageKind, SyncStageCheckpoint>>,
+}
+
+impl SyncStageCheckpointStore for InMemorySyncStageCheckpointStore {
+    fn checkpoint(&self, stage: SyncStageKind) -> ServiceResult<Option<SyncStageCheckpoint>> {
+        Ok(self.checkpoints.read().get(&stage).cloned())
+    }
+
+    fn put_checkpoint(&self, checkpoint: SyncStageCheckpoint) -> ServiceResult<()> {
+        self.checkpoints
+            .write()
+            .insert(checkpoint.stage, checkpoint);
+        Ok(())
+    }
+}
+
+/// One contiguous block batch entering a staged sync/import driver.
+#[derive(Clone, Debug)]
+pub struct SyncBlockBatch {
+    /// Height of the first block in `blocks`.
+    pub start_height: u32,
+    /// Blocks in canonical order.
+    pub blocks: Vec<Block>,
+    /// Approximate bytes changed by this stage batch, when known.
+    pub changed_bytes: u64,
+}
+
+impl SyncBlockBatch {
+    /// Construct a sync batch.
+    #[must_use]
+    pub fn new(start_height: u32, blocks: Vec<Block>) -> Self {
+        Self {
+            start_height,
+            blocks,
+            changed_bytes: 0,
+        }
+    }
+
+    /// Attach the approximate changed-byte count for commit-policy decisions.
+    #[must_use]
+    pub const fn with_changed_bytes(mut self, changed_bytes: u64) -> Self {
+        self.changed_bytes = changed_bytes;
+        self
+    }
+
+    /// Height immediately after the last block in this batch.
+    #[must_use]
+    pub fn next_height(&self) -> u32 {
+        self.start_height
+            .saturating_add(u32::try_from(self.blocks.len()).unwrap_or(u32::MAX))
+    }
+
+    /// Returns `true` when this batch carries no blocks.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.blocks.is_empty()
+    }
+}
+
+/// Result of pushing one sync batch through a [`SyncPipelineDriver`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SyncPipelineImportOutcome {
+    /// Outcome returned by the ordered block import path.
+    pub imported: BlockBatchImportOutcome,
+    /// Height expected for the next non-empty batch.
+    pub next_height: Option<u32>,
+    /// Checkpoint persisted after this batch, when the commit policy fired.
+    pub checkpoint: Option<SyncStageCheckpoint>,
+}
+
+/// Runtime sync driver that bridges downloaded batches to block import.
+pub struct SyncPipelineDriver<I: BlockImport + ?Sized, C: SyncStageCheckpointStore + ?Sized> {
+    importer: Arc<I>,
+    checkpoints: Arc<C>,
+    commit_policy: CommitPolicy,
+    origin: BlockOrigin,
+    progress: StageProgress,
+    window_started: Instant,
+    next_height: Option<u32>,
+    total_blocks: u64,
+    total_changes: u64,
+}
+
+impl<I, C> SyncPipelineDriver<I, C>
+where
+    I: BlockImport + ?Sized,
+    C: SyncStageCheckpointStore + ?Sized,
+{
+    /// Create a driver from the last durable import checkpoint.
+    pub fn new(
+        importer: Arc<I>,
+        checkpoints: Arc<C>,
+        commit_policy: CommitPolicy,
+        origin: BlockOrigin,
+    ) -> ServiceResult<Self> {
+        let checkpoint = checkpoints.checkpoint(SyncStageKind::Import)?;
+        let next_height = checkpoint.as_ref().map(|checkpoint| {
+            checkpoint
+                .height
+                .checked_add(1)
+                .unwrap_or(checkpoint.height)
+        });
+        Ok(Self {
+            importer,
+            checkpoints,
+            commit_policy,
+            origin,
+            progress: StageProgress::default(),
+            window_started: Instant::now(),
+            next_height,
+            total_blocks: 0,
+            total_changes: 0,
+        })
+    }
+
+    /// Push one contiguous block batch through the canonical import path.
+    pub async fn push_batch(
+        &mut self,
+        batch: SyncBlockBatch,
+    ) -> ServiceResult<SyncPipelineImportOutcome> {
+        if batch.is_empty() {
+            return Ok(SyncPipelineImportOutcome {
+                imported: BlockBatchImportOutcome::new(0),
+                next_height: self.next_height,
+                checkpoint: None,
+            });
+        }
+
+        if let Some(expected) = self.next_height {
+            if batch.start_height != expected {
+                return Err(ServiceError::invalid_input(format!(
+                    "non-contiguous sync batch: expected height {expected}, got {}",
+                    batch.start_height
+                )));
+            }
+        }
+
+        let next_height = batch.next_height();
+        let imported = self.importer.import_many(batch.blocks, self.origin).await?;
+        let processed_blocks = u64::try_from(imported.processed).unwrap_or(u64::MAX);
+        self.progress.blocks = self.progress.blocks.saturating_add(processed_blocks);
+        self.progress.changes = self.progress.changes.saturating_add(batch.changed_bytes);
+        self.progress.elapsed = self.window_started.elapsed();
+        self.total_blocks = self.total_blocks.saturating_add(processed_blocks);
+        self.total_changes = self.total_changes.saturating_add(batch.changed_bytes);
+        self.next_height = Some(next_height);
+
+        let checkpoint = if self.commit_policy.should_commit(self.progress) {
+            let checkpoint =
+                SyncStageCheckpoint::new(SyncStageKind::Import, next_height.saturating_sub(1))
+                    .with_counters(self.total_blocks, self.total_changes);
+            self.checkpoints.put_checkpoint(checkpoint.clone())?;
+            self.progress = StageProgress::default();
+            self.window_started = Instant::now();
+            Some(checkpoint)
+        } else {
+            None
+        };
+
+        Ok(SyncPipelineImportOutcome {
+            imported,
+            next_height: self.next_height,
+            checkpoint,
+        })
+    }
+}
+
+#[cfg(test)]
+#[path = "../tests/service/sync_pipeline.rs"]
+mod tests;

@@ -8,8 +8,11 @@ use async_trait::async_trait;
 use neo_payloads::Block;
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::task::JoinSet;
 
 use crate::error::ServiceError;
+use crate::errors::ServiceResult;
 use crate::services::Service;
 
 /// Where a block import request came from.
@@ -138,6 +141,109 @@ pub trait BlockImport: Service {
             }
         }
         Ok(BlockBatchImportOutcome::new(processed))
+    }
+}
+
+/// Bounded preverification queue in front of the canonical block-import path.
+///
+/// The queue mirrors Substrate's `ImportQueue` boundary without owning Neo's
+/// block execution or storage logic. It is responsible only for cheap
+/// concurrent [`BlockImport::check`] calls and then hands the original
+/// canonical-order batch to [`BlockImport::import_many`].
+#[derive(Debug)]
+pub struct BlockImportQueue<I: BlockImport + ?Sized> {
+    importer: Arc<I>,
+    max_concurrency: usize,
+}
+
+impl<I> BlockImportQueue<I>
+where
+    I: BlockImport + ?Sized,
+{
+    /// Create an import queue over `importer`.
+    ///
+    /// `max_concurrency` is clamped to at least one so callers can wire config
+    /// values directly without creating a permanently stalled queue.
+    #[must_use]
+    pub fn new(importer: Arc<I>, max_concurrency: usize) -> Self {
+        Self {
+            importer,
+            max_concurrency: max_concurrency.max(1),
+        }
+    }
+
+    /// Returns the bounded number of blocks checked concurrently.
+    #[must_use]
+    pub const fn max_concurrency(&self) -> usize {
+        self.max_concurrency
+    }
+
+    /// Returns the importer behind this queue.
+    #[must_use]
+    pub fn importer(&self) -> &Arc<I> {
+        &self.importer
+    }
+
+    /// Validate every block, then import the original ordered batch.
+    ///
+    /// A check failure skips import entirely. This keeps preverification and
+    /// canonical persistence separated: out-of-order downloader work can be
+    /// parallel, while state mutation still occurs through one deterministic
+    /// ordered path.
+    pub async fn push_blocks(
+        &self,
+        blocks: Vec<Block>,
+        origin: BlockOrigin,
+    ) -> ServiceResult<BlockBatchImportOutcome> {
+        let block_count = blocks.len();
+        if block_count == 0 {
+            return Ok(BlockBatchImportOutcome::new(0));
+        }
+
+        let mut pending_blocks = blocks.into_iter().enumerate();
+        let mut check_tasks = JoinSet::new();
+        let mut checked_blocks = (0..block_count).map(|_| None).collect::<Vec<_>>();
+
+        while check_tasks.len() < self.max_concurrency {
+            let Some((position, block)) = pending_blocks.next() else {
+                break;
+            };
+            let importer = Arc::clone(&self.importer);
+            check_tasks.spawn(async move {
+                let result = importer.check(&block).await;
+                (position, block, result)
+            });
+        }
+
+        while let Some(joined) = check_tasks.join_next().await {
+            let (position, block, check_result) = joined.map_err(|error| {
+                ServiceError::internal(format!("block import check task failed: {error}"))
+            })?;
+            if let Err(error) = check_result {
+                check_tasks.abort_all();
+                return Err(error);
+            }
+            checked_blocks[position] = Some(block);
+
+            if let Some((position, block)) = pending_blocks.next() {
+                let importer = Arc::clone(&self.importer);
+                check_tasks.spawn(async move {
+                    let result = importer.check(&block).await;
+                    (position, block, result)
+                });
+            }
+        }
+
+        let blocks = checked_blocks
+            .into_iter()
+            .map(|block| {
+                block.ok_or_else(|| {
+                    ServiceError::internal("block import queue lost a checked block")
+                })
+            })
+            .collect::<ServiceResult<Vec<_>>>()?;
+
+        self.importer.import_many(blocks, origin).await
     }
 }
 

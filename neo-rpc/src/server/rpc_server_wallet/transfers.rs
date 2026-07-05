@@ -1,8 +1,8 @@
 use neo_crypto::{Crypto, ECCurve, ECPoint};
+use neo_execution::Nep17MetadataReaderImpl;
 use neo_execution::contract::Contract;
 use neo_execution::contract_parameters_context::ContractParametersContext;
 use neo_execution::helper::Helper as ContractHelper;
-use neo_execution::Nep17MetadataReaderImpl;
 use neo_io::Serializable;
 use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_payloads::conflicts::Conflicts;
@@ -114,12 +114,8 @@ impl RpcServerWallet {
             server.system().settings().as_ref().clone(),
         );
         let descriptor_cache = |asset: &UInt160| {
-            AssetDescriptor::new(
-                Arc::clone(&descriptor_snapshot),
-                &reader,
-                *asset,
-            )
-            .map_err(|err| neo_error::CoreError::other(err.to_string()))
+            AssetDescriptor::new(Arc::clone(&descriptor_snapshot), &reader, *asset)
+                .map_err(|err| neo_error::CoreError::other(err.to_string()))
         };
 
         let transfers = outputs_array
@@ -378,12 +374,8 @@ impl RpcServerWallet {
             Arc::clone(&snapshot),
             server.system().settings().as_ref().clone(),
         );
-        let descriptor = AssetDescriptor::new(
-            snapshot,
-            &reader,
-            asset,
-        )
-        .map_err(|err| invalid_params(err.to_string()))?;
+        let descriptor = AssetDescriptor::new(snapshot, &reader, asset)
+            .map_err(|err| invalid_params(err.to_string()))?;
         let value = Self::parse_positive_amount(
             &amount,
             descriptor.decimals,
@@ -456,8 +448,10 @@ impl RpcServerWallet {
                         if let Some((mut m, member_points)) =
                             ContractHelper::parse_multi_sig_contract(&contract.script)
                         {
-                            let multisig_contract =
-                                Contract::create(contract.parameter_list.clone(), contract.script.clone());
+                            let multisig_contract = Contract::create(
+                                contract.parameter_list.clone(),
+                                contract.script.clone(),
+                            );
                             for member_bytes in &member_points {
                                 let Some(member_point) = Self::member_point(member_bytes) else {
                                     continue;
@@ -483,11 +477,7 @@ impl RpcServerWallet {
                                     ECPoint::new(ECCurve::Secp256r1, key.compressed_public_key())
                                         .map_err(|e| internal_error(e.to_string()))?;
                                 let ok = context
-                                    .add_signature(
-                                        multisig_contract.clone(),
-                                        pub_key,
-                                        signature,
-                                    )
+                                    .add_signature(multisig_contract.clone(), pub_key, signature)
                                     .map_err(|e| internal_error(e.to_string()))?;
                                 if ok {
                                     m -= 1;
@@ -515,8 +505,7 @@ impl RpcServerWallet {
                                     .ok()
                                     .and_then(|p| ECPoint::from_bytes(&p.to_bytes()).ok());
                                 if let Some(point) = pub_point {
-                                    contract_opt =
-                                        Some(Contract::create_signature_contract(point));
+                                    contract_opt = Some(Contract::create_signature_contract(point));
                                 }
                             }
                         }
@@ -536,8 +525,8 @@ impl RpcServerWallet {
                                         key.compressed_public_key(),
                                     )
                                     .map_err(|e| internal_error(e.to_string()))?;
-                                    let _ = context
-                                        .add_signature(contract.clone(), pub_key, signature);
+                                    let _ =
+                                        context.add_signature(contract.clone(), pub_key, signature);
                                     handled = true;
                                 }
                             } else if account.has_key() {
@@ -564,8 +553,7 @@ impl RpcServerWallet {
                                 let pub_key_bytes = signature_contract_pubkey(&contract.script)?;
                                 let pub_key = ECPoint::new(ECCurve::Secp256r1, pub_key_bytes)
                                     .map_err(|e| internal_error(e.to_string()))?;
-                                let _ =
-                                    context.add_signature(contract.clone(), pub_key, signature);
+                                let _ = context.add_signature(contract.clone(), pub_key, signature);
                                 handled = true;
                             }
                         }

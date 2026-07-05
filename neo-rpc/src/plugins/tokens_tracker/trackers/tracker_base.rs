@@ -4,6 +4,7 @@
 //! database operations and transfer record extraction.
 
 use super::token_transfer_key::TokenTransferKey;
+use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_io::SerializableExtensions;
 use neo_io::{MemoryReader, Serializable};
@@ -11,7 +12,6 @@ use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
 use neo_primitives::{LogLevel, UInt160};
 use neo_storage::persistence::{DataCache, SeekDirection, Store, StoreSnapshot};
-use neo_config::ProtocolSettings;
 use neo_vm::StackItem;
 use num_bigint::BigInt;
 use serde_json::{Value, json};

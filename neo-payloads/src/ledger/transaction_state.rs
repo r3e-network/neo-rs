@@ -62,20 +62,16 @@ impl TransactionState {
     /// transaction bytes or fail, never silently degrade to a conflict stub.
     pub fn try_to_stack_value(&self) -> Result<StackValue, CoreError> {
         if let Some(tx) = &self.transaction {
-            return Ok(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
-                vec![
-                    StackValue::Integer(i64::from(self.block_index)),
-                    StackValue::ByteString(Self::serialize_transaction(tx)?),
-                    StackValue::Integer(i64::from(self.state.to_byte())),
-                ],
-            ));
+            return Ok(StackValue::Struct(vec![
+                StackValue::Integer(i64::from(self.block_index)),
+                StackValue::ByteString(Self::serialize_transaction(tx)?),
+                StackValue::Integer(i64::from(self.state.to_byte())),
+            ]));
         }
 
-        Ok(StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
-            vec![StackValue::Integer(i64::from(self.block_index))],
-        ))
+        Ok(StackValue::Struct(vec![StackValue::Integer(i64::from(
+            self.block_index,
+        ))]))
     }
 
     /// Converts to a neo-vm-rs stack value.
@@ -86,7 +82,7 @@ impl TransactionState {
 
     /// Updates this transaction state from a neo-vm-rs stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
-        let StackValue::Struct(_, items) = stack_value else {
+        let StackValue::Struct(items) = stack_value else {
             return Err(CoreError::invalid_data(
                 "TransactionState record is not a Struct stack item",
             ));

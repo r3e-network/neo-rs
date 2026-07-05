@@ -73,7 +73,7 @@ pub(crate) fn encode_storage_struct<T: Interoperable>(
 
 /// Position-based decoder for `StackValue::Struct` items.
 ///
-/// Replaces the repeated `StackValue::Struct(_, items)` destructure +
+/// Replaces the repeated `StackValue::Struct(items)` destructure +
 /// index-by-position decode pattern found in 8 `from_stack_value` impls
 /// (`DepositState`, `NeoAccountStateView`, `CandidateState`, `CachedCommittee`,
 /// `WhitelistedContractView`, `HashIndexState`, `OracleRequest`, `AccountState`).
@@ -88,10 +88,8 @@ pub(crate) struct StructDecoder<'a> {
 impl<'a> StructDecoder<'a> {
     /// Creates a decoder from a `StackValue` that must be a `Struct`.
     pub fn new(value: &'a StackValue, label: &'a str) -> CoreResult<Self> {
-        let StackValue::Struct(_, items) = value else {
-            return Err(CoreError::invalid_data(format!(
-                "{label} is not a struct"
-            )));
+        let StackValue::Struct(items) = value else {
+            return Err(CoreError::invalid_data(format!("{label} is not a struct")));
         };
         Ok(Self { items, label })
     }
@@ -116,9 +114,10 @@ impl<'a> StructDecoder<'a> {
 
     /// Decodes the field at position `i` as a `BigInt`.
     pub fn bigint(&self, i: usize, field: &str) -> CoreResult<BigInt> {
-        let v = self.items.get(i).ok_or_else(|| {
-            CoreError::invalid_data(format!("{} {} missing", self.label, field))
-        })?;
+        let v = self
+            .items
+            .get(i)
+            .ok_or_else(|| CoreError::invalid_data(format!("{} {} missing", self.label, field)))?;
         neo_vm::stack_value_as_bigint(v)
             .map_err(|e| CoreError::invalid_data(format!("{} {}: {e}", self.label, field)))
     }
@@ -149,9 +148,10 @@ impl<'a> StructDecoder<'a> {
 
     /// Decodes the field at position `i` as a `bool`.
     pub fn bool_value(&self, i: usize, field: &str) -> CoreResult<bool> {
-        let v = self.items.get(i).ok_or_else(|| {
-            CoreError::invalid_data(format!("{} {} missing", self.label, field))
-        })?;
+        let v = self
+            .items
+            .get(i)
+            .ok_or_else(|| CoreError::invalid_data(format!("{} {} missing", self.label, field)))?;
         neo_vm_rs::stack_value_as_bool(v).ok_or_else(|| {
             CoreError::invalid_data(format!(
                 "{} {}: expected boolean-compatible value",
@@ -163,9 +163,10 @@ impl<'a> StructDecoder<'a> {
     /// Decodes the field at position `i` as a byte vector (`ByteString` or
     /// `Buffer`).
     pub fn byte_array(&self, i: usize, field: &str) -> CoreResult<Vec<u8>> {
-        let v = self.items.get(i).ok_or_else(|| {
-            CoreError::invalid_data(format!("{} {} missing", self.label, field))
-        })?;
+        let v = self
+            .items
+            .get(i)
+            .ok_or_else(|| CoreError::invalid_data(format!("{} {} missing", self.label, field)))?;
         v.to_byte_string_bytes().ok_or_else(|| {
             CoreError::invalid_data(format!(
                 "{} {}: expected byte-like value",

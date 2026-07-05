@@ -89,8 +89,13 @@ fn create_response_tx_matches_csharp_fee_math() {
         network: settings.network,
         ..Default::default()
     };
-    let service =
-        OracleService::new(oracle_settings, system.clone(), system.clone(), system.clone()).expect("oracle service");
+    let service = OracleService::new(
+        oracle_settings,
+        system.clone(),
+        system.clone(),
+        system.clone(),
+    )
+    .expect("oracle service");
     let snapshot = service.snapshot_cache();
 
     seed_transaction_state(&snapshot, &request.original_tx_id, &origin_tx, 1);

@@ -3,8 +3,8 @@
 use super::contract_group::ContractGroup;
 use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
-use neo_primitives::hex_util;
 use neo_primitives::UInt160;
+use neo_primitives::hex_util;
 use neo_vm::StackItem;
 use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
@@ -75,7 +75,8 @@ impl ContractPermissionDescriptor {
                         .map_err(|e| CoreError::other(e.to_string()));
                 }
                 66 => {
-                    let bytes = hex_util::decode_hex(s).map_err(|e| CoreError::other(e.to_string()))?;
+                    let bytes =
+                        hex_util::decode_hex(s).map_err(|e| CoreError::other(e.to_string()))?;
                     return ECPoint::decode_secp256r1(&bytes)
                         .map(ContractPermissionDescriptor::Group)
                         .map_err(|e| CoreError::other(e.to_string()));
@@ -123,9 +124,7 @@ impl ContractPermissionDescriptor {
     pub fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
         match stack_value {
             StackValue::Null => Ok(Self::create_wildcard()),
-            StackValue::ByteString(bytes) | StackValue::Buffer(_, bytes) => {
-                Self::from_bytes(&bytes)
-            }
+            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => Self::from_bytes(&bytes),
             other => Err(CoreError::other(format!(
                 "Unsupported stack value type for ContractPermissionDescriptor: {:?}",
                 other

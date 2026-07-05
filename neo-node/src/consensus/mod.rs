@@ -23,13 +23,13 @@ use neo_config::ProtocolSettings;
 use neo_consensus::messages::ConsensusPayload;
 use neo_consensus::{ConsensusEvent, ConsensusService, ConsensusSigner, ValidatorInfo};
 use neo_crypto::{ECPoint, Secp256r1Crypto};
+use neo_io::Serializable;
 use neo_mempool::MemoryPool;
 use neo_native_contracts::{LedgerContract, NeoToken, PolicyContract};
-use neo_io::Serializable;
 use neo_network::NetworkHandle;
 use neo_payloads::{ExtensiblePayload, Transaction, Witness};
-use neo_primitives::{UInt160, UInt256, hex_util};
 use neo_primitives::time::now_millis;
+use neo_primitives::{UInt160, UInt256, hex_util};
 use neo_storage::persistence::{DataCache, Store, StoreCache};
 use neo_vm::script_builder::{RedeemScript, ScriptBuilder, signature_from_invocation};
 use parking_lot::RwLock;
@@ -73,7 +73,9 @@ fn consensus_to_extensible(
     ext.sender = validator.script_hash;
     ext.data = payload.to_message_bytes();
     ext.witness = Witness::new_with_scripts(
-        ScriptBuilder::new().invocation_from_signature(&payload.witness).to_array(),
+        ScriptBuilder::new()
+            .invocation_from_signature(&payload.witness)
+            .to_array(),
         RedeemScript::signature_redeem_script(&validator.public_key.encoded()),
     );
     Some(ext)
@@ -325,9 +327,10 @@ impl ConsensusDriver {
         // `ProtocolSettings` default, so this replaces the frozen construction-time
         // value on every round. Without this, a committee `setMillisecondsPerBlock`
         // would desync Rust validators' block timers from the C# committee.
-        let ms_per_block = PolicyContract::new()
-            .get_milliseconds_per_block_snapshot(snapshot, &self.settings)?;
-        self.service.set_expected_block_time(u64::from(ms_per_block));
+        let ms_per_block =
+            PolicyContract::new().get_milliseconds_per_block_snapshot(snapshot, &self.settings)?;
+        self.service
+            .set_expected_block_time(u64::from(ms_per_block));
 
         // C# `DbftSettings.MaxBlockSize` / `MaxBlockSystemFee`: the block-policy
         // limits a backup re-checks in `CheckPrepareResponse` before sending its

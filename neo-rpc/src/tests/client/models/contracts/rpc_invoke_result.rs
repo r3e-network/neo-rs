@@ -129,10 +129,7 @@ fn invoke_result_to_json_handles_circular_stack() {
         script: "00".to_string(),
         state: VmState::Halt,
         gas_consumed: 1,
-        stack: vec![StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
-            vec![StackValue::Boolean(true)],
-        )],
+        stack: vec![StackValue::Array(vec![StackValue::Boolean(true)])],
         tx: None,
         exception: None,
         session: None,

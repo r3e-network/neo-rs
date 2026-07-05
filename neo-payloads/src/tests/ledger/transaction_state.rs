@@ -8,17 +8,17 @@ use neo_vm::Interoperable;
 use neo_vm_rs::{ExecutionEngineLimits, OpCode, StackValue, VmState as VMState};
 
 /// Structural equality for StackValue that ignores the reference-identity ids
-/// on compound variants (neo-vm-rs 0.2.0 compares compounds by id; tests want
-/// value equality). The id is not serialized, so structural equality is the
-/// correct notion for round-trip / shape assertions.
+/// on compound variants. Collection identity is not part of serialized
+/// stack data, so structural equality is the correct notion for round-trip / shape
+/// assertions.
 fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
     use neo_vm_rs::StackValue::*;
     match (a, b) {
-        (Buffer(_, x), Buffer(_, y)) => x == y,
-        (Array(_, x), Array(_, y)) | (Struct(_, x), Struct(_, y)) => {
+        (Buffer(x), Buffer(y)) => x == y,
+        (Array(x), Array(y)) | (Struct(x), Struct(y)) => {
             x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
         }
-        (Map(_, x), Map(_, y)) => {
+        (Map(x), Map(y)) => {
             x.len() == y.len()
                 && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
                     stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
@@ -55,10 +55,7 @@ fn transaction_state_projects_conflict_stub_to_neo_vm_rs_stack_value() {
     let state = TransactionState::new(7, None, VMState::NONE);
 
     let left = state.to_stack_value();
-    let right = StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
-        vec![StackValue::Integer(7)],
-    );
+    let right = StackValue::Struct(vec![StackValue::Integer(7)]);
     assert!(
         stack_value_struct_eq(&left, &right),
         "structural StackValue mismatch: {left:?} vs {right:?}"
@@ -72,14 +69,11 @@ fn transaction_state_reads_from_neo_vm_rs_stack_value() {
     let mut state = TransactionState::new(0, None, VMState::NONE);
 
     state
-        .from_stack_value(StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
-            vec![
-                StackValue::Integer(11),
-                StackValue::ByteString(tx_bytes),
-                StackValue::Integer(VMState::HALT.to_byte() as i64),
-            ],
-        ))
+        .from_stack_value(StackValue::Struct(vec![
+            StackValue::Integer(11),
+            StackValue::ByteString(tx_bytes),
+            StackValue::Integer(VMState::HALT.to_byte() as i64),
+        ]))
         .unwrap();
 
     assert_eq!(state.block_index, 11);
@@ -171,22 +165,14 @@ fn interoperable_projection_accepts_conflict_stub() {
 fn transaction_state_rejects_invalid_stack_shapes() {
     let mut parsed = TransactionState::new(0, None, VMState::NONE);
 
+    assert!(parsed.from_stack_value(StackValue::Array(vec![])).is_err());
+    assert!(parsed.from_stack_value(StackValue::Struct(vec![])).is_err());
     assert!(
         parsed
-            .from_stack_value(StackValue::Array(neo_vm_rs::next_stack_item_id(), vec![]))
-            .is_err()
-    );
-    assert!(
-        parsed
-            .from_stack_value(StackValue::Struct(neo_vm_rs::next_stack_item_id(), vec![]))
-            .is_err()
-    );
-    assert!(
-        parsed
-            .from_stack_value(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
-                vec![StackValue::Integer(7), StackValue::ByteString(vec![])]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::Integer(7),
+                StackValue::ByteString(vec![])
+            ]))
             .is_err()
     );
 }
@@ -196,14 +182,11 @@ fn transaction_state_rejects_malformed_transaction_bytes() {
     let mut parsed = TransactionState::new(0, None, VMState::NONE);
 
     let error = parsed
-        .from_stack_value(StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
-            vec![
-                StackValue::Integer(7),
-                StackValue::ByteString(vec![0xff]),
-                StackValue::Integer(VMState::HALT.to_byte() as i64),
-            ],
-        ))
+        .from_stack_value(StackValue::Struct(vec![
+            StackValue::Integer(7),
+            StackValue::ByteString(vec![0xff]),
+            StackValue::Integer(VMState::HALT.to_byte() as i64),
+        ]))
         .unwrap_err();
 
     assert!(

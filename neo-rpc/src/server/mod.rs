@@ -90,6 +90,7 @@ mod wallet_compat;
 pub mod ws;
 
 // Public exports
+pub use node_context::NodeContext;
 pub use rpc_error::RpcError as ServerRpcError;
 pub use rpc_exception::RpcException;
 pub(crate) use rpc_handler_macros::rpc_handlers;
@@ -97,7 +98,6 @@ pub use rpc_method_attribute::RpcMethodDescriptor;
 pub use rpc_registry::{SERVERS, ServerRegistry};
 pub use rpc_remote_ledger::RemoteLedgerRpcClient;
 pub use rpc_server::{RpcCallback, RpcHandler, RpcServer};
-pub use node_context::NodeContext;
 pub use rpc_server_application_logs::RpcServerApplicationLogs;
 pub use rpc_server_blockchain::RpcServerBlockchain;
 pub use rpc_server_indexer::RpcServerIndexer;

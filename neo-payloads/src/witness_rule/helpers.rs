@@ -15,9 +15,7 @@ pub fn encode_hex(bytes: &[u8]) -> String {
 }
 
 fn decode_hex(value: &str) -> CoreResult<Vec<u8>> {
-    hex_util::decode_hex(value).map_err(|e| {
-        CoreError::other(format!("Invalid hex string: {e}"))
-    })
+    hex_util::decode_hex(value).map_err(|e| CoreError::other(format!("Invalid hex string: {e}")))
 }
 
 /// Parses a hex-encoded ECPoint group, validating the byte length.

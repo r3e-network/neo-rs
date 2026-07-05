@@ -137,8 +137,7 @@ impl NeoToken {
 
     /// Decodes a stored `NeoAccountState` struct into its fields.
     pub(super) fn decode_neo_account_state(value: &[u8]) -> CoreResult<NeoAccountStateView> {
-        let decoded =
-            crate::support::codec::decode_stack_value(value, "neo account state")?;
+        let decoded = crate::support::codec::decode_stack_value(value, "neo account state")?;
         NeoAccountStateView::from_stack_value(decoded)
     }
 
@@ -309,8 +308,7 @@ impl NeoToken {
             }
         }
 
-        let decoded =
-            crate::support::codec::decode_stack_value(&raw, "committee cache")?;
+        let decoded = crate::support::codec::decode_stack_value(&raw, "committee cache")?;
         let members = CachedCommittee::from_stack_value(decoded)?.into_members();
 
         let mut cache = COMMITTEE_DESERIALIZE_CACHE
@@ -685,8 +683,7 @@ impl NeoToken {
         if let Some(decoded) = Self::decode_canonical_candidate_state(value)? {
             return Ok(decoded);
         }
-        let decoded =
-            crate::support::codec::decode_stack_value(value, "candidate state")?;
+        let decoded = crate::support::codec::decode_stack_value(value, "candidate state")?;
         let state = CandidateState::from_stack_value(decoded)?;
         Ok((state.registered, state.votes))
     }
@@ -909,17 +906,13 @@ impl NeoToken {
         candidates: &[(ECPoint, BigInt)],
     ) -> CoreResult<Vec<u8>> {
         let array = StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
             candidates
                 .iter()
                 .map(|(pk, votes)| {
-                    StackValue::Struct(
-                        neo_vm_rs::next_stack_item_id(),
-                        vec![
-                            StackValue::ByteString(pk.to_bytes()),
-                            StackValue::BigInteger(votes.to_signed_bytes_le()),
-                        ],
-                    )
+                    StackValue::Struct(vec![
+                        StackValue::ByteString(pk.to_bytes()),
+                        StackValue::BigInteger(votes.to_signed_bytes_le()),
+                    ])
                 })
                 .collect::<Vec<_>>(),
         );
@@ -934,7 +927,6 @@ impl NeoToken {
         I: IntoIterator<Item = &'a ECPoint>,
     {
         StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
             points
                 .into_iter()
                 .map(|p| StackValue::ByteString(p.to_bytes()))

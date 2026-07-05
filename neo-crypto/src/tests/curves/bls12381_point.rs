@@ -108,8 +108,7 @@ fn rejects_invalid_and_wrong_length() {
 // --- Canonicity parity with C# (`Scalar.FromBytes` / `Fp.FromBytes`) ---
 
 // BLS12-381 base-field modulus p, big-endian (48 bytes).
-const FP_MODULUS_BE_HEX: &str =
-    "1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab";
+const FP_MODULUS_BE_HEX: &str = "1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab";
 // BLS12-381 scalar-field order r, little-endian (32 bytes).
 const R_MODULUS_LE: [u8; SCALAR_SIZE] = [
     0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xfe, 0x5b, 0xfe, 0xff, 0x02, 0xa4, 0xbd, 0x53,
@@ -152,7 +151,10 @@ fn mul_rejects_non_canonical_scalar_like_csharp() {
     let mut r_minus_1 = R_MODULUS_LE;
     r_minus_1[0] = 0x00; // r ends in 0x01 -> r-1 ends in 0x00, no borrow.
     let out = gt.mul(&r_minus_1, false);
-    assert!(out.is_ok(), "scalar == r-1 is canonical and must be accepted");
+    assert!(
+        out.is_ok(),
+        "scalar == r-1 is canonical and must be accepted"
+    );
 
     // The largest canonical scalar (r-1) and a small one both round-trip;
     // sanity-check that a normal small scalar still works.

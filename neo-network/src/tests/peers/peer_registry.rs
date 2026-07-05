@@ -134,9 +134,9 @@ fn add_unconnected_dedups_and_skips_connected_endpoints() {
     let added = registry.add_unconnected([
         addr("10.0.0.2:20333"),
         addr("10.0.0.3:20333"),
-        addr("10.0.0.2:20333"),      // duplicate within the batch
-        addr("10.0.0.1:20333"),      // already connected (listener) => skipped
-        addr("10.0.0.1:5001"),       // already connected (transport) => skipped
+        addr("10.0.0.2:20333"), // duplicate within the batch
+        addr("10.0.0.1:20333"), // already connected (listener) => skipped
+        addr("10.0.0.1:5001"),  // already connected (transport) => skipped
     ]);
     assert_eq!(added, 2, "only two distinct, non-connected endpoints");
     assert_eq!(registry.unconnected_len(), 2);

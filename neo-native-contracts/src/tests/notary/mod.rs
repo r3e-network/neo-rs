@@ -22,17 +22,17 @@ use neo_vm::{Interoperable, StackItem};
 use neo_vm_rs::{ExecutionEngineLimits, StackValue};
 
 /// Structural equality for StackValue that ignores the reference-identity ids
-/// on compound variants (neo-vm-rs 0.2.0 compares compounds by id; tests want
-/// value equality). The id is not serialized, so structural equality is the
-/// correct notion for round-trip / shape assertions.
+/// on compound variants. Collection identity is not part of serialized
+/// stack data, so structural equality is the correct notion for round-trip / shape
+/// assertions.
 fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
     use neo_vm_rs::StackValue::*;
     match (a, b) {
-        (Buffer(_, x), Buffer(_, y)) => x == y,
-        (Array(_, x), Array(_, y)) | (Struct(_, x), Struct(_, y)) => {
+        (Buffer(x), Buffer(y)) => x == y,
+        (Array(x), Array(y)) | (Struct(x), Struct(y)) => {
             x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
         }
-        (Map(_, x), Map(_, y)) => {
+        (Map(x), Map(y)) => {
             x.len() == y.len()
                 && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
                     stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
@@ -216,13 +216,10 @@ fn deposit_round_trips_and_lock_decision_matches_csharp() {
 #[test]
 fn deposit_state_interoperable_projection_matches_csharp_shape() {
     let state = DepositState::new(BigInt::from(1000), 42);
-    let expected_value = StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
-        vec![
-            StackValue::BigInteger(BigInt::from(1000).to_signed_bytes_le()),
-            StackValue::Integer(42),
-        ],
-    );
+    let expected_value = StackValue::Struct(vec![
+        StackValue::BigInteger(BigInt::from(1000).to_signed_bytes_le()),
+        StackValue::Integer(42),
+    ]);
 
     let projected = state.to_stack_value();
     assert!(
@@ -240,17 +237,11 @@ fn deposit_state_interoperable_projection_matches_csharp_shape() {
     Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
     assert_eq!(parsed, state);
 
+    assert!(DepositState::from_stack_value(StackValue::Array(vec![])).is_err());
     assert!(
-        DepositState::from_stack_value(StackValue::Array(neo_vm_rs::next_stack_item_id(), vec![]))
-            .is_err()
-    );
-    assert!(
-        DepositState::from_stack_value(StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
-            vec![StackValue::BigInteger(
-                BigInt::from(1000).to_signed_bytes_le()
-            )]
-        ))
+        DepositState::from_stack_value(StackValue::Struct(vec![StackValue::BigInteger(
+            BigInt::from(1000).to_signed_bytes_le()
+        )]))
         .is_err()
     );
 }

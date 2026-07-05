@@ -32,6 +32,7 @@ use std::time::Duration;
 use self::http_policy::RpcHttpLayer;
 use super::jsonrpsee_adapter::build_jsonrpsee_module_with_methods;
 use super::middleware::{GovernorRateLimiter, RateLimitCheckResult, RateLimitConfig};
+use super::node_context::NodeContext;
 use super::rpc_error::RpcError;
 use super::rpc_remote_ledger::RemoteLedgerRpcClient;
 use super::rpc_server_settings::RpcServerConfig;
@@ -39,7 +40,6 @@ use super::session::Session;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use crate::server::rpc_transport::log_join_error;
-use super::node_context::NodeContext;
 use neo_wallets::Wallet;
 
 /// Callback signature used by registered RPC handlers.

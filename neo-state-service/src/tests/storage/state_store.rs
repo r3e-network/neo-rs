@@ -23,7 +23,8 @@ struct SnapshotCountingRawOverlayStore {
 
 impl std::fmt::Debug for SnapshotCountingRawOverlayStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SnapshotCountingRawOverlayStore").finish_non_exhaustive()
+        f.debug_struct("SnapshotCountingRawOverlayStore")
+            .finish_non_exhaustive()
     }
 }
 

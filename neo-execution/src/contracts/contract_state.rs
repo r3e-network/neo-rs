@@ -206,22 +206,19 @@ impl Interoperable for ContractState {
 impl ContractState {
     /// Converts the contract state into the persisted VM stack-value shape.
     pub fn to_stack_value(&self) -> StackValue {
-        StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
-            vec![
-                StackValue::Integer(self.id as i64),
-                StackValue::Integer(i64::from(self.update_counter)),
-                StackValue::ByteString(self.hash.to_bytes().to_vec()),
-                StackValue::ByteString(self.nef.to_bytes()),
-                self.manifest.to_stack_value(),
-            ],
-        )
+        StackValue::Array(vec![
+            StackValue::Integer(self.id as i64),
+            StackValue::Integer(i64::from(self.update_counter)),
+            StackValue::ByteString(self.hash.to_bytes().to_vec()),
+            StackValue::ByteString(self.nef.to_bytes()),
+            self.manifest.to_stack_value(),
+        ])
     }
 
     /// Updates this contract state from the persisted VM stack-value shape.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         let items = match stack_value {
-            StackValue::Array(_, items) => items,
+            StackValue::Array(items) => items,
             other => {
                 return Err(CoreError::invalid_format(format!(
                     "ContractState expects Array stack value, found {:?}",

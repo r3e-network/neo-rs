@@ -20,9 +20,7 @@ where
         // equivalent of `std::panic::catch_unwind`. `AssertUnwindSafe`
         // is required because the compiler cannot prove the future is
         // unwind-safe across a task boundary.
-        if let Err(panic) =
-            std::panic::AssertUnwindSafe(future).catch_unwind().await
-        {
+        if let Err(panic) = std::panic::AssertUnwindSafe(future).catch_unwind().await {
             let msg = panic_to_string(&panic);
             error!(target: "neo_network", %msg, "spawned task \"{name}\" panicked");
         }

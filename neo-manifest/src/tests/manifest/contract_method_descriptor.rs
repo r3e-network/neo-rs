@@ -2,17 +2,17 @@ use super::*;
 use neo_vm_rs::StackValue;
 
 /// Structural equality for StackValue that ignores the reference-identity ids
-/// on compound variants (neo-vm-rs 0.2.0 compares compounds by id; tests want
-/// value equality). The id is not serialized, so structural equality is the
-/// correct notion for round-trip / shape assertions.
+/// on compound variants. Collection identity is not part of serialized
+/// stack data, so structural equality is the correct notion for round-trip / shape
+/// assertions.
 fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
     use neo_vm_rs::StackValue::*;
     match (a, b) {
-        (Buffer(_, x), Buffer(_, y)) => x == y,
-        (Array(_, x), Array(_, y)) | (Struct(_, x), Struct(_, y)) => {
+        (Buffer(x), Buffer(y)) => x == y,
+        (Array(x), Array(y)) | (Struct(x), Struct(y)) => {
             x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
         }
-        (Map(_, x), Map(_, y)) => {
+        (Map(x), Map(y)) => {
             x.len() == y.len()
                 && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
                     stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
@@ -38,25 +38,16 @@ fn method_descriptor_projects_to_neo_vm_rs_stack_value() {
     .unwrap();
 
     let left = method.to_stack_value();
-    let right = StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
-        vec![
-            StackValue::ByteString(b"balanceOf".to_vec()),
-            StackValue::Array(
-                neo_vm_rs::next_stack_item_id(),
-                vec![StackValue::Struct(
-                    neo_vm_rs::next_stack_item_id(),
-                    vec![
-                        StackValue::ByteString(b"account".to_vec()),
-                        StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
-                    ],
-                )],
-            ),
-            StackValue::Integer(ContractParameterType::Integer as u8 as i64),
-            StackValue::Integer(42),
-            StackValue::Boolean(true),
-        ],
-    );
+    let right = StackValue::Struct(vec![
+        StackValue::ByteString(b"balanceOf".to_vec()),
+        StackValue::Array(vec![StackValue::Struct(vec![
+            StackValue::ByteString(b"account".to_vec()),
+            StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
+        ])]),
+        StackValue::Integer(ContractParameterType::Integer as u8 as i64),
+        StackValue::Integer(42),
+        StackValue::Boolean(true),
+    ]);
     assert!(
         stack_value_struct_eq(&left, &right),
         "structural StackValue mismatch: {left:?} vs {right:?}"
@@ -68,25 +59,16 @@ fn method_descriptor_reads_from_neo_vm_rs_stack_value() {
     let mut method = ContractMethodDescriptor::default();
 
     method
-        .from_stack_value(StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
-            vec![
-                StackValue::ByteString(b"symbol".to_vec()),
-                StackValue::Array(
-                    neo_vm_rs::next_stack_item_id(),
-                    vec![StackValue::Struct(
-                        neo_vm_rs::next_stack_item_id(),
-                        vec![
-                            StackValue::ByteString(b"format".to_vec()),
-                            StackValue::Integer(ContractParameterType::String as u8 as i64),
-                        ],
-                    )],
-                ),
+        .from_stack_value(StackValue::Struct(vec![
+            StackValue::ByteString(b"symbol".to_vec()),
+            StackValue::Array(vec![StackValue::Struct(vec![
+                StackValue::ByteString(b"format".to_vec()),
                 StackValue::Integer(ContractParameterType::String as u8 as i64),
-                StackValue::Integer(12),
-                StackValue::Boolean(true),
-            ],
-        ))
+            ])]),
+            StackValue::Integer(ContractParameterType::String as u8 as i64),
+            StackValue::Integer(12),
+            StackValue::Boolean(true),
+        ]))
         .unwrap();
 
     assert_eq!(method.name, "symbol");
@@ -105,25 +87,16 @@ fn method_descriptor_rejects_struct_parameter_sequence_like_csharp() {
 
     assert!(
         method
-            .from_stack_value(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
-                vec![
-                    StackValue::ByteString(b"verify".to_vec()),
-                    StackValue::Struct(
-                        neo_vm_rs::next_stack_item_id(),
-                        vec![StackValue::Struct(
-                            neo_vm_rs::next_stack_item_id(),
-                            vec![
-                                StackValue::ByteString(b"signature".to_vec()),
-                                StackValue::Integer(ContractParameterType::Signature as u8 as i64),
-                            ]
-                        )]
-                    ),
-                    StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
-                    StackValue::Integer(5),
-                    StackValue::Boolean(false),
-                ]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(b"verify".to_vec()),
+                StackValue::Struct(vec![StackValue::Struct(vec![
+                    StackValue::ByteString(b"signature".to_vec()),
+                    StackValue::Integer(ContractParameterType::Signature as u8 as i64),
+                ])]),
+                StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
+                StackValue::Integer(5),
+                StackValue::Boolean(false),
+            ]))
             .is_err()
     );
 }
@@ -141,58 +114,46 @@ fn method_descriptor_rejects_invalid_stack_fields_like_csharp() {
 
     assert!(
         method
-            .from_stack_value(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
-                vec![
-                    StackValue::ByteString(b"changed".to_vec()),
-                    StackValue::Array(neo_vm_rs::next_stack_item_id(), Vec::new()),
-                    StackValue::Integer(0x7f),
-                    StackValue::Integer(3),
-                    StackValue::Boolean(true),
-                ]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(b"changed".to_vec()),
+                StackValue::Array(Vec::new()),
+                StackValue::Integer(0x7f),
+                StackValue::Integer(3),
+                StackValue::Boolean(true),
+            ]))
             .is_err()
     );
     assert!(
         method
-            .from_stack_value(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
-                vec![
-                    StackValue::Null,
-                    StackValue::Array(neo_vm_rs::next_stack_item_id(), Vec::new()),
-                    StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
-                    StackValue::Integer(3),
-                    StackValue::Boolean(true),
-                ]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::Null,
+                StackValue::Array(Vec::new()),
+                StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
+                StackValue::Integer(3),
+                StackValue::Boolean(true),
+            ]))
             .is_err()
     );
     assert!(
         method
-            .from_stack_value(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
-                vec![
-                    StackValue::ByteString(vec![0xff]),
-                    StackValue::Array(neo_vm_rs::next_stack_item_id(), Vec::new()),
-                    StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
-                    StackValue::Integer(3),
-                    StackValue::Boolean(true),
-                ]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(vec![0xff]),
+                StackValue::Array(Vec::new()),
+                StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
+                StackValue::Integer(3),
+                StackValue::Boolean(true),
+            ]))
             .is_err()
     );
     assert!(
         method
-            .from_stack_value(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
-                vec![
-                    StackValue::ByteString(b"changed".to_vec()),
-                    StackValue::Array(neo_vm_rs::next_stack_item_id(), Vec::new()),
-                    StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
-                    StackValue::Integer(i64::MAX),
-                    StackValue::Boolean(true),
-                ]
-            ))
+            .from_stack_value(StackValue::Struct(vec![
+                StackValue::ByteString(b"changed".to_vec()),
+                StackValue::Array(Vec::new()),
+                StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
+                StackValue::Integer(i64::MAX),
+                StackValue::Boolean(true),
+            ]))
             .is_err()
     );
 }

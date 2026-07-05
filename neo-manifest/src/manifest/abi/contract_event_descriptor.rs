@@ -80,19 +80,15 @@ impl ContractEventDescriptor {
 
     /// Converts to a neo-vm-rs stack value (matches C# `ContractEventDescriptor.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
-            vec![
-                StackValue::ByteString(self.name.as_bytes().to_vec()),
-                StackValue::Array(
-                    neo_vm_rs::next_stack_item_id(),
-                    self.parameters
-                        .iter()
-                        .map(ContractParameterDefinition::to_stack_value)
-                        .collect(),
-                ),
-            ],
-        )
+        StackValue::Struct(vec![
+            StackValue::ByteString(self.name.as_bytes().to_vec()),
+            StackValue::Array(
+                self.parameters
+                    .iter()
+                    .map(ContractParameterDefinition::to_stack_value)
+                    .collect(),
+            ),
+        ])
     }
 
     /// Updates this event descriptor from a neo-vm-rs stack value.

@@ -124,9 +124,7 @@ impl WildCardContainer<String> {
     pub fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
         match stack_value {
             StackValue::Null => Ok(Self::create_wildcard()),
-            StackValue::Array(_, items) => {
-                Ok(Self::create(Self::strings_from_stack_values(items)?))
-            }
+            StackValue::Array(items) => Ok(Self::create(Self::strings_from_stack_values(items)?)),
             _ => Err(CoreError::other(
                 "Unsupported stack value for wildcard container",
             )),
@@ -146,7 +144,6 @@ impl WildCardContainer<String> {
         match self {
             Self::Wildcard => StackValue::Null,
             Self::List(values) => StackValue::Array(
-                neo_vm_rs::next_stack_item_id(),
                 values
                     .iter()
                     .map(|value| StackValue::ByteString(value.as_bytes().to_vec()))

@@ -36,10 +36,8 @@ impl Layer {
             // Layer 0: Foundation (no neo-* dependencies allowed).
             "neo-primitives" => Some(Layer::Foundation),
             // Layer 1: Infrastructure and shared data tooling.
-            "neo-io" | "neo-error" | "neo-crypto" | "neo-storage"
-            | "neo-config" | "neo-vm" | "neo-serialization" | "neo-manifest" => {
-                Some(Layer::Infrastructure)
-            }
+            "neo-io" | "neo-error" | "neo-crypto" | "neo-storage" | "neo-config" | "neo-vm"
+            | "neo-serialization" | "neo-manifest" => Some(Layer::Infrastructure),
             // Layer 2: Protocol payloads and consensus message vocabulary.
             "neo-payloads" | "neo-consensus" | "neo-hsm" => Some(Layer::Protocol),
             // Layer 3: Domain logic with no node composition dependency.

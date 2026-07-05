@@ -1076,11 +1076,9 @@ impl MptStore {
     fn should_publish_live_overlay(&self) -> bool {
         match self.backing.as_ref() {
             None => true,
-            Some(backing) => {
-                backing
-                    .as_fast_sync_store()
-                    .is_some_and(|fs| fs.has_pending_fast_sync_writes())
-            }
+            Some(backing) => backing
+                .as_fast_sync_store()
+                .is_some_and(|fs| fs.has_pending_fast_sync_writes()),
         }
     }
 

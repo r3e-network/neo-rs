@@ -587,8 +587,7 @@ async fn recovery_message_without_prepare_request_does_not_commit_zero_hash() {
     // `on_recovery_message` reconstructs.
     let mut preparation_messages = Vec::new();
     for &validator_index in &[1u8, 2u8, 3u8] {
-        let response =
-            PrepareResponseMessage::new(0, 0, validator_index, preparation_hash);
+        let response = PrepareResponseMessage::new(0, 0, validator_index, preparation_hash);
         let mut resp_payload = ConsensusPayload::new(
             network,
             0,

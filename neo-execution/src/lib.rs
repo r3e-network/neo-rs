@@ -74,8 +74,8 @@ pub use interoperable::Interoperable;
 pub use native_contract::{NativeContract, NativeEvent, NativeMethod, is_active_for};
 pub use native_contract_cache::{NativeContractsCache, NativeContractsCacheEntry};
 pub use native_registry::NativeRegistry;
-pub use nep17_reader::Nep17MetadataReaderImpl;
 pub use neo_primitives::TriggerType;
+pub use nep17_reader::Nep17MetadataReaderImpl;
 pub use notify_event_args::NotifyEventArgs;
 pub use storage_context::StorageContext;
 pub use storage_item_ext::StorageItemExt;
@@ -93,7 +93,7 @@ pub use native::{
     native_registry,
 };
 pub use runtime::{
-    bls12381_interop, diagnostic, env_flags, execution_context_state, helper,
-    interoperable, notify_event_args,
+    bls12381_interop, diagnostic, env_flags, execution_context_state, helper, interoperable,
+    notify_event_args,
 };
 pub use storage::{storage_context, storage_item_ext};

@@ -267,10 +267,7 @@ impl BinarySerializer {
                     let bytes = reader
                         .read_var_bytes(max_size)
                         .map_err(Self::io_error_to_core_error)?;
-                    pending.push(PendingStackValue::Value(StackValue::Buffer(
-                        neo_vm_rs::next_stack_item_id(),
-                        bytes,
-                    )));
+                    pending.push(PendingStackValue::Value(StackValue::Buffer(bytes)));
                 }
                 neo_vm_rs::NEOVM_STACK_ITEM_TYPE_ARRAY
                 | neo_vm_rs::NEOVM_STACK_ITEM_TYPE_STRUCT => {
@@ -338,13 +335,9 @@ impl BinarySerializer {
                             })?);
                         }
                         if matches!(container.kind, StackValueContainerKind::Array) {
-                            constructed
-                                .push(StackValue::Array(neo_vm_rs::next_stack_item_id(), elements));
+                            constructed.push(StackValue::Array(elements));
                         } else {
-                            constructed.push(StackValue::Struct(
-                                neo_vm_rs::next_stack_item_id(),
-                                elements,
-                            ));
+                            constructed.push(StackValue::Struct(elements));
                         }
                     }
                     StackValueContainerKind::Map => {
@@ -358,7 +351,7 @@ impl BinarySerializer {
                                 .ok_or_else(|| CoreError::other("Invalid serialized map value"))?;
                             entries.push((key, value));
                         }
-                        constructed.push(StackValue::Map(neo_vm_rs::next_stack_item_id(), entries));
+                        constructed.push(StackValue::Map(entries));
                     }
                 },
             }
@@ -461,25 +454,25 @@ impl BinarySerializer {
                     writer.push(StackItemType::ByteString.to_byte());
                     VarInt::write_var_bytes(bytes, writer);
                 }
-                StackValue::Buffer(_, bytes) => {
+                StackValue::Buffer(bytes) => {
                     writer.push(StackItemType::Buffer.to_byte());
                     VarInt::write_var_bytes(bytes, writer);
                 }
-                StackValue::Array(_, items) => {
+                StackValue::Array(items) => {
                     writer.push(StackItemType::Array.to_byte());
                     VarInt::write_var_int(items.len() as u64, writer);
                     for element in items.iter().rev() {
                         queue.push_back(element);
                     }
                 }
-                StackValue::Struct(_, items) => {
+                StackValue::Struct(items) => {
                     writer.push(StackItemType::Struct.to_byte());
                     VarInt::write_var_int(items.len() as u64, writer);
                     for element in items.iter().rev() {
                         queue.push_back(element);
                     }
                 }
-                StackValue::Map(_, entries) => {
+                StackValue::Map(entries) => {
                     writer.push(StackItemType::Map.to_byte());
                     VarInt::write_var_int(entries.len() as u64, writer);
                     for (key, value) in entries.iter().rev() {

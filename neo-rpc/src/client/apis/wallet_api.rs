@@ -42,7 +42,10 @@ impl WalletApi {
 
     /// Get unclaimed gas
     /// Matches C# `GetUnclaimedGasAsync` with `UInt160` parameter
-    pub async fn get_unclaimed_gas_from_hash(&self, account: &UInt160) -> Result<f64, RpcClientError> {
+    pub async fn get_unclaimed_gas_from_hash(
+        &self,
+        account: &UInt160,
+    ) -> Result<f64, RpcClientError> {
         let script_hash = neo_hash();
         let block_count = self.rpc_client.get_block_count().await?;
 
@@ -121,7 +124,8 @@ impl WalletApi {
         key: &str,
         add_assert: bool,
     ) -> Result<Transaction, RpcClientError> {
-        let key_pair = RpcUtility::key_pair(key).map_err(|e| RpcClientError::Other(e.to_string()))?;
+        let key_pair =
+            RpcUtility::key_pair(key).map_err(|e| RpcClientError::Other(e.to_string()))?;
         self.claim_gas_with_assert(&key_pair, add_assert).await
     }
 
@@ -337,7 +341,10 @@ impl WalletApi {
 
     /// Wait for a transaction to be confirmed.
     /// Matches C# `WaitTransactionAsync`
-    pub async fn wait_transaction(&self, tx: &Transaction) -> Result<RpcTransaction, RpcClientError> {
+    pub async fn wait_transaction(
+        &self,
+        tx: &Transaction,
+    ) -> Result<RpcTransaction, RpcClientError> {
         self.wait_transaction_with_timeout(tx, 60).await
     }
 
@@ -377,7 +384,10 @@ impl WalletApi {
 
     /// Get account state including balances
     /// Matches C# `GetAccountStateAsync`
-    pub async fn get_account_state(&self, account: &str) -> Result<WalletAccountState, RpcClientError> {
+    pub async fn get_account_state(
+        &self,
+        account: &str,
+    ) -> Result<WalletAccountState, RpcClientError> {
         let account_hash =
             RpcUtility::get_script_hash(account, &self.rpc_client.protocol_settings)?;
 

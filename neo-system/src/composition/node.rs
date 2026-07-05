@@ -37,8 +37,8 @@ use neo_storage::persistence::store_cache::StoreCache;
 use neo_error::{CoreError, CoreResult};
 
 use crate::error::NodeResult;
-use neo_runtime::ServiceRegistry;
 use crate::wallet_provider::WalletProvider;
+use neo_runtime::ServiceRegistry;
 
 /// The composed Neo node runtime.
 ///

@@ -16,8 +16,8 @@
 #![doc(html_root_url = "https://docs.rs/neo-runtime/0.10.0")]
 
 mod errors;
-mod service;
 pub mod node;
+mod service;
 pub mod time;
 
 // Re-exports for the public surface of the crate.
@@ -26,18 +26,16 @@ pub mod time;
 // exported here so the docstring "use neo_runtime::NetworkService"
 // import path resolves.
 pub use errors::{ServiceError, ServiceResult, error};
+pub use node::{ConfigProvider, NeoNodeTypes, NodeTypes, StoreProvider, TxAdmission};
 pub use service::{
-    BlockBatchImportOutcome, BlockImport, BlockImportOutcome,
-    BlockOrigin, BlockchainEvent,
-    DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, ExecutionOutcome, ExecutionPayload,
-    ImportedTip, Nep17Metadata,
-    Nep17MetadataReader, NetworkEvent, NetworkService, Service, ServiceRegistry,
-    TxHash, ValidationResult,
+    BlockBatchImportOutcome, BlockImport, BlockImportOutcome, BlockImportQueue, BlockOrigin,
+    BlockchainEvent, CommitPolicy, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY,
+    ExecutionOutcome, ExecutionPayload, ImportedTip, InMemorySyncStageCheckpointStore,
+    Nep17Metadata, Nep17MetadataReader, NetworkEvent, NetworkService, Service, ServiceRegistry,
+    StageProgress, SyncBlockBatch, SyncPipelineDriver, SyncPipelineImportOutcome,
+    SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind, TxHash, ValidationResult,
 };
 pub use service::{
-    block_import, blockchain, nep17, outcome, service_registry, services,
-    sync_metrics,
-};
-pub use node::{
-    ConfigProvider, NeoNodeTypes, NodeTypes, StoreProvider, TxAdmission,
+    block_import, blockchain, nep17, outcome, service_registry, services, sync_metrics,
+    sync_pipeline,
 };

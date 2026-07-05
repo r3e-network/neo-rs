@@ -66,14 +66,11 @@ impl NotifyEventArgs {
     /// The runtime owns hardfork-specific state-copying policy. This helper keeps
     /// the `[ScriptHash, EventName, State]` projection in one place.
     pub fn to_stack_value_with_state_array(&self, state_array: StackValue) -> StackValue {
-        StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
-            vec![
-                StackValue::ByteString(self.script_hash.to_bytes()),
-                StackValue::ByteString(self.event_name.clone().into_bytes()),
-                state_array,
-            ],
-        )
+        StackValue::Array(vec![
+            StackValue::ByteString(self.script_hash.to_bytes()),
+            StackValue::ByteString(self.event_name.clone().into_bytes()),
+            state_array,
+        ])
     }
 
     /// Converts the notification to a neo-vm-rs stack value using its current state array.
@@ -84,10 +81,7 @@ impl NotifyEventArgs {
             .cloned()
             .map(StackValue::try_from)
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(self.to_stack_value_with_state_array(StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
-            state,
-        )))
+        Ok(self.to_stack_value_with_state_array(StackValue::Array(state)))
     }
 
     /// Builds the C# `NotifyEventArgs.ToStackItem` layout with a caller-prepared
@@ -96,8 +90,7 @@ impl NotifyEventArgs {
         &self,
         state_array: StackItem,
     ) -> Result<StackItem, VmError> {
-        let StackValue::Array(_, mut fields) =
-            self.to_stack_value_with_state_array(StackValue::Null)
+        let StackValue::Array(mut fields) = self.to_stack_value_with_state_array(StackValue::Null)
         else {
             unreachable!("notification projection is always an array");
         };

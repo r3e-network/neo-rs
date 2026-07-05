@@ -393,15 +393,18 @@ impl LocalNodeService {
         // its own clones of the shared state so the command loop
         // can keep running. The `JoinHandle` is stored so we can
         // await it during shutdown to catch panics.
-        self.accept_handle = Some(spawn_guarded("accept_loop", accept_loop(
-            listener,
-            self.identity.clone(),
-            self.registry.clone(),
-            self.event_tx.clone(),
-            self.shutdown.clone(),
-            self.inbound_tx.clone(),
-            self.block_source.clone(),
-        )));
+        self.accept_handle = Some(spawn_guarded(
+            "accept_loop",
+            accept_loop(
+                listener,
+                self.identity.clone(),
+                self.registry.clone(),
+                self.event_tx.clone(),
+                self.shutdown.clone(),
+                self.inbound_tx.clone(),
+                self.block_source.clone(),
+            ),
+        ));
 
         self.started = true;
         self.bind_addr = Some(local_addr);

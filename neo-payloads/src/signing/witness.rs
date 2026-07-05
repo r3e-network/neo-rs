@@ -38,11 +38,11 @@
 use base64::{Engine as _, engine::general_purpose};
 use neo_crypto::Crypto;
 use neo_io::{Serializable, serializable::helper::SerializeHelper};
-use neo_primitives::hex_util;
 use neo_primitives::UInt160;
+use neo_primitives::hex_util;
 use serde::{Deserialize, Serialize};
-use std::sync::OnceLock;
 use std::fmt;
+use std::sync::OnceLock;
 
 /// Maximum size of invocation script in bytes.
 /// This is designed to allow a MultiSig 21/11 (committee)
@@ -155,7 +155,6 @@ impl Witness {
             },
         }
     }
-
 }
 
 neo_io::impl_default_via_new!(Witness);

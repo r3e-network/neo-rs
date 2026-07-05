@@ -108,7 +108,11 @@ impl Nep11Tracker {
                 tx_hash: *tx_hash,
             };
             if let Err(e) = self.base.put(NEP11_TRANSFER_SENT_PREFIX, &key, &value) {
-                TrackerBase::log(self.track_name(), &format!("Failed to store NEP-11 transfer sent: {e}"), LogLevel::Error);
+                TrackerBase::log(
+                    self.track_name(),
+                    &format!("Failed to store NEP-11 transfer sent: {e}"),
+                    LogLevel::Error,
+                );
             }
         }
 
@@ -127,7 +131,11 @@ impl Nep11Tracker {
                 tx_hash: *tx_hash,
             };
             if let Err(e) = self.base.put(NEP11_TRANSFER_RECEIVED_PREFIX, &key, &value) {
-                TrackerBase::log(self.track_name(), &format!("Failed to store NEP-11 transfer received: {e}"), LogLevel::Error);
+                TrackerBase::log(
+                    self.track_name(),
+                    &format!("Failed to store NEP-11 transfer received: {e}"),
+                    LogLevel::Error,
+                );
             }
         }
 
@@ -230,10 +238,18 @@ impl Nep11Tracker {
         };
 
         if let Err(e) = self.base.put(NEP11_BALANCE_PREFIX, &key_to, &value_to) {
-            TrackerBase::log(self.track_name(), &format!("Failed to store NEP-11 balance (to): {e}"), LogLevel::Error);
+            TrackerBase::log(
+                self.track_name(),
+                &format!("Failed to store NEP-11 balance (to): {e}"),
+                LogLevel::Error,
+            );
         }
         if let Err(e) = self.base.put(NEP11_BALANCE_PREFIX, &key_from, &value_from) {
-            TrackerBase::log(self.track_name(), &format!("Failed to store NEP-11 balance (from): {e}"), LogLevel::Error);
+            TrackerBase::log(
+                self.track_name(),
+                &format!("Failed to store NEP-11 balance (from): {e}"),
+                LogLevel::Error,
+            );
         }
     }
 
@@ -250,7 +266,11 @@ impl Nep11Tracker {
         if record.from != UInt160::zero() {
             let key_from = Nep11BalanceKey::new(record.from, record.asset, token_id.clone());
             if let Err(e) = self.base.delete(NEP11_BALANCE_PREFIX, &key_from) {
-                TrackerBase::log(self.track_name(), &format!("Failed to delete NEP-11 balance (from): {e}"), LogLevel::Error);
+                TrackerBase::log(
+                    self.track_name(),
+                    &format!("Failed to delete NEP-11 balance (from): {e}"),
+                    LogLevel::Error,
+                );
             }
         }
 
@@ -261,7 +281,11 @@ impl Nep11Tracker {
                 last_updated_block: self.current_height,
             };
             if let Err(e) = self.base.put(NEP11_BALANCE_PREFIX, &key_to, &value) {
-                TrackerBase::log(self.track_name(), &format!("Failed to store NEP-11 balance (to): {e}"), LogLevel::Error);
+                TrackerBase::log(
+                    self.track_name(),
+                    &format!("Failed to store NEP-11 balance (to): {e}"),
+                    LogLevel::Error,
+                );
             }
         }
     }

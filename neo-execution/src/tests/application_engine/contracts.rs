@@ -1,4 +1,5 @@
 use super::*;
+use crate::native_contract_provider::lock_native_provider;
 use crate::native_contract_provider::{NativeContractLookup, NativeContractProvider};
 use neo_manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
@@ -7,7 +8,6 @@ use neo_manifest::{
 use neo_primitives::ContractParameterType;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
-use crate::native_contract_provider::lock_native_provider;
 use parking_lot::Mutex as PlMutex;
 use std::collections::HashMap;
 

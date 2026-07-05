@@ -28,10 +28,8 @@ pub trait RawOverlayStore: super::store::Store {
     ///
     /// Implementations may sort this materialized overlay by raw key before
     /// writing so B+tree and LSM backends receive locality-friendly batches.
-    fn try_commit_raw_overlay(
-        &self,
-        overlay: &[(Vec<u8>, Option<Vec<u8>>)],
-    ) -> StorageResult<bool>;
+    fn try_commit_raw_overlay(&self, overlay: &[(Vec<u8>, Option<Vec<u8>>)])
+    -> StorageResult<bool>;
 
     /// Commits raw byte-key overlay entries from a borrowed visitor when the
     /// backend can consume the changes without the caller first cloning them

@@ -127,7 +127,9 @@ impl ConsensusService {
         info!(
             block_index,
             view = loaded.view_number,
-            commit_sent = loaded.my_index.is_some_and(|idx| loaded.commits.contains_key(&idx)),
+            commit_sent = loaded
+                .my_index
+                .is_some_and(|idx| loaded.commits.contains_key(&idx)),
             "resuming consensus from recovery log"
         );
 

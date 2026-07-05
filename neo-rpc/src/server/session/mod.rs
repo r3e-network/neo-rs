@@ -137,7 +137,10 @@ impl Session {
         // `ConfigProvider::max_valid_until_block_increment()` is only correct
         // pre-Echidna, so read the Policy-aware value from the snapshot.
         let max_valid_until_block_increment = PolicyContract::new()
-            .get_max_valid_until_block_increment_snapshot(store_cache.data_cache(), settings.as_ref())
+            .get_max_valid_until_block_increment_snapshot(
+                store_cache.data_cache(),
+                settings.as_ref(),
+            )
             .unwrap_or_else(|_| config_provider.max_valid_until_block_increment());
 
         let tx_container = signers.as_ref().map(|signer_list| {

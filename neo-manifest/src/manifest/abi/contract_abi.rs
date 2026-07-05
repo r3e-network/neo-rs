@@ -135,25 +135,20 @@ impl ContractAbi {
 
     /// Converts to a neo-vm-rs stack value (matches C# `ContractAbi.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
-            vec![
-                StackValue::Array(
-                    neo_vm_rs::next_stack_item_id(),
-                    self.methods
-                        .iter()
-                        .map(ContractMethodDescriptor::to_stack_value)
-                        .collect(),
-                ),
-                StackValue::Array(
-                    neo_vm_rs::next_stack_item_id(),
-                    self.events
-                        .iter()
-                        .map(ContractEventDescriptor::to_stack_value)
-                        .collect(),
-                ),
-            ],
-        )
+        StackValue::Struct(vec![
+            StackValue::Array(
+                self.methods
+                    .iter()
+                    .map(ContractMethodDescriptor::to_stack_value)
+                    .collect(),
+            ),
+            StackValue::Array(
+                self.events
+                    .iter()
+                    .map(ContractEventDescriptor::to_stack_value)
+                    .collect(),
+            ),
+        ])
     }
 
     /// Updates this ABI from a neo-vm-rs stack value.

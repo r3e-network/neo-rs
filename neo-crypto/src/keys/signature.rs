@@ -525,7 +525,6 @@ impl Crypto {
         verify_ecdsa_raw64_with_hash(data, &signature, public_key, *curve, hash_algorithm)
             .unwrap_or(false)
     }
-
 }
 
 #[cfg(test)]

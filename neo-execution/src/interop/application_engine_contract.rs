@@ -9,8 +9,8 @@ use neo_crypto::bls12381_point::{G1_COMPRESSED_SIZE, G2_COMPRESSED_SIZE, GT_SIZE
 use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
 use neo_payloads::Transaction;
-use neo_primitives::hex_util;
 use neo_primitives::ContractParameterType;
+use neo_primitives::hex_util;
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::BinarySerializer;
 use neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};

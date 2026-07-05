@@ -1,6 +1,4 @@
-use super::helpers::{
-    PersistCompletedHarness, create_validators_with_keys, sign_payload,
-};
+use super::helpers::{PersistCompletedHarness, create_validators_with_keys, sign_payload};
 use crate::messages::{ConsensusPayload, PrepareResponseMessage};
 use crate::{ConsensusEvent, ConsensusMessageType, ConsensusService};
 use neo_primitives::{UInt160, UInt256};
@@ -54,7 +52,10 @@ async fn drive_primary_to_own_commit(
             }
         }
     }
-    let preparation_hash = service.context().preparation_hash.expect("preparation hash");
+    let preparation_hash = service
+        .context()
+        .preparation_hash
+        .expect("preparation hash");
 
     // Two PrepareResponses (+ the primary's own prepare) reach M=3 → the primary
     // signs and broadcasts its OWN Commit, which triggers the save.
@@ -72,7 +73,10 @@ async fn drive_primary_to_own_commit(
         service.process_message(payload).await.unwrap();
     }
 
-    let block_hash = service.context().proposed_block_hash.expect("committed block hash");
+    let block_hash = service
+        .context()
+        .proposed_block_hash
+        .expect("committed block hash");
     (service, block_hash, rx)
 }
 
@@ -161,12 +165,8 @@ async fn own_commit_persists_recovery_log_before_broadcast() {
 
     // The persisted state round-trips and records the commit at (block 0, view 0)
     // over the real proposed block hash.
-    let reloaded = crate::context::ConsensusContext::load(
-        &state_path,
-        validators,
-        Some(0),
-    )
-    .expect("recovery log loads");
+    let reloaded = crate::context::ConsensusContext::load(&state_path, validators, Some(0))
+        .expect("recovery log loads");
     assert_eq!(reloaded.block_index, 0);
     assert_eq!(reloaded.view_number, 0);
     assert!(
@@ -202,8 +202,7 @@ async fn fresh_service_resumes_from_log_and_will_not_double_sign() {
     // Round 2: a brand-new service (fresh in-memory state) restarts and loads the
     // recovery log for the same block 0.
     let (tx, mut rx) = mpsc::channel(100);
-    let mut restarted =
-        ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+    let mut restarted = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
     restarted.set_state_path(Some(state_path.clone()));
 
     let resumed = restarted

@@ -3,9 +3,7 @@ use super::*;
 use std::sync::Arc;
 
 use neo_config::{Hardfork, ProtocolSettings};
-use neo_execution::native_contract_provider::{
-    lock_native_provider, NativeProviderTestGuard,
-};
+use neo_execution::native_contract_provider::{NativeProviderTestGuard, lock_native_provider};
 use neo_payloads::{Block, Header, Transaction};
 use neo_storage::SeekDirection;
 

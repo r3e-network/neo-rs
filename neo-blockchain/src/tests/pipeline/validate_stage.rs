@@ -90,7 +90,9 @@ fn block_with_transactions(index: u32, tx_count: usize) -> Block {
             tx
         })
         .collect();
-    block.try_rebuild_merkle_root().expect("valid tx merkle root");
+    block
+        .try_rebuild_merkle_root()
+        .expect("valid tx merkle root");
     block
 }
 
@@ -150,7 +152,10 @@ async fn validate_stage_uses_protocol_transaction_limit() {
         .await
         .expect_err("protocol tx limit must fail");
 
-    assert!(err.to_string().contains("Transaction count 2 exceeds maximum 1"));
+    assert!(
+        err.to_string()
+            .contains("Transaction count 2 exceeds maximum 1")
+    );
 }
 
 #[tokio::test]

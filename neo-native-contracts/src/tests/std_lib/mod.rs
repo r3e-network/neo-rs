@@ -77,7 +77,11 @@ fn base64_decode_respects_max_input_length() {
 #[test]
 fn base64_encode_respects_max_input_length() {
     let ok = vec![0u8; MAX_INPUT_LENGTH];
-    assert!(StdLib::dispatch("base64Encode", &[ok], true).unwrap().is_ok());
+    assert!(
+        StdLib::dispatch("base64Encode", &[ok], true)
+            .unwrap()
+            .is_ok()
+    );
 
     let too_long = vec![0u8; MAX_INPUT_LENGTH + 1];
     assert!(
@@ -200,9 +204,13 @@ fn base58_methods_respect_max_input_length() {
             .is_err()
     );
     assert!(
-        StdLib::dispatch("base58CheckEncode", std::slice::from_ref(&too_long_bytes), true)
-            .unwrap()
-            .is_err()
+        StdLib::dispatch(
+            "base58CheckEncode",
+            std::slice::from_ref(&too_long_bytes),
+            true
+        )
+        .unwrap()
+        .is_err()
     );
 
     let too_long_base58 = "1".repeat(MAX_INPUT_LENGTH + 1);
@@ -261,7 +269,9 @@ fn unknown_method_is_none() {
 /// return back into the substrings for comparison.
 fn split(args: &[&[u8]]) -> Vec<String> {
     let owned: Vec<Vec<u8>> = args.iter().map(|a| a.to_vec()).collect();
-    let bytes = StdLib::dispatch("stringSplit", &owned, true).unwrap().unwrap();
+    let bytes = StdLib::dispatch("stringSplit", &owned, true)
+        .unwrap()
+        .unwrap();
     let item =
         BinarySerializer::deserialize(&bytes, &ExecutionEngineLimits::default(), None).unwrap();
     item.as_array()
@@ -551,7 +561,9 @@ fn str_len_is_ungated_and_safe() {
 fn memory_search_matches_csharp() {
     let search = |args: &[&[u8]]| -> i64 {
         let owned: Vec<Vec<u8>> = args.iter().map(|a| a.to_vec()).collect();
-        let out = StdLib::dispatch("memorySearch", &owned, true).unwrap().unwrap();
+        let out = StdLib::dispatch("memorySearch", &owned, true)
+            .unwrap()
+            .unwrap();
         BigInt::from_signed_bytes_le(&out).to_i64().unwrap()
     };
     let n = |v: i64| BigInt::from(v).to_signed_bytes_le();
@@ -571,9 +583,13 @@ fn memory_search_matches_csharp() {
 fn memory_search_start_out_of_range_faults() {
     // C# AsSpan(start) throws when start exceeds the length.
     assert!(
-        StdLib::dispatch("memorySearch", &[b"abc".to_vec(), b"a".to_vec(), vec![9]], true)
-            .unwrap()
-            .is_err()
+        StdLib::dispatch(
+            "memorySearch",
+            &[b"abc".to_vec(), b"a".to_vec(), vec![9]],
+            true
+        )
+        .unwrap()
+        .is_err()
     );
 }
 
@@ -673,9 +689,13 @@ fn json_serialize_deserialize_match_csharp_vectors() {
     );
 
     // Serialize -> deserialize round-trips a structured value.
-    let payload = StdLib::dispatch("jsonDeserialize", &[br#"{"k":[1,true,null]}"#.to_vec()], true)
-        .unwrap()
-        .unwrap();
+    let payload = StdLib::dispatch(
+        "jsonDeserialize",
+        &[br#"{"k":[1,true,null]}"#.to_vec()],
+        true,
+    )
+    .unwrap()
+    .unwrap();
     let item = BinarySerializer::deserialize(&payload, &limits, None).unwrap();
     assert_eq!(ser(&item), r#"{"k":[1,true,null]}"#);
 }

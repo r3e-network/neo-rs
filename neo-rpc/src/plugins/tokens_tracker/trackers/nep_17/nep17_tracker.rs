@@ -120,7 +120,11 @@ impl Nep17Tracker {
                 tx_hash: *tx_hash,
             };
             if let Err(e) = self.base.put(NEP17_TRANSFER_SENT_PREFIX, &key, &value) {
-                TrackerBase::log(self.track_name(), &format!("Failed to store NEP-17 transfer sent: {e}"), LogLevel::Error);
+                TrackerBase::log(
+                    self.track_name(),
+                    &format!("Failed to store NEP-17 transfer sent: {e}"),
+                    LogLevel::Error,
+                );
             }
         }
 
@@ -138,7 +142,11 @@ impl Nep17Tracker {
                 tx_hash: *tx_hash,
             };
             if let Err(e) = self.base.put(NEP17_TRANSFER_RECEIVED_PREFIX, &key, &value) {
-                TrackerBase::log(self.track_name(), &format!("Failed to store NEP-17 transfer received: {e}"), LogLevel::Error);
+                TrackerBase::log(
+                    self.track_name(),
+                    &format!("Failed to store NEP-17 transfer received: {e}"),
+                    LogLevel::Error,
+                );
             }
         }
 
@@ -203,7 +211,11 @@ impl Nep17Tracker {
 
         if balance.is_zero() {
             if let Err(e) = self.base.delete(NEP17_BALANCE_PREFIX, &key) {
-                TrackerBase::log(self.track_name(), &format!("Failed to delete NEP-17 balance: {e}"), LogLevel::Error);
+                TrackerBase::log(
+                    self.track_name(),
+                    &format!("Failed to delete NEP-17 balance: {e}"),
+                    LogLevel::Error,
+                );
             }
             return;
         }
@@ -213,7 +225,11 @@ impl Nep17Tracker {
             last_updated_block: self.current_height,
         };
         if let Err(e) = self.base.put(NEP17_BALANCE_PREFIX, &key, &value) {
-            TrackerBase::log(self.track_name(), &format!("Failed to store NEP-17 balance: {e}"), LogLevel::Error);
+            TrackerBase::log(
+                self.track_name(),
+                &format!("Failed to store NEP-17 balance: {e}"),
+                LogLevel::Error,
+            );
         }
     }
 

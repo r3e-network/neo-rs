@@ -5,9 +5,9 @@
 
 use crate::{key_pair::KeyPair, version::Version, wallet_account::WalletAccount};
 use async_trait::async_trait;
-use neo_vm::Contract;
 use neo_payloads::Transaction;
 use neo_primitives::{UInt160, UInt256};
+use neo_vm::Contract;
 use std::sync::Arc;
 
 /// Result type for wallet operations

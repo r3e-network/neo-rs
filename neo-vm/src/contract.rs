@@ -6,11 +6,11 @@
 //! contract management) need it, so it lives at the VM infrastructure layer
 //! to avoid a circular dependency.
 
+use crate::script_builder::ScriptBuilder;
 use neo_crypto::{Crypto, ECPoint};
 use neo_error::CoreError;
 use neo_primitives::ContractParameterType;
 use neo_primitives::UInt160;
-use crate::script_builder::ScriptBuilder;
 use std::sync::OnceLock;
 
 /// Represents a verification contract (matches C# `Neo.SmartContract.Contract`).
@@ -153,13 +153,20 @@ mod tests {
         let contract = Contract::create(vec![ContractParameterType::Signature], script.clone());
         let hash1 = contract.script_hash();
         let hash2 = contract.script_hash();
-        assert_eq!(hash1, hash2, "script_hash should be cached and deterministic");
+        assert_eq!(
+            hash1, hash2,
+            "script_hash should be cached and deterministic"
+        );
     }
 
     #[test]
     fn create_with_hash_pre_populates_cache() {
         let script_hash = UInt160::from_bytes(&[0x42; UInt160::LENGTH]).unwrap();
         let contract = Contract::create_with_hash(script_hash, Vec::new());
-        assert_eq!(contract.script_hash(), script_hash, "pre-supplied hash should be returned");
+        assert_eq!(
+            contract.script_hash(),
+            script_hash,
+            "pre-supplied hash should be returned"
+        );
     }
 }

@@ -26,8 +26,8 @@ use neo_storage::persistence::store::Store;
 
 use crate::error::NodeResult;
 use crate::node::Node;
-use neo_runtime::ServiceRegistry;
 use crate::wallet_provider::WalletProvider;
+use neo_runtime::ServiceRegistry;
 
 /// Fluent builder for [`Node`].
 #[derive(Default)]

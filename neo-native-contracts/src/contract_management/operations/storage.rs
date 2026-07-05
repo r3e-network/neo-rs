@@ -180,10 +180,8 @@ impl ContractManagement {
                 &item.value_bytes(),
                 "ContractManagement::destroy: whitelist entry",
             )?;
-            let decoder = crate::support::codec::StructDecoder::new(
-                &decoded,
-                "whitelisted-contract entry",
-            )?;
+            let decoder =
+                crate::support::codec::StructDecoder::new(&decoded, "whitelisted-contract entry")?;
             if decoder.len() < 4 {
                 return Err(CoreError::invalid_data(
                     "whitelisted-contract entry must have 4 fields",

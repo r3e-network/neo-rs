@@ -8,8 +8,7 @@ use neo_vm_rs::StackValue;
 /// Decodes a serialized node-list (a `BinarySerializer` array of compressed
 /// EC-point byte strings) into `ECPoint`s.
 pub(super) fn decode_node_list(value: &[u8]) -> CoreResult<Vec<ECPoint>> {
-    let value =
-        crate::support::codec::decode_stack_value(value, "RoleManagement node list")?;
+    let value = crate::support::codec::decode_stack_value(value, "RoleManagement node list")?;
     Ok(NodeList::from_stack_value(value)?.into_nodes())
 }
 
@@ -42,10 +41,7 @@ pub(super) fn nodes_to_event_array(points: &[ECPoint]) -> CoreResult<StackItem> 
 pub(super) fn encode_node_list(points: &[ECPoint]) -> CoreResult<Vec<u8>> {
     let mut sorted = points.to_vec();
     sorted.sort();
-    crate::support::codec::encode_storage_struct(
-        &NodeList::new(sorted),
-        "RoleManagement node list",
-    )
+    crate::support::codec::encode_storage_struct(&NodeList::new(sorted), "RoleManagement node list")
 }
 
 /// Decodes + validates the `nodes` Array argument: 1..=32 compressed EC points
@@ -77,7 +73,6 @@ impl NodeList {
 
     pub(super) fn to_stack_value(&self) -> StackValue {
         StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
             self.nodes
                 .iter()
                 .map(|point| StackValue::ByteString(point.to_bytes()))
@@ -86,7 +81,7 @@ impl NodeList {
     }
 
     pub(super) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Array(_, items) = stack_value else {
+        let StackValue::Array(items) = stack_value else {
             return Err(CoreError::invalid_data(
                 "RoleManagement node list is not an array",
             ));

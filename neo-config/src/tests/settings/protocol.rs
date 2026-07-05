@@ -14,7 +14,10 @@ fn csharp_default_matches_neo_v3100_protocol_settings_default() {
         settings.max_transactions_per_block,
         constants::MAX_TRANSACTIONS_PER_BLOCK as u32
     );
-    assert_eq!(settings.max_valid_until_block_increment, constants::DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT);
+    assert_eq!(
+        settings.max_valid_until_block_increment,
+        constants::DEFAULT_MAX_VALID_UNTIL_BLOCK_INCREMENT
+    );
     assert_eq!(settings.memory_pool_max_transactions, 50_000);
     assert_eq!(
         settings.max_traceable_blocks,

@@ -32,11 +32,11 @@
 use std::fmt;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use neo_config::ProtocolSettings;
 use super::stage_traits::{
     EngineError, EngineResult, PipelineStage, StageContext, StageId, StageOutput, ValidateStage,
 };
+use async_trait::async_trait;
+use neo_config::ProtocolSettings;
 use neo_payloads::Block;
 use neo_primitives::UInt256;
 
@@ -207,9 +207,9 @@ impl PipelineStage for NeoValidateStage {
 
         self.validate(ctx, block).await?;
 
-        Ok(StageOutput::performed(
-            neo_runtime::time::elapsed_us(start.elapsed()),
-        ))
+        Ok(StageOutput::performed(neo_runtime::time::elapsed_us(
+            start.elapsed(),
+        )))
     }
 }
 

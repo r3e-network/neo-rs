@@ -137,7 +137,10 @@ async fn late_transaction_lets_backup_reach_commit() {
     while rx.try_recv().is_ok() {}
     service.on_transactions_received(Vec::new()).await.unwrap();
 
-    let preparation_hash = service.context().preparation_hash.expect("preparation hash");
+    let preparation_hash = service
+        .context()
+        .preparation_hash
+        .expect("preparation hash");
 
     // Two other backups (indices 2, 3) send PrepareResponses. Together with the
     // primary's implicit preparation that is M = 3, but the backup is still
@@ -164,7 +167,10 @@ async fn late_transaction_lets_backup_reach_commit() {
             saw_commit |= payload.message_type == ConsensusMessageType::Commit;
         }
     }
-    assert!(!saw_commit, "must not commit while a transaction is missing");
+    assert!(
+        !saw_commit,
+        "must not commit while a transaction is missing"
+    );
 
     // The missing transaction arrives late → the backup sends its
     // PrepareResponse AND, now that all preparations + all transactions are
@@ -186,8 +192,14 @@ async fn late_transaction_lets_backup_reach_commit() {
             }
         }
     }
-    assert!(saw_response, "backup sends its PrepareResponse on completion");
-    assert!(saw_commit, "backup signs its Commit once the round is complete");
+    assert!(
+        saw_response,
+        "backup sends its PrepareResponse on completion"
+    );
+    assert!(
+        saw_commit,
+        "backup signs its Commit once the round is complete"
+    );
 }
 
 /// Guard parity with C# `OnTransaction`: the late feed is a no-op for a node
@@ -201,8 +213,7 @@ async fn on_transaction_guards_match_csharp() {
     {
         let (tx, mut rx) = mpsc::channel(100);
         let (validators, keys) = create_validators_with_keys(4);
-        let mut service =
-            ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+        let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
         service.start(0, 1_000, UInt256::zero(), 0).unwrap();
         service
             .on_transaction(UInt256::from([0x31; 32]))
@@ -216,15 +227,17 @@ async fn on_transaction_guards_match_csharp() {
     {
         let (tx, mut rx) = mpsc::channel(100);
         let (validators, keys) = create_validators_with_keys(4);
-        let mut service =
-            ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
+        let mut service = ConsensusService::new(network, validators, Some(1), keys[1].to_vec(), tx);
         service.start(0, 1_000, UInt256::zero(), 0).unwrap();
         assert!(!service.context().prepare_request_received);
         service
             .on_transaction(UInt256::from([0x31; 32]))
             .await
             .unwrap();
-        assert!(rx.try_recv().is_err(), "no PrepareRequest → OnTransaction no-ops");
+        assert!(
+            rx.try_recv().is_err(),
+            "no PrepareRequest → OnTransaction no-ops"
+        );
     }
 }
 

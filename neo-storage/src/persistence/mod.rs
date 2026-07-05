@@ -29,17 +29,17 @@
 
 /// Data cache with Neo-style trackable entries.
 pub mod data_cache;
-/// Built-in store providers used by tests and ephemeral nodes.
-pub mod providers;
 /// Fast-sync extension trait for [`Store`](store::Store).
 #[path = "traits/fast_sync_store.rs"]
 pub mod fast_sync_store;
-/// Read-only store traits.
-#[path = "traits/read_only_store.rs"]
-pub mod read_only_store;
+/// Built-in store providers used by tests and ephemeral nodes.
+pub mod providers;
 /// Raw overlay extension trait for [`Store`](store::Store).
 #[path = "traits/raw_overlay_store.rs"]
 pub mod raw_overlay_store;
+/// Read-only store traits.
+#[path = "traits/read_only_store.rs"]
+pub mod read_only_store;
 /// Iteration direction for seek/find operations.
 #[path = "traits/seek_direction.rs"]
 pub mod seek_direction;
@@ -70,8 +70,8 @@ pub mod write_store;
 
 pub use data_cache::{DataCache, Trackable};
 pub use fast_sync_store::FastSyncStore;
-pub use read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric};
 pub use raw_overlay_store::RawOverlayStore;
+pub use read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric};
 pub use seek_direction::SeekDirection;
 pub use store::Store;
 pub use store_cache::StoreCache;

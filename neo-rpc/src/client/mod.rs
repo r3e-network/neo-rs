@@ -50,8 +50,6 @@ mod utility;
 #[path = "apis/wallet_api.rs"]
 mod wallet_api;
 
-#[cfg(feature = "server")]
-pub(crate) use utility::parse_script_hash_or_address_inner;
 pub use contract_client::ContractClient;
 pub use error::{ClientRpcError, RpcException};
 pub use nep17_api::Nep17Api;
@@ -61,6 +59,8 @@ pub use state_api::StateApi;
 pub use transaction_manager::TransactionManager;
 pub use transaction_manager_factory::TransactionManagerFactory;
 pub use utility::RpcUtility;
+#[cfg(feature = "server")]
+pub(crate) use utility::parse_script_hash_or_address_inner;
 pub use wallet_api::WalletApi;
 
 // Re-export commonly used types

@@ -22,7 +22,11 @@ fn transaction_with_nonce(nonce: u32) -> Transaction {
 fn try_broadcast_transaction_splits_full_and_closed_errors() {
     let (handle, cmd_rx, _events) = NetworkHandle::channel(1, 32);
 
-    assert!(handle.try_broadcast_transaction(transaction_with_nonce(1)).is_ok());
+    assert!(
+        handle
+            .try_broadcast_transaction(transaction_with_nonce(1))
+            .is_ok()
+    );
 
     let full_error = handle
         .try_broadcast_transaction(transaction_with_nonce(2))
