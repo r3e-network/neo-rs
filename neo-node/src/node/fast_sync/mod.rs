@@ -11,12 +11,12 @@
 //!
 //! ## Contents
 //!
+//! - `marker`: Crash-safety marker handling for in-progress imports.
 //! - `package`: Fast-sync package metadata, cache, and archive helpers.
 //! - `reference`: Reference RPC verification helpers for fast-sync imports.
 //! - `report`: Machine-readable import reports and throughput classification.
 
 use super::config::NodeConfig;
-use anyhow::Context;
 use neo_blockchain::BlockchainHandle;
 use neo_primitives::UInt256;
 use neo_state_service::StateStore;
@@ -26,10 +26,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::info;
 
+mod marker;
 mod package;
 mod reference;
 mod report;
 
+use marker::{
+    clear_fast_sync_import_marker, refuse_stale_fast_sync_import_marker,
+    write_fast_sync_import_marker,
+};
 use package::{
     FastSyncPackage, ensure_chain_acc_extracted, ensure_package_cached, fetch_latest_package,
 };
@@ -264,53 +269,6 @@ pub(super) fn fast_sync_cache_dir(
         .or_else(|| config.storage.data_directory())
         .unwrap_or_else(|| PathBuf::from("data"));
     storage_root.join("fast-sync")
-}
-
-const FAST_SYNC_IMPORT_IN_PROGRESS_MARKER: &str = ".neo-fast-sync-import-in-progress";
-
-fn fast_sync_import_marker_path(cache_dir: &Path) -> PathBuf {
-    cache_dir.join(FAST_SYNC_IMPORT_IN_PROGRESS_MARKER)
-}
-
-fn refuse_stale_fast_sync_import_marker(cache_dir: &Path) -> anyhow::Result<()> {
-    let marker_path = fast_sync_import_marker_path(cache_dir);
-    if marker_path.exists() {
-        anyhow::bail!(
-            "previous fast-sync import did not finish cleanly (marker: {}); restore a checkpoint or remove the local ledger before retrying, then remove this marker",
-            marker_path.display()
-        );
-    }
-    Ok(())
-}
-
-fn write_fast_sync_import_marker(
-    cache_dir: &Path,
-    package: &FastSyncPackage,
-    chain_path: &Path,
-) -> anyhow::Result<PathBuf> {
-    std::fs::create_dir_all(cache_dir)
-        .with_context(|| format!("creating fast-sync cache {}", cache_dir.display()))?;
-    let marker_path = fast_sync_import_marker_path(cache_dir);
-    let content = format!(
-        "network={}\nstart={}\nend={}\npackage={}\nchain={}\n",
-        package.network_key,
-        package.start,
-        package.end,
-        package.filename,
-        chain_path.display()
-    );
-    std::fs::write(&marker_path, content)
-        .with_context(|| format!("writing fast-sync import marker {}", marker_path.display()))?;
-    Ok(marker_path)
-}
-
-fn clear_fast_sync_import_marker(marker_path: &Path) -> anyhow::Result<()> {
-    match std::fs::remove_file(marker_path) {
-        Ok(()) => Ok(()),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(err) => Err(err)
-            .with_context(|| format!("removing fast-sync import marker {}", marker_path.display())),
-    }
 }
 
 #[cfg(test)]
