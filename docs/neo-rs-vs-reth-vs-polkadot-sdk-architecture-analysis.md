@@ -378,9 +378,11 @@ resolve through the process-global compatibility bridge in
    contract-management lookups made from contract loading, committee-witness
    checks, storage-context resolution, OracleResponse witness inheritance,
    witness group checks, current-index reads, and fee whitelist checks.
-   Remaining step: migrate legacy helper callers to the explicit-provider helper
-   entry points and keep installed-provider resource creation at the composition
-   boundary instead of reading `NativeContractLookup` in lower-level workflows.
+   Batch block import, header inventory verification, extensible-payload
+   verification, and signed-StateRoot verification now use explicit providers
+   when their caller owns one. Remaining step: keep shrinking the legacy helper
+   wrappers and installed-provider resource creation until
+   `NativeContractLookup` is only a standalone compatibility bridge.
 3. Consider WASM runtime for future sidechain/feature-gate support.
 
 ---
