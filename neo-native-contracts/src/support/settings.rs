@@ -85,7 +85,8 @@ pub(crate) fn put_required_i64_setting_key(
 /// `BigInteger` under `key`, falling back to `default` when the key is absent
 /// (the C# pre-genesis missing-key fallback).
 ///
-/// Replaces 2 `get_max_*_snapshot` functions in `PolicyContract::storage`:
+/// Backs 3 snapshot getters in `PolicyContract::storage`:
+/// - `get_milliseconds_per_block_snapshot` (HfEchidna)
 /// - `get_max_valid_until_block_increment_snapshot` (HfEchidna)
 /// - `get_max_traceable_blocks_snapshot` (HfEchidna)
 ///

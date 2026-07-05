@@ -67,6 +67,30 @@ impl PolicyContract {
         crate::support::settings::put_required_i64_setting_key(snapshot, key, setting, value)
     }
 
+    /// Returns the effective block generation time (milliseconds) for
+    /// snapshot-only callers such as the consensus driver.
+    ///
+    /// Mirrors C# `NeoSystemExtensions.GetTimePerBlock(IReadOnlyStore, ProtocolSettings)`:
+    /// before `HF_Echidna` (gated on the persisted ledger height) this is the
+    /// static `ProtocolSettings.MillisecondsPerBlock`; from `HF_Echidna` onward
+    /// it is the Policy storage value under prefix 21
+    /// (`SetMillisecondsPerBlock`), with the C# pre-genesis missing-key fallback
+    /// to `ProtocolSettings`.
+    pub fn get_milliseconds_per_block_snapshot(
+        &self,
+        snapshot: &neo_storage::persistence::DataCache,
+        settings: &neo_config::ProtocolSettings,
+    ) -> neo_error::CoreResult<u32> {
+        crate::support::settings::read_hardfork_gated_u32_setting(
+            snapshot,
+            settings,
+            settings.milliseconds_per_block,
+            Hardfork::HfEchidna,
+            Self::milliseconds_per_block_key(),
+            "MillisecondsPerBlock",
+        )
+    }
+
     /// Reads the max valid-until-block increment with C# `NeoSystemExtensions`
     /// semantics. Before `HF_Echidna` this is the static protocol setting; from
     /// `HF_Echidna` onward it is the Policy storage value under prefix 22, with

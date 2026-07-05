@@ -24,7 +24,7 @@ use neo_consensus::messages::ConsensusPayload;
 use neo_consensus::{ConsensusEvent, ConsensusService, ConsensusSigner, ValidatorInfo};
 use neo_crypto::{ECPoint, Secp256r1Crypto};
 use neo_mempool::MemoryPool;
-use neo_native_contracts::{LedgerContract, NeoToken};
+use neo_native_contracts::{LedgerContract, NeoToken, PolicyContract};
 use neo_network::NetworkHandle;
 use neo_payloads::{ExtensiblePayload, Transaction, Witness};
 use neo_primitives::{UInt160, UInt256, hex_util};
@@ -296,6 +296,20 @@ impl ConsensusDriver {
         let my_index = resolve_public_key_index(&self.public_key, &validators);
         self.service.update_validators(validators.clone(), my_index);
         *self.validators.write() = validators;
+
+        // Re-read the live per-block time from the round snapshot before the
+        // timer arithmetic in `start_with_block_context`, matching C#
+        // `ConsensusContext.Reset(0)` which sets `TimePerBlock =
+        // neoSystem.GetTimePerBlock()` once per block round. Post-Echidna this is
+        // the committee-settable `PolicyContract.MillisecondsPerBlock`; pre-Echidna
+        // (and on the pre-genesis fallback) the reader returns the
+        // `ProtocolSettings` default, so this replaces the frozen construction-time
+        // value on every round. Without this, a committee `setMillisecondsPerBlock`
+        // would desync Rust validators' block timers from the C# committee.
+        let ms_per_block = PolicyContract::new()
+            .get_milliseconds_per_block_snapshot(snapshot, &self.settings)?;
+        self.service.set_expected_block_time(u64::from(ms_per_block));
+
         Ok(next_consensus)
     }
 

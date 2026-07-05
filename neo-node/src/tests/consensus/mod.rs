@@ -167,6 +167,81 @@ fn prepare_request_ledger_guard_uses_dynamic_max_traceable_blocks() {
     );
 }
 
+/// Builds a bare `ConsensusService` seeded with the construction-time block
+/// time (as `consensus_driver_task` does), then applies the same per-round
+/// Policy read `configure_round` performs and returns the resulting effective
+/// block time from the context. Mirrors C# `ConsensusContext.Reset(0)` setting
+/// `TimePerBlock = neoSystem.GetTimePerBlock()`.
+fn effective_block_time_after_configure_round(
+    snapshot: &DataCache,
+    settings: &ProtocolSettings,
+) -> u64 {
+    let validators = build_consensus_validators(settings);
+    let (event_tx, _event_rx) = mpsc::channel::<ConsensusEvent>(16);
+    let mut service = ConsensusService::new(
+        settings.network,
+        validators,
+        None,
+        vec![0x11u8; 32],
+        event_tx,
+    );
+    // Construction-time seed: the frozen ProtocolSettings default that the bug
+    // used to leave in place forever.
+    service.set_expected_block_time(u64::from(settings.milliseconds_per_block));
+    // The per-round refresh added to `configure_round`.
+    let ms = neo_native_contracts::PolicyContract::new()
+        .get_milliseconds_per_block_snapshot(snapshot, settings)
+        .expect("policy ms-per-block read");
+    service.set_expected_block_time(u64::from(ms));
+    service.context().expected_block_time
+}
+
+/// Post-Echidna, a committee `setMillisecondsPerBlock` (written to Policy
+/// storage) is what the driver must use for its block timer — NOT the frozen
+/// construction-time ProtocolSettings value.
+#[test]
+fn configure_round_picks_up_policy_milliseconds_per_block_after_echidna() {
+    neo_native_contracts::install();
+    let mut settings = ProtocolSettings::default();
+    settings
+        .hardforks
+        .insert(neo_config::Hardfork::HfEchidna, 0);
+    let snapshot = DataCache::new(false);
+    seed_current_block(&snapshot, 10);
+    // Committee lowered the block time to 5s, differing from the 15s default.
+    let committee_ms: u32 = 5_000;
+    assert_ne!(committee_ms, settings.milliseconds_per_block);
+    set_policy_u32(&snapshot, 21, committee_ms);
+
+    assert_eq!(
+        effective_block_time_after_configure_round(&snapshot, &settings),
+        u64::from(committee_ms),
+        "post-Echidna the round must adopt the live Policy MillisecondsPerBlock"
+    );
+}
+
+/// Pre-Echidna, the driver keeps using the ProtocolSettings default even if a
+/// value happens to sit in Policy storage (the reader is Echidna-gated).
+#[test]
+fn configure_round_uses_settings_default_before_echidna() {
+    neo_native_contracts::install();
+    let mut settings = ProtocolSettings::default();
+    // Echidna not active until far in the future.
+    settings
+        .hardforks
+        .insert(neo_config::Hardfork::HfEchidna, 1_000_000);
+    let snapshot = DataCache::new(false);
+    seed_current_block(&snapshot, 10);
+    // A stray Policy value must be ignored pre-Echidna.
+    set_policy_u32(&snapshot, 21, 5_000);
+
+    assert_eq!(
+        effective_block_time_after_configure_round(&snapshot, &settings),
+        u64::from(settings.milliseconds_per_block),
+        "pre-Echidna the round must fall back to the ProtocolSettings default"
+    );
+}
+
 /// `build_consensus_setup` is a no-op when disabled and errors when enabled
 /// without a key.
 #[test]

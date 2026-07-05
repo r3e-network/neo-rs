@@ -219,6 +219,75 @@ fn snapshot_max_valid_until_ignores_policy_storage_before_echidna() {
 }
 
 #[test]
+fn snapshot_milliseconds_per_block_reads_policy_value_after_echidna() {
+    // C# `NeoSystemExtensions.GetTimePerBlock`: from HF_Echidna the per-block
+    // time comes from the committee-settable Policy storage (prefix 21), NOT the
+    // frozen ProtocolSettings default. The consensus driver reads this each round.
+    let cache = DataCache::new(false);
+    let mut settings = neo_config::ProtocolSettings::default();
+    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    // Committee changed the block time to a value that differs from the default.
+    let committee_value: i64 = 7_000;
+    assert_ne!(committee_value as u32, settings.milliseconds_per_block);
+    seed_policy_setting_key(
+        &cache,
+        PolicyContract::milliseconds_per_block_key(),
+        committee_value,
+    );
+    seed_current_block(&cache, 10);
+
+    assert_eq!(
+        PolicyContract::new()
+            .get_milliseconds_per_block_snapshot(&cache, &settings)
+            .unwrap(),
+        committee_value as u32,
+        "post-Echidna the snapshot reader must return the live Policy value"
+    );
+}
+
+#[test]
+fn snapshot_milliseconds_per_block_ignores_policy_storage_before_echidna() {
+    // Pre-Echidna the reader returns the static ProtocolSettings default and
+    // ignores any Policy storage value, matching C# `GetTimePerBlock`.
+    let cache = DataCache::new(false);
+    let mut settings = neo_config::ProtocolSettings::default();
+    settings.hardforks.insert(Hardfork::HfEchidna, 100);
+    seed_policy_setting_key(
+        &cache,
+        PolicyContract::milliseconds_per_block_key(),
+        7_000,
+    );
+    seed_current_block(&cache, 0);
+
+    assert_eq!(
+        PolicyContract::new()
+            .get_milliseconds_per_block_snapshot(&cache, &settings)
+            .unwrap(),
+        settings.milliseconds_per_block,
+        "pre-Echidna the reader must fall back to the ProtocolSettings default"
+    );
+}
+
+#[test]
+fn snapshot_milliseconds_per_block_falls_back_when_key_missing_after_echidna() {
+    // C# pre-genesis fallback: Echidna active but the Policy key not yet written
+    // (or the ledger has no current block) → ProtocolSettings default.
+    let cache = DataCache::new(false);
+    let mut settings = neo_config::ProtocolSettings::default();
+    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    seed_current_block(&cache, 5);
+    // Intentionally no milliseconds_per_block_key written.
+
+    assert_eq!(
+        PolicyContract::new()
+            .get_milliseconds_per_block_snapshot(&cache, &settings)
+            .unwrap(),
+        settings.milliseconds_per_block,
+        "missing Policy key post-Echidna must fall back to the default"
+    );
+}
+
+#[test]
 fn set_fee_per_byte_validation_bounds() {
     // C# SetFeePerByte accepts [0, 100000000] and rejects outside.
     assert!(PolicyContract::validate_fee_per_byte(0).is_ok());
