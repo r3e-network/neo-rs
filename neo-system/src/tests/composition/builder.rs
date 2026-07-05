@@ -60,9 +60,6 @@ fn builder_succeeds_with_required_services() {
         .with_network(net)
         .build()
         .expect("required services set");
-    assert!(node.block_executor.is_none());
-    assert!(node.consensus.is_none());
-    assert!(node.engine.is_none());
     assert!(
         !node
             .native_contract_provider

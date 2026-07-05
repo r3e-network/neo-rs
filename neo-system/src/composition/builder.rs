@@ -19,7 +19,6 @@ use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::{NativeContractLookup, NativeContractProvider};
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
-use neo_runtime::{BlockExecutor, ConsensusApi, EngineApi};
 use neo_storage::persistence::store::Store;
 
 use crate::error::NodeResult;
@@ -39,9 +38,6 @@ pub struct NodeBuilder {
     header_cache: Option<Arc<HeaderCache>>,
     services: Option<ServiceRegistry>,
     native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
-    block_executor: Option<Arc<dyn BlockExecutor>>,
-    consensus: Option<Arc<dyn ConsensusApi>>,
-    engine: Option<Arc<dyn EngineApi>>,
 }
 
 impl std::fmt::Debug for NodeBuilder {
@@ -59,12 +55,6 @@ impl std::fmt::Debug for NodeBuilder {
                 "native_contract_provider",
                 &self.native_contract_provider.is_some(),
             )
-            .field(
-                "block_executor",
-                &self.block_executor.as_ref().map(|s| s.name()),
-            )
-            .field("consensus", &self.consensus.as_ref().map(|s| s.name()))
-            .field("engine", &self.engine.as_ref().map(|s| s.name()))
             .finish()
     }
 }
@@ -140,24 +130,6 @@ impl NodeBuilder {
         self
     }
 
-    /// Install a block executor service.
-    pub fn with_block_executor(mut self, executor: Arc<dyn BlockExecutor>) -> Self {
-        self.block_executor = Some(executor);
-        self
-    }
-
-    /// Install a consensus service.
-    pub fn with_consensus(mut self, consensus: Arc<dyn ConsensusApi>) -> Self {
-        self.consensus = Some(consensus);
-        self
-    }
-
-    /// Install an engine API service.
-    pub fn with_engine(mut self, engine: Arc<dyn EngineApi>) -> Self {
-        self.engine = Some(engine);
-        self
-    }
-
     /// Finalise the builder.
     pub fn build(self) -> NodeResult<Node> {
         let settings = self
@@ -199,9 +171,6 @@ impl NodeBuilder {
             header_cache: self.header_cache.unwrap_or_default(),
             services: self.services.unwrap_or_default(),
             native_contract_provider,
-            block_executor: self.block_executor,
-            consensus: self.consensus,
-            engine: self.engine,
             shutdown: tokio_util::sync::CancellationToken::new(),
         })
     }

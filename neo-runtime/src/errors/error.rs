@@ -1,8 +1,8 @@
-//! Service-layer error type shared by every reth-style service in `neo_runtime`.
+//! Service-layer error type shared by the runtime service traits in `neo_runtime`.
 //!
-//! `ServiceError` is the single vocabulary used by the `BlockExecutor`,
-//! `NetworkService`, `ConsensusApi`, `EngineApi`, and
-//! `BlockchainHandle` APIs. Lower-layer errors (storage, IO, crypto, …) are
+//! `ServiceError` is the single vocabulary used by the `NetworkService`,
+//! `BlockImport`, `ImportQueue`, and `BlockchainHandle` APIs. Lower-layer
+//! errors (storage, IO, crypto, …) are
 //! lifted into the `Internal` arm by the concrete service implementation; the
 //! trait-level API never exposes a foreign error type. This keeps the public
 //! surface of the runtime crate free of cross-crate error leakage and matches

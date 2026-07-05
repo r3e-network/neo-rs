@@ -1778,3 +1778,59 @@ layer without removing any forwarding. Not worth the churn.
 - No test changes — nothing consumed the deleted types.
 - Architecture health score: 9.6 → 9.6 (removes a latent correctness trap; net
   honesty gain, no structural regression).
+
+### ADR-033: Dead service-trait scaffolding excision — BlockExecutor, ConsensusApi, EngineApi
+
+**Status**: Accepted (implemented)
+
+**Context**: The comprehensive architecture-consistency audit found that three of
+the reth-style runtime service traits in `neo-runtime/src/service/services.rs`
+were the same never-wired scaffolding ADR-032 already removed once — a trait +
+`Option<Arc<dyn ..>>` field + no-impl profile:
+
+- `BlockExecutor` — zero production implementations (only a test `DummyExecutor`).
+- `ConsensusApi` — zero implementations at all (the name renamed from
+  `ConsensusService` in ADR-030 to break a collision; the trait itself was dead).
+- `EngineApi` — zero implementations, plus a `sealed` module gating zero
+  implementors.
+
+`Node` and `NodeBuilder` carried `block_executor` / `consensus` / `engine`
+`Option<Arc<dyn ..>>` fields with `with_*` setters. Verified: the setters have
+**zero call sites** and the fields are **never read** — they are always `None`
+in production.
+
+**Decision**: **Delete** `BlockExecutor`, `ConsensusApi`, `EngineApi`, the
+`sealed` module, the three `Node`/`NodeBuilder` fields + their `with_*` setters +
+build-assignments, and the `DummyExecutor` test — applying the ADR-032 treatment.
+
+**KEEP** (verified genuinely used, NOT dead — the audit's "half-live" grouping
+was too broad):
+- `Service` — the marker supertrait, still implemented by the live traits below.
+- `NetworkService` — has a real production impl (`LocalNodeService`).
+- `BlockImport` + `ImportQueue` — load-bearing generic bounds for
+  `BlockImportQueue<I: BlockImport>` (shipped in v0.9.0 for bounded concurrent
+  block preverification) and `SyncPipelineDriver<Q: ImportQueue>`. These are the
+  staged-sync pipeline infrastructure; deleting them would destroy real WIP.
+
+So the excision is a clean 3-trait removal, not 6 — the genuinely-dead seams
+only.
+
+**Trade-offs**:
+- **Gaining**: ~110 LOC of never-instantiated scaffolding removed; `Node` /
+  `NodeBuilder` no longer carry three always-`None` fields and three dead
+  setters; the runtime service vocabulary now reflects what is actually wired
+  (network + import/sync).
+- **Giving up**: the reth-style executor/consensus/engine service seam. Correct:
+  the node wires block execution, consensus, and the engine surface through
+  concrete types; the traits shipped nothing. ADR-021's sealing of `EngineApi`
+  is superseded (the trait is gone).
+- **Reversibility**: High — mechanical to reintroduce behind a concrete impl if
+  a real polymorphic consumer ever appears.
+
+**Consequences**:
+- `neo_runtime::service::services` exports `Service`, `NetworkService`, `TxHash`.
+- The surviving `ConsensusService` name in the tree is the `neo-consensus`
+  STRUCT (the real dBFT machine), not a trait — the ADR-030 collision stays
+  resolved.
+- `cargo check --workspace --tests` clean; neo-runtime + neo-system tests pass.
+- Architecture health score: 9.6 → 9.6 (honesty; removes dead scaffolding).

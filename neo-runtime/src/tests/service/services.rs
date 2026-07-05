@@ -2,24 +2,8 @@ use super::*;
 use crate::{BlockImport, BlockImportOutcome, BlockOrigin, ImportedTip};
 use std::sync::Arc;
 
-/// No-op service used to verify the trait is object-safe and can be
+/// No-op service used to verify the traits are object-safe and can be
 /// held behind an `Arc<dyn ...>`.
-#[derive(Debug)]
-struct DummyExecutor;
-
-impl Service for DummyExecutor {}
-
-#[async_trait]
-impl BlockExecutor for DummyExecutor {
-    async fn execute(&self, _block: &Block) -> Result<ExecutionOutcome, ServiceError> {
-        Ok(ExecutionOutcome::default())
-    }
-
-    async fn validate(&self, _block: &Block) -> Result<(), ServiceError> {
-        Ok(())
-    }
-}
-
 #[derive(Debug)]
 struct DummyBlockImporter;
 
@@ -45,18 +29,7 @@ impl BlockImport for DummyBlockImporter {
 #[test]
 fn traits_are_object_safe() {
     fn _importer(_: &dyn BlockImport) {}
-    fn _executor(_: &dyn BlockExecutor) {}
     fn _network(_: &dyn NetworkService) {}
-    fn _consensus(_: &dyn ConsensusApi) {}
-    fn _engine(_: &dyn EngineApi) {}
-}
-
-#[tokio::test]
-async fn dummy_executor_runs() {
-    let exec: Arc<dyn BlockExecutor> = Arc::new(DummyExecutor);
-    let block = Block::new();
-    exec.execute(&block).await.expect("execute");
-    exec.validate(&block).await.expect("validate");
 }
 
 #[tokio::test]

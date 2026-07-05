@@ -23,14 +23,14 @@ pub mod time;
 // Re-exports for the public surface of the crate.
 //
 // Everything the spec promises at the top level of `neo_runtime` is
-// exported here so the docstring "use neo_runtime::BlockExecutor"
+// exported here so the docstring "use neo_runtime::NetworkService"
 // import path resolves.
 pub use errors::{ServiceError, ServiceResult, error};
 pub use service::{
-    BlockBatchImportOutcome, BlockExecutor, BlockImport, BlockImportOutcome, BlockImportQueue,
-    BlockOrigin, BlockchainEvent, CommitDecision, CommitPolicy, CommitTrigger, ConsensusApi,
+    BlockBatchImportOutcome, BlockImport, BlockImportOutcome, BlockImportQueue,
+    BlockOrigin, BlockchainEvent, CommitDecision, CommitPolicy, CommitTrigger,
     DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, ExecutionOutcome, ExecutionPayload,
-    ImportQueue, ImportedTip, InMemorySyncStageCheckpointStore, EngineApi, Nep17Metadata,
+    ImportQueue, ImportedTip, InMemorySyncStageCheckpointStore, Nep17Metadata,
     Nep17MetadataReader, NetworkEvent, NetworkService, Service, ServiceRegistry, StageProgress,
     SyncBlockBatch, SyncPipelineDriver, SyncPipelineImportOutcome, SyncStageCheckpoint,
     SyncStageCheckpointStore, SyncStageKind, TxHash, ValidationResult,

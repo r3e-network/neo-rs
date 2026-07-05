@@ -29,7 +29,7 @@ use neo_mempool::MemoryPool;
 use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_network::NetworkHandle;
 use neo_payloads::{Transaction, VerifyResult};
-use neo_runtime::{BlockExecutor, ConsensusApi, EngineApi, ConfigProvider, StoreProvider, TxAdmission};
+use neo_runtime::{ConfigProvider, StoreProvider, TxAdmission};
 use neo_storage::DataCache;
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_cache::StoreCache;
@@ -87,18 +87,6 @@ pub struct Node {
     /// `neo-execution` lookup seam.
     pub native_contract_provider: Arc<dyn NativeContractProvider>,
 
-    /// Optional block executor service. Present when a concrete
-    /// `impl BlockExecutor` has been wired in by the caller.
-    pub block_executor: Option<Arc<dyn BlockExecutor>>,
-
-    /// Optional consensus service. Present when a concrete
-    /// `impl ConsensusApi` has been wired in by the caller.
-    pub consensus: Option<Arc<dyn ConsensusApi>>,
-
-    /// Optional engine API service. Present when a concrete
-    /// `impl EngineApi` has been wired in by the caller.
-    pub engine: Option<Arc<dyn EngineApi>>,
-
     /// Cancellation token the node monitors for shutdown. A clone
     /// of this is also handed to every service task so they can
     /// observe the same shutdown signal.
@@ -120,12 +108,6 @@ impl std::fmt::Debug for Node {
                 "native_contract_provider_contracts",
                 &self.native_contract_provider.all_native_contracts().len(),
             )
-            .field(
-                "block_executor",
-                &self.block_executor.as_ref().map(|s| s.name()),
-            )
-            .field("consensus", &self.consensus.as_ref().map(|s| s.name()))
-            .field("engine", &self.engine.as_ref().map(|s| s.name()))
             .finish()
     }
 }
@@ -168,9 +150,6 @@ impl Node {
             header_cache: Arc::new(HeaderCache::default()),
             services: ServiceRegistry::new(),
             native_contract_provider,
-            block_executor: None,
-            consensus: None,
-            engine: None,
             shutdown: tokio_util::sync::CancellationToken::new(),
         })
     }

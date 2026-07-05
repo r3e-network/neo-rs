@@ -39,7 +39,7 @@ pub use import_queue::{BlockImportQueue, ImportQueue};
 pub use nep17::{Nep17Metadata, Nep17MetadataReader};
 pub use outcome::{ExecutionOutcome, ExecutionPayload, NetworkEvent, ValidationResult};
 pub use service_registry::ServiceRegistry;
-pub use services::{BlockExecutor, ConsensusApi, EngineApi, NetworkService, Service, TxHash};
+pub use services::{NetworkService, Service, TxHash};
 pub use sync_pipeline::{
     CommitDecision, CommitPolicy, CommitTrigger, InMemorySyncStageCheckpointStore, StageProgress,
     SyncBlockBatch, SyncPipelineDriver, SyncPipelineImportOutcome, SyncStageCheckpoint,
