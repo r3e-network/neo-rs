@@ -256,10 +256,20 @@ fn build_and_sign_transaction(
     tx.set_attributes(Vec::<TransactionAttribute>::new());
 
     let ledger = neo_native_contracts::LedgerContract::new();
+    // C# `Wallet.MakeTransaction`:
+    //   ValidUntilBlock = Ledger.CurrentIndex(snapshot)
+    //                     + snapshot.GetMaxValidUntilBlockIncrement(ProtocolSettings)
+    // The increment is Policy-aware: the static setting pre-HF_Echidna, the
+    // Policy storage value from HF_Echidna onward (falling back to the setting
+    // when the key is not yet initialized). The static
+    // `system.max_valid_until_block_increment()` is only correct pre-Echidna.
+    let max_valid_until_block_increment = neo_native_contracts::PolicyContract::new()
+        .get_max_valid_until_block_increment_snapshot(snapshot.data_cache(), &protocol_settings)
+        .unwrap_or_else(|_| system.max_valid_until_block_increment());
     let valid_until = ledger
         .current_index(snapshot.data_cache())
         .map_err(|err| CoreError::other(err.to_string()))?
-        .saturating_add(system.max_valid_until_block_increment());
+        .saturating_add(max_valid_until_block_increment);
     tx.set_valid_until_block(valid_until);
     tx.set_system_fee(system_fee);
 

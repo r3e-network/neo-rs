@@ -2,7 +2,106 @@ use super::*;
 use neo_config::ProtocolSettings;
 use neo_primitives::FindOptions;
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm_rs::OpCode;
+use neo_vm_rs::{OpCode, VmState};
+
+/// Genesis-block timestamp seeded by the RPC test harness
+/// (`seed_genesis_state` / `genesis_header`).
+const GENESIS_TIMESTAMP: u64 = 1_468_595_301_000;
+
+/// FIX 13 — a stateless RPC invoke must run against a *dummy persisting block*
+/// (C# `ApplicationEngine.CreateDummyBlock`), so `System.Runtime.GetTime` does
+/// not fault and reports `prevBlock.Timestamp + msPerBlock`, and index-dependent
+/// reads see `height + 1`.
+#[tokio::test(flavor = "multi_thread")]
+async fn stateless_invoke_builds_dummy_persisting_block() {
+    let settings = ProtocolSettings::default();
+    let expected_timestamp =
+        GENESIS_TIMESTAMP + u64::from(settings.milliseconds_per_block);
+    let system = crate::server::test_support::test_system(settings);
+
+    // SYSCALL System.Runtime.GetTime ; RET
+    let mut script = vec![OpCode::SYSCALL.byte()];
+    script.extend_from_slice(&neo_vm_rs::interop_hash("System.Runtime.GetTime").to_le_bytes());
+    script.push(OpCode::RET.byte());
+
+    let session = Session::new(
+        system.clone(),
+        system,
+        script,
+        None,
+        None,
+        100_000_000,
+        None,
+    )
+    .expect("session");
+
+    let engine = session.engine();
+
+    // Before the fix the engine had no persisting block: GetTime faulted.
+    assert_eq!(
+        engine.state(),
+        VmState::HALT,
+        "GetTime must not fault with a dummy persisting block"
+    );
+
+    // Dummy block index = currentBlock.Index + 1 (genesis 0 -> 1).
+    let block = engine
+        .persisting_block()
+        .expect("dummy persisting block present");
+    assert_eq!(block.index(), 1, "dummy block index = height + 1");
+    assert_eq!(block.timestamp(), expected_timestamp);
+    assert_eq!(block.version(), 0);
+    assert_eq!(block.merkle_root(), &neo_primitives::UInt256::default());
+    assert_eq!(engine.current_block_index(), 1);
+
+    // GetTime result on the stack == prevBlock.Timestamp + msPerBlock.
+    let top = engine
+        .result_stack()
+        .peek(0)
+        .expect("GetTime result on stack");
+    let time = top.as_int().expect("integer result");
+    assert_eq!(time, num_bigint::BigInt::from(expected_timestamp));
+}
+
+/// FIX 17a — the session's synthetic transaction container derives
+/// `ValidUntilBlock` from the *Policy-aware* MaxValidUntilBlockIncrement
+/// (`snapshot.GetMaxValidUntilBlockIncrement(settings)`). With default settings
+/// (HF_Echidna disabled) this equals the static protocol setting, applied over
+/// the current height.
+#[tokio::test(flavor = "multi_thread")]
+async fn session_valid_until_block_uses_policy_aware_increment() {
+    let settings = ProtocolSettings::default();
+    let increment = settings.max_valid_until_block_increment;
+    let system = crate::server::test_support::test_system(settings);
+
+    let signer = neo_payloads::Signer::new(
+        neo_primitives::UInt160::default(),
+        neo_payloads::WitnessScope::CALLED_BY_ENTRY,
+    );
+
+    let session = Session::new(
+        system.clone(),
+        system,
+        vec![OpCode::RET.byte()],
+        Some(vec![signer]),
+        None,
+        100_000_000,
+        None,
+    )
+    .expect("session");
+
+    let engine = session.engine();
+    let container = engine
+        .script_container()
+        .expect("tx container present");
+    let tx = container
+        .as_any()
+        .downcast_ref::<neo_payloads::transaction::Transaction>()
+        .expect("container is a transaction");
+
+    // current height (genesis) = 0, so ValidUntilBlock = 0 + increment.
+    assert_eq!(tx.valid_until_block(), increment);
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn session_registers_and_traverses_storage_iterator() {
