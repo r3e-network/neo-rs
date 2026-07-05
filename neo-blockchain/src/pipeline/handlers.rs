@@ -985,9 +985,13 @@ where
         let hash = payload.hash();
         if let Some(snapshot) = self.system.store_snapshot() {
             let settings = self.system.settings();
-            Self::verify_extensible(&payload, settings.as_ref(), &snapshot).map_err(|error| {
-                CoreError::other(format!("extensible payload rejected: {error}"))
-            })?;
+            Self::verify_extensible(
+                &payload,
+                settings.as_ref(),
+                &snapshot,
+                self.system.native_contract_provider(),
+            )
+            .map_err(|error| CoreError::other(format!("extensible payload rejected: {error}")))?;
         }
         if let Err(error) = self.ledger.insert_extensible(payload) {
             return Err(CoreError::other(format!("ledger insert: {error}")));
@@ -1006,6 +1010,9 @@ where
         payload: &ExtensiblePayload,
         settings: &neo_config::ProtocolSettings,
         snapshot: &neo_storage::DataCache,
+        native_contract_provider: Option<
+            Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>,
+        >,
     ) -> CoreResult<()> {
         use neo_payloads::VerifiableExt;
 
@@ -1077,13 +1084,14 @@ where
         }
         let mut remaining_gas = 6_000_000i64;
         for (hash, witness) in hashes.iter().zip(witnesses) {
-            match neo_execution::Helper::verify_witness(
+            match neo_execution::Helper::verify_witness_with_native_provider(
                 payload,
                 settings,
                 snapshot,
                 hash,
                 witness,
                 remaining_gas,
+                native_contract_provider.clone(),
             ) {
                 Ok(fee) => remaining_gas -= fee,
                 Err(error) => {

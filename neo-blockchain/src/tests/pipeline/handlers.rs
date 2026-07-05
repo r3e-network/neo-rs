@@ -151,6 +151,32 @@ fn batch_header_verification_uses_explicit_native_provider_helper() {
     );
 }
 
+#[test]
+fn extensible_verification_uses_system_native_provider() {
+    let source = include_str!("../../pipeline/handlers.rs");
+    let handler_start = source
+        .find("pub(crate) async fn handle_extensible_inventory")
+        .expect("extensible handler exists");
+    let handler_end = source[handler_start..]
+        .find("fn verify_extensible(")
+        .map(|offset| handler_start + offset)
+        .expect("extensible verifier follows handler");
+    let handler = &source[handler_start..handler_end];
+    assert!(
+        handler.contains("self.system.native_contract_provider()"),
+        "extensible payload verification must use the provider exposed by SystemContext"
+    );
+
+    let verifier_start = source
+        .find("fn verify_extensible(")
+        .expect("extensible verifier exists");
+    let verifier = &source[verifier_start..];
+    assert!(
+        verifier.contains("verify_witness_with_native_provider"),
+        "extensible payload verification must use the explicit-provider witness helper"
+    );
+}
+
 fn fixture() -> (
     BlockchainService<TestContext, TestMempool>,
     BlockchainHandle,

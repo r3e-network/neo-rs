@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use neo_blockchain::service_context::BlockPersistContext;
 use neo_config::ProtocolSettings;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Block, CommittedHandler, CommittingHandler};
 use neo_storage::persistence::{DataCache, StoreCache};
 use parking_lot::{Mutex, RwLock};
@@ -33,6 +34,7 @@ pub(super) struct DaemonContext {
     state_service: Option<Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers>>,
     state_service_track_during_catchup: bool,
     indexer_service: Option<Arc<neo_indexer::IndexerService>>,
+    native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
     node: RwLock<Option<Arc<neo_system::Node>>>,
     application_logs_service: Option<Arc<neo_rpc::application_logs::ApplicationLogsService>>,
     tokens_tracker: RwLock<Option<Arc<neo_rpc::plugins::tokens_tracker::TokensTracker>>>,
@@ -63,10 +65,19 @@ impl DaemonContext {
             state_service,
             state_service_track_during_catchup,
             indexer_service,
+            native_contract_provider: None,
             node: RwLock::new(None),
             application_logs_service,
             tokens_tracker: RwLock::new(None),
         }
+    }
+
+    pub(super) fn with_native_contract_provider(
+        mut self,
+        native_contract_provider: Arc<dyn NativeContractProvider>,
+    ) -> Self {
+        self.native_contract_provider = Some(native_contract_provider);
+        self
     }
 
     pub(super) fn set_node(&self, node: Arc<neo_system::Node>) {
@@ -98,6 +109,10 @@ impl neo_blockchain::service_context::SystemContext for DaemonContext {
 
     fn store_snapshot(&self) -> Option<Arc<DataCache>> {
         Some(Arc::clone(&self.snapshot))
+    }
+
+    fn native_contract_provider(&self) -> Option<Arc<dyn NativeContractProvider>> {
+        self.native_contract_provider.as_ref().map(Arc::clone)
     }
 
     fn block_committing(

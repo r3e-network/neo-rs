@@ -882,15 +882,18 @@ async fn build_node(
             Arc::clone(&mempool),
         )),
     };
-    let daemon_ctx = Arc::new(DaemonContext::new(
-        Arc::clone(&settings),
-        snapshot,
-        store_cache,
-        state_service.clone(),
-        config.state_service.track_during_catchup,
-        indexer_service.clone(),
-        application_logs_service.clone(),
-    ));
+    let daemon_ctx = Arc::new(
+        DaemonContext::new(
+            Arc::clone(&settings),
+            snapshot,
+            store_cache,
+            state_service.clone(),
+            config.state_service.track_during_catchup,
+            indexer_service.clone(),
+            application_logs_service.clone(),
+        )
+        .with_native_contract_provider(Arc::clone(&native_contract_provider)),
+    );
     let system_ctx = Arc::clone(&daemon_ctx);
     let (mut service, blockchain) = BlockchainService::with_defaults(
         system_ctx,

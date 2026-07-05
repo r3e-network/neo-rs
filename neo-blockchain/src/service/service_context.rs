@@ -66,6 +66,18 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
         None
     }
 
+    /// Returns the native-contract provider captured by the composition root,
+    /// when this context owns one.
+    ///
+    /// Blockchain handlers use this for witness verification paths that execute
+    /// native-contract lookups. The default keeps lightweight tests and
+    /// store-less contexts on the legacy compatibility path.
+    fn native_contract_provider(
+        &self,
+    ) -> Option<Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>> {
+        None
+    }
+
     /// Called after a block's native persistence pipeline has produced its
     /// `ApplicationExecuted` records but before the canonical store is
     /// committed. This mirrors the C# `ICommittingHandler` plugin hook and lets
