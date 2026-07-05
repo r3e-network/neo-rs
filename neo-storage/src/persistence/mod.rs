@@ -23,7 +23,6 @@
 //! - `store_factory`: store factory trait.
 //! - `store_provider`: store provider trait.
 //! - `store_snapshot`: snapshot store trait.
-//! - `table`: Typed table metadata and byte-preserving table codecs.
 //! - `track_state`: tracked mutation state enum.
 //! - `transaction`: Transaction body, signer, witness, and fee records.
 //! - `write_store`: write store trait.
@@ -60,8 +59,6 @@ pub mod store_provider;
 /// Mutable point-in-time store snapshots.
 #[path = "traits/store_snapshot.rs"]
 pub mod store_snapshot;
-/// Typed table boundary over raw byte-key stores.
-pub mod table;
 /// Track states used by cached storage entries.
 #[path = "cache/track_state.rs"]
 pub mod track_state;
@@ -81,11 +78,6 @@ pub use store_cache::StoreCache;
 pub use store_factory::StoreFactory;
 pub use store_provider::StoreProvider;
 pub use store_snapshot::StoreSnapshot;
-pub use table::{StoreTableRead, Table, TableCodec, TableReader};
 pub use track_state::TrackState;
 pub use transaction::StoreTransaction;
 pub use write_store::WriteStore;
-
-#[cfg(test)]
-#[path = "../tests/persistence/table.rs"]
-mod table_tests;

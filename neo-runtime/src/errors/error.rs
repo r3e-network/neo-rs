@@ -1,7 +1,7 @@
 //! Service-layer error type shared by the runtime service traits in `neo_runtime`.
 //!
 //! `ServiceError` is the single vocabulary used by the `NetworkService`,
-//! `BlockImport`, `ImportQueue`, and `BlockchainHandle` APIs. Lower-layer
+//! `BlockImport`, and `BlockchainHandle` APIs. Lower-layer
 //! errors (storage, IO, crypto, …) are
 //! lifted into the `Internal` arm by the concrete service implementation; the
 //! trait-level API never exposes a foreign error type. This keeps the public

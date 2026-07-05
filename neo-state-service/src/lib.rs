@@ -1,7 +1,6 @@
 //! # neo-state-service
 //!
-//! State-root service, MPT persistence, validation, and state-root protocol
-//! types.
+//! State-root service, MPT persistence, and state-root protocol types.
 //!
 //! ## Boundary
 //!
@@ -14,16 +13,13 @@
 //!   constants.
 //! - `service`: Service loops, handles, lifecycle helpers, and command
 //!   processing.
-//! - `storage`: MPT storage, state-root cache, durable state records, and
-//!   immutable provider views.
-//! - `validation`: Validation routines and typed verdicts for protocol data.
+//! - `storage`: MPT storage, state-root cache, and durable state records.
 
 #![doc(html_root_url = "https://docs.rs/neo-state-service/0.10.0")]
 
 mod protocol;
 mod service;
 mod storage;
-mod validation;
 
 /// Extensible payload category for state service messages
 /// (matches C# `StateService.StatePayloadCategory`).
@@ -42,7 +38,5 @@ pub use storage::{
 };
 pub use storage::{
     MptChange, MptReadSnapshot, MptStore, StateStore, StateStoreLookup, StateStoreTransaction,
-    mpt_store, root_cache, state_provider, state_store,
+    mpt_store, root_cache, state_store,
 };
-pub use storage::{MptStateProviderFactory, MptStateView, StateProviderFactory, StateView};
-pub use validation::{StateRootCalculator, Verifier, VerifyOutcome, verification};

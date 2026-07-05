@@ -72,7 +72,6 @@ path = "tests/properties/crypto_properties.rs"
 
 [features]
 default = []
-bls-experimental = []
 
 [lints]
 workspace = true

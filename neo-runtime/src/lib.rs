@@ -27,17 +27,16 @@ pub mod time;
 // import path resolves.
 pub use errors::{ServiceError, ServiceResult, error};
 pub use service::{
-    BlockBatchImportOutcome, BlockImport, BlockImportOutcome, BlockImportQueue,
-    BlockOrigin, BlockchainEvent, CommitDecision, CommitPolicy, CommitTrigger,
+    BlockBatchImportOutcome, BlockImport, BlockImportOutcome,
+    BlockOrigin, BlockchainEvent,
     DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, ExecutionOutcome, ExecutionPayload,
-    ImportQueue, ImportedTip, InMemorySyncStageCheckpointStore, Nep17Metadata,
-    Nep17MetadataReader, NetworkEvent, NetworkService, Service, ServiceRegistry, StageProgress,
-    SyncBlockBatch, SyncPipelineDriver, SyncPipelineImportOutcome, SyncStageCheckpoint,
-    SyncStageCheckpointStore, SyncStageKind, TxHash, ValidationResult,
+    ImportedTip, Nep17Metadata,
+    Nep17MetadataReader, NetworkEvent, NetworkService, Service, ServiceRegistry,
+    TxHash, ValidationResult,
 };
 pub use service::{
-    block_import, blockchain, import_queue, nep17, outcome, service_registry, services,
-    sync_metrics, sync_pipeline,
+    block_import, blockchain, nep17, outcome, service_registry, services,
+    sync_metrics,
 };
 pub use node::{
     ConfigProvider, NeoNodeTypes, NodeTypes, StoreProvider, TxAdmission,

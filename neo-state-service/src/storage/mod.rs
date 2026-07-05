@@ -13,12 +13,10 @@
 //!
 //! - `mpt_store`: MPT-backed state store.
 //! - `root_cache`: state-root cache.
-//! - `state_provider`: provider-style immutable state views.
 //! - `state_store`: state-service store facade.
 
 pub mod mpt_store;
 pub mod root_cache;
-pub mod state_provider;
 pub mod state_store;
 
 pub use mpt_store::{MptChange, MptReadSnapshot, MptStore};
@@ -26,5 +24,4 @@ pub use root_cache::{
     DEFAULT_ROOT_CACHE_CAPACITY, StateRootCache, StateRootCacheEntry, StateRootCacheStats,
     StateRootCacheStatsSnapshot,
 };
-pub use state_provider::{MptStateProviderFactory, MptStateView, StateProviderFactory, StateView};
 pub use state_store::{StateStore, StateStoreLookup, StateStoreTransaction};

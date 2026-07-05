@@ -39,9 +39,7 @@ pub use state_root_consensus::{
 pub use state_root_verify::verify_state_root;
 
 pub(crate) use ledger::ledger_records;
-pub use ledger::{
-    header_cache, ledger_context, ledger_provider, provider_factory, pruning, static_archive,
-};
+pub use ledger::{header_cache, ledger_context, ledger_provider};
 pub use pipeline::{
     block_processing, block_validation, empty_block_fast_forward, handlers, native_persist,
     validate_stage,
@@ -98,8 +96,3 @@ pub use neo_runtime::{BlockchainEvent as RuntimeEvent, ServiceError};
 pub use header_cache::HeaderCache;
 pub use ledger_context::LedgerContext;
 pub use ledger_provider::{BlockProvider, StorageLedgerProvider, TxProvider};
-pub use provider_factory::{
-    HotColdLedgerProviderFactory, LedgerProviderFactory, StorageLedgerProviderFactory,
-};
-pub use pruning::{LedgerPruningStore, PruningReadiness};
-pub use static_archive::{HotColdLedgerProvider, StaticLedgerArchive};

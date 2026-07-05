@@ -12,7 +12,7 @@
 //!
 //! - `core`: Core reader, writer, var-int, and macro helpers for binary IO.
 //! - `errors`: Typed errors and result aliases for this crate boundary.
-//! - `persistence`: Persistence traits, snapshots, typed tables, transactions,
+//! - `persistence`: Persistence traits, snapshots, transactions,
 //!   and cache overlays.
 //! - `mdbx`: Production default MDBX provider and store adapter.
 //! - `rocksdb`: RocksDB provider, store, snapshot, and write-batch adapter.

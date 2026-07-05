@@ -15,14 +15,8 @@
 //! - `ledger_context`: ledger context facade for block import.
 //! - `ledger_provider`: provider-style read traits over hot ledger records.
 //! - `ledger_records`: persisted ledger record codecs.
-//! - `provider_factory`: factories for hot/cold ledger provider views.
-//! - `pruning`: consumer acknowledgements for future hot ledger pruning.
-//! - `static_archive`: append-only cold block and transaction body archive.
 
 pub mod header_cache;
 pub mod ledger_context;
 pub mod ledger_provider;
 pub(crate) mod ledger_records;
-pub mod provider_factory;
-pub mod pruning;
-pub mod static_archive;

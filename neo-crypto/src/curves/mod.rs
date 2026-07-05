@@ -10,10 +10,8 @@
 //!
 //! ## Contents
 //!
-//! - `bls12381`: BLS12-381 curve operations.
 //! - `bls12381_point`: BLS12-381 point representation and conversions.
 //! - `ecc`: elliptic-curve point operations and encoding.
 
-pub mod bls12381;
 pub mod bls12381_point;
 pub mod ecc;

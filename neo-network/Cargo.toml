@@ -52,7 +52,6 @@ path = "tests/service/integration.rs"
 
 [features]
 default = []
-upnp = []
 
 [lints]
 workspace = true

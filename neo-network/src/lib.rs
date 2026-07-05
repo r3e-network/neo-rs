@@ -34,11 +34,7 @@ pub mod wire;
 // Public re-exports
 // -----------------------------------------------------------------------------
 
-pub use download::{
-    BlockDownloadBatch, BlockDownloadConfig, BlockDownloadPeer, BlockDownloader,
-    BlockRangeAssignment, BlockRequest, BlockRequestScheduler, ChannelBlockDownloader,
-    CrossPeerBlockRangeScheduler, OrderedBlockBatchBuffer,
-};
+pub use download::{BlockRequest, BlockRequestScheduler};
 pub use errors::{NetworkError, NetworkResult, error};
 pub use identity::{LocalIdentity, local_identity};
 pub use peers::{
