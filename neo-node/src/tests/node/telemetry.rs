@@ -51,6 +51,37 @@ fn rocksdb_test_node() -> (Arc<neo_system::Node>, tempfile::TempDir) {
     (Arc::new(node), tmp)
 }
 
+fn mdbx_test_node(map_size: isize) -> (Arc<neo_system::Node>, tempfile::TempDir) {
+    use neo_blockchain::HeaderCache;
+    use neo_network::NetworkHandle;
+    use neo_storage::persistence::StoreFactory;
+    use neo_storage::persistence::storage::StorageConfig;
+
+    let tmp = tempfile::TempDir::new().expect("tempdir");
+    let settings = Arc::new(neo_config::ProtocolSettings::testnet());
+    let storage = StoreFactory::get_store_with_config(
+        "mdbx",
+        StorageConfig {
+            path: tmp.path().join("telemetry-mdbx"),
+            mdbx_geometry_upper_bytes: Some(map_size),
+            ..Default::default()
+        },
+    )
+    .expect("mdbx store");
+    let (blockchain, _rx) = neo_blockchain::BlockchainHandle::with_capacity();
+    let (network, _nrx, _etx) = NetworkHandle::channel(8, 8);
+    let node = neo_system::Node::builder()
+        .with_settings(Arc::clone(&settings))
+        .with_storage(storage)
+        .with_blockchain(blockchain)
+        .with_network(network)
+        .with_mempool(Arc::new(neo_mempool::MemoryPool::new(&settings)))
+        .with_header_cache(Arc::new(HeaderCache::default()))
+        .build()
+        .expect("node");
+    (Arc::new(node), tmp)
+}
+
 fn remote_ledger_node(height: u32) -> Arc<neo_system::Node> {
     remote_ledger_node_with_height(Some(height))
 }
@@ -94,6 +125,26 @@ fn indexed_service_at(height: u32) -> Arc<neo_indexer::IndexerService> {
         .index_block(&neo_payloads::Block::from_parts(header, Vec::new()))
         .expect("index block");
     indexer
+}
+
+#[test]
+fn renders_mdbx_environment_metrics() {
+    const MAP_SIZE: isize = 128 * 1024 * 1024;
+    let (node, _tmp) = mdbx_test_node(MAP_SIZE);
+    let exporter = MetricsExporter::new(node).expect("metrics exporter");
+
+    let payload = exporter.render().expect("metrics payload");
+    let text = String::from_utf8(payload).expect("utf8 metrics");
+
+    assert!(text.contains(&format!("neo_storage_mdbx_map_size_bytes {MAP_SIZE}")));
+    assert!(text.contains("neo_storage_mdbx_last_page_number"));
+    assert!(text.contains("neo_storage_mdbx_last_transaction_id"));
+    assert!(text.contains("neo_storage_mdbx_max_readers"));
+    assert!(text.contains("neo_storage_mdbx_reader_slots_used"));
+    assert!(
+        !text.contains("neo_storage_rocksdb_batch_pending_operations"),
+        "MDBX nodes should not emit RocksDB-only batch metrics"
+    );
 }
 
 #[test]

@@ -6,6 +6,7 @@ use std::time::Instant;
 use anyhow::Context;
 use hyper::{Body, Response};
 use prometheus::{Encoder, Gauge, IntGauge, IntGaugeVec, Opts, Registry, TextEncoder};
+use tracing::warn;
 
 use super::super::remote_ledger::RemoteLedgerStatus;
 use super::readiness::{ReadinessSnapshot, indexer_readiness, readiness_response};
@@ -181,11 +182,60 @@ impl MetricsExporter {
         // collectors) so /metrics exposes per-stage timing + throughput.
         buffer.extend_from_slice(crate::node::sync_metrics::render_prometheus().as_bytes());
         buffer.extend_from_slice(crate::node::tasks::render_prometheus().as_bytes());
-        buffer.extend_from_slice(self.render_rocksdb_metrics().as_bytes());
+        buffer.extend_from_slice(self.render_storage_backend_metrics().as_bytes());
 
         Ok(buffer)
     }
 
+    fn render_storage_backend_metrics(&self) -> String {
+        let storage = self.node.storage();
+        if let Some(store) = storage
+            .as_any()
+            .downcast_ref::<neo_storage::mdbx::MdbxStore>()
+        {
+            return render_mdbx_metrics(store);
+        }
+        if storage.as_any().is::<neo_storage::rocksdb::RocksDbStore>() {
+            return self.render_rocksdb_metrics();
+        }
+        String::new()
+    }
+}
+
+fn render_mdbx_metrics(store: &neo_storage::mdbx::MdbxStore) -> String {
+    let info = match store.info() {
+        Ok(info) => info,
+        Err(err) => {
+            warn!(target: "neo::telemetry", error = %err, "failed to read MDBX environment info");
+            return String::new();
+        }
+    };
+
+    format!(
+        "# HELP neo_storage_mdbx_map_size_bytes Current MDBX memory-map size in bytes\n\
+         # TYPE neo_storage_mdbx_map_size_bytes gauge\n\
+         neo_storage_mdbx_map_size_bytes {}\n\
+         # HELP neo_storage_mdbx_last_page_number Last used MDBX page number\n\
+         # TYPE neo_storage_mdbx_last_page_number gauge\n\
+         neo_storage_mdbx_last_page_number {}\n\
+         # HELP neo_storage_mdbx_last_transaction_id Last committed MDBX transaction id\n\
+         # TYPE neo_storage_mdbx_last_transaction_id gauge\n\
+         neo_storage_mdbx_last_transaction_id {}\n\
+         # HELP neo_storage_mdbx_max_readers Configured MDBX reader slot capacity reported by the environment\n\
+         # TYPE neo_storage_mdbx_max_readers gauge\n\
+         neo_storage_mdbx_max_readers {}\n\
+         # HELP neo_storage_mdbx_reader_slots_used MDBX reader slots currently used\n\
+         # TYPE neo_storage_mdbx_reader_slots_used gauge\n\
+         neo_storage_mdbx_reader_slots_used {}\n",
+        info.map_size(),
+        info.last_pgno(),
+        info.last_txnid(),
+        info.max_readers(),
+        info.num_readers(),
+    )
+}
+
+impl MetricsExporter {
     fn render_rocksdb_metrics(&self) -> String {
         let storage = self.node.storage();
         let Some(store) = storage
