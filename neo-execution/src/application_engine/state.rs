@@ -80,7 +80,12 @@ impl ApplicationEngine {
             persisting_block.as_deref(),
             snapshot_cache.as_ref(),
         );
-        let engine = ExecutionEngine::new(Some(jump_table));
+        let mut engine = ExecutionEngine::new(Some(jump_table));
+        // Match C# Neo: no instruction-count cap on the execution path. Bounding
+        // is done by gas alone (fee consumption), so a long cheap-instruction
+        // script HALTs instead of FAULTing at the upstream 1M-instruction
+        // default. See ExecutionEngine::set_max_instructions for the rationale.
+        engine.set_max_instructions(u64::MAX);
 
         let mut app = Self {
             trigger,
@@ -158,7 +163,12 @@ impl ApplicationEngine {
             persisting_block.as_deref(),
             snapshot_cache.as_ref(),
         );
-        let engine = ExecutionEngine::new(Some(jump_table));
+        let mut engine = ExecutionEngine::new(Some(jump_table));
+        // Match C# Neo: no instruction-count cap on the execution path. Bounding
+        // is done by gas alone (fee consumption), so a long cheap-instruction
+        // script HALTs instead of FAULTing at the upstream 1M-instruction
+        // default. See ExecutionEngine::set_max_instructions for the rationale.
+        engine.set_max_instructions(u64::MAX);
 
         let mut app = Self {
             trigger,
