@@ -1,5 +1,5 @@
 use super::*;
-use crate::native_contract_provider::NativeContractProvider;
+use crate::native_contract_provider::{NativeContractLookup, NativeContractProvider};
 use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
@@ -134,6 +134,29 @@ fn jump_table_selection_uses_supplied_native_provider_current_index() {
         handler_id(&default, OpCode::HASKEY),
         "constructor-time jump table selection must use the injected provider current index"
     );
+}
+
+#[test]
+fn engine_native_provider_is_fixed_at_construction() {
+    let engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        None,
+        None,
+    )
+    .expect("engine without native provider");
+
+    let late_provider = Arc::new(CurrentIndexProvider(42)) as Arc<dyn NativeContractProvider>;
+    NativeContractLookup::with_scoped_provider(late_provider, || {
+        assert!(
+            engine.native_contract_provider().is_none(),
+            "an engine constructed without a provider must not observe later ambient provider changes"
+        );
+    });
 }
 
 fn expected_base_services() -> Vec<(String, i64, u8)> {

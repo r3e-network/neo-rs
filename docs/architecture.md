@@ -262,10 +262,12 @@ The detailed rules for this style live in
   reads, dynamic-call policy gates, contract-management lookups made from
   contract loading, committee-witness checks, storage-context resolution,
   OracleResponse witness inheritance, witness group checks, current-index
-  reads, and whitelisted-fee checks. The process-global lookup remains only as
-  a compatibility bridge for standalone callers, legacy runtime-helper wrappers,
-  and installed-provider resource creation. `Helper::verify_witness*_with_native_provider`
-  and provider-aware script-hash resolution let node services verify witnesses
+  reads, and whitelisted-fee checks. Engine methods do not read the global slot
+  after construction, so provider replacement cannot change an already-created
+  engine. The process-global lookup remains only as a compatibility bridge for
+  standalone callers, legacy runtime-helper wrappers, and installed-provider
+  resource creation. `Helper::verify_witness*_with_native_provider` and
+  provider-aware script-hash resolution let node services verify witnesses
   against an explicit provider without reading the global slot. Batch block
   import, genesis initialization, header inventory verification,
   extensible-payload verification, and signed-StateRoot verification now use

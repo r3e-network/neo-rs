@@ -349,8 +349,10 @@ installed or scoped provider at construction and uses that stable handle for
 direct native calls, policy reads, dynamic-call policy gates, contract-management
 lookups made from contract loading, committee-witness checks, storage-context
 resolution, OracleResponse witness inheritance, witness group checks,
-current-index reads, and whitelisted-fee checks. Runtime witness helpers now
-have explicit-provider entry points. Native block persistence passes
+current-index reads, and whitelisted-fee checks. Engine methods do not read the
+global provider after construction, so later provider replacement cannot affect
+an already-created engine. Runtime witness helpers now have explicit-provider
+entry points. Native block persistence passes
 `NativePersistResources` providers directly into OnPersist/Application/PostPersist
 engines, and service-level genesis initialization plus batch resource setup
 build those resources from `SystemContext::native_contract_provider` instead of
@@ -380,7 +382,8 @@ compatibility bridge in
    direct native calls, policy reads, dynamic-call policy gates,
    contract-management lookups made from contract loading, committee-witness
    checks, storage-context resolution, OracleResponse witness inheritance,
-   witness group checks, current-index reads, and fee whitelist checks.
+   witness group checks, current-index reads, and fee whitelist checks. Engine
+   methods no longer read the global provider after construction.
    Batch block import, genesis initialization, header inventory verification,
    extensible-payload verification, and signed-StateRoot verification now use
    explicit providers when their caller owns one. Remaining step: keep shrinking

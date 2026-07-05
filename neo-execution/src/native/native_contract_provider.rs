@@ -131,9 +131,9 @@ pub fn lock_native_provider() -> NativeProviderTestGuard {
 
 /// Cohesive set of global native-contract lookup helpers.
 ///
-/// These associated functions form the seam between the abstract engine
-/// and the concrete native-contract implementations, routed through the
-/// globally-installed [`NativeContractProvider`].
+/// These associated functions form the compatibility seam between callers that
+/// still need ambient native-contract lookup and the explicit
+/// [`NativeContractProvider`] passed into modern execution paths.
 pub struct NativeContractLookup;
 
 impl NativeContractLookup {
@@ -175,10 +175,13 @@ impl NativeContractLookup {
         f()
     }
 
-    /// Returns the currently-installed global native-contract provider, if
-    /// any. The application engine uses this to dispatch
-    /// `System.Contract.CallNative` without depending on
-    /// `neo-native-contracts` directly.
+    /// Returns the currently-installed or thread-scoped native-contract
+    /// provider, if any.
+    ///
+    /// Compatibility constructors call this before creating an
+    /// [`ApplicationEngine`](crate::ApplicationEngine). Once constructed, an
+    /// engine uses only the provider it captured and does not observe later
+    /// ambient provider changes.
     pub fn native_contract_provider() -> Option<Arc<dyn NativeContractProvider>> {
         SCOPED_PROVIDER
             .with(|slot| slot.borrow().clone())

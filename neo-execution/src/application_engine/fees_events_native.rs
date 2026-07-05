@@ -207,9 +207,9 @@ impl ApplicationEngine {
         self.refresh_context_tracking()?;
 
         // Resolve from the engine-local registry first, then the provider
-        // captured when this engine was constructed. The process-global
-        // fallback remains inside `native_contract_provider()` for standalone
-        // callers during the gradual migration.
+        // captured when this engine was constructed. Compatibility constructors
+        // read the process-global bridge before construction; engine methods do
+        // not read it later.
         let native = self
             .native_contract_by_hash(&contract_hash)
             .ok_or_else(|| CoreError::not_found(contract_hash.to_string()))?;

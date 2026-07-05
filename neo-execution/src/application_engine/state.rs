@@ -683,9 +683,7 @@ impl ApplicationEngine {
     pub(super) fn native_contract_provider(
         &self,
     ) -> Option<Arc<dyn crate::native_contract_provider::NativeContractProvider>> {
-        self.native_contract_provider.clone().or_else(|| {
-            crate::native_contract_provider::NativeContractLookup::native_contract_provider()
-        })
+        self.native_contract_provider.clone()
     }
 
     pub(super) fn native_contract_by_hash(
@@ -720,9 +718,9 @@ impl ApplicationEngine {
     }
 
     pub(super) fn policy_contract(&self) -> Option<Arc<dyn NativeContract>> {
-        // Prefer the provider captured when this engine was constructed. The
-        // global fallback remains for standalone callers during the gradual
-        // migration away from process-global native dispatch.
+        // Use the provider captured when this engine was constructed. The
+        // compatibility constructors read the process-global bridge before
+        // construction; engine methods do not read it later.
         self.native_contract_by_name("PolicyContract")
     }
 
