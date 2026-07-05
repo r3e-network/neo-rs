@@ -149,3 +149,107 @@ async fn send_from_returns_invalid_request_without_funds() {
 
     fs::remove_file(path).ok();
 }
+
+// Fix 19: a wallet holding the member keys of a multi-sig contract must
+// contribute each held member's signature to the ContractParametersContext,
+// mirroring C# `Wallet.Sign` (Wallet.cs:700-719). Before the fix, `sign_and_relay`
+// only signed a multi-sig signer with the multi-sig account's own key, so a
+// 2-of-2 send-from could never complete and would fall back to a pending context.
+#[tokio::test(flavor = "multi_thread")]
+async fn send_from_multisig_collects_member_signatures() {
+    use neo_execution::contract::Contract;
+    use neo_wallets::Wallet as CoreWalletTrait;
+
+    let settings = Arc::new(ProtocolSettings::default());
+    let system = crate::server::test_support::test_system(ProtocolSettings::default());
+    let server = RpcServer::new(system.clone(), authenticated_config());
+    let handlers = RpcServerWallet::register_handlers();
+    let send_handler = find_handler(&handlers, "sendfrom");
+
+    // Build an in-memory NEP-6 wallet with two single-sig member accounts (each
+    // holding its private key) plus a watch-only 2-of-2 multi-sig account.
+    let wallet = Nep6Wallet::new(Some("multisig".to_string()), None, settings.clone());
+    let member1 = KeyPair::from_private_key(&[0x21u8; 32]).expect("member1");
+    let member2 = KeyPair::from_private_key(&[0x22u8; 32]).expect("member2");
+    wallet
+        .create_account(&[0x21u8; 32])
+        .await
+        .expect("member1 account");
+    wallet
+        .create_account(&[0x22u8; 32])
+        .await
+        .expect("member2 account");
+
+    let points = vec![
+        member1.public_key_point().expect("point1"),
+        member2.public_key_point().expect("point2"),
+    ];
+    let multisig_contract = Contract::create_multi_sig_contract(2, &points);
+    let multisig_hash = multisig_contract.script_hash();
+    wallet
+        .create_account_with_contract(multisig_contract, None)
+        .await
+        .expect("multisig account");
+
+    let wallet_arc: Arc<dyn CoreWalletTrait> = Arc::new(wallet);
+    server.set_wallet(Some(wallet_arc));
+
+    // Fund the multi-sig account so `make_transaction` can build the transfer.
+    let mut store = system.store_cache();
+    mint_gas(
+        &mut store,
+        &system.settings(),
+        multisig_hash,
+        BigInt::from(50_0000_0000i64),
+    );
+    store.commit();
+
+    let multisig_address =
+        wallet_helper::to_address(&multisig_hash, system.settings().address_version);
+    let asset = GasToken::script_hash().to_string();
+    let params = [
+        Value::String(asset),
+        Value::String(multisig_address.clone()),
+        Value::String(multisig_address.clone()),
+        Value::String("1".to_string()),
+    ];
+    let result = tokio::task::block_in_place(|| (send_handler.callback())(&server, &params))
+        .expect("sendfrom multisig");
+    let obj = result.as_object().expect("tx json");
+
+    // A completed multi-sig signing returns the full 12-field transaction JSON,
+    // not a pending ContractParametersContext (which would have "type"/"items").
+    assert!(
+        obj.get("hash").is_some(),
+        "expected a completed transaction, got: {result}"
+    );
+    assert_eq!(obj.len(), 12, "expected full tx json, got: {result}");
+    assert_eq!(
+        obj.get("sender").and_then(Value::as_str),
+        Some(multisig_address.as_str())
+    );
+
+    // The single witness must carry both member signatures (2 * PUSHDATA1 64B).
+    let witnesses = obj
+        .get("witnesses")
+        .and_then(Value::as_array)
+        .expect("witnesses");
+    assert_eq!(witnesses.len(), 1, "one multi-sig witness expected");
+    let invocation_b64 = witnesses[0]
+        .as_object()
+        .and_then(|w| w.get("invocation"))
+        .and_then(Value::as_str)
+        .expect("invocation script");
+    let invocation = BASE64_STANDARD
+        .decode(invocation_b64)
+        .expect("decode invocation");
+    // Each signature is emitted as PUSHDATA1 (0x0c) + len(0x40) + 64 bytes = 66.
+    let sig_pushes = invocation
+        .chunks(66)
+        .filter(|c| c.len() == 66 && c[0] == 0x0c && c[1] == 0x40)
+        .count();
+    assert_eq!(
+        sig_pushes, 2,
+        "expected 2 member signatures in the multi-sig invocation script"
+    );
+}
