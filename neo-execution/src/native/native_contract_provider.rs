@@ -34,7 +34,7 @@
 
 use parking_lot::RwLock;
 use std::cell::RefCell;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use neo_primitives::UInt160;
 
@@ -84,6 +84,45 @@ thread_local! {
 
 fn provider_slot() -> &'static RwLock<Option<Arc<dyn NativeContractProvider>>> {
     PROVIDER.get_or_init(|| RwLock::new(None))
+}
+
+/// Process-global serialization lock for tests that mutate the global
+/// native-contract provider.
+///
+/// The provider ([`PROVIDER`]) is a single process-global slot, but tests
+/// across `neo-execution` and `neo-blockchain` all install/replace it. Some
+/// of those tests share one test binary, so cargo's parallel runner can
+/// interleave a provider install from one test with a lookup from another
+/// and clobber the installed provider. Every provider-mutating test acquires
+/// this one shared lock via [`lock_native_provider`] so they run serially.
+static PROVIDER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+/// RAII guard returned by [`lock_native_provider`]. Holds the shared
+/// serialization lock for the duration of a provider-mutating test so that
+/// concurrent tests in the same binary cannot interleave a provider install
+/// with another test's lookup.
+///
+/// The guard deliberately does **not** restore a snapshot on drop: each
+/// provider-mutating test installs the provider it needs, and the last install
+/// under the lock stays until the next locked test installs its own. Restoring
+/// to a snapshot on drop would reset the global slot to `None` and clobber a
+/// concurrent test that installed a provider without holding this lock.
+pub struct NativeProviderTestGuard {
+    _lock: MutexGuard<'static, ()>,
+}
+
+/// Acquires the process-global native-provider serialization lock. Every test
+/// that installs or replaces the global provider must hold this guard for the
+/// duration of its body so provider mutations across crates and test binaries
+/// stay serialized.
+///
+/// The lock is poison-tolerant: a panicking test still releases a usable lock
+/// to the next test.
+pub fn lock_native_provider() -> NativeProviderTestGuard {
+    let _lock = PROVIDER_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    NativeProviderTestGuard { _lock }
 }
 
 /// Cohesive set of global native-contract lookup helpers.

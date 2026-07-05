@@ -7,8 +7,10 @@ use neo_storage::StorageKey;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
+use neo_execution::native_contract_provider::{
+    lock_native_provider, NativeProviderTestGuard,
+};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, MutexGuard};
 
 /// NEO `Prefix_Committee` (C# NeoToken).
 const NEO_PREFIX_COMMITTEE: u8 = 14;
@@ -25,10 +27,8 @@ const NEP17_PREFIX_TOTAL_SUPPLY: u8 = 11;
 const ORACLE_PREFIX_PRICE: u8 = 5;
 const ORACLE_PREFIX_REQUEST_ID: u8 = 9;
 
-static PROVIDER_TEST_LOCK: Mutex<()> = Mutex::new(());
-
-fn lock_provider() -> MutexGuard<'static, ()> {
-    PROVIDER_TEST_LOCK.lock().expect("provider test lock")
+fn lock_provider() -> NativeProviderTestGuard {
+    lock_native_provider()
 }
 
 struct CountingNativeProvider {

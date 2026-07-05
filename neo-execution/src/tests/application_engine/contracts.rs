@@ -7,14 +7,12 @@ use neo_manifest::{
 use neo_primitives::ContractParameterType;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
+use crate::native_contract_provider::lock_native_provider;
 use parking_lot::Mutex as PlMutex;
 use std::collections::HashMap;
-use std::sync::MutexGuard;
 
-static PROVIDER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-fn lock_provider() -> MutexGuard<'static, ()> {
-    PROVIDER_TEST_LOCK.lock().expect("provider test lock")
+fn lock_provider() -> crate::native_contract_provider::NativeProviderTestGuard {
+    lock_native_provider()
 }
 
 struct BlockingPolicy {

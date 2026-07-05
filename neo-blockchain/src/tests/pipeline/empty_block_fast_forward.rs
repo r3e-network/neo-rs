@@ -1,8 +1,11 @@
 use super::*;
 
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::Arc;
 
 use neo_config::{Hardfork, ProtocolSettings};
+use neo_execution::native_contract_provider::{
+    lock_native_provider, NativeProviderTestGuard,
+};
 use neo_payloads::{Block, Header, Transaction};
 use neo_storage::SeekDirection;
 
@@ -10,10 +13,8 @@ use crate::empty_block_fast_forward::EmptyBlockFastForwardRequest;
 use crate::native_persist::{NativePersistOptions, NativePersistResources};
 use crate::service_context::BlockPersistContext;
 
-static PROVIDER_TEST_LOCK: Mutex<()> = Mutex::new(());
-
-fn lock_provider() -> MutexGuard<'static, ()> {
-    PROVIDER_TEST_LOCK.lock().expect("provider test lock")
+fn lock_provider() -> NativeProviderTestGuard {
+    lock_native_provider()
 }
 
 fn install_resources() -> NativePersistResources {
