@@ -299,10 +299,17 @@ where
 
     /// Resolve a block hash from the durable store for a height, when a
     /// store snapshot is available (cold read after LRU eviction).
+    ///
+    /// Routes through [`StorageLedgerProvider`] (the crate's sole ledger read
+    /// path) instead of hand-rolling the native-contract call. The provider's
+    /// `block_hash_by_index` is a direct `LedgerContract::get_block_hash`
+    /// forward, so collapsing its `CoreResult` with `.ok().flatten()` preserves
+    /// the prior "error becomes `None`" semantics byte-for-byte.
     fn block_hash_from_store(&self, height: u32) -> Option<neo_primitives::UInt256> {
+        use crate::ledger_provider::BlockProvider;
         let snapshot = self.system.store_snapshot()?;
-        neo_native_contracts::LedgerContract::new()
-            .get_block_hash(&snapshot, height)
+        crate::ledger_provider::StorageLedgerProvider::new(snapshot.as_ref())
+            .block_hash_by_index(height)
             .ok()
             .flatten()
     }
@@ -312,26 +319,22 @@ where
     /// used when the in-memory LRU has evicted the body. Returns `None` when
     /// there is no store, no trimmed block, or any referenced transaction is
     /// missing.
+    ///
+    /// Routes through [`StorageLedgerProvider::block_by_hash`], which performs
+    /// the identical trimmed-block + per-transaction reconstruction. A missing
+    /// referenced transaction makes the provider return `Err`; collapsing with
+    /// `.ok().flatten()` maps that to `None`, matching the prior behaviour
+    /// where the `?` on the missing transaction short-circuited to `None`.
     fn full_block_from_store(
         &self,
         hash: &neo_primitives::UInt256,
     ) -> Option<neo_payloads::block::Block> {
+        use crate::ledger_provider::BlockProvider;
         let snapshot = self.system.store_snapshot()?;
-        let ledger = neo_native_contracts::LedgerContract::new();
-        let trimmed = ledger.get_trimmed_block(&snapshot, hash).ok().flatten()?;
-        let mut transactions = Vec::with_capacity(trimmed.hashes.len());
-        for tx_hash in &trimmed.hashes {
-            let tx = ledger
-                .get_transaction_state(&snapshot, tx_hash)
-                .ok()
-                .flatten()
-                .and_then(|state| state.transaction)?;
-            transactions.push(tx);
-        }
-        Some(neo_payloads::block::Block {
-            header: trimmed.header,
-            transactions,
-        })
+        crate::ledger_provider::StorageLedgerProvider::new(snapshot.as_ref())
+            .block_by_hash(hash)
+            .ok()
+            .flatten()
     }
 }
 
