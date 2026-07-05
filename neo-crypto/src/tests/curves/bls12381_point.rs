@@ -104,3 +104,100 @@ fn rejects_invalid_and_wrong_length() {
     assert!(Bls12381Point::deserialize(&[]).is_err());
     assert!(Bls12381Point::deserialize(&[0u8; 100]).is_err());
 }
+
+// --- Canonicity parity with C# (`Scalar.FromBytes` / `Fp.FromBytes`) ---
+
+// BLS12-381 base-field modulus p, big-endian (48 bytes).
+const FP_MODULUS_BE_HEX: &str =
+    "1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab";
+// BLS12-381 scalar-field order r, little-endian (32 bytes).
+const R_MODULUS_LE: [u8; SCALAR_SIZE] = [
+    0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xfe, 0x5b, 0xfe, 0xff, 0x02, 0xa4, 0xbd, 0x53,
+    0x05, 0xd8, 0xa1, 0x09, 0x08, 0xd8, 0x39, 0x33, 0x48, 0x7d, 0x9d, 0x29, 0x53, 0xa7, 0xed, 0x73,
+];
+
+#[test]
+fn mul_rejects_non_canonical_scalar_like_csharp() {
+    // C# `bls12381Mul` -> `Scalar.FromBytes(mul)` throws `FormatException` when
+    // the little-endian scalar is `>= r`. blst would multiply by the raw bits,
+    // so neo-rs must FAULT on the same inputs.
+    let gt = Bls12381Point::deserialize(&hex::decode(GT_HEX).unwrap()).unwrap();
+
+    // scalar == r  (non-canonical: >= r) -> reject.
+    assert!(
+        gt.mul(&R_MODULUS_LE, false).is_err(),
+        "scalar == r must be rejected (C# Scalar.FromBytes throws)"
+    );
+    assert!(
+        gt.mul(&R_MODULUS_LE, true).is_err(),
+        "scalar == r must be rejected regardless of neg"
+    );
+
+    // scalar == r + 1  (non-canonical) -> reject.
+    let mut r_plus_1 = R_MODULUS_LE;
+    // r ends in ...0x01 at LE index 0; +1 -> 0x02 (no carry needed).
+    r_plus_1[0] = 0x02;
+    assert!(
+        gt.mul(&r_plus_1, false).is_err(),
+        "scalar == r+1 must be rejected"
+    );
+
+    // all-0xFF (2^256 - 1, far above r) -> reject.
+    assert!(
+        gt.mul(&[0xFFu8; SCALAR_SIZE], false).is_err(),
+        "scalar 2^256-1 must be rejected"
+    );
+
+    // scalar == r - 1  (canonical: < r) -> accept.
+    let mut r_minus_1 = R_MODULUS_LE;
+    r_minus_1[0] = 0x00; // r ends in 0x01 -> r-1 ends in 0x00, no borrow.
+    let out = gt.mul(&r_minus_1, false);
+    assert!(out.is_ok(), "scalar == r-1 is canonical and must be accepted");
+
+    // The largest canonical scalar (r-1) and a small one both round-trip;
+    // sanity-check that a normal small scalar still works.
+    let mut three = [0u8; SCALAR_SIZE];
+    three[0] = 0x03;
+    assert!(gt.mul(&three, false).is_ok(), "scalar 3 is accepted");
+}
+
+#[test]
+fn deserialize_rejects_non_canonical_gt_coefficient_like_csharp() {
+    // C# `Gt.FromBytes` -> `Fp12/Fp6/Fp2.FromBytes` -> `Fp.FromBytes` throws
+    // `FormatException` when any 48-byte big-endian coefficient is `>= p`.
+    // blst's `blst_fp_from_bendian` silently reduces mod p, so neo-rs must
+    // FAULT on a non-canonical coefficient to match the C# accept-set.
+    let valid = hex::decode(GT_HEX).unwrap();
+    assert_eq!(valid.len(), GT_SIZE);
+    // Baseline: the valid vector deserializes.
+    assert!(Bls12381Point::deserialize(&valid).is_ok());
+
+    let p_be = hex::decode(FP_MODULUS_BE_HEX).unwrap();
+    assert_eq!(p_be.len(), 48);
+
+    // Overwrite the FIRST coefficient (bytes 0..48) with exactly p (== modulus
+    // -> non-canonical, borrow check gives >= p).
+    let mut coeff_eq_p = valid.clone();
+    coeff_eq_p[0..48].copy_from_slice(&p_be);
+    assert!(
+        Bls12381Point::deserialize(&coeff_eq_p).is_err(),
+        "Gt with a coefficient == p must be rejected"
+    );
+
+    // Overwrite the LAST coefficient (bytes 528..576) with p as well, to prove
+    // the check covers every coefficient, not just the first.
+    let mut last_eq_p = valid.clone();
+    last_eq_p[528..576].copy_from_slice(&p_be);
+    assert!(
+        Bls12381Point::deserialize(&last_eq_p).is_err(),
+        "Gt with the last coefficient == p must be rejected"
+    );
+
+    // A coefficient strictly above p (all-0xFF) is likewise non-canonical.
+    let mut coeff_all_ff = valid.clone();
+    coeff_all_ff[0..48].copy_from_slice(&[0xFFu8; 48]);
+    assert!(
+        Bls12381Point::deserialize(&coeff_all_ff).is_err(),
+        "Gt with a coefficient of all-0xFF (>= p) must be rejected"
+    );
+}

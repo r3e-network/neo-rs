@@ -311,7 +311,15 @@ impl Ed25519Crypto {
         Ok(signature.to_bytes())
     }
 
-    /// Verifies an Ed25519 signature.
+    /// Verifies an Ed25519 signature, matching the accept-set of C# Neo's
+    /// `CryptoLib.VerifyWithEd25519` (BouncyCastle's cofactorless `Ed25519.Verify`).
+    ///
+    /// Uses the non-strict cofactorless `verify` (enforcing `S < L` and a
+    /// canonical `R`, and accepting a small-order `R`, exactly as BouncyCastle
+    /// does) plus an explicit small-order public-key rejection (BouncyCastle
+    /// `CheckPointFullVar`). `verify_strict` would additionally reject a
+    /// small-order `R` and thus FAULT where C# accepts — a consensus
+    /// divergence. See [`crate::ecc::EcdsaVerify::verify_ed25519`].
     pub fn verify(
         message: &[u8],
         signature: &[u8; 64],
@@ -322,7 +330,12 @@ impl Ed25519Crypto {
         let signature = Ed25519Signature::try_from(signature.as_slice())
             .map_err(|e| CryptoError::invalid_signature(format!("Invalid signature: {e}")))?;
 
-        Ok(verifying_key.verify_strict(message, &signature).is_ok())
+        // BouncyCastle `CheckPointFullVar` rejects a small-order (weak) public key.
+        if verifying_key.is_weak() {
+            return Ok(false);
+        }
+
+        Ok(verifying_key.verify(message, &signature).is_ok())
     }
 }
 

@@ -332,6 +332,96 @@ fn test_verify_ed25519_signature() {
     assert!(!EcdsaVerify::verify_ed25519(&verifying_key.to_bytes(), message, &bad_sig).unwrap());
 }
 
+/// Adversarial-input parity vectors for `verify_ed25519`, asserting the verdict
+/// matches C# `CryptoLib.VerifyWithEd25519` (BouncyCastle `Ed25519Signer`).
+///
+/// Every `expected` value below was produced by running the exact BouncyCastle
+/// verification path Neo uses (`Ed25519Signer.Init(false, Ed25519PublicKeyParameters)`
+/// + `VerifySignature`) on the same `(pubkey, msg, sig)` triple. BouncyCastle
+/// uses the **cofactorless** RFC 8032 equation and:
+///   * rejects a small-order public key A (`lowOrderA` -> false),
+///   * ACCEPTS a small-order R (`lowOrderR` -> true) — the case where the old
+///     `verify_strict` FAULTED, diverging from C#,
+///   * rejects a non-canonical scalar S >= L (`noncanonical_S` -> false),
+///   * accepts a well-formed valid signature (`valid` -> true).
+#[test]
+fn verify_ed25519_matches_bouncycastle_accept_set() {
+    // (label, pubkey_hex, sig_hex, msg_ascii, expected)
+    let cases: &[(&str, &str, &str, &[u8], bool)] = &[
+        // Valid signature over "neo" with a real key: both C# and neo-rs accept.
+        (
+            "valid_baseline",
+            "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664",
+            "df286c9498ea5a3f85ea8ba88f12384f4149cb9333ffd83d1780b6fd5b1adc6bd031cc295c29c83de73a2413aefd59a831278c674176bb2cd2b8243850407304",
+            b"neo",
+            true,
+        ),
+        // Small-order public key A (an order-8 torsion point), with a signature
+        // that satisfies the cofactorless equation. BouncyCastle
+        // `CheckPointFullVar` rejects a small-order A -> false. Our fix keeps
+        // this rejection via `is_weak`.
+        (
+            "lowOrderA",
+            "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+            "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc050000000000000000000000000000000000000000000000000000000000000000",
+            b"la1",
+            false,
+        ),
+        // Small-order R (an order-8 torsion point) with a full-order A that
+        // carries a torsion component; the signature satisfies the cofactorless
+        // equation. BouncyCastle ACCEPTS this (it only checks R's canonical
+        // encoding, not its order) -> true. `verify_strict` would FAULT here,
+        // which is the exact consensus divergence this fix removes.
+        (
+            "lowOrderR",
+            "c6e2cb790d0e8833a455b24cc304bf11cc0e2d0b6625c64663aa9ee64506188d",
+            "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa04f5ec52d9c7966bc348e298fd98ecf7669b0199bad90440d1de6905588d920e",
+            b"lor0",
+            true,
+        ),
+        // Non-canonical scalar S = S0 + L (>= the group order L). BouncyCastle
+        // `Scalar25519.CheckVar` rejects S >= L -> false. ed25519-dalek's
+        // `check_scalar` (`Scalar::from_canonical_bytes`) enforces the same bound.
+        (
+            "noncanonical_S_geq_L",
+            "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664",
+            "df286c9498ea5a3f85ea8ba88f12384f4149cb9333ffd83d1780b6fd5b1adc6bbd05c286768cda95bdd71bb68cf738bd31278c674176bb2cd2b8243850407314",
+            b"neo",
+            false,
+        ),
+        // A valid signature verified against the wrong message: false.
+        (
+            "wrong_msg",
+            "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664",
+            "df286c9498ea5a3f85ea8ba88f12384f4149cb9333ffd83d1780b6fd5b1adc6bd031cc295c29c83de73a2413aefd59a831278c674176bb2cd2b8243850407304",
+            b"NEO",
+            false,
+        ),
+    ];
+
+    for (label, pub_hex, sig_hex, msg, expected) in cases {
+        let pubkey = hex::decode(pub_hex).unwrap();
+        let sig = hex::decode(sig_hex).unwrap();
+        let got = EcdsaVerify::verify_ed25519(&pubkey, msg, &sig).unwrap_or(false);
+        assert_eq!(
+            got, *expected,
+            "verify_ed25519 disagrees with BouncyCastle on case '{label}'"
+        );
+
+        // The higher-level `Ed25519Crypto::verify` (used by the generic ECDsa
+        // dispatch) must reach the same verdict for 32/64-byte inputs.
+        if pubkey.len() == 32 && sig.len() == 64 {
+            let pk: [u8; 32] = pubkey.clone().try_into().unwrap();
+            let sg: [u8; 64] = sig.clone().try_into().unwrap();
+            let got2 = crate::Ed25519Crypto::verify(msg, &sg, &pk).unwrap_or(false);
+            assert_eq!(
+                got2, *expected,
+                "Ed25519Crypto::verify disagrees with BouncyCastle on case '{label}'"
+            );
+        }
+    }
+}
+
 #[test]
 fn test_generate_keypair_roundtrip() {
     let (private_key, public_point) = EcdsaVerify::generate_keypair(ECCurve::Secp256r1).unwrap();

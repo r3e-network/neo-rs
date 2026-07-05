@@ -730,7 +730,24 @@ impl EcdsaVerify {
         }
     }
 
-    /// Verifies an Ed25519 signature.
+    /// Verifies an Ed25519 signature, matching the accept-set of C# Neo's
+    /// `CryptoLib.VerifyWithEd25519` (which delegates to BouncyCastle's
+    /// `Ed25519Signer` / `Ed25519.Verify`).
+    ///
+    /// BouncyCastle uses the **cofactorless** RFC 8032 verification equation
+    /// (`[S]B = R + [k]A`, byte-comparing the recomputed R) and enforces:
+    /// * `S < L` (canonical scalar), and
+    /// * a canonical `R` encoding (`y < p`), and
+    /// * rejects a **small-order public key `A`** (`CheckPointFullVar`),
+    ///
+    /// but it **accepts a small-order `R`**. ed25519-dalek's `verify_strict`
+    /// additionally rejects small-order `R`, so using it would FAULT on inputs
+    /// C# accepts — an adversarial-input consensus divergence. Instead we use
+    /// the non-strict cofactorless `verify` (which already enforces the `S < L`
+    /// and canonical-`R` checks via `Signature`/`recompute_R`) and add back
+    /// only the small-order `A` rejection (`is_weak`) to match BouncyCastle
+    /// exactly. See `CryptoLib.cs` `VerifyWithEd25519V0/V1` and BouncyCastle
+    /// `Ed25519.ImplVerify` (`CheckPointFullVar` + `Scalar25519.CheckVar`).
     pub fn verify_ed25519(
         public_key: &[u8],
         message: &[u8],
@@ -745,7 +762,13 @@ impl EcdsaVerify {
         let verifying_key = VerifyingKey::from_bytes(&pk_bytes)
             .map_err(|e| CryptoError::invalid_key(format!("Invalid Ed25519 public key: {e}")))?;
 
-        Ok(verifying_key.verify_strict(message, &sig).is_ok())
+        // BouncyCastle `CheckPointFullVar` rejects a small-order (weak) public
+        // key A; `verify` (non-strict) does not, so re-add the check here.
+        if verifying_key.is_weak() {
+            return Ok(false);
+        }
+
+        Ok(verifying_key.verify(message, &sig).is_ok())
     }
 
     /// Generates a random keypair for the specified curve.

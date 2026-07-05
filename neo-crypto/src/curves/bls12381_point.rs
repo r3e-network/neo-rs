@@ -40,6 +40,62 @@ use blst::{
 /// Byte length of a BLS12-381 scalar multiplier (matches C# `Scalar.FromBytes`).
 pub const SCALAR_SIZE: usize = 32;
 
+/// Byte length of a single `Fp` field coefficient (big-endian).
+const FP_SIZE: usize = 48;
+
+/// The BLS12-381 base-field modulus `p`, big-endian (48 bytes). Matches C#
+/// `FpConstants.MODULUS`. C# `Fp.FromBytes` throws `FormatException` when a
+/// deserialized coefficient is `>= p`, so the neo-rs Gt parse must reject the
+/// same inputs (blst's `blst_fp_from_bendian` would otherwise reduce mod `p`
+/// silently and accept a non-canonical coefficient — a consensus divergence).
+const FP_MODULUS_BE: [u8; FP_SIZE] = [
+    0x1a, 0x01, 0x11, 0xea, 0x39, 0x7f, 0xe6, 0x9a, 0x4b, 0x1b, 0xa7, 0xb6, 0x43, 0x4b, 0xac, 0xd7,
+    0x64, 0x77, 0x4b, 0x84, 0xf3, 0x85, 0x12, 0xbf, 0x67, 0x30, 0xd2, 0xa0, 0xf6, 0xb0, 0xf6, 0x24,
+    0x1e, 0xab, 0xff, 0xfe, 0xb1, 0x53, 0xff, 0xff, 0xb9, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xaa, 0xab,
+];
+
+/// The BLS12-381 scalar-field (group) order `r`, little-endian (32 bytes).
+/// Matches C# `ScalarConstants.MODULUS`. C# `Scalar.FromBytes` reads the 32
+/// bytes as little-endian limbs and throws `FormatException` when the value is
+/// `>= r`; the scalar handed to `bls12381Mul` is little-endian on both sides,
+/// so the neo-rs check compares the same LE value against `r`.
+const SCALAR_MODULUS_LE: [u8; SCALAR_SIZE] = [
+    0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xfe, 0x5b, 0xfe, 0xff, 0x02, 0xa4, 0xbd, 0x53,
+    0x05, 0xd8, 0xa1, 0x09, 0x08, 0xd8, 0x39, 0x33, 0x48, 0x7d, 0x9d, 0x29, 0x53, 0xa7, 0xed, 0x73,
+];
+
+/// Returns `true` when the 48-byte big-endian coefficient `data` is `< p` (a
+/// canonical `Fp` encoding). Mirrors C# `Fp.FromBytes`'s borrow check against
+/// `FpConstants.MODULUS`.
+fn fp_is_canonical(data: &[u8]) -> bool {
+    // Lexicographic big-endian compare: data < FP_MODULUS_BE.
+    for (d, m) in data.iter().zip(FP_MODULUS_BE.iter()) {
+        match d.cmp(m) {
+            core::cmp::Ordering::Less => return true,
+            core::cmp::Ordering::Greater => return false,
+            core::cmp::Ordering::Equal => {}
+        }
+    }
+    // Equal to the modulus is non-canonical (`>= p`).
+    false
+}
+
+/// Returns `true` when the 32-byte little-endian scalar is `< r` (a canonical
+/// scalar). Mirrors C# `Scalar.FromBytes`'s borrow check against
+/// `ScalarConstants.MODULUS_LIMBS_64`.
+fn scalar_is_canonical(scalar_le: &[u8; SCALAR_SIZE]) -> bool {
+    // Compare most-significant byte first (index 31 down to 0).
+    for i in (0..SCALAR_SIZE).rev() {
+        match scalar_le[i].cmp(&SCALAR_MODULUS_LE[i]) {
+            core::cmp::Ordering::Less => return true,
+            core::cmp::Ordering::Greater => return false,
+            core::cmp::Ordering::Equal => {}
+        }
+    }
+    // Equal to the order is non-canonical (`>= r`).
+    false
+}
+
 /// Compressed length of a G1 point (matches C# `G1Affine.ToCompressed`).
 pub const G1_COMPRESSED_SIZE: usize = 48;
 /// Compressed length of a G2 point (matches C# `G2Affine.ToCompressed`).
@@ -82,18 +138,29 @@ fn fp_from_be(bytes: &[u8]) -> blst_fp {
 /// `fp6[i].fp2[j].fp[k]` indices descend (`i: 1→0`, `j: 2→0`, `k: 1→0`), each
 /// coefficient a 48-byte big-endian `Fp`. Verified byte-exact against the
 /// `UT_CryptoLib` pairing / add / mul vectors.
-fn gt_from_bytes(data: &[u8]) -> blst_fp12 {
+fn gt_from_bytes(data: &[u8]) -> CryptoResult<blst_fp12> {
     let mut fp12 = blst_fp12::default();
     let mut idx = 0usize;
     for i in (0..2).rev() {
         for j in (0..3).rev() {
             for k in (0..2).rev() {
-                fp12.fp6[i].fp2[j].fp[k] = fp_from_be(&data[idx * 48..]);
+                let coeff = &data[idx * FP_SIZE..idx * FP_SIZE + FP_SIZE];
+                // C# `Fp.FromBytes` (reached via `Gt.FromBytes` ->
+                // `Fp12/Fp6/Fp2.FromBytes`) throws `FormatException` when a
+                // coefficient is `>= p`. blst's `blst_fp_from_bendian` would
+                // silently reduce mod `p`, so validate canonicity first to
+                // FAULT on the same non-canonical inputs C# rejects.
+                if !fp_is_canonical(coeff) {
+                    return Err(CryptoError::invalid_point(
+                        "BLS12-381 Gt: Fp coefficient is not canonical (>= field modulus)",
+                    ));
+                }
+                fp12.fp6[i].fp2[j].fp[k] = fp_from_be(coeff);
                 idx += 1;
             }
         }
     }
-    fp12
+    Ok(fp12)
 }
 
 /// Serializes an `Fp12` (Gt element) to its 576-byte form (same walk order as
@@ -256,7 +323,7 @@ impl Bls12381Point {
                 }
                 Ok(Bls12381Point::G2(affine))
             }
-            GT_SIZE => Ok(Bls12381Point::Gt(gt_from_bytes(data))),
+            GT_SIZE => Ok(Bls12381Point::Gt(gt_from_bytes(data)?)),
             other => Err(CryptoError::invalid_point(format!(
                 "invalid BLS12-381 point length: {other} (expected {G1_COMPRESSED_SIZE}/{G2_COMPRESSED_SIZE}/{GT_SIZE})"
             ))),
@@ -323,6 +390,18 @@ impl Bls12381Point {
                 scalar_le.len()
             ))
         })?;
+        // C# `bls12381Mul` builds the multiplier via `Scalar.FromBytes(mul)`,
+        // which throws `FormatException` when the (little-endian) scalar is
+        // `>= r` (the group order). blst multiplies by the raw bit pattern
+        // regardless, so reject a non-canonical scalar here to FAULT on the
+        // same inputs C# rejects. (`neg` maps to C# `-Scalar.FromBytes(mul)`;
+        // C# negates only after the canonical `FromBytes`, so the range check
+        // applies to the pre-negation bytes either way.)
+        if !scalar_is_canonical(scalar) {
+            return Err(CryptoError::invalid_point(
+                "BLS12-381 mul: scalar is not canonical (>= group order)",
+            ));
+        }
         Ok(match self {
             Bls12381Point::G1(p) => Bls12381Point::G1(g1_mul(p, scalar, neg)),
             Bls12381Point::G2(p) => Bls12381Point::G2(g2_mul(p, scalar, neg)),
