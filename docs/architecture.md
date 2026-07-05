@@ -229,9 +229,12 @@ The detailed rules for this style live in
   `BlockImport::import_many` in original order. Execution, native persistence,
   state-root updates, and durable storage still happen only inside
   `neo-blockchain`. Peer-relayed block bursts enter the live inventory path
-  through `BlockchainHandle::submit_inventory_blocks` so node composition does
-  not construct `BlockchainCommand` variants directly while inventory-specific
-  relay, parking, draining, and mempool behavior remains in the service loop.
+  through `BlockchainHandle::submit_inventory_blocks`, consensus-produced
+  blocks use `submit_inventory_block`, extensible payloads use
+  `submit_inventory_extensible`, and startup genesis bootstrapping uses
+  `initialize`. Node composition does not construct `BlockchainCommand`
+  variants directly while inventory-specific relay, parking, draining, and
+  mempool behavior remains in the service loop.
 
 - **Staged-sync policies are shared runtime contracts.**
   `neo_runtime::sync_pipeline` defines stable stage identifiers,

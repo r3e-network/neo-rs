@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use neo_blockchain::{BlockchainCommand, BlockchainHandle, RuntimeEvent};
+use neo_blockchain::{BlockchainHandle, RuntimeEvent};
 use neo_config::ProtocolSettings;
 use neo_consensus::messages::ConsensusPayload;
 use neo_consensus::{ConsensusEvent, ConsensusService, ConsensusSigner, ValidatorInfo};
@@ -619,11 +619,7 @@ impl ConsensusDriver {
                         // validators already signed, so it is pre-verified.
                         let _ = self
                             .blockchain
-                            .tell(BlockchainCommand::InventoryBlock {
-                                block: Arc::clone(&block),
-                                relay: true,
-                                pre_verified: true,
-                            })
+                            .submit_inventory_block(Arc::clone(&block), true, true)
                             .await;
                         // The InventoryBlock handler does not relay, so broadcast
                         // the new block to peers explicitly.

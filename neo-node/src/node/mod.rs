@@ -302,10 +302,7 @@ async fn handle_inbound_inventory_item(
             // Cache + relay through the blockchain service regardless
             // (peers that are validators consume it; we relay it on).
             let _ = blockchain
-                .tell(neo_blockchain::BlockchainCommand::InventoryExtensible {
-                    payload: (*payload).clone(),
-                    relay: true,
-                })
+                .submit_inventory_extensible((*payload).clone(), true)
                 .await;
         }
     }
@@ -911,7 +908,7 @@ async fn build_node(
     if ledger_mode.uses_local_replay_services() {
         // C# Blockchain.OnInitialize: persist genesis on an empty store.
         blockchain
-            .tell(neo_blockchain::BlockchainCommand::Initialize)
+            .initialize()
             .await
             .map_err(|_| anyhow::anyhow!("blockchain service command loop closed during init"))?;
     } else {

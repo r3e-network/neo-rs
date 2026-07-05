@@ -25,7 +25,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use neo_payloads::Block;
+use neo_payloads::{Block, ExtensiblePayload};
 use neo_primitives::UInt256;
 use neo_runtime::{
     BlockBatchImportOutcome, BlockImport, BlockImportOutcome, BlockOrigin, ImportedTip, Service,
@@ -142,6 +142,47 @@ impl BlockchainHandle {
                 relay,
                 pre_verified,
             })
+            .await
+            .map_err(|_| ServiceError::unavailable("blockchain command channel closed"))
+    }
+
+    /// Submit one block to the peer/consensus inventory path.
+    ///
+    /// Use this for live inventory semantics. RPC and local package imports
+    /// should use [`Self::import_block`] or [`Self::import_blocks_bulk`]
+    /// instead.
+    pub async fn submit_inventory_block(
+        &self,
+        block: Arc<Block>,
+        relay: bool,
+        pre_verified: bool,
+    ) -> Result<(), ServiceError> {
+        self.cmd_tx
+            .send(BlockchainCommand::InventoryBlock {
+                block,
+                relay,
+                pre_verified,
+            })
+            .await
+            .map_err(|_| ServiceError::unavailable("blockchain command channel closed"))
+    }
+
+    /// Submit an extensible payload to the live inventory path.
+    pub async fn submit_inventory_extensible(
+        &self,
+        payload: ExtensiblePayload,
+        relay: bool,
+    ) -> Result<(), ServiceError> {
+        self.cmd_tx
+            .send(BlockchainCommand::InventoryExtensible { payload, relay })
+            .await
+            .map_err(|_| ServiceError::unavailable("blockchain command channel closed"))
+    }
+
+    /// Request blockchain service initialization.
+    pub async fn initialize(&self) -> Result<(), ServiceError> {
+        self.cmd_tx
+            .send(BlockchainCommand::Initialize)
             .await
             .map_err(|_| ServiceError::unavailable("blockchain command channel closed"))
     }

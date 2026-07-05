@@ -25,7 +25,7 @@ flowchart TD
     C --> D["StoreCache + shared DataCache snapshot"]
     D --> E["read durable tip:<br/>LedgerContract.current_index"]
     E --> F["build BlockchainService<br/>(neo-blockchain) + spawn run loop"]
-    F --> G["send Initialize:<br/>persist genesis if store empty"]
+    F --> G["BlockchainHandle::initialize:<br/>persist genesis if store empty"]
     G --> H["spawn LocalNodeService (neo-network)<br/>+ inventory sink + BlockSource"]
     H --> I{"[consensus].enabled<br/>and key in validator set?"}
     I -- yes --> J["spawn dBFT driver (neo-consensus)"]
@@ -52,13 +52,17 @@ Two startup details matter for correctness:
 
 A block arriving from a peer is decoded by its per-peer task, buffered by
 `neo-node`, and submitted through
-`neo_blockchain::BlockchainHandle::submit_inventory_blocks`. The blockchain
-service then structurally and witness-verifies it, runs the C#
-`Blockchain.Persist` pipeline, and commits it durably. Out-of-order blocks are
-parked and drained when their parent lands. The typed handle method deliberately
-preserves inventory-specific behavior (relay policy, parking, draining, and
-live mempool maintenance) instead of routing peer blocks through the generic
-bulk-import command.
+`neo_blockchain::BlockchainHandle::submit_inventory_blocks`. Consensus-produced
+blocks use `submit_inventory_block`; extensible payloads use
+`submit_inventory_extensible`; startup genesis bootstrapping uses `initialize`.
+The node composition code does not construct private `BlockchainCommand`
+variants directly. The blockchain service then structurally and
+witness-verifies blocks, runs the C# `Blockchain.Persist` pipeline, and commits
+them durably. Out-of-order blocks are parked and drained when their parent
+lands. The typed inventory handle methods deliberately preserve
+inventory-specific behavior (relay policy, parking, draining, and live mempool
+maintenance) instead of routing peer blocks through the generic bulk-import
+command.
 
 Downloaded block batches may first pass through `neo_runtime::BlockImportQueue`:
 the queue runs `BlockImport::check` with bounded concurrency and then calls
@@ -93,7 +97,7 @@ sequenceDiagram
     opt batch preflight
         Fwd->>Fwd: BlockImportQueue::push_blocks<br/>(bounded check concurrency)
     end
-    Fwd->>BC: InventoryBlock { relay, pre_verified: false }
+    Fwd->>BC: submit_inventory_blocks / submit_inventory_block
     Note over BC: index == height + 1?<br/>else park / ignore
     BC->>BC: structural checks (version, tx count,<br/>merkle root, no duplicate tx)
     BC->>Store: load prev TrimmedBlock

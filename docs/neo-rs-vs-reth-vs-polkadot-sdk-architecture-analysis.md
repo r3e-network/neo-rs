@@ -88,9 +88,13 @@ headers/bodies/execute/index/prune loop remains the next large integration step.
 
 Live path: P2P Block -> `InboundInventory::Block` -> `neo-node` buffering ->
 `BlockchainHandle::submit_inventory_blocks` -> neo-blockchain
-`handle_block_inventory_batch` / `persist_block_sequence`, bypassing the
-generic queue/driver layer for now. That bypass is intentional until the queue
-has an inventory-aware adapter: the live inventory path owns relay policy,
+`handle_block_inventory_batch` / `persist_block_sequence`. Consensus-produced
+blocks use `submit_inventory_block`; extensible payloads use
+`submit_inventory_extensible`; local replay startup uses `initialize`. These
+typed handle methods keep `BlockchainCommand` construction inside
+`neo-blockchain` while the live path intentionally bypasses the generic
+queue/driver layer for now. That bypass remains until the queue has an
+inventory-aware adapter: the live inventory path owns relay policy,
 future-block parking, unverified draining, and mempool maintenance, while
 `SyncPipelineDriver` is still a reusable primitive constructed only under
 `tests/`.

@@ -109,6 +109,68 @@ async fn handle_submits_inventory_block_batches_without_exposing_command_enum() 
     }
 }
 
+#[tokio::test]
+async fn handle_submits_single_inventory_block_without_exposing_command_enum() {
+    let (handle, mut cmd_rx, _event_tx) = BlockchainHandle::channel(4, 4);
+    let block = Arc::new(neo_payloads::Block::new());
+
+    handle
+        .submit_inventory_block(Arc::clone(&block), true, true)
+        .await
+        .expect("submit inventory block");
+
+    match cmd_rx.recv().await.expect("inventory command") {
+        BlockchainCommand::InventoryBlock {
+            block: submitted,
+            relay,
+            pre_verified,
+        } => {
+            assert!(Arc::ptr_eq(&submitted, &block));
+            assert!(relay);
+            assert!(pre_verified);
+        }
+        other => panic!("expected InventoryBlock command, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn handle_submits_extensible_inventory_without_exposing_command_enum() {
+    let (handle, mut cmd_rx, _event_tx) = BlockchainHandle::channel(4, 4);
+    let payload = neo_payloads::ExtensiblePayload::default();
+
+    handle
+        .submit_inventory_extensible(payload.clone(), true)
+        .await
+        .expect("submit extensible inventory");
+
+    match cmd_rx.recv().await.expect("inventory command") {
+        BlockchainCommand::InventoryExtensible {
+            payload: submitted,
+            relay,
+        } => {
+            assert_eq!(submitted.category, payload.category);
+            assert_eq!(submitted.valid_block_start, payload.valid_block_start);
+            assert_eq!(submitted.valid_block_end, payload.valid_block_end);
+            assert_eq!(submitted.sender, payload.sender);
+            assert_eq!(submitted.data, payload.data);
+            assert!(relay);
+        }
+        other => panic!("expected InventoryExtensible command, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn handle_initializes_without_exposing_command_enum() {
+    let (handle, mut cmd_rx, _event_tx) = BlockchainHandle::channel(4, 4);
+
+    handle.initialize().await.expect("initialize");
+
+    match cmd_rx.recv().await.expect("initialize command") {
+        BlockchainCommand::Initialize => {}
+        other => panic!("expected Initialize command, got {other:?}"),
+    }
+}
+
 #[test]
 fn service_debug_does_not_panic() {
     let system = Arc::new(TestContext);
