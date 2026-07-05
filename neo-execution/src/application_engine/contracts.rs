@@ -36,10 +36,7 @@ impl ApplicationEngine {
         let block_idx = self.persisting_block().map(|b| b.index()).unwrap_or(0);
         let diag = Self::should_trace_block(block_idx);
 
-        match crate::native_contract_provider::NativeContractLookup::lookup_contract_management(
-            self.snapshot_cache.as_ref(),
-            hash,
-        ) {
+        match self.lookup_contract_management_state(hash) {
             Ok(Some(contract)) => {
                 if diag {
                     tracing::warn!(target: "neo", block_index = block_idx, %hash, id = contract.id, "TRACE: fetch_contract found in snapshot");
@@ -80,9 +77,45 @@ impl ApplicationEngine {
     }
 
     fn is_contract_blocked(&mut self, contract_hash: &UInt160) -> CoreResult<bool> {
-        crate::native_contract_provider::NativeContractLookup::is_contract_blocked_by_policy(
+        let provider = self.native_contract_provider().ok_or_else(|| {
+            CoreError::invalid_operation(
+                "PolicyContract lookup requires a native contract provider",
+            )
+        })?;
+        let policy = provider
+            .get_native_contract_by_name("PolicyContract")
+            .ok_or_else(|| {
+                CoreError::invalid_operation(
+                    "PolicyContract lookup requires the Policy native contract",
+                )
+            })?;
+        policy.is_contract_blocked(self.snapshot_cache.as_ref(), contract_hash)
+    }
+
+    fn lookup_contract_management_state(
+        &self,
+        hash: &UInt160,
+    ) -> CoreResult<Option<ContractState>> {
+        let Some(contract_management) = self.native_contract_by_name("ContractManagement") else {
+            return Ok(None);
+        };
+        contract_management.lookup_contract_state(self.snapshot_cache.as_ref(), hash)
+    }
+
+    fn whitelisted_fee_for_policy(
+        &self,
+        contract_hash: &UInt160,
+        method: &str,
+        param_count: u32,
+    ) -> CoreResult<Option<i64>> {
+        let Some(policy) = self.native_contract_by_name("PolicyContract") else {
+            return Ok(None);
+        };
+        policy.whitelisted_fee(
             self.snapshot_cache.as_ref(),
             contract_hash,
+            method,
+            param_count,
         )
     }
 
@@ -215,12 +248,9 @@ impl ApplicationEngine {
             let executing_contract = if self.is_hardfork_enabled(Hardfork::HfDomovoi) {
                 executing_contract
             } else {
-                crate::native_contract_provider::NativeContractLookup::lookup_contract_management(
-                    self.snapshot_cache.as_ref(),
-                    &previous_hash,
-                )
-                .ok()
-                .flatten()
+                self.lookup_contract_management_state(&previous_hash)
+                    .ok()
+                    .flatten()
             };
 
             if let Some(executing_contract) = executing_contract {
@@ -243,8 +273,7 @@ impl ApplicationEngine {
             .protocol_settings
             .is_hardfork_enabled(Hardfork::HfFaun, self.current_block_index())
         {
-            crate::native_contract_provider::NativeContractLookup::get_whitelisted_fee_for_policy(
-                self.snapshot_cache.as_ref(),
+            self.whitelisted_fee_for_policy(
                 &contract.hash,
                 &method.name,
                 method.parameters.len() as u32,

@@ -259,9 +259,10 @@ The detailed rules for this style live in
   `neo-execution` lookup seam, and passes the same `Arc` into `NodeBuilder`.
   `ApplicationEngine` now captures the installed or scoped provider at
   construction and uses that stable handle for direct native calls, policy
-  reads, current-index reads, and whitelisted-fee checks. The process-global
-  lookup remains only as a compatibility bridge for standalone callers and
-  unconverted helper/syscall paths (`contracts`, `load_execute_storage`,
+  reads, dynamic-call policy gates, contract-management lookups made from
+  contract loading, current-index reads, and whitelisted-fee checks. The
+  process-global lookup remains only as a compatibility bridge for standalone
+  callers and unconverted helper/syscall paths (`load_execute_storage`,
   `witness_and_misc`, runtime helpers, and blockchain native persistence).
   Headless/test construction can still omit the provider and let the builder
   install the standard default. ADR-015 proposes a builder pattern for future

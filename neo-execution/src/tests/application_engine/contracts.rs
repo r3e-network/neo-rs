@@ -411,6 +411,58 @@ fn call_contract_dynamic_rejects_policy_blocked_target() {
 }
 
 #[test]
+fn dynamic_contract_policy_uses_provider_captured_at_engine_creation() {
+    let _provider_guard = lock_provider();
+
+    let target_hash =
+        UInt160::parse("0xb1b2c3d4e5f60718293a4b5c6d7e8f0102030415").expect("target hash");
+    let provider = Arc::new(BlockingProvider {
+        policy: Arc::new(BlockingPolicy {
+            blocked_hash: target_hash,
+        }),
+    }) as Arc<dyn NativeContractProvider>;
+
+    let mut contracts: HashMap<UInt160, ContractState> = HashMap::new();
+    contracts.insert(target_hash, build_mock_contract(target_hash));
+
+    let mut engine = NativeContractLookup::with_scoped_provider(provider, || {
+        ApplicationEngine::new_with_preloaded_native(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            contracts,
+            Arc::new(PlMutex::new(NativeContractsCache::default())),
+            None,
+        )
+    })
+    .expect("engine");
+
+    NativeContractLookup::install_provider(Arc::new(EmptyProvider));
+
+    engine
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
+        .expect("load entry script");
+
+    let err = engine
+        .call_contract_dynamic(
+            &target_hash,
+            "balanceOf",
+            CallFlags::READ_STATES | CallFlags::ALLOW_CALL,
+            vec![StackItem::from_byte_string(UInt160::zero().to_bytes())],
+        )
+        .expect_err("captured policy provider must reject the blocked target");
+
+    assert!(
+        err.to_string()
+            .contains(&format!("The contract {target_hash} has been blocked.")),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn call_contract_internal_checks_policy_before_return_type_mismatch() {
     let _provider_guard = lock_provider();
 
