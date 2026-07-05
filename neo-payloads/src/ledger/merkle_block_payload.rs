@@ -53,13 +53,36 @@ impl MerkleBlockPayload {
             .map(|tx| tx.try_hash())
             .collect::<CoreResult<Vec<_>>>()?;
         let mut tree = MerkleTree::new(&tx_hashes);
-        let padded_flags = pad_flags(filter_bits, tree.depth());
+        // The padded flags (widened to 2^(depth-1) leaves) are only used to drive
+        // `tree.trim`; C# copies the padded BitArray for trimming but leaves the
+        // caller's original BitArray untouched.
+        let padded_flags = pad_flags(filter_bits.clone(), tree.depth());
         tree.trim(&padded_flags);
         let hashes = tree.to_hash_array();
-        let flags = pack_flags(&padded_flags);
+        // On the wire, C# `MerkleBlockPayload.Create` packs the ORIGINAL flags
+        // BitArray (length == TxCount) into `ceil(TxCount / 8)` bytes via
+        // `BitArray.CopyTo` — NOT the padded/trim flags. Match that exactly so the
+        // serialized `flags` length and bit layout are byte-identical to C#.
+        let flags = pack_wire_flags(&filter_bits, tx_count as usize);
 
         Ok(Self::new(block.header.clone(), tx_count, hashes, flags))
     }
+}
+
+/// Packs the transaction-match flags for the wire exactly as C#
+/// `MerkleBlockPayload.Create` does: a compact bit array of `ceil(tx_count / 8)`
+/// bytes, one bit per transaction, LSB-first per byte (C# `BitArray.CopyTo`).
+///
+/// Bits beyond `tx_count` (or beyond the supplied `flags`) are treated as `false`,
+/// matching a C# BitArray of length `tx_count`.
+fn pack_wire_flags(flags: &[bool], tx_count: usize) -> Vec<u8> {
+    let mut bits: MerkleBlockFlags = flags.iter().copied().take(tx_count).collect();
+    // C# `new byte[(flags.Length + 7) / 8]` sizes to the BitArray length (TxCount),
+    // so short flag inputs are zero-extended up to `tx_count` bits before packing.
+    if bits.len() < tx_count {
+        bits.resize(tx_count, false);
+    }
+    bits.into_vec()
 }
 
 fn pad_flags(mut flags: Vec<bool>, depth: usize) -> Vec<bool> {
@@ -87,14 +110,6 @@ fn pad_flags(mut flags: Vec<bool>, depth: usize) -> Vec<bool> {
         }
         Ordering::Equal => flags,
     }
-}
-
-fn pack_flags(flags: &[bool]) -> Vec<u8> {
-    flags
-        .iter()
-        .copied()
-        .collect::<MerkleBlockFlags>()
-        .into_vec()
 }
 
 impl Serializable for MerkleBlockPayload {

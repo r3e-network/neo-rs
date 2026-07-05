@@ -1,4 +1,4 @@
-use super::{MerkleBlockPayload, pack_flags, pad_flags};
+use super::{MerkleBlockPayload, pack_wire_flags, pad_flags};
 use crate::Witness;
 use crate::block::Block;
 use crate::signer::Signer;
@@ -40,10 +40,68 @@ fn pad_flags_extends_and_truncates_to_width() {
 }
 
 #[test]
-fn pack_flags_uses_neo_lsb_first_byte_order() {
-    let packed = pack_flags(&[true, false, true, true, false, false, false, false, true]);
+fn pack_wire_flags_matches_csharp_bitarray_copyto() {
+    // C# `MerkleBlockPayload.Create`:
+    //   byte[] buffer = new byte[(flags.Length + 7) / 8];  // flags.Length == TxCount
+    //   flags.CopyTo(buffer, 0);                            // LSB-first per byte
+    //
+    // 3 transactions, only tx0 matched => 1 byte, bit0 set.
+    assert_eq!(pack_wire_flags(&[true, false, false], 3), vec![0b0000_0001]);
 
-    assert_eq!(packed, vec![0b0000_1101, 0b0000_0001]);
+    // 8 transactions, tx0 + tx7 matched => exactly 1 byte, bits 0 and 7 set.
+    assert_eq!(
+        pack_wire_flags(&[true, false, false, false, false, false, false, true], 8),
+        vec![0b1000_0001]
+    );
+
+    // 9 transactions => ceil(9/8) == 2 bytes. tx0 and tx8 matched.
+    // Byte0 bit0 => 0x01, byte1 bit0 (== tx8) => 0x01.
+    assert_eq!(
+        pack_wire_flags(
+            &[true, false, false, false, false, false, false, false, true],
+            9
+        ),
+        vec![0b0000_0001, 0b0000_0001]
+    );
+
+    // 17 transactions => ceil(17/8) == 3 bytes (regression guard against the old
+    // 2^(depth-1)-padded packing, which produced 4 bytes for 17 leaves).
+    let mut seventeen = vec![false; 17];
+    seventeen[0] = true;
+    seventeen[16] = true;
+    assert_eq!(
+        pack_wire_flags(&seventeen, 17),
+        vec![0b0000_0001, 0b0000_0000, 0b0000_0001]
+    );
+
+    // Short input is zero-extended up to TxCount (C# BitArray of length TxCount).
+    assert_eq!(pack_wire_flags(&[true], 3), vec![0b0000_0001]);
+    // No transactions => zero bytes.
+    assert_eq!(pack_wire_flags(&[], 0), Vec::<u8>::new());
+}
+
+#[test]
+fn create_flags_length_is_ceil_tx_count_over_8() {
+    // Build a block with 9 transactions so ceil(9/8) == 2 bytes on the wire,
+    // and assert the created payload does not pad to the tree width.
+    let mut block = Block::new();
+    for i in 0..9u8 {
+        block
+            .transactions
+            .push(transaction_with_script(vec![OpCode::PUSH1.byte(), i]));
+    }
+
+    // Match only the first transaction.
+    let mut filter = vec![false; 9];
+    filter[0] = true;
+
+    let payload = MerkleBlockPayload::try_create(&mut block, filter).unwrap();
+
+    assert_eq!(payload.tx_count, 9);
+    // ceil(9 / 8) == 2 — NOT ceil(2^(depth-1) / 8).
+    assert_eq!(payload.flags.len(), 2);
+    // tx0 matched => byte0 bit0 set; remaining bits false.
+    assert_eq!(payload.flags, vec![0b0000_0001, 0b0000_0000]);
 }
 
 #[test]
