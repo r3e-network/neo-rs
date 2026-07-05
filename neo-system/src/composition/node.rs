@@ -24,7 +24,7 @@ use tracing::info;
 use async_trait::async_trait;
 use neo_blockchain::{BlockchainHandle, HeaderCache};
 use neo_config::ProtocolSettings;
-use neo_execution::native_contract_provider::{NativeContractLookup, NativeContractProvider};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
 use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_network::NetworkHandle;
@@ -127,31 +127,17 @@ impl Node {
         _blockchain: Option<()>,
         _network: Option<()>,
     ) -> Result<Self, crate::error::NodeError> {
-        // Keep this direct constructor aligned with NodeBuilder::build().
-        // Services created from a headless node still need native dispatch.
-        let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new())
-            as Arc<dyn NativeContractProvider>;
-        NativeContractLookup::install_provider(Arc::clone(&native_contract_provider));
-
         let storage: Arc<dyn neo_storage::persistence::store::Store> =
             neo_storage::persistence::StoreFactory::get_store("memory", "")
                 .map_err(crate::error::NodeError::storage)?;
-        let wallets = WalletProvider::default();
         let (blockchain, _rx) = neo_blockchain::BlockchainHandle::with_capacity();
         let (network, _nrx, _etx) = neo_network::NetworkHandle::channel(8, 8);
-        let mempool = Arc::new(MemoryPool::new(&settings));
-        Ok(Self {
-            settings,
-            storage,
-            wallets,
-            blockchain,
-            network,
-            mempool,
-            header_cache: Arc::new(HeaderCache::default()),
-            services: ServiceRegistry::new(),
-            native_contract_provider,
-            shutdown: tokio_util::sync::CancellationToken::new(),
-        })
+        crate::NodeBuilder::default()
+            .with_settings(settings)
+            .with_storage(storage)
+            .with_blockchain(blockchain)
+            .with_network(network)
+            .build()
     }
 
     /// Run the node until the cancellation token is fired.
