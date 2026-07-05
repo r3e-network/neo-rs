@@ -11,6 +11,7 @@
 //!
 //! ## Contents
 //!
+//! - `cache_dir`: Operator cache-directory resolution.
 //! - `local`: Local ledger and StateService verification for fast-sync imports.
 //! - `marker`: Crash-safety marker handling for in-progress imports.
 //! - `package`: Fast-sync package metadata, cache, and archive helpers.
@@ -22,16 +23,18 @@ use neo_blockchain::BlockchainHandle;
 use neo_state_service::StateStore;
 use neo_state_service::commit_handlers::StateServiceCommitHandlers;
 use neo_storage::persistence::store::Store;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use tracing::info;
 
+mod cache_dir;
 mod local;
 mod marker;
 mod package;
 mod reference;
 mod report;
 
+use cache_dir::fast_sync_cache_dir;
 use local::{
     LocalStateRootTip, local_state_root_tip, validate_fast_sync_preflight,
     verify_fast_sync_import_tip,
@@ -127,21 +130,6 @@ pub(super) async fn run_fast_sync_report(
     ))
 }
 
-pub(super) fn fast_sync_cache_dir(
-    config: &NodeConfig,
-    storage_override: Option<&Path>,
-    cache_dir_override: Option<&Path>,
-) -> PathBuf {
-    if let Some(cache_dir) = cache_dir_override {
-        return cache_dir.to_path_buf();
-    }
-    let storage_root = storage_override
-        .map(Path::to_path_buf)
-        .or_else(|| config.storage.data_directory())
-        .unwrap_or_else(|| PathBuf::from("data"));
-    storage_root.join("fast-sync")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,6 +137,7 @@ mod tests {
     use serde_json::Value;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+    use std::path::PathBuf;
 
     #[test]
     fn default_cache_dir_tracks_storage_path() {
