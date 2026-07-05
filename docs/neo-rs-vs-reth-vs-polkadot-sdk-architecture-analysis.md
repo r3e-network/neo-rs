@@ -350,10 +350,13 @@ direct native calls, policy reads, dynamic-call policy gates, contract-managemen
 lookups made from contract loading, committee-witness checks, storage-context
 resolution, OracleResponse witness inheritance, witness group checks,
 current-index reads, and whitelisted-fee checks. Runtime witness helpers now
-have explicit-provider entry points, and native block persistence passes
+have explicit-provider entry points. Native block persistence passes
 `NativePersistResources` providers directly into OnPersist/Application/PostPersist
-engines. Legacy helper wrappers and installed-provider resource creation still
-resolve through the process-global compatibility bridge in
+engines, and service-level genesis initialization plus batch resource setup
+build those resources from `SystemContext::native_contract_provider` instead of
+the installed global provider. Legacy helper wrappers and standalone
+installed-provider resource creation still resolve through the process-global
+compatibility bridge in
 `neo-execution/src/native/native_contract_provider.rs`.
 
 ### Polkadot SDK innovations
@@ -378,11 +381,11 @@ resolve through the process-global compatibility bridge in
    contract-management lookups made from contract loading, committee-witness
    checks, storage-context resolution, OracleResponse witness inheritance,
    witness group checks, current-index reads, and fee whitelist checks.
-   Batch block import, header inventory verification, extensible-payload
-   verification, and signed-StateRoot verification now use explicit providers
-   when their caller owns one. Remaining step: keep shrinking the legacy helper
-   wrappers and installed-provider resource creation until
-   `NativeContractLookup` is only a standalone compatibility bridge.
+   Batch block import, genesis initialization, header inventory verification,
+   extensible-payload verification, and signed-StateRoot verification now use
+   explicit providers when their caller owns one. Remaining step: keep shrinking
+   legacy helper wrappers and standalone installed-provider resource creation
+   until `NativeContractLookup` is only a compatibility bridge.
 3. Consider WASM runtime for future sidechain/feature-gate support.
 
 ---
