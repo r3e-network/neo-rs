@@ -926,6 +926,15 @@ fn reusable_native_persist_resources_keep_provider_consistent_after_global_repla
 }
 
 #[test]
+fn native_persist_resources_do_not_install_thread_scoped_provider() {
+    let source = include_str!("../../pipeline/native_persist.rs");
+    assert!(
+        !source.contains("with_scoped_provider"),
+        "native persistence resources must pass providers directly into engines, not mutate the thread-scoped global provider"
+    );
+}
+
+#[test]
 fn reusable_native_persist_resources_cross_echidna_activation_height() {
     let _provider_guard = lock_provider();
     neo_native_contracts::install();

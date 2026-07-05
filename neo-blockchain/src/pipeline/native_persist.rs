@@ -508,18 +508,6 @@ pub fn stage_block_natives_with_resources(
     options: NativePersistOptions,
     resources: &NativePersistResources,
 ) -> CoreResult<StagedNativePersist> {
-    NativeContractLookup::with_scoped_provider(Arc::clone(&resources.provider), || {
-        stage_block_natives_with_resources_inner(snapshot, block, settings, options, resources)
-    })
-}
-
-fn stage_block_natives_with_resources_inner(
-    snapshot: Arc<DataCache>,
-    block: Arc<Block>,
-    settings: &ProtocolSettings,
-    options: NativePersistOptions,
-    resources: &NativePersistResources,
-) -> CoreResult<StagedNativePersist> {
     let total_start = std::time::Instant::now();
     let block_index = block.index();
     let block_hash = block
@@ -537,7 +525,7 @@ fn stage_block_natives_with_resources_inner(
 
     // --- OnPersist stage (C# TriggerType.OnPersist engine, gas 0) ---
     let onpersist_start = std::time::Instant::now();
-    let mut engine = ApplicationEngine::new_with_shared_block(
+    let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
         TriggerType::OnPersist,
         None,
         Arc::clone(&block_cache),
@@ -545,6 +533,7 @@ fn stage_block_natives_with_resources_inner(
         settings.clone(),
         0,
         None,
+        Some(Arc::clone(&resources.provider)),
     )?;
 
     // Record which activation initializers will run inside
@@ -616,17 +605,19 @@ fn stage_block_natives_with_resources_inner(
         );
 
         let stage_start = std::time::Instant::now();
-        let mut tx_engine = ApplicationEngine::new_with_preloaded_native(
-            TriggerType::Application,
-            Some(container),
-            Arc::clone(&tx_cache),
-            Some(Arc::clone(&block)),
-            settings.clone(),
-            tx.system_fee(),
-            HashMap::new(),
-            Arc::clone(&native_contract_cache),
-            None,
-        )?;
+        let mut tx_engine =
+            ApplicationEngine::new_with_preloaded_native_and_native_contract_provider(
+                TriggerType::Application,
+                Some(container),
+                Arc::clone(&tx_cache),
+                Some(Arc::clone(&block)),
+                settings.clone(),
+                tx.system_fee(),
+                HashMap::new(),
+                Arc::clone(&native_contract_cache),
+                None,
+                Some(Arc::clone(&resources.provider)),
+            )?;
         record_tx_stage(
             neo_runtime::sync_metrics::NativePersistTxStage::EngineCreate,
             stage_start,
@@ -739,7 +730,7 @@ fn stage_block_natives_with_resources_inner(
 
     // --- PostPersist stage (C# TriggerType.PostPersist engine, gas 0) ---
     let postpersist_start = std::time::Instant::now();
-    let mut engine = ApplicationEngine::new_with_shared_block(
+    let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
         TriggerType::PostPersist,
         None,
         Arc::clone(&block_cache),
@@ -747,6 +738,7 @@ fn stage_block_natives_with_resources_inner(
         settings.clone(),
         0,
         None,
+        Some(Arc::clone(&resources.provider)),
     )?;
     run_native_persist_hooks(
         contracts,

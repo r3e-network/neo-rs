@@ -264,11 +264,13 @@ The detailed rules for this style live in
   OracleResponse witness inheritance, witness group checks, current-index
   reads, and whitelisted-fee checks. The process-global lookup remains only as
   a compatibility bridge for standalone callers, legacy runtime-helper wrappers,
-  and blockchain native persistence. `Helper::verify_witness*_with_native_provider`
+  and installed-provider resource creation. `Helper::verify_witness*_with_native_provider`
   and provider-aware script-hash resolution let node services verify witnesses
-  against an explicit provider without reading the global slot. Headless/test
-  construction can still omit the provider and let the builder install the
-  standard default. ADR-015 proposes a builder pattern for future extensibility.
+  against an explicit provider without reading the global slot. Native block
+  persistence uses `NativePersistResources` to pass the provider directly into
+  each OnPersist/Application/PostPersist engine. Headless/test construction can
+  still omit the provider and let the builder install the standard default.
+  ADR-015 proposes a builder pattern for future extensibility.
 
 - **Error type policy.** `neo-error` owns the authoritative `CoreError` /
   `CoreResult`. ADR-011 formalizes the split: 17 crates with domain-specific

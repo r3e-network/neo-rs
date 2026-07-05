@@ -86,7 +86,13 @@ impl ApplicationEngine {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new_with_shared_block_and_native_contract_provider(
+    /// Creates a new application engine with a shared optional persisting block
+    /// and an explicit native-contract provider.
+    ///
+    /// This is the provider-aware variant used by composition and persistence
+    /// code that already owns the native-contract provider. It avoids reading
+    /// the process-global lookup bridge during engine construction.
+    pub fn new_with_shared_block_and_native_contract_provider(
         trigger: TriggerType,
         script_container: Option<Arc<dyn Verifiable>>,
         snapshot_cache: Arc<DataCache>,
@@ -181,11 +187,40 @@ impl ApplicationEngine {
         native_contract_cache: Arc<Mutex<NativeContractsCache>>,
         diagnostic: Option<Box<dyn Diagnostic>>,
     ) -> CoreResult<Self> {
+        let native_contract_provider =
+            crate::native_contract_provider::NativeContractLookup::native_contract_provider();
+        Self::new_with_preloaded_native_and_native_contract_provider(
+            trigger,
+            script_container,
+            snapshot_cache,
+            persisting_block,
+            protocol_settings,
+            gas_limit,
+            contracts,
+            native_contract_cache,
+            diagnostic,
+            native_contract_provider,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    /// Creates a new engine with preloaded native contract state and an
+    /// explicit native-contract provider.
+    pub fn new_with_preloaded_native_and_native_contract_provider(
+        trigger: TriggerType,
+        script_container: Option<Arc<dyn Verifiable>>,
+        snapshot_cache: Arc<DataCache>,
+        persisting_block: Option<Arc<Block>>,
+        protocol_settings: ProtocolSettings,
+        gas_limit: i64,
+        contracts: HashMap<UInt160, ContractState>,
+        native_contract_cache: Arc<Mutex<NativeContractsCache>>,
+        diagnostic: Option<Box<dyn Diagnostic>>,
+        native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+    ) -> CoreResult<Self> {
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
         let original_snapshot_cache = Arc::clone(&snapshot_cache);
-        let native_contract_provider =
-            crate::native_contract_provider::NativeContractLookup::native_contract_provider();
         let jump_table = Self::select_jump_table(
             &protocol_settings,
             persisting_block.as_deref(),
