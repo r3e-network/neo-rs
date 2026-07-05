@@ -32,7 +32,7 @@ pub mod sync_pipeline;
 
 pub use block_import::{
     BlockBatchImportOutcome, BlockImport, BlockImportOutcome, BlockImportQueue, BlockOrigin,
-    ImportedTip,
+    ImportQueue, ImportedTip,
 };
 pub use blockchain::{BlockchainEvent, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY};
 pub use nep17::{Nep17Metadata, Nep17MetadataReader};

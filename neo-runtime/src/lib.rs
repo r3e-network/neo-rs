@@ -30,7 +30,7 @@ pub use node::{ConfigProvider, NeoNodeTypes, NodeTypes, StoreProvider, TxAdmissi
 pub use service::{
     BlockBatchImportOutcome, BlockImport, BlockImportOutcome, BlockImportQueue, BlockOrigin,
     BlockchainEvent, CommitPolicy, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY,
-    ExecutionOutcome, ExecutionPayload, ImportedTip, InMemorySyncStageCheckpointStore,
+    ExecutionOutcome, ExecutionPayload, ImportQueue, ImportedTip, InMemorySyncStageCheckpointStore,
     Nep17Metadata, Nep17MetadataReader, NetworkEvent, NetworkService, Service, ServiceRegistry,
     StageProgress, SyncBlockBatch, SyncPipelineDriver, SyncPipelineImportOutcome,
     SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind, TxHash, ValidationResult,

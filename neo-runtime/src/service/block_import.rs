@@ -144,6 +144,22 @@ pub trait BlockImport: Service {
     }
 }
 
+/// Queue boundary for verified, ordered block import.
+///
+/// Implementations may perform bounded stateless or cheap stateful
+/// preverification before forwarding to the canonical [`BlockImport`] chain.
+/// They must preserve the input block order when they call the import path and
+/// must skip import entirely if preflight fails.
+#[async_trait]
+pub trait ImportQueue: Service {
+    /// Push a batch of candidate blocks toward the canonical import path.
+    async fn push_blocks(
+        &self,
+        blocks: Vec<Block>,
+        origin: BlockOrigin,
+    ) -> ServiceResult<BlockBatchImportOutcome>;
+}
+
 /// Bounded preverification queue in front of the canonical block-import path.
 ///
 /// The queue mirrors Substrate's `ImportQueue` boundary without owning Neo's
@@ -186,11 +202,18 @@ where
 
     /// Validate every block, then import the original ordered batch.
     ///
-    /// A check failure skips import entirely. This keeps preverification and
-    /// canonical persistence separated: out-of-order downloader work can be
-    /// parallel, while state mutation still occurs through one deterministic
-    /// ordered path.
+    /// This inherent method is the ergonomic entry point for callers that own a
+    /// concrete `BlockImportQueue`. Generic sync code should depend on the
+    /// [`ImportQueue`] trait instead.
     pub async fn push_blocks(
+        &self,
+        blocks: Vec<Block>,
+        origin: BlockOrigin,
+    ) -> ServiceResult<BlockBatchImportOutcome> {
+        self.preverify_and_import(blocks, origin).await
+    }
+
+    async fn preverify_and_import(
         &self,
         blocks: Vec<Block>,
         origin: BlockOrigin,
@@ -244,6 +267,35 @@ where
             .collect::<ServiceResult<Vec<_>>>()?;
 
         self.importer.import_many(blocks, origin).await
+    }
+}
+
+impl<I> Service for BlockImportQueue<I>
+where
+    I: BlockImport + ?Sized,
+{
+    fn name(&self) -> &str {
+        "BlockImportQueue"
+    }
+}
+
+#[async_trait]
+impl<I> ImportQueue for BlockImportQueue<I>
+where
+    I: BlockImport + ?Sized,
+{
+    /// Validate every block, then import the original ordered batch.
+    ///
+    /// A check failure skips import entirely. This keeps preverification and
+    /// canonical persistence separated: out-of-order downloader work can be
+    /// parallel, while state mutation still occurs through one deterministic
+    /// ordered path.
+    async fn push_blocks(
+        &self,
+        blocks: Vec<Block>,
+        origin: BlockOrigin,
+    ) -> ServiceResult<BlockBatchImportOutcome> {
+        self.preverify_and_import(blocks, origin).await
     }
 }
 

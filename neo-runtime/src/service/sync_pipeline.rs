@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use neo_payloads::Block;
 use parking_lot::RwLock;
 
-use crate::{BlockBatchImportOutcome, BlockImport, BlockOrigin, ServiceError, ServiceResult};
+use crate::{BlockBatchImportOutcome, BlockOrigin, ImportQueue, ServiceError, ServiceResult};
 
 /// Stable sync-stage identifiers.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -259,8 +259,8 @@ pub struct SyncPipelineImportOutcome {
 }
 
 /// Runtime sync driver that bridges downloaded batches to block import.
-pub struct SyncPipelineDriver<I: BlockImport + ?Sized, C: SyncStageCheckpointStore + ?Sized> {
-    importer: Arc<I>,
+pub struct SyncPipelineDriver<Q: ImportQueue + ?Sized, C: SyncStageCheckpointStore + ?Sized> {
+    import_queue: Arc<Q>,
     checkpoints: Arc<C>,
     commit_policy: CommitPolicy,
     origin: BlockOrigin,
@@ -271,14 +271,14 @@ pub struct SyncPipelineDriver<I: BlockImport + ?Sized, C: SyncStageCheckpointSto
     total_changes: u64,
 }
 
-impl<I, C> SyncPipelineDriver<I, C>
+impl<Q, C> SyncPipelineDriver<Q, C>
 where
-    I: BlockImport + ?Sized,
+    Q: ImportQueue + ?Sized,
     C: SyncStageCheckpointStore + ?Sized,
 {
     /// Create a driver from the last durable import checkpoint.
     pub fn new(
-        importer: Arc<I>,
+        import_queue: Arc<Q>,
         checkpoints: Arc<C>,
         commit_policy: CommitPolicy,
         origin: BlockOrigin,
@@ -291,7 +291,7 @@ where
                 .unwrap_or(checkpoint.height)
         });
         Ok(Self {
-            importer,
+            import_queue,
             checkpoints,
             commit_policy,
             origin,
@@ -326,7 +326,10 @@ where
         }
 
         let next_height = batch.next_height();
-        let imported = self.importer.import_many(batch.blocks, self.origin).await?;
+        let imported = self
+            .import_queue
+            .push_blocks(batch.blocks, self.origin)
+            .await?;
         let processed_blocks = u64::try_from(imported.processed).unwrap_or(u64::MAX);
         self.progress.blocks = self.progress.blocks.saturating_add(processed_blocks);
         self.progress.changes = self.progress.changes.saturating_add(batch.changed_bytes);
