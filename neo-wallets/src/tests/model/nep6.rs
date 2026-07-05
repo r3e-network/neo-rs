@@ -25,7 +25,7 @@ fn nep6_contract_script_is_base64_not_hex_on_serialize() {
         vec![ContractParameterType::Signature],
         SCRIPT_BYTES.to_vec(),
     );
-    let file = Nep6Contract::to_file(&contract, &["signature".to_string()]);
+    let file = Nep6Contract::to_file(&contract, &["signature".to_string()], false);
 
     // C# NEP6Contract.ToJson emits Base64: `Convert.ToBase64String(Script)`.
     let expected_b64 = general_purpose::STANDARD.encode(SCRIPT_BYTES);
@@ -49,7 +49,7 @@ fn nep6_contract_round_trips_through_base64() {
         SCRIPT_BYTES.to_vec(),
     );
 
-    let file = Nep6Contract::to_file(&original, &["signature".to_string()]);
+    let file = Nep6Contract::to_file(&original, &["signature".to_string()], false);
     let parsed = Nep6Contract::from_file(&file).expect("round-trip parse must succeed");
 
     assert_eq!(
@@ -62,6 +62,33 @@ fn nep6_contract_round_trips_through_base64() {
         parsed.contract.parameter_list,
         vec![ContractParameterType::Signature]
     );
+}
+
+#[test]
+fn nep6_contract_serializes_real_deployed_flag() {
+    // C# NEP6Contract.ToJson writes the real `Deployed` (NEP6Contract.cs:47); a
+    // deployed=true contract must NOT round-trip as non-deployed.
+    let contract = Contract::create(
+        vec![ContractParameterType::Signature],
+        SCRIPT_BYTES.to_vec(),
+    );
+
+    // deployed = true must be emitted as true...
+    let file_deployed = Nep6Contract::to_file(&contract, &["signature".to_string()], true);
+    assert!(
+        file_deployed.deployed,
+        "to_file must serialize the real deployed flag (true), not a hardcoded false"
+    );
+    assert!(
+        Nep6Contract::from_file(&file_deployed)
+            .expect("parse")
+            .deployed,
+        "deployed=true must survive a to_file -> from_file round-trip"
+    );
+
+    // ...and deployed = false stays false.
+    let file_local = Nep6Contract::to_file(&contract, &["signature".to_string()], false);
+    assert!(!file_local.deployed, "deployed=false must stay false");
 }
 
 #[test]

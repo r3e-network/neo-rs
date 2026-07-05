@@ -78,6 +78,9 @@ pub struct Nep6Account {
     lock: bool,
     extra: Option<Value>,
     parameter_names: Vec<String>,
+    /// Whether the account's contract is already deployed on chain
+    /// (C# `NEP6Contract.Deployed`). Preserved across load/save.
+    deployed: bool,
     _wallet: Arc<Nep6Wallet>,
 }
 
@@ -598,6 +601,10 @@ impl Nep6Account {
         // scrypt parameters so a wallet created with non-default values unlocks.
         inner.set_scrypt_parameters(wallet.scrypt.n, wallet.scrypt.r, wallet.scrypt.p);
 
+        let deployed = parsed_contract
+            .as_ref()
+            .map(|contract| contract.deployed)
+            .unwrap_or(false);
         let parameter_names = parsed_contract
             .map(|contract| contract.parameter_names)
             .or_else(|| contract_data.as_ref().map(default_parameter_names))
@@ -609,6 +616,7 @@ impl Nep6Account {
             lock: file.lock,
             extra: file.extra,
             parameter_names,
+            deployed,
             _wallet: Arc::new(wallet.clone()),
         };
 
@@ -635,7 +643,7 @@ impl Nep6Account {
         let contract = self
             .inner
             .contract()
-            .map(|contract| Nep6Contract::to_file(contract, &self.parameter_names));
+            .map(|contract| Nep6Contract::to_file(contract, &self.parameter_names, self.deployed));
 
         Ok(Nep6AccountFile {
             address,
@@ -669,6 +677,9 @@ impl Nep6Account {
             lock: false,
             extra: None,
             parameter_names,
+            // A locally key-generated account's contract is a signature contract,
+            // not an on-chain deployed contract (C# NEP6Account default).
+            deployed: false,
             _wallet: Arc::new(wallet),
         }
     }
@@ -690,6 +701,9 @@ impl Nep6Account {
             lock: false,
             extra: None,
             parameter_names,
+            // A watch-only account added by script hash has no known deployed
+            // flag; default false (C# NEP6Account default).
+            deployed: false,
             _wallet: Arc::new(wallet),
         }
     }
@@ -800,7 +814,7 @@ impl Nep6Contract {
         })
     }
 
-    fn to_file(contract: &Contract, parameter_names: &[String]) -> Nep6ContractFile {
+    fn to_file(contract: &Contract, parameter_names: &[String], deployed: bool) -> Nep6ContractFile {
         let parameters = contract
             .parameter_list
             .iter()
@@ -819,7 +833,10 @@ impl Nep6Contract {
             // (NEP6Contract.cs:39); it must be Base64, not hex, for neo-cli/neo-gui interop.
             script: general_purpose::STANDARD.encode(&contract.script),
             parameters,
-            deployed: false,
+            // C# `NEP6Contract.ToJson` writes the real `Deployed` value
+            // (NEP6Contract.cs:47); hardcoding false made a deployed-contract
+            // account round-trip as non-deployed.
+            deployed,
         }
     }
 }
