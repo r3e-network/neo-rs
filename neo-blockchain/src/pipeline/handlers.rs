@@ -1149,10 +1149,24 @@ where
                 match crate::native_persist::genesis_block(settings.as_ref()) {
                     Ok(genesis) => {
                         let genesis = Arc::new(genesis);
-                        match crate::native_persist::stage_block_natives(
+                        let Some(native_contract_provider) = self.system.native_contract_provider()
+                        else {
+                            tracing::error!(
+                                target: "neo",
+                                "genesis native persistence requires a native-contract provider from SystemContext"
+                            );
+                            return;
+                        };
+                        let native_persist =
+                            crate::native_persist::NativePersistResources::from_provider(
+                                native_contract_provider,
+                            );
+                        match crate::native_persist::stage_block_natives_with_resources(
                             Arc::clone(&snapshot),
                             Arc::clone(&genesis),
                             settings.as_ref(),
+                            crate::native_persist::NativePersistOptions::default(),
+                            &native_persist,
                         ) {
                             Ok(staged) => {
                                 if !self.system.block_committing(
