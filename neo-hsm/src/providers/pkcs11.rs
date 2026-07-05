@@ -381,29 +381,6 @@ impl Pkcs11Signer {
         Ok((session, priv_handle, compressed_pubkey, script_hash))
     }
 
-    /// Internal sign path: compute digest, send to worker, await result,
-    /// post-process to canonical 64-byte low-s `r‖s`.
-    fn do_sign(&self, data: &[u8]) -> HsmResult<Vec<u8>> {
-        // Neo's consensus signs SHA-256(data); CKM_ECDSA expects the raw digest.
-        let digest = Crypto::sha256(data);
-
-        let (reply_tx, reply_rx) = mpsc::channel();
-        self.tx
-            .send(WorkerCmd::Sign {
-                digest,
-                key: self.key_handle,
-                reply: reply_tx,
-            })
-            .map_err(|_| HsmError::Disconnected)?;
-
-        // Bounded wait — a stalled HSM must not wedge the dBFT driver.
-        let raw = reply_rx
-            .recv_timeout(SIGN_TIMEOUT)
-            .map_err(|_| HsmError::Timeout(SIGN_TIMEOUT))??;
-
-        // Post-process: DER → r||s (GCP), then low-s normalize (all providers).
-        finalize_signature(&raw, self.sig_format)
-    }
 }
 
 impl Drop for Pkcs11Signer {

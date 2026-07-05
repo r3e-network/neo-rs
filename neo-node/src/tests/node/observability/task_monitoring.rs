@@ -5,12 +5,21 @@ use super::super::super::tasks::{
 };
 use super::super::ObservabilityRuntime;
 
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use serde_json::Value;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
+
+/// Serializes the two tests that spawn a `telemetry_metrics` / `Normal` daemon
+/// task against the shared global metrics registry, so the exact-count metrics
+/// test's `reset → spawn → assert` window is not contaminated by the sibling's
+/// concurrent spawn. An async mutex is used so the guard can be held across
+/// `.await` without tripping `clippy::await_holding_lock`.
+static TELEMETRY_METRICS_SERIAL: LazyLock<tokio::sync::Mutex<()>> =
+    LazyLock::new(|| tokio::sync::Mutex::new(()));
 
 #[test]
 fn node_long_running_background_tasks_are_spawned_under_observability_monitoring() {
@@ -180,6 +189,7 @@ async fn essential_daemon_task_error_requests_node_shutdown() {
 
 #[tokio::test]
 async fn normal_daemon_task_error_does_not_request_node_shutdown() {
+    let _serial = TELEMETRY_METRICS_SERIAL.lock().await;
     let shutdown = CancellationToken::new();
     let mut handles = Vec::new();
 
@@ -203,6 +213,7 @@ async fn normal_daemon_task_error_does_not_request_node_shutdown() {
 
 #[tokio::test]
 async fn daemon_task_metrics_use_bounded_task_kind_and_outcome_labels() {
+    let _serial = TELEMETRY_METRICS_SERIAL.lock().await;
     reset_metrics_for_tests();
     let shutdown = CancellationToken::new();
     let mut handles = Vec::new();
