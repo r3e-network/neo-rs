@@ -267,8 +267,11 @@ fn neo_storage_codecs_use_stack_value_projection() {
     assert!(!account_decoder.contains("stack_value_as_bigint"));
     assert!(!account_decoder.contains("BinarySerializer::deserialize("));
 
-    let account_encoder =
-        slice_between(source, "fn encode_neo_account_state", "fn voters_count_key");
+    let account_encoder = slice_between(
+        source,
+        "fn encode_neo_account_state",
+        "fn read_voters_count",
+    );
     assert!(account_encoder.contains("encode_storage_struct"));
     assert!(!account_encoder.contains("StackValue::Struct"));
     assert!(!account_encoder.contains("StackItem::from_struct"));
@@ -316,7 +319,11 @@ fn neo_storage_codecs_use_stack_value_projection() {
     assert!(!candidate_decoder.contains("stack_value_as_bigint"));
     assert!(!candidate_decoder.contains("BinarySerializer::deserialize("));
 
-    let candidate_encoder = slice_between(source, "fn encode_candidate_state", "fn candidate_key");
+    let candidate_encoder = slice_between(
+        source,
+        "fn encode_candidate_state",
+        "/// C# `GetCandidatesInternal`",
+    );
     assert!(candidate_encoder.contains("CandidateState::new"));
     assert!(candidate_encoder.contains("encode_storage_struct"));
     assert!(!candidate_encoder.contains("StackValue::Struct"));

@@ -11,6 +11,7 @@
 //! ## Contents
 //!
 //! - `candidates`: NEO candidate storage codecs.
+//! - `keys`: NEO storage key constructors.
 //! - `views`: native contract storage read views.
 
 use super::*;
@@ -20,6 +21,7 @@ use num_traits::ToPrimitive;
 use std::time::Instant;
 
 mod candidates;
+mod keys;
 mod views;
 
 pub(crate) use candidates::candidate_signature_account;
@@ -84,20 +86,6 @@ impl NeoToken {
         Ok(())
     }
 
-    pub(super) fn register_price_key() -> StorageKey {
-        crate::keys::prefixed_key(Self::ID, PREFIX_REGISTER_PRICE, &[])
-    }
-
-    /// The `Prefix_GasPerBlock` prefix key used for backward gas-record scans.
-    pub(super) fn gas_per_block_prefix_key() -> StorageKey {
-        crate::keys::prefixed_key(Self::ID, PREFIX_GAS_PER_BLOCK, &[])
-    }
-
-    /// The `Prefix_GasPerBlock` storage key for a record index.
-    pub(super) fn gas_per_block_key(index: u32) -> StorageKey {
-        crate::keys::prefixed_u32_be_key(Self::ID, PREFIX_GAS_PER_BLOCK, index)
-    }
-
     /// C# `SetGasPerBlock` storage effect: write a `Prefix_GasPerBlock` record at
     /// `index` (a big-endian `uint` key suffix), overwriting any record already at
     /// that index (`GetAndChange(key, factory).Set(gasPerBlock)`). `update` upserts
@@ -145,11 +133,6 @@ impl NeoToken {
     /// LastGasPerVote]`) — the write counterpart of [`decode_neo_account_state`].
     pub(super) fn encode_neo_account_state(state: &NeoAccountStateView) -> CoreResult<Vec<u8>> {
         crate::support::codec::encode_storage_struct(state, "neo account state")
-    }
-
-    /// The `Prefix_VotersCount` storage key (a single key, no suffix).
-    pub(crate) fn voters_count_key() -> StorageKey {
-        crate::keys::prefixed_key(Self::ID, PREFIX_VOTERS_COUNT, &[])
     }
 
     /// Reads the total voted NEO (`Prefix_VotersCount`), defaulting to zero.
@@ -742,40 +725,6 @@ impl NeoToken {
             &CandidateState::new(registered, votes.clone()),
             "candidate state",
         )
-    }
-
-    /// The `Prefix_Candidate` storage key for `pubkey` (`prefix ++ 33-byte pubkey`).
-    pub(crate) fn candidate_key(pubkey: &ECPoint) -> StorageKey {
-        crate::keys::prefixed_key(Self::ID, PREFIX_CANDIDATE, &pubkey.to_bytes())
-    }
-
-    /// The `Prefix_Candidate` prefix key used for candidate scans.
-    pub(super) fn candidate_prefix_key() -> StorageKey {
-        crate::keys::prefixed_key(Self::ID, PREFIX_CANDIDATE, &[])
-    }
-
-    /// The `Prefix_Committee` storage key (a single key, no suffix).
-    pub(crate) fn committee_key() -> StorageKey {
-        crate::keys::prefixed_key(Self::ID, PREFIX_COMMITTEE, &[])
-    }
-
-    /// The `Prefix_VoterRewardPerCommittee` storage key for `pubkey`.
-    pub(crate) fn voter_reward_per_committee_key(pubkey: &ECPoint) -> StorageKey {
-        crate::keys::prefixed_key(
-            Self::ID,
-            PREFIX_VOTER_REWARD_PER_COMMITTEE,
-            &pubkey.to_bytes(),
-        )
-    }
-
-    /// The `Prefix_Account` storage key for `account` (NEP-17 account prefix).
-    pub(crate) fn account_key(account: &UInt160) -> StorageKey {
-        crate::nep17_account_key(Self::ID, account)
-    }
-
-    /// The NEP-17 total-supply storage key for NEO (`Prefix_TotalSupply`).
-    pub(crate) fn total_supply_key() -> StorageKey {
-        crate::nep17_total_supply_key(Self::ID)
     }
 
     /// C# `GetCandidatesInternal`: scan `Prefix_Candidate` (key = prefix ++ 33-byte
