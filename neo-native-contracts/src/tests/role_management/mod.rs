@@ -15,10 +15,13 @@
 use super::node_list::{self, NodeList};
 use super::storage;
 use super::*;
+use crate::Role;
+use neo_crypto::ECPoint;
 use neo_primitives::{CallFlags, ContractParameterType};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
-use neo_vm::Interoperable;
+use neo_storage::persistence::DataCache;
+use neo_vm::{Interoperable, StackItem};
 use neo_vm_rs::StackValue;
 
 /// Structural equality for StackValue that ignores the reference-identity ids

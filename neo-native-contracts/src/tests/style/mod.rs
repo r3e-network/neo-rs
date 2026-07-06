@@ -161,6 +161,8 @@ pub(super) fn standard_contract_sources()
                 "\n",
                 include_str!("../../role_management/node_list.rs"),
                 "\n",
+                include_str!("../../role_management/providers.rs"),
+                "\n",
                 include_str!("../../role_management/invoke.rs"),
                 "\n",
                 include_str!("../../role_management/metadata.rs"),
