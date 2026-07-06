@@ -89,6 +89,8 @@ pub(super) fn standard_contract_sources()
             concat!(
                 include_str!("../../gas_token/metadata.rs"),
                 "\n",
+                include_str!("../../gas_token/storage.rs"),
+                "\n",
                 include_str!("../../gas_token/mod.rs"),
             ),
         ),

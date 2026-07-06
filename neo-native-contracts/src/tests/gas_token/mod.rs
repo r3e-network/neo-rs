@@ -16,6 +16,7 @@ use super::*;
 use neo_execution::Contract;
 use neo_primitives::{CallFlags, ContractParameterType};
 use neo_serialization::BinarySerializer;
+use neo_storage::persistence::DataCache;
 use neo_vm_rs::ExecutionEngineLimits;
 
 fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
@@ -234,7 +235,7 @@ fn gas_account_storage_round_trips() {
 
 #[test]
 fn gas_account_storage_uses_stack_value_projection() {
-    let source = include_str!("../../gas_token/mod.rs");
+    let source = include_str!("../../gas_token/storage.rs");
     let read_start = source
         .find("fn read_gas_account(")
         .expect("read_gas_account helper exists");
