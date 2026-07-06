@@ -236,7 +236,11 @@ fn standard_contract_dispatch_sources()
     [
         (
             "ContractManagement",
-            include_str!("../../contract_management/invoke.rs"),
+            concat!(
+                include_str!("../../contract_management/metadata.rs"),
+                "\n",
+                include_str!("../../contract_management/invoke.rs"),
+            ),
         ),
         ("StdLib", include_str!("../../std_lib/invoke.rs")),
         (

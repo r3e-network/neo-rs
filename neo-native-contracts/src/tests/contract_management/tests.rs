@@ -421,25 +421,25 @@ fn has_method_rejects_invalid_utf8_method_name_like_csharp() {
 
 #[test]
 fn invoke_argument_parsing_uses_shared_raw_helpers() {
-    fn arm_between<'a>(source: &'a str, arm: &str, next_arm: &str) -> &'a str {
-        let start = source.find(arm).expect("invoke arm exists");
+    fn handler_between<'a>(source: &'a str, handler: &str, next_handler: &str) -> &'a str {
+        let start = source.find(handler).expect("invoke handler exists");
         let end = source[start..]
-            .find(next_arm)
+            .find(next_handler)
             .map(|offset| start + offset)
-            .expect("following invoke arm exists");
+            .expect("following invoke handler exists");
         &source[start..end]
     }
 
     let source = include_str!("../../contract_management/invoke.rs");
-    let by_id = arm_between(
+    let by_id = handler_between(
         source,
-        "\"getContractById\" =>",
-        "\"getMinimumDeploymentFee\"",
+        "fn invoke_get_contract_by_id(",
+        "fn invoke_get_minimum_deployment_fee(",
     );
     assert!(by_id.contains("crate::args::raw_i32_arg"));
     assert!(!by_id.contains("BigInt::from_signed_bytes_le(args"));
 
-    let has_method = arm_between(source, "\"hasMethod\" =>", "// Both deploy overloads");
+    let has_method = handler_between(source, "fn invoke_has_method(", "fn invoke_deploy(");
     assert!(has_method.contains("crate::args::raw_string_arg"));
     assert!(has_method.contains("crate::args::raw_i32_arg"));
     assert!(!has_method.contains("String::from_utf8("));
