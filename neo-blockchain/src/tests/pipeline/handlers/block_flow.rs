@@ -1,4 +1,5 @@
 use super::*;
+use neo_payloads::header::Header;
 
 fn sign_header_for_test(
     header: &Header,

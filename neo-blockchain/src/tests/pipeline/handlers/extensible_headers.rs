@@ -1,5 +1,6 @@
 use super::*;
 use neo_payloads::extensible_payload::ExtensiblePayload;
+use neo_payloads::header::Header;
 
 /// C# `Blockchain.OnNewExtensiblePayload`: an extensible payload signed by
 /// a whitelisted sender (here the network's validator) within its validity

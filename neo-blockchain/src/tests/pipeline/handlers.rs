@@ -7,6 +7,7 @@ use crate::ledger_context::LedgerContext;
 use crate::service::MempoolLike;
 use crate::service_context::SystemContext;
 use neo_payloads::Transaction;
+use neo_payloads::header::Header;
 use neo_primitives::UInt256;
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageKey;
@@ -211,15 +212,11 @@ fn extensible_verification_uses_system_native_provider() {
 
 #[test]
 fn header_inventory_verification_uses_system_native_provider() {
-    let source = include_str!("../../pipeline/handlers.rs");
+    let source = include_str!("../../handlers/headers.rs");
     let handler_start = source
         .find("pub(crate) fn handle_headers")
         .expect("header handler exists");
-    let handler_end = source[handler_start..]
-        .find("pub(crate) async fn handle_import")
-        .map(|offset| handler_start + offset)
-        .expect("import handler follows header handler");
-    let handler = &source[handler_start..handler_end];
+    let handler = &source[handler_start..];
 
     assert!(
         handler.contains("self.system.native_contract_provider()"),
