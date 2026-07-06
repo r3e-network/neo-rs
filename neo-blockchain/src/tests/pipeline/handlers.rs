@@ -133,7 +133,7 @@ fn verified_import_pipeline_uses_explicit_native_providers() {
         .find("fn verify_import_block_with_pipeline")
         .expect("verified import helper exists");
     let helper_end = source[helper_start..]
-        .find("fn collect_empty_fast_forward_run")
+        .find("fn ensure_block_matches_cached_header")
         .map(|offset| helper_start + offset)
         .expect("next handler helper follows verified import helper");
     let helper = &source[helper_start..helper_end];
