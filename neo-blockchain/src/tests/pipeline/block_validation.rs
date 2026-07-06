@@ -1,4 +1,5 @@
 use super::*;
+use neo_primitives::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 
 #[test]
 fn block_validation_error_display_messages_remain_stable() {
