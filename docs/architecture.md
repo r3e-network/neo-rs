@@ -325,9 +325,10 @@ The detailed rules for this style live in
   adapters over the existing raw bytes. MDBX is the production default, RocksDB
   remains a supported fallback, and memory providers are used for tests. Higher
   crates read through capability providers: `neo-blockchain` has
-  `BlockProvider`/`TxProvider` plus `LedgerProviderFactory`, and
+  `BlockProvider`/`TxProvider` plus `LedgerProviderFactory`,
+  `StorageLedgerProviderFactory`, and a generic `HotColdLedgerProviderFactory`;
   `neo-state-service` has `StateProviderFactory`/`StateView` for immutable MPT
-  views. These provider factories make hot/cold/static routing explicit without
+  views. These provider factories make hot/cold routing explicit without
   changing C#-compatible key/value bytes.
 
 - **MPT layering.** The Merkle-Patricia Trie is split across two crates
@@ -338,13 +339,12 @@ The detailed rules for this style live in
   `neo-storage`. `neo-rpc` also uses `neo-crypto::mpt_trie` directly for proof
   verification. This is layered design, not duplication.
 
-- **Cold ledger scaffold is provider-backed, not implicit.**
-  `StaticLedgerArchive` is an append-only block/transaction body archive used
-  through `BlockProvider`/`TxProvider`. `HotColdLedgerProviderFactory` composes a
-  hot storage provider with a cold archive provider. The current implementation
-  is a scaffold for explicit integration; the block import path does not
-  silently write static files until node configuration and crash-recovery policy
-  opt in.
+- **Cold ledger routing is provider-backed, not implicit.**
+  `HotColdLedgerProviderFactory` composes hot native Ledger reads with any cold
+  provider implementing `BlockProvider`/`TxProvider`, and falls back only when
+  hot records miss. The static-file archive writer/format remains explicit
+  integration work; the block import path does not silently write static files
+  until node configuration and crash-recovery policy opt in.
 
 - **Byte-for-byte C# parity as a hard constraint.** Wire formats, hashing,
   signature schemes, fee formulas, VM opcode pricing, native-contract behavior,

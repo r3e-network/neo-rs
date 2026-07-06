@@ -314,8 +314,9 @@ Key points:
 - **Ledger provider boundary.** `neo-blockchain` exposes `BlockProvider` and
   `TxProvider` capability traits. `StorageLedgerProviderFactory` creates hot
   providers over native Ledger records; `HotColdLedgerProviderFactory` composes
-  hot reads with a `StaticLedgerArchive` cold provider. Static archive writes
-  are explicit integration work, not an implicit side effect of block import.
+  hot reads with any cold provider that implements the same capability traits.
+  Static archive writes are explicit integration work, not an implicit side
+  effect of block import.
 - **State provider boundary.** `neo-state-service` exposes
   `StateProviderFactory` and `StateView` so RPC, VM, and tests can request an
   immutable MPT view at a specific height instead of holding ad-hoc references

@@ -30,10 +30,10 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync + A
 |--------|--------|------|-------------|
 | Abstraction | Single `Store` trait | `Database` trait with GATs | `kvdb` trait, 3-level stack |
 | Table encoding | Live: `StorageKey` / `KeyBuilder` over raw C#-compatible bytes; `Table`/`TableCodec` boundary exists but on no live access path | Per-table `Encode`/`Decode` + `Compact` derive | Per-column encoding (parity-scale-codec) |
-| Tiering | Hot DB only today; cold-ledger / static-file provider scaffold exists but is unwired (constructed only under `tests/`) | Hot (MDBX) / Cold (RocksDB) / Static (NippyJar) | Single DB (parity-db or RocksDB) |
+| Tiering | Hot DB today; hot/cold provider factory exists, while static-file archive writing/format is still unwired | Hot (MDBX) / Cold (RocksDB) / Static (NippyJar) | Single DB (parity-db or RocksDB) |
 | Overlay | `DataCache` with `Arc<RwLock<HashMap>>` | MDBX transaction | `OverlayedChanges` |
 | Pruning | Manual via `MaxTraceableBlocks` | Per-segment config (4 profiles) | `PruningMode` enum |
-| Static files | `StaticLedgerArchive` present but not wired (constructed only under `tests/`); its `parking_lot::Mutex` choice is correct | NippyJar columnar (mandatory, mmap) | None |
+| Static files | Static-file archive writer/format remains future work; provider routing can already compose a cold implementation | NippyJar columnar (mandatory, mmap) | None |
 
 ### Reth innovations
 
@@ -65,7 +65,7 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync + A
 |----------|--------|---------|
 | P0 | Hot/Cold/Static tiering | 30%+ disk savings, tiered hardware |
 | P1 | Compact derive macro for Neo types | 15-25% storage savings, fewer bytes |
-| Correct, but not wired | `parking_lot::Mutex` in static files | Right choice, but `StaticLedgerArchive` is present-not-wired (constructed only under `tests/`), not an active tiering feature |
+| Partially wired | Hot/cold ledger provider factory | Provider routing is implemented; append-only static-file archive writing and recovery are still future work |
 | P3 | `OverlayedChanges`-style transactional overlay | Cleaner per-tx isolation |
 
 ---

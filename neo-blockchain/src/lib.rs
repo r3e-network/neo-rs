@@ -95,4 +95,7 @@ pub use neo_runtime::{BlockchainEvent as RuntimeEvent, ServiceError};
 
 pub use header_cache::HeaderCache;
 pub use ledger_context::LedgerContext;
-pub use ledger_provider::{BlockProvider, StorageLedgerProvider, TxProvider};
+pub use ledger_provider::{
+    BlockProvider, HotColdLedgerProvider, HotColdLedgerProviderFactory, LedgerProvider,
+    LedgerProviderFactory, StorageLedgerProvider, StorageLedgerProviderFactory, TxProvider,
+};
