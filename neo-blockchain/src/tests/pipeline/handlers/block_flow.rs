@@ -310,7 +310,6 @@ async fn state_service_failure_aborts_before_chain_tip_advances() {
 
 #[tokio::test]
 async fn bulk_import_flush_failure_aborts_batch_before_durable_store_commit() {
-    neo_native_contracts::install();
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let flush_calls = Arc::new(AtomicUsize::new(0));
     let commit_to_store_calls = Arc::new(AtomicUsize::new(0));
@@ -1267,7 +1266,6 @@ async fn bulk_import_falls_back_when_per_block_committing_observer_is_active() {
 
 #[tokio::test]
 async fn bulk_import_uses_empty_fast_path_when_only_state_service_is_loaded() {
-    neo_native_contracts::install();
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let state_store = Arc::new(neo_state_service::StateStore::with_mpt(true));
     let state_service = Arc::new(
@@ -1465,7 +1463,6 @@ async fn bulk_import_verify_true_validates_against_prior_batch_block() {
 
 #[tokio::test]
 async fn bulk_import_keeps_accepted_prefix_when_second_block_committing_fails() {
-    neo_native_contracts::install();
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let commit_attempts = Arc::new(AtomicUsize::new(0));
     let commit_to_store_calls = Arc::new(AtomicUsize::new(0));
@@ -1651,7 +1648,6 @@ async fn inventory_block_batch_counts_and_flushes_drained_parked_children() {
 
 #[tokio::test]
 async fn bulk_import_skips_per_block_mempool_maintenance() {
-    neo_native_contracts::install();
     let settings = neo_config::ProtocolSettings::default();
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let system = Arc::new(StoreContext {
@@ -1788,7 +1784,6 @@ async fn import_blocks_counts_duplicate_prefix_as_processed() {
 
 #[tokio::test]
 async fn persisted_inventory_block_removes_cached_header_after_mempool_update() {
-    neo_native_contracts::install();
     let settings = neo_config::ProtocolSettings::default();
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let system = Arc::new(StoreContext {

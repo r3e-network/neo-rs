@@ -353,7 +353,6 @@ fn store_fixture_with(
     BlockchainHandle,
     Arc<neo_storage::DataCache>,
 ) {
-    neo_native_contracts::install();
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
@@ -377,7 +376,6 @@ fn store_fixture_with_state_service() -> (
     Arc<neo_storage::DataCache>,
     Arc<neo_state_service::StateStore>,
 ) {
-    neo_native_contracts::install();
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let state_store = Arc::new(neo_state_service::StateStore::with_mpt(true));
     let state_service = Arc::new(
@@ -407,7 +405,6 @@ fn store_fixture_recording_application_executed_lengths() -> (
     Arc<neo_storage::DataCache>,
     Arc<parking_lot::Mutex<Vec<usize>>>,
 ) {
-    neo_native_contracts::install();
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let lengths = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let system = Arc::new(StoreContext {
@@ -432,7 +429,6 @@ fn store_fixture_counting_commits() -> (
     Arc<neo_storage::DataCache>,
     Arc<AtomicUsize>,
 ) {
-    neo_native_contracts::install();
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let commit_calls = Arc::new(AtomicUsize::new(0));
     let system = Arc::new(StoreContext {
@@ -457,7 +453,6 @@ fn store_fixture_recording_committed_heights() -> (
     Arc<neo_storage::DataCache>,
     Arc<parking_lot::Mutex<Vec<u32>>>,
 ) {
-    neo_native_contracts::install();
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let committed_heights = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let system = Arc::new(StoreContext {
@@ -494,7 +489,6 @@ fn store_fixture_counting_snapshot_commits_and_committed_heights() -> (
     Arc<AtomicUsize>,
     Arc<parking_lot::Mutex<Vec<u32>>>,
 ) {
-    neo_native_contracts::install();
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let snapshot_calls = Arc::new(AtomicUsize::new(0));
     let commit_calls = Arc::new(AtomicUsize::new(0));
@@ -531,7 +525,6 @@ fn store_fixture_counting_snapshot_and_commits_with(
     Arc<AtomicUsize>,
     Arc<AtomicUsize>,
 ) {
-    neo_native_contracts::install();
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let snapshot_calls = Arc::new(AtomicUsize::new(0));
     let commit_calls = Arc::new(AtomicUsize::new(0));
@@ -751,7 +744,6 @@ fn dispatch_command_variants_is_exhaustive() {
 
 #[test]
 fn reverify_mempool_after_persist_skips_snapshot_when_no_unverified_transactions() {
-    neo_native_contracts::install();
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let store_snapshot_calls = Arc::new(AtomicUsize::new(0));
     let reverify_calls = Arc::new(AtomicUsize::new(0));
