@@ -185,7 +185,7 @@ fn store_header_verification_uses_system_native_provider() {
 
 #[test]
 fn extensible_verification_uses_system_native_provider() {
-    let source = include_str!("../../pipeline/handlers.rs");
+    let source = include_str!("../../handlers/extensible.rs");
     let handler_start = source
         .find("pub(crate) async fn handle_extensible_inventory")
         .expect("extensible handler exists");
