@@ -625,6 +625,45 @@ async fn import_verify_true_rejects_invalid_header_like_csharp() {
 }
 
 #[tokio::test]
+async fn import_verify_true_rejects_invalid_transaction_merkle_root() {
+    let (service, _handle, snapshot) = store_fixture();
+    service.initialize().await;
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp() + 15_000);
+    header.set_next_consensus(*genesis.header.next_consensus());
+
+    let reply = service
+        .handle_import(Import {
+            // Intentionally do not rebuild the merkle root after adding the
+            // transaction. `verify: true` must run the shared validate stage
+            // before persistence, so the stale zero root is rejected.
+            blocks: vec![Block::from_parts(header, vec![transaction_with_nonce(42)])],
+            verify: true,
+            bulk_sync: false,
+        })
+        .await;
+
+    assert_eq!(reply.imported, 0);
+    assert_eq!(
+        service.ledger.current_height(),
+        0,
+        "verified import must reject blocks whose transaction merkle root is invalid"
+    );
+    assert_eq!(
+        neo_native_contracts::LedgerContract::new()
+            .current_index(&snapshot)
+            .expect("ledger current index"),
+        0
+    );
+}
+
+#[tokio::test]
 async fn bulk_import_uses_batch_block_before_parked_duplicate_height() {
     let (service, _handle, snapshot) = store_fixture();
     service.initialize().await;

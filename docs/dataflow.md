@@ -78,8 +78,8 @@ checkpoint provider over the same blockchain and storage handles used by the
 rest of the node and is registered in the node `ServiceRegistry`.
 `neo_system::SyncDownloadImportDriver` drains any `BlockDownloader` stream into
 that handle and stops on downloader, contiguity, partial-import, or checkpoint
-errors; the remaining network work is to feed it from the real async peer
-transport. The
+errors. Production local-ledger node startup now feeds it from the
+coordinator-backed P2P downloader over live peer handles. The
 per-peer `GetBlockByIndex` request window is planned by
 `neo_network::BlockRequestScheduler` and sent by `PeerSession`. Cross-peer range
 assignment, peer bias, and retry accounting are now owned by

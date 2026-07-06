@@ -31,6 +31,10 @@ use crate::relay_result::RelayResult;
 use crate::reverify::Reverify;
 use crate::service::{BlockchainService, MempoolLike};
 use crate::service_context::BlockPersistContext;
+use neo_runtime::BlockOrigin;
+
+use super::stage_traits::{StageContext, ValidateStage};
+use super::validate_stage::{NeoValidateStage, SnapshotValidateContext};
 
 #[path = "../handlers/transactions.rs"]
 mod transactions;
@@ -123,6 +127,31 @@ where
             resources.snapshot.as_ref(),
             Some(resources.native_persist.provider()),
         )
+    }
+
+    async fn validate_import_block_with_stage(
+        &self,
+        block: &Block,
+        current_height: u32,
+        bulk_sync: bool,
+        settings: Arc<neo_config::ProtocolSettings>,
+        snapshot: Arc<neo_storage::DataCache>,
+    ) -> CoreResult<()> {
+        let stage =
+            NeoValidateStage::new(Arc::new(SnapshotValidateContext::new(settings, snapshot)));
+        let ctx = StageContext {
+            origin: if bulk_sync {
+                BlockOrigin::TrustedLocal
+            } else {
+                BlockOrigin::Rpc
+            },
+            current_height,
+            bulk_sync,
+        };
+        stage
+            .validate(&ctx, block)
+            .await
+            .map_err(|error| CoreError::other(format!("block {}: {error}", block.index())))
     }
 
     fn collect_empty_fast_forward_run<'a>(
@@ -503,9 +532,36 @@ where
 
             if import.verify {
                 let verify_result = if let Some(resources) = &batch_persist_resources {
-                    self.verify_header_with_batch_resources(block, resources)
+                    self.validate_import_block_with_stage(
+                        block,
+                        current_height,
+                        bulk_sync,
+                        Arc::clone(&resources.settings),
+                        Arc::clone(&resources.snapshot),
+                    )
+                    .await
+                    .and_then(|()| self.verify_header_with_batch_resources(block, resources))
                 } else {
-                    self.verify_header_against_store(block)
+                    let snapshot = match self.system.store_snapshot() {
+                        Some(snapshot) => snapshot,
+                        None => {
+                            warn!(
+                                target: "neo",
+                                height = index,
+                                "import aborted: store snapshot unavailable for block validation"
+                            );
+                            return ImportBlocksReply::ok_with_stats(imported, stats);
+                        }
+                    };
+                    self.validate_import_block_with_stage(
+                        block,
+                        current_height,
+                        bulk_sync,
+                        self.system.settings(),
+                        snapshot,
+                    )
+                    .await
+                    .and_then(|()| self.verify_header_against_store(block))
                 };
                 if let Err(error) = verify_result {
                     warn!(

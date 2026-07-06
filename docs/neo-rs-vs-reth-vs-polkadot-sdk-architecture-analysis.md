@@ -91,10 +91,11 @@ contiguous `SyncBlockBatch` values through
 the shared `ImportQueue` and checkpoints the import stage when policy fires,
 can be created from that handle.
 The queue/checkpoint handle is now part of production node composition and
-service lookup, and `SyncDownloadImportDriver` can drive it from a downloader
-stream, but real P2P transport is not feeding it yet.
-The concrete multi-stage
-headers/bodies/execute/index/prune loop remains the next large integration step.
+service lookup. Production node startup runs a coordinator-backed P2P
+`BlockDownloader` over the live `PeerRegistry` and feeds it through
+`SyncDownloadImportDriver` into the composed import pipeline. The concrete
+multi-stage headers/bodies/execute/index/prune loop remains the next large
+integration step.
 
 Live path: P2P Block -> `InboundInventory::Block` -> `neo-node` buffering ->
 `BlockchainHandle::submit_inventory_blocks` -> neo-blockchain
@@ -106,10 +107,9 @@ typed handle methods keep `BlockchainCommand` construction inside
 queue/driver layer for now. That bypass remains until the queue has an
 inventory-aware adapter: the live inventory path owns relay policy,
 future-block parking, unverified draining, and mempool maintenance, while
-`SyncPipelineDriver` remains a reusable import-stage primitive; `neo_system`
-now provides `SyncDownloadImportDriver` to drain any `BlockDownloader` stream
-into the composed pipeline, while the production P2P transport still has not
-started feeding real peer batches into that bridge.
+`SyncPipelineDriver` remains a reusable import-stage primitive; production P2P
+range sync now feeds real peer batches into that bridge through the
+coordinator-backed downloader/import task.
 
 ```rust
 // Sequential: verify → persist → commit per block
@@ -172,18 +172,20 @@ transaction hashes), so queued preverification rejects malformed blocks before
 ordered import without enforcing the dBFT-only production transaction limit.
 RPC `submitblock` uses the same preflight before submitting decoded blocks
 through `BlockImport::import(..., BlockOrigin::Rpc)`.
-Verification-enabled `chain.acc` imports run this same preflight at the batch
-boundary before dispatching the trusted bulk import command; the normal
-fast-sync package path keeps relying on the block decoder's import-integrity
-checks to avoid duplicating merkle/hash work on the hot replay path.
+Verification-enabled imports then run the concrete
+`neo-blockchain::NeoValidateStage` over the same snapshot used by native
+persistence before the consensus-witness verifier runs; trusted
+`verify: false` fast-sync package imports keep relying on the block decoder's
+import-integrity checks to avoid duplicating merkle/hash work on the hot replay
+path.
 `neo_runtime::SyncPipelineDriver` consumes contiguous sync batches, rejects
 height gaps, calls the import queue, and writes import-stage checkpoints
 according to `CommitPolicy`. `neo_system::SyncImportPipeline` now composes the
 bounded import queue and durable checkpoint provider from the node's
 `BlockchainHandle` and shared storage handle, then registers the same handle in
-`ServiceRegistry`; `SyncDownloadImportDriver` can now create and drive that
-runtime driver from a downloader stream, but the production P2P transport does
-not feed it real peer batches yet. The live import path calls
+`ServiceRegistry`; production P2P range sync now creates a coordinator-backed
+downloader over live peer handles and drives that runtime driver. The live
+inventory path still calls
 `BlockImport` directly via
 `BlockchainHandle::import_many`, driven by neo-blockchain's
 `handle_block_inventory`.
@@ -220,9 +222,8 @@ let import_chain = Box::new(NeoHeaderVerifier)
 Current status: the shared trait, bounded queue, and import-stage sync driver
 exist as primitives; node composition constructs a `SyncImportPipeline` handle
 with the queue and store-backed checkpoints and registers it for service
-lookup, while `SyncDownloadImportDriver` drains downloader streams into the
-import-stage driver. The async peer transport still does not feed production
-peer batches into that bridge.
+lookup, while `SyncDownloadImportDriver` drains production coordinator-backed
+peer batches into the import-stage driver.
 `neo-network::BlockDownloadBatch` converts into `neo_runtime::SyncBlockBatch`,
 preserving the single ordered import path. `PeerSession` uses the per-peer
 `BlockRequestScheduler`, and the transport-agnostic

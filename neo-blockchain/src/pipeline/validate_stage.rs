@@ -17,11 +17,12 @@
 //!
 //! # Wiring Status
 //!
-//! This stage is **extracted but not wired** into the live block-processing
-//! command loop. It can be unit-tested in isolation and is ready to be called
-//! from `BlockchainService` handlers as a next step. The existing `handle_block_inventory`
-//! and `handle_import` paths continue to use their inline validation until the
-//! wiring is completed in a follow-up phase.
+//! Verified block import (`Import { verify: true }`) constructs this stage over
+//! the same snapshot used by native persistence before running the existing
+//! consensus-witness verifier. Live peer inventory still keeps its inline
+//! import-integrity and witness checks because that path intentionally follows
+//! C# `OnNewBlock` relay semantics and must not inherit consensus-production
+//! transaction-count limits.
 //!
 //! # Bulk-Sync Behavior
 //!
@@ -41,6 +42,8 @@ use neo_payloads::Block;
 use neo_primitives::UInt256;
 
 use super::block_validation::{BlockValidationError, BlockValidator, MIN_TIMESTAMP_MS};
+use neo_native_contracts::LedgerContract;
+use neo_storage::DataCache;
 
 /// Context trait providing the stateful dependencies needed for full validation.
 ///
@@ -63,6 +66,63 @@ pub trait ValidateContext: Send + Sync + fmt::Debug + 'static {
 
     /// Returns the validators count for primary index validation.
     fn validators_count(&self) -> i32;
+}
+
+/// Snapshot-backed validate context used by service handlers.
+#[derive(Clone)]
+pub struct SnapshotValidateContext {
+    settings: Arc<ProtocolSettings>,
+    snapshot: Arc<DataCache>,
+}
+
+impl fmt::Debug for SnapshotValidateContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SnapshotValidateContext")
+            .field("validators_count", &self.settings.validators_count)
+            .finish_non_exhaustive()
+    }
+}
+
+impl SnapshotValidateContext {
+    /// Creates a validate context over an immutable store snapshot.
+    #[must_use]
+    pub fn new(settings: Arc<ProtocolSettings>, snapshot: Arc<DataCache>) -> Self {
+        Self { settings, snapshot }
+    }
+
+    fn ledger(&self) -> LedgerContract {
+        LedgerContract::new()
+    }
+}
+
+impl ValidateContext for SnapshotValidateContext {
+    fn settings(&self) -> Arc<ProtocolSettings> {
+        Arc::clone(&self.settings)
+    }
+
+    fn prev_block_hash(&self, height: u32) -> Option<UInt256> {
+        self.ledger()
+            .get_block_hash(self.snapshot.as_ref(), height)
+            .ok()
+            .flatten()
+    }
+
+    fn prev_block_timestamp(&self, height: u32) -> Option<u64> {
+        let ledger = self.ledger();
+        let hash = ledger
+            .get_block_hash(self.snapshot.as_ref(), height)
+            .ok()
+            .flatten()?;
+        ledger
+            .get_trimmed_block(self.snapshot.as_ref(), &hash)
+            .ok()
+            .flatten()
+            .map(|block| block.header.timestamp())
+    }
+
+    fn validators_count(&self) -> i32 {
+        self.settings.validators_count
+    }
 }
 
 /// Concrete validate stage wrapping [`BlockValidator`] + stateful checks.
