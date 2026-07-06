@@ -7,7 +7,7 @@
 //! - the typed network handle from `neo-network`,
 //! - a [`WalletProvider`] for the optional node wallet,
 //! - the storage backend, mempool, header cache, and service registry,
-//! - and the native contract provider installed for NeoVM host calls.
+//! - and the native contract provider owned for NeoVM host calls.
 //!
 //! Construction goes through [`crate::NodeBuilder`], whose `build()`
 //! validates the required components (storage, the blockchain and
@@ -80,7 +80,7 @@ pub struct Node {
     /// composition root and looked up by type at request time.
     pub services: ServiceRegistry,
 
-    /// Native-contract provider installed for NeoVM host calls.
+    /// Native-contract provider captured for NeoVM host calls.
     ///
     /// Stored on the node so the composition-root dependency remains visible
     /// after `NodeBuilder::build()` instead of disappearing into the global
