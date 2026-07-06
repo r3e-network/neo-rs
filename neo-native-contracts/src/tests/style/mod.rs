@@ -25,6 +25,8 @@ pub(super) fn standard_contract_sources()
         (
             "ContractManagement",
             concat!(
+                include_str!("../../contract_management/constants.rs"),
+                "\n",
                 include_str!("../../contract_management/operations/storage.rs"),
                 "\n",
                 include_str!("../../contract_management/operations/validation.rs"),

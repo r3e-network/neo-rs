@@ -10,6 +10,7 @@
 //!
 //! ## Contents
 //!
+//! - `constants`: native event names, storage prefixes, and genesis defaults.
 //! - `invoke`: native method dispatch for query and lifecycle calls.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `operations`: native-contract operation handlers.
@@ -24,32 +25,14 @@ use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
 use num_bigint::BigInt;
 
+mod constants;
 mod invoke;
 mod metadata;
 mod operations;
 mod persist;
 
-pub(crate) const CONTRACT_DEPLOY_EVENT: &str = "Deploy";
-pub(crate) const CONTRACT_UPDATE_EVENT: &str = "Update";
-pub(crate) const CONTRACT_DESTROY_EVENT: &str = "Destroy";
-
-/// Storage prefix for the minimum-deployment-fee setting (C#
-/// `ContractManagement.Prefix_MinimumDeploymentFee`).
-const PREFIX_MINIMUM_DEPLOYMENT_FEE: u8 = 20;
-/// C# default minimum deployment fee: 10 GAS, in datoshi.
-const DEFAULT_MINIMUM_DEPLOYMENT_FEE: i64 = 10_00000000;
-
-/// Storage prefix for the per-contract record (matches C#
-/// `ContractManagement.PREFIX_CONTRACT`).
-const PREFIX_CONTRACT: u8 = 8;
-/// Storage prefix for the contract-id → hash index (matches C#
-/// `ContractManagement.PREFIX_CONTRACT_HASH`).
-const PREFIX_CONTRACT_HASH: u8 = 12;
-/// Storage prefix for the next-available-contract-id counter (matches C#
-/// `ContractManagement.Prefix_NextAvailableId`).
-const PREFIX_NEXT_AVAILABLE_ID: u8 = 15;
-/// C# genesis value for `Prefix_NextAvailableId` (`InitializeAsync` writes 1).
-const DEFAULT_NEXT_AVAILABLE_ID: i64 = 1;
+pub(in crate::contract_management) use constants::*;
+pub(crate) use constants::{CONTRACT_DEPLOY_EVENT, CONTRACT_DESTROY_EVENT, CONTRACT_UPDATE_EVENT};
 
 native_contract_handle!(
     /// Static accessor for the ContractManagement native contract.
