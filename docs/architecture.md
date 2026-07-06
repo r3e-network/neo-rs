@@ -300,9 +300,10 @@ The detailed rules for this style live in
   reads, and whitelisted-fee checks. Engine methods do not read the global slot
   after construction, so provider replacement cannot change an already-created
   engine. Production composition no longer mutates the global slot. The
-  process-global lookup remains only as a compatibility bridge for standalone
-  callers, legacy runtime-helper wrappers, and tests that intentionally exercise
-  ambient lookup. `Helper::verify_witness*_with_native_provider` and
+  process-global lookup remains only as a provider compatibility bridge for
+  standalone callers, legacy runtime-helper wrappers, and tests that
+  intentionally exercise ambient lookup; it no longer exposes contract-specific
+  native helper wrappers. `Helper::verify_witness*_with_native_provider` and
   provider-aware script-hash resolution let node services verify witnesses
   against an explicit provider without reading the global slot. Batch block
   import, genesis initialization, header inventory verification,

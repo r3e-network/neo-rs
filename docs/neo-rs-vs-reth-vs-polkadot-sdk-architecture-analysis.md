@@ -403,8 +403,9 @@ block persistence passes
 engines, and service-level genesis initialization plus batch resource setup
 build those resources from `SystemContext::native_contract_provider`; live block
 import uses the explicit-resource staging/commit path instead of the global
-provider. Legacy helper wrappers still resolve through the process-global
-compatibility bridge in
+provider. `NativeContractLookup` is now reduced to a compatibility bridge for
+installing, replacing, scoping, and reading the ambient provider; the
+contract-specific global helper wrappers were removed from
 `neo-execution/src/native/native_contract_provider.rs`.
 
 ### Polkadot SDK innovations
@@ -434,9 +435,10 @@ compatibility bridge in
    extensible-payload verification, and signed-StateRoot verification now use
    explicit providers when their caller owns one; native persistence exposes an
    explicit-resource committing helper, and production composition no longer
-   installs the standard provider globally. Remaining step: keep shrinking
-   legacy helper wrappers until `NativeContractLookup` is only a compatibility
-   bridge.
+   installs the standard provider globally. `NativeContractLookup` now only
+   exposes provider install/replace/scope/access helpers, so callers must use
+   the provider trait for concrete native lookups instead of contract-specific
+   global wrappers.
 3. Consider WASM runtime for future sidechain/feature-gate support.
 
 ---

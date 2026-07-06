@@ -59,10 +59,10 @@ fn provider_resolves_cryptolib_by_name_and_hash() {
 #[test]
 fn install_wires_global_provider() {
     install();
-    let resolved =
-        neo_execution::native_contract_provider::NativeContractLookup::get_native_contract(
-            &CRYPTO_LIB_HASH,
-        );
+    let provider =
+        neo_execution::native_contract_provider::NativeContractLookup::native_contract_provider()
+            .expect("global provider installed");
+    let resolved = provider.get_native_contract(&CRYPTO_LIB_HASH);
     assert!(
         resolved.is_some(),
         "global provider resolves CryptoLib after install()"

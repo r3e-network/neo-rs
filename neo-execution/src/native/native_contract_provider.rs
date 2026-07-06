@@ -134,11 +134,12 @@ pub fn lock_native_provider() -> NativeProviderTestGuard {
     NativeProviderTestGuard { _lock }
 }
 
-/// Cohesive set of global native-contract lookup helpers.
+/// Process-global native-contract provider compatibility bridge.
 ///
-/// These associated functions form the compatibility seam between callers that
-/// still need ambient native-contract lookup and the explicit
-/// [`NativeContractProvider`] passed into modern execution paths.
+/// New execution paths should pass an explicit [`NativeContractProvider`].
+/// This bridge remains only for standalone callers, tests, and compatibility
+/// constructors that need to capture whatever provider the surrounding process
+/// installed.
 pub struct NativeContractLookup;
 
 impl NativeContractLookup {
@@ -193,153 +194,6 @@ impl NativeContractLookup {
         SCOPED_PROVIDER
             .with(|slot| slot.borrow().clone())
             .or_else(|| provider_slot().read().clone())
-    }
-
-    /// Convenience: looks up a native contract by hash via the global
-    /// provider, returning `None` if no provider is installed or the hash
-    /// is not registered.
-    pub fn get_native_contract(hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
-        Self::native_contract_provider()?.get_native_contract(hash)
-    }
-
-    /// Convenience: looks up a native contract by name via the global
-    /// provider.
-    pub fn get_native_contract_by_name(name: &str) -> Option<Arc<dyn NativeContract>> {
-        Self::native_contract_provider()?.get_native_contract_by_name(name)
-    }
-
-    // ============================================================================
-    // Convenience lookups
-    // ============================================================================
-
-    /// Returns the `ContractManagement`
-    /// native contract (if installed), looked up by name through the global
-    /// provider. This is a convenience used by the application engine to
-    /// reach the one native contract that exposes
-    /// `lookup_contract_state` semantics for deployed user contracts.
-    pub fn lookup_contract_management_handle() -> Option<Arc<dyn NativeContract>> {
-        Self::get_native_contract_by_name("ContractManagement")
-    }
-
-    /// Returns the `LedgerContract`
-    /// native contract (if installed).
-    pub fn lookup_ledger_contract() -> Option<Arc<dyn NativeContract>> {
-        Self::get_native_contract_by_name("LedgerContract")
-    }
-
-    /// Returns the `PolicyContract`
-    /// native contract (if installed).
-    pub fn lookup_policy_contract() -> Option<Arc<dyn NativeContract>> {
-        Self::get_native_contract_by_name("PolicyContract")
-    }
-
-    /// Returns the `GasToken` native
-    /// contract (if installed).
-    pub fn lookup_gas_token() -> Option<Arc<dyn NativeContract>> {
-        Self::get_native_contract_by_name("GasToken")
-    }
-
-    /// Returns the `GasToken` contract
-    /// hash, if installed.
-    pub fn lookup_gas_token_hash() -> Option<neo_primitives::UInt160> {
-        Self::lookup_gas_token().map(|c| c.hash())
-    }
-
-    /// Returns the `OracleContract`
-    /// native contract (if installed).
-    pub fn lookup_oracle_contract() -> Option<Arc<dyn NativeContract>> {
-        Self::get_native_contract_by_name("OracleContract")
-    }
-
-    /// Returns the `NeoToken` native
-    /// contract (if installed).
-    pub fn lookup_neo_token() -> Option<Arc<dyn NativeContract>> {
-        Self::get_native_contract_by_name("NeoToken")
-    }
-
-    /// Convenience wrapper around `ContractManagement.lookup_contract_state`.
-    pub fn lookup_contract_management_state(
-        snapshot: &neo_storage::DataCache,
-        hash: &neo_primitives::UInt160,
-    ) -> neo_error::CoreResult<Option<crate::ContractState>> {
-        let Some(provider) = Self::native_contract_provider() else {
-            return Ok(None);
-        };
-        let Some(cm) = provider.get_native_contract_by_name("ContractManagement") else {
-            return Ok(None);
-        };
-        cm.lookup_contract_state(snapshot, hash)
-    }
-
-    /// Convenience wrapper around `PolicyContract.is_contract_blocked`.
-    pub fn is_contract_blocked_by_policy(
-        snapshot: &neo_storage::DataCache,
-        contract_hash: &neo_primitives::UInt160,
-    ) -> neo_error::CoreResult<bool> {
-        let provider = Self::native_contract_provider().ok_or_else(|| {
-            neo_error::CoreError::invalid_operation(
-                "PolicyContract lookup requires a native contract provider",
-            )
-        })?;
-        let policy = provider
-            .get_native_contract_by_name("PolicyContract")
-            .ok_or_else(|| {
-                neo_error::CoreError::invalid_operation(
-                    "PolicyContract lookup requires the Policy native contract",
-                )
-            })?;
-        policy.is_contract_blocked(snapshot, contract_hash)
-    }
-
-    /// Convenience wrapper around `NeoToken.committee_address` (C#
-    /// `NEO.GetCommitteeAddress`). Returns `Ok(None)` when no provider is installed
-    /// or NeoToken is not registered, so the caller falls back to fail-closed
-    /// behaviour.
-    pub fn lookup_committee_address(
-        snapshot: &neo_storage::DataCache,
-    ) -> neo_error::CoreResult<Option<neo_primitives::UInt160>> {
-        let Some(provider) = Self::native_contract_provider() else {
-            return Ok(None);
-        };
-        let Some(neo) = provider.get_native_contract_by_name("NeoToken") else {
-            return Ok(None);
-        };
-        neo.committee_address(snapshot)
-    }
-
-    /// Convenience wrapper around `PolicyContract.whitelisted_fee`.
-    pub fn get_whitelisted_fee_for_policy(
-        snapshot: &neo_storage::DataCache,
-        contract_hash: &neo_primitives::UInt160,
-        method: &str,
-        param_count: u32,
-    ) -> neo_error::CoreResult<Option<i64>> {
-        let Some(provider) = Self::native_contract_provider() else {
-            return Ok(None);
-        };
-        let Some(policy) = provider.get_native_contract_by_name("PolicyContract") else {
-            return Ok(None);
-        };
-        policy.whitelisted_fee(snapshot, contract_hash, method, param_count)
-    }
-
-    /// Convenience: `ContractManagement::get_contract_from_snapshot` from
-    /// the original `neo-core` code, now routed through the provider.
-    /// This is the alias used by the application engine.
-    pub fn lookup_contract_management(
-        snapshot: &neo_storage::DataCache,
-        hash: &neo_primitives::UInt160,
-    ) -> neo_error::CoreResult<Option<crate::ContractState>> {
-        Self::lookup_contract_management_state(snapshot, hash)
-    }
-
-    /// Returns the current block index from the LedgerContract (or 0 if no provider
-    /// is installed).
-    pub fn lookup_current_block_index(snapshot: &neo_storage::DataCache) -> u32 {
-        let Some(provider) = Self::native_contract_provider() else {
-            return 0;
-        };
-        provider.current_block_index(snapshot).unwrap_or(0)
     }
 }
 
@@ -410,19 +264,24 @@ mod tests {
         let previous = NativeContractLookup::replace_provider(Some(global));
 
         NativeContractLookup::with_scoped_provider(outer, || {
-            assert!(NativeContractLookup::get_native_contract_by_name("outer").is_some());
-            assert!(NativeContractLookup::get_native_contract_by_name("global").is_none());
+            let provider = NativeContractLookup::native_contract_provider().expect("outer scope");
+            assert!(provider.get_native_contract_by_name("outer").is_some());
+            assert!(provider.get_native_contract_by_name("global").is_none());
 
             NativeContractLookup::with_scoped_provider(inner, || {
-                assert!(NativeContractLookup::get_native_contract_by_name("inner").is_some());
-                assert!(NativeContractLookup::get_native_contract_by_name("outer").is_none());
+                let provider =
+                    NativeContractLookup::native_contract_provider().expect("inner scope");
+                assert!(provider.get_native_contract_by_name("inner").is_some());
+                assert!(provider.get_native_contract_by_name("outer").is_none());
             });
 
-            assert!(NativeContractLookup::get_native_contract_by_name("outer").is_some());
-            assert!(NativeContractLookup::get_native_contract_by_name("inner").is_none());
+            let provider = NativeContractLookup::native_contract_provider().expect("outer scope");
+            assert!(provider.get_native_contract_by_name("outer").is_some());
+            assert!(provider.get_native_contract_by_name("inner").is_none());
         });
 
-        assert!(NativeContractLookup::get_native_contract_by_name("global").is_some());
+        let provider = NativeContractLookup::native_contract_provider().expect("global provider");
+        assert!(provider.get_native_contract_by_name("global").is_some());
         NativeContractLookup::replace_provider(previous);
     }
 }
