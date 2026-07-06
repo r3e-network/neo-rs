@@ -23,6 +23,7 @@ use neo_payloads::p2p_payloads::{GetBlockByIndexPayload, NodeCapability, Version
 use serde_json::Value;
 use std::io::{Read, Write};
 use std::net::TcpListener;
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
