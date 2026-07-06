@@ -42,7 +42,7 @@ fn engine_for(
     tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
     tx.set_witnesses(vec![Witness::empty()]);
     let container: Arc<dyn Verifiable> = Arc::new(tx);
-    ApplicationEngine::new(
+    ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
         snapshot,
@@ -50,6 +50,7 @@ fn engine_for(
         settings,
         100_00000000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds")
 }

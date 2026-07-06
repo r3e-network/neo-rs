@@ -413,7 +413,7 @@ fn deposit_reads_amount_and_till_or_zero() {
 #[test]
 fn max_not_valid_before_delta_requires_initialized_storage() {
     let cache = DataCache::new(false);
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         neo_primitives::TriggerType::Application,
         None,
         std::sync::Arc::new(cache),
@@ -421,6 +421,7 @@ fn max_not_valid_before_delta_requires_initialized_storage() {
         ProtocolSettings::default(),
         0,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
 

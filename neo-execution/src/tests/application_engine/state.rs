@@ -380,13 +380,14 @@ fn expected_faun_services() -> Vec<(String, i64, u8)> {
 }
 
 fn engine_with_settings(settings: ProtocolSettings) -> ApplicationEngine {
-    ApplicationEngine::new(
+    ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
         None,
         settings,
         TEST_MODE_GAS,
+        None,
         None,
     )
     .expect("application engine")
@@ -398,13 +399,14 @@ fn engine_with_settings_at_block(
 ) -> ApplicationEngine {
     let mut block = Block::new();
     block.header.set_index(block_index);
-    ApplicationEngine::new(
+    ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
         Some(block),
         settings,
         TEST_MODE_GAS,
+        None,
         None,
     )
     .expect("application engine")

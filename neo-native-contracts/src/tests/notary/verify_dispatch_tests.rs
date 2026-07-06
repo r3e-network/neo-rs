@@ -97,7 +97,7 @@ fn call_verify(
     builder.emit_push(&Notary::script_hash().to_array());
     builder.emit_syscall("System.Contract.Call").expect("call");
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         container,
         snapshot,
@@ -105,6 +105,7 @@ fn call_verify(
         echidna_settings(),
         10_00000000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
     engine
@@ -384,7 +385,7 @@ fn on_persist_debits_payer_deposit_and_mints_notary_reward() {
     header.set_index(1);
     let block = Block::from_parts(header, vec![tx]);
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::OnPersist,
         None,
         Arc::clone(&snapshot),
@@ -392,6 +393,7 @@ fn on_persist_debits_payer_deposit_and_mints_notary_reward() {
         echidna_settings(),
         0,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
     NativeContract::on_persist(&Notary, &mut engine).expect("notary on_persist");

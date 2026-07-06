@@ -138,13 +138,14 @@ fn runtime_log_allows_dynamic_script_without_container_like_csharp() {
         .expect("emit Runtime.Log");
     builder.emit_opcode(OpCode::RET);
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
         None,
         ProtocolSettings::default(),
         TEST_MODE_GAS,
+        None,
         None,
     )
     .expect("application engine");
@@ -165,13 +166,14 @@ fn send_notification_enforces_echidna_cap_for_native_paths_like_csharp() {
     settings.hardforks.clear();
     settings.hardforks.insert(Hardfork::HfEchidna, 0);
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
         None,
         settings,
         TEST_MODE_GAS,
+        None,
         None,
     )
     .expect("application engine");
@@ -201,13 +203,14 @@ fn get_notifications_deep_copies_domovoi_state_like_csharp() {
     settings.hardforks.clear();
     settings.hardforks.insert(Hardfork::HfDomovoi, 0);
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
         None,
         settings,
         TEST_MODE_GAS,
+        None,
         None,
     )
     .expect("application engine");
@@ -293,13 +296,14 @@ fn runtime_check_witness_faults_on_invalid_public_key_like_csharp() {
         .expect("emit Runtime.CheckWitness");
     builder.emit_opcode(OpCode::RET);
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
         None,
         ProtocolSettings::default(),
         TEST_MODE_GAS,
+        None,
         None,
     )
     .expect("application engine");
@@ -321,13 +325,14 @@ fn verification_trigger_without_persisting_block_uses_configured_hardforks_like_
         .expect("emit Runtime.GetRandom");
     builder.emit_opcode(OpCode::RET);
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Verification,
         None,
         Arc::new(DataCache::new(false)),
         None,
         settings,
         TEST_MODE_GAS,
+        None,
         None,
     )
     .expect("application engine");
@@ -344,13 +349,14 @@ fn default_policy_storage_exec_fee_factor_charges_push1_as_thirty_datoshi() {
     let snapshot = Arc::new(DataCache::new(false));
     seed_policy_exec_fee_factor(&snapshot, 30);
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::clone(&snapshot),
         None,
         ProtocolSettings::default(),
         TEST_MODE_GAS,
+        None,
         None,
     )
     .expect("application engine");
@@ -372,13 +378,14 @@ fn policy_provider_legacy_exec_fee_factor_is_scaled_until_faun_height() {
         let snapshot = Arc::new(DataCache::new(false));
         seed_policy_exec_fee_factor(&snapshot, 30);
 
-        let mut engine = ApplicationEngine::new(
+        let mut engine = ApplicationEngine::new_with_native_contract_provider(
             TriggerType::Application,
             None,
             Arc::clone(&snapshot),
             None,
             ProtocolSettings::default(),
             TEST_MODE_GAS,
+            None,
             None,
         )
         .expect("application engine");
@@ -396,13 +403,14 @@ fn external_vm_loop_hits_gas_limit_before_instruction_cap() {
     let mut builder = ScriptBuilder::new();
     builder.emit_jump(OpCode::JMP_L, 0).expect("jump loop");
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
         None,
         ProtocolSettings::default(),
         1_000_000,
+        None,
         None,
     )
     .expect("application engine");
@@ -429,13 +437,14 @@ fn invocation_counter_uses_explicit_context_script_hash_like_csharp() {
         .expect("emit Runtime.GetInvocationCounter");
     builder.emit_opcode(OpCode::RET);
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
         None,
         ProtocolSettings::default(),
         TEST_MODE_GAS,
+        None,
         None,
     )
     .expect("application engine");
@@ -470,13 +479,14 @@ fn external_vm_pointer_result_halts_like_local_engine() {
         0x00,
         OpCode::RET.byte(),
     ];
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
         None,
         ProtocolSettings::default(),
         TEST_MODE_GAS,
+        None,
         None,
     )
     .expect("application engine");

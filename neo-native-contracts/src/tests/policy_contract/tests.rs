@@ -509,7 +509,7 @@ fn echidna_policy_settings_require_initialized_storage() {
     seed_current_block(&cache, 0);
     let mut settings = neo_config::ProtocolSettings::default();
     settings.hardforks.insert(Hardfork::HfEchidna, 0);
-    let engine = ApplicationEngine::new(
+    let engine = ApplicationEngine::new_with_native_contract_provider(
         neo_primitives::TriggerType::Application,
         None,
         std::sync::Arc::new(cache),
@@ -517,6 +517,7 @@ fn echidna_policy_settings_require_initialized_storage() {
         settings.clone(),
         0,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
 

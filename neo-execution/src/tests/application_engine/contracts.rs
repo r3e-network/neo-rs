@@ -530,7 +530,7 @@ fn native_method_storage_fee_is_charged_in_datoshi() {
     let native_hash = native.hash();
     NativeContractLookup::install_provider(Arc::new(SingleNativeProvider { native }));
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
@@ -538,6 +538,7 @@ fn native_method_storage_fee_is_charged_in_datoshi() {
         ProtocolSettings::default(),
         TEST_MODE_GAS,
         None,
+        NativeContractLookup::native_contract_provider(),
     )
     .expect("engine");
 
@@ -560,7 +561,7 @@ fn native_call_uses_provider_captured_at_engine_creation() {
     let provider = Arc::new(SingleNativeProvider { native }) as Arc<dyn NativeContractProvider>;
 
     let mut engine = NativeContractLookup::with_scoped_provider(provider, || {
-        ApplicationEngine::new(
+        ApplicationEngine::new_with_native_contract_provider(
             TriggerType::Application,
             None,
             Arc::new(DataCache::new(false)),
@@ -568,6 +569,7 @@ fn native_call_uses_provider_captured_at_engine_creation() {
             ProtocolSettings::default(),
             TEST_MODE_GAS,
             None,
+            NativeContractLookup::native_contract_provider(),
         )
     })
     .expect("engine");
@@ -590,7 +592,7 @@ fn native_call_uses_resolved_method_index_after_hardfork_selection() {
 
     let mut settings = ProtocolSettings::default();
     settings.hardforks.insert(Hardfork::HfEchidna, 0);
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
@@ -598,6 +600,7 @@ fn native_call_uses_resolved_method_index_after_hardfork_selection() {
         settings,
         TEST_MODE_GAS,
         None,
+        NativeContractLookup::native_contract_provider(),
     )
     .expect("engine");
 
@@ -616,7 +619,7 @@ fn committee_witness_uses_provider_captured_at_engine_creation() {
     }) as Arc<dyn NativeContractProvider>;
 
     let engine = NativeContractLookup::with_scoped_provider(provider, || {
-        ApplicationEngine::new(
+        ApplicationEngine::new_with_native_contract_provider(
             TriggerType::Application,
             None,
             Arc::new(DataCache::new(false)),
@@ -624,6 +627,7 @@ fn committee_witness_uses_provider_captured_at_engine_creation() {
             ProtocolSettings::default(),
             TEST_MODE_GAS,
             None,
+            NativeContractLookup::native_contract_provider(),
         )
     })
     .expect("engine");
@@ -652,7 +656,7 @@ fn storage_context_uses_provider_captured_at_engine_creation() {
     }) as Arc<dyn NativeContractProvider>;
 
     let mut engine = NativeContractLookup::with_scoped_provider(provider, || {
-        ApplicationEngine::new(
+        ApplicationEngine::new_with_native_contract_provider(
             TriggerType::Application,
             None,
             Arc::new(DataCache::new(false)),
@@ -660,6 +664,7 @@ fn storage_context_uses_provider_captured_at_engine_creation() {
             ProtocolSettings::default(),
             TEST_MODE_GAS,
             None,
+            NativeContractLookup::native_contract_provider(),
         )
     })
     .expect("engine");
@@ -701,7 +706,7 @@ fn oracle_response_witness_uses_provider_captured_at_engine_creation() {
     tx.set_signers(vec![Signer::new(delegated_signer, WitnessScope::NONE)]);
 
     let engine = NativeContractLookup::with_scoped_provider(provider, || {
-        ApplicationEngine::new(
+        ApplicationEngine::new_with_native_contract_provider(
             TriggerType::Application,
             Some(Arc::new(tx)),
             Arc::new(DataCache::new(false)),
@@ -709,6 +714,7 @@ fn oracle_response_witness_uses_provider_captured_at_engine_creation() {
             ProtocolSettings::default(),
             TEST_MODE_GAS,
             None,
+            NativeContractLookup::native_contract_provider(),
         )
     })
     .expect("engine");
@@ -751,7 +757,7 @@ fn group_witness_uses_provider_captured_at_engine_creation() {
     tx.set_signers(vec![signer]);
 
     let mut engine = NativeContractLookup::with_scoped_provider(provider, || {
-        ApplicationEngine::new(
+        ApplicationEngine::new_with_native_contract_provider(
             TriggerType::Application,
             Some(Arc::new(tx)),
             Arc::new(DataCache::new(false)),
@@ -759,6 +765,7 @@ fn group_witness_uses_provider_captured_at_engine_creation() {
             ProtocolSettings::default(),
             TEST_MODE_GAS,
             None,
+            NativeContractLookup::native_contract_provider(),
         )
     })
     .expect("engine");
@@ -796,7 +803,7 @@ fn call_contract_uses_execution_state_script_hash_for_caller() {
     let mut contracts: HashMap<UInt160, ContractState> = HashMap::new();
     contracts.insert(target_hash, build_mock_contract(target_hash));
 
-    let mut engine = ApplicationEngine::new_with_preloaded_native(
+    let mut engine = ApplicationEngine::new_with_preloaded_native_and_native_contract_provider(
         TriggerType::Application,
         None,
         snapshot,
@@ -806,6 +813,7 @@ fn call_contract_uses_execution_state_script_hash_for_caller() {
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
         None,
+        NativeContractLookup::native_contract_provider(),
     )
     .expect("engine");
 
@@ -862,7 +870,7 @@ fn call_contract_dynamic_rejects_policy_blocked_target() {
     let mut contracts: HashMap<UInt160, ContractState> = HashMap::new();
     contracts.insert(target_hash, build_mock_contract(target_hash));
     let snapshot = Arc::new(DataCache::new(false));
-    let mut engine = ApplicationEngine::new_with_preloaded_native(
+    let mut engine = ApplicationEngine::new_with_preloaded_native_and_native_contract_provider(
         TriggerType::Application,
         None,
         snapshot,
@@ -872,6 +880,7 @@ fn call_contract_dynamic_rejects_policy_blocked_target() {
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
         None,
+        NativeContractLookup::native_contract_provider(),
     )
     .expect("engine");
 
@@ -916,7 +925,7 @@ fn dynamic_contract_policy_uses_provider_captured_at_engine_creation() {
     contracts.insert(target_hash, build_mock_contract(target_hash));
 
     let mut engine = NativeContractLookup::with_scoped_provider(provider, || {
-        ApplicationEngine::new_with_preloaded_native(
+        ApplicationEngine::new_with_preloaded_native_and_native_contract_provider(
             TriggerType::Application,
             None,
             Arc::new(DataCache::new(false)),
@@ -926,6 +935,7 @@ fn dynamic_contract_policy_uses_provider_captured_at_engine_creation() {
             contracts,
             Arc::new(PlMutex::new(NativeContractsCache::default())),
             None,
+            NativeContractLookup::native_contract_provider(),
         )
     })
     .expect("engine");
@@ -968,7 +978,7 @@ fn call_contract_internal_checks_policy_before_return_type_mismatch() {
         .cloned()
         .expect("balanceOf method");
     let snapshot = Arc::new(DataCache::new(false));
-    let mut engine = ApplicationEngine::new_with_preloaded_native(
+    let mut engine = ApplicationEngine::new_with_preloaded_native_and_native_contract_provider(
         TriggerType::Application,
         None,
         snapshot,
@@ -978,6 +988,7 @@ fn call_contract_internal_checks_policy_before_return_type_mismatch() {
         HashMap::new(),
         Arc::new(PlMutex::new(NativeContractsCache::default())),
         None,
+        NativeContractLookup::native_contract_provider(),
     )
     .expect("engine");
 
@@ -1010,7 +1021,7 @@ fn call_contract_dynamic_faults_when_policy_provider_is_missing() {
     let mut contracts: HashMap<UInt160, ContractState> = HashMap::new();
     contracts.insert(target_hash, build_mock_contract(target_hash));
     let snapshot = Arc::new(DataCache::new(false));
-    let mut engine = ApplicationEngine::new_with_preloaded_native(
+    let mut engine = ApplicationEngine::new_with_preloaded_native_and_native_contract_provider(
         TriggerType::Application,
         None,
         snapshot,
@@ -1020,6 +1031,7 @@ fn call_contract_dynamic_faults_when_policy_provider_is_missing() {
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
         None,
+        NativeContractLookup::native_contract_provider(),
     )
     .expect("engine");
 
@@ -1078,7 +1090,7 @@ fn build_returning_mock(
 /// from.
 fn engine_with_entry(contracts: HashMap<UInt160, ContractState>) -> ApplicationEngine {
     let snapshot = Arc::new(DataCache::new(false));
-    let mut engine = ApplicationEngine::new_with_preloaded_native(
+    let mut engine = ApplicationEngine::new_with_preloaded_native_and_native_contract_provider(
         TriggerType::Application,
         None,
         snapshot,
@@ -1088,6 +1100,7 @@ fn engine_with_entry(contracts: HashMap<UInt160, ContractState>) -> ApplicationE
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
         None,
+        NativeContractLookup::native_contract_provider(),
     )
     .expect("engine");
     engine
@@ -1398,7 +1411,7 @@ fn returning_call_exception_cannot_be_caught_below_native_frame() {
     );
 
     let snapshot = Arc::new(DataCache::new(false));
-    let mut engine = ApplicationEngine::new_with_preloaded_native(
+    let mut engine = ApplicationEngine::new_with_preloaded_native_and_native_contract_provider(
         TriggerType::Application,
         None,
         snapshot,
@@ -1408,6 +1421,7 @@ fn returning_call_exception_cannot_be_caught_below_native_frame() {
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
         None,
+        NativeContractLookup::native_contract_provider(),
     )
     .expect("engine");
     engine
@@ -1475,7 +1489,7 @@ fn queued_native_call_exception_cannot_be_caught_below_native_frame() {
     );
 
     let snapshot = Arc::new(DataCache::new(false));
-    let mut engine = ApplicationEngine::new_with_preloaded_native(
+    let mut engine = ApplicationEngine::new_with_preloaded_native_and_native_contract_provider(
         TriggerType::Application,
         None,
         snapshot,
@@ -1485,6 +1499,7 @@ fn queued_native_call_exception_cannot_be_caught_below_native_frame() {
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
         None,
+        NativeContractLookup::native_contract_provider(),
     )
     .expect("engine");
     engine

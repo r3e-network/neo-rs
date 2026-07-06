@@ -63,7 +63,7 @@ fn call(snapshot: Arc<DataCache>, signer: UInt160, pubkey: &[u8], method: &str) 
         .emit_syscall("System.Contract.Call")
         .expect("System.Contract.Call");
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
         snapshot,
@@ -71,6 +71,7 @@ fn call(snapshot: Arc<DataCache>, signer: UInt160, pubkey: &[u8], method: &str) 
         ProtocolSettings::default(),
         2000_00000000, // > the 1000-GAS register price
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
     engine

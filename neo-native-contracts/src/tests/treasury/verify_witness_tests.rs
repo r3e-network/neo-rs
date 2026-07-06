@@ -37,7 +37,7 @@ fn call_verify(
     header.set_index(block_height);
     let block = Block::from_parts(header, Vec::new());
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
         snapshot,
@@ -45,6 +45,7 @@ fn call_verify(
         settings,
         10_000_000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
     engine

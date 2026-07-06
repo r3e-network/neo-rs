@@ -96,7 +96,7 @@ where
         .emit_syscall("System.Contract.Call")
         .expect("System.Contract.Call");
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
         snapshot,
@@ -104,6 +104,7 @@ where
         settings,
         2000_00000000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
     engine

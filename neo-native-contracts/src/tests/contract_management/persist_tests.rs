@@ -23,7 +23,7 @@ fn on_persist_engine(
     header.set_index(index);
     header.set_timestamp(timestamp);
     let block = Block::from_parts(header, Vec::new());
-    ApplicationEngine::new(
+    ApplicationEngine::new_with_native_contract_provider(
         TriggerType::OnPersist,
         None,
         Arc::clone(snapshot),
@@ -31,6 +31,7 @@ fn on_persist_engine(
         settings.clone(),
         0,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds")
 }

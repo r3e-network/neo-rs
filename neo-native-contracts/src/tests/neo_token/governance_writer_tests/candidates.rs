@@ -38,7 +38,7 @@ fn get_candidates_filters_blocked_and_projects_votes() {
         StorageItem::from_bytes(Vec::new()),
     );
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(cache),
@@ -46,6 +46,7 @@ fn get_candidates_filters_blocked_and_projects_votes() {
         ProtocolSettings::default(),
         10_000_000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
 
@@ -91,7 +92,7 @@ fn get_all_candidates_iterator_filters_and_projects() {
         StorageItem::from_bytes(Vec::new()),
     );
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(cache),
@@ -99,6 +100,7 @@ fn get_all_candidates_iterator_filters_and_projects() {
         ProtocolSettings::default(),
         10_000_000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
 

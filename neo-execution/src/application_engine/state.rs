@@ -40,8 +40,14 @@ impl ApplicationEngine {
         }
     }
 
-    /// Creates a new application engine using an owned optional persisting block.
-    pub fn new(
+    /// Creates a new application engine using an owned optional persisting block
+    /// and an explicit native-contract provider.
+    ///
+    /// Composition roots and tests must pass the provider they want this engine
+    /// to observe. Keeping provider selection outside the constructor prevents
+    /// long-running services from depending on the process-global compatibility
+    /// bridge.
+    pub fn new_with_native_contract_provider(
         trigger: TriggerType,
         script_container: Option<Arc<dyn Verifiable>>,
         snapshot_cache: Arc<DataCache>,
@@ -49,35 +55,13 @@ impl ApplicationEngine {
         protocol_settings: ProtocolSettings,
         gas_limit: i64,
         diagnostic: Option<Box<dyn Diagnostic>>,
+        native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
     ) -> CoreResult<Self> {
-        Self::new_with_shared_block(
-            trigger,
-            script_container,
-            snapshot_cache,
-            persisting_block.map(Arc::new),
-            protocol_settings,
-            gas_limit,
-            diagnostic,
-        )
-    }
-
-    /// Creates a new application engine using a shared optional persisting block.
-    pub fn new_with_shared_block(
-        trigger: TriggerType,
-        script_container: Option<Arc<dyn Verifiable>>,
-        snapshot_cache: Arc<DataCache>,
-        persisting_block: Option<Arc<Block>>,
-        protocol_settings: ProtocolSettings,
-        gas_limit: i64,
-        diagnostic: Option<Box<dyn Diagnostic>>,
-    ) -> CoreResult<Self> {
-        let native_contract_provider =
-            crate::native_contract_provider::NativeContractLookup::native_contract_provider();
         Self::new_with_shared_block_and_native_contract_provider(
             trigger,
             script_container,
             snapshot_cache,
-            persisting_block,
+            persisting_block.map(Arc::new),
             protocol_settings,
             gas_limit,
             diagnostic,
@@ -172,35 +156,6 @@ impl ApplicationEngine {
         }
 
         Ok(app)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    /// Creates a new engine with preloaded native contract state and cache.
-    pub fn new_with_preloaded_native(
-        trigger: TriggerType,
-        script_container: Option<Arc<dyn Verifiable>>,
-        snapshot_cache: Arc<DataCache>,
-        persisting_block: Option<Arc<Block>>,
-        protocol_settings: ProtocolSettings,
-        gas_limit: i64,
-        contracts: HashMap<UInt160, ContractState>,
-        native_contract_cache: Arc<Mutex<NativeContractsCache>>,
-        diagnostic: Option<Box<dyn Diagnostic>>,
-    ) -> CoreResult<Self> {
-        let native_contract_provider =
-            crate::native_contract_provider::NativeContractLookup::native_contract_provider();
-        Self::new_with_preloaded_native_and_native_contract_provider(
-            trigger,
-            script_container,
-            snapshot_cache,
-            persisting_block,
-            protocol_settings,
-            gas_limit,
-            contracts,
-            native_contract_cache,
-            diagnostic,
-            native_contract_provider,
-        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -718,9 +673,8 @@ impl ApplicationEngine {
     }
 
     pub(super) fn policy_contract(&self) -> Option<Arc<dyn NativeContract>> {
-        // Use the provider captured when this engine was constructed. The
-        // compatibility constructors read the process-global bridge before
-        // construction; engine methods do not read it later.
+        // Use the provider captured when this engine was constructed. Engine
+        // methods do not read the process-global compatibility bridge.
         self.native_contract_by_name("PolicyContract")
     }
 
@@ -740,7 +694,7 @@ impl ApplicationEngine {
     ///
     /// # Example
     /// ```ignore
-    /// let engine = ApplicationEngine::new(...)?;
+    /// let engine = ApplicationEngine::new_with_native_contract_provider(...)?;
     /// engine.execute();
     /// let changes = engine.extract_storage_changes();
     /// for (key_bytes, value_opt) in changes {

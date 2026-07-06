@@ -46,7 +46,7 @@ fn vote_assigns_weight_distributes_gas_and_records_target() {
 
     let mut header = BlockHeader::default();
     header.set_index(100);
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
         Arc::clone(&snapshot),
@@ -54,6 +54,7 @@ fn vote_assigns_weight_distributes_gas_and_records_target() {
         ProtocolSettings::default(),
         2000_00000000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
     engine

@@ -33,7 +33,7 @@ fn run_signed(script: Vec<u8>, signers: &[UInt160]) -> (VmState, bool) {
     tx.set_witnesses(signers.iter().map(|_| Witness::empty()).collect());
     let container: Arc<dyn Verifiable> = Arc::new(tx);
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
         Arc::new(DataCache::new(false)),
@@ -41,6 +41,7 @@ fn run_signed(script: Vec<u8>, signers: &[UInt160]) -> (VmState, bool) {
         ProtocolSettings::default(),
         10_000_000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
     engine

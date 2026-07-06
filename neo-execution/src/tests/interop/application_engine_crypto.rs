@@ -13,13 +13,14 @@ fn engine_with_gorgon(active: bool) -> ApplicationEngine {
     } else {
         settings.hardforks.remove(&Hardfork::HfGorgon);
     }
-    ApplicationEngine::new(
+    ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(Arc::new(neo_payloads::Transaction::new())),
         Arc::new(DataCache::new(false)),
         None,
         settings,
         crate::application_engine::TEST_MODE_GAS,
+        None,
         None,
     )
     .expect("application engine")

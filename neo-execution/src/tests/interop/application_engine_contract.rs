@@ -6,13 +6,14 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 fn test_engine() -> ApplicationEngine {
-    ApplicationEngine::new(
+    ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
         None,
         ProtocolSettings::default(),
         1_000_000,
+        None,
         None,
     )
     .expect("engine builds")

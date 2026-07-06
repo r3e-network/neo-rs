@@ -123,7 +123,7 @@ fn signed_tx(signer: UInt160) -> Transaction {
 fn run(script: Vec<u8>, tx: Transaction, snapshot: Arc<DataCache>) -> (VmState, Vec<u8>) {
     crate::install();
     let container: Arc<dyn Verifiable> = Arc::new(tx);
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
         snapshot,
@@ -131,6 +131,7 @@ fn run(script: Vec<u8>, tx: Transaction, snapshot: Arc<DataCache>) -> (VmState, 
         ProtocolSettings::default(),
         2000_00000000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
     engine
@@ -180,7 +181,7 @@ fn request_writes_record_id_list_counter_and_mints_response_gas() {
 
     crate::install();
     let container: Arc<dyn Verifiable> = Arc::new(tx);
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
         Arc::clone(&snapshot),
@@ -188,6 +189,7 @@ fn request_writes_record_id_list_counter_and_mints_response_gas() {
         ProtocolSettings::default(),
         2000_00000000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
     engine
@@ -399,7 +401,7 @@ fn finish_notifies_and_queues_the_callback() {
 
     crate::install();
     let container: Arc<dyn Verifiable> = Arc::new(tx);
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
         Arc::clone(&snapshot),
@@ -407,6 +409,7 @@ fn finish_notifies_and_queues_the_callback() {
         ProtocolSettings::default(),
         2000_00000000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
     engine
@@ -470,7 +473,7 @@ fn verify_accepts_only_oracle_response_transactions() {
     crate::install();
     let make_engine = |tx: Transaction| {
         let container: Arc<dyn Verifiable> = Arc::new(tx);
-        ApplicationEngine::new(
+        ApplicationEngine::new_with_native_contract_provider(
             TriggerType::Application,
             Some(container),
             Arc::new(DataCache::new(false)),
@@ -478,6 +481,7 @@ fn verify_accepts_only_oracle_response_transactions() {
             ProtocolSettings::default(),
             10_00000000,
             None,
+            Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
         )
         .expect("engine builds")
     };
@@ -504,7 +508,7 @@ fn post_persist_engine(
     crate::install();
     let mut header = BlockHeader::default();
     header.set_index(block_index);
-    ApplicationEngine::new(
+    ApplicationEngine::new_with_native_contract_provider(
         TriggerType::PostPersist,
         None,
         snapshot,
@@ -512,6 +516,7 @@ fn post_persist_engine(
         ProtocolSettings::default(),
         2000_00000000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds")
 }

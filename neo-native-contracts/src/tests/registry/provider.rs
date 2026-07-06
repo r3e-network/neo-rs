@@ -93,7 +93,7 @@ fn provider_current_block_index_feeds_engine_without_persisting_block() {
         ),
     );
 
-    let engine = ApplicationEngine::new(
+    let engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::clone(&cache),
@@ -101,6 +101,7 @@ fn provider_current_block_index_feeds_engine_without_persisting_block() {
         ProtocolSettings::default(),
         1_000_000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
 

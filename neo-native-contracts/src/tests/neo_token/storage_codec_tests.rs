@@ -647,7 +647,7 @@ fn total_supply_returns_constant_not_storage_slot() {
         NeoToken::total_supply_key(),
         StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(42))),
     );
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         neo_primitives::TriggerType::Application,
         None,
         Arc::new(cache),
@@ -655,6 +655,7 @@ fn total_supply_returns_constant_not_storage_slot() {
         ProtocolSettings::default(),
         10_000_000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
 

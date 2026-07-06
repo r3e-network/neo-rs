@@ -58,7 +58,7 @@ fn gas_transfer_from_calling_contract_uses_contract_as_witness() {
     )]);
 
     let snapshot = Arc::new(cache);
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(Arc::new(tx)),
         Arc::clone(&snapshot),
@@ -66,6 +66,7 @@ fn gas_transfer_from_calling_contract_uses_contract_as_witness() {
         ProtocolSettings::default(),
         10_000_000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
 
@@ -295,7 +296,7 @@ fn total_supply_invoke_reads_full_bigint() {
         StorageItem::from_bytes(crate::bigint_to_storage_bytes(&supply)),
     );
     let snapshot = Arc::new(cache);
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         snapshot,
@@ -303,6 +304,7 @@ fn total_supply_invoke_reads_full_bigint() {
         ProtocolSettings::default(),
         10_000_000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
 
@@ -345,7 +347,7 @@ fn gas_burn_debits_balance_and_supply() {
         StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(100))),
     );
     let snapshot = Arc::new(cache);
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::clone(&snapshot),
@@ -353,6 +355,7 @@ fn gas_burn_debits_balance_and_supply() {
         ProtocolSettings::default(),
         10_000_000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
 
@@ -454,7 +457,7 @@ mod persist_tests {
 
     fn on_persist_engine(snapshot: Arc<DataCache>, block: Block) -> ApplicationEngine {
         // C# runs the native OnPersist script with gas limit 0.
-        ApplicationEngine::new(
+        ApplicationEngine::new_with_native_contract_provider(
             TriggerType::OnPersist,
             None,
             snapshot,
@@ -462,6 +465,7 @@ mod persist_tests {
             ProtocolSettings::default(),
             0,
             None,
+            Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
         )
         .expect("engine builds")
     }
@@ -493,7 +497,7 @@ mod persist_tests {
     fn initialize_mints_initial_gas_distribution_to_bft_address() {
         let settings = ProtocolSettings::default();
         let snapshot = Arc::new(DataCache::new(false));
-        let mut engine = ApplicationEngine::new(
+        let mut engine = ApplicationEngine::new_with_native_contract_provider(
             TriggerType::OnPersist,
             None,
             Arc::clone(&snapshot),
@@ -501,6 +505,7 @@ mod persist_tests {
             settings.clone(),
             0,
             None,
+            Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
         )
         .expect("engine builds");
 

@@ -14,7 +14,7 @@ fn engine_for(
 ) -> ApplicationEngine {
     let mut header = BlockHeader::default();
     header.set_index(index);
-    ApplicationEngine::new(
+    ApplicationEngine::new_with_native_contract_provider(
         trigger,
         None,
         snapshot,
@@ -22,6 +22,7 @@ fn engine_for(
         settings,
         0,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds")
 }

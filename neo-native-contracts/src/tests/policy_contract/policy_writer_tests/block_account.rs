@@ -26,7 +26,7 @@ fn real_policy_blocked_storage_rejects_system_contract_call_target() {
         .emit_syscall("System.Contract.Call")
         .expect("System.Contract.Call");
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
         Arc::new(cache),
@@ -34,6 +34,7 @@ fn real_policy_blocked_storage_rejects_system_contract_call_target() {
         settings,
         2000_00000000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
     engine

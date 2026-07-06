@@ -46,7 +46,7 @@ fn transfer_moves_balance_and_follows_vote_weight() {
     b.emit_push(&NeoToken::script_hash().to_array());
     b.emit_syscall("System.Contract.Call").expect("call");
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
         Arc::clone(&snapshot),
@@ -54,6 +54,7 @@ fn transfer_moves_balance_and_follows_vote_weight() {
         ProtocolSettings::default(),
         2000_00000000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
     engine

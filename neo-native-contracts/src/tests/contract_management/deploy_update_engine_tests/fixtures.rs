@@ -105,7 +105,7 @@ pub(super) fn engine_for(
     tx.set_signers(vec![Signer::new(sender, WitnessScope::GLOBAL)]);
     tx.set_witnesses(vec![Witness::empty()]);
     let container: Arc<dyn Verifiable> = Arc::new(tx);
-    ApplicationEngine::new(
+    ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
         snapshot,
@@ -113,6 +113,7 @@ pub(super) fn engine_for(
         settings,
         1000_00000000, // covers the 10-GAS minimum deployment fee
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds")
 }

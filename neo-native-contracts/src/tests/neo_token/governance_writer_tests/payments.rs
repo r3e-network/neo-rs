@@ -27,7 +27,7 @@ fn payment_engine(
         tx.set_witnesses(vec![Witness::empty()]);
         Arc::new(tx) as Arc<dyn Verifiable>
     });
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         container,
         snapshot,
@@ -35,6 +35,7 @@ fn payment_engine(
         ProtocolSettings::default(),
         10_000_000,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
     engine.set_calling_script_hash(caller);
@@ -142,7 +143,7 @@ fn registration_payment_engine(
     script: Vec<u8>,
     gas_limit: i64,
 ) -> ApplicationEngine {
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
         snapshot,
@@ -150,6 +151,7 @@ fn registration_payment_engine(
         settings,
         gas_limit,
         None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
     engine

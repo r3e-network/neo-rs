@@ -6,13 +6,14 @@ use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
 fn storage_engine() -> ApplicationEngine {
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
         None,
         ProtocolSettings::default(),
         1_000_000,
+        None,
         None,
     )
     .expect("engine builds");

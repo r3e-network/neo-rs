@@ -27,9 +27,16 @@
 //! let node = NodeBuilder::new().with_native_contract_provider(provider).build()?;
 //!
 //! // In tests or replay batches that need a temporary provider:
-//! let engine = NativeContractLookup::with_scoped_provider(provider, || {
-//!     ApplicationEngine::new(...)
-//! })?;
+//! let engine = ApplicationEngine::new_with_native_contract_provider(
+//!     trigger,
+//!     container,
+//!     snapshot,
+//!     block,
+//!     settings,
+//!     gas_limit,
+//!     diagnostic,
+//!     Some(provider),
+//! )?;
 //! ```
 //!
 //! The trait is intentionally narrow — it only exposes the operations

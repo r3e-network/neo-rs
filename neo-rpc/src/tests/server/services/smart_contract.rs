@@ -212,7 +212,7 @@ fn deploy_verify_contract(system: &Arc<crate::server::NodeContext>) -> UInt160 {
     tx.set_signers(vec![Signer::new(sender, WitnessScope::CALLED_BY_ENTRY)]);
     tx.add_witness(Witness::new());
 
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(Arc::new(tx)),
         Arc::clone(&snapshot),
@@ -220,6 +220,7 @@ fn deploy_verify_contract(system: &Arc<crate::server::NodeContext>) -> UInt160 {
         system.settings().as_ref().clone(),
         50_000_000_000,
         None,
+        Some(system.native_contract_provider()),
     )
     .expect("engine");
     engine
