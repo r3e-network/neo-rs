@@ -3,6 +3,7 @@ use neo_config::ProtocolSettings;
 use neo_error::CoreError;
 use neo_error::CoreResult;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Cache of native contract method metadata, mirroring the C# NativeContractsCache behaviour.
 #[derive(Default)]
@@ -28,10 +29,9 @@ pub struct NativeContractsCacheEntry {
     methods_by_name: HashMap<String, Vec<CachedNativeMethod>>,
 }
 
-#[derive(Clone)]
 struct CachedNativeMethod {
     method_index: usize,
-    method: NativeMethod,
+    method: Arc<NativeMethod>,
 }
 
 /// Native method metadata selected by the engine for an invocation.
@@ -39,11 +39,13 @@ struct CachedNativeMethod {
 /// `method_index` is the index in `NativeContract::methods()`. For standard
 /// native contracts that method slice is cloned from the concrete binding table
 /// in the same order, so the index can be reused to call the already-resolved
-/// Rust handler without repeating name/arity/hardfork selection.
+/// Rust handler without repeating name/arity/hardfork selection. The method
+/// metadata is shared from the cache, so resolving a native call only clones one
+/// `Arc` handle instead of deep-cloning the ABI descriptor.
 #[derive(Clone)]
 pub struct ResolvedNativeMethod {
     method_index: usize,
-    method: NativeMethod,
+    method: Arc<NativeMethod>,
 }
 
 impl ResolvedNativeMethod {
@@ -54,7 +56,7 @@ impl ResolvedNativeMethod {
 
     /// ABI metadata selected for this invocation.
     pub fn method(&self) -> &NativeMethod {
-        &self.method
+        self.method.as_ref()
     }
 }
 
@@ -62,12 +64,13 @@ impl NativeContractsCacheEntry {
     fn from_contract(contract: &dyn NativeContract) -> Self {
         let mut methods_by_name: HashMap<String, Vec<CachedNativeMethod>> = HashMap::new();
         for (method_index, method) in contract.methods().iter().enumerate() {
+            let method = Arc::new(method.clone());
             methods_by_name
                 .entry(method.name.clone())
                 .or_default()
                 .push(CachedNativeMethod {
                     method_index,
-                    method: method.clone(),
+                    method,
                 });
         }
 
