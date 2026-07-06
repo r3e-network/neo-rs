@@ -231,9 +231,10 @@ The detailed rules for this style live in
   block version, transaction merkle root, and duplicate transaction hashes), so
   the queue is no longer a hash-only placeholder. Execution, native
   persistence, state-root updates, and durable storage still happen only inside
-  `neo-blockchain`. RPC `submitblock` runs that same preflight before sending a
-  decoded block into the service loop, preserving the RPC-visible `Invalid`
-  relay result for malformed block structure. Peer-relayed block bursts enter
+  `neo-blockchain`. RPC `submitblock` runs that same preflight before submitting
+  decoded blocks through `BlockImport::import(..., BlockOrigin::Rpc)`,
+  preserving the RPC-visible `Invalid` relay result for malformed block
+  structure or rejected height-plausible imports. Peer-relayed block bursts enter
   the live inventory path through `BlockchainHandle::submit_inventory_blocks`,
   consensus-produced blocks use `submit_inventory_block`, extensible payloads
   use `submit_inventory_extensible`, and startup genesis bootstrapping uses

@@ -19,7 +19,7 @@ use crate::server::rpc_server::RpcServer;
 use neo_blockchain::RelayResult;
 use neo_payloads::VerifyResult;
 use neo_payloads::{Block, InventoryType, Transaction};
-use neo_runtime::BlockImport;
+use neo_runtime::{BlockImport, BlockImportOutcome, BlockOrigin};
 use serde_json::{Value, json};
 use tokio::runtime::{Handle, Runtime};
 use tokio::task::block_in_place;
@@ -172,19 +172,18 @@ pub(super) fn relay_block(server: &RpcServer, block: Block) -> Result<RelayResul
             result: VerifyResult::Invalid,
         });
     }
-    let imported = block_on_service(blockchain.import_block(block))?
+    let outcome = block_on_service(blockchain.import(block, BlockOrigin::Rpc))?
         .map_err(|err| internal_error(err.to_string()))?;
     Ok(RelayResult {
         hash,
         inventory_type: InventoryType::Block,
         block_index: Some(index),
-        result: if imported {
-            VerifyResult::Succeed
-        } else {
+        result: match outcome {
+            BlockImportOutcome::Imported(_) => VerifyResult::Succeed,
             // The import path rejected a height-plausible block — the
             // C# `OnNewBlock` verification branches return `Invalid`
             // for these.
-            VerifyResult::Invalid
+            BlockImportOutcome::NotImported { .. } => VerifyResult::Invalid,
         },
     })
 }
