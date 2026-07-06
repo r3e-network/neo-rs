@@ -21,7 +21,6 @@ use crate::empty_block_fast_forward::stage_empty_block_fast_forward;
 use crate::import::Import;
 use crate::internal::ImportDisposition;
 use crate::native_persist::NativePersistOptions;
-use crate::persist_completed::PersistCompleted;
 use crate::relay_result::RelayResult;
 use crate::service::{BlockchainService, MempoolLike};
 use crate::service_context::BlockPersistContext;
@@ -38,6 +37,8 @@ mod extensible;
 mod headers;
 #[path = "../handlers/initialize.rs"]
 mod initialize;
+#[path = "../handlers/persist_completed.rs"]
+mod persist_completed;
 #[path = "../handlers/reverify.rs"]
 mod reverify;
 #[path = "../handlers/transactions.rs"]
@@ -129,61 +130,6 @@ where
             }
         }
         Ok(())
-    }
-
-    /// Handle a [`BlockchainCommand::PersistCompleted`]: update hot ledger
-    /// caches, evict persisted transactions from the mempool cache, flush the
-    /// durable store, and broadcast the persistence event.
-    pub(crate) async fn handle_persist_completed(&self, persist: PersistCompleted) {
-        let PersistCompleted { block } = persist;
-        let index = block.index();
-        let hash = match Self::try_block_hash(block.as_ref()) {
-            Ok(hash) => hash,
-            Err(error) => {
-                warn!(
-                    target: "neo",
-                    error = %error,
-                    index,
-                    "persist completed block hash computation failed"
-                );
-                return;
-            }
-        };
-        debug!(
-            target: "neo",
-            index,
-            tx_count = block.transactions.len(),
-            "persist completed for block"
-        );
-
-        if let Err(error) = self.ledger.insert_block_arc(Arc::clone(&block)) {
-            warn!(
-                target: "neo",
-                %error,
-                index,
-                "failed to insert persisted block into ledger cache"
-            );
-        }
-
-        for transaction in &block.transactions {
-            if let Ok(hash) = transaction.try_hash() {
-                self.ledger.remove_transaction(&hash);
-            }
-        }
-
-        self.header_cache.remove_up_to(index);
-        // Flush the persisted state through to the durable backing store
-        // (C# snapshot.Commit() at the end of Blockchain.Persist).
-        self.system.commit_to_store();
-        self.system
-            .block_committed_with_context(block.as_ref(), BlockPersistContext::live());
-        self.event_tx
-            .send(crate::RuntimeEvent::Imported {
-                hash,
-                height: index,
-                timestamp: block.header.timestamp(),
-            })
-            .ok();
     }
 
     /// Handle a [`BlockchainCommand::Import`] request.
