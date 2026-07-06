@@ -7,6 +7,7 @@ use crate::header_cache::HeaderCache;
 use crate::ledger_context::LedgerContext;
 use crate::service::MempoolLike;
 use crate::service_context::SystemContext;
+use neo_payloads::Block;
 use neo_payloads::Transaction;
 use neo_payloads::header::Header;
 use neo_primitives::UInt256;
@@ -15,6 +16,7 @@ use neo_serialization::BinarySerializer;
 use neo_storage::StorageKey;
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::oneshot;
 
@@ -131,7 +133,7 @@ impl MempoolLike for RecordingMempool {
 
 #[test]
 fn verified_import_pipeline_uses_explicit_native_providers() {
-    let source = include_str!("../../pipeline/handlers.rs");
+    let source = include_str!("../../handlers/verification.rs");
     let import_source = include_str!("../../handlers/import.rs");
     let helper_start = source
         .find("fn verify_import_block_with_pipeline")
@@ -167,7 +169,7 @@ fn verified_import_pipeline_uses_explicit_native_providers() {
 
 #[test]
 fn store_header_verification_uses_system_native_provider() {
-    let source = include_str!("../../pipeline/handlers.rs");
+    let source = include_str!("../../handlers/verification.rs");
     let verifier_start = source
         .find("fn verify_consensus_witness_against_store")
         .expect("store-backed header verifier exists");
