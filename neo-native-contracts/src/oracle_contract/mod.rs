@@ -12,6 +12,7 @@
 //!
 //! - `constants`: request limits, storage prefixes, default pricing, and event
 //!   names.
+//! - `initialize`: genesis request counter and price seeding.
 //! - `invoke`: native method dispatch for request/finish/verify.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `persist`: post-persist response cleanup and oracle-node reward minting.
@@ -25,11 +26,10 @@ use neo_config::{Hardfork, ProtocolSettings};
 use neo_error::CoreResult;
 use neo_execution::native_contract::OracleRequestDetails;
 use neo_execution::{ApplicationEngine, NativeContract, NativeEvent, NativeMethod};
-use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
-use num_bigint::BigInt;
 
 mod constants;
+mod initialize;
 mod invoke;
 mod metadata;
 mod persist;
@@ -97,23 +97,8 @@ impl NativeContract for OracleContract {
             .map(|request| OracleRequestDetails::new(request.url, request.original_tx_id)))
     }
 
-    /// C# `OracleContract.InitializeAsync(engine, hardfork)` for
-    /// `hardfork == ActiveIn` (the Oracle contract is genesis-active): seed the
-    /// request-id counter with `BigInteger.Zero` (stored as empty bytes) and the
-    /// request price with 0.5 GAS (`0_50000000` datoshi).
     fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
-        let snapshot = engine.snapshot_cache();
-        snapshot.add(
-            Self::request_id_key(),
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(0))),
-        );
-        snapshot.add(
-            Self::price_key(),
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
-                DEFAULT_ORACLE_PRICE,
-            ))),
-        );
-        Ok(())
+        self.initialize_native(engine)
     }
 
     fn post_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {

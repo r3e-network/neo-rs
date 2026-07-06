@@ -7,6 +7,7 @@ use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
 use neo_vm::{Interoperable, StackItem};
 use neo_vm_rs::{ExecutionEngineLimits, StackValue};
+use num_bigint::BigInt;
 
 /// Structural equality for StackValue that ignores the reference-identity ids
 /// on compound variants. Collection identity is not part of serialized
