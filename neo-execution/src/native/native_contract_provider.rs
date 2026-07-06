@@ -9,9 +9,8 @@
 //!
 //! - is **defined** in `neo-execution` (the consumer);
 //! - is **implemented** in `neo-native-contracts` (the provider); and
-//! - is installed by the composition root and captured by new application
-//!   engines where the host-call path has been converted away from ambient
-//!   lookup.
+//! - is provided by the composition root and captured by new application
+//!   engines.
 //!
 //! The process-global slot is a compatibility bridge for standalone callers
 //! and the remaining unconverted helper paths. New execution paths should pass
@@ -143,10 +142,12 @@ pub fn lock_native_provider() -> NativeProviderTestGuard {
 pub struct NativeContractLookup;
 
 impl NativeContractLookup {
-    /// Installs the global native-contract provider. This is normally
-    /// called once at process startup from `neo-native-contracts::install`
-    /// (or equivalent). Calling it more than once replaces the previous
-    /// provider.
+    /// Installs the global native-contract provider compatibility bridge.
+    ///
+    /// Production composition should pass providers explicitly to services and
+    /// engines. This helper remains for standalone compatibility callers and
+    /// tests that intentionally exercise ambient lookup. Calling it more than
+    /// once replaces the previous provider.
     pub fn install_provider(provider: Arc<dyn NativeContractProvider>) {
         Self::replace_provider(Some(provider));
     }

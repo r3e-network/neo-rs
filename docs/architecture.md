@@ -255,18 +255,19 @@ The detailed rules for this style live in
   low-level `NativeContractProvider` seam so the engine does not depend on
   `neo-native-contracts`, but `neo-system::NodeBuilder` now accepts and stores
   the provider as an explicit dependency. The daemon builds the standard Neo N3
-  provider once before genesis initialization, installs it into the legacy
-  `neo-execution` lookup seam, and passes the same `Arc` into `NodeBuilder`.
-  `ApplicationEngine` now captures the installed or scoped provider at
-  construction and uses that stable handle for direct native calls, policy
+  provider once before genesis initialization and passes the same `Arc` into
+  every provider-aware subsystem and into `NodeBuilder`. `ApplicationEngine` now
+  captures the explicit or scoped provider at construction and uses that stable
+  handle for direct native calls, policy
   reads, dynamic-call policy gates, contract-management lookups made from
   contract loading, committee-witness checks, storage-context resolution,
   OracleResponse witness inheritance, witness group checks, current-index
   reads, and whitelisted-fee checks. Engine methods do not read the global slot
   after construction, so provider replacement cannot change an already-created
-  engine. The process-global lookup remains only as a compatibility bridge for
-  standalone callers, legacy runtime-helper wrappers, and installed-provider
-  resource creation. `Helper::verify_witness*_with_native_provider` and
+  engine. Production composition no longer mutates the global slot. The
+  process-global lookup remains only as a compatibility bridge for standalone
+  callers, legacy runtime-helper wrappers, and tests that intentionally exercise
+  ambient lookup. `Helper::verify_witness*_with_native_provider` and
   provider-aware script-hash resolution let node services verify witnesses
   against an explicit provider without reading the global slot. Batch block
   import, genesis initialization, header inventory verification,
@@ -277,10 +278,9 @@ The detailed rules for this style live in
   pass the provider directly into each OnPersist/Application/PostPersist engine.
   Batch resource setup builds `NativePersistResources` from that context
   provider and calls the explicit-resource staging/commit path instead of
-  reading the installed global provider. The installed-provider persistence
-  functions remain compatibility wrappers for standalone tests and legacy
-  callers. Headless/test construction can still omit the provider and let the
-  builder install the standard default. ADR-015 proposes a builder pattern for
+  reading an ambient global provider. Headless/test construction can still
+  omit the provider and let the builder own a local standard default. ADR-015
+  proposes a builder pattern for
   future extensibility.
 
 - **Error type policy.** `neo-error` owns the authoritative `CoreError` /

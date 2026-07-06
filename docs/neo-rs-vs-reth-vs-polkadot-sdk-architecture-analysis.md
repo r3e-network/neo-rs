@@ -342,23 +342,24 @@ Native Rust NeoVM — no WASM. `ApplicationEngine` with per-tx child caches.
 `NativeContractProvider` remains the lower-level execution seam, but
 `neo-system::NodeBuilder` now makes the provider an explicit composition-root
 dependency. The daemon constructs the standard provider once before genesis
-initialization, installs it into the `neo-execution` lookup seam, and passes the
-same `Arc` into `NodeBuilder`; headless/test construction still falls back to the
-builder's standard provider default. `ApplicationEngine` now captures the
-installed or scoped provider at construction and uses that stable handle for
-direct native calls, policy reads, dynamic-call policy gates, contract-management
-lookups made from contract loading, committee-witness checks, storage-context
-resolution, OracleResponse witness inheritance, witness group checks,
-current-index reads, and whitelisted-fee checks. Engine methods do not read the
-global provider after construction, so later provider replacement cannot affect
-an already-created engine. Runtime witness helpers now have explicit-provider
-entry points. Native block persistence passes
+initialization and passes the same `Arc` into every provider-aware subsystem and
+into `NodeBuilder`; headless/test construction still falls back to the builder's
+local standard provider default. `ApplicationEngine` now captures the explicit
+or scoped provider at construction and uses that stable handle for direct native
+calls, policy reads, dynamic-call policy gates, contract-management lookups made
+from contract loading, committee-witness checks, storage-context resolution,
+OracleResponse witness inheritance, witness group checks, current-index reads,
+and whitelisted-fee checks. Engine methods do not read the global provider after
+construction, so later provider replacement cannot affect an already-created
+engine. Production composition no longer mutates the process-global provider
+slot. Runtime witness helpers now have explicit-provider entry points. Native
+block persistence passes
 `NativePersistResources` providers directly into OnPersist/Application/PostPersist
 engines, and service-level genesis initialization plus batch resource setup
 build those resources from `SystemContext::native_contract_provider`; live block
-import uses the explicit-resource staging/commit path instead of the installed
-global provider. Legacy helper wrappers and standalone installed-provider
-resource creation still resolve through the process-global compatibility bridge in
+import uses the explicit-resource staging/commit path instead of the global
+provider. Legacy helper wrappers still resolve through the process-global
+compatibility bridge in
 `neo-execution/src/native/native_contract_provider.rs`.
 
 ### Polkadot SDK innovations
@@ -387,10 +388,10 @@ resource creation still resolve through the process-global compatibility bridge 
    Batch block import, genesis initialization, header inventory verification,
    extensible-payload verification, and signed-StateRoot verification now use
    explicit providers when their caller owns one; native persistence exposes an
-   explicit-resource committing helper so standalone installed-provider entry
-   points are compatibility wrappers. Remaining step: keep shrinking legacy
-   helper wrappers and standalone installed-provider resource creation until
-   `NativeContractLookup` is only a compatibility bridge.
+   explicit-resource committing helper, and production composition no longer
+   installs the standard provider globally. Remaining step: keep shrinking
+   legacy helper wrappers until `NativeContractLookup` is only a compatibility
+   bridge.
 3. Consider WASM runtime for future sidechain/feature-gate support.
 
 ---
