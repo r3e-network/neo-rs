@@ -158,6 +158,8 @@ submits the verified batch to `BlockImport::import_many` in original order.
 checks (hash serialization, block version, transaction merkle root, and duplicate
 transaction hashes), so queued preverification rejects malformed blocks before
 ordered import without enforcing the dBFT-only production transaction limit.
+RPC `submitblock` uses the same preflight before dispatching decoded blocks into
+the blockchain service loop.
 `neo_runtime::SyncPipelineDriver` consumes contiguous sync batches, rejects
 height gaps, calls the import queue, and writes import-stage checkpoints
 according to `CommitPolicy` — but this behavior exercises only in unit tests;

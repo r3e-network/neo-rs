@@ -231,13 +231,15 @@ The detailed rules for this style live in
   block version, transaction merkle root, and duplicate transaction hashes), so
   the queue is no longer a hash-only placeholder. Execution, native
   persistence, state-root updates, and durable storage still happen only inside
-  `neo-blockchain`. Peer-relayed block bursts enter the live inventory path
-  through `BlockchainHandle::submit_inventory_blocks`, consensus-produced
-  blocks use `submit_inventory_block`, extensible payloads use
-  `submit_inventory_extensible`, and startup genesis bootstrapping uses
-  `initialize`. Node composition does not construct `BlockchainCommand`
-  variants directly while inventory-specific relay, parking, draining, and
-  mempool behavior remains in the service loop.
+  `neo-blockchain`. RPC `submitblock` runs that same preflight before sending a
+  decoded block into the service loop, preserving the RPC-visible `Invalid`
+  relay result for malformed block structure. Peer-relayed block bursts enter
+  the live inventory path through `BlockchainHandle::submit_inventory_blocks`,
+  consensus-produced blocks use `submit_inventory_block`, extensible payloads
+  use `submit_inventory_extensible`, and startup genesis bootstrapping uses
+  `initialize`. Node composition does not construct `BlockchainCommand` variants
+  directly while inventory-specific relay, parking, draining, and mempool
+  behavior remains in the service loop.
 
 - **Staged-sync policies are shared runtime contracts.**
   `neo_runtime::sync_pipeline` defines stable stage identifiers,

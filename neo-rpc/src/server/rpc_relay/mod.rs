@@ -19,6 +19,7 @@ use crate::server::rpc_server::RpcServer;
 use neo_blockchain::RelayResult;
 use neo_payloads::VerifyResult;
 use neo_payloads::{Block, InventoryType, Transaction};
+use neo_runtime::BlockImport;
 use serde_json::{Value, json};
 use tokio::runtime::{Handle, Runtime};
 use tokio::task::block_in_place;
@@ -163,6 +164,14 @@ pub(super) fn relay_block(server: &RpcServer, block: Block) -> Result<RelayResul
     }
 
     let blockchain = system.blockchain();
+    if block_on_service(blockchain.check(&block))?.is_err() {
+        return Ok(RelayResult {
+            hash,
+            inventory_type: InventoryType::Block,
+            block_index: Some(index),
+            result: VerifyResult::Invalid,
+        });
+    }
     let imported = block_on_service(blockchain.import_block(block))?
         .map_err(|err| internal_error(err.to_string()))?;
     Ok(RelayResult {
@@ -178,4 +187,29 @@ pub(super) fn relay_block(server: &RpcServer, block: Block) -> Result<RelayResul
             VerifyResult::Invalid
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::rpc_server_settings::RpcServerConfig;
+    use neo_config::ProtocolSettings;
+    use neo_payloads::Header;
+    use neo_primitives::UInt256;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn relay_block_preflight_rejects_bad_merkle_root_as_invalid() {
+        let system = crate::server::test_support::test_system(ProtocolSettings::default());
+        let server = RpcServer::new(system, RpcServerConfig::default());
+        let mut header = Header::new();
+        header.set_index(1);
+        header.set_merkle_root(UInt256::from([0x42; 32]));
+        let block = Block::from_parts(header, Vec::new());
+
+        let result = relay_block(&server, block).expect("relay result");
+
+        assert_eq!(result.inventory_type, InventoryType::Block);
+        assert_eq!(result.block_index, Some(1));
+        assert_eq!(result.result, VerifyResult::Invalid);
+    }
 }

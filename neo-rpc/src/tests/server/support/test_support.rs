@@ -14,6 +14,7 @@ use neo_blockchain::service::{BlockchainService, MempoolLike};
 use neo_blockchain::service_context::SystemContext;
 use neo_blockchain::{HeaderCache, LedgerContext};
 use neo_config::ProtocolSettings;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
 use neo_primitives::UInt160;
@@ -31,6 +32,7 @@ struct FixtureContext {
     settings: Arc<ProtocolSettings>,
     snapshot: Arc<neo_storage::persistence::DataCache>,
     store_cache: Mutex<StoreCache>,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
 }
 
 impl std::fmt::Debug for FixtureContext {
@@ -54,6 +56,10 @@ impl SystemContext for FixtureContext {
 
     fn store_snapshot(&self) -> Option<Arc<neo_storage::persistence::DataCache>> {
         Some(Arc::clone(&self.snapshot))
+    }
+
+    fn native_contract_provider(&self) -> Option<Arc<dyn NativeContractProvider>> {
+        Some(Arc::clone(&self.native_contract_provider))
     }
 
     fn commit_to_store(&self) {
@@ -148,11 +154,14 @@ pub(crate) fn test_system(settings: ProtocolSettings) -> Arc<crate::server::Node
     let header_cache = Arc::new(HeaderCache::default());
     let store_cache = StoreCache::new_from_store(Arc::clone(&storage), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
+    let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new())
+        as Arc<dyn NativeContractProvider>;
 
     let system_ctx = Arc::new(FixtureContext {
         settings: Arc::clone(&settings),
         snapshot,
         store_cache: Mutex::new(store_cache),
+        native_contract_provider: Arc::clone(&native_contract_provider),
     });
     let mempool_like = Arc::new(NodeMempoolAdapter {
         pool: Arc::clone(&mempool),
@@ -177,6 +186,7 @@ pub(crate) fn test_system(settings: ProtocolSettings) -> Arc<crate::server::Node
         .with_network(network)
         .with_mempool(mempool)
         .with_header_cache(header_cache)
+        .with_native_contract_provider(native_contract_provider)
         .build()
         .expect("test node composition should succeed");
     let node = Arc::new(node);
