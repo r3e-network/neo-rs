@@ -20,9 +20,12 @@
 
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
 
 use crate::ChannelsConfig;
 
+use crate::download::{BlockDownloadBatch, BlockRangeAssignment, BlockRangeFetcher};
+use crate::error::{NetworkError, NetworkResult};
 use crate::peer_id::PeerId;
 use crate::remote_node::RemoteNodeHandle;
 
@@ -76,6 +79,22 @@ impl PeerRegistry {
     /// Maximum number of unconnected candidate endpoints retained in the
     /// address book (C# `Peer.UnconnectedMax` = 1000).
     pub const UNCONNECTED_MAX: usize = 1000;
+}
+
+#[async_trait::async_trait]
+impl BlockRangeFetcher for Arc<PeerRegistry> {
+    async fn fetch_range(
+        &self,
+        assignment: BlockRangeAssignment,
+    ) -> NetworkResult<BlockDownloadBatch> {
+        let Some(handle) = self.handle(assignment.peer_id) else {
+            return Err(NetworkError::RemoteUnavailable {
+                peer_id: assignment.peer_id.to_string(),
+                detail: "peer is no longer connected".to_string(),
+            });
+        };
+        handle.fetch_blocks_by_index(assignment.request).await
+    }
 }
 
 impl std::fmt::Debug for PeerRegistry {

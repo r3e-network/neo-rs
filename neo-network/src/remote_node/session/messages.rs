@@ -93,6 +93,9 @@ impl PeerSession {
                 let block = Block::deserialize(&mut reader).map_err(|err| {
                     CloseReason::ProtocolViolation(format!("invalid block payload: {err}"))
                 })?;
+                let Some(block) = self.accept_pending_block_fetch(block) else {
+                    return Ok(());
+                };
                 if let Some(tx) = &self.inbound_tx {
                     let _ = tx.send(InboundInventory::Block(Arc::new(block))).await;
                 }

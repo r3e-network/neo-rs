@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -14,7 +14,7 @@ use super::{
 };
 use crate::MessageCommand;
 use crate::connection_timeouts::ConnectionTimeouts;
-use crate::download::{BlockRequest, BlockRequestScheduler};
+use crate::download::{BlockDownloadBatch, BlockRequest, BlockRequestScheduler};
 use crate::error::NetworkError;
 use crate::event::NetworkEvent;
 use crate::local_identity::LocalIdentity;
@@ -111,6 +111,15 @@ pub(super) struct PeerSession {
     pub(super) inbound_tx: Option<mpsc::Sender<InboundInventory>>,
     /// Optional read-only ledger view for serving block requests.
     pub(super) block_source: Option<Arc<dyn BlockSource>>,
+    /// Explicit block range fetch currently awaiting `block` responses.
+    pub(super) pending_block_fetch: Option<PendingBlockFetch>,
+}
+
+pub(super) struct PendingBlockFetch {
+    request: BlockRequest,
+    next_index: u32,
+    blocks: Vec<neo_payloads::Block>,
+    reply: oneshot::Sender<crate::NetworkResult<BlockDownloadBatch>>,
 }
 
 impl PeerSession {
@@ -195,6 +204,28 @@ impl PeerSession {
                         match self.send_get_block_by_index(framed, request).await {
                             Ok(()) => {
                                 let _ = reply.send(Ok(()));
+                            }
+                            Err(reason) => {
+                                let _ = reply.send(Err(self.network_error_for_close_reason(&reason)));
+                                return reason;
+                            }
+                        }
+                    }
+                    Some(RemoteNodeCommand::FetchBlocksByIndex { request, reply }) => {
+                        if self.pending_block_fetch.is_some() {
+                            let _ = reply.send(Err(NetworkError::Protocol(
+                                "block range fetch already in flight for this peer".to_string(),
+                            )));
+                            continue;
+                        }
+                        match self.send_get_block_by_index(framed, request).await {
+                            Ok(()) => {
+                                self.pending_block_fetch = Some(PendingBlockFetch {
+                                    request,
+                                    next_index: request.start,
+                                    blocks: Vec::with_capacity(request.count as usize),
+                                    reply,
+                                });
                             }
                             Err(reason) => {
                                 let _ = reply.send(Err(self.network_error_for_close_reason(&reason)));
@@ -380,6 +411,31 @@ impl PeerSession {
             }
             CloseReason::ProtocolViolation(detail) => NetworkError::Protocol(detail.clone()),
         }
+    }
+
+    pub(super) fn accept_pending_block_fetch(
+        &mut self,
+        block: neo_payloads::Block,
+    ) -> Option<neo_payloads::Block> {
+        let Some(fetch) = self.pending_block_fetch.as_mut() else {
+            return Some(block);
+        };
+        if block.index() != fetch.next_index {
+            return Some(block);
+        }
+
+        fetch.next_index = fetch.next_index.saturating_add(1);
+        fetch.blocks.push(block);
+        if fetch.blocks.len() == fetch.request.count as usize {
+            let fetch = self
+                .pending_block_fetch
+                .take()
+                .expect("pending fetch exists");
+            let batch =
+                BlockDownloadBatch::new(Some(self.peer_id), fetch.request.start, fetch.blocks);
+            let _ = fetch.reply.send(Ok(batch));
+        }
+        None
     }
 
     /// C# `RemoteNode.ProtocolHandler.OnVersionMessageReceived` +

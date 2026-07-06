@@ -261,9 +261,9 @@ Priority order for crate refactors:
    downloader policy stays independent from wire transport. Use
    `neo_network::BlockDownloadCoordinator` to compose that scheduler with
    `neo_network::OrderedBlockBatchBuffer` and a transport-specific
-   `neo_network::BlockRangeFetcher`; real P2P code should only implement the
-   fetcher and leave ordered release to the coordinator before batches reach the
-   runtime import queue.
+   `neo_network::BlockRangeFetcher`; live P2P range fetching should go through
+   the connected-peer registry/remote-node handle and leave ordered release to
+   the coordinator before batches reach the runtime import queue.
 2. **One reorg-aware chain event stream.** Indexers, RPC application logs,
    token trackers, oracle services, and plugins should derive from a single
    bounded stream of chain outcomes. Because Neo committed blocks are final,

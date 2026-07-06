@@ -1,5 +1,12 @@
 use super::*;
 
+fn block_message(index: u32) -> Message {
+    let mut header = neo_payloads::Header::new();
+    header.set_index(index);
+    let block = neo_payloads::Block::from_parts(header, vec![]);
+    Message::create(MessageCommand::Block, Some(&block), false).expect("encode block")
+}
+
 // ---------------------------------------------------------------------------
 // Inactivity timeout (C# Connection.cs)
 // ---------------------------------------------------------------------------
@@ -235,6 +242,177 @@ async fn remote_node_handle_can_request_explicit_block_range() {
 
     assert_eq!(request.index_start, 7);
     assert_eq!(request.count, 3);
+
+    handle.shutdown().await.expect("shutdown");
+}
+
+/// Explicit range fetches collect matching `block` frames into a downloader
+/// batch while leaving unrelated relayed blocks on the normal inventory path.
+#[tokio::test]
+async fn remote_node_handle_fetches_explicit_block_range_as_batch() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let listen_addr = listener.local_addr().expect("addr");
+
+    let mut fake = {
+        let stream = TcpStream::connect(listen_addr).await.expect("dial");
+        Framed::new(stream, MessageCodec::new())
+    };
+    let (stream, remote_addr) = listener.accept().await.expect("accept");
+
+    let identity = Arc::new(LocalIdentity::new(
+        ProtocolSettings::default().network,
+        7,
+        "/neo-rs:test/".to_string(),
+        true,
+    ));
+    let registry = Arc::new(PeerRegistry::with_limits(8, 8));
+    let (event_tx, _events) = broadcast::channel(64);
+    let (inv_tx, mut inv_rx) = tokio::sync::mpsc::channel::<InboundInventory>(8);
+    let peer_id = PeerId::new();
+    let (service, handle) = RemoteNodeService::new(
+        stream,
+        peer_id,
+        remote_addr,
+        identity,
+        registry.clone(),
+        event_tx,
+        RemoteNodeState::Handshake,
+        CancellationToken::new(),
+    );
+    let service = service.with_inventory_sink(inv_tx);
+    assert!(registry.try_admit(peer_id, remote_addr, handle.clone()));
+    tokio::spawn(service.run());
+
+    complete_handshake(
+        &mut fake,
+        ProtocolSettings::default().network,
+        0xfa4e_0012,
+        20333,
+    )
+    .await;
+
+    let fetch = tokio::spawn({
+        let handle = handle.clone();
+        async move { handle.fetch_blocks_by_index(BlockRequest::new(7, 3)).await }
+    });
+    let request = recv_getblockbyindex(&mut fake).await;
+    assert_eq!(request.index_start, 7);
+    assert_eq!(request.count, 3);
+
+    fake.send(block_message(99))
+        .await
+        .expect("send unrelated block");
+    let relayed = tokio::time::timeout(TEST_TIMEOUT, inv_rx.recv())
+        .await
+        .expect("timed out waiting for unrelated inventory")
+        .expect("inventory channel open");
+    let InboundInventory::Block(relayed) = relayed else {
+        panic!("expected unrelated block inventory");
+    };
+    assert_eq!(relayed.index(), 99);
+
+    for index in 7..=9 {
+        fake.send(block_message(index))
+            .await
+            .expect("send requested block");
+    }
+
+    let batch = fetch
+        .await
+        .expect("fetch task joined")
+        .expect("fetch succeeded");
+    assert_eq!(batch.peer_id, Some(peer_id));
+    assert_eq!(batch.start_height, 7);
+    assert_eq!(
+        batch
+            .blocks
+            .iter()
+            .map(neo_payloads::Block::index)
+            .collect::<Vec<_>>(),
+        vec![7, 8, 9]
+    );
+
+    handle.shutdown().await.expect("shutdown");
+}
+
+/// The connected-peer registry is the transport fetcher used by
+/// `BlockDownloadCoordinator`: it resolves the assigned peer handle and returns
+/// the collected batch.
+#[tokio::test]
+async fn peer_registry_fetcher_collects_assigned_peer_range() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let listen_addr = listener.local_addr().expect("addr");
+
+    let mut fake = {
+        let stream = TcpStream::connect(listen_addr).await.expect("dial");
+        Framed::new(stream, MessageCodec::new())
+    };
+    let (stream, remote_addr) = listener.accept().await.expect("accept");
+
+    let identity = Arc::new(LocalIdentity::new(
+        ProtocolSettings::default().network,
+        7,
+        "/neo-rs:test/".to_string(),
+        true,
+    ));
+    let registry = Arc::new(PeerRegistry::with_limits(8, 8));
+    let (event_tx, _events) = broadcast::channel(64);
+    let peer_id = PeerId::new();
+    let (service, handle) = RemoteNodeService::new(
+        stream,
+        peer_id,
+        remote_addr,
+        identity,
+        registry.clone(),
+        event_tx,
+        RemoteNodeState::Handshake,
+        CancellationToken::new(),
+    );
+    assert!(registry.try_admit(peer_id, remote_addr, handle.clone()));
+    tokio::spawn(service.run());
+
+    complete_handshake(
+        &mut fake,
+        ProtocolSettings::default().network,
+        0xfa4e_0013,
+        20333,
+    )
+    .await;
+
+    let fetch = tokio::spawn({
+        let registry = registry.clone();
+        async move {
+            neo_network::BlockRangeFetcher::fetch_range(
+                &registry,
+                BlockRangeAssignment::new(peer_id, BlockRequest::new(11, 2), 0),
+            )
+            .await
+        }
+    });
+    let request = recv_getblockbyindex(&mut fake).await;
+    assert_eq!(request.index_start, 11);
+    assert_eq!(request.count, 2);
+
+    for index in 11..=12 {
+        fake.send(block_message(index))
+            .await
+            .expect("send requested block");
+    }
+
+    let batch = fetch
+        .await
+        .expect("fetch task joined")
+        .expect("fetch succeeded");
+    assert_eq!(batch.peer_id, Some(peer_id));
+    assert_eq!(batch.start_height, 11);
+    assert_eq!(
+        batch
+            .blocks
+            .iter()
+            .map(neo_payloads::Block::index)
+            .collect::<Vec<_>>(),
+        vec![11, 12]
+    );
 
     handle.shutdown().await.expect("shutdown");
 }

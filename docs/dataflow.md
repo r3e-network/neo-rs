@@ -86,8 +86,11 @@ assignment, peer bias, and retry accounting are now owned by
 `neo_network::CrossPeerBlockRangeScheduler`. The transport-agnostic
 `neo_network::BlockDownloadCoordinator` composes that scheduler with
 `neo_network::OrderedBlockBatchBuffer` and yields ordered `BlockDownloadBatch`
-values from any `BlockRangeFetcher`; the remaining production integration is the
-real async P2P fetcher that sends those assignments to peers.
+values from any `BlockRangeFetcher`. `Arc<neo_network::PeerRegistry>` now
+implements that fetcher by resolving the assigned peer handle, sending
+`GetBlockByIndex`, and collecting the matching block frames into a batch; the
+remaining production integration is wiring the coordinator-driven downloader
+into node sync startup.
 The canonical execution/persist path remains the `neo-blockchain` service loop.
 
 ```mermaid

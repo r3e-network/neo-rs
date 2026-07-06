@@ -271,8 +271,10 @@ The detailed rules for this style live in
   out-of-order peer responses until the next contiguous height is available.
   `BlockDownloadCoordinator` composes the cross-peer scheduler, ordered buffer,
   and a transport-provided `BlockRangeFetcher` into a `BlockDownloader` stream.
-  The remaining production integration layer is the real async P2P fetcher that
-  executes assignments against live peers.
+  `PeerRegistry` implements the live-peer fetcher by resolving the assigned
+  `RemoteNodeHandle`, sending `GetBlockByIndex`, and collecting matching block
+  frames into a batch. The remaining production integration layer is wiring
+  that coordinator-backed downloader into node sync startup.
 
 - **Native dispatch is explicit at composition.** `neo-execution` still owns the
   low-level `NativeContractProvider` seam so the engine does not depend on

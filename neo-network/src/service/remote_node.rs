@@ -51,7 +51,7 @@ use tokio_util::codec::Framed;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::download::{BlockRequest, BlockRequestScheduler};
+use crate::download::{BlockDownloadBatch, BlockRequest, BlockRequestScheduler};
 use crate::wire::MessageCodec;
 use neo_payloads::{Block, ExtensiblePayload, Header, Transaction};
 use neo_primitives::UInt256;
@@ -208,6 +208,13 @@ pub enum RemoteNodeCommand {
         /// post-handshake flush, or rejected locally.
         reply: oneshot::Sender<NetworkResult<()>>,
     },
+    /// Request and collect a contiguous block range from this peer.
+    FetchBlocksByIndex {
+        /// Planned range to request.
+        request: BlockRequest,
+        /// Completion signal carrying the collected block batch.
+        reply: oneshot::Sender<NetworkResult<BlockDownloadBatch>>,
+    },
     /// Send a pre-encoded wire frame (a complete `Message` byte
     /// sequence) to the peer.
     SendRaw(Vec<u8>),
@@ -288,6 +295,32 @@ impl RemoteNodeHandle {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.cmd_tx
             .send(RemoteNodeCommand::RequestBlocksByIndex {
+                request,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| crate::error::NetworkError::LocalShuttingDown)?;
+        reply_rx
+            .await
+            .map_err(|_| crate::error::NetworkError::LocalShuttingDown)?
+    }
+
+    /// Ask this peer for a contiguous block range and wait for the matching
+    /// `block` frames.
+    ///
+    /// This is the peer-level implementation primitive for
+    /// [`crate::BlockRangeFetcher`]. The per-peer session accepts only one
+    /// explicit fetch at a time so range responses cannot be interleaved
+    /// ambiguously; callers that need concurrency should spread assignments
+    /// across peers through `BlockDownloadCoordinator`.
+    pub async fn fetch_blocks_by_index(
+        &self,
+        request: BlockRequest,
+    ) -> NetworkResult<BlockDownloadBatch> {
+        Self::validate_block_index_request(request)?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.cmd_tx
+            .send(RemoteNodeCommand::FetchBlocksByIndex {
                 request,
                 reply: reply_tx,
             })
@@ -540,6 +573,7 @@ impl RemoteNodeService {
             get_addr_sent: false,
             inbound_tx,
             block_source,
+            pending_block_fetch: None,
         };
 
         let close_reason = session
