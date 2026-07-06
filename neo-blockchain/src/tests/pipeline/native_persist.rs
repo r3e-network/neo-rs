@@ -2,6 +2,8 @@ use super::*;
 // `invocation_script`/`verification_script` on `Witness` are trait methods.
 use neo_execution::native_contract_provider::{NativeProviderTestGuard, lock_native_provider};
 use neo_manifest::{ContractManifest, ContractMethodDescriptor, NefFile};
+use neo_payloads::Header;
+use neo_primitives::UInt160;
 use neo_primitives::Witness as _;
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageKey;
