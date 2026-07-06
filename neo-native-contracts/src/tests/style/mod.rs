@@ -167,6 +167,8 @@ pub(super) fn standard_contract_sources()
             concat!(
                 include_str!("../../treasury/metadata.rs"),
                 "\n",
+                include_str!("../../treasury/invoke.rs"),
+                "\n",
                 include_str!("../../treasury/mod.rs")
             ),
         ),
