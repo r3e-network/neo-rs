@@ -59,9 +59,10 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
     /// persistence, or `None` when the implementation exposes no store
     /// (e.g. lightweight test contexts). When this returns a snapshot,
     /// [`crate::service::BlockchainService`] runs the native-contract
-    /// persistence pipeline ([`crate::native_persist::persist_block_natives`])
-    /// against it for every persisted block; committing the snapshot to the
-    /// backing store remains the implementation's responsibility.
+    /// persistence pipeline
+    /// ([`crate::native_persist::persist_block_natives_with_resources`]) against
+    /// it for every persisted block; committing the snapshot to the backing
+    /// store remains the implementation's responsibility.
     fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache>> {
         None
     }
@@ -69,9 +70,10 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
     /// Returns the native-contract provider captured by the composition root,
     /// when this context owns one.
     ///
-    /// Blockchain handlers use this for witness verification paths that execute
-    /// native-contract lookups. The default keeps lightweight tests and
-    /// store-less contexts on the legacy compatibility path.
+    /// Blockchain handlers use this for witness verification and persistence
+    /// paths that execute native-contract lookups. Lightweight tests and
+    /// store-less contexts can leave it unset only when they do not expose a
+    /// store-backed persistence path.
     fn native_contract_provider(
         &self,
     ) -> Option<Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>> {

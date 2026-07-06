@@ -1,7 +1,7 @@
 //! Concrete `ValidateStage` implementation for the block processing pipeline.
 //!
-//! This module implements the [`ValidateStage`](super::stage_traits::ValidateStage) trait
-//! by wrapping the existing pure [`BlockValidator`](super::block_validation::BlockValidator)
+//! This module implements the [`ValidateStage`] trait
+//! by wrapping the existing pure [`BlockValidator`]
 //! checks. It is the first concrete `PipelineStage` implementation in the workspace
 //! (ADR-010 Phase 1).
 //!

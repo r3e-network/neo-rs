@@ -1,4 +1,5 @@
-//! Signed [`StateRoot`] witness verification against the StateValidators multisig.
+//! Signed [`neo_state_service::StateRoot`] witness verification against the
+//! StateValidators multisig.
 //!
 //! Mirrors C# `StateService.Network.StateRoot`:
 //! - `Verify(settings, snapshot)` = `VerifyWitnesses(settings, snapshot, 2_00000000)`.
@@ -7,18 +8,17 @@
 //!
 //! This lives in `neo-blockchain` (which already depends on `neo-native-contracts`,
 //! `neo-execution`, and `neo-vm`) rather than in the light `neo-state-service`
-//! crate, and wraps the [`StateRoot`] in a `VerifiableExt` newtype so the tested,
-//! engine-based witness verification
+//! crate, and wraps the [`neo_state_service::StateRoot`] in a `VerifiableExt`
+//! newtype so the tested, engine-based witness verification
 //! ([`neo_execution::Helper::verify_witnesses_with_native_provider`]) is reused
 //! instead of hand-rolling signature checks. The provider-aware entry point is
-//! the architecture boundary; [`verify_state_root`] is retained as the legacy
-//! compatibility wrapper for callers that have not been wired with an explicit
-//! native-contract provider yet.
+//! the architecture boundary; callers must pass the native-contract provider
+//! composed by their node/service context.
 
 use neo_config::ProtocolSettings;
 use neo_crypto::Crypto;
 use neo_execution::Helper;
-use neo_execution::native_contract_provider::{NativeContractLookup, NativeContractProvider};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::{Role, RoleManagement};
 use neo_payloads::{VerifiableExt, Witness};
 use neo_primitives::error::PrimitiveResult;
@@ -73,30 +73,11 @@ impl VerifiableExt for VerifiableStateRoot {
     }
 }
 
-/// Verifies a signed [`StateRoot`]'s witness against the StateValidators
-/// designated at its index. Returns `false` if the root is unsigned, if no
-/// StateValidators are designated at that height, or if the multisig witness
-/// does not verify. Matches C# `StateRoot.Verify(settings, snapshot)`.
-pub fn verify_state_root(
-    state_root: &StateRoot,
-    settings: &ProtocolSettings,
-    snapshot: &DataCache,
-) -> bool {
-    verify_state_root_with_native_provider(
-        state_root,
-        settings,
-        snapshot,
-        NativeContractLookup::native_contract_provider(),
-    )
-}
-
 /// Verifies a signed [`StateRoot`] using an explicit native-contract provider.
 ///
 /// Callers that already own composition or persistence resources should prefer
 /// this entry point so state-root witness verification stays bound to the same
-/// native-contract set as the surrounding node service. The legacy
-/// [`verify_state_root`] wrapper only exists for paths that still rely on the
-/// process-global compatibility bridge.
+/// native-contract set as the surrounding node service.
 pub fn verify_state_root_with_native_provider(
     state_root: &StateRoot,
     settings: &ProtocolSettings,

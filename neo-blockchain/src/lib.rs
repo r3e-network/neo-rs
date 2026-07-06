@@ -36,7 +36,7 @@ pub mod state_root_verify;
 pub use state_root_consensus::{
     StateRootVoteCollector, aggregate_state_root_witness, sign_state_root, validate_state_root_vote,
 };
-pub use state_root_verify::{verify_state_root, verify_state_root_with_native_provider};
+pub use state_root_verify::verify_state_root_with_native_provider;
 
 pub(crate) use ledger::ledger_records;
 pub use ledger::{header_cache, ledger_context, ledger_provider};
@@ -77,8 +77,7 @@ pub use internal::{ImportDisposition, UnverifiedBlocksList};
 pub use inventory_payload::InventoryPayload;
 pub use native_persist::{
     NativePersistNotification, NativePersistOptions, NativePersistOutcome, NativePersistResources,
-    chain_state_initialized, genesis_block, persist_block_natives,
-    persist_block_natives_with_resources, stage_block_natives_with_options,
+    chain_state_initialized, genesis_block, persist_block_natives_with_resources,
     stage_block_natives_with_resources,
 };
 pub use neo_runtime::BlockchainEvent;

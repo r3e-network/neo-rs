@@ -7,10 +7,9 @@
 //! The native-contract half of C# `Blockchain.Persist` IS wired:
 //! when the [`crate::service_context::SystemContext`] exposes a
 //! store snapshot, `BlockchainService::persist_block_sequence`
-//! stages [`crate::native_persist::stage_block_natives`] (genesis
-//! initialization + `OnPersist` + `PostPersist` native hooks) over
-//! it and only publishes the staged snapshot after the committing
-//! hook succeeds.
+//! stages [`crate::native_persist::stage_block_natives_with_resources`]
+//! (genesis initialization + `OnPersist` + `PostPersist` native hooks) over it
+//! and only publishes the staged snapshot after the committing hook succeeds.
 
 use std::sync::Arc;
 

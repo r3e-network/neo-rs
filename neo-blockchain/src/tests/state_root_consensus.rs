@@ -48,7 +48,7 @@ fn m_votes_aggregate_into_the_state_validators_multisig_witness() {
 
     let witness = signed.witness().expect("signed root carries a witness");
     // The witness's verification script is the StateValidators BFT multisig, so
-    // its hash equals the BFT address that verify_state_root checks against.
+    // its hash equals the BFT address checked by state-root verification.
     let expected = RedeemScript::bft_address(&pubkeys).expect("bft address");
     assert_eq!(UInt160::from_script(&witness.verification_script), expected);
     // Invocation pushes exactly M signatures (M * (1 opcode + 1 len + 64 bytes)).

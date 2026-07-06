@@ -2,11 +2,12 @@
 //!
 //! Mirrors the vote/aggregate flow of C# `Neo.Plugins.StateService`:
 //! 1. Each designated **StateValidator** signs the sign-data of a locally
-//!    computed [`StateRoot`] (`network || Hash`) and broadcasts a `Vote`.
+//!    computed [`neo_state_service::StateRoot`] (`network || Hash`) and
+//!    broadcasts a `Vote`.
 //! 2. Nodes collect votes per root index. Once `M = bft_threshold(N)` valid
 //!    votes exist, the signatures are aggregated into the StateValidators
 //!    `M`-of-`N` multisig witness — producing a **network-signed** `StateRoot`
-//!    that [`crate::verify_state_root`] accepts.
+//!    that [`crate::verify_state_root_with_native_provider`] accepts.
 //!
 //! This module is the deterministic state-machine core. The node layer feeds it
 //! inbound votes (from the `StateService` extensible-payload category) and

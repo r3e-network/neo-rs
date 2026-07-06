@@ -16,15 +16,15 @@
 //! C# stages every write of the sequence in one `snapshot =
 //! system.GetSnapshotCache()` and calls `snapshot.Commit()` only after
 //! the whole sequence succeeds; a throw disposes the snapshot and
-//! nothing lands in the store. [`persist_block_natives`] mirrors that
-//! with a child [`DataCache`] (`snapshot.clone_cache()`): all three
-//! stages write into the child, and only a fully successful sequence
-//! commits it into the caller's snapshot. On any error the child is
-//! dropped, so observers of the caller's snapshot (e.g. the genesis
-//! re-init guard [`chain_state_initialized`]) can never see partial
-//! block state. The per-transaction engines add the inner C# layer:
-//! `clonedSnapshot = snapshot.CloneCache()` per transaction,
-//! committed into the block cache only when the script HALTs.
+//! nothing lands in the store. [`persist_block_natives_with_resources`]
+//! mirrors that with a child [`DataCache`] (`snapshot.clone_cache()`): all
+//! three stages write into the child, and only a fully successful sequence
+//! commits it into the caller's snapshot. On any error the child is dropped,
+//! so observers of the caller's snapshot (e.g. the genesis re-init guard
+//! [`chain_state_initialized`]) can never see partial block state. The
+//! per-transaction engines add the inner C# layer: `clonedSnapshot =
+//! snapshot.CloneCache()` per transaction, committed into the block cache only
+//! when the script HALTs.
 //!
 //! The per-stage native hooks are driven from a [`NativePersistResources`]
 //! value that captures one explicit native-contract provider plus the canonical
@@ -64,7 +64,7 @@ use tracing::debug;
 
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::native_contract_provider::{NativeContractLookup, NativeContractProvider};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_execution::{ApplicationEngine, ExecutionContextState};
 use neo_manifest::CallFlags;
 use neo_payloads::ApplicationExecuted;
@@ -207,7 +207,7 @@ pub struct NativePersistNotification {
     pub state: Vec<StackItem>,
 }
 
-/// Outcome of [`persist_block_natives`] for one block.
+/// Outcome of [`persist_block_natives_with_resources`] for one block.
 #[derive(Debug, Clone, Default)]
 pub struct NativePersistOutcome {
     /// Names of the native contracts whose `initialize()` ran at this
@@ -258,22 +258,6 @@ impl NativePersistResources {
             provider,
             contracts,
         }
-    }
-
-    /// Captures the canonical native-contract list once from the installed
-    /// provider.
-    ///
-    /// This is a compatibility constructor for standalone tests and legacy
-    /// callers. Node service paths should use [`Self::from_provider`] so a block
-    /// batch cannot observe a later process-global provider replacement.
-    pub fn from_installed_provider() -> CoreResult<Self> {
-        let provider = NativeContractLookup::native_contract_provider().ok_or_else(|| {
-            CoreError::invalid_operation(
-                "persist_block_natives requires the native-contract provider \
-                 (install a NativeContractProvider at startup)",
-            )
-        })?;
-        Ok(Self::from_provider(provider))
     }
 
     /// Returns the canonical native contracts captured for this persistence
@@ -472,30 +456,6 @@ fn run_native_persist_hooks(
 /// system fee, per-tx child cache committed on HALT), and native
 /// `PostPersist` (with the LedgerContract current-block pointer).
 ///
-/// The whole sequence is staged in a child cache over `snapshot` and
-/// committed into it only when every stage succeeds, mirroring C#'s
-/// single `snapshot.Commit()` at the end of `Persist` (see the module
-/// docs). Committing `snapshot` itself to the backing store remains
-/// the caller's responsibility.
-///
-/// Compatibility wrapper that captures the installed process-global provider.
-/// New node-service code should construct [`NativePersistResources`] from its
-/// explicit system provider and call [`persist_block_natives_with_resources`].
-pub fn persist_block_natives(
-    snapshot: Arc<DataCache>,
-    block: Arc<Block>,
-    settings: &ProtocolSettings,
-) -> CoreResult<NativePersistOutcome> {
-    let resources = NativePersistResources::from_installed_provider()?;
-    persist_block_natives_with_resources(
-        snapshot,
-        block,
-        settings,
-        NativePersistOptions::default(),
-        &resources,
-    )
-}
-
 /// Runs the C# `Blockchain.Persist` sequence with caller-provided reusable
 /// native resources and commits the staged writes on success.
 pub fn persist_block_natives_with_resources(
@@ -509,35 +469,6 @@ pub fn persist_block_natives_with_resources(
     let outcome = staged.outcome.clone();
     staged.commit();
     Ok(outcome)
-}
-
-/// Runs native block persistence into an isolated child cache, returning the
-/// staged writes without publishing them into the canonical snapshot.
-///
-/// Compatibility wrapper that captures the installed process-global provider.
-/// Prefer [`stage_block_natives_with_resources`] when the caller owns an
-/// explicit native provider.
-pub fn stage_block_natives(
-    snapshot: Arc<DataCache>,
-    block: Arc<Block>,
-    settings: &ProtocolSettings,
-) -> CoreResult<StagedNativePersist> {
-    stage_block_natives_with_options(snapshot, block, settings, NativePersistOptions::default())
-}
-
-/// Runs native block persistence with explicit replay-artifact capture policy.
-///
-/// Compatibility wrapper that captures the installed process-global provider.
-/// Prefer [`stage_block_natives_with_resources`] when the caller owns an
-/// explicit native provider.
-pub fn stage_block_natives_with_options(
-    snapshot: Arc<DataCache>,
-    block: Arc<Block>,
-    settings: &ProtocolSettings,
-    options: NativePersistOptions,
-) -> CoreResult<StagedNativePersist> {
-    let resources = NativePersistResources::from_installed_provider()?;
-    stage_block_natives_with_resources(snapshot, block, settings, options, &resources)
 }
 
 /// Runs native block persistence with caller-provided reusable resources.
