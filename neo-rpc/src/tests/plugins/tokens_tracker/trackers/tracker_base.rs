@@ -1,5 +1,6 @@
 use super::*;
 use neo_config::ProtocolSettings;
+use neo_native_contracts::StandardNativeProvider;
 use neo_storage::persistence::{
     read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric},
     storage::StorageError,
@@ -122,7 +123,13 @@ impl StoreSnapshot for FailingSnapshot {
 #[tokio::test(flavor = "multi_thread")]
 async fn tracker_base_commit_propagates_snapshot_try_commit_failure() {
     let settings = Arc::new(ProtocolSettings::mainnet());
-    let mut tracker = TrackerBase::new(Arc::new(FailingStore), 100, true, settings);
+    let mut tracker = TrackerBase::new(
+        Arc::new(FailingStore),
+        100,
+        true,
+        settings,
+        Arc::new(StandardNativeProvider::new()),
+    );
     tracker.reset_batch();
 
     let err = tracker

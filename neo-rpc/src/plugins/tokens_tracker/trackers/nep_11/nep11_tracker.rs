@@ -9,6 +9,7 @@ use super::nep11_balance_key::Nep11BalanceKey;
 use super::nep11_transfer_key::Nep11TransferKey;
 use neo_config::ProtocolSettings;
 use neo_execution::ApplicationEngine;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_manifest::CallFlags;
 use neo_native_contracts::contract_management::ContractManagement;
 use neo_payloads::ApplicationExecuted;
@@ -42,9 +43,16 @@ impl Nep11Tracker {
         max_results: u32,
         should_track_history: bool,
         settings: Arc<ProtocolSettings>,
+        native_contract_provider: Arc<dyn NativeContractProvider>,
     ) -> Self {
         Self {
-            base: TrackerBase::new(db, max_results, should_track_history, settings),
+            base: TrackerBase::new(
+                db,
+                max_results,
+                should_track_history,
+                settings,
+                native_contract_provider,
+            ),
             current_height: 0,
             current_block: None,
         }
@@ -177,14 +185,15 @@ impl Nep11Tracker {
             return;
         }
 
-        let mut engine = match ApplicationEngine::new(
+        let mut engine = match ApplicationEngine::new_with_shared_block_and_native_contract_provider(
             TriggerType::Application,
             None,
             Arc::new(snapshot.clone()),
-            self.current_block.clone(),
+            self.current_block.clone().map(Arc::new),
             self.base.settings.as_ref().clone(),
             34_000_000,
             None,
+            Some(Arc::clone(&self.base.native_contract_provider)),
         ) {
             Ok(engine) => engine,
             Err(_) => return,

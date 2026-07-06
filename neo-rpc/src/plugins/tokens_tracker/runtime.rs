@@ -8,6 +8,7 @@ use super::trackers::nep_11::Nep11Tracker;
 use super::trackers::nep_17::Nep17Tracker;
 use super::trackers::tracker_base::Tracker;
 use neo_config::ProtocolSettings;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
 use neo_payloads::{CommittedHandler, CommittingHandler};
@@ -42,6 +43,7 @@ impl TokensTracker {
         settings: TokensTrackerSettings,
         db: Arc<dyn Store>,
         protocol_settings: Arc<ProtocolSettings>,
+        native_contract_provider: Arc<dyn NativeContractProvider>,
     ) -> Self {
         let mut trackers: Vec<Box<dyn Tracker>> = Vec::new();
 
@@ -51,6 +53,7 @@ impl TokensTracker {
                 settings.max_results,
                 settings.track_history,
                 Arc::clone(&protocol_settings),
+                Arc::clone(&native_contract_provider),
             )));
         }
 
@@ -60,6 +63,7 @@ impl TokensTracker {
                 settings.max_results,
                 settings.track_history,
                 Arc::clone(&protocol_settings),
+                Arc::clone(&native_contract_provider),
             )));
         }
 

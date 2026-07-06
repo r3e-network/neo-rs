@@ -6,6 +6,7 @@
 use super::token_transfer_key::TokenTransferKey;
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::SerializableExtensions;
 use neo_io::{MemoryReader, Serializable};
 use neo_payloads::ApplicationExecuted;
@@ -98,6 +99,8 @@ pub struct TrackerBase {
     snapshot: Option<Arc<dyn StoreSnapshot>>,
     /// Protocol settings (for VM execution).
     pub settings: Arc<ProtocolSettings>,
+    /// Native-contract provider captured from the node composition root.
+    pub native_contract_provider: Arc<dyn NativeContractProvider>,
 }
 
 impl TrackerBase {
@@ -107,6 +110,7 @@ impl TrackerBase {
         max_results: u32,
         should_track_history: bool,
         settings: Arc<ProtocolSettings>,
+        native_contract_provider: Arc<dyn NativeContractProvider>,
     ) -> Self {
         Self {
             should_track_history,
@@ -114,6 +118,7 @@ impl TrackerBase {
             db,
             snapshot: None,
             settings,
+            native_contract_provider,
         }
     }
 
