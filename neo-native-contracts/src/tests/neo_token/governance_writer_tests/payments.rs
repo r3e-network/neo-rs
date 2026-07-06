@@ -162,17 +162,17 @@ fn registration_payment_engine(
 fn on_nep17_payment_data_parser_uses_stack_value_projection() {
     let source = include_str!("../../../neo_token/invoke.rs");
     let start = source
-        .find("crate::NEP17_PAYMENT_METHOD =>")
-        .expect("onNEP17Payment branch exists");
+        .find("fn invoke_on_nep17_payment(")
+        .expect("onNEP17Payment handler exists");
     let end = source[start..]
-        .find("\"unregisterCandidate\" =>")
+        .find("fn invoke_unregister_candidate(")
         .map(|offset| start + offset)
-        .expect("next branch exists");
-    let branch = &source[start..end];
+        .expect("next handler exists");
+    let handler = &source[start..end];
 
-    assert!(branch.contains("decode_stack_value"));
-    assert!(branch.contains("to_byte_string_bytes"));
-    assert!(!branch.contains("BinarySerializer::deserialize("));
+    assert!(handler.contains("decode_stack_value"));
+    assert!(handler.contains("to_byte_string_bytes"));
+    assert!(!handler.contains("BinarySerializer::deserialize("));
 }
 
 #[test]
