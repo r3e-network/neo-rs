@@ -7,6 +7,7 @@ use neo_payloads::{Block, Header, Transaction, Witness};
 use neo_primitives::UInt256;
 use neo_runtime::BlockOrigin;
 
+use crate::block_validation::MIN_TIMESTAMP_MS;
 use crate::pipeline::stage_traits::{PipelineStage, StageContext, StageId};
 
 #[derive(Debug)]
