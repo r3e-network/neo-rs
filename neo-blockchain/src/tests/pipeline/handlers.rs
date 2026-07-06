@@ -1,4 +1,5 @@
 use super::*;
+use crate::Import;
 use crate::command::BlockchainCommand;
 use crate::fill_memory_pool::FillMemoryPool;
 use crate::handle::BlockchainHandle;
@@ -131,6 +132,7 @@ impl MempoolLike for RecordingMempool {
 #[test]
 fn verified_import_pipeline_uses_explicit_native_providers() {
     let source = include_str!("../../pipeline/handlers.rs");
+    let import_source = include_str!("../../handlers/import.rs");
     let helper_start = source
         .find("fn verify_import_block_with_pipeline")
         .expect("verified import helper exists");
@@ -144,14 +146,14 @@ fn verified_import_pipeline_uses_explicit_native_providers() {
         "verified imports must route through the high-level verified import pipeline"
     );
 
-    let import_start = source
+    let import_start = import_source
         .find("if import.verify")
         .expect("verified import branch exists");
-    let import_end = source[import_start..]
+    let import_end = import_source[import_start..]
         .find("if bulk_sync && let Some(resources)")
         .map(|offset| import_start + offset)
         .expect("persistence branch follows verified import branch");
-    let branch = &source[import_start..import_end];
+    let branch = &import_source[import_start..import_end];
 
     assert!(
         branch.contains("Some(resources.native_persist.provider())"),
@@ -838,14 +840,11 @@ fn empty_fast_forward_run_collection_borrows_import_batch_blocks() {
 
 #[test]
 fn bulk_import_clones_blocks_only_after_empty_fast_forward_attempt() {
-    let source = include_str!("../../pipeline/handlers.rs");
+    let source = include_str!("../../handlers/import.rs");
     let handle_import = source
         .split("pub(crate) async fn handle_import")
         .nth(1)
-        .and_then(|tail| {
-            tail.split("/// Handle a [`BlockchainCommand::InventoryBlock`]")
-                .next()
-        })
+        .and_then(|tail| tail.split("impl<S, M> BlockchainService").next())
         .expect("handle_import source");
     let fast_forward_branch = handle_import
         .find("stage_empty_block_fast_forward")
