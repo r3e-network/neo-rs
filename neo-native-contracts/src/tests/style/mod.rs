@@ -189,6 +189,8 @@ pub(super) fn standard_contract_sources()
         (
             "Notary",
             concat!(
+                include_str!("../../notary/constants.rs"),
+                "\n",
                 include_str!("../../notary/storage.rs"),
                 "\n",
                 include_str!("../../notary/invoke.rs"),

@@ -10,6 +10,7 @@
 //!
 //! ## Contents
 //!
+//! - `constants`: deposit defaults and storage-prefix bytes.
 //! - `invoke`: native method dispatch for deposit/withdraw/verify calls.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `persist`: Notary-assisted fee accounting and designated notary rewards.
@@ -26,22 +27,13 @@ use num_bigint::BigInt;
 
 use crate::hashes::NOTARY_HASH;
 
+mod constants;
 mod invoke;
 mod metadata;
 mod persist;
 mod storage;
 
-/// C# `Notary.DefaultDepositDeltaTill`: the default lock-height delta applied to a
-/// first deposit whose `till` the depositor isn't allowed to set itself.
-const DEFAULT_DEPOSIT_DELTA_TILL: u32 = 5760;
-
-/// Storage prefix for the max-NotValidBefore-delta setting (C#
-/// `Notary.Prefix_MaxNotValidBeforeDelta`).
-const PREFIX_MAX_NOT_VALID_BEFORE_DELTA: u8 = 10;
-/// C# `Notary.DefaultMaxNotValidBeforeDelta`.
-const DEFAULT_MAX_NOT_VALID_BEFORE_DELTA: i64 = 140;
-/// C# `Notary.Prefix_Deposit` — per-account deposit (`Struct[Amount, Till]`).
-const PREFIX_DEPOSIT: u8 = 1;
+pub(in crate::notary) use constants::*;
 
 native_contract_handle!(
     /// The Notary native contract.
