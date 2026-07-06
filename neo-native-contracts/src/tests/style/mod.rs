@@ -250,6 +250,8 @@ fn standard_contract_dispatch_sources()
                 "\n",
                 include_str!("../../crypto_lib/hashing.rs"),
                 "\n",
+                include_str!("../../crypto_lib/metadata.rs"),
+                "\n",
                 include_str!("../../crypto_lib/invoke.rs"),
                 "\n",
                 include_str!("../../crypto_lib/signatures.rs"),
