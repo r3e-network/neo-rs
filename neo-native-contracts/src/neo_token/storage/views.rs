@@ -1,6 +1,7 @@
 //! Stack-value projections for NeoToken storage records.
 
 use super::*;
+use neo_error::CoreError;
 
 /// Decoded view of a `NeoAccountState` (`Struct[Balance, BalanceHeight, VoteTo,
 /// LastGasPerVote]`, C# `NeoAccountState.FromStackItem`).

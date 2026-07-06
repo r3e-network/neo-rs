@@ -1,6 +1,6 @@
 use super::*;
 use neo_config::ProtocolSettings;
-use neo_execution::ApplicationEngine;
+use neo_execution::{ApplicationEngine, Contract};
 use neo_payloads::{Block, BlockHeader};
 use neo_primitives::TriggerType;
 use std::collections::HashMap;

@@ -17,6 +17,7 @@
 //! - `views`: native contract storage read views.
 
 use super::*;
+use neo_error::CoreError;
 use neo_serialization::BinarySerializer;
 use num_traits::ToPrimitive;
 

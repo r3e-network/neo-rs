@@ -1,4 +1,5 @@
 use super::*;
+use neo_error::CoreError;
 
 impl NeoToken {
     /// C# `NeoToken.OnBalanceChanging`: invoked whenever an account's NEO balance is

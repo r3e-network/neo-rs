@@ -1,6 +1,7 @@
 use super::*;
 use crate::neo_token::storage::candidate_signature_account;
 use crate::test_support::{sample_committee, seed_committee};
+use neo_execution::Contract;
 use neo_vm::Interoperable;
 
 fn seed_register_price(cache: &DataCache, price: i64) {

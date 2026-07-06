@@ -1,4 +1,6 @@
 use super::*;
+use neo_error::CoreError;
+use neo_execution::Contract;
 use neo_runtime::sync_metrics::{
     self, NeoTokenCommitteeCandidateCount, NeoTokenCommitteeComputeStage,
 };

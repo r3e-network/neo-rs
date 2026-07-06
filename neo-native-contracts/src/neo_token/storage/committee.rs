@@ -6,6 +6,7 @@
 //! `Prefix_Committee` storage value.
 
 use super::*;
+use neo_error::CoreError;
 
 /// Process-global memoization for the deserialized committee, keyed by the exact
 /// `Prefix_Committee` storage bytes. A pure function of those bytes (same bytes
