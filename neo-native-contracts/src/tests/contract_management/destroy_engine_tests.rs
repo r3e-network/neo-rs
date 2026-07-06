@@ -6,6 +6,7 @@ use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
 use neo_payloads::{Block, BlockHeader};
 use neo_primitives::{CallFlags, TriggerType, Verifiable, WitnessScope};
+use neo_vm::StackItem;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::VmState;
 use std::sync::Arc;
