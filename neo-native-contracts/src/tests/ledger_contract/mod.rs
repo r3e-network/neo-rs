@@ -15,11 +15,12 @@
 use super::wire::HashIndexState;
 use super::*;
 use neo_execution::Interoperable;
-use neo_io::BinaryWriter;
+use neo_io::{BinaryWriter, Serializable};
 use neo_payloads::Transaction;
-use neo_primitives::{CallFlags, ContractParameterType};
+use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
+use neo_storage::persistence::DataCache;
 use neo_vm::StackItem;
 use neo_vm_rs::{ExecutionEngineLimits, StackValue, VmState as VMState};
 
@@ -112,9 +113,9 @@ fn block_lookup_args_use_shared_raw_integer_helpers() {
         &source[start_index..end_index]
     }
 
-    let root_source = include_str!("../../ledger_contract/mod.rs");
+    let query_source = include_str!("../../ledger_contract/queries.rs");
     let resolver = slice_between(
-        root_source,
+        query_source,
         "fn resolve_block_hash",
         "fn is_traceable_block",
     );
