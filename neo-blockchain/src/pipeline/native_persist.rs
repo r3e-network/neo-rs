@@ -64,8 +64,8 @@ use tracing::debug;
 
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
+use neo_execution::ApplicationEngine;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_execution::{ApplicationEngine, ExecutionContextState};
 use neo_manifest::CallFlags;
 use neo_payloads::ApplicationExecuted;
 use neo_payloads::{Block, Header, Witness};
@@ -73,9 +73,21 @@ use neo_primitives::{TriggerType, UInt160, UInt256, Verifiable};
 use neo_storage::DataCache;
 use neo_storage::StorageKey;
 use neo_storage::persistence::SeekDirection;
-use neo_vm::StackItem;
-use neo_vm_rs::StackValue;
 use neo_vm_rs::VmState as VMState;
+
+mod artifacts;
+mod metrics;
+mod trace;
+
+pub use artifacts::NativePersistNotification;
+use artifacts::{application_executed, collect_notifications};
+use metrics::record_tx_stage;
+use trace::{TraceTxFilter, trace_tx_frames, trace_tx_notifications};
+
+#[cfg(test)]
+use neo_vm::StackItem;
+#[cfg(test)]
+use neo_vm_rs::StackValue;
 
 /// C# genesis timestamp: `2016-07-15T15:08:21Z` in Unix milliseconds.
 const GENESIS_TIMESTAMP_MS: u64 = 1_468_595_301_000;
@@ -93,119 +105,6 @@ const NEO_TOKEN_ID: i32 = -5;
 /// C# `NeoToken.Prefix_Committee` (14): the cached-committee record —
 /// the first key genesis initialization writes.
 const NEO_PREFIX_COMMITTEE_KEY: u8 = 14;
-
-#[derive(Debug, Clone, Default)]
-struct TraceTxFilter {
-    all: bool,
-    hashes: Vec<String>,
-}
-
-fn record_tx_stage(
-    stage: neo_runtime::sync_metrics::NativePersistTxStage,
-    start: std::time::Instant,
-) {
-    neo_runtime::sync_metrics::record_native_persist_tx_stage(
-        stage,
-        neo_runtime::time::elapsed_us(start.elapsed()),
-    );
-}
-
-impl TraceTxFilter {
-    fn from_env() -> Self {
-        Self::from_raw(std::env::var("NEO_TRACE_TX").ok().as_deref())
-    }
-
-    fn from_raw(raw: Option<&str>) -> Self {
-        let Some(raw) = raw else {
-            return Self::default();
-        };
-        let mut filter = Self::default();
-        for entry in raw
-            .split(',')
-            .map(str::trim)
-            .filter(|entry| !entry.is_empty())
-        {
-            if entry == "*" || entry.eq_ignore_ascii_case("all") {
-                filter.all = true;
-            } else {
-                filter.hashes.push(entry.to_ascii_lowercase());
-            }
-        }
-        filter
-    }
-
-    fn matches(&self, tx_hash: &UInt256) -> bool {
-        if self.all {
-            return true;
-        }
-        if self.hashes.is_empty() {
-            return false;
-        }
-        let tx_hash = tx_hash.to_string().to_ascii_lowercase();
-        self.hashes.iter().any(|entry| entry == &tx_hash)
-    }
-}
-
-fn trace_tx_frames(engine: &ApplicationEngine) -> String {
-    engine
-        .invocation_stack()
-        .iter()
-        .enumerate()
-        .map(|(index, context)| {
-            let state_arc = context
-                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-            let state = state_arc.lock();
-            let script_hash = state
-                .script_hash
-                .or_else(|| UInt160::from_bytes(&context.script_hash()).ok())
-                .map(|hash| hash.to_string())
-                .unwrap_or_else(|| "unknown".to_string());
-            let method = state.method_name.as_deref().unwrap_or("-");
-            let opcode = context
-                .current_instruction()
-                .map(|instruction| format!("{:?}", instruction.opcode()))
-                .unwrap_or_else(|_| "<none>".to_string());
-            format!(
-                "#{index}:hash={script_hash}:method={method}:ip={}:opcode={opcode}",
-                context.instruction_pointer()
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("|")
-}
-
-fn trace_tx_notifications(engine: &ApplicationEngine) -> String {
-    engine
-        .notifications()
-        .iter()
-        .enumerate()
-        .map(|(index, notification)| {
-            let state = notification
-                .state
-                .iter()
-                .map(|item| format!("{:?}", stack_value_snapshot(item)))
-                .collect::<Vec<_>>()
-                .join(",");
-            format!(
-                "#{index}:contract={}:event={}:state=[{}]",
-                notification.script_hash, notification.event_name, state
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("|")
-}
-
-/// A notification emitted by a native persistence engine, captured for
-/// the caller (C# wraps these in `ApplicationExecuted` events).
-#[derive(Debug, Clone)]
-pub struct NativePersistNotification {
-    /// The contract that emitted the notification.
-    pub script_hash: UInt160,
-    /// The event name (e.g. `Transfer`, `CommitteeChanged`).
-    pub event_name: String,
-    /// The event arguments.
-    pub state: Vec<StackItem>,
-}
 
 /// Outcome of [`persist_block_natives_with_resources`] for one block.
 #[derive(Debug, Clone, Default)]
@@ -738,87 +637,6 @@ pub fn stage_block_natives_with_resources(
         postpersist_us,
         total_start,
     })
-}
-
-/// Builds the C# `ApplicationExecuted` record for a finished engine.
-/// `GasConsumed` is the datoshi fee (C# `engine.FeeConsumed`), the
-/// stack is the engine's result stack, and the notifications/logs are
-/// the engine's captured events.
-fn application_executed(
-    engine: &ApplicationEngine,
-    transaction: Option<neo_payloads::Transaction>,
-    vm_state: VMState,
-) -> ApplicationExecuted {
-    let mut executed = ApplicationExecuted::new(
-        transaction,
-        engine.trigger_type(),
-        vm_state,
-        engine.fault_exception().map(str::to_owned),
-        engine.fee_consumed(),
-        engine
-            .result_stack()
-            .iter()
-            .map(stack_value_snapshot)
-            .collect(),
-    );
-    executed.notifications = engine.notifications().to_vec();
-    executed.logs = engine.logs().to_vec();
-    executed
-}
-
-fn stack_value_snapshot(item: &StackItem) -> StackValue {
-    match item {
-        StackItem::Null => StackValue::Null,
-        StackItem::Boolean(value) => StackValue::Boolean(*value),
-        StackItem::Integer(value) => match value.to_i64() {
-            Some(value) => StackValue::Integer(value),
-            None => StackValue::BigInteger(value.to_signed_bytes_le()),
-        },
-        StackItem::ByteString(bytes) => StackValue::ByteString(bytes.clone()),
-        StackItem::Buffer(buffer) => StackValue::Buffer(buffer.data()),
-        StackItem::Array(array) => StackValue::Array(
-            array
-                .iter()
-                .map(|item| stack_value_snapshot(&item))
-                .collect(),
-        ),
-        StackItem::Struct(structure) => StackValue::Struct(
-            structure
-                .iter()
-                .map(|item| stack_value_snapshot(&item))
-                .collect(),
-        ),
-        StackItem::Map(map) => StackValue::Map(
-            map.iter()
-                .map(|(key, value)| (stack_value_snapshot(&key), stack_value_snapshot(&value)))
-                .collect(),
-        ),
-        StackItem::Pointer(pointer) => {
-            // pointer.position() returns usize. On 64-bit platforms (MSRV 1.85),
-            // usize fits in i64. Use an explicit cast with a debug assertion.
-            let pos = pointer.position();
-            debug_assert!(
-                pos <= i64::MAX as usize,
-                "pointer position {pos} exceeds i64::MAX"
-            );
-            #[allow(clippy::cast_possible_wrap)]
-            StackValue::Pointer(pos as i64)
-        }
-        StackItem::InteropInterface(_) => StackValue::Interop(0),
-    }
-}
-
-/// Copies the engine's emitted notifications into the outcome shape.
-fn collect_notifications(engine: &ApplicationEngine) -> Vec<NativePersistNotification> {
-    engine
-        .notifications()
-        .iter()
-        .map(|event| NativePersistNotification {
-            script_hash: event.script_hash,
-            event_name: event.event_name.clone(),
-            state: event.state.clone(),
-        })
-        .collect()
 }
 
 #[cfg(test)]

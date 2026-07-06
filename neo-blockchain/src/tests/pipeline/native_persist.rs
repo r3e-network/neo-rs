@@ -256,7 +256,7 @@ fn trace_tx_filter_matches_wildcards_and_listed_hashes() {
 
 #[test]
 fn trace_tx_filter_default_path_returns_before_hash_formatting() {
-    let source = include_str!("../../pipeline/native_persist.rs");
+    let source = include_str!("../../pipeline/native_persist/trace.rs");
     let matcher = source
         .split("fn matches(&self, tx_hash: &UInt256) -> bool")
         .nth(1)
