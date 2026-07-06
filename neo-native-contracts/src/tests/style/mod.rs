@@ -77,6 +77,8 @@ pub(super) fn standard_contract_sources()
                 "\n",
                 include_str!("../../neo_token/transfers.rs"),
                 "\n",
+                include_str!("../../neo_token/fast_forward.rs"),
+                "\n",
                 include_str!("../../neo_token/metadata.rs"),
                 "\n",
                 include_str!("../../neo_token/invoke.rs"),
