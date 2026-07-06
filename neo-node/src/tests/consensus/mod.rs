@@ -20,7 +20,7 @@ use neo_consensus::{
 use neo_crypto::signature::Secp256r1Crypto;
 use neo_io::Serializable;
 use neo_mempool::PoolItem;
-use neo_payloads::{Signer, Transaction, TransactionAttribute, Witness};
+use neo_payloads::{ExtensiblePayload, Signer, Transaction, TransactionAttribute, Witness};
 use neo_primitives::{UInt160, VerifyResult, WitnessScope};
 use neo_serialization::BinarySerializer;
 use neo_storage::{StorageItem, StorageKey};

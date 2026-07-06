@@ -11,6 +11,7 @@
 //! ## Contents
 //!
 //! - `hsm`: node-side HSM signer wiring.
+//! - `payload`: dBFT extensible-payload codec helpers.
 //! - `proposal`: consensus proposal construction helpers.
 //! - `setup`: validator-set, signer, and consensus startup setup helpers.
 //! - `tests`: Module-local tests and regression coverage.
@@ -28,20 +29,24 @@ use neo_io::Serializable;
 use neo_mempool::MemoryPool;
 use neo_native_contracts::{LedgerContract, NeoToken, PolicyContract};
 use neo_network::NetworkHandle;
-use neo_payloads::{ExtensiblePayload, Transaction, Witness};
+use neo_payloads::Transaction;
 use neo_primitives::time::now_millis;
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::persistence::{DataCache, Store, StoreCache};
-use neo_vm::script_builder::{RedeemScript, ScriptBuilder, signature_from_invocation};
 use parking_lot::RwLock;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
 mod hsm;
+mod payload;
 mod proposal;
 mod setup;
 
 pub use hsm::HsmKeyConfig;
+#[cfg(test)]
+use payload::DBFT_CATEGORY;
+use payload::consensus_to_extensible;
+pub use payload::extensible_to_consensus;
 use proposal::{
     cache_available_proposal_transactions, prepare_request_passes_ledger_guards,
     resolve_transactions, select_primary_proposal_transactions,
@@ -54,59 +59,10 @@ use setup::{resolve_public_key_index, validator_infos_from_keys};
 #[cfg(test)]
 use proposal::{expected_dbft_block_size_without_transactions, proposal_rejection_reason};
 
-/// dBFT extensible category (C# `ConsensusContext.CreatePayload`: `Category = "dBFT"`).
-const DBFT_CATEGORY: &str = "dBFT";
 /// Block version dBFT produces (C# Header default; consensus never sets a non-zero version).
 const BLOCK_VERSION: u32 = 0;
 /// C# DBFTPlugin `DbftSettings.MaxBlockSystemFee` default for Neo v3.10.0.
 const DBFT_MAX_BLOCK_SYSTEM_FEE: i64 = 150_000_000_000;
-
-// ===================== Extensible <-> ConsensusPayload codec =====================
-
-/// Builds the outbound dBFT [`ExtensiblePayload`] for a `ConsensusPayload` the
-/// service produced (its `witness` is the raw 64-byte signature). Mirrors C#
-/// `ConsensusContext.CreatePayload`.
-fn consensus_to_extensible(
-    payload: &ConsensusPayload,
-    validators: &[ValidatorInfo],
-) -> Option<ExtensiblePayload> {
-    let validator = validators.get(payload.validator_index as usize)?;
-    let mut ext = ExtensiblePayload::new();
-    ext.category = DBFT_CATEGORY.to_string();
-    ext.valid_block_start = 0;
-    ext.valid_block_end = payload.block_index;
-    ext.sender = validator.script_hash;
-    ext.data = payload.to_message_bytes();
-    ext.witness = Witness::new_with_scripts(
-        ScriptBuilder::new()
-            .invocation_from_signature(&payload.witness)
-            .to_array(),
-        RedeemScript::signature_redeem_script(&validator.public_key.encoded()),
-    );
-    Some(ext)
-}
-
-/// Decodes an inbound dBFT [`ExtensiblePayload`] into a [`ConsensusPayload`].
-/// Returns `None` for non-dBFT, malformed, or spoofed payloads (the in-body
-/// `validator_index` must map to the validator whose script hash is the
-/// extensible's `sender`).
-pub fn extensible_to_consensus(
-    ext: &ExtensiblePayload,
-    network: u32,
-    validators: &[ValidatorInfo],
-) -> Option<ConsensusPayload> {
-    if ext.category != DBFT_CATEGORY {
-        return None;
-    }
-    let signature = signature_from_invocation(&ext.witness.invocation_script)?;
-    let payload =
-        ConsensusPayload::from_message_bytes(network, &ext.data, signature.to_vec()).ok()?;
-    let validator = validators.get(payload.validator_index as usize)?;
-    if validator.script_hash != ext.sender {
-        return None;
-    }
-    Some(payload)
-}
 
 // ===================== the driver =====================
 
