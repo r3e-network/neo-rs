@@ -136,18 +136,12 @@ fn native_contract_surface() {
 #[test]
 fn invoke_uint_args_use_shared_raw_parser() {
     let source = include_str!("../../notary/invoke.rs");
-    let start = source
-        .find("fn invoke_native(")
-        .expect("Notary invoke dispatch exists");
-    let end = source[start..]
-        .find("other => Err")
-        .map(|offset| start + offset)
-        .expect("invoke default arm exists");
-    let invoke = &source[start..end];
 
-    assert!(invoke.contains("crate::args::raw_u32_arg"));
-    assert!(!invoke.contains("BigInt::from_signed_bytes_le(args"));
-    assert!(!invoke.contains("BigInt::from_signed_bytes_le(b)"));
+    assert!(source.contains("fn invoke_lock_deposit_until("));
+    assert!(source.contains("fn invoke_set_max_not_valid_before_delta("));
+    assert!(source.contains("crate::args::raw_u32_arg"));
+    assert!(!source.contains("BigInt::from_signed_bytes_le(args"));
+    assert!(!source.contains("BigInt::from_signed_bytes_le(b)"));
 }
 
 #[test]
