@@ -172,14 +172,14 @@ transaction hashes), so queued preverification rejects malformed blocks before
 ordered import without enforcing the dBFT-only production transaction limit.
 RPC `submitblock` uses the same preflight before submitting decoded blocks
 through `BlockImport::import(..., BlockOrigin::Rpc)`.
-Verification-enabled imports then run the concrete
-`neo-blockchain::NeoValidateStage` followed by
-`NeoConsensusWitnessStage` over the same snapshot used by native persistence.
-The second stage resolves the previous trimmed block, reads its
-`NextConsensus`, and verifies the header witness through the explicit
-native-contract provider; trusted `verify: false` fast-sync package imports
-keep relying on the block decoder's import-integrity checks to avoid
-duplicating merkle/hash work on the hot replay path.
+Verification-enabled imports then run
+`neo-blockchain::VerifiedImportPipeline`, which composes the concrete
+`NeoValidateStage` followed by `NeoConsensusWitnessStage` over the same
+snapshot used by native persistence. The second stage resolves the previous
+trimmed block, reads its `NextConsensus`, and verifies the header witness
+through the explicit native-contract provider; trusted `verify: false`
+fast-sync package imports keep relying on the block decoder's import-integrity
+checks to avoid duplicating merkle/hash work on the hot replay path.
 `neo_runtime::SyncPipelineDriver` consumes contiguous sync batches, rejects
 height gaps, calls the import queue, and writes import-stage checkpoints
 according to `CommitPolicy`. `neo_system::SyncImportPipeline` now composes the
@@ -215,8 +215,7 @@ happen only inside `neo-blockchain`.
 
 ```rust
 // Proposed BlockImport chain for neo-rs
-let import_chain = Box::new(NeoValidateStage)
-    .and_then(Box::new(NeoConsensusWitnessStage)) // dBFT header witness check
+let import_chain = VerifiedImportPipeline::new(...) // validate -> dBFT witness
     .and_then(Box::new(StateVerifier))       // balance, nonce, conflicts
     .chain(Box::new(ClientBlockImport));     // persist to DB
 ```

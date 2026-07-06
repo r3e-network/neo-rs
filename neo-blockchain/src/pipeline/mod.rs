@@ -19,6 +19,7 @@
 //! - `native_persist`: native-contract persistence hooks.
 //! - `stage_traits`: pipeline stage trait definitions (ADR-027, moved from neo-engine).
 //! - `validate_stage`: concrete `ValidateStage` impl (ADR-010 Phase 1).
+//! - `verified_import_pipeline`: high-level verified import stage chain.
 
 pub mod block_processing;
 pub mod block_validation;
@@ -28,6 +29,7 @@ pub mod handlers;
 pub mod native_persist;
 pub mod stage_traits;
 pub mod validate_stage;
+pub mod verified_import_pipeline;
 
 pub use stage_traits::{
     ConsensusWitnessStage, EngineError, EngineResult, PipelineStage, StageContext, StageId,

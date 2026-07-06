@@ -127,33 +127,37 @@ impl MempoolLike for RecordingMempool {
 }
 
 #[test]
-fn batch_header_verification_uses_explicit_native_provider_helper() {
+fn verified_import_pipeline_uses_explicit_native_providers() {
     let source = include_str!("../../pipeline/handlers.rs");
-    let verifier_start = source
-        .find("fn verify_consensus_witness_against_snapshot_with_native_provider")
-        .expect("provider-aware verifier exists");
-    let verifier_end = source[verifier_start..]
-        .find("fn verify_consensus_witness_with_batch_resources")
-        .map(|offset| verifier_start + offset)
-        .expect("batch verifier follows provider-aware verifier");
-    let provider_aware_verifier = &source[verifier_start..verifier_end];
+    let helper_start = source
+        .find("fn verify_import_block_with_pipeline")
+        .expect("verified import helper exists");
+    let helper_end = source[helper_start..]
+        .find("fn collect_empty_fast_forward_run")
+        .map(|offset| helper_start + offset)
+        .expect("next handler helper follows verified import helper");
+    let helper = &source[helper_start..helper_end];
     assert!(
-        provider_aware_verifier.contains("SnapshotConsensusWitnessContext::new"),
-        "provider-aware header verification must build the consensus-witness stage context"
+        helper.contains("VerifiedImportPipeline::verify_block"),
+        "verified imports must route through the high-level verified import pipeline"
     );
 
-    let start = source
-        .find("fn verify_consensus_witness_with_batch_resources")
-        .expect("batch header verifier exists");
-    let end = source[start..]
-        .find("fn collect_empty_fast_forward_run")
-        .map(|offset| start + offset)
-        .expect("next handler helper follows batch verifier");
-    let verifier = &source[start..end];
+    let import_start = source
+        .find("if import.verify")
+        .expect("verified import branch exists");
+    let import_end = source[import_start..]
+        .find("if bulk_sync && let Some(resources)")
+        .map(|offset| import_start + offset)
+        .expect("persistence branch follows verified import branch");
+    let branch = &source[import_start..import_end];
 
     assert!(
-        verifier.contains("Some(resources.native_persist.provider())"),
-        "batch header verification must pass the provider captured in BatchPersistResources"
+        branch.contains("Some(resources.native_persist.provider())"),
+        "batch verified import must pass the provider captured in BatchPersistResources"
+    );
+    assert!(
+        branch.contains("self.system.native_contract_provider()"),
+        "store-backed verified import must pass the provider exposed by SystemContext"
     );
 }
 

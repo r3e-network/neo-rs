@@ -31,11 +31,10 @@ use crate::relay_result::RelayResult;
 use crate::reverify::Reverify;
 use crate::service::{BlockchainService, MempoolLike};
 use crate::service_context::BlockPersistContext;
-use neo_runtime::BlockOrigin;
 
 use super::consensus_witness_stage::{NeoConsensusWitnessStage, SnapshotConsensusWitnessContext};
-use super::stage_traits::{EngineError, StageContext, ValidateStage};
-use super::validate_stage::{NeoValidateStage, SnapshotValidateContext};
+use super::stage_traits::EngineError;
+use super::verified_import_pipeline::VerifiedImportPipeline;
 
 #[path = "../handlers/transactions.rs"]
 mod transactions;
@@ -89,42 +88,27 @@ where
             .map_err(|error| Self::pipeline_error(block, error))
     }
 
-    fn verify_consensus_witness_with_batch_resources(
-        &self,
-        block: &Block,
-        resources: &BatchPersistResources,
-    ) -> CoreResult<()> {
-        self.verify_consensus_witness_against_snapshot_with_native_provider(
-            block,
-            Arc::clone(&resources.settings),
-            Arc::clone(&resources.snapshot),
-            Some(resources.native_persist.provider()),
-        )
-    }
-
-    async fn validate_import_block_with_stage(
+    async fn verify_import_block_with_pipeline(
         &self,
         block: &Block,
         current_height: u32,
         bulk_sync: bool,
         settings: Arc<neo_config::ProtocolSettings>,
         snapshot: Arc<neo_storage::DataCache>,
+        native_contract_provider: Option<
+            Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>,
+        >,
     ) -> CoreResult<()> {
-        let stage =
-            NeoValidateStage::new(Arc::new(SnapshotValidateContext::new(settings, snapshot)));
-        let ctx = StageContext {
-            origin: if bulk_sync {
-                BlockOrigin::TrustedLocal
-            } else {
-                BlockOrigin::Rpc
-            },
+        VerifiedImportPipeline::verify_block(
+            block,
             current_height,
             bulk_sync,
-        };
-        stage
-            .validate(&ctx, block)
-            .await
-            .map_err(|error| Self::pipeline_error(block, error))
+            settings,
+            snapshot,
+            native_contract_provider,
+        )
+        .await
+        .map_err(|error| Self::pipeline_error(block, error))
     }
 
     fn collect_empty_fast_forward_run<'a>(
@@ -505,17 +489,15 @@ where
 
             if import.verify {
                 let verify_result = if let Some(resources) = &batch_persist_resources {
-                    self.validate_import_block_with_stage(
+                    self.verify_import_block_with_pipeline(
                         block,
                         current_height,
                         bulk_sync,
                         Arc::clone(&resources.settings),
                         Arc::clone(&resources.snapshot),
+                        Some(resources.native_persist.provider()),
                     )
                     .await
-                    .and_then(|()| {
-                        self.verify_consensus_witness_with_batch_resources(block, resources)
-                    })
                 } else {
                     let snapshot = match self.system.store_snapshot() {
                         Some(snapshot) => snapshot,
@@ -528,15 +510,15 @@ where
                             return ImportBlocksReply::ok_with_stats(imported, stats);
                         }
                     };
-                    self.validate_import_block_with_stage(
+                    self.verify_import_block_with_pipeline(
                         block,
                         current_height,
                         bulk_sync,
                         self.system.settings(),
                         snapshot,
+                        self.system.native_contract_provider(),
                     )
                     .await
-                    .and_then(|()| self.verify_consensus_witness_against_store(block))
                 };
                 if let Err(error) = verify_result {
                     warn!(

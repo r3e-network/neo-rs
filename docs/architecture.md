@@ -212,7 +212,9 @@ The detailed rules for this style live in
   `ConsensusWitnessStage`, `PipelineStage`) live in
   `neo-blockchain::pipeline::stage_traits`, alongside their concrete
   implementations, `NeoValidateStage` and `NeoConsensusWitnessStage`. The
-  concrete block processing lives in `neo-blockchain::BlockchainService`. The former
+  high-level `VerifiedImportPipeline` composes those two stages for
+  verification-enabled local imports. The concrete block processing lives in
+  `neo-blockchain::BlockchainService`. The former
   `neo-engine` crate and its `BlockchainEngineAdapter` bridge were removed in
   ADR-027 as never-instantiated dead code; ADR-009/ADR-010 record the earlier
   pipeline-vocabulary overlap that this excision resolved.
@@ -236,10 +238,11 @@ The detailed rules for this style live in
   decoded blocks through `BlockImport::import(..., BlockOrigin::Rpc)`,
   preserving the RPC-visible `Invalid` relay result for malformed block
   structure or rejected height-plausible imports. Verification-enabled imports
-  then run `neo-blockchain::NeoValidateStage` followed by
-  `NeoConsensusWitnessStage` over the same snapshot used by native persistence;
-  the second stage verifies the header witness against the previous block's
-  `NextConsensus` using the explicit native-contract provider. Trusted
+  then run `neo-blockchain::VerifiedImportPipeline`, which composes
+  `NeoValidateStage` followed by `NeoConsensusWitnessStage` over the same
+  snapshot used by native persistence; the second stage verifies the header
+  witness against the previous block's `NextConsensus` using the explicit
+  native-contract provider. Trusted
   `verify: false` fast-sync package imports keep relying on the block decoder's
   import-integrity checks to avoid duplicate work. Peer-relayed block bursts
   enter the live inventory path through

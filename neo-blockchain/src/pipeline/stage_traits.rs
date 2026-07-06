@@ -150,6 +150,25 @@ pub struct StageContext {
     pub bulk_sync: bool,
 }
 
+impl StageContext {
+    /// Builds the stage context used by verification-enabled import commands.
+    ///
+    /// Bulk-sync imports are trusted local replay artifacts; non-bulk imports
+    /// enter through RPC-like local submission.
+    #[must_use]
+    pub fn for_verified_import(current_height: u32, bulk_sync: bool) -> Self {
+        Self {
+            origin: if bulk_sync {
+                BlockOrigin::TrustedLocal
+            } else {
+                BlockOrigin::Rpc
+            },
+            current_height,
+            bulk_sync,
+        }
+    }
+}
+
 /// Output produced by a stage after processing a block.
 #[derive(Debug, Clone)]
 pub struct StageOutput {
