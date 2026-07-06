@@ -4,10 +4,9 @@ use anyhow::Context;
 use neo_primitives::UInt256;
 use std::sync::Arc;
 
-use super::{
-    FastSyncBlockReferenceProof, FastSyncPackage, FastSyncStateRootReferenceProof,
-    LocalStateRootTip,
-};
+use super::local::LocalStateRootTip;
+use super::package::FastSyncPackage;
+use super::report::{FastSyncBlockReferenceProof, FastSyncStateRootReferenceProof};
 
 fn reference_rpc_client(endpoint: &str) -> anyhow::Result<neo_rpc::RpcClient> {
     let url = url::Url::parse(endpoint)
