@@ -139,6 +139,8 @@ pub(super) fn standard_contract_sources()
                 "\n",
                 include_str!("../../policy_contract/metadata.rs"),
                 "\n",
+                include_str!("../../policy_contract/provider.rs"),
+                "\n",
                 include_str!("../../policy_contract/mod.rs"),
             ),
         ),

@@ -12,6 +12,7 @@
 //!
 //! - `invoke`: Native method dispatch and runtime side effects.
 //! - `metadata`: Native contract metadata and descriptor helpers.
+//! - `provider`: Engine-facing blocked-contract and whitelisted-fee seams.
 //! - `storage`: Storage contexts, key builders, and storage item helpers for
 //!   execution.
 //! - `tests`: Module-local tests and regression coverage.
@@ -26,6 +27,7 @@ use num_bigint::BigInt;
 
 mod invoke;
 mod metadata;
+mod provider;
 mod storage;
 
 /// C# `PolicyContract.Prefix_FeePerByte` storage prefix.
@@ -119,20 +121,12 @@ impl NativeContract for PolicyContract {
         &metadata::POLICY_CONTRACT_EVENTS
     }
 
-    /// The `ApplicationEngine` contract-invocation gate (C#
-    /// `ApplicationEngine.CallContract` -> `NativeContract.Policy.IsBlocked`):
-    /// `snapshot.Contains(key(Prefix_BlockedAccount, hash))`. Native contracts can
-    /// never be in the blocked list (`blockAccount` rejects them), so no special
-    /// casing is needed. Without this override the trait default `Ok(false)` would
-    /// let a blocked contract be invoked, diverging from C#.
     fn is_contract_blocked(
         &self,
         snapshot: &neo_storage::persistence::DataCache,
         contract_hash: &UInt160,
     ) -> CoreResult<bool> {
-        Ok(snapshot
-            .get(&Self::blocked_account_key(contract_hash))
-            .is_some())
+        self.is_contract_blocked_native(snapshot, contract_hash)
     }
 
     /// C# `PolicyContract.InitializeAsync(engine, hardfork)` for `hardfork ==
@@ -165,12 +159,6 @@ impl NativeContract for PolicyContract {
         Ok(())
     }
 
-    /// C# `PolicyContract.IsWhitelistFeeContract(snapshot, contractHash,
-    /// method, out fixedFee)`, reached by the engine's contract-call fee logic
-    /// through the native-contract seam: the contract must exist in
-    /// ContractManagement, the `(method, paramCount)` descriptor must resolve,
-    /// and a `Prefix_WhitelistedFeeContracts ++ hash ++ offset` entry must be
-    /// stored — then its `FixedFee` applies instead of per-instruction fees.
     fn whitelisted_fee(
         &self,
         snapshot: &DataCache,
@@ -178,26 +166,7 @@ impl NativeContract for PolicyContract {
         method: &str,
         param_count: u32,
     ) -> CoreResult<Option<i64>> {
-        let Some(contract) =
-            crate::ContractManagement::get_contract_from_snapshot(snapshot, contract_hash)?
-        else {
-            return Ok(None);
-        };
-        let Some(descriptor) = contract
-            .manifest
-            .abi
-            .methods
-            .iter()
-            .find(|m| m.name == method && m.parameters.len() == param_count as usize)
-        else {
-            return Ok(None);
-        };
-        match snapshot.get(&Self::whitelist_fee_key(contract_hash, descriptor.offset)) {
-            Some(item) => Ok(Some(
-                Self::decode_whitelisted_contract(&item.value_bytes())?.fixed_fee,
-            )),
-            None => Ok(None),
-        }
+        self.whitelisted_fee_native(snapshot, contract_hash, method, param_count)
     }
 
     fn invoke(
