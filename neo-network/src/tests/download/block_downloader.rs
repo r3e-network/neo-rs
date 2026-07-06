@@ -1,8 +1,11 @@
 use super::*;
 use futures::StreamExt;
 use neo_payloads::Block;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+use std::time::Duration;
 
-use crate::PeerId;
+use crate::{NetworkError, NetworkResult, PeerId};
 
 fn block(index: u32) -> Block {
     let mut header = neo_payloads::Header::new();
@@ -147,6 +150,148 @@ fn ordered_block_batch_buffer_rejects_misaligned_block_indices() {
 
     assert!(result.is_err());
     assert!(buffer.pop_ready().is_none());
+}
+
+#[derive(Clone, Default)]
+struct FakeRangeFetcher {
+    delays: Arc<parking_lot::Mutex<BTreeMap<u32, Duration>>>,
+    fail_once: Arc<parking_lot::Mutex<BTreeSet<u32>>>,
+    calls: Arc<parking_lot::Mutex<Vec<BlockRangeAssignment>>>,
+}
+
+impl FakeRangeFetcher {
+    fn with_delay(self, start: u32, delay: Duration) -> Self {
+        self.delays.lock().insert(start, delay);
+        self
+    }
+
+    fn with_one_failure(self, start: u32) -> Self {
+        self.fail_once.lock().insert(start);
+        self
+    }
+
+    fn calls(&self) -> Vec<BlockRangeAssignment> {
+        self.calls.lock().clone()
+    }
+}
+
+#[async_trait::async_trait]
+impl BlockRangeFetcher for FakeRangeFetcher {
+    async fn fetch_range(
+        &self,
+        assignment: BlockRangeAssignment,
+    ) -> NetworkResult<BlockDownloadBatch> {
+        self.calls.lock().push(assignment);
+        let delay = self.delays.lock().get(&assignment.request.start).copied();
+        if let Some(delay) = delay {
+            tokio::time::sleep(delay).await;
+        }
+        if self.fail_once.lock().remove(&assignment.request.start) {
+            return Err(NetworkError::Protocol(format!(
+                "temporary failure at {}",
+                assignment.request.start
+            )));
+        }
+        let blocks = (assignment.request.start..=assignment.request.end())
+            .map(block)
+            .collect::<Vec<_>>();
+        Ok(BlockDownloadBatch::new(
+            Some(assignment.peer_id),
+            assignment.request.start,
+            blocks,
+        ))
+    }
+}
+
+#[tokio::test]
+async fn block_download_coordinator_yields_contiguous_batches_after_out_of_order_fetches() {
+    let peer = PeerId::from_raw(1);
+    let fetcher = FakeRangeFetcher::default().with_delay(1, Duration::from_millis(20));
+    let mut coordinator = BlockDownloadCoordinator::new(
+        0,
+        4,
+        vec![BlockDownloadPeer::new(peer, 4)],
+        BlockDownloadConfig::new(2, 2),
+        fetcher.clone(),
+    );
+
+    let first = coordinator
+        .next()
+        .await
+        .expect("first batch")
+        .expect("first ok");
+    let second = coordinator
+        .next()
+        .await
+        .expect("second batch")
+        .expect("second ok");
+
+    assert_eq!(first.start_height, 1);
+    assert_eq!(first.next_height(), 3);
+    assert_eq!(second.start_height, 3);
+    assert_eq!(second.next_height(), 5);
+    assert!(coordinator.next().await.is_none());
+    assert_eq!(
+        fetcher
+            .calls()
+            .into_iter()
+            .map(|assignment| assignment.request.start)
+            .collect::<Vec<_>>(),
+        vec![1, 3]
+    );
+}
+
+#[tokio::test]
+async fn block_download_coordinator_retries_failed_range_on_another_peer() {
+    let first_peer = PeerId::from_raw(1);
+    let second_peer = PeerId::from_raw(2);
+    let fetcher = FakeRangeFetcher::default().with_one_failure(1);
+    let mut coordinator = BlockDownloadCoordinator::new(
+        0,
+        2,
+        vec![
+            BlockDownloadPeer::new(first_peer, 2),
+            BlockDownloadPeer::new(second_peer, 2),
+        ],
+        BlockDownloadConfig::new(1, 2).with_retry_limit(1),
+        fetcher.clone(),
+    );
+
+    let batch = coordinator
+        .next()
+        .await
+        .expect("retry batch")
+        .expect("retry ok");
+
+    assert_eq!(batch.start_height, 1);
+    assert_eq!(batch.peer_id, Some(second_peer));
+    let calls = fetcher.calls();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0].peer_id, first_peer);
+    assert_eq!(calls[0].attempt, 0);
+    assert_eq!(calls[1].peer_id, second_peer);
+    assert_eq!(calls[1].attempt, 1);
+    assert!(coordinator.next().await.is_none());
+}
+
+#[tokio::test]
+async fn block_download_coordinator_errors_when_no_peer_can_serve_next_range() {
+    let peer = PeerId::from_raw(1);
+    let mut coordinator = BlockDownloadCoordinator::new(
+        0,
+        4,
+        vec![BlockDownloadPeer::new(peer, 0)],
+        BlockDownloadConfig::new(1, 2),
+        FakeRangeFetcher::default(),
+    );
+
+    let err = coordinator
+        .next()
+        .await
+        .expect("stuck downloader should yield an error")
+        .expect_err("no eligible peer");
+
+    assert!(err.to_string().contains("no eligible peer"), "{err}");
 }
 
 #[tokio::test]

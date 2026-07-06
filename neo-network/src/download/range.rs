@@ -1,9 +1,9 @@
 //! Cross-peer block range assignment.
 //!
 //! `CrossPeerBlockRangeScheduler` is the transport-independent policy object
-//! used by a future P2P stream downloader. It assigns contiguous block ranges
-//! across eligible peers, caps in-flight work, preserves peer bias, and retries
-//! failed ranges on another peer before surfacing an error.
+//! used by `BlockDownloadCoordinator`. It assigns contiguous block ranges across
+//! eligible peers, caps in-flight work, preserves peer bias, and retries failed
+//! ranges on another peer before surfacing an error.
 
 use std::collections::{BTreeMap, VecDeque};
 
@@ -90,6 +90,13 @@ impl CrossPeerBlockRangeScheduler {
     #[must_use]
     pub fn in_flight_len(&self) -> usize {
         self.in_flight.len()
+    }
+
+    /// Returns `true` when every planned range has either completed or there
+    /// was no range to request.
+    #[must_use]
+    pub fn is_complete(&self) -> bool {
+        self.next_start > self.target_height && self.in_flight.is_empty() && self.retries.is_empty()
     }
 
     /// Assign the next range to an eligible peer.

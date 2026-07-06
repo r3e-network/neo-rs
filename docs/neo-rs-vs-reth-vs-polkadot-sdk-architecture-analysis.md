@@ -224,11 +224,12 @@ lookup, while `SyncDownloadImportDriver` drains downloader streams into the
 import-stage driver. The async peer transport still does not feed production
 peer batches into that bridge.
 `neo-network::BlockDownloadBatch` converts into `neo_runtime::SyncBlockBatch`,
-preserving the single ordered import path. Of the downloader components, only the
-per-peer `BlockRequestScheduler` is wired into production (used by `PeerSession`);
-the `CrossPeerBlockRangeScheduler` and ordered response buffer exist but are
-constructed only in `neo-network/src/tests/`. The remaining work is the async
-peer transport stream and broader staged pipeline.
+preserving the single ordered import path. `PeerSession` uses the per-peer
+`BlockRequestScheduler`, and the transport-agnostic
+`BlockDownloadCoordinator` now composes `CrossPeerBlockRangeScheduler` with the
+ordered response buffer behind the `BlockDownloader` stream boundary. The
+remaining work is the real async P2P `BlockRangeFetcher` and broader staged
+pipeline.
 
 ---
 
@@ -319,15 +320,15 @@ node-composed `SyncImportPipeline` and surfaces downloader/import errors through
 the shared runtime error vocabulary. The per-peer
 `BlockRequestScheduler` owns the `GetBlockByIndex` request-window policy
 used by `PeerSession` (`500` blocks per request, `1000` blocks in flight,
-stall rewind) — this is the one downloader component wired into production.
+stall rewind).
 `CrossPeerBlockRangeScheduler` (cross-peer selection, peer bias, bounded
 in-flight range assignment, retry accounting) and `OrderedBlockBatchBuffer`
 (holds out-of-order peer responses until the next contiguous height is
-available) are implemented but unwired — constructed only in
-`neo-network/src/tests/`. The `ChannelBlockDownloader` adapter is available for
-tests and composition roots. The remaining work is the async stream executor
-that sends those assignments to peers and yields `BlockDownloadBatch` values
-directly.
+available) are composed by `BlockDownloadCoordinator`, a transport-agnostic
+`BlockDownloader` stream over any `BlockRangeFetcher`. The
+`ChannelBlockDownloader` adapter remains available for tests and composition
+roots. The remaining work is the real async peer fetcher that sends those
+assignments to live peers.
 
 ### Reth innovations
 
@@ -480,7 +481,7 @@ pub struct TransactionState {
 | Stage commit policy + checkpoints | ★★★ | - | ★★★★ | ★★ | Import-stage driver done |
 | Compact derive macro | ★★ | ★★★★ | - | ★★ | Small |
 | Task supervision | - | - | ★★★★★ | ★★ | Done |
-| BlockDownloader as Stream | ★★★ | - | ★★ | ★★★ | Boundary + download-to-import bridge + per-peer scheduler wired; cross-peer range scheduler + ordered buffer implemented but unwired (test-only); async transport stream medium |
+| BlockDownloader as Stream | ★★★ | - | ★★ | ★★★ | Boundary + download-to-import bridge + per-peer scheduler wired; coordinator composes cross-peer range scheduler + ordered buffer; real async peer fetcher medium |
 | Essential task monitoring | - | - | ★★★★★ | ★ | Small |
 | Metrics infrastructure | - | - | ★★★★ | ★★ | Medium |
 
@@ -492,7 +493,7 @@ pub struct TransactionState {
 2. **Typed table boundary** — implemented in `neo-storage` but on no live storage access path (the live encoding remains `StorageKey` / `KeyBuilder` over raw C#-compatible bytes); compact derive is still future work.
 3. **Block import queue with concurrent verification** — reusable runtime boundary implemented and composed by `neo_system::SyncImportPipeline`.
 4. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`; durable store-backed checkpoints are available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, node composition creates the import-stage queue/checkpoint handle, and `SyncDownloadImportDriver` can drive it from a downloader stream; production P2P transport still does not feed real batches.
-5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; `neo-system` has the download-to-import bridge; per-peer `BlockRequestScheduler` is wired into `PeerSession`; `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) and `OrderedBlockBatchBuffer` (contiguous response release) are implemented but unwired, constructed only in `neo-network/src/tests/`; async peer transport stream remains next.
+5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; `neo-system` has the download-to-import bridge; per-peer `BlockRequestScheduler` is wired into `PeerSession`; `BlockDownloadCoordinator` composes `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) and `OrderedBlockBatchBuffer` (contiguous response release) behind a transport-agnostic `BlockRangeFetcher`; real async peer transport remains next.
 6. **Hot/Cold/Static tiering integration** (medium, big storage win)
 7. **Staged sync pipeline integration** (large, biggest overall impact)
 

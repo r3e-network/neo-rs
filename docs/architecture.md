@@ -268,9 +268,11 @@ The detailed rules for this style live in
   `GetBlockByIndex` request-window policy used by `PeerSession`.
   `CrossPeerBlockRangeScheduler` owns peer selection, bias, bounded in-flight
   range assignment, and retry accounting. `OrderedBlockBatchBuffer` holds
-  out-of-order peer responses until the next contiguous height is available. The
-  remaining integration layer is the async stream downloader that executes those
-  assignments and yields `BlockDownloadBatch` values.
+  out-of-order peer responses until the next contiguous height is available.
+  `BlockDownloadCoordinator` composes the cross-peer scheduler, ordered buffer,
+  and a transport-provided `BlockRangeFetcher` into a `BlockDownloader` stream.
+  The remaining production integration layer is the real async P2P fetcher that
+  executes assignments against live peers.
 
 - **Native dispatch is explicit at composition.** `neo-execution` still owns the
   low-level `NativeContractProvider` seam so the engine does not depend on

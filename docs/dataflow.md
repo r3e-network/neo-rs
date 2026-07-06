@@ -83,10 +83,11 @@ transport. The
 per-peer `GetBlockByIndex` request window is planned by
 `neo_network::BlockRequestScheduler` and sent by `PeerSession`. Cross-peer range
 assignment, peer bias, and retry accounting are now owned by
-`neo_network::CrossPeerBlockRangeScheduler`; the remaining download integration
-is the async stream executor that sends those assignments to peers, buffers
-out-of-order responses through `neo_network::OrderedBlockBatchBuffer`, and
-yields `BlockDownloadBatch` values directly.
+`neo_network::CrossPeerBlockRangeScheduler`. The transport-agnostic
+`neo_network::BlockDownloadCoordinator` composes that scheduler with
+`neo_network::OrderedBlockBatchBuffer` and yields ordered `BlockDownloadBatch`
+values from any `BlockRangeFetcher`; the remaining production integration is the
+real async P2P fetcher that sends those assignments to peers.
 The canonical execution/persist path remains the `neo-blockchain` service loop.
 
 ```mermaid

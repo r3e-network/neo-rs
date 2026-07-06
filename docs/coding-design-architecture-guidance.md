@@ -258,10 +258,12 @@ Priority order for crate refactors:
    `neo_network::BlockRequestScheduler`; session code should only serialize and
    send the planned wire request. Cross-peer range assignment, peer bias, and
    retry accounting belong in `neo_network::CrossPeerBlockRangeScheduler` so the
-   future async downloader can stay focused on transport and block validation.
-   Out-of-order peer responses must pass through
-   `neo_network::OrderedBlockBatchBuffer` before they reach the runtime import
-   queue.
+   downloader policy stays independent from wire transport. Use
+   `neo_network::BlockDownloadCoordinator` to compose that scheduler with
+   `neo_network::OrderedBlockBatchBuffer` and a transport-specific
+   `neo_network::BlockRangeFetcher`; real P2P code should only implement the
+   fetcher and leave ordered release to the coordinator before batches reach the
+   runtime import queue.
 2. **One reorg-aware chain event stream.** Indexers, RPC application logs,
    token trackers, oracle services, and plugins should derive from a single
    bounded stream of chain outcomes. Because Neo committed blocks are final,

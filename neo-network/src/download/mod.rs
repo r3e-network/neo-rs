@@ -15,6 +15,7 @@
 //!   roots.
 //! - `config`: bounded request concurrency, batch size, retry, and peer-bias
 //!   settings.
+//! - `coordinator`: transport-agnostic scheduler/buffer/fetcher composition.
 //! - `order`: ordered response buffering for multi-peer downloads.
 //! - `range`: cross-peer range assignment and retry scheduling.
 //! - `request`: per-peer `GetBlockByIndex` request-window scheduling.
@@ -23,6 +24,7 @@
 mod batch;
 mod channel;
 mod config;
+mod coordinator;
 mod order;
 mod range;
 mod request;
@@ -31,6 +33,7 @@ mod stream;
 pub use batch::BlockDownloadBatch;
 pub use channel::ChannelBlockDownloader;
 pub use config::BlockDownloadConfig;
+pub use coordinator::{BlockDownloadCoordinator, BlockRangeFetcher};
 pub use order::OrderedBlockBatchBuffer;
 pub use range::{BlockDownloadPeer, BlockRangeAssignment, CrossPeerBlockRangeScheduler};
 pub use request::{BlockRequest, BlockRequestScheduler};
