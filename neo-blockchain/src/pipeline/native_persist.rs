@@ -26,18 +26,19 @@
 //! `clonedSnapshot = snapshot.CloneCache()` per transaction,
 //! committed into the block cache only when the script HALTs.
 //!
-//! The per-stage native hooks are driven directly off the installed
-//! global provider (see `run_native_persist_hooks`) rather than via
-//! `ApplicationEngine::native_on_persist`/`native_post_persist`: those
-//! engine functions run the identical loop, but over the engine's
-//! *local* `NativeRegistry`, which every constructor builds empty and
-//! which has no population API — they would silently no-op. The direct
-//! loop uses the same contracts in the same canonical order with the
-//! same `is_active` filter against the same engine, so the observable
-//! behavior (storage writes, notifications, ordering) is identical to
-//! C#'s `NativeContract.OnPersistAsync(engine)` dispatch. When
-//! neo-execution grows a registry-population seam, this should switch
-//! to the engine functions.
+//! The per-stage native hooks are driven from a [`NativePersistResources`]
+//! value that captures one explicit native-contract provider plus the canonical
+//! native contract list for the whole block batch. This keeps bulk sync,
+//! genesis initialization, and live block import stable even if a compatibility
+//! caller replaces the process-global provider later. The hook loop deliberately
+//! does not call `ApplicationEngine::native_on_persist`/`native_post_persist`:
+//! those engine functions iterate the engine's local `NativeRegistry`, which is
+//! still empty for these constructors. The direct loop uses the same contracts
+//! in the same canonical order with the same `is_active` filter against the
+//! same engine, so storage writes, notifications, and ordering stay aligned
+//! with C#'s `NativeContract.OnPersistAsync(engine)` dispatch. When
+//! `neo-execution` grows a registry-population seam, this can switch to the
+//! engine functions without reintroducing ambient provider lookup.
 //!
 //! In C# the native *deployment + initialization* (committee cache,
 //! genesis NEO/GAS mints, Oracle price, …) happens inside
@@ -240,7 +241,7 @@ impl Default for NativePersistOptions {
 }
 
 /// Reusable native-persistence resources for a sequence of blocks that share
-/// the same process-wide native-contract provider and protocol settings.
+/// the same explicit native-contract provider and protocol settings.
 #[derive(Clone)]
 pub struct NativePersistResources {
     provider: Arc<dyn NativeContractProvider>,
@@ -260,8 +261,11 @@ impl NativePersistResources {
     }
 
     /// Captures the canonical native-contract list once from the installed
-    /// provider. The list order is the C# native registration order used by
-    /// both OnPersist and PostPersist hooks.
+    /// provider.
+    ///
+    /// This is a compatibility constructor for standalone tests and legacy
+    /// callers. Node service paths should use [`Self::from_provider`] so a block
+    /// batch cannot observe a later process-global provider replacement.
     pub fn from_installed_provider() -> CoreResult<Self> {
         let provider = NativeContractLookup::native_contract_provider().ok_or_else(|| {
             CoreError::invalid_operation(
@@ -474,14 +478,34 @@ fn run_native_persist_hooks(
 /// docs). Committing `snapshot` itself to the backing store remains
 /// the caller's responsibility.
 ///
-/// Requires the global native-contract provider to be installed, like every
-/// engine-based execution path.
+/// Compatibility wrapper that captures the installed process-global provider.
+/// New node-service code should construct [`NativePersistResources`] from its
+/// explicit system provider and call [`persist_block_natives_with_resources`].
 pub fn persist_block_natives(
     snapshot: Arc<DataCache>,
     block: Arc<Block>,
     settings: &ProtocolSettings,
 ) -> CoreResult<NativePersistOutcome> {
-    let staged = stage_block_natives(snapshot, block, settings)?;
+    let resources = NativePersistResources::from_installed_provider()?;
+    persist_block_natives_with_resources(
+        snapshot,
+        block,
+        settings,
+        NativePersistOptions::default(),
+        &resources,
+    )
+}
+
+/// Runs the C# `Blockchain.Persist` sequence with caller-provided reusable
+/// native resources and commits the staged writes on success.
+pub fn persist_block_natives_with_resources(
+    snapshot: Arc<DataCache>,
+    block: Arc<Block>,
+    settings: &ProtocolSettings,
+    options: NativePersistOptions,
+    resources: &NativePersistResources,
+) -> CoreResult<NativePersistOutcome> {
+    let staged = stage_block_natives_with_resources(snapshot, block, settings, options, resources)?;
     let outcome = staged.outcome.clone();
     staged.commit();
     Ok(outcome)
@@ -489,6 +513,10 @@ pub fn persist_block_natives(
 
 /// Runs native block persistence into an isolated child cache, returning the
 /// staged writes without publishing them into the canonical snapshot.
+///
+/// Compatibility wrapper that captures the installed process-global provider.
+/// Prefer [`stage_block_natives_with_resources`] when the caller owns an
+/// explicit native provider.
 pub fn stage_block_natives(
     snapshot: Arc<DataCache>,
     block: Arc<Block>,
@@ -498,6 +526,10 @@ pub fn stage_block_natives(
 }
 
 /// Runs native block persistence with explicit replay-artifact capture policy.
+///
+/// Compatibility wrapper that captures the installed process-global provider.
+/// Prefer [`stage_block_natives_with_resources`] when the caller owns an
+/// explicit native provider.
 pub fn stage_block_natives_with_options(
     snapshot: Arc<DataCache>,
     block: Arc<Block>,

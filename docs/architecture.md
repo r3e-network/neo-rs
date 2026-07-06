@@ -275,10 +275,13 @@ The detailed rules for this style live in
   `SystemContext::native_contract_provider` is the blockchain-service seam for
   handler paths, and native block persistence uses `NativePersistResources` to
   pass the provider directly into each OnPersist/Application/PostPersist engine.
-  Batch resource setup also builds `NativePersistResources` from that context
-  provider instead of reading the installed global provider. Headless/test
-  construction can still omit the provider and let the builder install the
-  standard default. ADR-015 proposes a builder pattern for future extensibility.
+  Batch resource setup builds `NativePersistResources` from that context
+  provider and calls the explicit-resource staging/commit path instead of
+  reading the installed global provider. The installed-provider persistence
+  functions remain compatibility wrappers for standalone tests and legacy
+  callers. Headless/test construction can still omit the provider and let the
+  builder install the standard default. ADR-015 proposes a builder pattern for
+  future extensibility.
 
 - **Error type policy.** `neo-error` owns the authoritative `CoreError` /
   `CoreResult`. ADR-011 formalizes the split: 17 crates with domain-specific

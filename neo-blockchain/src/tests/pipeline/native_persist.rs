@@ -935,6 +935,24 @@ fn native_persist_resources_do_not_install_thread_scoped_provider() {
 }
 
 #[test]
+fn native_persist_exposes_explicit_resource_commit_path() {
+    let source = include_str!("../../pipeline/native_persist.rs");
+    assert!(
+        source.contains("pub fn persist_block_natives_with_resources"),
+        "native persistence should expose a committing path for callers that already own explicit provider resources"
+    );
+    assert!(
+        source.contains("persist_block_natives_with_resources(\n        snapshot,\n        block,\n        settings,\n        NativePersistOptions::default(),\n        &resources,"),
+        "the installed-provider persist wrapper should delegate through the explicit-resource committing path"
+    );
+    assert!(
+        source
+            .contains("Compatibility wrapper that captures the installed process-global provider"),
+        "installed-provider native persistence APIs must be documented as compatibility wrappers"
+    );
+}
+
+#[test]
 fn reusable_native_persist_resources_cross_echidna_activation_height() {
     let _provider_guard = lock_provider();
     neo_native_contracts::install();

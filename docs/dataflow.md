@@ -102,7 +102,7 @@ sequenceDiagram
     BC->>BC: structural checks (version, tx count,<br/>merkle root, no duplicate tx)
     BC->>Store: load prev TrimmedBlock
     BC->>BC: verify consensus witness vs<br/>prev.NextConsensus (3-GAS cap)
-    BC->>NP: persist_block_natives(block)
+    BC->>NP: stage_block_natives_with_resources(block)
     NP->>AE: OnPersist engine (+ native init at activation)
     loop each transaction
         AE->>AE: Application engine, gas = tx.SystemFee
