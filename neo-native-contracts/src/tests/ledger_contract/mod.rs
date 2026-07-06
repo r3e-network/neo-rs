@@ -21,7 +21,7 @@ use neo_primitives::{CallFlags, ContractParameterType};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_vm::StackItem;
-use neo_vm_rs::{ExecutionEngineLimits, StackValue};
+use neo_vm_rs::{ExecutionEngineLimits, StackValue, VmState as VMState};
 
 /// Structural equality for StackValue that ignores the reference-identity ids
 /// on compound variants. Collection identity is not part of serialized
@@ -112,16 +112,29 @@ fn block_lookup_args_use_shared_raw_integer_helpers() {
         &source[start_index..end_index]
     }
 
-    let source = include_str!("../../ledger_contract/mod.rs");
-    let resolver = slice_between(source, "fn resolve_block_hash", "fn is_traceable_block");
+    let root_source = include_str!("../../ledger_contract/mod.rs");
+    let resolver = slice_between(
+        root_source,
+        "fn resolve_block_hash",
+        "fn is_traceable_block",
+    );
     assert!(resolver.contains("crate::args::raw_integer_bytes_to_u32"));
     assert!(!resolver.contains("BigInt::from_signed_bytes_le(index_or_hash"));
 
-    let get_block = slice_between(source, "\"getBlock\" =>", "\"getTransactionFromBlock\" =>");
+    let invoke_source = include_str!("../../ledger_contract/invoke.rs");
+    let get_block = slice_between(
+        invoke_source,
+        "\"getBlock\" =>",
+        "\"getTransactionFromBlock\" =>",
+    );
     assert!(get_block.contains("crate::args::raw_arg"));
     assert!(!get_block.contains("args.first()"));
 
-    let from_block = slice_between(source, "\"getTransactionFromBlock\" =>", "other => Err");
+    let from_block = slice_between(
+        invoke_source,
+        "\"getTransactionFromBlock\" =>",
+        "other => Err",
+    );
     assert!(from_block.contains("crate::args::raw_arg"));
     assert!(from_block.contains("crate::args::raw_integer_bytes_to_i32"));
     assert!(!from_block.contains("BigInt::from_signed_bytes_le(tx_index_bytes"));

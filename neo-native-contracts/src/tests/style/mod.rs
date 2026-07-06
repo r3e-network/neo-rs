@@ -65,6 +65,8 @@ pub(super) fn standard_contract_sources()
                 "\n",
                 include_str!("../../ledger_contract/wire.rs"),
                 "\n",
+                include_str!("../../ledger_contract/invoke.rs"),
+                "\n",
                 include_str!("../../ledger_contract/metadata.rs"),
                 "\n",
                 include_str!("../../ledger_contract/mod.rs"),
