@@ -256,6 +256,7 @@ fn neo_storage_codecs_use_stack_value_projection() {
     }
 
     let source = include_str!("../../neo_token/storage/mod.rs");
+    let committee_source = include_str!("../../neo_token/storage/committee.rs");
     let account_decoder = slice_between(
         source,
         "fn decode_neo_account_state",
@@ -278,7 +279,7 @@ fn neo_storage_codecs_use_stack_value_projection() {
     assert!(!account_encoder.contains("BinarySerializer::serialize("));
 
     let committee_reader = slice_between(
-        source,
+        committee_source,
         "fn read_committee_with_votes",
         "fn read_committee_points",
     );
@@ -289,8 +290,11 @@ fn neo_storage_codecs_use_stack_value_projection() {
     assert!(!committee_reader.contains("stack_value_as_bigint"));
     assert!(!committee_reader.contains("BinarySerializer::deserialize("));
 
-    let committee_encoder =
-        slice_between(source, "fn encode_committee", "fn should_refresh_committee");
+    let committee_encoder = slice_between(
+        committee_source,
+        "fn encode_committee",
+        "fn should_refresh_committee",
+    );
     assert!(committee_encoder.contains("CachedCommittee::new"));
     assert!(committee_encoder.contains("encode_storage_struct"));
     assert!(!committee_encoder.contains("StackValue::Array"));
@@ -298,13 +302,9 @@ fn neo_storage_codecs_use_stack_value_projection() {
     assert!(!committee_encoder.contains("StackItem::from_array"));
     assert!(!committee_encoder.contains("BinarySerializer::serialize("));
 
-    let committee_address = slice_between(
-        source,
-        "fn compute_committee_address",
-        "/// C# `GetAccountState`",
-    );
     assert!(
-        committee_address.contains("COMMITTEE_ADDRESS_CACHE"),
+        committee_source.contains("fn compute_committee_address")
+            && committee_source.contains("COMMITTEE_ADDRESS_CACHE"),
         "committee witness checks should reuse the byte-keyed committee address cache"
     );
 
@@ -348,7 +348,7 @@ fn neo_storage_codecs_use_stack_value_projection() {
     let top_registered_candidates = slice_between(
         source,
         "fn top_registered_candidates",
-        "/// C# `Contract.GetBFTAddress(pubkeys)`",
+        "/// Decodes a `CandidateState` storage value",
     );
     let candidate_scan = slice_between(
         top_registered_candidates,
