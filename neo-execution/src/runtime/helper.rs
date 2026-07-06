@@ -3,7 +3,7 @@
 use crate::NativeRegistry;
 use crate::application_engine::ApplicationEngine;
 use crate::contract::Contract;
-use crate::native_contract_provider::{NativeContractLookup, NativeContractProvider};
+use crate::native_contract_provider::NativeContractProvider;
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
@@ -149,33 +149,12 @@ impl Helper {
         )
     }
 
-    /// Verifies all witnesses for a verifiable object.
-    /// Matches C# Helper.VerifyWitnesses exactly.
-    ///
-    /// # Arguments
-    /// * `verifiable` - The object to verify
-    /// * `settings` - Protocol settings
-    /// * `snapshot` - Database snapshot
-    /// * `max_gas` - Maximum gas allowed for verification (in datoshi)
-    ///
-    /// # Returns
-    /// `true` if all witnesses verify successfully, `false` otherwise
-    pub fn verify_witnesses<V: VerifiableExt>(
-        verifiable: &V,
-        settings: &ProtocolSettings,
-        snapshot: &DataCache,
-        max_gas: i64,
-    ) -> bool {
-        Self::verify_witnesses_with_native_provider(
-            verifiable,
-            settings,
-            snapshot,
-            max_gas,
-            NativeContractLookup::native_contract_provider(),
-        )
-    }
-
     /// Verifies all witnesses using an explicit native-contract provider.
+    ///
+    /// Matches C# `Helper.VerifyWitnesses`, but requires callers to pass the
+    /// native-contract provider captured by their composition root. This keeps
+    /// verification deterministic under tests and long-running services instead
+    /// of reading the process-global compatibility bridge.
     pub fn verify_witnesses_with_native_provider<V: VerifiableExt>(
         verifiable: &V,
         settings: &ProtocolSettings,
@@ -236,39 +215,11 @@ impl Helper {
         true
     }
 
-    /// Verifies a single witness for a verifiable object.
-    /// Matches C# Helper.VerifyWitness exactly.
-    ///
-    /// # Arguments
-    /// * `verifiable` - The object being verified
-    /// * `settings` - Protocol settings
-    /// * `snapshot` - Database snapshot
-    /// * `hash` - Expected script hash
-    /// * `witness` - The witness to verify
-    /// * `max_gas` - Maximum gas allowed (in datoshi)
-    ///
-    /// # Returns
-    /// `Ok(fee)` with consumed gas if verification succeeds, `Err` otherwise
-    pub fn verify_witness<V: VerifiableExt>(
-        verifiable: &V,
-        settings: &ProtocolSettings,
-        snapshot: &DataCache,
-        hash: &UInt160,
-        witness: &Witness,
-        max_gas: i64,
-    ) -> CoreResult<i64> {
-        Self::verify_witness_with_native_provider(
-            verifiable,
-            settings,
-            snapshot,
-            hash,
-            witness,
-            max_gas,
-            NativeContractLookup::native_contract_provider(),
-        )
-    }
-
     /// Verifies a single witness using an explicit native-contract provider.
+    ///
+    /// Matches C# `Helper.VerifyWitness`, but the provider is explicit so
+    /// contract verification and native syscalls observe the same contract set
+    /// as the caller's engine.
     pub fn verify_witness_with_native_provider<V: VerifiableExt>(
         verifiable: &V,
         settings: &ProtocolSettings,

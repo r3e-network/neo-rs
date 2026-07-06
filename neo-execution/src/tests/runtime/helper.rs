@@ -100,6 +100,10 @@ impl NativeContractProvider for SingleNativeProvider {
     }
 }
 
+fn empty_provider() -> Option<Arc<dyn NativeContractProvider>> {
+    Some(Arc::new(EmptyNativeProvider) as Arc<dyn NativeContractProvider>)
+}
+
 fn build_verify_contract(hash: UInt160) -> ContractState {
     let nef = NefFile::new(
         "test".to_string(),
@@ -143,7 +147,13 @@ fn verify_witnesses_uses_transaction_witnesses_for_count_check() {
     let snapshot = DataCache::new(false);
 
     assert!(
-        Helper::verify_witnesses(&tx, &settings, &snapshot, Helper::MAX_VERIFICATION_GAS),
+        Helper::verify_witnesses_with_native_provider(
+            &tx,
+            &settings,
+            &snapshot,
+            Helper::MAX_VERIFICATION_GAS,
+            empty_provider(),
+        ),
         "transactions must expose their witnesses before the engine executes, matching C# Transaction.Witnesses"
     );
 }
@@ -159,7 +169,13 @@ fn verify_witnesses_uses_genesis_header_witnesses() {
     let snapshot = DataCache::new(false);
 
     assert!(
-        Helper::verify_witnesses(&header, &settings, &snapshot, Helper::MAX_VERIFICATION_GAS),
+        Helper::verify_witnesses_with_native_provider(
+            &header,
+            &settings,
+            &snapshot,
+            Helper::MAX_VERIFICATION_GAS,
+            empty_provider(),
+        ),
         "C# Header.IVerifiable exposes exactly one witness and uses Witness.ScriptHash for genesis headers"
     );
 }
@@ -175,7 +191,13 @@ fn verify_witnesses_uses_genesis_block_header_witnesses() {
     let snapshot = DataCache::new(false);
 
     assert!(
-        Helper::verify_witnesses(&block, &settings, &snapshot, Helper::MAX_VERIFICATION_GAS),
+        Helper::verify_witnesses_with_native_provider(
+            &block,
+            &settings,
+            &snapshot,
+            Helper::MAX_VERIFICATION_GAS,
+            empty_provider(),
+        ),
         "C# Block.IVerifiable delegates witnesses and verifying hashes to Header"
     );
 }
@@ -184,7 +206,7 @@ fn verify_witnesses_uses_genesis_block_header_witnesses() {
 fn verify_witness_uses_verifiable_container_hook() {
     let source = include_str!("../../runtime/helper.rs");
     let start = source
-        .find("pub fn verify_witness<V: VerifiableExt>")
+        .find("pub fn verify_witness_with_native_provider<V: VerifiableExt>")
         .expect("verify_witness function exists");
     let end = source[start..]
         .find("let mut engine = ApplicationEngine::new")
@@ -229,13 +251,14 @@ fn verify_witness_uses_transaction_container_for_check_witness() {
     let settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
 
-    Helper::verify_witness(
+    Helper::verify_witness_with_native_provider(
         &tx,
         &settings,
         &snapshot,
         &witness.script_hash(),
         &witness,
         Helper::MAX_VERIFICATION_GAS,
+        empty_provider(),
     )
     .expect(
         "CheckWitness inside transaction witness verification must see the real Transaction container",
@@ -310,13 +333,14 @@ fn verify_witness_uses_transaction_container_for_current_signers() {
     let settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
 
-    Helper::verify_witness(
+    Helper::verify_witness_with_native_provider(
         &tx,
         &settings,
         &snapshot,
         &witness.script_hash(),
         &witness,
         Helper::MAX_VERIFICATION_GAS,
+        empty_provider(),
     )
     .expect(
         "CurrentSigners inside transaction witness verification must see the real Transaction container",
@@ -348,13 +372,14 @@ fn verify_witness_uses_transaction_container_for_get_script_container() {
     let settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
 
-    Helper::verify_witness(
+    Helper::verify_witness_with_native_provider(
         &tx,
         &settings,
         &snapshot,
         &witness.script_hash(),
         &witness,
         Helper::MAX_VERIFICATION_GAS,
+        empty_provider(),
     )
     .expect("GetScriptContainer inside transaction witness verification must expose the real Transaction");
 }
@@ -388,13 +413,14 @@ fn oracle_response_check_witness_faults_when_request_is_missing() {
     let snapshot = DataCache::new(false);
 
     assert!(
-        Helper::verify_witness(
+        Helper::verify_witness_with_native_provider(
             &tx,
             &settings,
             &snapshot,
             &witness.script_hash(),
             &witness,
             Helper::MAX_VERIFICATION_GAS,
+            empty_provider(),
         )
         .is_err(),
         "C# CheckWitnessInternal faults when an OracleResponse request lookup is missing"
@@ -425,13 +451,14 @@ fn verify_witness_rejects_strictly_invalid_verification_script_before_execution(
     let snapshot = DataCache::new(false);
 
     assert!(
-        Helper::verify_witness(
+        Helper::verify_witness_with_native_provider(
             &tx,
             &settings,
             &snapshot,
             &witness.script_hash(),
             &witness,
             Helper::MAX_VERIFICATION_GAS,
+            empty_provider(),
         )
         .is_err(),
         "C# Helper.VerifyWitness constructs Script(verification, strict: true) before execution"
