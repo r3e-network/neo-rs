@@ -244,10 +244,13 @@ The detailed rules for this style live in
 
 - **Staged-sync policies are shared runtime contracts.**
   `neo_runtime::sync_pipeline` defines stable stage identifiers,
-  `CommitPolicy` thresholds, `SyncStageCheckpointStore`, and
-  `SyncPipelineDriver`. Downloaded `SyncBlockBatch` values are checked for
-  contiguous heights, imported through the canonical `ImportQueue`, and
-  checkpointed when policy fires. `neo_network::BlockDownloader` is the
+  `CommitPolicy` thresholds, `SyncStageCheckpointStore`,
+  `StoreSyncStageCheckpointStore`, and `SyncPipelineDriver`. Downloaded
+  `SyncBlockBatch` values are checked for contiguous heights, imported through
+  the canonical `ImportQueue`, and checkpointed when policy fires. The
+  store-backed checkpoint adapter persists versioned runtime sync metadata under
+  a short raw-key namespace that cannot overlap normal `StorageKey` contract
+  rows. `neo_network::BlockDownloader` is the
   stream-shaped download boundary; its `BlockDownloadBatch` converts into the
   runtime batch type. `BlockRequestScheduler` owns the per-peer
   `GetBlockByIndex` request-window policy used by `PeerSession`.

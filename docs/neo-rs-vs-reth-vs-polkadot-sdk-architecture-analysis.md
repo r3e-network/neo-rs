@@ -79,7 +79,9 @@ Out-of-order blocks parked in `Arc<Mutex<BTreeMap<u32, UnverifiedBlocksList>>>`.
 Drain batch size = 500, cache max = 50K. Eviction drops top 25% (O(n log n)).
 `neo_runtime::sync_pipeline` provides stage identifiers, Reth-style
 `CommitPolicy` thresholds (`max_blocks`, `max_changes`, `max_cumulative_gas`,
-`max_duration`), a provider-neutral `SyncStageCheckpointStore` seam, and
+`max_duration`), a provider-neutral `SyncStageCheckpointStore` seam,
+`InMemorySyncStageCheckpointStore` for tests/scaffolding,
+`StoreSyncStageCheckpointStore` for store-backed durable checkpoints, and
 `SyncPipelineDriver`, which imports contiguous `SyncBlockBatch` values through
 the shared `ImportQueue` and checkpoints the import stage when policy fires.
 These are reusable primitives; the driver and queue are constructed only under
@@ -141,7 +143,7 @@ while let Some(cmd) = cmd_rx.recv().await {
 |----------|--------|---------|
 | P0 | Staged sync pipeline integration | 3-5x sync speed, crash resume |
 | Primitives Done / Wiring Pending | Import queue boundary with bounded concurrent `check` | Reusable preverification surface; `BlockchainHandle::check` now shares live stateless import-integrity checks, but the queue is constructed only under `tests/` and is not yet on the production sync path |
-| Primitives Done / Wiring Pending | Commit policy/checkpoint primitives plus import-stage driver | Tunable memory/i-o; the crash-resume seam is a design seam only (the sole `SyncStageCheckpointStore` impl is in-memory); driver is constructed only under `tests/` |
+| Primitives Done / Wiring Pending | Commit policy/checkpoint primitives plus import-stage driver | Tunable memory/i-o; durable checkpoint storage is available through `StoreSyncStageCheckpointStore`, but the driver is still constructed only under `tests/` |
 | P2 | Warp sync / state sync | Minutes to sync instead of hours |
 
 ---
@@ -462,7 +464,7 @@ pub struct TransactionState {
 1. **Essential task supervision + metrics** — implemented in `neo-node`.
 2. **Typed table boundary** — implemented in `neo-storage` but on no live storage access path (the live encoding remains `StorageKey` / `KeyBuilder` over raw C#-compatible bytes); compact derive is still future work.
 3. **Block import queue with concurrent verification** — reusable runtime boundary implemented.
-4. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`.
+4. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`; durable store-backed checkpoints are available through `StoreSyncStageCheckpointStore`, but production sync still does not construct the driver.
 5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; per-peer `BlockRequestScheduler` is wired into `PeerSession`; `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) and `OrderedBlockBatchBuffer` (contiguous response release) are implemented but unwired, constructed only in `neo-network/src/tests/`; async peer transport stream remains next.
 6. **Hot/Cold/Static tiering integration** (medium, big storage win)
 7. **Staged sync pipeline integration** (large, biggest overall impact)

@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use neo_payloads::Block;
+use neo_storage::persistence::Store;
 use parking_lot::RwLock;
 
 use crate::{BlockBatchImportOutcome, BlockOrigin, ImportQueue, ServiceError, ServiceResult};
@@ -47,6 +48,33 @@ impl SyncStageKind {
             Self::StateRoot => "state_root",
             Self::Index => "index",
             Self::Prune => "prune",
+        }
+    }
+
+    const fn code(self) -> u8 {
+        match self {
+            Self::Headers => 0,
+            Self::Bodies => 1,
+            Self::Preverify => 2,
+            Self::Import => 3,
+            Self::Execute => 4,
+            Self::StateRoot => 5,
+            Self::Index => 6,
+            Self::Prune => 7,
+        }
+    }
+
+    fn from_code(code: u8) -> Option<Self> {
+        match code {
+            0 => Some(Self::Headers),
+            1 => Some(Self::Bodies),
+            2 => Some(Self::Preverify),
+            3 => Some(Self::Import),
+            4 => Some(Self::Execute),
+            5 => Some(Self::StateRoot),
+            6 => Some(Self::Index),
+            7 => Some(Self::Prune),
+            _ => None,
         }
     }
 }
@@ -202,6 +230,147 @@ impl SyncStageCheckpointStore for InMemorySyncStageCheckpointStore {
             .insert(checkpoint.stage, checkpoint);
         Ok(())
     }
+}
+
+const STORE_CHECKPOINT_KEY_PREFIX: [u8; 2] = [0xF8, b's'];
+const STORE_CHECKPOINT_VALUE_MAGIC: &[u8; 6] = b"NRSCP1";
+const STORE_CHECKPOINT_VALUE_LEN: usize = STORE_CHECKPOINT_VALUE_MAGIC.len() + 1 + 4 + 8 + 8;
+
+/// Store-backed checkpoint provider for crash-resumable sync stages.
+///
+/// The key is deliberately three bytes (`0xF8`, `s`, stage-code), shorter than
+/// every consensus [`neo_storage::StorageKey`] row, whose serialized form starts
+/// with a four-byte contract id. This keeps runtime sync metadata out of the
+/// contract-storage keyspace while still using the same provider/factory-backed
+/// storage engine. Values are versioned fixed-width records:
+/// `NRSCP1 || stage || height_be || processed_blocks_be || changed_bytes_be`.
+#[derive(Debug)]
+pub struct StoreSyncStageCheckpointStore<S: Store + Clone> {
+    store: S,
+    write_lock: parking_lot::Mutex<()>,
+}
+
+impl<S> StoreSyncStageCheckpointStore<S>
+where
+    S: Store + Clone,
+{
+    /// Create a checkpoint store over a concrete storage backend handle.
+    ///
+    /// Cloned store handles are expected to observe the same backend state,
+    /// which is true for the built-in memory, MDBX, and RocksDB stores.
+    #[must_use]
+    pub fn new(store: S) -> Self {
+        Self {
+            store,
+            write_lock: parking_lot::Mutex::new(()),
+        }
+    }
+
+    /// Return the underlying store handle.
+    #[must_use]
+    pub const fn store(&self) -> &S {
+        &self.store
+    }
+}
+
+impl<S> SyncStageCheckpointStore for StoreSyncStageCheckpointStore<S>
+where
+    S: Store + Clone,
+{
+    fn checkpoint(&self, stage: SyncStageKind) -> ServiceResult<Option<SyncStageCheckpoint>> {
+        let Some(bytes) = self.store.try_get_bytes(&checkpoint_key(stage)) else {
+            return Ok(None);
+        };
+        decode_checkpoint(stage, &bytes).map(Some)
+    }
+
+    fn put_checkpoint(&self, checkpoint: SyncStageCheckpoint) -> ServiceResult<()> {
+        let key = checkpoint_key(checkpoint.stage);
+        let value = encode_checkpoint(&checkpoint);
+
+        if let Some(raw_overlay) = self.store.as_raw_overlay_store() {
+            let overlay = [(key.clone(), Some(value.clone()))];
+            if raw_overlay
+                .try_commit_raw_overlay(&overlay)
+                .map_err(|err| storage_error("write sync checkpoint", err))?
+            {
+                self.store
+                    .flush()
+                    .map_err(|err| storage_error("flush sync checkpoint", err))?;
+                return Ok(());
+            }
+        }
+
+        let _guard = self.write_lock.lock();
+        let mut writer = self.store.clone();
+        writer
+            .put_sync(key, value)
+            .map_err(|err| storage_error("write sync checkpoint", err))?;
+        writer
+            .flush()
+            .map_err(|err| storage_error("flush sync checkpoint", err))
+    }
+}
+
+fn checkpoint_key(stage: SyncStageKind) -> Vec<u8> {
+    vec![
+        STORE_CHECKPOINT_KEY_PREFIX[0],
+        STORE_CHECKPOINT_KEY_PREFIX[1],
+        stage.code(),
+    ]
+}
+
+fn encode_checkpoint(checkpoint: &SyncStageCheckpoint) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(STORE_CHECKPOINT_VALUE_LEN);
+    bytes.extend_from_slice(STORE_CHECKPOINT_VALUE_MAGIC);
+    bytes.push(checkpoint.stage.code());
+    bytes.extend_from_slice(&checkpoint.height.to_be_bytes());
+    bytes.extend_from_slice(&checkpoint.processed_blocks.to_be_bytes());
+    bytes.extend_from_slice(&checkpoint.changed_bytes.to_be_bytes());
+    bytes
+}
+
+fn decode_checkpoint(
+    expected_stage: SyncStageKind,
+    bytes: &[u8],
+) -> ServiceResult<SyncStageCheckpoint> {
+    if bytes.len() != STORE_CHECKPOINT_VALUE_LEN
+        || &bytes[..STORE_CHECKPOINT_VALUE_MAGIC.len()] != STORE_CHECKPOINT_VALUE_MAGIC
+    {
+        return Err(ServiceError::invalid_state(format!(
+            "invalid sync checkpoint payload for stage {}: {} bytes",
+            expected_stage.as_str(),
+            bytes.len()
+        )));
+    }
+
+    let mut cursor = STORE_CHECKPOINT_VALUE_MAGIC.len();
+    let stage_code = bytes[cursor];
+    cursor += 1;
+    let stage = SyncStageKind::from_code(stage_code).ok_or_else(|| {
+        ServiceError::invalid_state(format!("invalid sync checkpoint stage code {stage_code}"))
+    })?;
+    if stage != expected_stage {
+        return Err(ServiceError::invalid_state(format!(
+            "sync checkpoint stage mismatch: requested {}, stored {}",
+            expected_stage.as_str(),
+            stage.as_str()
+        )));
+    }
+
+    let height = u32::from_be_bytes(bytes[cursor..cursor + 4].try_into().expect("slice length"));
+    cursor += 4;
+    let processed_blocks =
+        u64::from_be_bytes(bytes[cursor..cursor + 8].try_into().expect("slice length"));
+    cursor += 8;
+    let changed_bytes =
+        u64::from_be_bytes(bytes[cursor..cursor + 8].try_into().expect("slice length"));
+
+    Ok(SyncStageCheckpoint::new(stage, height).with_counters(processed_blocks, changed_bytes))
+}
+
+fn storage_error(context: &'static str, err: impl std::fmt::Display) -> ServiceError {
+    ServiceError::internal(format!("{context}: {err}"))
 }
 
 /// One contiguous block batch entering a staged sync/import driver.

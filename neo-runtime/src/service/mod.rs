@@ -40,7 +40,7 @@ pub use outcome::{ExecutionOutcome, ExecutionPayload, NetworkEvent, ValidationRe
 pub use service_registry::ServiceRegistry;
 pub use services::{NetworkService, Service, TxHash};
 pub use sync_pipeline::{
-    CommitPolicy, InMemorySyncStageCheckpointStore, StageProgress, SyncBlockBatch,
-    SyncPipelineDriver, SyncPipelineImportOutcome, SyncStageCheckpoint, SyncStageCheckpointStore,
-    SyncStageKind,
+    CommitPolicy, InMemorySyncStageCheckpointStore, StageProgress, StoreSyncStageCheckpointStore,
+    SyncBlockBatch, SyncPipelineDriver, SyncPipelineImportOutcome, SyncStageCheckpoint,
+    SyncStageCheckpointStore, SyncStageKind,
 };

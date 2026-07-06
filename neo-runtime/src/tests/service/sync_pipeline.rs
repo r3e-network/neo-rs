@@ -5,7 +5,12 @@ use crate::{
 };
 use async_trait::async_trait;
 use neo_payloads::{Block, Header};
+use neo_storage::mdbx::MdbxStoreProvider;
+use neo_storage::persistence::providers::MemoryStore;
+use neo_storage::persistence::storage::StorageConfig;
 use parking_lot::Mutex;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -58,6 +63,84 @@ fn in_memory_checkpoint_store_persists_stage_progress() {
         Some(checkpoint)
     );
     assert_eq!(SyncStageKind::Import.as_str(), "import");
+}
+
+#[test]
+fn store_checkpoint_keys_do_not_overlap_contract_storage_keys() {
+    for stage in [
+        SyncStageKind::Headers,
+        SyncStageKind::Bodies,
+        SyncStageKind::Preverify,
+        SyncStageKind::Import,
+        SyncStageKind::Execute,
+        SyncStageKind::StateRoot,
+        SyncStageKind::Index,
+        SyncStageKind::Prune,
+    ] {
+        assert!(
+            checkpoint_key(stage).len() < std::mem::size_of::<i32>(),
+            "{} checkpoint keys must stay outside StorageKey's contract-id namespace",
+            stage.as_str()
+        );
+    }
+}
+
+#[test]
+fn store_checkpoint_store_round_trips_and_overwrites_memory_backend() {
+    let store = StoreSyncStageCheckpointStore::new(MemoryStore::new());
+    let first = SyncStageCheckpoint::new(SyncStageKind::Import, 10).with_counters(10, 1_000);
+    let second = SyncStageCheckpoint::new(SyncStageKind::Import, 12).with_counters(12, 2_000);
+
+    assert_eq!(store.checkpoint(SyncStageKind::Import).expect("get"), None);
+
+    store.put_checkpoint(first).expect("put first");
+    store.put_checkpoint(second.clone()).expect("put second");
+
+    assert_eq!(
+        store.checkpoint(SyncStageKind::Import).expect("get"),
+        Some(second)
+    );
+    assert_eq!(store.checkpoint(SyncStageKind::Bodies).expect("get"), None);
+}
+
+#[test]
+fn store_checkpoint_store_persists_across_mdbx_reopen() {
+    let path = unique_test_path("sync-checkpoint-mdbx");
+    let provider = MdbxStoreProvider::new(StorageConfig::default()).with_map_size(64 * 1024 * 1024);
+    let checkpoint = SyncStageCheckpoint::new(SyncStageKind::Import, 99).with_counters(99, 16_384);
+
+    {
+        let mdbx = provider.get_mdbx_store(&path).expect("open mdbx");
+        let store = StoreSyncStageCheckpointStore::new(mdbx);
+        store
+            .put_checkpoint(checkpoint.clone())
+            .expect("persist checkpoint");
+    }
+
+    {
+        let mdbx = provider.get_mdbx_store(&path).expect("reopen mdbx");
+        let store = StoreSyncStageCheckpointStore::new(mdbx);
+        assert_eq!(
+            store.checkpoint(SyncStageKind::Import).expect("read"),
+            Some(checkpoint)
+        );
+    }
+
+    let _ = fs::remove_dir_all(path);
+}
+
+#[test]
+fn store_checkpoint_payload_rejects_wrong_stage() {
+    let checkpoint = SyncStageCheckpoint::new(SyncStageKind::Bodies, 7).with_counters(3, 4);
+    let encoded = encode_checkpoint(&checkpoint);
+
+    let err = decode_checkpoint(SyncStageKind::Import, &encoded)
+        .expect_err("stage mismatch must be rejected");
+
+    assert!(
+        err.to_string().contains("stage mismatch"),
+        "unexpected error: {err}"
+    );
 }
 
 #[derive(Debug, Default)]
@@ -139,6 +222,34 @@ async fn sync_pipeline_driver_imports_contiguous_batches_and_checkpoints() {
 }
 
 #[tokio::test]
+async fn sync_pipeline_driver_resumes_from_store_checkpoint() {
+    let checkpoints = Arc::new(StoreSyncStageCheckpointStore::new(MemoryStore::new()));
+    checkpoints
+        .put_checkpoint(SyncStageCheckpoint::new(SyncStageKind::Import, 42).with_counters(40, 512))
+        .expect("seed checkpoint");
+    let importer = Arc::new(RecordingImport::default());
+    let queue = Arc::new(BlockImportQueue::new(importer, 2));
+    let mut driver = SyncPipelineDriver::new(
+        queue,
+        checkpoints,
+        CommitPolicy::new().with_max_blocks(1),
+        BlockOrigin::Sync,
+    )
+    .expect("driver");
+
+    let outcome = driver
+        .push_batch(SyncBlockBatch::new(43, vec![block(43)]))
+        .await
+        .expect("resume batch");
+
+    assert_eq!(outcome.next_height, Some(44));
+    assert_eq!(
+        outcome.checkpoint,
+        Some(SyncStageCheckpoint::new(SyncStageKind::Import, 43).with_counters(1, 0))
+    );
+}
+
+#[tokio::test]
 async fn sync_pipeline_driver_rejects_height_gaps() {
     let importer = Arc::new(RecordingImport::default());
     let queue = Arc::new(BlockImportQueue::new(importer, 2));
@@ -189,4 +300,16 @@ async fn sync_pipeline_driver_uses_import_queue_preflight_before_import() {
 
     assert!(err.to_string().contains("reject block 2"), "{err}");
     assert_eq!(importer.imported_batches.load(Ordering::Relaxed), 0);
+}
+
+fn unique_test_path(name: &str) -> PathBuf {
+    let unique = format!(
+        "neo-runtime-{name}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time after epoch")
+            .as_nanos()
+    );
+    std::env::temp_dir().join(unique)
 }
