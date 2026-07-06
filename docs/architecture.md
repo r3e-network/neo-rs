@@ -234,8 +234,12 @@ The detailed rules for this style live in
   `neo-blockchain`. RPC `submitblock` runs that same preflight before submitting
   decoded blocks through `BlockImport::import(..., BlockOrigin::Rpc)`,
   preserving the RPC-visible `Invalid` relay result for malformed block
-  structure or rejected height-plausible imports. Peer-relayed block bursts enter
-  the live inventory path through `BlockchainHandle::submit_inventory_blocks`,
+  structure or rejected height-plausible imports. Verification-enabled
+  `chain.acc` imports also run this shared preflight before the trusted bulk
+  import command, while the normal fast-sync path keeps relying on the block
+  decoder's import-integrity checks to avoid duplicate work. Peer-relayed block
+  bursts enter the live inventory path through
+  `BlockchainHandle::submit_inventory_blocks`,
   consensus-produced blocks use `submit_inventory_block`, extensible payloads
   use `submit_inventory_extensible`, and startup genesis bootstrapping uses
   `initialize`. Node composition does not construct `BlockchainCommand` variants

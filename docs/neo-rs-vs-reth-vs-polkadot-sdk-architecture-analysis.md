@@ -162,6 +162,10 @@ transaction hashes), so queued preverification rejects malformed blocks before
 ordered import without enforcing the dBFT-only production transaction limit.
 RPC `submitblock` uses the same preflight before submitting decoded blocks
 through `BlockImport::import(..., BlockOrigin::Rpc)`.
+Verification-enabled `chain.acc` imports run this same preflight at the batch
+boundary before dispatching the trusted bulk import command; the normal
+fast-sync package path keeps relying on the block decoder's import-integrity
+checks to avoid duplicating merkle/hash work on the hot replay path.
 `neo_runtime::SyncPipelineDriver` consumes contiguous sync batches, rejects
 height gaps, calls the import queue, and writes import-stage checkpoints
 according to `CommitPolicy` — but this behavior exercises only in unit tests;

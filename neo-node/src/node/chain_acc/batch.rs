@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use neo_blockchain::command::ImportBlocksStats;
 use neo_blockchain::handle::BlockchainHandle;
 use neo_payloads::block::Block;
+use neo_runtime::BlockImport;
 
 use super::{IMPORT_BATCH_SIZE, LocalLedgerTip};
 
@@ -74,6 +75,14 @@ pub(super) async fn import_chain_acc_batch(
     verify: bool,
 ) -> anyhow::Result<ChainAccBatchImportResult> {
     let len = batch_blocks.len();
+    if verify {
+        for block in &batch_blocks {
+            handle
+                .check(block)
+                .await
+                .map_err(|err| anyhow::anyhow!("chain.acc block preflight failed: {err}"))?;
+        }
+    }
     let start = Instant::now();
     let reply = handle
         .import_blocks_bulk_detailed(batch_blocks, verify)

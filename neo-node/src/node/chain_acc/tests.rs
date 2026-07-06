@@ -1,6 +1,8 @@
 //! Regression tests for chain.acc import helpers.
 
-use super::batch::{PendingChainAccBatch, take_import_batch};
+use super::batch::{
+    ChainAccImportComposition, PendingChainAccBatch, import_chain_acc_batch, take_import_batch,
+};
 use super::format::tests::{
     empty_block, empty_block_with_prev_hash, encode_chain_acc, linked_empty_blocks,
 };
@@ -271,6 +273,39 @@ async fn import_chain_acc_errors_when_blockchain_accepts_partial_batch() {
     assert!(
         err.to_string().contains("imported 1 of 2"),
         "unexpected error: {err}"
+    );
+}
+
+#[tokio::test]
+async fn chain_acc_batch_preflight_rejects_bad_block_version_before_import_command() {
+    let (handle, mut commands, _events) = BlockchainHandle::channel(1, 1);
+    let mut bad_block = empty_block(0);
+    bad_block.header.set_version(1);
+
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        import_chain_acc_batch(
+            &handle,
+            vec![bad_block],
+            ChainAccImportComposition::default(),
+            None,
+            true,
+        ),
+    )
+    .await
+    .expect("preflight should return before waiting for an import reply");
+    let err = match result {
+        Ok(_) => panic!("bad block version must fail preflight"),
+        Err(err) => err,
+    };
+
+    assert!(
+        err.to_string().contains("preflight"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        commands.try_recv().is_err(),
+        "preflight failure must skip the ImportBlocks command"
     );
 }
 
