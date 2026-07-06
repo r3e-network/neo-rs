@@ -11,6 +11,7 @@
 //! ## Contents
 //!
 //! - `constants`: deposit defaults and storage-prefix bytes.
+//! - `initialize`: HF_Echidna activation setting seeding.
 //! - `invoke`: native method dispatch for deposit/withdraw/verify calls.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `persist`: Notary-assisted fee accounting and designated notary rewards.
@@ -22,12 +23,11 @@
 use neo_config::{Hardfork, ProtocolSettings};
 use neo_error::CoreResult;
 use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
-use neo_storage::StorageItem;
-use num_bigint::BigInt;
 
 use crate::hashes::NOTARY_HASH;
 
 mod constants;
+mod initialize;
 mod invoke;
 mod metadata;
 mod persist;
@@ -78,18 +78,8 @@ impl NativeContract for Notary {
         true
     }
 
-    /// C# `Notary.InitializeAsync(engine, hardfork)` for `hardfork == ActiveIn`
-    /// (Notary.cs:52-59; ActiveIn is HF_Echidna, so this runs while persisting
-    /// the Echidna activation block): seed `Prefix_MaxNotValidBeforeDelta` with
-    /// `DefaultMaxNotValidBeforeDelta` (140).
     fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
-        engine.snapshot_cache().add(
-            Self::max_not_valid_before_delta_key(),
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
-                DEFAULT_MAX_NOT_VALID_BEFORE_DELTA,
-            ))),
-        );
-        Ok(())
+        self.initialize_native(engine)
     }
 
     fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
