@@ -133,6 +133,8 @@ pub(super) fn standard_contract_sources()
         (
             "PolicyContract",
             concat!(
+                include_str!("../../policy_contract/constants.rs"),
+                "\n",
                 include_str!("../../policy_contract/storage/recovery.rs"),
                 "\n",
                 include_str!("../../policy_contract/storage/whitelist.rs"),
