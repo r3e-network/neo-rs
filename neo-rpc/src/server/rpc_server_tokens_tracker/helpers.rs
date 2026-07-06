@@ -7,6 +7,7 @@ use crate::server::rpc_helpers::{
     expect_script_hash_or_address_param, internal_error, invalid_params, optional_u64_param,
 };
 use neo_execution::application_engine::TEST_MODE_GAS;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::Serializable;
 use neo_manifest::CallFlags;
 use neo_primitives::UInt160;
@@ -192,22 +193,25 @@ where
 pub(super) fn query_asset_metadata(
     snapshot: &neo_storage::persistence::DataCache,
     settings: &neo_config::ProtocolSettings,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
     asset: &UInt160,
 ) -> Option<(String, u32)> {
     let mut script = ScriptBuilder::new();
     emit_contract_call(&mut script, asset, "decimals").ok()?;
     emit_contract_call(&mut script, asset, "symbol").ok()?;
 
-    let mut engine = neo_execution::ApplicationEngine::new(
-        neo_primitives::TriggerType::Application,
-        None,
-        Arc::new(snapshot.clone()),
-        None,
-        settings.clone(),
-        TEST_MODE_GAS,
-        None,
-    )
-    .ok()?;
+    let mut engine =
+        neo_execution::ApplicationEngine::new_with_shared_block_and_native_contract_provider(
+            neo_primitives::TriggerType::Application,
+            None,
+            Arc::new(snapshot.clone()),
+            None,
+            settings.clone(),
+            TEST_MODE_GAS,
+            None,
+            Some(native_contract_provider),
+        )
+        .ok()?;
     engine
         .load_script(script.to_array(), CallFlags::ALL, Some(*asset))
         .ok()?;

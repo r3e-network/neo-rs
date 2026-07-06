@@ -34,16 +34,18 @@ impl RpcServerWallet {
         }
 
         let script = Self::build_balance_script(asset, &accounts)?;
-        let store = server.system().store_cache();
+        let system = server.system();
+        let store = system.store_cache();
         let snapshot = Arc::new(store.data_cache().clone());
-        let mut engine = ApplicationEngine::new(
+        let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
             TriggerType::Application,
             None,
             snapshot,
             None,
-            server.system().settings().as_ref().clone(),
+            system.settings().as_ref().clone(),
             server.settings().max_gas_invoke,
             None,
+            Some(system.native_contract_provider()),
         )
         .map_err(|err| internal_error(err.to_string()))?;
         engine

@@ -4,6 +4,48 @@ use neo_primitives::FindOptions;
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm_rs::{OpCode, VmState};
 
+#[test]
+fn server_context_engine_paths_use_explicit_native_provider() {
+    let sources = [
+        (
+            "rpc wallet balance",
+            include_str!("../../../server/rpc_server_wallet/balance.rs"),
+        ),
+        (
+            "native queries",
+            include_str!("../../../server/native_queries/mod.rs"),
+        ),
+        (
+            "contract verify",
+            include_str!("../../../server/smart_contract/contract_verify.rs"),
+        ),
+        (
+            "token tracker handlers",
+            include_str!("../../../server/rpc_server_tokens_tracker/mod.rs"),
+        ),
+        (
+            "token tracker helpers",
+            include_str!("../../../server/rpc_server_tokens_tracker/helpers.rs"),
+        ),
+        ("session", include_str!("../../../server/session/mod.rs")),
+    ];
+
+    for (name, source) in sources {
+        assert!(
+            source.contains("new_with_shared_block_and_native_contract_provider"),
+            "{name} should construct ApplicationEngine with an explicit native provider"
+        );
+        assert!(
+            source.contains("native_contract_provider"),
+            "{name} should pass the composed native provider"
+        );
+        assert!(
+            !source.contains("ApplicationEngine::new("),
+            "{name} should not read the ambient native-provider bridge"
+        );
+    }
+}
+
 /// Genesis-block timestamp seeded by the RPC test harness
 /// (`seed_genesis_state` / `genesis_header`).
 const GENESIS_TIMESTAMP: u64 = 1_468_595_301_000;
@@ -25,7 +67,8 @@ async fn stateless_invoke_builds_dummy_persisting_block() {
 
     let session = Session::new(
         system.clone(),
-        system,
+        system.clone(),
+        system.native_contract_provider(),
         script,
         None,
         None,
@@ -80,7 +123,8 @@ async fn session_valid_until_block_uses_policy_aware_increment() {
 
     let session = Session::new(
         system.clone(),
-        system,
+        system.clone(),
+        system.native_contract_provider(),
         vec![OpCode::RET.byte()],
         Some(vec![signer]),
         None,
@@ -105,8 +149,9 @@ async fn session_registers_and_traverses_storage_iterator() {
     let settings = ProtocolSettings::default();
     let system = crate::server::test_support::test_system(settings);
     let session = Session::new(
-        system.clone(), // Arc<Node> coerced to Arc<dyn StoreProvider>
-        system,         // Arc<Node> coerced to Arc<dyn ConfigProvider>
+        system.clone(), // Arc<NodeContext> coerced to Arc<dyn StoreProvider>
+        system.clone(), // Arc<NodeContext> coerced to Arc<dyn ConfigProvider>
+        system.native_contract_provider(),
         vec![OpCode::RET.byte()],
         None,
         None,

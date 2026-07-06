@@ -13,6 +13,7 @@
 //! - `tests`: Module-local tests and regression coverage.
 
 use neo_error::{CoreError, CoreResult};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use parking_lot::{Mutex, MutexGuard};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -119,6 +120,7 @@ impl Session {
     pub fn new(
         store_provider: Arc<dyn StoreProvider>,
         config_provider: Arc<dyn ConfigProvider>,
+        native_contract_provider: Arc<dyn NativeContractProvider>,
         script: Vec<u8>,
         signers: Option<Vec<Signer>>,
         witnesses: Option<Vec<Witness>>,
@@ -170,13 +172,14 @@ impl Session {
         // reads see `height` instead of the `height + 1` a real persisting block
         // would give. Build the same dummy block so stateless invoke *results*
         // (GetTime, currentindex) match C# field-for-field.
-        let persisting_block = create_dummy_block(store_cache.data_cache(), settings.as_ref());
+        let persisting_block =
+            create_dummy_block(store_cache.data_cache(), settings.as_ref()).map(Arc::new);
 
         let diagnostic_box = diagnostic
             .clone()
             .map(|diag| Box::new(diag) as Box<dyn neo_execution::diagnostic::Diagnostic>);
 
-        let mut engine = ApplicationEngine::new(
+        let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
             TriggerType::Application,
             tx_container,
             Arc::clone(&snapshot_cache),
@@ -184,6 +187,7 @@ impl Session {
             settings.as_ref().clone(),
             gas_limit,
             diagnostic_box,
+            Some(native_contract_provider),
         )
         .map_err(|err| CoreError::other(err.to_string()))?;
 

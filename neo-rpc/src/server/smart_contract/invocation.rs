@@ -86,9 +86,11 @@ fn execute_script(
     } else {
         None
     };
+    let system = server.system();
     let mut session = Session::new(
-        server.system(), // Arc<Node> coerced to Arc<dyn StoreProvider>
-        server.system(), // Arc<Node> coerced to Arc<dyn ConfigProvider>
+        system.clone(), // Arc<NodeContext> coerced to Arc<dyn StoreProvider>
+        system.clone(), // Arc<NodeContext> coerced to Arc<dyn ConfigProvider>
+        system.native_contract_provider(),
         script,
         signers.clone(),
         witnesses,

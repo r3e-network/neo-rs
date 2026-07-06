@@ -192,7 +192,7 @@ async fn get_nep17_balances_reports_asset_metadata() {
     let mut script = ScriptBuilder::new();
     emit_contract_call(&mut script, &asset, "decimals").expect("emit decimals");
     emit_contract_call(&mut script, &asset, "symbol").expect("emit symbol");
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
         TriggerType::Application,
         None,
         snapshot.clone(),
@@ -200,6 +200,7 @@ async fn get_nep17_balances_reports_asset_metadata() {
         system.settings().as_ref().clone(),
         TEST_MODE_GAS,
         None,
+        Some(system.native_contract_provider()),
     )
     .expect("engine");
     engine
@@ -224,7 +225,15 @@ async fn get_nep17_balances_reports_asset_metadata() {
         .expect("decimals u32");
     assert_eq!(symbol, "GAS");
     assert_eq!(decimals, 8);
-    assert!(query_asset_metadata(snapshot.as_ref(), &system.settings(), &asset).is_some());
+    assert!(
+        query_asset_metadata(
+            snapshot.as_ref(),
+            &system.settings(),
+            system.native_contract_provider(),
+            &asset
+        )
+        .is_some()
+    );
     let user = UInt160::from_bytes(&[1u8; 20]).expect("user hash");
     let balance = TokenBalance {
         balance: BigInt::from(42),

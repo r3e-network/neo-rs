@@ -101,8 +101,9 @@ impl NativeQueries {
         emit_native_call(&mut builder, contract, method, args)?;
         let script = builder.to_array();
 
-        let settings = server.system().settings().as_ref().clone();
-        let mut engine = ApplicationEngine::new(
+        let system = server.system();
+        let settings = system.settings().as_ref().clone();
+        let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
             TriggerType::Application,
             None,
             snapshot,
@@ -110,6 +111,7 @@ impl NativeQueries {
             settings,
             server.settings().max_gas_invoke,
             None,
+            Some(system.native_contract_provider()),
         )
         .map_err(|err| CoreError::other(err.to_string()))?;
         engine

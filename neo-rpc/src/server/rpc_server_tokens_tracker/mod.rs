@@ -112,9 +112,12 @@ impl RpcServerTokensTracker {
                 continue;
             };
 
-            let Some((symbol, decimals)) =
-                query_asset_metadata(snapshot.as_ref(), &server.system().settings(), &asset)
-            else {
+            let Some((symbol, decimals)) = query_asset_metadata(
+                snapshot.as_ref(),
+                &server.system().settings(),
+                server.system().native_contract_provider(),
+                &asset,
+            ) else {
                 continue;
             };
 
@@ -210,16 +213,18 @@ impl RpcServerTokensTracker {
             &token_id,
         )?;
 
-        let store_cache = server.system().store_cache();
+        let system = server.system();
+        let store_cache = system.store_cache();
         let snapshot = Arc::new(store_cache.data_cache().clone());
-        let mut engine = ApplicationEngine::new(
+        let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
             TriggerType::Application,
             None,
             snapshot,
             None,
-            server.system().settings().as_ref().clone(),
+            system.settings().as_ref().clone(),
             TEST_MODE_GAS,
             None,
+            Some(system.native_contract_provider()),
         )
         .map_err(|err| internal_error(err.to_string()))?;
         engine
@@ -321,6 +326,7 @@ impl RpcServerTokensTracker {
             let Some((symbol, decimals)) = query_asset_metadata(
                 snapshot.as_ref(),
                 &server.system().settings(),
+                server.system().native_contract_provider(),
                 &key.asset_script_hash,
             ) else {
                 continue;

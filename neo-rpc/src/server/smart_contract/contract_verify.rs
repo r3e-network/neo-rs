@@ -85,7 +85,7 @@ pub(super) fn invoke_contract_verify(
     tx.set_script(vec![OpCode::RET.byte()]);
 
     let tx_container = Arc::new(tx) as Arc<dyn neo_primitives::Verifiable>;
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
         TriggerType::Verification,
         Some(tx_container),
         Arc::clone(&snapshot_cache),
@@ -93,6 +93,7 @@ pub(super) fn invoke_contract_verify(
         system.settings().as_ref().clone(),
         server.settings().max_gas_invoke,
         None,
+        Some(system.native_contract_provider()),
     )
     .map_err(|err| internal_error(err.to_string()))?;
 
