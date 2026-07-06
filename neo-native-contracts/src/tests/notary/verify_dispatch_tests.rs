@@ -10,19 +10,24 @@ fn echidna_settings() -> ProtocolSettings {
     settings
 }
 use crate::test_support::deploy_native;
+use crate::{LedgerContract, Role, RoleManagement};
 use neo_crypto::Secp256r1Crypto;
-use neo_execution::ApplicationEngine;
 use neo_execution::native_contract::build_native_contract_state;
+use neo_execution::{ApplicationEngine, Contract, NativeContract};
 use neo_payloads::{
     Block, Header, NotaryAssisted, Signer, Transaction, TransactionAttribute, Witness,
     get_sign_data,
 };
-use neo_primitives::{CallFlags, TriggerType, UInt256, Verifiable, WitnessScope};
+use neo_primitives::{
+    CallFlags, TransactionAttributeType, TriggerType, UInt160, UInt256, Verifiable, WitnessScope,
+};
 use neo_serialization::BinarySerializer;
+use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
 use neo_vm::StackItem;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::{ExecutionEngineLimits, OpCode, VmState};
+use num_bigint::BigInt;
 use std::sync::Arc;
 
 /// Writes a P2PNotary designation effective from block `index`: the

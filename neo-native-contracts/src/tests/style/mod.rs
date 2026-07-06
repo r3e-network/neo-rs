@@ -181,6 +181,8 @@ pub(super) fn standard_contract_sources()
                 "\n",
                 include_str!("../../notary/metadata.rs"),
                 "\n",
+                include_str!("../../notary/persist.rs"),
+                "\n",
                 include_str!("../../notary/mod.rs"),
             ),
         ),
