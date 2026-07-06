@@ -256,7 +256,14 @@ fn standard_contract_dispatch_sources()
             include_str!("../../ledger_contract/invoke.rs"),
         ),
         ("NeoToken", include_str!("../../neo_token/invoke.rs")),
-        ("GasToken", include_str!("../../gas_token/invoke.rs")),
+        (
+            "GasToken",
+            concat!(
+                include_str!("../../gas_token/metadata.rs"),
+                "\n",
+                include_str!("../../gas_token/invoke.rs"),
+            ),
+        ),
         (
             "PolicyContract",
             include_str!("../../policy_contract/invoke.rs"),
@@ -276,6 +283,11 @@ fn standard_contract_dispatch_sources()
 
 fn dispatch_source_mentions_method(source: &str, method_name: &str) -> bool {
     source.contains(&format!("\"{method_name}\""))
+        || (method_name == "symbol" && source.contains("nep17_symbol_method"))
+        || (method_name == "decimals" && source.contains("nep17_decimals_method"))
+        || (method_name == "totalSupply" && source.contains("nep17_total_supply_method"))
+        || (method_name == "balanceOf" && source.contains("nep17_balance_of_method"))
+        || (method_name == "transfer" && source.contains("nep17_transfer_method"))
         || (method_name == NEP17_PAYMENT_METHOD && source.contains("NEP17_PAYMENT_METHOD"))
         || (method_name == NEP11_PAYMENT_METHOD && source.contains("NEP11_PAYMENT_METHOD"))
 }
