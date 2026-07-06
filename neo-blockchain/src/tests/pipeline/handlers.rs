@@ -775,11 +775,11 @@ fn reverify_mempool_after_persist_skips_snapshot_when_no_unverified_transactions
 
 #[test]
 fn empty_fast_forward_run_collection_borrows_import_batch_blocks() {
-    let source = include_str!("../../pipeline/handlers.rs");
+    let source = include_str!("../../handlers/empty_fast_forward.rs");
     let collector = source
         .split("fn collect_empty_fast_forward_run")
         .nth(1)
-        .and_then(|tail| tail.split("fn ensure_block_matches_cached_header").next())
+        .and_then(|tail| tail.split("pub(super) fn persist_empty_block").next())
         .expect("collect_empty_fast_forward_run source");
 
     assert!(
@@ -795,7 +795,7 @@ fn bulk_import_clones_blocks_only_after_empty_fast_forward_attempt() {
         .split("pub(crate) async fn handle_import")
         .nth(1)
         .and_then(|tail| {
-            tail.split("/// Handle a [`BlockchainCommand::Reverify`]")
+            tail.split("/// Handle a [`BlockchainCommand::InventoryBlock`]")
                 .next()
         })
         .expect("handle_import source");

@@ -23,7 +23,6 @@ use crate::internal::ImportDisposition;
 use crate::native_persist::NativePersistOptions;
 use crate::persist_completed::PersistCompleted;
 use crate::relay_result::RelayResult;
-use crate::reverify::Reverify;
 use crate::service::{BlockchainService, MempoolLike};
 use crate::service_context::BlockPersistContext;
 
@@ -39,6 +38,8 @@ mod extensible;
 mod headers;
 #[path = "../handlers/initialize.rs"]
 mod initialize;
+#[path = "../handlers/reverify.rs"]
+mod reverify;
 #[path = "../handlers/transactions.rs"]
 mod transactions;
 
@@ -502,29 +503,6 @@ where
             }
         }
         ImportBlocksReply::ok_with_stats(imported, stats)
-    }
-
-    /// Handle a [`BlockchainCommand::Reverify`] request.
-    pub(crate) async fn handle_reverify(&self, reverify: Reverify) {
-        for item in reverify.inventories {
-            match item.payload {
-                crate::inventory_payload::InventoryPayload::Block(block) => {
-                    let _ = self
-                        .handle_block_inventory(Arc::new(*block), false, false)
-                        .await;
-                }
-                crate::inventory_payload::InventoryPayload::Transaction(tx) => {
-                    let _ = self.on_new_transaction(&tx, None);
-                }
-                crate::inventory_payload::InventoryPayload::Extensible(payload) => {
-                    let _ = self.handle_extensible_inventory(*payload, false).await;
-                }
-                crate::inventory_payload::InventoryPayload::Raw(_, _) => {
-                    // Raw payloads are decoded before they reach the service
-                    // path, so this compatibility branch is a no-op.
-                }
-            }
-        }
     }
 
     /// Handle a [`BlockchainCommand::InventoryBlock`] command.
