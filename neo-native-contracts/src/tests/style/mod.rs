@@ -55,7 +55,13 @@ pub(super) fn standard_contract_sources()
         (
             "CryptoLib",
             concat!(
+                include_str!("../../crypto_lib/bls.rs"),
+                "\n",
+                include_str!("../../crypto_lib/hashing.rs"),
+                "\n",
                 include_str!("../../crypto_lib/metadata.rs"),
+                "\n",
+                include_str!("../../crypto_lib/signatures.rs"),
                 "\n",
                 include_str!("../../crypto_lib/invoke.rs"),
                 "\n",
@@ -186,9 +192,13 @@ fn standard_contract_dispatch_sources()
         (
             "CryptoLib",
             concat!(
+                include_str!("../../crypto_lib/bls.rs"),
+                "\n",
+                include_str!("../../crypto_lib/hashing.rs"),
+                "\n",
                 include_str!("../../crypto_lib/invoke.rs"),
                 "\n",
-                include_str!("../../crypto_lib/mod.rs"),
+                include_str!("../../crypto_lib/signatures.rs"),
             ),
         ),
         (

@@ -16,6 +16,7 @@ use super::*;
 use neo_config::Hardfork;
 use neo_crypto::murmur;
 use neo_primitives::ContractParameterType;
+use num_bigint::BigInt;
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
