@@ -29,6 +29,27 @@ fn lock_provider() -> NativeProviderTestGuard {
     lock_native_provider()
 }
 
+fn standard_resources() -> NativePersistResources {
+    NativePersistResources::from_provider(Arc::new(
+        neo_native_contracts::StandardNativeProvider::new(),
+    ))
+}
+
+fn persist_with_resources(
+    snapshot: Arc<DataCache>,
+    block: Arc<Block>,
+    settings: &ProtocolSettings,
+    resources: &NativePersistResources,
+) -> CoreResult<NativePersistOutcome> {
+    persist_block_natives_with_resources(
+        snapshot,
+        block,
+        settings,
+        NativePersistOptions::default(),
+        resources,
+    )
+}
+
 struct CountingNativeProvider {
     inner: neo_native_contracts::StandardNativeProvider,
     all_contracts_calls: Arc<AtomicUsize>,
@@ -289,13 +310,13 @@ fn genesis_block_matches_csharp_create_genesis_block() {
 
 #[test]
 fn genesis_persist_seeds_native_state_and_mints() {
-    neo_native_contracts::install();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(DataCache::new(false));
     let block = Arc::new(genesis_block(&settings).expect("genesis block"));
 
-    let outcome =
-        persist_block_natives(Arc::clone(&snapshot), block, &settings).expect("genesis persist");
+    let outcome = persist_with_resources(Arc::clone(&snapshot), block, &settings, &resources)
+        .expect("genesis persist");
 
     // Genesis-active natives initialized (NeoToken + OracleContract among them).
     assert!(outcome.initialized.iter().any(|n| n == "NeoToken"));
@@ -497,19 +518,20 @@ fn genesis_persist_seeds_native_state_and_mints() {
 
 #[test]
 fn non_refresh_block_mints_to_rotating_member_without_recompute() {
-    neo_native_contracts::install();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(DataCache::new(false));
     // Persist genesis first so the committee cache + gas records exist.
     let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
-    persist_block_natives(Arc::clone(&snapshot), genesis, &settings).expect("genesis persist");
+    persist_with_resources(Arc::clone(&snapshot), genesis, &settings, &resources)
+        .expect("genesis persist");
 
     // Block 1: not a refresh block for the 21-member committee.
     let mut header = Header::new();
     header.set_index(1);
     let block = Arc::new(Block::from_parts(header, Vec::new()));
-    let outcome =
-        persist_block_natives(Arc::clone(&snapshot), block, &settings).expect("block 1 persist");
+    let outcome = persist_with_resources(Arc::clone(&snapshot), block, &settings, &resources)
+        .expect("block 1 persist");
     assert!(
         outcome.initialized.is_empty(),
         "no native initializes after genesis"
@@ -549,7 +571,7 @@ fn probe_constants_pin_the_real_native_ids() {
 
 #[test]
 fn chain_state_initialized_flips_after_genesis_persist() {
-    neo_native_contracts::install();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(DataCache::new(false));
     assert!(
@@ -558,7 +580,8 @@ fn chain_state_initialized_flips_after_genesis_persist() {
     );
 
     let block = Arc::new(genesis_block(&settings).expect("genesis block"));
-    persist_block_natives(Arc::clone(&snapshot), block, &settings).expect("genesis persist");
+    persist_with_resources(Arc::clone(&snapshot), block, &settings, &resources)
+        .expect("genesis persist");
     assert!(
         chain_state_initialized(&snapshot),
         "genesis persist initializes the chain"
@@ -607,11 +630,12 @@ fn mainnet_genesis_hash_matches_csharp() {
 /// tx, PostPersist).
 #[test]
 fn persist_executes_transactions_and_records_vm_states() {
-    neo_native_contracts::install();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(DataCache::new(false));
     let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
-    persist_block_natives(Arc::clone(&snapshot), genesis, &settings).expect("genesis persist");
+    persist_with_resources(Arc::clone(&snapshot), genesis, &settings, &resources)
+        .expect("genesis persist");
 
     // Fund the fee-paying signer first: C# GasToken.OnPersist burns
     // each transaction's system+network fee from its sender, so a
@@ -649,8 +673,8 @@ fn persist_executes_transactions_and_records_vm_states() {
     header.set_index(1);
     let block = Arc::new(Block::from_parts(header, vec![tx1, tx2]));
     let block_hash = block.header.try_hash().unwrap();
-    let outcome =
-        persist_block_natives(Arc::clone(&snapshot), block, &settings).expect("block 1 persist");
+    let outcome = persist_with_resources(Arc::clone(&snapshot), block, &settings, &resources)
+        .expect("block 1 persist");
 
     // C# allApplicationExecuted: OnPersist, tx1, tx2, PostPersist.
     assert_eq!(outcome.application_executed.len(), 4);
@@ -700,11 +724,12 @@ fn persist_executes_transactions_and_records_vm_states() {
 
 #[test]
 fn persist_records_fault_when_nep17_receiver_callback_faults() {
-    neo_native_contracts::install();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(DataCache::new(false));
     let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
-    persist_block_natives(Arc::clone(&snapshot), genesis, &settings).expect("genesis persist");
+    persist_with_resources(Arc::clone(&snapshot), genesis, &settings, &resources)
+        .expect("genesis persist");
 
     let signer_account = neo_primitives::UInt160::from_bytes(&[0x55; 20]).unwrap();
     let receiver = neo_primitives::UInt160::from_bytes(&[0x66; 20]).unwrap();
@@ -722,8 +747,8 @@ fn persist_records_fault_when_nep17_receiver_callback_faults() {
     let mut header = Header::new();
     header.set_index(1);
     let block = Arc::new(Block::from_parts(header, vec![tx]));
-    let outcome =
-        persist_block_natives(Arc::clone(&snapshot), block, &settings).expect("block 1 persist");
+    let outcome = persist_with_resources(Arc::clone(&snapshot), block, &settings, &resources)
+        .expect("block 1 persist");
 
     assert_eq!(outcome.application_executed.len(), 3);
     let tx_exec = &outcome.application_executed[1];
@@ -748,11 +773,12 @@ fn persist_records_fault_when_nep17_receiver_callback_faults() {
 
 #[test]
 fn bulk_sync_native_persist_skips_replay_artifacts_but_keeps_vm_state() {
-    neo_native_contracts::install();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(DataCache::new(false));
     let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
-    persist_block_natives(Arc::clone(&snapshot), genesis, &settings).expect("genesis persist");
+    persist_with_resources(Arc::clone(&snapshot), genesis, &settings, &resources)
+        .expect("genesis persist");
 
     let signer_account = neo_primitives::UInt160::from_bytes(&[0x44; 20]).unwrap();
     let mut gas_key = vec![NEP17_PREFIX_ACCOUNT];
@@ -780,13 +806,14 @@ fn bulk_sync_native_persist_skips_replay_artifacts_but_keeps_vm_state() {
     let mut header = Header::new();
     header.set_index(1);
     let block = Arc::new(Block::from_parts(header, vec![tx]));
-    let staged = stage_block_natives_with_options(
+    let staged = stage_block_natives_with_resources(
         Arc::clone(&snapshot),
         block,
         &settings,
         NativePersistOptions {
             capture_replay_artifacts: false,
         },
+        &resources,
     )
     .expect("bulk-sync block stages");
 
@@ -954,14 +981,12 @@ fn native_persist_exposes_explicit_resource_commit_path() {
 
 #[test]
 fn reusable_native_persist_resources_cross_echidna_activation_height() {
-    let _provider_guard = lock_provider();
-    neo_native_contracts::install();
+    let resources = standard_resources();
     let mut settings = ProtocolSettings::default();
     settings
         .hardforks
         .insert(neo_config::Hardfork::HfEchidna, 1);
     let snapshot = Arc::new(DataCache::new(false));
-    let resources = NativePersistResources::from_installed_provider().expect("native resources");
 
     let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
     let staged = stage_block_natives_with_resources(
@@ -1022,12 +1047,13 @@ fn reusable_native_persist_resources_cross_echidna_activation_height() {
 /// C# `Ledger.Initialized` check) and the current-block pointer.
 #[test]
 fn genesis_persist_writes_ledger_records() {
-    neo_native_contracts::install();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(DataCache::new(false));
     let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
     let genesis_hash = genesis.header.try_hash().unwrap();
-    persist_block_natives(Arc::clone(&snapshot), genesis, &settings).expect("genesis persist");
+    persist_with_resources(Arc::clone(&snapshot), genesis, &settings, &resources)
+        .expect("genesis persist");
 
     let ledger = neo_native_contracts::LedgerContract::new();
     assert_eq!(

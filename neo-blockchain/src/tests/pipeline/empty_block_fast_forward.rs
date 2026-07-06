@@ -3,7 +3,6 @@ use super::*;
 use std::sync::Arc;
 
 use neo_config::{Hardfork, ProtocolSettings};
-use neo_execution::native_contract_provider::{NativeProviderTestGuard, lock_native_provider};
 use neo_payloads::{Block, Header, Transaction};
 use neo_storage::SeekDirection;
 
@@ -11,13 +10,10 @@ use crate::empty_block_fast_forward::EmptyBlockFastForwardRequest;
 use crate::native_persist::{NativePersistOptions, NativePersistResources};
 use crate::service_context::BlockPersistContext;
 
-fn lock_provider() -> NativeProviderTestGuard {
-    lock_native_provider()
-}
-
-fn install_resources() -> NativePersistResources {
-    neo_native_contracts::install();
-    NativePersistResources::from_installed_provider().expect("native resources")
+fn standard_resources() -> NativePersistResources {
+    NativePersistResources::from_provider(Arc::new(
+        neo_native_contracts::StandardNativeProvider::new(),
+    ))
 }
 
 fn empty_block(index: u32) -> Arc<Block> {
@@ -58,6 +54,21 @@ fn bulk_context() -> BlockPersistContext {
     BlockPersistContext::bulk_sync()
 }
 
+fn persist_block_with_resources(
+    snapshot: Arc<neo_storage::DataCache>,
+    block: Arc<Block>,
+    settings: &ProtocolSettings,
+    resources: &NativePersistResources,
+) -> neo_error::CoreResult<crate::native_persist::NativePersistOutcome> {
+    crate::native_persist::persist_block_natives_with_resources(
+        snapshot,
+        block,
+        settings,
+        NativePersistOptions::default(),
+        resources,
+    )
+}
+
 fn visible_store_dump(snapshot: &neo_storage::DataCache) -> Vec<(Vec<u8>, Vec<u8>)> {
     snapshot
         .find(None, SeekDirection::Forward)
@@ -73,8 +84,7 @@ fn neo_gas_per_block_key(index: u32) -> neo_storage::StorageKey {
 
 #[test]
 fn planner_accepts_contiguous_empty_bulk_sync_range_between_cut_points() {
-    let _guard = lock_provider();
-    let resources = install_resources();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let blocks = vec![empty_block(1), empty_block(2), empty_block(3)];
 
@@ -100,8 +110,7 @@ fn planner_accepts_contiguous_empty_bulk_sync_range_between_cut_points() {
 
 #[test]
 fn planner_accepts_maximum_empty_blocks_as_one_batch() {
-    let _guard = lock_provider();
-    let resources = install_resources();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let count = crate::empty_block_fast_forward::MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS;
     let blocks = (1..=count as u32).map(empty_block).collect::<Vec<_>>();
@@ -137,8 +146,7 @@ fn planner_batch_guard_matches_realistic_short_empty_runs() {
 
 #[test]
 fn planner_rejects_only_above_the_empty_block_batch_guard() {
-    let _guard = lock_provider();
-    let resources = install_resources();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let count = crate::empty_block_fast_forward::MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS + 1;
     let blocks = (1..=count as u32).map(empty_block).collect::<Vec<_>>();
@@ -164,8 +172,7 @@ fn planner_rejects_only_above_the_empty_block_batch_guard() {
 
 #[test]
 fn planner_rejects_replay_artifact_paths() {
-    let _guard = lock_provider();
-    let resources = install_resources();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let blocks = vec![empty_block(1)];
 
@@ -184,8 +191,7 @@ fn planner_rejects_replay_artifact_paths() {
 
 #[test]
 fn planner_rejects_non_bulk_sync_contexts() {
-    let _guard = lock_provider();
-    let resources = install_resources();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let blocks = vec![empty_block(1)];
 
@@ -204,8 +210,7 @@ fn planner_rejects_non_bulk_sync_contexts() {
 
 #[test]
 fn planner_rejects_blocks_with_transactions() {
-    let _guard = lock_provider();
-    let resources = install_resources();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let blocks = vec![empty_block(1), non_empty_block(2)];
 
@@ -230,8 +235,7 @@ fn planner_rejects_blocks_with_transactions() {
 
 #[test]
 fn planner_rejects_non_next_start() {
-    let _guard = lock_provider();
-    let resources = install_resources();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let blocks = vec![empty_block(2)];
 
@@ -256,8 +260,7 @@ fn planner_rejects_non_next_start() {
 
 #[test]
 fn planner_rejects_non_contiguous_range() {
-    let _guard = lock_provider();
-    let resources = install_resources();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let blocks = vec![empty_block(1), empty_block(3)];
 
@@ -282,8 +285,7 @@ fn planner_rejects_non_contiguous_range() {
 
 #[test]
 fn planner_rejects_empty_blocks_with_non_zero_merkle_root() {
-    let _guard = lock_provider();
-    let resources = install_resources();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let merkle_root = neo_primitives::UInt256::from([0x42; 32]);
     let blocks = vec![empty_block(1), empty_block_with_merkle_root(2, 0x42)];
@@ -309,8 +311,7 @@ fn planner_rejects_empty_blocks_with_non_zero_merkle_root() {
 
 #[test]
 fn planner_rejects_native_initialization_or_manifest_refresh_height() {
-    let _guard = lock_provider();
-    let resources = install_resources();
+    let resources = standard_resources();
     let mut settings = ProtocolSettings::default();
     settings.hardforks.insert(Hardfork::HfEchidna, 2);
     let blocks = vec![empty_block(1), empty_block(2)];
@@ -336,8 +337,7 @@ fn planner_rejects_native_initialization_or_manifest_refresh_height() {
 
 #[test]
 fn standard_natives_explicitly_opt_in_to_empty_block_fast_forward() {
-    let _guard = lock_provider();
-    let resources = install_resources();
+    let resources = standard_resources();
     let names = resources
         .contracts()
         .iter()
@@ -377,8 +377,7 @@ fn stage_empty_block_fast_forward_reuses_last_hash_from_ledger_loop() {
 
 #[test]
 fn fast_forward_empty_blocks_matches_normal_persist_store_dump_between_refreshes() {
-    let _guard = lock_provider();
-    let resources = install_resources();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
 
     let normal = Arc::new(neo_storage::DataCache::new(false));
@@ -393,13 +392,14 @@ fn fast_forward_empty_blocks_matches_normal_persist_store_dump_between_refreshes
         Arc::clone(&block3),
     ];
 
-    crate::native_persist::persist_block_natives(
+    persist_block_with_resources(
         Arc::clone(&normal),
         Arc::clone(&genesis),
         &settings,
+        &resources,
     )
     .expect("normal genesis");
-    crate::native_persist::persist_block_natives(Arc::clone(&fast), genesis, &settings)
+    persist_block_with_resources(Arc::clone(&fast), genesis, &settings, &resources)
         .expect("fast genesis baseline");
 
     // A governance change from an earlier non-empty block can schedule a new
@@ -414,10 +414,11 @@ fn fast_forward_empty_blocks_matches_normal_persist_store_dump_between_refreshes
     fast.update(gas_change_key, gas_change_value);
 
     for block in &blocks {
-        crate::native_persist::persist_block_natives(
+        persist_block_with_resources(
             Arc::clone(&normal),
             Arc::clone(block),
             &settings,
+            &resources,
         )
         .expect("normal empty block");
     }
@@ -461,23 +462,24 @@ fn fast_forward_empty_blocks_matches_normal_persist_store_dump_between_refreshes
 
 #[test]
 fn fast_forward_empty_blocks_matches_normal_persist_across_multiple_gas_changes() {
-    let _guard = lock_provider();
-    let resources = install_resources();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
 
     let normal = Arc::new(neo_storage::DataCache::new(false));
     let fast = Arc::new(neo_storage::DataCache::new(false));
     let genesis = Arc::new(crate::native_persist::genesis_block(&settings).expect("genesis"));
-    crate::native_persist::persist_block_natives(
+    persist_block_with_resources(
         Arc::clone(&normal),
         Arc::clone(&genesis),
         &settings,
+        &resources,
     )
     .expect("normal genesis");
-    crate::native_persist::persist_block_natives(
+    persist_block_with_resources(
         Arc::clone(&fast),
         Arc::clone(&genesis),
         &settings,
+        &resources,
     )
     .expect("fast genesis baseline");
 
@@ -499,10 +501,11 @@ fn fast_forward_empty_blocks_matches_normal_persist_across_multiple_gas_changes(
     }
 
     for block in &blocks {
-        crate::native_persist::persist_block_natives(
+        persist_block_with_resources(
             Arc::clone(&normal),
             Arc::clone(block),
             &settings,
+            &resources,
         )
         .expect("normal empty block across gas changes");
     }
@@ -528,42 +531,40 @@ fn fast_forward_empty_blocks_matches_normal_persist_across_multiple_gas_changes(
 
 #[test]
 fn fast_forward_empty_blocks_matches_normal_persist_across_committee_refresh() {
-    let _guard = lock_provider();
-    let resources = install_resources();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let committee_count = settings.committee_members_count() as u32;
 
     let normal = Arc::new(neo_storage::DataCache::new(false));
     let fast = Arc::new(neo_storage::DataCache::new(false));
     let genesis = Arc::new(crate::native_persist::genesis_block(&settings).expect("genesis"));
-    crate::native_persist::persist_block_natives(
+    persist_block_with_resources(
         Arc::clone(&normal),
         Arc::clone(&genesis),
         &settings,
+        &resources,
     )
     .expect("normal genesis");
-    crate::native_persist::persist_block_natives(
+    persist_block_with_resources(
         Arc::clone(&fast),
         Arc::clone(&genesis),
         &settings,
+        &resources,
     )
     .expect("fast genesis baseline");
 
     let mut prev = genesis;
     for height in 1..committee_count - 1 {
         prev = empty_child(&prev, height);
-        crate::native_persist::persist_block_natives(
+        persist_block_with_resources(
             Arc::clone(&normal),
             Arc::clone(&prev),
             &settings,
+            &resources,
         )
         .expect("normal pre-run block");
-        crate::native_persist::persist_block_natives(
-            Arc::clone(&fast),
-            Arc::clone(&prev),
-            &settings,
-        )
-        .expect("fast pre-run block");
+        persist_block_with_resources(Arc::clone(&fast), Arc::clone(&prev), &settings, &resources)
+            .expect("fast pre-run block");
     }
 
     let block_before_refresh = empty_child(&prev, committee_count - 1);
@@ -576,10 +577,11 @@ fn fast_forward_empty_blocks_matches_normal_persist_across_committee_refresh() {
     ];
 
     for block in &blocks {
-        crate::native_persist::persist_block_natives(
+        persist_block_with_resources(
             Arc::clone(&normal),
             Arc::clone(block),
             &settings,
+            &resources,
         )
         .expect("normal empty block across refresh");
     }
@@ -605,42 +607,40 @@ fn fast_forward_empty_blocks_matches_normal_persist_across_committee_refresh() {
 
 #[test]
 fn fast_forward_empty_blocks_matches_normal_persist_across_multiple_committee_refreshes() {
-    let _guard = lock_provider();
-    let resources = install_resources();
+    let resources = standard_resources();
     let settings = ProtocolSettings::default();
     let committee_count = settings.committee_members_count() as u32;
 
     let normal = Arc::new(neo_storage::DataCache::new(false));
     let fast = Arc::new(neo_storage::DataCache::new(false));
     let genesis = Arc::new(crate::native_persist::genesis_block(&settings).expect("genesis"));
-    crate::native_persist::persist_block_natives(
+    persist_block_with_resources(
         Arc::clone(&normal),
         Arc::clone(&genesis),
         &settings,
+        &resources,
     )
     .expect("normal genesis");
-    crate::native_persist::persist_block_natives(
+    persist_block_with_resources(
         Arc::clone(&fast),
         Arc::clone(&genesis),
         &settings,
+        &resources,
     )
     .expect("fast genesis baseline");
 
     let mut prev = genesis;
     for height in 1..committee_count - 1 {
         prev = empty_child(&prev, height);
-        crate::native_persist::persist_block_natives(
+        persist_block_with_resources(
             Arc::clone(&normal),
             Arc::clone(&prev),
             &settings,
+            &resources,
         )
         .expect("normal pre-run block");
-        crate::native_persist::persist_block_natives(
-            Arc::clone(&fast),
-            Arc::clone(&prev),
-            &settings,
-        )
-        .expect("fast pre-run block");
+        persist_block_with_resources(Arc::clone(&fast), Arc::clone(&prev), &settings, &resources)
+            .expect("fast pre-run block");
     }
 
     let mut blocks = Vec::new();
@@ -651,10 +651,11 @@ fn fast_forward_empty_blocks_matches_normal_persist_across_multiple_committee_re
     }
 
     for block in &blocks {
-        crate::native_persist::persist_block_natives(
+        persist_block_with_resources(
             Arc::clone(&normal),
             Arc::clone(block),
             &settings,
+            &resources,
         )
         .expect("normal empty block across refreshes");
     }
