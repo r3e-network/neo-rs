@@ -2,6 +2,7 @@ use neo_payloads::Transaction;
 use neo_primitives::verify_result::VerifyResult;
 use tracing::{debug, warn};
 
+use crate::PreverifyCompleted;
 use crate::command::AddTransactionReply;
 use crate::fill_memory_pool::FillMemoryPool;
 use crate::service::{BlockchainService, MempoolLike};
@@ -123,6 +124,34 @@ where
         if drained > 0 {
             debug!(target: "neo", drained, "drained parked unverified blocks");
         }
+    }
+
+    /// Handle a [`BlockchainCommand::PreverifyCompleted`] command.
+    pub(crate) async fn handle_preverify_completed(&self, task: PreverifyCompleted) {
+        let hash = match task.transaction.try_hash() {
+            Ok(hash) => hash,
+            Err(error) => {
+                warn!(
+                    target: "neo",
+                    error = %error,
+                    "transaction hash computation failed after preverification"
+                );
+                return;
+            }
+        };
+        if task.result == VerifyResult::Succeed {
+            let result = self.on_new_transaction(&task.transaction, task.cached_state_independent);
+            debug!(
+                target: "neo",
+                %hash,
+                ?result,
+                relay = task.relay,
+                cached_state_independent = ?task.cached_state_independent,
+                "preverified transaction admitted through mempool"
+            );
+            return;
+        }
+        debug!(target: "neo", %hash, ?task.result, relay = task.relay, "preverify rejected transaction");
     }
 
     /// Try to insert a transaction into the mempool. Used by the

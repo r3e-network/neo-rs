@@ -14,10 +14,8 @@ use std::time::Instant;
 
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::block::Block;
-use neo_primitives::verify_result::VerifyResult;
 use tracing::{debug, warn};
 
-use crate::PreverifyCompleted;
 use crate::command::{ImportBlocksReply, ImportBlocksStats};
 use crate::empty_block_fast_forward::stage_empty_block_fast_forward;
 use crate::import::Import;
@@ -773,34 +771,6 @@ where
 
         let _ = relay; // relay broadcast is handled by the network service
         Ok(())
-    }
-
-    /// Handle a [`BlockchainCommand::PreverifyCompleted`] command.
-    pub(crate) async fn handle_preverify_completed(&self, task: PreverifyCompleted) {
-        let hash = match task.transaction.try_hash() {
-            Ok(hash) => hash,
-            Err(error) => {
-                warn!(
-                    target: "neo",
-                    error = %error,
-                    "transaction hash computation failed after preverification"
-                );
-                return;
-            }
-        };
-        if task.result == VerifyResult::Succeed {
-            let result = self.on_new_transaction(&task.transaction, task.cached_state_independent);
-            debug!(
-                target: "neo",
-                %hash,
-                ?result,
-                relay = task.relay,
-                cached_state_independent = ?task.cached_state_independent,
-                "preverified transaction admitted through mempool"
-            );
-            return;
-        }
-        debug!(target: "neo", %hash, ?task.result, relay = task.relay, "preverify rejected transaction");
     }
 
     /// Handle a [`BlockchainCommand::RelayResult`] notification.

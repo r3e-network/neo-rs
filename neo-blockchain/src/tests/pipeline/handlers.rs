@@ -9,6 +9,7 @@ use crate::service_context::SystemContext;
 use neo_payloads::Transaction;
 use neo_payloads::header::Header;
 use neo_primitives::UInt256;
+use neo_primitives::verify_result::VerifyResult;
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageKey;
 use neo_vm_rs::ExecutionEngineLimits;
