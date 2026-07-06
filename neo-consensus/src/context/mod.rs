@@ -12,6 +12,7 @@
 //!
 //! - `persistence`: Persistence traits, snapshots, transactions, and cache
 //!   overlays.
+//! - `replay`: bounded message-hash replay protection.
 //! - `state`: domain state records for the surrounding workflow.
 //! - `timer`: consensus timer policy and scheduling helpers.
 //! - `transactions`: proposal transaction availability and block-policy math.
@@ -24,7 +25,6 @@ use lru::LruCache;
 use neo_crypto::ECPoint;
 use neo_primitives::{UInt160, UInt256};
 use std::collections::{HashMap, HashSet};
-use std::num::NonZeroUsize;
 
 /// Default block time in milliseconds (15 seconds for Neo N3).
 /// Post-Echidna, `MillisecondsPerBlock` is a committee-configurable policy
@@ -57,6 +57,7 @@ pub const DEFAULT_MAX_BLOCK_SYSTEM_FEE: i64 = 150_000_000_000;
 pub const MAX_MESSAGE_CACHE_SIZE: usize = 10_000;
 
 mod persistence;
+mod replay;
 mod state;
 mod timer;
 mod transactions;
@@ -227,13 +228,6 @@ impl ConsensusContext {
             last_seen_messages: HashMap::new(),
             seen_message_hashes: Self::new_seen_message_cache(),
         }
-    }
-
-    fn new_seen_message_cache() -> LruCache<UInt256, ()> {
-        LruCache::new(
-            NonZeroUsize::new(MAX_MESSAGE_CACHE_SIZE)
-                .expect("message cache capacity must be non-zero"),
-        )
     }
 
     /// Returns the number of validators
@@ -504,39 +498,6 @@ impl ConsensusContext {
     /// Updates the last seen message for a validator
     pub fn update_last_seen_message(&mut self, validator_index: u8, block_index: u32) {
         self.last_seen_messages.insert(validator_index, block_index);
-    }
-
-    /// Checks if a message hash has been seen before (replay attack prevention)
-    ///
-    /// This method is critical for preventing replay attacks where an attacker
-    /// could retransmit valid consensus messages to disrupt the protocol.
-    ///
-    /// # Arguments
-    /// * `hash` - The message hash to check
-    ///
-    /// # Returns
-    /// * `true` if the message has been seen before
-    /// * `false` if this is a new message
-    #[must_use]
-    pub fn has_seen_message(&self, hash: &UInt256) -> bool {
-        self.seen_message_hashes.contains(hash)
-    }
-
-    /// Marks a message hash as seen (replay attack prevention)
-    ///
-    /// This method adds the message hash to the cache to prevent duplicate processing.
-    /// The cache is automatically cleared when starting a new block via `reset_for_new_block()`.
-    ///
-    /// Security: uses a bounded LRU cache (`MAX_MESSAGE_CACHE_SIZE`) to prevent memory
-    /// exhaustion attacks while avoiding a clear-all window for recently seen messages.
-    ///
-    /// # Arguments
-    /// * `hash` - The message hash to mark as seen
-    pub fn mark_message_seen(&mut self, hash: &UInt256) {
-        if self.seen_message_hashes.contains(hash) {
-            return;
-        }
-        self.seen_message_hashes.put(*hash, ());
     }
 
     /// Returns the number of validators that have committed (sent Commit messages)
