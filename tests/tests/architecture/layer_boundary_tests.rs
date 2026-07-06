@@ -459,14 +459,13 @@ async fn test_development_workspace_crates_are_not_default_members() {
     // were intentionally removed to reduce default build tax (Task #137).
     // They remain workspace members and can be built explicitly with
     // `cargo build -p neo-rpc` or `cargo build -p neo-indexer`.
-    for runtime_entrypoint in ["neo-node"] {
-        assert!(
-            default_members
-                .iter()
-                .any(|member| member == runtime_entrypoint),
-            "runtime-facing crate `{runtime_entrypoint}` should stay in default-members"
-        );
-    }
+    let runtime_entrypoint = "neo-node";
+    assert!(
+        default_members
+            .iter()
+            .any(|member| member == runtime_entrypoint),
+        "runtime-facing crate `{runtime_entrypoint}` should stay in default-members"
+    );
 }
 
 #[tokio::test]

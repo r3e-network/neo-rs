@@ -8,7 +8,10 @@
 
 use std::sync::Arc;
 
-use neo_blockchain::{genesis_block, persist_block_natives};
+use neo_blockchain::{
+    NativePersistOptions, NativePersistResources, genesis_block,
+    persist_block_natives_with_resources,
+};
 use neo_config::ProtocolSettings;
 use neo_native_contracts::LedgerContract;
 use neo_payloads::{Block, Header, Witness};
@@ -26,8 +29,9 @@ fn empty_child_block(parent: &Block, index: u32) -> Block {
 
 #[tokio::test]
 async fn native_ledger_records_survive_store_cache_reopen() {
-    neo_native_contracts::install();
-
+    let resources = NativePersistResources::from_provider(Arc::new(
+        neo_native_contracts::StandardNativeProvider::new(),
+    ));
     let settings = ProtocolSettings::default();
     let store: Arc<dyn Store> = StoreFactory::get_store("memory", "").expect("memory store");
     let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
@@ -35,13 +39,25 @@ async fn native_ledger_records_survive_store_cache_reopen() {
 
     let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
     let genesis_hash = genesis.try_hash().expect("genesis hash");
-    persist_block_natives(Arc::clone(&snapshot), Arc::clone(&genesis), &settings)
-        .expect("genesis persist");
+    persist_block_natives_with_resources(
+        Arc::clone(&snapshot),
+        Arc::clone(&genesis),
+        &settings,
+        NativePersistOptions::default(),
+        &resources,
+    )
+    .expect("genesis persist");
 
     let block_one = Arc::new(empty_child_block(genesis.as_ref(), 1));
     let block_one_hash = block_one.try_hash().expect("block one hash");
-    persist_block_natives(Arc::clone(&snapshot), Arc::clone(&block_one), &settings)
-        .expect("block one persist");
+    persist_block_natives_with_resources(
+        Arc::clone(&snapshot),
+        Arc::clone(&block_one),
+        &settings,
+        NativePersistOptions::default(),
+        &resources,
+    )
+    .expect("block one persist");
 
     let ledger = LedgerContract::new();
     let before_commit = StoreCache::new_from_store(Arc::clone(&store), false);

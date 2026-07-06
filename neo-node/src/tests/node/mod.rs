@@ -100,20 +100,33 @@ fn seed_store_tip(
 ) -> anyhow::Result<()> {
     use neo_storage::persistence::StoreCache;
 
-    neo_native_contracts::install();
-
     let mut config = NodeConfig::default();
     config.storage.backend = Some(backend.to_string());
     let store = open_store(&config, Some(path))?;
     let mut store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
+    let resources = neo_blockchain::NativePersistResources::from_provider(Arc::new(
+        neo_native_contracts::StandardNativeProvider::new(),
+    ));
 
     let mut parent = Arc::new(neo_blockchain::genesis_block(settings)?);
-    neo_blockchain::persist_block_natives(Arc::clone(&snapshot), Arc::clone(&parent), settings)?;
+    neo_blockchain::persist_block_natives_with_resources(
+        Arc::clone(&snapshot),
+        Arc::clone(&parent),
+        settings,
+        neo_blockchain::NativePersistOptions::default(),
+        &resources,
+    )?;
 
     for index in 1..=tip {
         let block = Arc::new(empty_child_block(parent.as_ref(), index));
-        neo_blockchain::persist_block_natives(Arc::clone(&snapshot), Arc::clone(&block), settings)?;
+        neo_blockchain::persist_block_natives_with_resources(
+            Arc::clone(&snapshot),
+            Arc::clone(&block),
+            settings,
+            neo_blockchain::NativePersistOptions::default(),
+            &resources,
+        )?;
         parent = block;
     }
 

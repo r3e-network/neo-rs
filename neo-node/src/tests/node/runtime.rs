@@ -1008,7 +1008,8 @@ async fn remote_ledger_node_advertises_upstream_height_when_available() {
 #[test]
 fn genesis_policy_init_visible_through_fresh_store_cache_after_commit() {
     use neo_blockchain::native_persist::{
-        chain_state_initialized, genesis_block, persist_block_natives,
+        NativePersistOptions, NativePersistResources, chain_state_initialized, genesis_block,
+        persist_block_natives_with_resources,
     };
     use neo_blockchain::service_context::SystemContext;
     use neo_native_contracts::PolicyContract;
@@ -1017,7 +1018,9 @@ fn genesis_policy_init_visible_through_fresh_store_cache_after_commit() {
     use neo_storage::persistence::{StoreCache, store::Store};
     use num_bigint::BigInt;
 
-    neo_native_contracts::install();
+    let resources = NativePersistResources::from_provider(Arc::new(
+        neo_native_contracts::StandardNativeProvider::new(),
+    ));
     let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
@@ -1038,8 +1041,14 @@ fn genesis_policy_init_visible_through_fresh_store_cache_after_commit() {
     // flush to the durable store — exactly handlers.rs::initialize().
     let settings = ProtocolSettings::default();
     let genesis = Arc::new(genesis_block(&settings).expect("genesis block"));
-    persist_block_natives(Arc::clone(&snapshot), Arc::clone(&genesis), &settings)
-        .expect("genesis persist");
+    persist_block_natives_with_resources(
+        Arc::clone(&snapshot),
+        Arc::clone(&genesis),
+        &settings,
+        NativePersistOptions::default(),
+        &resources,
+    )
+    .expect("genesis persist");
     ctx.commit_to_store();
 
     // The live RPC read path: a FRESH store_cache over the same backing store.

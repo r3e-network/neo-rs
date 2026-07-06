@@ -76,8 +76,10 @@ pub use import_completed::ImportCompleted;
 pub use internal::{ImportDisposition, UnverifiedBlocksList};
 pub use inventory_payload::InventoryPayload;
 pub use native_persist::{
-    NativePersistNotification, NativePersistOptions, NativePersistOutcome, chain_state_initialized,
-    genesis_block, persist_block_natives, stage_block_natives_with_options,
+    NativePersistNotification, NativePersistOptions, NativePersistOutcome, NativePersistResources,
+    chain_state_initialized, genesis_block, persist_block_natives,
+    persist_block_natives_with_resources, stage_block_natives_with_options,
+    stage_block_natives_with_resources,
 };
 pub use neo_runtime::BlockchainEvent;
 pub use persist_completed::PersistCompleted;
