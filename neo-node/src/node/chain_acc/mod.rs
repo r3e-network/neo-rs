@@ -14,6 +14,7 @@
 //! - `format`: chain.acc file format readers and validation helpers.
 //! - `metrics`: Metrics collection and progress-reporting helpers.
 //! - `range`: Expected-range, resume, and continuity validation helpers.
+//! - `report`: Import report DTOs and hot-metric projection.
 
 use std::io::{BufReader, Read, Seek};
 use std::path::Path;
@@ -31,6 +32,7 @@ mod batch;
 mod format;
 mod metrics;
 mod range;
+mod report;
 use batch::{
     ChainAccImportComposition, PendingChainAccBatch, import_chain_acc_batch, take_import_batch,
 };
@@ -46,6 +48,7 @@ use range::{
     validate_chain_acc_block_height, validate_chain_acc_count, validate_chain_acc_first_prev_hash,
     validate_chain_acc_internal_prev_hash,
 };
+pub(super) use report::{ChainAccImportReport, ImportHotMetrics, LocalLedgerTip};
 
 /// The mixed-block batch size for trusted `chain.acc` Import commands.
 ///
@@ -84,72 +87,6 @@ pub async fn import_chain_acc_until_height(
 pub(super) struct ChainAccExpectedRange {
     pub(super) start_height: u32,
     pub(super) end_height: u32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct LocalLedgerTip {
-    pub(super) height: u32,
-    pub(super) hash: neo_primitives::UInt256,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct ChainAccImportReport {
-    pub(super) imported: u64,
-    pub(super) last_imported_tip: Option<LocalLedgerTip>,
-    pub(super) elapsed_seconds: f64,
-    pub(super) driver_elapsed_seconds: f64,
-    pub(super) chain_acc_read_seconds: f64,
-    pub(super) chain_acc_validate_seconds: f64,
-    pub(super) average_blocks_per_second: f64,
-    pub(super) empty_blocks: u64,
-    pub(super) empty_only_blocks: u64,
-    pub(super) empty_block_import_seconds: f64,
-    pub(super) empty_blocks_per_second: f64,
-    pub(super) transaction_blocks: u64,
-    pub(super) transactions: u64,
-    pub(super) transaction_block_import_seconds: f64,
-    pub(super) transaction_block_clone_seconds: f64,
-    pub(super) transaction_ledger_insert_seconds: f64,
-    pub(super) transaction_committed_hook_seconds: f64,
-    pub(super) transaction_blocks_per_second: f64,
-    pub(super) finalization_seconds: f64,
-    pub(super) finalization_commit_handlers_seconds: f64,
-    pub(super) finalization_store_commit_seconds: f64,
-    pub(super) unclassified_import_seconds: f64,
-    pub(super) hot_metrics: ImportHotMetrics,
-}
-
-impl ChainAccImportReport {
-    #[cfg(test)]
-    pub(super) fn with_hot_metrics(mut self, hot_metrics: ImportHotMetrics) -> Self {
-        self.hot_metrics = hot_metrics;
-        self
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct ImportHotMetrics {
-    pub(super) state_service_mpt_apply_attempts: u64,
-    pub(super) state_service_mpt_apply_failures: u64,
-    pub(super) state_service_mpt_apply_height: u64,
-    pub(super) state_service_mpt_avg_total_us: u64,
-    pub(super) state_service_mpt_avg_project_us: u64,
-    pub(super) state_service_mpt_avg_trie_us: u64,
-    pub(super) state_service_mpt_avg_changes: u64,
-    pub(super) state_service_mpt_enqueue_blocking_avg_us: u64,
-    pub(super) state_service_mpt_queue_wait_avg_us: u64,
-    pub(super) state_service_mpt_mutate_changes_avg_us: u64,
-    pub(super) state_service_mpt_root_hash_avg_us: u64,
-    pub(super) state_service_mpt_trie_commit_avg_us: u64,
-    pub(super) state_service_mpt_backing_commit_avg_us: u64,
-    pub(super) state_service_mpt_publish_generation_avg_us: u64,
-    pub(super) state_service_mpt_overlay_entries_avg: u64,
-    pub(super) state_service_mpt_batch_blocks_avg: u64,
-    pub(super) native_persist_avg_total_us: u64,
-    pub(super) native_persist_tx_hot_stage: &'static str,
-    pub(super) native_persist_tx_hot_stage_avg_us: u64,
-    pub(super) rocksdb_batch_avg_flush_duration_ms: u64,
-    pub(super) rocksdb_batch_pending_operations: u64,
 }
 
 pub(super) fn local_ledger_tip(
@@ -543,39 +480,6 @@ where
         unclassified_import_seconds,
         hot_metrics,
     })
-}
-
-impl ImportHotMetrics {
-    fn from_snapshots(
-        state_service: &StateServiceMptImportMetrics,
-        rocksdb: Option<RocksDbBatchImportMetrics>,
-    ) -> Self {
-        Self {
-            state_service_mpt_apply_attempts: state_service.apply_attempts,
-            state_service_mpt_apply_failures: state_service.apply_failures,
-            state_service_mpt_apply_height: state_service.apply_height,
-            state_service_mpt_avg_total_us: state_service.avg_total_us,
-            state_service_mpt_avg_project_us: state_service.avg_project_us,
-            state_service_mpt_avg_trie_us: state_service.avg_trie_us,
-            state_service_mpt_avg_changes: state_service.avg_changes,
-            state_service_mpt_enqueue_blocking_avg_us: state_service.enqueue_blocking_avg_us,
-            state_service_mpt_queue_wait_avg_us: state_service.queue_wait_avg_us,
-            state_service_mpt_mutate_changes_avg_us: state_service.mutate_changes_avg_us,
-            state_service_mpt_root_hash_avg_us: state_service.root_hash_avg_us,
-            state_service_mpt_trie_commit_avg_us: state_service.trie_commit_avg_us,
-            state_service_mpt_backing_commit_avg_us: state_service.backing_commit_avg_us,
-            state_service_mpt_publish_generation_avg_us: state_service.publish_generation_avg_us,
-            state_service_mpt_overlay_entries_avg: state_service.overlay_entries_avg,
-            state_service_mpt_batch_blocks_avg: state_service.batch_blocks_avg,
-            native_persist_avg_total_us: state_service.native_persist_avg_total_us,
-            native_persist_tx_hot_stage: state_service.native_persist_tx_hot_stage,
-            native_persist_tx_hot_stage_avg_us: state_service.native_persist_tx_hot_stage_avg_us,
-            rocksdb_batch_avg_flush_duration_ms: rocksdb
-                .map_or(0, |metrics| metrics.avg_flush_duration_ms),
-            rocksdb_batch_pending_operations: rocksdb
-                .map_or(0, |metrics| metrics.pending_operations),
-        }
-    }
 }
 
 #[cfg(test)]
