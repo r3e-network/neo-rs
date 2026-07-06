@@ -33,6 +33,10 @@ impl<C> NativeMethodBinding<C> {
         self.method.name == method
     }
 
+    fn matches_name_and_arity(&self, method: &str, arity: usize) -> bool {
+        self.matches_name(method) && self.method.parameters.len() == arity
+    }
+
     fn invoke(
         &self,
         contract: &C,
@@ -68,5 +72,24 @@ pub(crate) fn dispatch_by_name<C>(
     bindings
         .iter()
         .find(|binding| binding.matches_name(method))
+        .map(|binding| binding.invoke(contract, engine, args))
+}
+
+/// Dispatches an overloaded native method by ABI name and argument count.
+///
+/// Use this for contracts such as StdLib where the Neo ABI exposes multiple
+/// descriptors with the same name. Returning `None` for a wrong arity mirrors
+/// the engine's metadata resolution instead of falling into the first same-name
+/// handler.
+pub(crate) fn dispatch_by_name_and_arity<C>(
+    contract: &C,
+    bindings: &[NativeMethodBinding<C>],
+    engine: &mut ApplicationEngine,
+    method: &str,
+    args: &[Vec<u8>],
+) -> Option<CoreResult<Vec<u8>>> {
+    bindings
+        .iter()
+        .find(|binding| binding.matches_name_and_arity(method, args.len()))
         .map(|binding| binding.invoke(contract, engine, args))
 }

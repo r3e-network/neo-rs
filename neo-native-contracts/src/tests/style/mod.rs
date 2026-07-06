@@ -242,7 +242,14 @@ fn standard_contract_dispatch_sources()
                 include_str!("../../contract_management/invoke.rs"),
             ),
         ),
-        ("StdLib", include_str!("../../std_lib/invoke.rs")),
+        (
+            "StdLib",
+            concat!(
+                include_str!("../../std_lib/metadata.rs"),
+                "\n",
+                include_str!("../../std_lib/invoke.rs"),
+            ),
+        ),
         (
             "CryptoLib",
             concat!(

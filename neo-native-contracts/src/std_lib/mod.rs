@@ -18,6 +18,7 @@
 //! - `numeric`: itoa/atoi and .NET integer-cast compatibility helpers.
 //! - `serialization`: serialization codecs and compatibility checks.
 //! - `strings`: stringSplit and strLen helpers.
+//! - `test_dispatch`: test-only pure arity dispatch for compatibility vectors.
 //! - `tests`: Module-local tests and regression coverage.
 
 mod args;
@@ -63,6 +64,9 @@ impl NativeContract for StdLib {
         self.invoke_native(engine, method, args)
     }
 }
+
+#[cfg(test)]
+mod test_dispatch;
 
 #[cfg(test)]
 #[path = "../tests/std_lib/mod.rs"]

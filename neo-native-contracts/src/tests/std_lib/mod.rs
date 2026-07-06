@@ -268,6 +268,19 @@ fn unknown_method_is_none() {
     assert!(StdLib::dispatch("notAStdLibMethod", &[vec![1]], true).is_none());
 }
 
+#[test]
+fn wrong_overload_arity_is_none() {
+    assert!(StdLib::dispatch("memorySearch", &[b"abc".to_vec()], true).is_none());
+    assert!(
+        StdLib::dispatch(
+            "stringSplit",
+            &[b"a,b".to_vec(), b",".to_vec(), vec![1], vec![2]],
+            true,
+        )
+        .is_none()
+    );
+}
+
 /// stringSplit via the dispatch seam: decodes the BinarySerialized Array
 /// return back into the substrings for comparison.
 fn split(args: &[&[u8]]) -> Vec<String> {
