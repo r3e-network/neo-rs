@@ -71,9 +71,11 @@ pub struct Node {
     ///
     /// The handle owns the bounded preverification queue and durable
     /// import-stage checkpoint provider over the same blockchain/storage
-    /// handles as the rest of the node. Live inventory still uses the
-    /// inventory-aware blockchain handle directly until downloader integration
-    /// is widened.
+    /// handles as the rest of the node. It is also registered in
+    /// [`Self::services`] as `SyncImportPipeline` so service consumers can use
+    /// the same provider lookup pattern as optional services. Live inventory
+    /// still uses the inventory-aware blockchain handle directly until
+    /// downloader integration is widened.
     pub sync_import_pipeline: Arc<SyncImportPipeline>,
 
     /// Shared memory pool. The same instance the blockchain service /
@@ -187,6 +189,9 @@ impl Node {
     }
 
     /// Returns the composed sync import pipeline handle.
+    ///
+    /// This is the same `Arc` returned by
+    /// `get_service::<SyncImportPipeline>()`.
     pub fn sync_import_pipeline(&self) -> Arc<SyncImportPipeline> {
         Arc::clone(&self.sync_import_pipeline)
     }

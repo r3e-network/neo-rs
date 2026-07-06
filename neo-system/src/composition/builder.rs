@@ -13,8 +13,8 @@
 //! contract provider can be supplied explicitly by a composition root; when it
 //! is not supplied, the builder owns the standard Neo N3 provider locally. The
 //! sync import pipeline is also built by default from the same blockchain and
-//! storage handles so staged-sync callers can use one shared import/checkpoint
-//! boundary.
+//! storage handles, then registered in the service registry, so staged-sync
+//! callers can use one shared import/checkpoint boundary.
 
 use std::sync::Arc;
 use tracing::debug;
@@ -140,7 +140,9 @@ impl NodeBuilder {
     /// Install a pre-composed sync import pipeline.
     ///
     /// When unset, [`Self::build`] creates one over the same blockchain handle
-    /// and storage provider installed on the node.
+    /// and storage provider installed on the node unless the supplied service
+    /// registry already contains one. The selected pipeline is always
+    /// registered in the node's service registry.
     pub fn with_sync_import_pipeline(mut self, pipeline: Arc<SyncImportPipeline>) -> Self {
         self.sync_import_pipeline = Some(pipeline);
         self
@@ -169,12 +171,17 @@ impl NodeBuilder {
         let mempool = self
             .mempool
             .unwrap_or_else(|| Arc::new(MemoryPool::new(&settings)));
-        let sync_import_pipeline = self.sync_import_pipeline.unwrap_or_else(|| {
-            Arc::new(SyncImportPipeline::new(
-                blockchain.clone(),
-                Arc::clone(&storage),
-            ))
-        });
+        let services = self.services.unwrap_or_default();
+        let sync_import_pipeline = self
+            .sync_import_pipeline
+            .or_else(|| services.get::<SyncImportPipeline>())
+            .unwrap_or_else(|| {
+                Arc::new(SyncImportPipeline::new(
+                    blockchain.clone(),
+                    Arc::clone(&storage),
+                ))
+            });
+        services.register(Arc::clone(&sync_import_pipeline));
         Ok(Node {
             settings,
             storage,
@@ -184,7 +191,7 @@ impl NodeBuilder {
             sync_import_pipeline,
             mempool,
             header_cache: self.header_cache.unwrap_or_default(),
-            services: self.services.unwrap_or_default(),
+            services,
             native_contract_provider,
             shutdown: tokio_util::sync::CancellationToken::new(),
         })

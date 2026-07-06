@@ -245,7 +245,9 @@ Priority order for crate refactors:
    bounded concurrent preverification, but keep ordered import in
    `BlockImport::import_many`. Use `neo_system::SyncImportPipeline` as the
    node-composed handle that binds the canonical blockchain importer, bounded
-   queue, shared store-backed sync checkpoints, and import-stage commit policy.
+   queue, shared store-backed sync checkpoints, and import-stage commit policy;
+   keep it registered in `ServiceRegistry` so downloader/RPC/service consumers
+   discover the same `Arc` instead of composing parallel queues.
    Downloader code should expose `neo_network::BlockDownloader` streams and use
    `neo_runtime::SyncPipelineDriver` to convert contiguous downloaded batches
    into ordered import-queue submissions. Stage flushing and crash-resume

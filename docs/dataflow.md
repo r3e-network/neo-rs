@@ -75,8 +75,8 @@ import-stage checkpoints through
 `neo_runtime::sync_pipeline::{CommitPolicy, SyncStageCheckpointStore}`. The
 node-level `neo_system::SyncImportPipeline` now composes the queue and durable
 checkpoint provider over the same blockchain and storage handles used by the
-rest of the node; the remaining network work is to drive that handle from the
-async downloader. The
+rest of the node and is registered in the node `ServiceRegistry`; the remaining
+network work is to drive that handle from the async downloader. The
 per-peer `GetBlockByIndex` request window is planned by
 `neo_network::BlockRequestScheduler` and sent by `PeerSession`. Cross-peer range
 assignment, peer bias, and retry accounting are now owned by

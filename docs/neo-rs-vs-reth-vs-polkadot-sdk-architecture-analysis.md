@@ -85,12 +85,14 @@ Drain batch size = 500, cache max = 50K. Eviction drops top 25% (O(n log n)).
 `SharedStoreSyncStageCheckpointStore` for node-composed `Arc<dyn Store>`
 backends. `neo_system::SyncImportPipeline` binds `BlockchainHandle`,
 `BlockImportQueue`, durable checkpoint storage, and the import-stage
-`CommitPolicy` at node construction time. `SyncPipelineDriver`, which imports
+`CommitPolicy` at node construction time, and `NodeBuilder` registers the same
+handle in `ServiceRegistry`. `SyncPipelineDriver`, which imports
 contiguous `SyncBlockBatch` values through
 the shared `ImportQueue` and checkpoints the import stage when policy fires,
 can be created from that handle.
-The queue/checkpoint handle is now part of production node composition, but the
-driver is not yet driven by the production downloader. The concrete multi-stage
+The queue/checkpoint handle is now part of production node composition and
+service lookup, but the driver is not yet driven by the production downloader.
+The concrete multi-stage
 headers/bodies/execute/index/prune loop remains the next large integration step.
 
 Live path: P2P Block -> `InboundInventory::Block` -> `neo-node` buffering ->
@@ -147,7 +149,7 @@ while let Some(cmd) = cmd_rx.recv().await {
 | Priority | Change | Benefit |
 |----------|--------|---------|
 | P0 | Staged sync pipeline integration | 3-5x sync speed, crash resume |
-| Composed / Driver Pending | Import queue boundary with bounded concurrent `check` | Reusable preverification surface; `BlockchainHandle::check` now shares live stateless import-integrity checks, and `neo_system::SyncImportPipeline` constructs the queue at node composition; production downloader still does not drive it |
+| Composed / Driver Pending | Import queue boundary with bounded concurrent `check` | Reusable preverification surface; `BlockchainHandle::check` now shares live stateless import-integrity checks, and `neo_system::SyncImportPipeline` constructs and registers the queue at node composition; production downloader still does not drive it |
 | Composed / Driver Pending | Commit policy/checkpoint primitives plus import-stage driver | Tunable memory/i-o; durable checkpoint storage is available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, and node composition creates the import-stage checkpoint handle; production downloader still does not drive `SyncPipelineDriver` |
 | P2 | Warp sync / state sync | Minutes to sync instead of hours |
 
@@ -175,9 +177,10 @@ checks to avoid duplicating merkle/hash work on the hot replay path.
 height gaps, calls the import queue, and writes import-stage checkpoints
 according to `CommitPolicy`. `neo_system::SyncImportPipeline` now composes the
 bounded import queue and durable checkpoint provider from the node's
-`BlockchainHandle` and shared storage handle; the driver can be created from
-that composed handle, but the production downloader does not call it yet. The
-live import path calls `BlockImport` directly via
+`BlockchainHandle` and shared storage handle, then registers the same handle in
+`ServiceRegistry`; the driver can be created from that composed handle, but the
+production downloader does not call it yet. The live import path calls
+`BlockImport` directly via
 `BlockchainHandle::import_many`, driven by neo-blockchain's
 `handle_block_inventory`.
 Execution, native persistence, state-root updates, and durable commits still
@@ -212,8 +215,9 @@ let import_chain = Box::new(NeoHeaderVerifier)
 
 Current status: the shared trait, bounded queue, and import-stage sync driver
 exist as primitives; node composition constructs a `SyncImportPipeline` handle
-with the queue and store-backed checkpoints, while the async peer downloader
-still does not drive the import-stage driver.
+with the queue and store-backed checkpoints and registers it for service
+lookup, while the async peer downloader still does not drive the import-stage
+driver.
 `neo-network::BlockDownloadBatch` converts into `neo_runtime::SyncBlockBatch`,
 preserving the single ordered import path. Of the downloader components, only the
 per-peer `BlockRequestScheduler` is wired into production (used by `PeerSession`);

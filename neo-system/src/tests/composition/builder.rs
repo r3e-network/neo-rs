@@ -74,6 +74,12 @@ fn builder_succeeds_with_required_services() {
     );
 
     let pipeline = node.sync_import_pipeline();
+    assert!(Arc::ptr_eq(
+        &pipeline,
+        &node
+            .get_service::<SyncImportPipeline>()
+            .expect("sync pipeline should be discoverable as a service")
+    ));
     assert_eq!(pipeline.origin(), BlockOrigin::Sync);
     assert!(
         pipeline.import_queue().max_concurrency() >= 1,
@@ -139,4 +145,38 @@ fn builder_keeps_custom_sync_import_pipeline_local() {
         .expect("required services set");
 
     assert!(Arc::ptr_eq(&node.sync_import_pipeline(), &pipeline));
+    assert!(Arc::ptr_eq(
+        &node
+            .get_service::<SyncImportPipeline>()
+            .expect("custom sync pipeline should be registered"),
+        &pipeline
+    ));
+}
+
+#[test]
+fn builder_uses_pre_registered_sync_import_pipeline_when_not_explicit() {
+    let storage = memory_store();
+    let settings = Arc::new(ProtocolSettings::default());
+    let (bc, _rx) = BlockchainHandle::with_capacity();
+    let (net, _nrx, _etx) = NetworkHandle::channel(8, 8);
+    let pipeline = Arc::new(SyncImportPipeline::new(bc.clone(), Arc::clone(&storage)));
+    let services = ServiceRegistry::new();
+    services.register(Arc::clone(&pipeline));
+
+    let node = NodeBuilder::default()
+        .with_settings(settings)
+        .with_storage(storage)
+        .with_blockchain(bc)
+        .with_network(net)
+        .with_services(services)
+        .build()
+        .expect("required services set");
+
+    assert!(Arc::ptr_eq(&node.sync_import_pipeline(), &pipeline));
+    assert!(Arc::ptr_eq(
+        &node
+            .get_service::<SyncImportPipeline>()
+            .expect("pre-registered sync pipeline should remain discoverable"),
+        &pipeline
+    ));
 }
