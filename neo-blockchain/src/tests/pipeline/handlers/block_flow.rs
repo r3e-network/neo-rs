@@ -2024,7 +2024,7 @@ async fn peer_block_must_match_cached_header_hash() {
 }
 
 /// Public `BlockchainHandle::import_block` is the RPC/user-submitted block
-/// path, so it must wait for the service verdict and verify the consensus
+/// path, so it must wait for the typed service verdict and verify the consensus
 /// witness instead of reporting success after merely queueing the command.
 #[tokio::test]
 async fn handle_import_block_reports_rejection_and_verifies_witness() {
@@ -2076,21 +2076,33 @@ async fn handle_import_block_reports_rejection_and_verifies_witness() {
 
     let runner = tokio::spawn(service.run());
 
+    let tampered_block = Block::from_parts(tampered_header, vec![]);
+    let tampered_tip = neo_runtime::ImportedTip::from_block(&tampered_block).expect("tampered tip");
     let rejected = handle
-        .import_block(Block::from_parts(tampered_header, vec![]))
+        .import_block(tampered_block)
         .await
         .expect("import command reply");
-    assert!(
-        !rejected,
-        "tampered witness must not be reported as imported"
+    assert_eq!(
+        rejected,
+        neo_runtime::BlockImportOutcome::NotImported {
+            hash: tampered_tip.hash,
+            height: tampered_tip.height,
+        },
+        "tampered witness must not be reported as imported",
     );
     assert_eq!(handle.get_height().await.expect("height reply"), 0);
 
+    let valid_block = Block::from_parts(header, vec![]);
+    let valid_tip = neo_runtime::ImportedTip::from_block(&valid_block).expect("valid tip");
     let imported = handle
-        .import_block(Block::from_parts(header, vec![]))
+        .import_block(valid_block)
         .await
         .expect("import command reply");
-    assert!(imported, "validly signed block advances the tip");
+    assert_eq!(
+        imported,
+        neo_runtime::BlockImportOutcome::Imported(valid_tip),
+        "validly signed block advances the tip",
+    );
     assert_eq!(handle.get_height().await.expect("height reply"), 1);
 
     drop(handle);

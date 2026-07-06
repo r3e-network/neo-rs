@@ -171,11 +171,15 @@ impl BlockchainHandle {
             .map_err(|_| ServiceError::unavailable("blockchain command channel closed"))
     }
 
-    /// Import an externally supplied block. Resolves to `Ok(true)` when
-    /// verification/persistence advanced the canonical tip, and `Ok(false)`
-    /// when the service rejected the block or parked it without changing the
-    /// tip.
-    pub async fn import_block(&self, block: Block) -> Result<bool, ServiceError> {
+    /// Import an externally supplied block and return the typed import outcome.
+    ///
+    /// `Imported` means verification/persistence advanced the canonical tip.
+    /// `NotImported` means the service rejected the block or parked it without
+    /// changing the tip. Live peer/consensus inventory should still use the
+    /// `submit_inventory_*` methods because those preserve relay, parking, and
+    /// mempool-maintenance semantics.
+    pub async fn import_block(&self, block: Block) -> Result<BlockImportOutcome, ServiceError> {
+        let tip = ImportedTip::from_block(&block)?;
         let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
         self.cmd_tx
             .send(BlockchainCommand::ImportBlock {
@@ -186,9 +190,17 @@ impl BlockchainHandle {
             .map_err(|_| {
                 ServiceError::ServiceUnavailable("blockchain command channel closed".to_string())
             })?;
-        reply_rx.await.map_err(|_| {
+        let imported = reply_rx.await.map_err(|_| {
             ServiceError::ServiceUnavailable("blockchain command reply dropped".to_string())
-        })
+        })?;
+        if imported {
+            Ok(BlockImportOutcome::Imported(tip))
+        } else {
+            Ok(BlockImportOutcome::NotImported {
+                hash: tip.hash,
+                height: tip.height,
+            })
+        }
     }
 
     /// Import a consecutive batch of blocks and wait until the service has
@@ -375,16 +387,7 @@ impl BlockImport for BlockchainHandle {
         block: Block,
         _origin: BlockOrigin,
     ) -> Result<BlockImportOutcome, ServiceError> {
-        let tip = ImportedTip::from_block(&block)?;
-        let imported = self.import_block(block).await?;
-        if imported {
-            Ok(BlockImportOutcome::Imported(tip))
-        } else {
-            Ok(BlockImportOutcome::NotImported {
-                hash: tip.hash,
-                height: tip.height,
-            })
-        }
+        self.import_block(block).await
     }
 
     async fn import_many(

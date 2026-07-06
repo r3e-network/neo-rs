@@ -65,32 +65,15 @@ pub enum BlockImportOutcome {
     /// The service accepted the request but did not advance the tip.
     ///
     /// This includes duplicate blocks, parked out-of-order blocks, or blocks
-    /// rejected by validation in legacy boolean import paths. Future
-    /// implementations can split this outcome into narrower variants without
-    /// changing the trait call shape.
+    /// rejected by validation after the request reached the canonical service
+    /// path. Future implementations can split this outcome into narrower
+    /// variants without changing the trait call shape.
     NotImported {
         /// Hash of the submitted block.
         hash: UInt256,
         /// Height declared by the submitted block.
         height: u32,
     },
-}
-
-impl BlockImportOutcome {
-    /// Convert the legacy `true == imported` response into a typed outcome.
-    pub fn from_legacy_imported(block: &Block, imported: bool) -> Result<Self, ServiceError> {
-        if imported {
-            return Ok(Self::Imported(ImportedTip::from_block(block)?));
-        }
-
-        let hash = block.try_hash().map_err(|error| {
-            ServiceError::invalid_input(format!("block hash serialization failed: {error}"))
-        })?;
-        Ok(Self::NotImported {
-            hash,
-            height: block.index(),
-        })
-    }
 }
 
 /// Result of submitting a consecutive block batch.
