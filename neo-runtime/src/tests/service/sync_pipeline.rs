@@ -166,6 +166,7 @@ fn store_checkpoint_payload_rejects_wrong_stage() {
 struct RecordingImport {
     checked: Mutex<Vec<u32>>,
     fail_check_at: Option<u32>,
+    processed_override: Option<usize>,
     imported_batches: AtomicUsize,
 }
 
@@ -200,7 +201,9 @@ impl BlockImport for RecordingImport {
         _origin: BlockOrigin,
     ) -> Result<BlockBatchImportOutcome, ServiceError> {
         self.imported_batches.fetch_add(1, Ordering::Relaxed);
-        Ok(BlockBatchImportOutcome::new(blocks.len()))
+        Ok(BlockBatchImportOutcome::new(
+            self.processed_override.unwrap_or(blocks.len()),
+        ))
     }
 }
 
@@ -319,6 +322,40 @@ async fn sync_pipeline_driver_uses_import_queue_preflight_before_import() {
 
     assert!(err.to_string().contains("reject block 2"), "{err}");
     assert_eq!(importer.imported_batches.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn sync_pipeline_driver_rejects_partial_imported_batches_without_advancing() {
+    let importer = Arc::new(RecordingImport {
+        processed_override: Some(1),
+        ..RecordingImport::default()
+    });
+    let queue = Arc::new(BlockImportQueue::new(importer.clone(), 2));
+    let checkpoints = Arc::new(InMemorySyncStageCheckpointStore::default());
+    let mut driver = SyncPipelineDriver::new(
+        queue,
+        checkpoints,
+        CommitPolicy::new().with_max_blocks(1),
+        BlockOrigin::Sync,
+    )
+    .expect("driver");
+
+    let err = driver
+        .push_batch(SyncBlockBatch::new(1, vec![block(1), block(2)]))
+        .await
+        .expect_err("partial import must not advance sync cursor");
+
+    assert!(err.to_string().contains("processed 1 of 2 blocks"), "{err}");
+    assert_eq!(importer.imported_batches.load(Ordering::Relaxed), 1);
+
+    let err = driver
+        .push_batch(SyncBlockBatch::new(3, vec![block(3)]))
+        .await
+        .expect_err("cursor should not advance after partial import");
+    assert!(
+        err.to_string().contains("non-contiguous sync batch"),
+        "{err}"
+    );
 }
 
 fn unique_test_path(name: &str) -> PathBuf {

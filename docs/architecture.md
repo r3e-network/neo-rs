@@ -255,11 +255,14 @@ The detailed rules for this style live in
   checkpoint provider, and import-stage commit policy so production downloader
   integration has one handle to drive. The same `Arc<SyncImportPipeline>` is
   registered in the node `ServiceRegistry`, keeping direct field access and
-  provider lookup consistent. Downloaded `SyncBlockBatch` values are checked
-  for contiguous heights, imported through the canonical `ImportQueue`, and
-  checkpointed when policy fires. The store-backed checkpoint adapters persist
-  versioned runtime sync metadata under a short raw-key namespace that cannot
-  overlap normal `StorageKey` contract rows. `neo_network::BlockDownloader` is the
+  provider lookup consistent. `neo_system::SyncDownloadImportDriver` drains any
+  `neo_network::BlockDownloader` stream into that handle, creating a
+  `SyncPipelineDriver` and stopping on downloader errors, height gaps, or
+  partial imports. Downloaded `SyncBlockBatch` values are checked for contiguous
+  heights, imported through the canonical `ImportQueue`, and checkpointed when
+  policy fires. The store-backed checkpoint adapters persist versioned runtime
+  sync metadata under a short raw-key namespace that cannot overlap normal
+  `StorageKey` contract rows. `neo_network::BlockDownloader` is the
   stream-shaped download boundary; its `BlockDownloadBatch` converts into the
   runtime batch type. `BlockRequestScheduler` owns the per-peer
   `GetBlockByIndex` request-window policy used by `PeerSession`.

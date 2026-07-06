@@ -20,6 +20,9 @@ mod composition;
 mod errors;
 
 // Public re-exports for the crate's public surface.
-pub use composition::{Node, NodeBuilder, ServiceRegistry, SyncImportPipeline, WalletProvider};
-pub use composition::{builder, node, sync_import_pipeline, wallet_provider};
+pub use composition::{
+    Node, NodeBuilder, ServiceRegistry, SyncDownloadImportDriver, SyncDownloadImportSummary,
+    SyncImportPipeline, WalletProvider,
+};
+pub use composition::{builder, node, sync_download_import, sync_import_pipeline, wallet_provider};
 pub use errors::{NodeError, NodeResult, error};

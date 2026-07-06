@@ -11,6 +11,7 @@
 //!
 //! - `builder`: RPC client builder.
 //! - `node`: Daemon composition, CLI modes, and long-running node startup.
+//! - `sync_download_import`: Download-stream to sync-import bridge.
 //! - `sync_import_pipeline`: Node-local sync import queue/checkpoint wiring.
 //! - `wallet_provider`: wallet provider adapter.
 //!
@@ -19,12 +20,14 @@
 
 pub mod builder;
 pub mod node;
+pub mod sync_download_import;
 pub mod sync_import_pipeline;
 pub mod wallet_provider;
 
 pub use builder::NodeBuilder;
 pub use neo_runtime::ServiceRegistry;
 pub use node::Node;
+pub use sync_download_import::{SyncDownloadImportDriver, SyncDownloadImportSummary};
 pub use sync_import_pipeline::SyncImportPipeline;
 pub use wallet_provider::WalletProvider;
 

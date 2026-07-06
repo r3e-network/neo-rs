@@ -223,7 +223,7 @@ impl LocalNodeService {
     /// The loop `select!`s over the command stream and a periodic
     /// peer-discovery tick (C# `Peer.OnTimer`). Every command is dispatched
     /// to a private `async fn` handler on the service struct; the discovery
-    /// tick runs [`Self::maintain_peers`].
+    /// tick runs the private peer-maintenance helper.
     pub async fn run(mut self) {
         info!(target: "neo_network", "local node service run loop started");
         // C# `Peer.OnTimer` runs on a fixed schedule independent of inbound

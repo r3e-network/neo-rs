@@ -558,11 +558,26 @@ where
             }
         }
 
+        let batch_start_height = batch.start_height;
+        let expected_blocks = batch.blocks.len();
         let next_height = batch.next_height();
         let imported = self
             .import_queue
             .push_blocks(batch.blocks, self.origin)
             .await?;
+        if imported.processed != expected_blocks {
+            self.next_height = Some(
+                batch_start_height
+                    .saturating_add(u32::try_from(imported.processed).unwrap_or(u32::MAX)),
+            );
+            return Err(ServiceError::invalid_state(format!(
+                "sync import processed {} of {} blocks for batch starting at {}; next expected height is {}",
+                imported.processed,
+                expected_blocks,
+                batch_start_height,
+                self.next_height.unwrap_or(batch_start_height)
+            )));
+        }
         let processed_blocks = u64::try_from(imported.processed).unwrap_or(u64::MAX);
         self.progress.blocks = self.progress.blocks.saturating_add(processed_blocks);
         self.progress.changes = self.progress.changes.saturating_add(batch.changed_bytes);

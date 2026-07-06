@@ -249,10 +249,11 @@ Priority order for crate refactors:
    keep it registered in `ServiceRegistry` so downloader/RPC/service consumers
    discover the same `Arc` instead of composing parallel queues.
    Downloader code should expose `neo_network::BlockDownloader` streams and use
-   `neo_runtime::SyncPipelineDriver` to convert contiguous downloaded batches
-   into ordered import-queue submissions. Stage flushing and crash-resume
-   markers belong in `neo_runtime::sync_pipeline::{CommitPolicy,
-   SyncStageCheckpointStore}` instead of ad hoc thresholds inside service loops.
+   `neo_system::SyncDownloadImportDriver` to convert downloaded batches into
+   ordered `neo_runtime::SyncPipelineDriver` submissions. Stage flushing and
+   crash-resume markers belong in
+   `neo_runtime::sync_pipeline::{CommitPolicy, SyncStageCheckpointStore}`
+   instead of ad hoc thresholds inside service loops.
    Per-peer request-window decisions belong in
    `neo_network::BlockRequestScheduler`; session code should only serialize and
    send the planned wire request. Cross-peer range assignment, peer bias, and

@@ -91,7 +91,8 @@ contiguous `SyncBlockBatch` values through
 the shared `ImportQueue` and checkpoints the import stage when policy fires,
 can be created from that handle.
 The queue/checkpoint handle is now part of production node composition and
-service lookup, but the driver is not yet driven by the production downloader.
+service lookup, and `SyncDownloadImportDriver` can drive it from a downloader
+stream, but real P2P transport is not feeding it yet.
 The concrete multi-stage
 headers/bodies/execute/index/prune loop remains the next large integration step.
 
@@ -105,8 +106,10 @@ typed handle methods keep `BlockchainCommand` construction inside
 queue/driver layer for now. That bypass remains until the queue has an
 inventory-aware adapter: the live inventory path owns relay policy,
 future-block parking, unverified draining, and mempool maintenance, while
-`SyncPipelineDriver` remains a reusable import-stage primitive that downloader
-integration has not started driving yet.
+`SyncPipelineDriver` remains a reusable import-stage primitive; `neo_system`
+now provides `SyncDownloadImportDriver` to drain any `BlockDownloader` stream
+into the composed pipeline, while the production P2P transport still has not
+started feeding real peer batches into that bridge.
 
 ```rust
 // Sequential: verify → persist → commit per block
@@ -149,8 +152,8 @@ while let Some(cmd) = cmd_rx.recv().await {
 | Priority | Change | Benefit |
 |----------|--------|---------|
 | P0 | Staged sync pipeline integration | 3-5x sync speed, crash resume |
-| Composed / Driver Pending | Import queue boundary with bounded concurrent `check` | Reusable preverification surface; `BlockchainHandle::check` now shares live stateless import-integrity checks, and `neo_system::SyncImportPipeline` constructs and registers the queue at node composition; production downloader still does not drive it |
-| Composed / Driver Pending | Commit policy/checkpoint primitives plus import-stage driver | Tunable memory/i-o; durable checkpoint storage is available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, and node composition creates the import-stage checkpoint handle; production downloader still does not drive `SyncPipelineDriver` |
+| Composed / Transport Pending | Import queue boundary with bounded concurrent `check` | Reusable preverification surface; `BlockchainHandle::check` now shares live stateless import-integrity checks, `neo_system::SyncImportPipeline` constructs/registers the queue, and `SyncDownloadImportDriver` can drain downloader batches into it; production P2P transport still does not feed it |
+| Composed / Transport Pending | Commit policy/checkpoint primitives plus import-stage driver | Tunable memory/i-o; durable checkpoint storage is available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, node composition creates the import-stage checkpoint handle, and the download bridge drives `SyncPipelineDriver`; production P2P transport still does not feed real batches |
 | P2 | Warp sync / state sync | Minutes to sync instead of hours |
 
 ---
@@ -178,8 +181,9 @@ height gaps, calls the import queue, and writes import-stage checkpoints
 according to `CommitPolicy`. `neo_system::SyncImportPipeline` now composes the
 bounded import queue and durable checkpoint provider from the node's
 `BlockchainHandle` and shared storage handle, then registers the same handle in
-`ServiceRegistry`; the driver can be created from that composed handle, but the
-production downloader does not call it yet. The live import path calls
+`ServiceRegistry`; `SyncDownloadImportDriver` can now create and drive that
+runtime driver from a downloader stream, but the production P2P transport does
+not feed it real peer batches yet. The live import path calls
 `BlockImport` directly via
 `BlockchainHandle::import_many`, driven by neo-blockchain's
 `handle_block_inventory`.
@@ -216,8 +220,9 @@ let import_chain = Box::new(NeoHeaderVerifier)
 Current status: the shared trait, bounded queue, and import-stage sync driver
 exist as primitives; node composition constructs a `SyncImportPipeline` handle
 with the queue and store-backed checkpoints and registers it for service
-lookup, while the async peer downloader still does not drive the import-stage
-driver.
+lookup, while `SyncDownloadImportDriver` drains downloader streams into the
+import-stage driver. The async peer transport still does not feed production
+peer batches into that bridge.
 `neo-network::BlockDownloadBatch` converts into `neo_runtime::SyncBlockBatch`,
 preserving the single ordered import path. Of the downloader components, only the
 per-peer `BlockRequestScheduler` is wired into production (used by `PeerSession`);
@@ -308,7 +313,10 @@ wire `block` messages and the inventory sink. The
 `neo_network::BlockDownloader` stream boundary and `BlockDownloadConfig` policy
 records now exist, with a channel-backed adapter for tests/composition roots.
 `BlockDownloadBatch` converts into `neo_runtime::SyncBlockBatch`, which the
-runtime sync driver can feed into the import queue. The per-peer
+runtime sync driver can feed into the import queue. `neo_system` provides
+`SyncDownloadImportDriver`, which drains any `BlockDownloader` stream into the
+node-composed `SyncImportPipeline` and surfaces downloader/import errors through
+the shared runtime error vocabulary. The per-peer
 `BlockRequestScheduler` owns the `GetBlockByIndex` request-window policy
 used by `PeerSession` (`500` blocks per request, `1000` blocks in flight,
 stall rewind) — this is the one downloader component wired into production.
@@ -316,9 +324,10 @@ stall rewind) — this is the one downloader component wired into production.
 in-flight range assignment, retry accounting) and `OrderedBlockBatchBuffer`
 (holds out-of-order peer responses until the next contiguous height is
 available) are implemented but unwired — constructed only in
-`neo-network/src/tests/`. The `ChannelBlockDownloader` adapter is likewise
-test-only. The remaining work is the async stream executor that sends those
-assignments to peers and yields `BlockDownloadBatch` values directly.
+`neo-network/src/tests/`. The `ChannelBlockDownloader` adapter is available for
+tests and composition roots. The remaining work is the async stream executor
+that sends those assignments to peers and yields `BlockDownloadBatch` values
+directly.
 
 ### Reth innovations
 
@@ -348,12 +357,13 @@ pub trait BlockDownloader:
     Stream<Item = NetworkResult<BlockDownloadBatch>> + Send + Unpin
 {
     fn config(&self) -> &BlockDownloadConfig;
+    fn poll_next_batch(...) -> Poll<Option<NetworkResult<BlockDownloadBatch>>>;
 }
 // WIRED: per-peer request policy (BlockRequestScheduler, used by PeerSession).
+// COMPOSED: SyncDownloadImportDriver drains BlockDownloader into SyncImportPipeline.
 // IMPLEMENTED-BUT-UNWIRED (constructed only in neo-network/src/tests/):
 //   - cross-peer range policy (CrossPeerBlockRangeScheduler)
 //   - ordered response buffering (OrderedBlockBatchBuffer)
-//   - the channel-backed adapter (ChannelBlockDownloader)
 // The async transport stream remains the next implementation step.
 ```
 
@@ -470,7 +480,7 @@ pub struct TransactionState {
 | Stage commit policy + checkpoints | ★★★ | - | ★★★★ | ★★ | Import-stage driver done |
 | Compact derive macro | ★★ | ★★★★ | - | ★★ | Small |
 | Task supervision | - | - | ★★★★★ | ★★ | Done |
-| BlockDownloader as Stream | ★★★ | - | ★★ | ★★★ | Boundary + per-peer scheduler wired; cross-peer range scheduler + ordered buffer implemented but unwired (test-only); async transport stream medium |
+| BlockDownloader as Stream | ★★★ | - | ★★ | ★★★ | Boundary + download-to-import bridge + per-peer scheduler wired; cross-peer range scheduler + ordered buffer implemented but unwired (test-only); async transport stream medium |
 | Essential task monitoring | - | - | ★★★★★ | ★ | Small |
 | Metrics infrastructure | - | - | ★★★★ | ★★ | Medium |
 
@@ -481,8 +491,8 @@ pub struct TransactionState {
 1. **Essential task supervision + metrics** — implemented in `neo-node`.
 2. **Typed table boundary** — implemented in `neo-storage` but on no live storage access path (the live encoding remains `StorageKey` / `KeyBuilder` over raw C#-compatible bytes); compact derive is still future work.
 3. **Block import queue with concurrent verification** — reusable runtime boundary implemented and composed by `neo_system::SyncImportPipeline`.
-4. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`; durable store-backed checkpoints are available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, and node composition creates the import-stage queue/checkpoint handle, but production downloader still does not drive the driver.
-5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; per-peer `BlockRequestScheduler` is wired into `PeerSession`; `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) and `OrderedBlockBatchBuffer` (contiguous response release) are implemented but unwired, constructed only in `neo-network/src/tests/`; async peer transport stream remains next.
+4. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`; durable store-backed checkpoints are available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, node composition creates the import-stage queue/checkpoint handle, and `SyncDownloadImportDriver` can drive it from a downloader stream; production P2P transport still does not feed real batches.
+5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; `neo-system` has the download-to-import bridge; per-peer `BlockRequestScheduler` is wired into `PeerSession`; `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) and `OrderedBlockBatchBuffer` (contiguous response release) are implemented but unwired, constructed only in `neo-network/src/tests/`; async peer transport stream remains next.
 6. **Hot/Cold/Static tiering integration** (medium, big storage win)
 7. **Staged sync pipeline integration** (large, biggest overall impact)
 
