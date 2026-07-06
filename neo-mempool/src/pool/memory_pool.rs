@@ -20,6 +20,8 @@ use crate::pool_item::PoolItem;
 use crate::transaction_removed_event_args::TransactionRemovedEventArgs;
 use crate::transaction_verification_context::TransactionVerificationContext;
 use neo_config::ProtocolSettings;
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_native_contracts::StandardNativeProvider;
 use neo_payloads::Transaction;
 use neo_primitives::{TransactionRemovalReason, UInt160, UInt256, VerifyResult};
 use neo_storage::DataCache;
@@ -249,6 +251,9 @@ pub struct MemoryPool {
     /// Protocol settings used by transaction verification (network
     /// magic for signature checks, hardfork schedule, expiry window).
     settings: ProtocolSettings,
+    /// Native contracts used by engine-based witness verification during
+    /// admission and unverified-transaction promotion.
+    native_contract_provider: Arc<dyn NativeContractProvider>,
     inner: RwLock<MemoryPoolInner>,
 }
 
@@ -257,6 +262,21 @@ impl MemoryPool {
     /// settings. The pool capacity is taken from
     /// `settings.memory_pool_max_transactions`.
     pub fn new(settings: &ProtocolSettings) -> Self {
+        Self::new_with_native_contract_provider(
+            settings,
+            Arc::new(StandardNativeProvider::new()) as Arc<dyn NativeContractProvider>,
+        )
+    }
+
+    /// Constructs a new memory pool using an explicit native-contract provider.
+    ///
+    /// Node composition should pass the same provider used by block import,
+    /// RPC, and consensus so engine-backed witness verification cannot observe
+    /// process-global provider replacement.
+    pub fn new_with_native_contract_provider(
+        settings: &ProtocolSettings,
+        native_contract_provider: Arc<dyn NativeContractProvider>,
+    ) -> Self {
         let capacity = settings.memory_pool_max_transactions as usize;
         Self {
             new_transaction: None,
@@ -264,6 +284,7 @@ impl MemoryPool {
             transaction_removed: None,
             transaction_relay: None,
             settings: settings.clone(),
+            native_contract_provider,
             inner: RwLock::new(MemoryPoolInner {
                 verified: PoolIndex::with_capacity(capacity),
                 unverified: PoolIndex::with_capacity(capacity / 4),
@@ -274,6 +295,11 @@ impl MemoryPool {
                 capacity,
             }),
         }
+    }
+
+    /// Returns the native-contract provider captured by this memory pool.
+    pub fn native_contract_provider(&self) -> Arc<dyn NativeContractProvider> {
+        Arc::clone(&self.native_contract_provider)
     }
 
     /// Returns the configured maximum pool capacity.
@@ -550,12 +576,13 @@ impl MemoryPool {
                 let effective_pooled_fee = &pooled_sender_fee - &rebate;
                 let oracle_duplicate = oracle_response_id(&tx)
                     .is_some_and(|id| guard.oracle_responses.contains_key(&id));
-                let result = crate::verification::verify_transaction(
+                let result = crate::verification::verify_transaction_with_native_provider(
                     &tx,
                     snapshot,
                     &self.settings,
                     &effective_pooled_fee,
                     oracle_duplicate,
+                    Arc::clone(&self.native_contract_provider),
                 );
 
                 if result != VerifyResult::Succeed {
@@ -688,12 +715,13 @@ impl MemoryPool {
                 .is_some_and(|id| guard.oracle_responses.contains_key(&id));
 
             // Full C# Transaction.Verify against the provided snapshot.
-            let result = crate::verification::verify_transaction(
+            let result = crate::verification::verify_transaction_with_native_provider(
                 &transaction,
                 snapshot,
                 &self.settings,
                 &effective_pooled_fee,
                 oracle_duplicate,
+                Arc::clone(&self.native_contract_provider),
             );
             if result != VerifyResult::Succeed {
                 return result;
@@ -820,23 +848,25 @@ impl MemoryPool {
                 // Preverified: state-independent already passed — only
                 // run state-dependent checks.
                 Some(VerifyResult::Succeed) => {
-                    crate::verification::verify_transaction_dependent_only(
+                    crate::verification::verify_transaction_dependent_only_with_native_provider(
                         &transaction,
                         snapshot,
                         &self.settings,
                         &effective_pooled_fee,
                         oracle_duplicate,
+                        Arc::clone(&self.native_contract_provider),
                     )
                 }
                 // Preverified but failed: reject immediately.
                 Some(fail) => fail,
                 // No cache: run full verification (same as try_add).
-                None => crate::verification::verify_transaction(
+                None => crate::verification::verify_transaction_with_native_provider(
                     &transaction,
                     snapshot,
                     &self.settings,
                     &effective_pooled_fee,
                     oracle_duplicate,
+                    Arc::clone(&self.native_contract_provider),
                 ),
             };
             if result != VerifyResult::Succeed {

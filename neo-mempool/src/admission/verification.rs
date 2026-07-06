@@ -23,8 +23,9 @@
 
 use neo_config::{Hardfork, ProtocolSettings};
 use neo_execution::helper::Helper;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::ledger_contract::LedgerContract;
-use neo_native_contracts::{GasToken, PolicyContract};
+use neo_native_contracts::{GasToken, PolicyContract, StandardNativeProvider};
 use neo_payloads::{MAX_TRANSACTION_SIZE, Transaction, TransactionAttribute};
 use neo_primitives::{UInt160, VerifyResult};
 // `invocation_script`/`verification_script` on `Witness` are trait methods.
@@ -35,6 +36,7 @@ use neo_storage::DataCache;
 mod attributes;
 use attributes::verify_attribute;
 use num_bigint::BigInt;
+use std::sync::Arc;
 
 /// Stateless reader of `PolicyContract` storage and the derived protocol
 /// limits the mempool needs during transaction admission.
@@ -102,11 +104,37 @@ pub fn verify_transaction(
     pooled_sender_fee: &BigInt,
     oracle_duplicate: bool,
 ) -> VerifyResult {
+    verify_transaction_with_native_provider(
+        tx,
+        snapshot,
+        settings,
+        pooled_sender_fee,
+        oracle_duplicate,
+        Arc::new(StandardNativeProvider::new()),
+    )
+}
+
+/// The full C# `Transaction.Verify` using an explicit native-contract provider.
+pub fn verify_transaction_with_native_provider(
+    tx: &Transaction,
+    snapshot: &DataCache,
+    settings: &ProtocolSettings,
+    pooled_sender_fee: &BigInt,
+    oracle_duplicate: bool,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
+) -> VerifyResult {
     let result = verify_state_independent(tx, settings);
     if result != VerifyResult::Succeed {
         return result;
     }
-    verify_state_dependent(tx, snapshot, settings, pooled_sender_fee, oracle_duplicate)
+    verify_state_dependent_with_native_provider(
+        tx,
+        snapshot,
+        settings,
+        pooled_sender_fee,
+        oracle_duplicate,
+        native_contract_provider,
+    )
 }
 
 /// Runs only [`verify_state_dependent`], skipping
@@ -123,7 +151,34 @@ pub fn verify_transaction_dependent_only(
     pooled_sender_fee: &BigInt,
     oracle_duplicate: bool,
 ) -> VerifyResult {
-    verify_state_dependent(tx, snapshot, settings, pooled_sender_fee, oracle_duplicate)
+    verify_transaction_dependent_only_with_native_provider(
+        tx,
+        snapshot,
+        settings,
+        pooled_sender_fee,
+        oracle_duplicate,
+        Arc::new(StandardNativeProvider::new()),
+    )
+}
+
+/// Runs only [`verify_state_dependent_with_native_provider`], skipping
+/// [`verify_state_independent`], using an explicit native-contract provider.
+pub fn verify_transaction_dependent_only_with_native_provider(
+    tx: &Transaction,
+    snapshot: &DataCache,
+    settings: &ProtocolSettings,
+    pooled_sender_fee: &BigInt,
+    oracle_duplicate: bool,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
+) -> VerifyResult {
+    verify_state_dependent_with_native_provider(
+        tx,
+        snapshot,
+        settings,
+        pooled_sender_fee,
+        oracle_duplicate,
+        native_contract_provider,
+    )
 }
 
 /// C# `Transaction.VerifyStateIndependent` (Transaction.cs:371).
@@ -215,6 +270,26 @@ pub fn verify_state_dependent(
     settings: &ProtocolSettings,
     pooled_sender_fee: &BigInt,
     oracle_duplicate: bool,
+) -> VerifyResult {
+    verify_state_dependent_with_native_provider(
+        tx,
+        snapshot,
+        settings,
+        pooled_sender_fee,
+        oracle_duplicate,
+        Arc::new(StandardNativeProvider::new()),
+    )
+}
+
+/// C# `Transaction.VerifyStateDependent` (Transaction.cs:323) using an explicit
+/// native-contract provider for engine-based witness verification.
+pub fn verify_state_dependent_with_native_provider(
+    tx: &Transaction,
+    snapshot: &DataCache,
+    settings: &ProtocolSettings,
+    pooled_sender_fee: &BigInt,
+    oracle_duplicate: bool,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
 ) -> VerifyResult {
     use neo_io::Serializable;
 
@@ -324,7 +399,15 @@ pub fn verify_state_dependent(
         } else if let Some((m, n)) = multi {
             net_fee -= exec_fee_factor * Helper::multi_signature_contract_cost(m as i32, n as i32);
         } else {
-            match Helper::verify_witness(tx, settings, snapshot, hash, witness, net_fee) {
+            match Helper::verify_witness_with_native_provider(
+                tx,
+                settings,
+                snapshot,
+                hash,
+                witness,
+                net_fee,
+                Some(Arc::clone(&native_contract_provider)),
+            ) {
                 Ok(fee) => net_fee -= fee,
                 Err(_) => return VerifyResult::Invalid,
             }

@@ -135,3 +135,20 @@ fn attribute_network_fee_delegates_to_payload_attribute_formula() {
     assert!(!helper.contains("TransactionAttribute::Conflicts"));
     assert!(!helper.contains("TransactionAttribute::NotaryAssisted"));
 }
+
+#[test]
+fn non_standard_witness_verification_uses_explicit_native_provider() {
+    let source = include_str!("../../admission/verification.rs");
+    let start = source
+        .find("pub fn verify_state_dependent_with_native_provider")
+        .expect("provider-aware state-dependent verifier exists");
+    let end = source[start..]
+        .find("/// C# `TransactionAttribute.CalculateNetworkFee` dispatch.")
+        .map(|offset| start + offset)
+        .expect("attribute helper follows verifier");
+    let verifier = &source[start..end];
+
+    assert!(verifier.contains("Helper::verify_witness_with_native_provider"));
+    assert!(verifier.contains("Arc::clone(&native_contract_provider)"));
+    assert!(!verifier.contains("Helper::verify_witness("));
+}

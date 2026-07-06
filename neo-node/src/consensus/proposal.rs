@@ -5,8 +5,9 @@ use neo_config::ProtocolSettings;
 use neo_consensus::messages::{ConsensusPayload, PrepareRequestMessage};
 use neo_consensus::{ChangeViewReason, ConsensusMessageType, ValidatorInfo};
 use neo_crypto::ECPoint;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::{Serializable, serializable::helper::SerializeHelper};
-use neo_mempool::{MemoryPool, PoolItem, verify_transaction};
+use neo_mempool::{MemoryPool, PoolItem, verify_transaction_with_native_provider};
 use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_payloads::{Transaction, TransactionAttribute, Witness};
 use neo_primitives::{UInt160, UInt256, VerifyResult};
@@ -244,6 +245,7 @@ fn verify_unverified_proposal_transaction(
     context: &ProposalVerificationContext,
     snapshot: &DataCache,
     settings: &ProtocolSettings,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
 ) -> VerifyResult {
     if conflict_hashes(tx).any(|hash| proposal_hashes.contains(&hash)) {
         return VerifyResult::HasConflicts;
@@ -257,12 +259,13 @@ fn verify_unverified_proposal_transaction(
     }
 
     let sender_fee = context.sender_fee(tx);
-    verify_transaction(
+    verify_transaction_with_native_provider(
         tx,
         snapshot,
         settings,
         &sender_fee,
         context.has_oracle_response(tx),
+        native_contract_provider,
     )
 }
 
@@ -315,6 +318,7 @@ pub(super) fn cache_available_proposal_transactions(
             &context,
             snapshot,
             settings,
+            mempool.native_contract_provider(),
         );
         if verify_result != VerifyResult::Succeed {
             warn!(

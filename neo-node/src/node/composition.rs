@@ -116,7 +116,10 @@ pub(in crate::node) async fn build_node(
         .current_index(&snapshot)
         .unwrap_or(0);
 
-    let mempool = Arc::new(neo_mempool::MemoryPool::new(&settings));
+    let mempool = Arc::new(neo_mempool::MemoryPool::new_with_native_contract_provider(
+        &settings,
+        Arc::clone(&native_contract_provider),
+    ));
     let header_cache = Arc::new(HeaderCache::default());
     // Seed the in-memory ledger tip from the durable store so a node restarted
     // on a populated chain accepts the next block (`index == current_height + 1`)
