@@ -16,7 +16,10 @@ use super::*;
 use neo_config::Hardfork;
 use neo_crypto::base58;
 use neo_primitives::ContractParameterType;
+use neo_serialization::BinarySerializer;
 use neo_vm_rs::ExecutionEngineLimits;
+use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 
 fn call(method: &str, arg: &[u8]) -> CoreResult<Vec<u8>> {
     StdLib::dispatch(method, &[arg.to_vec()], true).expect("known method")
@@ -312,7 +315,7 @@ fn string_split_remove_empty_entries() {
 
 #[test]
 fn string_split_return_encoder_uses_stack_value_projection() {
-    let source = include_str!("../../std_lib/mod.rs");
+    let source = include_str!("../../std_lib/strings.rs");
     let start = source
         .find("fn string_split_impl")
         .expect("stringSplit implementation exists");
