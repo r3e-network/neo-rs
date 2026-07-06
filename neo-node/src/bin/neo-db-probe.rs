@@ -14,7 +14,7 @@ use neo_config::ProtocolSettings;
 use neo_execution::{ApplicationEngine, ContractState, Diagnostic, ExecutionContextState};
 use neo_io::Serializable;
 use neo_manifest::CallFlags;
-use neo_native_contracts::GasToken;
+use neo_native_contracts::{GasToken, StandardNativeProvider};
 use neo_payloads::{Block, Transaction, TransactionState};
 use neo_primitives::{TriggerType, UInt160, UInt256, Verifiable};
 use neo_serialization::BinarySerializer;
@@ -965,7 +965,7 @@ fn execute_transaction_probe(
     let block_cache = Arc::new(snapshot.clone_cache());
     let tx_cache = Arc::new(block_cache.clone_cache());
     let container: Arc<dyn Verifiable> = Arc::new(transaction.clone());
-    let mut engine = ApplicationEngine::new_with_shared_block(
+    let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
         TriggerType::Application,
         Some(container),
         Arc::clone(&tx_cache),
@@ -973,6 +973,7 @@ fn execute_transaction_probe(
         ProtocolSettings::mainnet(),
         transaction.system_fee(),
         diagnostic,
+        Some(Arc::new(StandardNativeProvider::new())),
     )?;
     let (vm_state, load_error) =
         match engine.load_script(transaction.script().to_vec(), CallFlags::ALL, None) {

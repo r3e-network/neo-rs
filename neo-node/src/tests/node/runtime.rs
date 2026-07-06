@@ -180,6 +180,23 @@ fn state_service_store_uses_fast_sync_for_validation_import() {
 }
 
 #[test]
+fn db_probe_replay_uses_explicit_native_provider() {
+    let source = include_str!("../../bin/neo-db-probe.rs");
+    let start = source
+        .find("fn execute_transaction_probe(")
+        .expect("probe replay function exists");
+    let end = source[start..]
+        .find("fn vm_state_name(")
+        .map(|offset| start + offset)
+        .expect("vm state helper follows probe replay");
+    let replay = &source[start..end];
+
+    assert!(replay.contains("new_with_shared_block_and_native_contract_provider"));
+    assert!(replay.contains("StandardNativeProvider::new()"));
+    assert!(!replay.contains("ApplicationEngine::new_with_shared_block("));
+}
+
+#[test]
 fn configured_mdbx_backend_is_used_for_service_stores() {
     let temp = tempfile::tempdir().expect("temp service store root");
     let config: NodeConfig = toml::from_str(&format!(
