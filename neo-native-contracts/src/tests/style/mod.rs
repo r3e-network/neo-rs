@@ -115,6 +115,8 @@ pub(super) fn standard_contract_sources()
                 "\n",
                 include_str!("../../gas_token/storage.rs"),
                 "\n",
+                include_str!("../../gas_token/transfers.rs"),
+                "\n",
                 include_str!("../../gas_token/mod.rs"),
             ),
         ),

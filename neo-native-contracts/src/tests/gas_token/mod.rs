@@ -16,8 +16,11 @@ use super::*;
 use neo_execution::Contract;
 use neo_primitives::{CallFlags, ContractParameterType};
 use neo_serialization::BinarySerializer;
+use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
+use neo_vm::StackItem;
 use neo_vm_rs::ExecutionEngineLimits;
+use num_traits::Zero;
 
 fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
     let start_idx = source.find(start).expect("start marker");
