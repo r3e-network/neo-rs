@@ -319,6 +319,7 @@ async fn cancel_transaction_applies_extra_fee() {
     let signers = vec![Signer::new(keypair.script_hash(), WitnessScope::NONE)];
     let snapshot = server.system().store_cache();
     let snapshot_arc = Arc::new(snapshot.data_cache().clone());
+    let native_contract_provider = server.system().native_contract_provider();
     let base_tx = crate::server::wallet_compat::make_transaction(
         server.wallet().expect("wallet").as_ref(),
         snapshot_arc.as_ref(),
@@ -327,6 +328,7 @@ async fn cancel_transaction_applies_extra_fee() {
         Some(signers[0].account),
         &signers,
         std::slice::from_ref(&conflict),
+        &native_contract_provider,
         server.settings().max_gas_invoke,
     )
     .expect("base cancel tx");

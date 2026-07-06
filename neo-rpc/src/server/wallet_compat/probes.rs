@@ -5,6 +5,7 @@ use std::sync::Arc;
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_manifest::CallFlags;
 use neo_native_contracts::GasToken;
 use neo_primitives::{TriggerType, UInt160, Verifiable};
@@ -20,9 +21,10 @@ pub(super) fn run_test_invocation(
     snapshot: &DataCache,
     container: Option<Arc<dyn Verifiable>>,
     settings: &ProtocolSettings,
+    native_contract_provider: &Arc<dyn NativeContractProvider>,
     max_gas: i64,
 ) -> CoreResult<ApplicationEngine> {
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
         TriggerType::Application,
         container,
         Arc::new(snapshot.clone()),
@@ -30,6 +32,7 @@ pub(super) fn run_test_invocation(
         settings.clone(),
         max_gas,
         None,
+        Some(Arc::clone(native_contract_provider)),
     )
     .map_err(|err| CoreError::other(err.to_string()))?;
     engine
@@ -44,15 +47,23 @@ pub(super) fn run_test_invocation(
 pub(crate) fn gas_balance_of(
     snapshot: &DataCache,
     settings: &ProtocolSettings,
+    native_contract_provider: &Arc<dyn NativeContractProvider>,
     account: &UInt160,
 ) -> WalletCompatResult<BigInt> {
-    nep17_balance_of(snapshot, settings, &GasToken::script_hash(), account)
+    nep17_balance_of(
+        snapshot,
+        settings,
+        native_contract_provider,
+        &GasToken::script_hash(),
+        account,
+    )
 }
 
 /// `balanceOf` probe for an arbitrary NEP-17 asset.
 pub(super) fn nep17_balance_of(
     snapshot: &DataCache,
     settings: &ProtocolSettings,
+    native_contract_provider: &Arc<dyn NativeContractProvider>,
     asset: &UInt160,
     account: &UInt160,
 ) -> WalletCompatResult<BigInt> {
@@ -69,6 +80,7 @@ pub(super) fn nep17_balance_of(
         snapshot,
         None,
         settings,
+        native_contract_provider,
         BALANCE_PROBE_GAS,
     )
     .map_err(|e| WalletCompatError::Other(e.to_string()))?;

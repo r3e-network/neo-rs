@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::{GasToken, LedgerContract};
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
@@ -35,6 +36,7 @@ pub(crate) fn make_transaction<W>(
     sender: Option<UInt160>,
     cosigners: &[Signer],
     attributes: &[TransactionAttribute],
+    native_contract_provider: &Arc<dyn NativeContractProvider>,
     max_gas: i64,
 ) -> WalletCompatResult<Transaction>
 where
@@ -44,7 +46,7 @@ where
 
     let mut balances_gas = Vec::new();
     for account in accounts {
-        let value = gas_balance_of(snapshot, settings, &account)?;
+        let value = gas_balance_of(snapshot, settings, native_contract_provider, &account)?;
         if value > BigInt::zero() {
             balances_gas.push((account, value));
         }
@@ -58,6 +60,7 @@ where
         cosigners,
         attributes,
         balances_gas,
+        native_contract_provider,
         max_gas,
     )
 }
@@ -71,6 +74,7 @@ fn make_transaction_with_balances<W>(
     cosigners: &[Signer],
     attributes: &[TransactionAttribute],
     balances_gas: Vec<(UInt160, BigInt)>,
+    native_contract_provider: &Arc<dyn NativeContractProvider>,
     max_gas: i64,
 ) -> WalletCompatResult<Transaction>
 where
@@ -96,6 +100,7 @@ where
             snapshot,
             Some(container),
             settings,
+            native_contract_provider,
             max_gas,
         )
         .map_err(|e| WalletCompatError::Other(e.to_string()))?;
@@ -116,7 +121,14 @@ where
                 .account(hash)
                 .and_then(|account| account.contract().map(|contract| contract.script.clone()))
         };
-        let network_fee = calculate_network_fee(&tx, snapshot, settings, &account_script, max_gas)?;
+        let network_fee = calculate_network_fee(
+            &tx,
+            snapshot,
+            settings,
+            native_contract_provider,
+            &account_script,
+            max_gas,
+        )?;
         tx.set_network_fee(network_fee);
 
         if value >= BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee()) {
@@ -140,6 +152,7 @@ pub(crate) fn make_transfer_transaction<W>(
     outputs: &[TransferOutput],
     from: Option<UInt160>,
     cosigners: Option<&[Signer]>,
+    native_contract_provider: &Arc<dyn NativeContractProvider>,
     max_gas: i64,
 ) -> WalletCompatResult<Transaction>
 where
@@ -176,7 +189,13 @@ where
 
         let mut balances: Vec<(UInt160, BigInt)> = Vec::new();
         for account in &accounts {
-            let value = nep17_balance_of(snapshot, settings, &asset_id, account)?;
+            let value = nep17_balance_of(
+                snapshot,
+                settings,
+                native_contract_provider,
+                &asset_id,
+                account,
+            )?;
             if value > BigInt::zero() {
                 balances.push((*account, value));
             }
@@ -232,7 +251,7 @@ where
         None => {
             let mut balances = Vec::new();
             for account in &accounts {
-                let value = gas_balance_of(snapshot, settings, account)?;
+                let value = gas_balance_of(snapshot, settings, native_contract_provider, account)?;
                 if value > BigInt::zero() {
                     balances.push((*account, value));
                 }
@@ -250,6 +269,7 @@ where
         &cosigners,
         &[],
         balances_gas,
+        native_contract_provider,
         max_gas,
     )
 }

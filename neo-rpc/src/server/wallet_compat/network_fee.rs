@@ -6,6 +6,7 @@ use neo_config::ProtocolSettings;
 use neo_execution::ApplicationEngine;
 use neo_execution::contract_state::ContractState;
 use neo_execution::helper::Helper as ContractHelper;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::serializable::helper::SerializeHelper;
 use neo_manifest::CallFlags;
 use neo_native_contracts::{ContractManagement, LedgerContract, PolicyContract};
@@ -31,6 +32,7 @@ pub(crate) fn calculate_network_fee<F>(
     tx: &Transaction,
     snapshot: &DataCache,
     settings: &ProtocolSettings,
+    native_contract_provider: &Arc<dyn NativeContractProvider>,
     account_script: &F,
     mut max_execution_cost: i64,
 ) -> WalletCompatResult<i64>
@@ -98,6 +100,7 @@ where
                     tx,
                     snapshot,
                     settings,
+                    native_contract_provider,
                     hash,
                     invocation_script,
                     &mut max_execution_cost,
@@ -128,6 +131,7 @@ fn contract_verification_fee(
     tx: &Transaction,
     snapshot: &DataCache,
     settings: &ProtocolSettings,
+    native_contract_provider: &Arc<dyn NativeContractProvider>,
     hash: &UInt160,
     mut invocation_script: Option<Vec<u8>>,
     max_execution_cost: &mut i64,
@@ -181,6 +185,7 @@ fn contract_verification_fee(
         tx,
         snapshot,
         settings,
+        native_contract_provider,
         contract,
         verify_method,
         invocation_script,
@@ -233,6 +238,7 @@ fn run_contract_verify(
     tx: &Transaction,
     snapshot: &DataCache,
     settings: &ProtocolSettings,
+    native_contract_provider: &Arc<dyn NativeContractProvider>,
     contract: ContractState,
     verify_method: neo_manifest::ContractMethodDescriptor,
     invocation_script: Option<Vec<u8>>,
@@ -240,7 +246,7 @@ fn run_contract_verify(
 ) -> WalletCompatResult<i64> {
     let container = Arc::new(tx.clone()) as Arc<dyn Verifiable>;
     let contract_hash = contract.hash;
-    let mut engine = ApplicationEngine::new(
+    let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
         TriggerType::Verification,
         Some(container),
         Arc::new(snapshot.clone()),
@@ -248,6 +254,7 @@ fn run_contract_verify(
         settings.clone(),
         max_execution_cost,
         None,
+        Some(Arc::clone(native_contract_provider)),
     )
     .map_err(|err| WalletCompatError::Other(err.to_string()))?;
     engine

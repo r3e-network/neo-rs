@@ -27,6 +27,14 @@ fn server_context_engine_paths_use_explicit_native_provider() {
             "token tracker helpers",
             include_str!("../../../server/rpc_server_tokens_tracker/helpers.rs"),
         ),
+        (
+            "wallet compat probes",
+            include_str!("../../../server/wallet_compat/probes.rs"),
+        ),
+        (
+            "wallet compat network fee",
+            include_str!("../../../server/wallet_compat/network_fee.rs"),
+        ),
         ("session", include_str!("../../../server/session/mod.rs")),
     ];
 
@@ -42,6 +50,21 @@ fn server_context_engine_paths_use_explicit_native_provider() {
         assert!(
             !source.contains("ApplicationEngine::new("),
             "{name} should not read the ambient native-provider bridge"
+        );
+    }
+
+    let provider_threading_sources = [(
+        "wallet compat transaction builder",
+        include_str!("../../../server/wallet_compat/transaction_builder.rs"),
+    )];
+    for (name, source) in provider_threading_sources {
+        assert!(
+            source.contains("native_contract_provider"),
+            "{name} should thread the composed native provider through wallet probes"
+        );
+        assert!(
+            !source.contains("ApplicationEngine::new("),
+            "{name} should not construct engines through the ambient provider bridge"
         );
     }
 }

@@ -171,6 +171,7 @@ impl RpcServerWallet {
         let conflict_attr = TransactionAttribute::Conflicts(Conflicts::new(txid));
         let script = vec![OpCode::RET.byte()];
         let snapshot_arc = Arc::new(snapshot.clone());
+        let native_contract_provider = server.system().native_contract_provider();
         let settings = server.system().settings();
         let mut tx = wallet_compat::make_transaction(
             wallet.as_ref(),
@@ -180,6 +181,7 @@ impl RpcServerWallet {
             Some(signers[0].account),
             &signers,
             std::slice::from_ref(&conflict_attr),
+            &native_contract_provider,
             server.settings().max_gas_invoke,
         )
         .map_err(Self::wallet_compat_failure)?;
@@ -405,6 +407,7 @@ impl RpcServerWallet {
     ) -> Result<Value, RpcException> {
         let store = server.system().store_cache();
         let snapshot_arc = Arc::new(store.data_cache().clone());
+        let native_contract_provider = server.system().native_contract_provider();
         let settings = server.system().settings();
         let tx = wallet_compat::make_transfer_transaction(
             wallet.as_ref(),
@@ -413,6 +416,7 @@ impl RpcServerWallet {
             outputs,
             from,
             signers,
+            &native_contract_provider,
             server.settings().max_gas_invoke,
         )
         .map_err(Self::wallet_compat_failure)?;

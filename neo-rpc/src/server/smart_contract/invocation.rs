@@ -276,6 +276,7 @@ fn build_and_sign_transaction(
     tx.set_system_fee(system_fee);
 
     let data_cache = snapshot.data_cache();
+    let native_contract_provider = system.native_contract_provider();
     let account_script = |hash: &neo_primitives::UInt160| -> Option<Vec<u8>> {
         wallet
             .account(hash)
@@ -285,6 +286,7 @@ fn build_and_sign_transaction(
         &tx,
         data_cache,
         &protocol_settings,
+        &native_contract_provider,
         &account_script,
         rpc_settings.max_gas_invoke,
     )
@@ -293,8 +295,13 @@ fn build_and_sign_transaction(
 
     let required_fee = BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee());
     let sender = signers[0].account;
-    let available = wallet_compat::gas_balance_of(data_cache, &protocol_settings, &sender)
-        .map_err(|err| CoreError::other(err.to_string()))?;
+    let available = wallet_compat::gas_balance_of(
+        data_cache,
+        &protocol_settings,
+        &native_contract_provider,
+        &sender,
+    )
+    .map_err(|err| CoreError::other(err.to_string()))?;
     if available < required_fee {
         return Err(CoreError::other(
             "Insufficient GAS balance to pay system and network fees.",

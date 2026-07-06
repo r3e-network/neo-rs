@@ -235,6 +235,7 @@ impl RpcServerWallet {
         let system = server.system();
         let store = system.store_cache();
         let settings = system.settings();
+        let native_contract_provider = system.native_contract_provider();
         let wallet = server.wallet();
         let account_script = |hash: &UInt160| -> Option<Vec<u8>> {
             wallet.as_ref().and_then(|wallet| {
@@ -247,6 +248,7 @@ impl RpcServerWallet {
             &transaction,
             store.data_cache(),
             &settings,
+            &native_contract_provider,
             &account_script,
             server.settings().max_gas_invoke,
         )
