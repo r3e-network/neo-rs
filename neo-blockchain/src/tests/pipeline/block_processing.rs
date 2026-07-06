@@ -10,7 +10,7 @@ fn constants_have_expected_values() {
 
 #[test]
 fn batch_persist_resources_use_system_native_provider() {
-    let source = include_str!("../../pipeline/block_processing.rs");
+    let source = include_str!("../../pipeline/block_processing/persist.rs");
     let start = source
         .find("pub(crate) fn batch_persist_resources")
         .expect("batch resource builder exists");
