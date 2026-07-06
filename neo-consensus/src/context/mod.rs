@@ -24,9 +24,7 @@ use lru::LruCache;
 use neo_crypto::ECPoint;
 use neo_primitives::{UInt160, UInt256};
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::num::NonZeroUsize;
-use std::path::Path;
 
 /// Default block time in milliseconds (15 seconds for Neo N3).
 /// Post-Echidna, `MillisecondsPerBlock` is a committee-configurable policy
@@ -64,7 +62,6 @@ mod timer;
 mod transactions;
 mod validator_info;
 
-use persistence::{PersistedConsensusState, decode_state, encode_state};
 pub use state::ConsensusState;
 pub use transactions::TxMetrics;
 pub use validator_info::ValidatorInfo;
@@ -615,177 +612,6 @@ impl ConsensusContext {
     #[must_use]
     pub fn not_accepting_payloads_due_to_view_changing(&self) -> bool {
         self.view_changing() && !self.more_than_f_nodes_committed_or_lost()
-    }
-
-    /// Saves the consensus state to disk for crash recovery
-    ///
-    /// Uses atomic write (write to temp file + rename) to prevent corruption.
-    /// Only saves the essential state needed to resume consensus after a restart.
-    ///
-    /// # Arguments
-    /// * `path` - Path to save the state file
-    ///
-    /// # Returns
-    /// * `Ok(())` on success
-    /// * `Err(ConsensusError)` on IO or serialization failure
-    pub fn save(&self, path: &Path) -> ConsensusResult<()> {
-        // Create the persisted state from current context
-        let state = PersistedConsensusState {
-            block_index: self.block_index,
-            view_number: self.view_number,
-            proposed_block_hash: self.proposed_block_hash,
-            preparation_hash: self.preparation_hash,
-            proposed_timestamp: self.proposed_timestamp,
-            proposed_tx_hashes: self.proposed_tx_hashes.clone(),
-            nonce: self.nonce,
-            prepare_request_received: self.prepare_request_received,
-            prepare_responses: self.prepare_responses.clone(),
-            prepare_response_hashes: self.prepare_response_hashes.clone(),
-            commits: self.commits.clone(),
-            commit_view_numbers: self.commit_view_numbers.clone(),
-            change_views: self.change_views.clone(),
-            prepare_request_invocation: self.prepare_request_invocation.clone(),
-            change_view_invocations: self.change_view_invocations.clone(),
-            change_view_timestamps: self.last_change_view_timestamps.clone(),
-            commit_invocations: self.commit_invocations.clone(),
-        };
-
-        let encoded = encode_state(&state)?;
-
-        // Atomic write: write to temp file first
-        let temp_path = path.with_extension("tmp");
-        fs::write(&temp_path, &encoded)?;
-
-        // Rename to final path (atomic on POSIX systems)
-        fs::rename(&temp_path, path)?;
-
-        tracing::debug!(
-            "Saved consensus state: block={}, view={}, size={} bytes",
-            self.block_index,
-            self.view_number,
-            encoded.len()
-        );
-
-        Ok(())
-    }
-
-    /// Serializes the persisted consensus state to bytes.
-    pub fn to_bytes(&self) -> ConsensusResult<Vec<u8>> {
-        let state = PersistedConsensusState {
-            block_index: self.block_index,
-            view_number: self.view_number,
-            proposed_block_hash: self.proposed_block_hash,
-            preparation_hash: self.preparation_hash,
-            proposed_timestamp: self.proposed_timestamp,
-            proposed_tx_hashes: self.proposed_tx_hashes.clone(),
-            nonce: self.nonce,
-            prepare_request_received: self.prepare_request_received,
-            prepare_responses: self.prepare_responses.clone(),
-            prepare_response_hashes: self.prepare_response_hashes.clone(),
-            commits: self.commits.clone(),
-            commit_view_numbers: self.commit_view_numbers.clone(),
-            change_views: self.change_views.clone(),
-            prepare_request_invocation: self.prepare_request_invocation.clone(),
-            change_view_invocations: self.change_view_invocations.clone(),
-            change_view_timestamps: self.last_change_view_timestamps.clone(),
-            commit_invocations: self.commit_invocations.clone(),
-        };
-        encode_state(&state)
-    }
-
-    /// Loads the consensus state from disk for crash recovery
-    ///
-    /// This method loads only the persisted state. The caller must provide:
-    /// - `validators`: Current validator list (from chain state)
-    /// - `my_index`: This node's validator index (from config)
-    ///
-    /// The loaded context will have:
-    /// - `state`: Set to `Initial` (caller should update based on role)
-    /// - `view_start_time`: Set to 0 (caller should update to current time)
-    /// - `expected_block_time`: Set to 0 (caller should update)
-    /// - `last_change_view_timestamps`: Empty (not persisted)
-    ///
-    /// # Arguments
-    /// * `path` - Path to load the state file from
-    /// * `validators` - Current validator list
-    /// * `my_index` - This node's validator index
-    ///
-    /// # Returns
-    /// * `Ok(ConsensusContext)` on success
-    /// * `Err(ConsensusError)` on IO or deserialization failure
-    pub fn load(
-        path: &Path,
-        validators: Vec<ValidatorInfo>,
-        my_index: Option<u8>,
-    ) -> ConsensusResult<Self> {
-        // Read the file
-        let encoded = fs::read(path)?;
-        Self::from_bytes(&encoded, validators, my_index)
-    }
-
-    /// Deserializes a consensus context from raw bytes.
-    pub fn from_bytes(
-        encoded: &[u8],
-        validators: Vec<ValidatorInfo>,
-        my_index: Option<u8>,
-    ) -> ConsensusResult<Self> {
-        let state = decode_state(encoded)?;
-
-        tracing::info!(
-            "Loaded consensus state: block={}, view={}, prepare_responses={}, commits={}, change_views={}",
-            state.block_index,
-            state.view_number,
-            state.prepare_responses.len(),
-            state.commits.len(),
-            state.change_views.len()
-        );
-
-        // Reconstruct the full context
-        Ok(Self {
-            block_index: state.block_index,
-            view_number: state.view_number,
-            validators,
-            my_index,
-            state: ConsensusState::Initial, // Caller should update based on role
-            view_start_time: 0,             // Caller should update to current time
-            timer_extension: 0,
-            expected_block_time: 0, // Caller should update
-            version: 0,
-            prev_hash: UInt256::zero(),
-            previous_block_timestamp: 0,
-            next_consensus: UInt160::zero(),
-            proposed_block_hash: state.proposed_block_hash,
-            preparation_hash: state.preparation_hash,
-            proposed_timestamp: state.proposed_timestamp,
-            proposed_tx_hashes: state.proposed_tx_hashes,
-            available_tx_hashes: HashSet::new(),
-            // Per-tx metrics are ephemeral (fed by the node as bodies are
-            // cached); a reloaded backup re-fills them as it re-fetches the
-            // proposal transactions. Policy limits restart at the C# defaults
-            // and are re-set by the node when the round is configured.
-            available_tx_metrics: HashMap::new(),
-            max_block_size: DEFAULT_MAX_BLOCK_SIZE,
-            max_block_system_fee: DEFAULT_MAX_BLOCK_SYSTEM_FEE,
-            nonce: state.nonce,
-            prepare_request_received: state.prepare_request_received,
-            transaction_request_sent: false,
-            transaction_request_sent_at: None,
-            commit_recovery_sent_at: None,
-            change_view_retry_at: None,
-            prepare_responses: state.prepare_responses,
-            prepare_response_hashes: state.prepare_response_hashes,
-            commits: state.commits,
-            commit_view_numbers: state.commit_view_numbers,
-            change_views: state.change_views,
-            // Ephemeral per-round state, not persisted — restarts empty on reload.
-            invalid_transactions: HashMap::new(),
-            prepare_request_invocation: state.prepare_request_invocation,
-            change_view_invocations: state.change_view_invocations,
-            commit_invocations: state.commit_invocations,
-            last_change_view_timestamps: state.change_view_timestamps,
-            last_seen_messages: HashMap::new(), // Not persisted
-            seen_message_hashes: Self::new_seen_message_cache(), // Not persisted
-        })
     }
 }
 
