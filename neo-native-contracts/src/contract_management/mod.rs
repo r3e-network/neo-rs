@@ -12,7 +12,7 @@
 //!
 //! - `constants`: native event names, storage prefixes, and genesis defaults.
 //! - `initialize`: genesis deployment-setting seeding.
-//! - `invoke`: native method dispatch for query and lifecycle calls.
+//! - `invoke`: native method handlers for query and lifecycle calls.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `operations`: native-contract operation handlers.
 //! - `persist`: native deployment and hardfork-refresh hook.
@@ -81,16 +81,7 @@ impl NativeContract for ContractManagement {
         Self::get_contract_from_snapshot(snapshot, hash)
     }
 
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        self.invoke_native(engine, method, args)
-    }
-
-    native_contract_resolved_invoke!(metadata::CONTRACT_MANAGEMENT_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::CONTRACT_MANAGEMENT_METHOD_BINDINGS);
 }
 
 #[cfg(test)]

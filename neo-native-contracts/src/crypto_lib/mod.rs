@@ -12,13 +12,12 @@
 //!
 //! - `bls`: BLS12-381 point parsing and operation helpers.
 //! - `hashing`: byte hashing and murmur32 helpers.
-//! - `invoke`: native method dispatch and hardfork-gated verification routing.
+//! - `invoke`: native method handlers and hardfork-gated verification routing.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `signatures`: Ed25519, ECDSA, and secp256k1 signature helpers.
 //! - `tests`: Module-local tests and regression coverage.
 
-use neo_error::CoreResult;
-use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
+use neo_execution::{NativeContract, NativeMethod};
 
 use crate::hashes::CRYPTO_LIB_HASH;
 
@@ -48,16 +47,7 @@ impl NativeContract for CryptoLib {
         true
     }
 
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        self.invoke_native(engine, method, args)
-    }
-
-    native_contract_resolved_invoke!(metadata::CRYPTO_LIB_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::CRYPTO_LIB_METHOD_BINDINGS);
 }
 
 #[cfg(test)]

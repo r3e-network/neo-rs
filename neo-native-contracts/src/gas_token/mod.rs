@@ -11,7 +11,7 @@
 //! ## Contents
 //!
 //! - `initialize`: genesis GAS distribution seeding.
-//! - `invoke`: NEP-17 native method dispatch.
+//! - `invoke`: NEP-17 native method handlers.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `persist`: block-persist fee burn and primary reward accounting.
 //! - `storage`: GAS account and total-supply storage helpers.
@@ -68,16 +68,7 @@ impl NativeContract for GasToken {
         &metadata::GAS_TOKEN_EVENTS
     }
 
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        self.invoke_native(engine, method, args)
-    }
-
-    native_contract_resolved_invoke!(metadata::GAS_TOKEN_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::GAS_TOKEN_METHOD_BINDINGS);
 
     fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         self.initialize_native(engine)

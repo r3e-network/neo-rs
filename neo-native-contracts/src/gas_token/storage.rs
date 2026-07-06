@@ -27,8 +27,8 @@ impl GasToken {
 
     /// State-only GAS mint used by state-equivalent empty-block fast-forward.
     ///
-    /// This is the storage half of [`Self::gas_mint`] with `call_on_payment =
-    /// false` and without `Transfer` notifications. It is valid only for paths
+    /// This is the storage half of `gas_mint` with `call_on_payment = false`
+    /// and without `Transfer` notifications. It is valid only for paths
     /// that explicitly skip replay artifacts/events and have already proven that
     /// no deployed contract callback can run. A zero amount is a no-op, matching
     /// `FungibleToken.Mint`.

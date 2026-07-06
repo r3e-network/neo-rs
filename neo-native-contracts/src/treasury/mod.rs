@@ -10,14 +10,13 @@
 //!
 //! ## Contents
 //!
-//! - `invoke`: native method dispatch for payment callbacks and verification.
+//! - `invoke`: native method handlers for payment callbacks and verification.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `tests`: Module-local tests and regression coverage.
 //! - `verify_witness_tests`: witness verification coverage.
 
 use neo_config::{Hardfork, ProtocolSettings};
-use neo_error::CoreResult;
-use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
+use neo_execution::{NativeContract, NativeMethod};
 
 use crate::hashes::TREASURY_HASH;
 
@@ -68,17 +67,11 @@ impl NativeContract for Treasury {
         true
     }
 
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        self.invoke_native(engine, method, args)
-    }
-
-    native_contract_resolved_invoke!(metadata::TREASURY_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::TREASURY_METHOD_BINDINGS);
 }
+
+#[cfg(test)]
+use neo_execution::ApplicationEngine;
 
 #[cfg(test)]
 #[path = "../tests/treasury/mod.rs"]

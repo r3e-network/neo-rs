@@ -95,8 +95,64 @@ macro_rules! native_contract_identity {
     };
 }
 
-macro_rules! native_contract_resolved_invoke {
+macro_rules! native_contract_dispatch {
     ($bindings:path) => {
+        fn invoke(
+            &self,
+            engine: &mut neo_execution::ApplicationEngine,
+            method: &str,
+            args: &[Vec<u8>],
+        ) -> neo_error::CoreResult<Vec<u8>> {
+            crate::support::invoke::dispatch_by_name(self, &$bindings, engine, method, args)
+                .unwrap_or_else(|| {
+                    Err(neo_error::CoreError::invalid_operation(format!(
+                        "{} method '{}({})' is not implemented",
+                        self.name(),
+                        method,
+                        args.len()
+                    )))
+                })
+        }
+
+        fn invoke_resolved(
+            &self,
+            engine: &mut neo_execution::ApplicationEngine,
+            method_index: usize,
+            method: &neo_execution::NativeMethod,
+            args: &[Vec<u8>],
+        ) -> neo_error::CoreResult<Vec<u8>> {
+            crate::support::invoke::dispatch_by_index(self, &$bindings, engine, method_index, args)
+                .unwrap_or_else(|| {
+                    Err(neo_error::CoreError::invalid_operation(format!(
+                        "{} method '{}({})' is not implemented",
+                        self.name(),
+                        method.name,
+                        args.len()
+                    )))
+                })
+        }
+    };
+
+    ($bindings:path, by_name_and_arity) => {
+        fn invoke(
+            &self,
+            engine: &mut neo_execution::ApplicationEngine,
+            method: &str,
+            args: &[Vec<u8>],
+        ) -> neo_error::CoreResult<Vec<u8>> {
+            crate::support::invoke::dispatch_by_name_and_arity(
+                self, &$bindings, engine, method, args,
+            )
+            .unwrap_or_else(|| {
+                Err(neo_error::CoreError::invalid_operation(format!(
+                    "{} method '{}({})' is not implemented",
+                    self.name(),
+                    method,
+                    args.len()
+                )))
+            })
+        }
+
         fn invoke_resolved(
             &self,
             engine: &mut neo_execution::ApplicationEngine,

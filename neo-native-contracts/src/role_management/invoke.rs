@@ -1,8 +1,9 @@
-//! RoleManagement native-method dispatch.
+//! RoleManagement native-method handlers.
 //!
-//! Keeps designation query and writer routing out of the contract root while
+//! Keeps designation query and writer bodies out of the contract root while
 //! preserving role validation, committee checks, storage layout, duplicate-node
-//! rejection, hardfork-gated event state, and current-index bounds.
+//! rejection, hardfork-gated event state, and current-index bounds. Dispatch is
+//! declared by the metadata binding table and `native_contract_dispatch!`.
 
 use super::{ROLE_DESIGNATION_EVENT, RoleManagement, node_list, storage};
 use crate::LedgerContract;
@@ -12,26 +13,6 @@ use neo_execution::ApplicationEngine;
 use neo_storage::StorageItem;
 
 impl RoleManagement {
-    pub(super) fn invoke_native(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        crate::support::invoke::dispatch_by_name(
-            self,
-            &super::metadata::ROLE_MANAGEMENT_METHOD_BINDINGS,
-            engine,
-            method,
-            args,
-        )
-        .unwrap_or_else(|| {
-            Err(CoreError::invalid_operation(format!(
-                "RoleManagement method '{method}' is not implemented"
-            )))
-        })
-    }
-
     pub(super) fn invoke_get_designated_by_role(
         &self,
         engine: &mut ApplicationEngine,

@@ -1,8 +1,9 @@
-//! Ledger native-method dispatch.
+//! Ledger native-method handlers.
 //!
-//! Keeps read-only ledger query routing out of the contract root while
-//! preserving trace-window checks, conflict-stub filtering, and deterministic
-//! public return encoders.
+//! Keeps read-only ledger query bodies out of the contract root while preserving
+//! trace-window checks, conflict-stub filtering, and deterministic public return
+//! encoders. Dispatch is declared by the metadata binding table and
+//! `native_contract_dispatch!`.
 
 use super::LedgerContract;
 use neo_error::{CoreError, CoreResult};
@@ -11,26 +12,6 @@ use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
 
 impl LedgerContract {
-    pub(super) fn invoke_native(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        crate::support::invoke::dispatch_by_name(
-            self,
-            &super::metadata::LEDGER_CONTRACT_METHOD_BINDINGS,
-            engine,
-            method,
-            args,
-        )
-        .unwrap_or_else(|| {
-            Err(CoreError::invalid_operation(format!(
-                "LedgerContract method '{method}' is not implemented"
-            )))
-        })
-    }
-
     pub(super) fn invoke_current_index(
         &self,
         engine: &mut ApplicationEngine,

@@ -10,7 +10,7 @@
 //!
 //! ## Contents
 //!
-//! - `invoke`: native method dispatch for designation query and writer calls.
+//! - `invoke`: native method handlers for designation query and writer calls.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `node_list`: designated-node list storage.
 //! - `providers`: designated-node provider helpers and event-state builders.
@@ -24,8 +24,7 @@ mod node_list;
 mod providers;
 mod storage;
 
-use neo_error::CoreResult;
-use neo_execution::{ApplicationEngine, NativeContract, NativeEvent, NativeMethod};
+use neo_execution::{NativeContract, NativeEvent, NativeMethod};
 
 use crate::hashes::ROLE_MANAGEMENT_HASH;
 
@@ -55,16 +54,7 @@ impl NativeContract for RoleManagement {
         &metadata::ROLE_MANAGEMENT_EVENTS
     }
 
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        self.invoke_native(engine, method, args)
-    }
-
-    native_contract_resolved_invoke!(metadata::ROLE_MANAGEMENT_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::ROLE_MANAGEMENT_METHOD_BINDINGS);
 }
 
 #[cfg(test)]

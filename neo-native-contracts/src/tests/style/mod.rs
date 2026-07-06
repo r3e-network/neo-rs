@@ -389,19 +389,19 @@ fn native_contract_invocation_boundaries_use_invoke_modules() {
         let production = source.split("#[cfg(test)]").next().unwrap_or(source);
         assert!(
             production.contains("mod invoke;"),
-            "{name} should keep native method dispatch in an invoke module"
+            "{name} should keep native method handlers in an invoke module"
         );
         assert!(
-            production.contains("pub(super) fn invoke_native("),
-            "{name} should expose a uniform invoke_native boundary"
+            production.contains("native_contract_dispatch!("),
+            "{name} should declare native method dispatch through native_contract_dispatch!"
         );
         assert!(
-            production.contains("self.invoke_native(engine, method, args)"),
-            "{name} root NativeContract::invoke should delegate to invoke_native"
+            !production.contains("self.invoke_native(engine, method, args)"),
+            "{name} root NativeContract::invoke should not hand-write dispatch shims"
         );
         assert!(
-            production.contains("native_contract_resolved_invoke!("),
-            "{name} should use the uniform resolved native invocation hook"
+            !production.contains("pub(super) fn invoke_native("),
+            "{name} invoke module should contain method handlers, not duplicate dispatch wrappers"
         );
         assert!(
             !production.contains("mod dispatch;"),

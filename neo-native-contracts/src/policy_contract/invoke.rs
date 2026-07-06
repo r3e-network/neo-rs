@@ -1,8 +1,9 @@
-//! PolicyContract native-method dispatch.
+//! PolicyContract native-method handlers.
 //!
-//! This module keeps the long method-name switch out of the contract root while
+//! This module keeps Policy method bodies out of the contract root while
 //! preserving the exact C#-compatible storage, notification, and hardfork
-//! semantics for each Policy method.
+//! semantics for each method. Dispatch is declared by the metadata binding table
+//! and `native_contract_dispatch!`.
 
 use super::storage::WhitelistedContractView;
 use super::{
@@ -20,26 +21,6 @@ use neo_vm::StackItem;
 use num_bigint::BigInt;
 
 impl PolicyContract {
-    pub(super) fn invoke_native(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        crate::support::invoke::dispatch_by_name(
-            self,
-            &super::metadata::POLICY_CONTRACT_METHOD_BINDINGS,
-            engine,
-            method,
-            args,
-        )
-        .unwrap_or_else(|| {
-            Err(CoreError::invalid_operation(format!(
-                "PolicyContract method '{method}' is not implemented"
-            )))
-        })
-    }
-
     pub(super) fn invoke_get_fee_per_byte(
         &self,
         engine: &mut ApplicationEngine,

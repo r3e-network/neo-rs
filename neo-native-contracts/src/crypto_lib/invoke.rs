@@ -1,7 +1,8 @@
-//! CryptoLib native-method dispatch.
+//! CryptoLib native-method handlers.
 //!
-//! Keeps engine-aware routing and hardfork gates separate from the pure hash,
-//! signature, recovery, murmur, and BLS helper implementations.
+//! Keeps ABI entry points and hardfork gates separate from the pure hash,
+//! signature, recovery, murmur, and BLS helper implementations. Dispatch is
+//! declared by the metadata binding table and `native_contract_dispatch!`.
 
 use super::CryptoLib;
 use neo_config::Hardfork;
@@ -11,26 +12,6 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
 impl CryptoLib {
-    pub(super) fn invoke_native(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        crate::support::invoke::dispatch_by_name(
-            self,
-            &super::metadata::CRYPTO_LIB_METHOD_BINDINGS,
-            engine,
-            method,
-            args,
-        )
-        .unwrap_or_else(|| {
-            Err(CoreError::invalid_operation(format!(
-                "CryptoLib method '{method}' is not implemented"
-            )))
-        })
-    }
-
     fn single_byte_array_arg<'a>(method: &str, args: &'a [Vec<u8>]) -> CoreResult<&'a [u8]> {
         args.first().map(Vec::as_slice).ok_or_else(|| {
             CoreError::invalid_operation(format!("CryptoLib::{method} requires one argument"))

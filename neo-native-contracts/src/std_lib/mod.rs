@@ -12,7 +12,7 @@
 //!
 //! - `args`: argument extraction and C# max-input-length validation.
 //! - `encoding`: encoding and decoding routines.
-//! - `invoke`: method dispatch and hardfork-gated invoke wrapper.
+//! - `invoke`: native method handlers and hardfork-gated ABI entry points.
 //! - `memory`: memory comparison/search helpers.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `numeric`: itoa/atoi and .NET integer-cast compatibility helpers.
@@ -30,8 +30,7 @@ mod numeric;
 mod serialization;
 mod strings;
 
-use neo_error::CoreResult;
-use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
+use neo_execution::{NativeContract, NativeMethod};
 
 use crate::hashes::STDLIB_HASH;
 
@@ -55,17 +54,11 @@ impl NativeContract for StdLib {
         true
     }
 
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        self.invoke_native(engine, method, args)
-    }
-
-    native_contract_resolved_invoke!(metadata::STD_LIB_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::STD_LIB_METHOD_BINDINGS, by_name_and_arity);
 }
+
+#[cfg(test)]
+use neo_error::CoreResult;
 
 #[cfg(test)]
 mod test_dispatch;

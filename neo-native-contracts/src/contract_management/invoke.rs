@@ -1,8 +1,9 @@
-//! ContractManagement native-method dispatch.
+//! ContractManagement native-method handlers.
 //!
-//! Keeps query, settings, deploy/update, and destroy method routing out of the
+//! Keeps query, settings, deploy/update, and destroy method bodies out of the
 //! contract root while preserving storage layout, committee checks, lifecycle
-//! operation handlers, and hardfork-gated destroy ordering.
+//! operation handlers, and hardfork-gated destroy ordering. Dispatch is declared
+//! by the metadata binding table and `native_contract_dispatch!`.
 
 use super::{CONTRACT_DESTROY_EVENT, ContractManagement};
 use neo_config::Hardfork;
@@ -15,26 +16,6 @@ use neo_vm::StackItem;
 use num_bigint::BigInt;
 
 impl ContractManagement {
-    pub(super) fn invoke_native(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        crate::support::invoke::dispatch_by_name(
-            self,
-            &super::metadata::CONTRACT_MANAGEMENT_METHOD_BINDINGS,
-            engine,
-            method,
-            args,
-        )
-        .unwrap_or_else(|| {
-            Err(CoreError::invalid_operation(format!(
-                "ContractManagement method '{method}' is not implemented"
-            )))
-        })
-    }
-
     pub(super) fn invoke_get_contract(
         &self,
         engine: &mut ApplicationEngine,

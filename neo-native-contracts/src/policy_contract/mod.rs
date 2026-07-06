@@ -12,7 +12,7 @@
 //!
 //! - `constants`: Protocol constants, storage prefixes, bounds, and event names.
 //! - `initialize`: genesis policy setting seeding.
-//! - `invoke`: Native method dispatch and runtime side effects.
+//! - `invoke`: Native method handlers and runtime side effects.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `provider`: Engine-facing blocked-contract and whitelisted-fee seams.
 //! - `storage`: Storage contexts, key builders, and storage item helpers for
@@ -87,16 +87,7 @@ impl NativeContract for PolicyContract {
         self.whitelisted_fee_native(snapshot, contract_hash, method, param_count)
     }
 
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        self.invoke_native(engine, method, args)
-    }
-
-    native_contract_resolved_invoke!(metadata::POLICY_CONTRACT_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::POLICY_CONTRACT_METHOD_BINDINGS);
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@
 //! - `constants`: request limits, storage prefixes, default pricing, and event
 //!   names.
 //! - `initialize`: genesis request counter and price seeding.
-//! - `invoke`: native method dispatch for request/finish/verify.
+//! - `invoke`: native method handlers for request/finish/verify.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `persist`: post-persist response cleanup and oracle-node reward minting.
 //! - `request`: oracle request records and lifecycle helpers.
@@ -105,16 +105,7 @@ impl NativeContract for OracleContract {
         self.post_persist_native(engine)
     }
 
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        self.invoke_native(engine, method, args)
-    }
-
-    native_contract_resolved_invoke!(metadata::ORACLE_CONTRACT_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::ORACLE_CONTRACT_METHOD_BINDINGS);
 }
 
 #[cfg(test)]

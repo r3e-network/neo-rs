@@ -12,7 +12,7 @@
 //!
 //! - `constants`: deposit defaults and storage-prefix bytes.
 //! - `initialize`: HF_Echidna activation setting seeding.
-//! - `invoke`: native method dispatch for deposit/withdraw/verify calls.
+//! - `invoke`: native method handlers for deposit/withdraw/verify calls.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `persist`: Notary-assisted fee accounting and designated notary rewards.
 //! - `storage`: Storage contexts, key builders, and storage item helpers for
@@ -86,16 +86,7 @@ impl NativeContract for Notary {
         self.on_persist_native(engine)
     }
 
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        self.invoke_native(engine, method, args)
-    }
-
-    native_contract_resolved_invoke!(metadata::NOTARY_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::NOTARY_METHOD_BINDINGS);
 }
 
 #[cfg(test)]

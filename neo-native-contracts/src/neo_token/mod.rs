@@ -109,16 +109,7 @@ impl NativeContract for NeoToken {
         self.post_persist_native(engine)
     }
 
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        self.invoke_native(engine, method, args)
-    }
-
-    native_contract_resolved_invoke!(metadata::NEO_TOKEN_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::NEO_TOKEN_METHOD_BINDINGS);
 
     /// C# `NEO.GetCommitteeAddress`, exposed through the native-contract seam so
     /// the engine's `check_committee_witness` can verify committee-gated writers

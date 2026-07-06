@@ -1,7 +1,8 @@
-//! StdLib native-method dispatch.
+//! StdLib native-method handlers.
 //!
-//! Keeps the method-name routing and hardfork-gated invoke wrapper separate
-//! from the string, memory, and serialization implementations.
+//! Keeps hardfork-gated ABI entry points separate from the string, memory, and
+//! serialization implementations. Dispatch is declared by the metadata binding
+//! table and `native_contract_dispatch!`.
 
 use super::{StdLib, encoding, serialization};
 use neo_config::Hardfork;
@@ -10,26 +11,6 @@ use neo_execution::ApplicationEngine;
 use num_bigint::BigInt;
 
 impl StdLib {
-    pub(super) fn invoke_native(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        crate::support::invoke::dispatch_by_name_and_arity(
-            self,
-            &super::metadata::STD_LIB_METHOD_BINDINGS,
-            engine,
-            method,
-            args,
-        )
-        .unwrap_or_else(|| {
-            Err(CoreError::invalid_operation(format!(
-                "StdLib method '{method}' is not implemented"
-            )))
-        })
-    }
-
     pub(super) fn invoke_base64_encode(
         &self,
         _engine: &mut ApplicationEngine,

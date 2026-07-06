@@ -307,8 +307,14 @@ The detailed rules for this style live in
   Batch resource setup builds `NativePersistResources` from that context
   provider and calls the explicit-resource staging/commit path instead of
   reading an ambient global provider. Headless/test construction can still
-  omit the provider and let the builder own a local standard default. ADR-015
-  proposes a builder pattern for
+  omit the provider and let the builder own a local standard default. Inside
+  `neo-native-contracts`, each contract declares one metadata binding table that
+  pairs ABI descriptors with Rust handlers, and its `NativeContract` impl uses
+  `native_contract_dispatch!` to derive both direct test dispatch and resolved
+  production dispatch from that table. The VM resolves `(name, arity,
+  hardfork)` once, charges fees/checks flags from the selected descriptor, then
+  jumps by binding-table index; invoke modules hold method bodies, not
+  hand-written method-name switches. ADR-015 proposes a builder pattern for
   future extensibility.
 
 - **Error type policy.** `neo-error` owns the authoritative `CoreError` /

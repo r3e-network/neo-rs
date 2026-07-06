@@ -10,7 +10,7 @@
 //!
 //! ## Contents
 //!
-//! - `invoke`: read-only native method dispatch for ledger queries.
+//! - `invoke`: read-only native method handlers for ledger queries.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `queries`: read-provider helpers for snapshots and trace windows.
 //! - `storage`: Storage contexts, key builders, and storage item helpers for
@@ -21,7 +21,7 @@
 
 use crate::hashes::LEDGER_CONTRACT_HASH;
 use neo_error::CoreResult;
-use neo_execution::{ApplicationEngine, NativeContract, NativeMethod};
+use neo_execution::{NativeContract, NativeMethod};
 use neo_payloads::TrimmedBlock;
 use neo_primitives::UInt256;
 
@@ -53,16 +53,7 @@ impl NativeContract for LedgerContract {
         true
     }
 
-    fn invoke(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        self.invoke_native(engine, method, args)
-    }
-
-    native_contract_resolved_invoke!(metadata::LEDGER_CONTRACT_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::LEDGER_CONTRACT_METHOD_BINDINGS);
 
     fn transaction_state(
         &self,

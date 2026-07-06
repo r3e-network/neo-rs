@@ -1,36 +1,17 @@
-//! GAS native-method dispatch.
+//! GAS native-method handlers.
 //!
-//! Keeps NEP-17 ABI method routing out of the contract root while preserving
-//! the shared transfer core, storage accounting, notifications, and callback
-//! queueing behavior.
+//! Keeps NEP-17 ABI method bodies out of the contract root while preserving the
+//! shared transfer core, storage accounting, notifications, and callback
+//! queueing behavior. Dispatch is declared by the metadata binding table and
+//! `native_contract_dispatch!`.
 
 use super::GasToken;
-use neo_error::{CoreError, CoreResult};
+use neo_error::CoreResult;
 use neo_execution::ApplicationEngine;
 use neo_primitives::UInt160;
 use num_bigint::BigInt;
 
 impl GasToken {
-    pub(super) fn invoke_native(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        crate::support::invoke::dispatch_by_name(
-            self,
-            &super::metadata::GAS_TOKEN_METHOD_BINDINGS,
-            engine,
-            method,
-            args,
-        )
-        .unwrap_or_else(|| {
-            Err(CoreError::invalid_operation(format!(
-                "GasToken method '{method}' is not implemented"
-            )))
-        })
-    }
-
     pub(super) fn invoke_symbol(
         &self,
         _engine: &mut ApplicationEngine,

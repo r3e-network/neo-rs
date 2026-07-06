@@ -1,8 +1,10 @@
-//! Notary native-method dispatch.
+//! Notary native-method handlers.
 //!
-//! Keeps deposit, withdrawal, verification, and committee-gated setting calls
+//! Keeps deposit, withdrawal, verification, and committee-gated setting bodies
 //! out of the contract root while preserving C#-compatible validation order,
 //! storage writes, witness checks, fee accounting, and signature verification.
+//! Dispatch is declared by the metadata binding table and
+//! `native_contract_dispatch!`.
 
 use super::Notary;
 use crate::{GasToken, LedgerContract, Role, RoleManagement};
@@ -14,26 +16,6 @@ use neo_primitives::{TransactionAttributeType, WitnessScope};
 use num_bigint::BigInt;
 
 impl Notary {
-    pub(super) fn invoke_native(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        crate::support::invoke::dispatch_by_name(
-            self,
-            &super::metadata::NOTARY_METHOD_BINDINGS,
-            engine,
-            method,
-            args,
-        )
-        .unwrap_or_else(|| {
-            Err(CoreError::invalid_operation(format!(
-                "Notary method '{method}' is not implemented"
-            )))
-        })
-    }
-
     pub(super) fn invoke_get_max_not_valid_before_delta(
         &self,
         engine: &mut ApplicationEngine,

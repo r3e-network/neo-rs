@@ -1,8 +1,9 @@
-//! Oracle native-method dispatch.
+//! Oracle native-method handlers.
 //!
-//! Keeps request/finish/verify method handling out of the contract root while
+//! Keeps request/finish/verify method bodies out of the contract root while
 //! preserving the C#-compatible validation order, fee charging, storage writes,
-//! notifications, and deferred callback behavior.
+//! notifications, and deferred callback behavior. Dispatch is declared by the
+//! metadata binding table and `native_contract_dispatch!`.
 
 use super::{
     MAX_CALLBACK_LENGTH, MAX_FILTER_LENGTH, MAX_PENDING_IDS_PER_URL, MAX_URL_LENGTH,
@@ -20,26 +21,6 @@ use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 
 impl OracleContract {
-    pub(super) fn invoke_native(
-        &self,
-        engine: &mut ApplicationEngine,
-        method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        crate::support::invoke::dispatch_by_name(
-            self,
-            &super::metadata::ORACLE_CONTRACT_METHOD_BINDINGS,
-            engine,
-            method,
-            args,
-        )
-        .unwrap_or_else(|| {
-            Err(CoreError::invalid_operation(format!(
-                "OracleContract method '{method}' is not implemented"
-            )))
-        })
-    }
-
     pub(super) fn invoke_get_price(
         &self,
         engine: &mut ApplicationEngine,
