@@ -6,9 +6,8 @@ fn memory_store() -> Arc<dyn Store> {
     Arc::new(MemoryStore::new())
 }
 
-// Shared with node.rs's build test via the parent module, so ALL tests in the
-// neo-system binary that touch the process-global native provider serialize on
-// one lock (a per-file lock would not stop cross-module races).
+// Shared with node.rs tests via the parent module, so tests that deliberately
+// inspect the process-global native provider serialize on one lock.
 fn native_provider_test_lock() -> std::sync::MutexGuard<'static, ()> {
     crate::composition::native_provider_test_guard()
 }
@@ -48,6 +47,8 @@ fn builder_requires_blockchain_and_network() {
 #[test]
 fn builder_succeeds_with_required_services() {
     let _guard = native_provider_test_lock();
+    NativeContractLookup::replace_provider(None);
+
     let storage = memory_store();
     let settings = Arc::new(ProtocolSettings::default());
     let (bc, _rx) = BlockchainHandle::with_capacity();
@@ -66,11 +67,14 @@ fn builder_succeeds_with_required_services() {
             .all_native_contracts()
             .is_empty()
     );
-    assert!(NativeContractLookup::native_contract_provider().is_some());
+    assert!(
+        NativeContractLookup::native_contract_provider().is_none(),
+        "NodeBuilder must keep the provider on the composed node instead of mutating the global bridge"
+    );
 }
 
 #[test]
-fn builder_installs_custom_native_contract_provider() {
+fn builder_keeps_custom_native_contract_provider_local() {
     let _guard = native_provider_test_lock();
     NativeContractLookup::replace_provider(None);
 
@@ -90,8 +94,9 @@ fn builder_installs_custom_native_contract_provider() {
         .build()
         .expect("required services set");
 
-    let installed =
-        NativeContractLookup::native_contract_provider().expect("provider should be installed");
     assert!(Arc::ptr_eq(&node.native_contract_provider, &provider));
-    assert!(Arc::ptr_eq(&installed, &provider));
+    assert!(
+        NativeContractLookup::native_contract_provider().is_none(),
+        "custom providers should be captured by the node, not installed globally"
+    );
 }

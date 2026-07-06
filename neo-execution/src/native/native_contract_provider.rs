@@ -23,7 +23,6 @@
 //! ```ignore
 //! // In neo-system / neo-node composition:
 //! let provider = Arc::new(StandardNativeContractProvider::new(settings));
-//! neo_native_contracts::install_provider(provider.clone());
 //! let node = NodeBuilder::new().with_native_contract_provider(provider).build()?;
 //!
 //! // In tests or replay batches that need a temporary provider:

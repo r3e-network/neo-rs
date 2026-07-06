@@ -820,7 +820,6 @@ fn replay_transaction(
 ) -> Result<Value> {
     let tx_hash =
         UInt256::from_str(tx_hash).map_err(|err| anyhow!("invalid transaction hash: {err}"))?;
-    neo_native_contracts::install();
     let trace_instruction_limit = std::env::var("NEO_DB_PROBE_TRACE_INSTRUCTIONS")
         .ok()
         .and_then(|raw| raw.parse::<usize>().ok())
@@ -886,7 +885,6 @@ fn replay_raw_transaction(
     raw_tx_base64: &str,
     block_base64: &str,
 ) -> Result<Value> {
-    neo_native_contracts::install();
     let trace_instruction_limit = std::env::var("NEO_DB_PROBE_TRACE_INSTRUCTIONS")
         .ok()
         .and_then(|raw| raw.parse::<usize>().ok())

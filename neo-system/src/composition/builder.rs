@@ -11,14 +11,14 @@
 //! one is absent. There are no trait-object executor / consensus / engine
 //! fields to compose: those were removed in ADR-032 / ADR-033. The native
 //! contract provider can be supplied explicitly by a composition root; when it
-//! is not supplied, the builder installs the standard Neo N3 provider.
+//! is not supplied, the builder owns the standard Neo N3 provider locally.
 
 use std::sync::Arc;
 use tracing::debug;
 
 use neo_blockchain::{BlockchainHandle, HeaderCache};
 use neo_config::ProtocolSettings;
-use neo_execution::native_contract_provider::{NativeContractLookup, NativeContractProvider};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
 use neo_storage::persistence::store::Store;
@@ -118,12 +118,11 @@ impl NodeBuilder {
         self
     }
 
-    /// Install the native-contract provider used by NeoVM host calls.
+    /// Sets the native-contract provider used by NeoVM host calls.
     ///
-    /// When unset, [`Self::build`] installs the standard Neo N3 provider from
+    /// When unset, [`Self::build`] uses the standard Neo N3 provider from
     /// `neo-native-contracts`. Supplying a provider here makes native dispatch
-    /// an explicit composition-root dependency instead of a hidden global side
-    /// effect.
+    /// an explicit composition-root dependency.
     pub fn with_native_contract_provider(
         mut self,
         provider: Arc<dyn NativeContractProvider>,
@@ -146,18 +145,10 @@ impl NodeBuilder {
         let network = self
             .network
             .ok_or_else(|| crate::error::NodeError::missing_service("network"))?;
-        let native_contract_provider = match self.native_contract_provider {
-            Some(provider) => {
-                NativeContractLookup::install_provider(Arc::clone(&provider));
-                provider
-            }
-            None => {
-                let provider = Arc::new(neo_native_contracts::StandardNativeProvider::new())
-                    as Arc<dyn NativeContractProvider>;
-                NativeContractLookup::install_provider(Arc::clone(&provider));
-                provider
-            }
-        };
+        let native_contract_provider = self.native_contract_provider.unwrap_or_else(|| {
+            Arc::new(neo_native_contracts::StandardNativeProvider::new())
+                as Arc<dyn NativeContractProvider>
+        });
 
         debug!("NodeBuilder::build: composing runtime node");
         let mempool = self

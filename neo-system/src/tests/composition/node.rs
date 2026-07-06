@@ -14,10 +14,6 @@ fn builder_returns_node_builder() {
 
 #[tokio::test]
 async fn cancellation_token_clone_is_independent() {
-    // Building a node installs the process-global native contract provider; hold
-    // the shared guard so this does not race the provider-asserting tests in
-    // builder.rs (same neo-system test binary, parallel threads).
-    let _guard = crate::composition::native_provider_test_guard();
     let storage = memory_store();
     let settings = Arc::new(ProtocolSettings::default());
     let (bc, _rx) = BlockchainHandle::with_capacity();
@@ -52,5 +48,8 @@ fn direct_constructor_uses_builder_defaults() {
             .all_native_contracts()
             .is_empty()
     );
-    assert!(NativeContractLookup::native_contract_provider().is_some());
+    assert!(
+        NativeContractLookup::native_contract_provider().is_none(),
+        "Node::new should use a local provider through NodeBuilder defaults"
+    );
 }

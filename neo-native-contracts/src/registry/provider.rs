@@ -1,10 +1,10 @@
 //! Standard native-contract provider.
 //!
 //! Implements neo-execution's [`NativeContractProvider`] seam over the concrete
-//! native contracts in this crate and installs it into the engine's global
-//! provider slot. This is the link that lets `ApplicationEngine` dispatch
-//! `System.Contract.Call` to a native contract without `neo-execution`
-//! depending on `neo-native-contracts` (which would be a crate cycle).
+//! native contracts in this crate. Composition roots pass this provider into
+//! engines and services so `ApplicationEngine` can dispatch `System.Contract.Call`
+//! to a native contract without `neo-execution` depending on
+//! `neo-native-contracts` (which would be a crate cycle).
 //!
 //! The canonical catalog in [`crate::catalog`] is the single source of truth for
 //! standard-contract order, id, name, hash, and construction.
@@ -70,9 +70,13 @@ impl NativeContractProvider for StandardNativeProvider {
     }
 }
 
-/// Installs the standard native-contract provider into neo-execution's global
-/// seam. Call once at process startup (and freely from tests); installing again
-/// replaces the previous provider.
+/// Installs the standard native-contract provider into neo-execution's
+/// compatibility bridge.
+///
+/// Production node composition should pass [`StandardNativeProvider`] explicitly
+/// instead of mutating the process-global slot. This helper remains for tests
+/// and standalone compatibility callers that still exercise
+/// [`neo_execution::native_contract_provider::NativeContractLookup`] directly.
 pub fn install() {
     NativeContractLookup::install_provider(Arc::new(StandardNativeProvider::new()));
 }

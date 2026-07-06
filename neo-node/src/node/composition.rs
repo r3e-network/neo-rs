@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
-use neo_execution::native_contract_provider::{NativeContractLookup, NativeContractProvider};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -98,12 +98,10 @@ pub(in crate::node) async fn build_node(
     }
 
     // Native dispatch must be available before genesis initialization, and the
-    // composed Node should expose the same provider object. Build it once here,
-    // install it for the legacy neo-execution lookup seam, then hand the same
-    // Arc to NodeBuilder instead of letting the builder create a second one.
+    // composed Node should expose the same provider object. Build it once here
+    // and hand the same Arc to every provider-aware subsystem.
     let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new())
         as Arc<dyn NativeContractProvider>;
-    NativeContractLookup::install_provider(Arc::clone(&native_contract_provider));
 
     let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
