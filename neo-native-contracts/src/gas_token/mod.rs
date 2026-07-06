@@ -10,6 +10,7 @@
 //!
 //! ## Contents
 //!
+//! - `invoke`: NEP-17 native method dispatch.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `storage`: GAS account and total-supply storage helpers.
 //! - `tests`: Module-local tests and regression coverage.
@@ -26,6 +27,7 @@ use num_traits::Zero;
 
 use crate::hashes::GAS_TOKEN_HASH;
 
+mod invoke;
 mod metadata;
 mod storage;
 
@@ -339,42 +341,7 @@ impl NativeContract for GasToken {
         method: &str,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        match method {
-            "symbol" => Ok(Self::SYMBOL.as_bytes().to_vec()),
-            "decimals" => Ok(BigInt::from(Self::DECIMALS).to_signed_bytes_le()),
-            "totalSupply" => {
-                let snapshot = engine.snapshot_cache();
-                Ok(Self::total_supply(&snapshot).to_signed_bytes_le())
-            }
-            "balanceOf" => {
-                let account = crate::args::raw_account(args, "GasToken::balanceOf")?;
-                let snapshot = engine.snapshot_cache();
-                Ok(Self::balance_of(&snapshot, &account)?.to_signed_bytes_le())
-            }
-            "transfer" => {
-                // C# FungibleToken.Transfer(from, to, amount, data).
-                let from = crate::args::raw_hash160(args, 0, "GasToken::transfer")?;
-                let to = crate::args::raw_hash160(args, 1, "GasToken::transfer")?;
-                let amount = crate::args::raw_required_integer_arg(
-                    args,
-                    2,
-                    "GasToken::transfer",
-                    "an amount",
-                )?;
-                let data = args.get(3).map(Vec::as_slice).unwrap_or(&[]);
-                // The witness bypass uses the engine's calling script hash
-                // (C# `from.Equals(CallingScriptHash)`).
-                let caller = engine
-                    .get_calling_script_hash()
-                    .unwrap_or_else(UInt160::zero);
-                Ok(vec![u8::from(Self::transfer_core(
-                    engine, caller, &from, &to, &amount, data,
-                )?)])
-            }
-            other => Err(CoreError::invalid_operation(format!(
-                "GasToken method '{other}' is not implemented"
-            ))),
-        }
+        self.invoke_native(engine, method, args)
     }
 
     /// C# `GasToken.InitializeAsync(engine, hardfork)` for `hardfork == ActiveIn`
