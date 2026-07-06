@@ -13,8 +13,11 @@ use crate::test_support::deploy_native;
 use neo_crypto::Secp256r1Crypto;
 use neo_execution::ApplicationEngine;
 use neo_execution::native_contract::build_native_contract_state;
-use neo_payloads::{Block, Header, NotaryAssisted, Signer, TransactionAttribute, Witness};
-use neo_primitives::{CallFlags, TriggerType, UInt256, Verifiable};
+use neo_payloads::{
+    Block, Header, NotaryAssisted, Signer, Transaction, TransactionAttribute, Witness,
+    get_sign_data,
+};
+use neo_primitives::{CallFlags, TriggerType, UInt256, Verifiable, WitnessScope};
 use neo_serialization::BinarySerializer;
 use neo_storage::persistence::DataCache;
 use neo_vm::StackItem;

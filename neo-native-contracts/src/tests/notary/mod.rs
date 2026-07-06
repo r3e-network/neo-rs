@@ -134,8 +134,10 @@ fn native_contract_surface() {
 
 #[test]
 fn invoke_uint_args_use_shared_raw_parser() {
-    let source = include_str!("../../notary/mod.rs");
-    let start = source.find("fn invoke(").expect("Notary invoke exists");
+    let source = include_str!("../../notary/invoke.rs");
+    let start = source
+        .find("fn invoke_native(")
+        .expect("Notary invoke dispatch exists");
     let end = source[start..]
         .find("other => Err")
         .map(|offset| start + offset)
