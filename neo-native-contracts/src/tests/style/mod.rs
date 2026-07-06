@@ -253,7 +253,11 @@ fn standard_contract_dispatch_sources()
         ),
         (
             "LedgerContract",
-            include_str!("../../ledger_contract/invoke.rs"),
+            concat!(
+                include_str!("../../ledger_contract/metadata.rs"),
+                "\n",
+                include_str!("../../ledger_contract/invoke.rs"),
+            ),
         ),
         ("NeoToken", include_str!("../../neo_token/invoke.rs")),
         (
