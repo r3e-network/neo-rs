@@ -13,23 +13,41 @@ impl Treasury {
         &self,
         engine: &mut ApplicationEngine,
         method: &str,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        crate::support::invoke::dispatch_by_name(
+            self,
+            &super::metadata::TREASURY_METHOD_BINDINGS,
+            engine,
+            method,
+            args,
+        )
+        .unwrap_or_else(|| {
+            Err(CoreError::invalid_operation(format!(
+                "Treasury method '{method}' is not implemented"
+            )))
+        })
+    }
+
+    pub(super) fn invoke_nep_payment(
+        &self,
+        _engine: &mut ApplicationEngine,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        match method {
-            // Both callbacks are no-ops in C# (empty bodies); they return Void,
-            // so an empty payload pushes nothing onto the stack.
-            crate::NEP17_PAYMENT_METHOD | crate::NEP11_PAYMENT_METHOD => Ok(Vec::new()),
-            // C# `Treasury.Verify` (Treasury.cs:41-42) = `CheckCommittee(engine)`:
-            // true iff the committee multi-sig address witnesses the current
-            // container - the witness boundary for Treasury-signed transactions.
-            "verify" => {
-                let authorized =
-                    crate::committee::is_committee_witness(engine, "Treasury::verify")?;
-                Ok(vec![u8::from(authorized)])
-            }
-            other => Err(CoreError::invalid_operation(format!(
-                "Treasury method '{other}' is not implemented"
-            ))),
-        }
+        // Both callbacks are no-ops in C# (empty bodies); they return Void,
+        // so an empty payload pushes nothing onto the stack.
+        Ok(Vec::new())
+    }
+
+    pub(super) fn invoke_verify(
+        &self,
+        engine: &mut ApplicationEngine,
+        _args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        // C# `Treasury.Verify` (Treasury.cs:41-42) = `CheckCommittee(engine)`:
+        // true iff the committee multi-sig address witnesses the current
+        // container - the witness boundary for Treasury-signed transactions.
+        let authorized = crate::committee::is_committee_witness(engine, "Treasury::verify")?;
+        Ok(vec![u8::from(authorized)])
     }
 }

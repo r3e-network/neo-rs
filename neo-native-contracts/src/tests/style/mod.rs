@@ -281,7 +281,14 @@ fn standard_contract_dispatch_sources()
             include_str!("../../oracle_contract/invoke.rs"),
         ),
         ("Notary", include_str!("../../notary/invoke.rs")),
-        ("Treasury", include_str!("../../treasury/invoke.rs")),
+        (
+            "Treasury",
+            concat!(
+                include_str!("../../treasury/metadata.rs"),
+                "\n",
+                include_str!("../../treasury/invoke.rs"),
+            ),
+        ),
     ]
 }
 
@@ -292,8 +299,10 @@ fn dispatch_source_mentions_method(source: &str, method_name: &str) -> bool {
         || (method_name == "totalSupply" && source.contains("nep17_total_supply_method"))
         || (method_name == "balanceOf" && source.contains("nep17_balance_of_method"))
         || (method_name == "transfer" && source.contains("nep17_transfer_method"))
-        || (method_name == NEP17_PAYMENT_METHOD && source.contains("NEP17_PAYMENT_METHOD"))
-        || (method_name == NEP11_PAYMENT_METHOD && source.contains("NEP11_PAYMENT_METHOD"))
+        || (method_name == NEP17_PAYMENT_METHOD
+            && (source.contains("NEP17_PAYMENT_METHOD") || source.contains("nep17_payment_method")))
+        || (method_name == NEP11_PAYMENT_METHOD
+            && (source.contains("NEP11_PAYMENT_METHOD") || source.contains("nep11_payment_method")))
 }
 
 #[test]
