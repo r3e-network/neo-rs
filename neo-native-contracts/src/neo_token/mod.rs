@@ -13,6 +13,7 @@
 //! - `constants`: protocol storage prefixes, defaults, reward ratios, and
 //!   event names.
 //! - `fast_forward`: state-equivalent empty-block reward batching.
+//! - `initialize`: genesis storage seeding.
 //! - `invoke`: native NEO invocation helpers.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `persist`: block-persist committee and reward hooks.
@@ -37,6 +38,7 @@ use crate::hashes::NEO_TOKEN_HASH;
 
 mod constants;
 mod fast_forward;
+mod initialize;
 mod invoke;
 mod metadata;
 mod persist;
@@ -95,44 +97,8 @@ impl NativeContract for NeoToken {
         &metadata::NEO_TOKEN_EVENTS
     }
 
-    /// C# `NeoToken.InitializeAsync(engine, hardfork)` for `hardfork == ActiveIn`
-    /// (NEO is genesis-active, so this runs while persisting block 0): seed the
-    /// committee cache with the standby committee (zero votes each), an empty
-    /// voters count, the genesis 5-GAS gas-per-block record at index 0, the
-    /// 1000-GAS register price, and mint `TotalAmount` NEO to the BFT address of
-    /// the standby validators.
     fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
-        let standby_committee = engine.protocol_settings().standby_committee.clone();
-        let standby_validators = engine.protocol_settings().standby_validators();
-        let snapshot = engine.snapshot_cache();
-        let members: Vec<(ECPoint, BigInt)> = standby_committee
-            .into_iter()
-            .map(|point| (point, BigInt::from(0)))
-            .collect();
-        snapshot.add(
-            Self::committee_key(),
-            StorageItem::from_bytes(Self::encode_committee(&members)?),
-        );
-        // C# `new StorageItem(Array.Empty<byte>())` — BigInteger zero is stored
-        // as empty bytes.
-        snapshot.add(
-            Self::voters_count_key(),
-            StorageItem::from_bytes(Vec::new()),
-        );
-        snapshot.add(
-            Self::gas_per_block_key(0),
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
-                DEFAULT_GAS_PER_BLOCK,
-            ))),
-        );
-        snapshot.add(
-            Self::register_price_key(),
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
-                DEFAULT_REGISTER_PRICE,
-            ))),
-        );
-        let bft = Self::bft_address(&standby_validators)?;
-        self.neo_mint(engine, &bft, &BigInt::from(NEO_TOTAL_AMOUNT), false)
+        self.initialize_native(engine)
     }
 
     fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
