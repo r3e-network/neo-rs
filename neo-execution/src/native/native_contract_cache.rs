@@ -2,13 +2,29 @@ use crate::{NativeContract, NativeMethod};
 use neo_config::ProtocolSettings;
 use neo_error::CoreError;
 use neo_error::CoreResult;
+use neo_primitives::UInt160;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Cache of native contract method metadata, mirroring the C# NativeContractsCache behaviour.
 #[derive(Default)]
 pub struct NativeContractsCache {
-    entries: HashMap<i32, NativeContractsCacheEntry>,
+    entries: HashMap<NativeContractCacheKey, NativeContractsCacheEntry>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct NativeContractCacheKey {
+    id: i32,
+    hash: UInt160,
+}
+
+impl NativeContractCacheKey {
+    fn from_contract(contract: &dyn NativeContract) -> Self {
+        Self {
+            id: contract.id(),
+            hash: contract.hash(),
+        }
+    }
 }
 
 impl NativeContractsCache {
@@ -17,9 +33,9 @@ impl NativeContractsCache {
         &'a mut self,
         contract: &dyn NativeContract,
     ) -> &'a NativeContractsCacheEntry {
-        let contract_id = contract.id();
+        let key = NativeContractCacheKey::from_contract(contract);
         self.entries
-            .entry(contract_id)
+            .entry(key)
             .or_insert_with(|| NativeContractsCacheEntry::from_contract(contract))
     }
 }
@@ -122,16 +138,18 @@ mod tests {
     use neo_primitives::{ContractParameterType, UInt160};
 
     struct IndexedContract {
+        id: i32,
+        hash: UInt160,
         methods: Vec<NativeMethod>,
     }
 
     impl NativeContract for IndexedContract {
         fn id(&self) -> i32 {
-            42
+            self.id
         }
 
         fn hash(&self) -> UInt160 {
-            UInt160::zero()
+            self.hash
         }
 
         fn name(&self) -> &str {
@@ -159,6 +177,8 @@ mod tests {
     #[test]
     fn resolved_method_preserves_contract_method_index() {
         let contract = IndexedContract {
+            id: 42,
+            hash: UInt160::zero(),
             methods: vec![
                 NativeMethod::new(
                     "same",
@@ -198,5 +218,61 @@ mod tests {
             .expect("post-hardfork method exists");
         assert_eq!(after.method_index(), 2);
         assert_eq!(after.method().cpu_fee, 2);
+    }
+
+    #[test]
+    fn cache_key_includes_hash_to_avoid_stale_provider_metadata() {
+        let mut cache = NativeContractsCache::default();
+        let settings = ProtocolSettings::default();
+        let first = IndexedContract {
+            id: 42,
+            hash: UInt160::from_bytes(&[0x11; UInt160::LENGTH]).expect("first hash"),
+            methods: vec![NativeMethod::new(
+                "first",
+                1,
+                true,
+                0,
+                Vec::new(),
+                ContractParameterType::Void,
+            )],
+        };
+        let second = IndexedContract {
+            id: 42,
+            hash: UInt160::from_bytes(&[0x22; UInt160::LENGTH]).expect("second hash"),
+            methods: vec![NativeMethod::new(
+                "second",
+                2,
+                true,
+                0,
+                Vec::new(),
+                ContractParameterType::Void,
+            )],
+        };
+
+        {
+            let entry = cache.get_or_build(&first);
+            assert!(
+                entry
+                    .get_method("first", 0, &settings, 0)
+                    .unwrap()
+                    .is_some()
+            );
+        }
+
+        let entry = cache.get_or_build(&second);
+        assert!(
+            entry
+                .get_method("second", 0, &settings, 0)
+                .unwrap()
+                .is_some(),
+            "same-id native contracts with different hashes must not reuse stale metadata"
+        );
+        assert!(
+            entry
+                .get_method("first", 0, &settings, 0)
+                .unwrap()
+                .is_none(),
+            "second cache entry should be keyed by its own native hash"
+        );
     }
 }
