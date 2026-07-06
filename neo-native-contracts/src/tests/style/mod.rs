@@ -169,6 +169,8 @@ pub(super) fn standard_contract_sources()
         (
             "OracleContract",
             concat!(
+                include_str!("../../oracle_contract/constants.rs"),
+                "\n",
                 include_str!("../../oracle_contract/request.rs"),
                 "\n",
                 include_str!("../../oracle_contract/storage.rs"),
