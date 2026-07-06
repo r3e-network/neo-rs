@@ -51,7 +51,7 @@ fn read_policy_setting_key(cache: &DataCache, key: StorageKey) -> i64 {
 
 #[test]
 fn raw_argument_parsing_uses_shared_helpers() {
-    let source = include_str!("../../policy_contract/dispatch.rs");
+    let source = include_str!("../../policy_contract/invoke.rs");
 
     assert!(!source.contains("fn setter_int_arg("));
     assert!(!source.contains("fn hash160_arg("));

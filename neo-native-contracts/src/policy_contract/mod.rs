@@ -10,7 +10,7 @@
 //!
 //! ## Contents
 //!
-//! - `dispatch`: Native method dispatch and runtime side effects.
+//! - `invoke`: Native method dispatch and runtime side effects.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `storage`: Storage contexts, key builders, and storage item helpers for
 //!   execution.
@@ -24,7 +24,7 @@ use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
 use num_bigint::BigInt;
 
-mod dispatch;
+mod invoke;
 mod metadata;
 mod storage;
 
@@ -206,7 +206,7 @@ impl NativeContract for PolicyContract {
         method: &str,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        self.invoke_policy_method(engine, method, args)
+        self.invoke_native(engine, method, args)
     }
 }
 

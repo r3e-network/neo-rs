@@ -1,4 +1,4 @@
-//! Policy native-method dispatch.
+//! PolicyContract native-method dispatch.
 //!
 //! This module keeps the long method-name switch out of the contract root while
 //! preserving the exact C#-compatible storage, notification, and hardfork
@@ -20,7 +20,7 @@ use neo_vm::StackItem;
 use num_bigint::BigInt;
 
 impl PolicyContract {
-    pub(super) fn invoke_policy_method(
+    pub(super) fn invoke_native(
         &self,
         engine: &mut ApplicationEngine,
         method: &str,
