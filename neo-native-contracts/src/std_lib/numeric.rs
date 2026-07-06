@@ -3,7 +3,7 @@
 //! These helpers preserve C# BigInteger formatting, parsing, and native
 //! `int` narrowing semantics for itoa/atoi and memorySearch overloads.
 
-use super::{MAX_INPUT_LENGTH, StdLib};
+use super::{StdLib, args::MAX_INPUT_LENGTH};
 use neo_error::{CoreError, CoreResult};
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;

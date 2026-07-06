@@ -3,7 +3,7 @@
 use neo_crypto::{base58, base64};
 use neo_error::{CoreError, CoreResult};
 
-use super::{MAX_INPUT_LENGTH, StdLib};
+use super::{StdLib, args::MAX_INPUT_LENGTH};
 
 pub(super) fn base64_encode_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
     StdLib::arg_bytes_max(args, "base64Encode", "data")

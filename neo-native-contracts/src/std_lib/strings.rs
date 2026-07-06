@@ -3,7 +3,7 @@
 //! Keeps UTF-8 validation, BinarySerializer return shaping, and .NET text
 //! segmentation compatibility out of the contract root.
 
-use super::{MAX_INPUT_LENGTH, StdLib};
+use super::{StdLib, args::MAX_INPUT_LENGTH};
 use crate::text::dotnet_text_segmentation::text_element_count;
 use neo_error::{CoreError, CoreResult};
 use neo_serialization::BinarySerializer;

@@ -12,7 +12,7 @@
 //!
 //! - Test modules and fixtures: grouped coverage for the surrounding domain.
 
-use super::*;
+use super::{args::MAX_INPUT_LENGTH, *};
 use neo_config::Hardfork;
 use neo_crypto::base58;
 use neo_primitives::ContractParameterType;

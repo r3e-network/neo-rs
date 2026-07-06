@@ -45,6 +45,8 @@ pub(super) fn standard_contract_sources()
         (
             "StdLib",
             concat!(
+                include_str!("../../std_lib/args.rs"),
+                "\n",
                 include_str!("../../std_lib/encoding.rs"),
                 "\n",
                 include_str!("../../std_lib/invoke.rs"),
