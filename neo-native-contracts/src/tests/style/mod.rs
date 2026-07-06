@@ -274,7 +274,11 @@ fn standard_contract_dispatch_sources()
         ),
         (
             "PolicyContract",
-            include_str!("../../policy_contract/invoke.rs"),
+            concat!(
+                include_str!("../../policy_contract/metadata.rs"),
+                "\n",
+                include_str!("../../policy_contract/invoke.rs"),
+            ),
         ),
         (
             "RoleManagement",
