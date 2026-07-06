@@ -2,10 +2,10 @@ use neo_config::ProtocolSettings;
 use neo_consensus::ValidatorInfo;
 use serde::Deserialize;
 
-use super::ConsensusSetup;
+use super::setup::ConsensusSetup;
 
 #[cfg(feature = "hsm")]
-use super::resolve_public_key_index;
+use super::setup::resolve_public_key_index;
 #[cfg(feature = "hsm")]
 use neo_crypto::ECPoint;
 #[cfg(feature = "hsm")]
