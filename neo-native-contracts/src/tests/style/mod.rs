@@ -12,8 +12,8 @@
 //! - `events`: Mempool event records emitted to subscribers.
 
 use crate::{
-    NEP17_STANDARD, NEP17_TRANSFER_EVENT, NEP26_STANDARD, NEP27_STANDARD, NEP30_STANDARD,
-    STANDARD_NATIVE_CONTRACT_COUNT,
+    NEP11_PAYMENT_METHOD, NEP17_PAYMENT_METHOD, NEP17_STANDARD, NEP17_TRANSFER_EVENT,
+    NEP26_STANDARD, NEP27_STANDARD, NEP30_STANDARD, STANDARD_NATIVE_CONTRACT_COUNT,
 };
 
 #[path = "events.rs"]
@@ -175,6 +175,51 @@ pub(super) fn standard_contract_sources()
     ]
 }
 
+fn standard_contract_dispatch_sources()
+-> [(&'static str, &'static str); STANDARD_NATIVE_CONTRACT_COUNT] {
+    [
+        (
+            "ContractManagement",
+            include_str!("../../contract_management/invoke.rs"),
+        ),
+        ("StdLib", include_str!("../../std_lib/invoke.rs")),
+        (
+            "CryptoLib",
+            concat!(
+                include_str!("../../crypto_lib/invoke.rs"),
+                "\n",
+                include_str!("../../crypto_lib/mod.rs"),
+            ),
+        ),
+        (
+            "LedgerContract",
+            include_str!("../../ledger_contract/invoke.rs"),
+        ),
+        ("NeoToken", include_str!("../../neo_token/invoke.rs")),
+        ("GasToken", include_str!("../../gas_token/invoke.rs")),
+        (
+            "PolicyContract",
+            include_str!("../../policy_contract/invoke.rs"),
+        ),
+        (
+            "RoleManagement",
+            include_str!("../../role_management/invoke.rs"),
+        ),
+        (
+            "OracleContract",
+            include_str!("../../oracle_contract/invoke.rs"),
+        ),
+        ("Notary", include_str!("../../notary/invoke.rs")),
+        ("Treasury", include_str!("../../treasury/invoke.rs")),
+    ]
+}
+
+fn dispatch_source_mentions_method(source: &str, method_name: &str) -> bool {
+    source.contains(&format!("\"{method_name}\""))
+        || (method_name == NEP17_PAYMENT_METHOD && source.contains("NEP17_PAYMENT_METHOD"))
+        || (method_name == NEP11_PAYMENT_METHOD && source.contains("NEP11_PAYMENT_METHOD"))
+}
+
 #[test]
 fn native_contract_style_sources_follow_canonical_catalog_order() {
     let style_names = standard_contract_sources().map(|(name, _)| name);
@@ -234,6 +279,24 @@ fn native_contract_invocation_boundaries_use_invoke_modules() {
             !production.contains("mod dispatch;"),
             "{name} should not use a second dispatch module name"
         );
+    }
+}
+
+#[test]
+fn native_contract_manifest_methods_are_represented_in_dispatch_sources() {
+    for ((source_name, source), contract) in standard_contract_dispatch_sources()
+        .into_iter()
+        .zip(crate::standard_native_contracts())
+    {
+        assert_eq!(source_name, contract.name());
+        for method in contract.methods() {
+            assert!(
+                dispatch_source_mentions_method(source, &method.name),
+                "{} manifest method '{}' should be represented in dispatch source",
+                contract.name(),
+                method.name
+            );
+        }
     }
 }
 
