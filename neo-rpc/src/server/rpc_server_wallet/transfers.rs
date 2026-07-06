@@ -109,9 +109,10 @@ impl RpcServerWallet {
 
         let store = server.system().store_cache();
         let descriptor_snapshot = Arc::new(store.data_cache().clone());
-        let reader = Nep17MetadataReaderImpl::new(
+        let reader = Nep17MetadataReaderImpl::new_with_native_contract_provider(
             Arc::clone(&descriptor_snapshot),
             server.system().settings().as_ref().clone(),
+            server.system().native_contract_provider(),
         );
         let descriptor_cache = |asset: &UInt160| {
             AssetDescriptor::new(Arc::clone(&descriptor_snapshot), &reader, *asset)
@@ -370,9 +371,10 @@ impl RpcServerWallet {
         let wallet = Self::require_wallet(server)?;
         let store = server.system().store_cache();
         let snapshot = Arc::new(store.data_cache().clone());
-        let reader = Nep17MetadataReaderImpl::new(
+        let reader = Nep17MetadataReaderImpl::new_with_native_contract_provider(
             Arc::clone(&snapshot),
             server.system().settings().as_ref().clone(),
+            server.system().native_contract_provider(),
         );
         let descriptor = AssetDescriptor::new(snapshot, &reader, asset)
             .map_err(|err| invalid_params(err.to_string()))?;

@@ -21,6 +21,7 @@ use neo_vm_rs::VmState;
 use num_traits::ToPrimitive;
 
 use crate::ApplicationEngine;
+use crate::native_contract_provider::NativeContractProvider;
 
 /// GAS budget for the metadata probe, matching C# `ApplicationEngine.Run`
 /// (`gas: 0_30000000L` — 0.3 GAS).
@@ -35,6 +36,7 @@ const DESCRIPTOR_PROBE_GAS: i64 = 30_000_000;
 pub struct Nep17MetadataReaderImpl {
     snapshot: Arc<DataCache>,
     settings: ProtocolSettings,
+    native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
 }
 
 impl std::fmt::Debug for Nep17MetadataReaderImpl {
@@ -42,14 +44,49 @@ impl std::fmt::Debug for Nep17MetadataReaderImpl {
         f.debug_struct("Nep17MetadataReaderImpl")
             .field("snapshot", &"DataCache")
             .field("settings", &self.settings)
+            .field(
+                "native_contract_provider",
+                &self
+                    .native_contract_provider
+                    .as_ref()
+                    .map(|_| "NativeContractProvider"),
+            )
             .finish()
     }
 }
 
 impl Nep17MetadataReaderImpl {
     /// Construct a new reader over the given snapshot and settings.
+    ///
+    /// This compatibility constructor preserves the historical behavior: each
+    /// metadata read creates an `ApplicationEngine` through the ambient
+    /// native-contract provider bridge. New node/RPC composition paths should
+    /// prefer [`Self::new_with_native_contract_provider`] so the reader is
+    /// insulated from process-global provider replacement.
     pub fn new(snapshot: Arc<DataCache>, settings: ProtocolSettings) -> Self {
-        Self { snapshot, settings }
+        Self {
+            snapshot,
+            settings,
+            native_contract_provider: None,
+        }
+    }
+
+    /// Construct a new reader with an explicit native-contract provider.
+    ///
+    /// The provider is captured by the reader and passed into each probe engine,
+    /// matching the rest of the execution-layer provider pattern: a replay, RPC
+    /// server, or embedded node should not observe ambient provider changes made
+    /// by unrelated tests or nodes.
+    pub fn new_with_native_contract_provider(
+        snapshot: Arc<DataCache>,
+        settings: ProtocolSettings,
+        native_contract_provider: Arc<dyn NativeContractProvider>,
+    ) -> Self {
+        Self {
+            snapshot,
+            settings,
+            native_contract_provider: Some(native_contract_provider),
+        }
     }
 }
 
@@ -62,15 +99,29 @@ impl Nep17MetadataReader for Nep17MetadataReaderImpl {
             .map_err(|e| ServiceError::Internal(e.to_string()))?;
         let script = builder.to_array();
 
-        let mut engine = ApplicationEngine::new(
-            TriggerType::Application,
-            None,
-            Arc::clone(&self.snapshot),
-            None,
-            self.settings.clone(),
-            DESCRIPTOR_PROBE_GAS,
-            None,
-        )
+        let mut engine = match &self.native_contract_provider {
+            Some(provider) => {
+                ApplicationEngine::new_with_shared_block_and_native_contract_provider(
+                    TriggerType::Application,
+                    None,
+                    Arc::clone(&self.snapshot),
+                    None,
+                    self.settings.clone(),
+                    DESCRIPTOR_PROBE_GAS,
+                    None,
+                    Some(Arc::clone(provider)),
+                )
+            }
+            None => ApplicationEngine::new(
+                TriggerType::Application,
+                None,
+                Arc::clone(&self.snapshot),
+                None,
+                self.settings.clone(),
+                DESCRIPTOR_PROBE_GAS,
+                None,
+            ),
+        }
         .map_err(|e| ServiceError::Internal(e.to_string()))?;
         engine
             .load_script(script, CallFlags::READ_ONLY, None)
