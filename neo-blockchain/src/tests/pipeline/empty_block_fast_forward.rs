@@ -361,7 +361,7 @@ fn standard_natives_explicitly_opt_in_to_empty_block_fast_forward() {
 
 #[test]
 fn stage_empty_block_fast_forward_reuses_last_hash_from_ledger_loop() {
-    let source = include_str!("../../pipeline/empty_block_fast_forward.rs");
+    let source = include_str!("../../pipeline/empty_block_fast_forward/stage.rs");
     let stage = source
         .split("pub fn stage_empty_block_fast_forward")
         .nth(1)
