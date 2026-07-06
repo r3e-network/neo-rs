@@ -14,12 +14,14 @@
 
 use super::*;
 use neo_execution::Contract;
-use neo_primitives::{CallFlags, ContractParameterType};
+use neo_payloads::TransactionAttribute;
+use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
 use neo_vm::StackItem;
 use neo_vm_rs::ExecutionEngineLimits;
+use num_bigint::BigInt;
 use num_traits::Zero;
 
 fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
@@ -597,8 +599,8 @@ mod persist_tests {
 
     #[test]
     fn on_persist_uses_cached_signature_account_for_primary_reward() {
-        let source = include_str!("../../gas_token/mod.rs");
-        let on_persist = slice_between(source, "fn on_persist", "\n}");
+        let source = include_str!("../../gas_token/persist.rs");
+        let on_persist = slice_between(source, "fn on_persist_native", "\n    }");
 
         assert!(
             on_persist.contains("next_block_validator_account"),
