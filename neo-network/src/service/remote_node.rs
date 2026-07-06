@@ -46,12 +46,12 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use tokio::net::TcpStream;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::codec::Framed;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::download::BlockRequestScheduler;
+use crate::download::{BlockRequest, BlockRequestScheduler};
 use crate::wire::MessageCodec;
 use neo_payloads::{Block, ExtensiblePayload, Header, Transaction};
 use neo_primitives::UInt256;
@@ -200,6 +200,14 @@ pub enum InventoryItem {
 pub enum RemoteNodeCommand {
     /// Send an inventory item to the peer.
     SendInventory(InventoryItem),
+    /// Request a contiguous block range from this peer via `GetBlockByIndex`.
+    RequestBlocksByIndex {
+        /// Planned range to request.
+        request: BlockRequest,
+        /// Completion signal after the frame has been sent, queued for the
+        /// post-handshake flush, or rejected locally.
+        reply: oneshot::Sender<NetworkResult<()>>,
+    },
     /// Send a pre-encoded wire frame (a complete `Message` byte
     /// sequence) to the peer.
     SendRaw(Vec<u8>),
@@ -265,6 +273,50 @@ impl RemoteNodeHandle {
             .send(RemoteNodeCommand::SendInventory(item))
             .await
             .map_err(|_| crate::error::NetworkError::LocalShuttingDown)
+    }
+
+    /// Ask this peer for a contiguous block range using `GetBlockByIndex`.
+    ///
+    /// This is the request-side seam used by the future transport-backed
+    /// [`crate::BlockRangeFetcher`]. Response correlation remains owned by the
+    /// caller/fetcher layer; this method only validates and sends the wire
+    /// request through the per-peer session. If the handshake is still
+    /// finishing, the session queues the frame and flushes it at `verack`, the
+    /// same policy used for outbound inventory.
+    pub async fn request_blocks_by_index(&self, request: BlockRequest) -> NetworkResult<()> {
+        Self::validate_block_index_request(request)?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.cmd_tx
+            .send(RemoteNodeCommand::RequestBlocksByIndex {
+                request,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| crate::error::NetworkError::LocalShuttingDown)?;
+        reply_rx
+            .await
+            .map_err(|_| crate::error::NetworkError::LocalShuttingDown)?
+    }
+
+    fn validate_block_index_request(request: BlockRequest) -> NetworkResult<()> {
+        if request.count == 0 {
+            return Err(crate::error::NetworkError::Protocol(
+                "GetBlockByIndex request count must be greater than zero".to_string(),
+            ));
+        }
+        if request.count > BlockRequestScheduler::MAX_BLOCKS_PER_REQUEST {
+            return Err(crate::error::NetworkError::Protocol(format!(
+                "GetBlockByIndex request count {} exceeds protocol cap {}",
+                request.count,
+                BlockRequestScheduler::MAX_BLOCKS_PER_REQUEST
+            )));
+        }
+        i16::try_from(request.count).map(|_| ()).map_err(|_| {
+            crate::error::NetworkError::Protocol(format!(
+                "GetBlockByIndex request count {} exceeds i16 payload range",
+                request.count
+            ))
+        })
     }
 
     /// Send a pre-encoded wire frame to the peer.

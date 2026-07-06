@@ -184,6 +184,61 @@ async fn node_requests_blocks_when_peer_is_ahead() {
     handle.shutdown().await.expect("shutdown");
 }
 
+/// Transport fetcher seam: callers can explicitly ask one peer for an assigned
+/// block range without reimplementing `GetBlockByIndex` frame encoding.
+#[tokio::test]
+async fn remote_node_handle_can_request_explicit_block_range() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let listen_addr = listener.local_addr().expect("addr");
+
+    let mut fake = {
+        let stream = TcpStream::connect(listen_addr).await.expect("dial");
+        Framed::new(stream, MessageCodec::new())
+    };
+    let (stream, remote_addr) = listener.accept().await.expect("accept");
+
+    let identity = Arc::new(LocalIdentity::new(
+        ProtocolSettings::default().network,
+        7,
+        "/neo-rs:test/".to_string(),
+        true,
+    ));
+    let registry = Arc::new(PeerRegistry::with_limits(8, 8));
+    let (event_tx, _events) = broadcast::channel(64);
+    let peer_id = PeerId::new();
+    let (service, handle) = RemoteNodeService::new(
+        stream,
+        peer_id,
+        remote_addr,
+        identity,
+        registry.clone(),
+        event_tx,
+        RemoteNodeState::Handshake,
+        CancellationToken::new(),
+    );
+    assert!(registry.try_admit(peer_id, remote_addr, handle.clone()));
+    tokio::spawn(service.run());
+
+    complete_handshake(
+        &mut fake,
+        ProtocolSettings::default().network,
+        0xfa4e_0011,
+        20333,
+    )
+    .await;
+
+    handle
+        .request_blocks_by_index(BlockRequest::new(7, 3))
+        .await
+        .expect("request explicit block range");
+    let request = recv_getblockbyindex(&mut fake).await;
+
+    assert_eq!(request.index_start, 7);
+    assert_eq!(request.count, 3);
+
+    handle.shutdown().await.expect("shutdown");
+}
+
 /// Restart/resume cursor: the daemon seeds the network-advertised height from
 /// durable `Ledger.CurrentIndex` before accepting peers. A peer that is ahead
 /// must see that height in our `version` payload and the first block-sync

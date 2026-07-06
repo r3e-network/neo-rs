@@ -14,7 +14,8 @@ use super::{
 };
 use crate::MessageCommand;
 use crate::connection_timeouts::ConnectionTimeouts;
-use crate::download::BlockRequestScheduler;
+use crate::download::{BlockRequest, BlockRequestScheduler};
+use crate::error::NetworkError;
 use crate::event::NetworkEvent;
 use crate::local_identity::LocalIdentity;
 use crate::peer_id::PeerId;
@@ -190,6 +191,17 @@ impl PeerSession {
                             return reason;
                         }
                     }
+                    Some(RemoteNodeCommand::RequestBlocksByIndex { request, reply }) => {
+                        match self.send_get_block_by_index(framed, request).await {
+                            Ok(()) => {
+                                let _ = reply.send(Ok(()));
+                            }
+                            Err(reason) => {
+                                let _ = reply.send(Err(self.network_error_for_close_reason(&reason)));
+                                return reason;
+                            }
+                        }
+                    }
                     Some(RemoteNodeCommand::SendRaw(bytes)) => {
                         if let Err(reason) = self.on_send_raw(framed, bytes).await {
                             return reason;
@@ -306,19 +318,7 @@ impl PeerSession {
         let Some(request) = self.sync_scheduler.next_request(local_height, peer_height) else {
             return Ok(());
         };
-        let count = i16::try_from(request.count)
-            .expect("BlockRequestScheduler never exceeds i16 request counts");
-        let payload = GetBlockByIndexPayload::create(request.start, count);
-        let message = Message::create(
-            MessageCommand::GetBlockByIndex,
-            Some(&payload),
-            self.peer_allows_compression,
-        )
-        .map_err(|err| CloseReason::Transport(format!("encode getblockbyindex: {err}")))?;
-        framed
-            .send(message)
-            .await
-            .map_err(|err| CloseReason::Transport(format!("send getblockbyindex: {err}")))?;
+        self.send_get_block_by_index(framed, request).await?;
         debug!(
             target: "neo_network",
             peer_id = %self.peer_id,
@@ -328,6 +328,58 @@ impl PeerSession {
             "requesting block batch from peer"
         );
         Ok(())
+    }
+
+    fn validate_get_block_by_index_request(request: BlockRequest) -> Result<i16, CloseReason> {
+        if request.count == 0 {
+            return Err(CloseReason::ProtocolViolation(
+                "GetBlockByIndex request count must be greater than zero".to_string(),
+            ));
+        }
+        if request.count > BlockRequestScheduler::MAX_BLOCKS_PER_REQUEST {
+            return Err(CloseReason::ProtocolViolation(format!(
+                "GetBlockByIndex request count {} exceeds protocol cap {}",
+                request.count,
+                BlockRequestScheduler::MAX_BLOCKS_PER_REQUEST
+            )));
+        }
+        i16::try_from(request.count).map_err(|_| {
+            CloseReason::ProtocolViolation(format!(
+                "GetBlockByIndex request count {} exceeds i16 payload range",
+                request.count
+            ))
+        })
+    }
+
+    async fn send_get_block_by_index(
+        &mut self,
+        framed: &mut PeerFramed,
+        request: BlockRequest,
+    ) -> Result<(), CloseReason> {
+        let count = Self::validate_get_block_by_index_request(request)?;
+        let payload = GetBlockByIndexPayload::create(request.start, count);
+        let message = Message::create(
+            MessageCommand::GetBlockByIndex,
+            Some(&payload),
+            self.peer_allows_compression,
+        )
+        .map_err(|err| CloseReason::Transport(format!("encode getblockbyindex: {err}")))?;
+        self.send_or_queue(framed, message).await
+    }
+
+    fn network_error_for_close_reason(&self, reason: &CloseReason) -> NetworkError {
+        match reason {
+            CloseReason::LocalShutdown | CloseReason::ShutdownRequested => {
+                NetworkError::LocalShuttingDown
+            }
+            CloseReason::RemoteClosed | CloseReason::TimedOut | CloseReason::Transport(_) => {
+                NetworkError::RemoteUnavailable {
+                    peer_id: self.peer_id.to_string(),
+                    detail: reason.to_string(),
+                }
+            }
+            CloseReason::ProtocolViolation(detail) => NetworkError::Protocol(detail.clone()),
+        }
     }
 
     /// C# `RemoteNode.ProtocolHandler.OnVersionMessageReceived` +
