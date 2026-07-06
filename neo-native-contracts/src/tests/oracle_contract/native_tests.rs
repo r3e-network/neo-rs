@@ -300,12 +300,12 @@ fn invoke_request_args_use_shared_raw_parsers() {
     }
 
     let source = include_str!("../../oracle_contract/invoke.rs");
-    let set_price = slice_between(source, "\"setPrice\" =>", "\"request\" =>");
+    let set_price = slice_between(source, "fn invoke_set_price(", "fn invoke_request(");
     assert!(set_price.contains("crate::args::raw_i64_arg"));
     assert!(!set_price.contains("BigInt::from_signed_bytes_le(args"));
     assert!(!set_price.contains("BigInt::from_signed_bytes_le(b)"));
 
-    let request = slice_between(source, "\"request\" =>", "\"finish\" =>");
+    let request = slice_between(source, "fn invoke_request(", "fn invoke_finish(");
     assert!(request.contains("crate::args::raw_string_arg"));
     assert!(request.contains("crate::args::raw_i64_arg"));
     assert!(!request.contains("String::from_utf8("));

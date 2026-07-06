@@ -286,7 +286,11 @@ fn standard_contract_dispatch_sources()
         ),
         (
             "OracleContract",
-            include_str!("../../oracle_contract/invoke.rs"),
+            concat!(
+                include_str!("../../oracle_contract/metadata.rs"),
+                "\n",
+                include_str!("../../oracle_contract/invoke.rs"),
+            ),
         ),
         ("Notary", include_str!("../../notary/invoke.rs")),
         (
