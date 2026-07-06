@@ -127,6 +127,8 @@ pub(super) fn standard_contract_sources()
             concat!(
                 include_str!("../../gas_token/metadata.rs"),
                 "\n",
+                include_str!("../../gas_token/initialize.rs"),
+                "\n",
                 include_str!("../../gas_token/persist.rs"),
                 "\n",
                 include_str!("../../gas_token/invoke.rs"),
