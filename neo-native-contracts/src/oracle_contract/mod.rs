@@ -113,6 +113,8 @@ impl NativeContract for OracleContract {
     ) -> CoreResult<Vec<u8>> {
         self.invoke_native(engine, method, args)
     }
+
+    native_contract_resolved_invoke!(metadata::ORACLE_CONTRACT_METHOD_BINDINGS);
 }
 
 #[cfg(test)]

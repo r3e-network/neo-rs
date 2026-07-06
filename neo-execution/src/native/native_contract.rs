@@ -215,6 +215,25 @@ pub trait NativeContract: Any + Send + Sync {
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>>;
 
+    /// Invokes a method after the engine has resolved its active ABI metadata.
+    ///
+    /// `ApplicationEngine::call_native_contract` resolves native methods by
+    /// `(name, parameter count, hardfork)` before charging fees and checking
+    /// call flags. Concrete native contracts can use `method_index` to jump to
+    /// the binding table entry that produced `methods()[method_index]`, avoiding
+    /// a second string/arity/hardfork lookup. The default keeps direct tests and
+    /// mock contracts simple by falling back to the legacy name-based entry.
+    fn invoke_resolved(
+        &self,
+        engine: &mut ApplicationEngine,
+        method_index: usize,
+        method: &NativeMethod,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        let _ = method_index;
+        self.invoke(engine, &method.name, args)
+    }
+
     /// Called when the contract is initialized.
     fn initialize(&self, _engine: &mut ApplicationEngine) -> CoreResult<()> {
         Ok(())

@@ -62,6 +62,8 @@ impl NativeContract for LedgerContract {
         self.invoke_native(engine, method, args)
     }
 
+    native_contract_resolved_invoke!(metadata::LEDGER_CONTRACT_METHOD_BINDINGS);
+
     fn transaction_state(
         &self,
         snapshot: &neo_storage::DataCache,

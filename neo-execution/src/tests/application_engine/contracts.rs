@@ -2,6 +2,7 @@ use super::*;
 use crate::native_contract::OracleRequestDetails;
 use crate::native_contract_provider::lock_native_provider;
 use crate::native_contract_provider::{NativeContractLookup, NativeContractProvider};
+use neo_config::Hardfork;
 use neo_crypto::{ECCurve, ECPoint};
 use neo_manifest::{
     ContractAbi, ContractGroup, ContractManifest, ContractMethodDescriptor,
@@ -169,6 +170,85 @@ impl NativeContract for MeteredNativeContract {
                 "unexpected method {method}"
             )))
         }
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+struct ResolvedOnlyNativeContract {
+    hash: UInt160,
+    methods: Vec<crate::NativeMethod>,
+}
+
+impl ResolvedOnlyNativeContract {
+    fn new() -> Self {
+        Self {
+            hash: UInt160::from_bytes(&[0xA6; 20]).expect("resolved native hash"),
+            methods: vec![
+                crate::NativeMethod::new(
+                    "same",
+                    0,
+                    true,
+                    CallFlags::ALL.bits(),
+                    Vec::new(),
+                    ContractParameterType::ByteArray,
+                )
+                .with_deprecated_in(Hardfork::HfEchidna),
+                crate::NativeMethod::new(
+                    "same",
+                    0,
+                    true,
+                    CallFlags::ALL.bits(),
+                    Vec::new(),
+                    ContractParameterType::ByteArray,
+                )
+                .with_active_in(Hardfork::HfEchidna),
+            ],
+        }
+    }
+}
+
+impl NativeContract for ResolvedOnlyNativeContract {
+    fn id(&self) -> i32 {
+        -98
+    }
+
+    fn hash(&self) -> UInt160 {
+        self.hash
+    }
+
+    fn name(&self) -> &str {
+        "ResolvedOnlyNative"
+    }
+
+    fn methods(&self) -> &[crate::NativeMethod] {
+        &self.methods
+    }
+
+    fn invoke(
+        &self,
+        _engine: &mut ApplicationEngine,
+        method: &str,
+        _args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        Err(CoreError::invalid_operation(format!(
+            "name dispatch should not be used for {method}"
+        )))
+    }
+
+    fn invoke_resolved(
+        &self,
+        _engine: &mut ApplicationEngine,
+        method_index: usize,
+        method: &crate::NativeMethod,
+        _args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        Ok(vec![
+            u8::try_from(method_index).expect("test method index fits in u8"),
+            method.name.as_bytes()[0],
+        ])
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -499,6 +579,33 @@ fn native_call_uses_provider_captured_at_engine_creation() {
         .expect("native method should use provider captured at engine creation");
 
     assert_eq!(engine.fee_consumed(), 50 * 100_000);
+}
+
+#[test]
+fn native_call_uses_resolved_method_index_after_hardfork_selection() {
+    let _provider_guard = lock_provider();
+    let native = Arc::new(ResolvedOnlyNativeContract::new());
+    let native_hash = native.hash();
+    NativeContractLookup::install_provider(Arc::new(SingleNativeProvider { native }));
+
+    let mut settings = ProtocolSettings::default();
+    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    let mut engine = ApplicationEngine::new(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        settings,
+        TEST_MODE_GAS,
+        None,
+    )
+    .expect("engine");
+
+    let result = engine
+        .call_native_contract(native_hash, "same", &[])
+        .expect("native method should use resolved index dispatch");
+
+    assert_eq!(result, vec![1, b's']);
 }
 
 #[test]

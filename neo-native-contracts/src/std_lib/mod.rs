@@ -63,6 +63,8 @@ impl NativeContract for StdLib {
     ) -> CoreResult<Vec<u8>> {
         self.invoke_native(engine, method, args)
     }
+
+    native_contract_resolved_invoke!(metadata::STD_LIB_METHOD_BINDINGS);
 }
 
 #[cfg(test)]

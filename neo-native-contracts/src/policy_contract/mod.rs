@@ -95,6 +95,8 @@ impl NativeContract for PolicyContract {
     ) -> CoreResult<Vec<u8>> {
         self.invoke_native(engine, method, args)
     }
+
+    native_contract_resolved_invoke!(metadata::POLICY_CONTRACT_METHOD_BINDINGS);
 }
 
 #[cfg(test)]

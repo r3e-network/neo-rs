@@ -93,3 +93,23 @@ pub(crate) fn dispatch_by_name_and_arity<C>(
         .find(|binding| binding.matches_name_and_arity(method, args.len()))
         .map(|binding| binding.invoke(contract, engine, args))
 }
+
+/// Dispatches a native method by the binding-table index already resolved by
+/// the execution engine.
+///
+/// Standard native contracts build `methods()` with [`method_metadata`] from
+/// the same binding table, preserving order. `ApplicationEngine` can therefore
+/// resolve ABI metadata once, charge fees/check flags from that record, then
+/// call this helper with the selected index instead of repeating string/arity
+/// dispatch inside the native contract.
+pub(crate) fn dispatch_by_index<C>(
+    contract: &C,
+    bindings: &[NativeMethodBinding<C>],
+    engine: &mut ApplicationEngine,
+    method_index: usize,
+    args: &[Vec<u8>],
+) -> Option<CoreResult<Vec<u8>>> {
+    bindings
+        .get(method_index)
+        .map(|binding| binding.invoke(contract, engine, args))
+}

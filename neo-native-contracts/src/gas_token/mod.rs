@@ -77,6 +77,8 @@ impl NativeContract for GasToken {
         self.invoke_native(engine, method, args)
     }
 
+    native_contract_resolved_invoke!(metadata::GAS_TOKEN_METHOD_BINDINGS);
+
     fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
         self.initialize_native(engine)
     }

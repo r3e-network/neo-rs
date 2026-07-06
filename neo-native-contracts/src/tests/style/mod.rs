@@ -400,6 +400,10 @@ fn native_contract_invocation_boundaries_use_invoke_modules() {
             "{name} root NativeContract::invoke should delegate to invoke_native"
         );
         assert!(
+            production.contains("native_contract_resolved_invoke!("),
+            "{name} should use the uniform resolved native invocation hook"
+        );
+        assert!(
             !production.contains("mod dispatch;"),
             "{name} should not use a second dispatch module name"
         );

@@ -224,12 +224,14 @@ impl ApplicationEngine {
         }
 
         let cache_arc = self.native_contract_cache();
-        let method_meta = {
+        let resolved_method = {
             let mut cache = cache_arc.lock();
-            cache
-                .get_or_build(native.as_ref())
-                .get_method(method, args.len(), &self.protocol_settings, block_height)?
-                .cloned()
+            cache.get_or_build(native.as_ref()).get_method(
+                method,
+                args.len(),
+                &self.protocol_settings,
+                block_height,
+            )?
         }
         .ok_or_else(|| {
             CoreError::invalid_operation(format!(
@@ -240,6 +242,7 @@ impl ApplicationEngine {
                 block_height
             ))
         })?;
+        let method_meta = resolved_method.method();
 
         let required_flags =
             CallFlags::from_bits(method_meta.required_call_flags).ok_or_else(|| {
@@ -323,15 +326,22 @@ impl ApplicationEngine {
             }
         }
 
-        let result = native.invoke(self, method, args).map_err(|err| {
-            CoreError::native_contract(format!(
-                "{}({}) method `{}` failed: {}",
-                native.name(),
-                contract_hash,
-                method,
-                err
-            ))
-        })?;
+        let result = native
+            .invoke_resolved(
+                self,
+                resolved_method.method_index(),
+                resolved_method.method(),
+                args,
+            )
+            .map_err(|err| {
+                CoreError::native_contract(format!(
+                    "{}({}) method `{}` failed: {}",
+                    native.name(),
+                    contract_hash,
+                    method,
+                    err
+                ))
+            })?;
 
         Ok(result)
     }
