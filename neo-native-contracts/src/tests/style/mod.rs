@@ -215,6 +215,29 @@ fn native_contract_handles_use_uniform_macros() {
 }
 
 #[test]
+fn native_contract_invocation_boundaries_use_invoke_modules() {
+    for (name, source) in standard_contract_sources() {
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production.contains("mod invoke;"),
+            "{name} should keep native method dispatch in an invoke module"
+        );
+        assert!(
+            production.contains("pub(super) fn invoke_native("),
+            "{name} should expose a uniform invoke_native boundary"
+        );
+        assert!(
+            production.contains("self.invoke_native(engine, method, args)"),
+            "{name} root NativeContract::invoke should delegate to invoke_native"
+        );
+        assert!(
+            !production.contains("mod dispatch;"),
+            "{name} should not use a second dispatch module name"
+        );
+    }
+}
+
+#[test]
 fn native_contract_metadata_tables_use_handle_name_prefixes() {
     let expected = [
         ("ContractManagement", "CONTRACT_MANAGEMENT"),
