@@ -60,6 +60,8 @@ impl PeerSession {
                     CloseReason::ProtocolViolation(format!("invalid ping payload: {err}"))
                 })?;
                 self.peer_last_block_index = payload.last_block_index;
+                self.registry
+                    .record_block_height(self.peer_id, payload.last_block_index);
                 let pong =
                     PingPayload::create_with_nonce(self.identity.block_height(), payload.nonce);
                 let message = Message::create(
@@ -81,6 +83,8 @@ impl PeerSession {
                     CloseReason::ProtocolViolation(format!("invalid pong payload: {err}"))
                 })?;
                 self.peer_last_block_index = payload.last_block_index;
+                self.registry
+                    .record_block_height(self.peer_id, payload.last_block_index);
                 Ok(())
             }
             // C# `OnInventoryReceived` for a relayed `Block`: decode and

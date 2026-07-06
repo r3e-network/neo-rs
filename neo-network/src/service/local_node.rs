@@ -151,6 +151,22 @@ impl LocalNodeService {
         settings: Arc<ProtocolSettings>,
         config: ChannelsConfig,
     ) -> (Self, NetworkHandle) {
+        let registry = Arc::new(PeerRegistry::from_config(&config));
+        Self::with_config_and_registry(settings, config, registry)
+    }
+
+    /// Build a fresh `(service, handle)` pair with an externally supplied peer
+    /// registry.
+    ///
+    /// Composition roots use this when downloader components need the same
+    /// connected-peer map as the live P2P service. The registry limits must
+    /// match `config`; callers should normally create it with
+    /// [`PeerRegistry::from_config`].
+    pub fn with_config_and_registry(
+        settings: Arc<ProtocolSettings>,
+        config: ChannelsConfig,
+        registry: Arc<PeerRegistry>,
+    ) -> (Self, NetworkHandle) {
         let (cmd_tx, cmd_rx) = mpsc::channel(DEFAULT_COMMAND_CAPACITY);
         let (event_tx, _event_rx) = broadcast::channel(DEFAULT_EVENT_CAPACITY);
         let handle = NetworkHandle::from_parts(cmd_tx, event_tx.clone());
@@ -165,7 +181,6 @@ impl LocalNodeService {
             info.user_agent.clone(),
             config.enable_compression,
         ));
-        let registry = Arc::new(PeerRegistry::from_config(&config));
         let service = Self {
             settings,
             config,

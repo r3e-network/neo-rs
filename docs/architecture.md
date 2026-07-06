@@ -273,8 +273,10 @@ The detailed rules for this style live in
   and a transport-provided `BlockRangeFetcher` into a `BlockDownloader` stream.
   `PeerRegistry` implements the live-peer fetcher by resolving the assigned
   `RemoteNodeHandle`, sending `GetBlockByIndex`, and collecting matching block
-  frames into a batch. The remaining production integration layer is wiring
-  that coordinator-backed downloader into node sync startup.
+  frames into a batch. The node composition root shares and registers that
+  registry, and the registry exposes advertised-height snapshots for range
+  scheduling. The remaining production integration layer is starting the
+  coordinator-backed downloader/import task from node sync startup.
 
 - **Native dispatch is explicit at composition.** `neo-execution` still owns the
   low-level `NativeContractProvider` seam so the engine does not depend on

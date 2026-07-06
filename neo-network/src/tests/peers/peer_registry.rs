@@ -191,3 +191,43 @@ fn handles_snapshot_and_lookup() {
     assert_eq!(registry.handles().len(), 1);
     assert!(!registry.is_empty());
 }
+
+#[test]
+fn download_peers_are_height_snapshots_for_advertising_full_nodes() {
+    let registry = PeerRegistry::with_limits(100, 10);
+    let (first, _) = admit(&registry, "10.0.0.1:1001");
+    let (second, _) = admit(&registry, "10.0.0.2:1002");
+
+    assert!(
+        registry.download_peers().is_empty(),
+        "peers do not become download candidates until they advertise a height"
+    );
+
+    registry.record_block_height(second, 42);
+    registry.record_block_height(first, 7);
+    let peers = registry.download_peers();
+
+    assert_eq!(peers.len(), 2);
+    assert!(
+        peers
+            .iter()
+            .any(|peer| peer.peer_id == first && peer.height == 7)
+    );
+    assert!(
+        peers
+            .iter()
+            .any(|peer| peer.peer_id == second && peer.height == 42)
+    );
+    assert!(
+        peers
+            .windows(2)
+            .all(|window| window[0].peer_id < window[1].peer_id),
+        "snapshot order is deterministic by peer id"
+    );
+
+    assert!(registry.remove(first));
+    let peers = registry.download_peers();
+    assert_eq!(peers.len(), 1);
+    assert_eq!(peers[0].peer_id, second);
+    assert_eq!(peers[0].height, 42);
+}

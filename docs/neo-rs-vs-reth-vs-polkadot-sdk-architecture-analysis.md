@@ -230,8 +230,10 @@ preserving the single ordered import path. `PeerSession` uses the per-peer
 ordered response buffer behind the `BlockDownloader` stream boundary.
 `Arc<PeerRegistry>` implements `BlockRangeFetcher` by resolving the assigned
 peer handle, issuing `GetBlockByIndex`, and collecting matching block frames
-into a `BlockDownloadBatch`. The remaining work is wiring that coordinator into
-production node sync startup and the broader staged pipeline.
+into a `BlockDownloadBatch`; node composition shares/registers that registry
+and the registry exposes advertised-height download snapshots. The remaining
+work is starting the coordinator-backed downloader/import task from production
+node sync startup and the broader staged pipeline.
 
 ---
 
@@ -329,9 +331,10 @@ in-flight range assignment, retry accounting) and `OrderedBlockBatchBuffer`
 available) are composed by `BlockDownloadCoordinator`, a transport-agnostic
 `BlockDownloader` stream over any `BlockRangeFetcher`. Live peer transport now
 has a registry-backed fetcher that uses `RemoteNodeHandle::fetch_blocks_by_index`;
-`ChannelBlockDownloader` remains available for tests and composition roots. The
-remaining work is selecting peer snapshots and wiring the coordinator-backed
-downloader into node sync startup.
+`PeerRegistry::download_peers` provides advertised-height peer snapshots, and
+the node composition root registers the shared registry. `ChannelBlockDownloader`
+remains available for tests and composition roots. The remaining work is wiring
+the coordinator-backed downloader/import driver into node sync startup.
 
 ### Reth innovations
 
@@ -484,7 +487,7 @@ pub struct TransactionState {
 | Stage commit policy + checkpoints | ★★★ | - | ★★★★ | ★★ | Import-stage driver done |
 | Compact derive macro | ★★ | ★★★★ | - | ★★ | Small |
 | Task supervision | - | - | ★★★★★ | ★★ | Done |
-| BlockDownloader as Stream | ★★★ | - | ★★ | ★★★ | Boundary + download-to-import bridge + per-peer scheduler wired; coordinator composes cross-peer range scheduler + ordered buffer; registry-backed peer fetcher done; startup wiring medium |
+| BlockDownloader as Stream | ★★★ | - | ★★ | ★★★ | Boundary + download-to-import bridge + per-peer scheduler wired; coordinator composes cross-peer range scheduler + ordered buffer; registry-backed peer fetcher and peer snapshots done; startup driver medium |
 | Essential task monitoring | - | - | ★★★★★ | ★ | Small |
 | Metrics infrastructure | - | - | ★★★★ | ★★ | Medium |
 
@@ -496,7 +499,7 @@ pub struct TransactionState {
 2. **Typed table boundary** — implemented in `neo-storage` but on no live storage access path (the live encoding remains `StorageKey` / `KeyBuilder` over raw C#-compatible bytes); compact derive is still future work.
 3. **Block import queue with concurrent verification** — reusable runtime boundary implemented and composed by `neo_system::SyncImportPipeline`.
 4. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`; durable store-backed checkpoints are available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, node composition creates the import-stage queue/checkpoint handle, and `SyncDownloadImportDriver` can drive it from a downloader stream; production P2P transport still does not feed real batches.
-5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; `neo-system` has the download-to-import bridge; per-peer `BlockRequestScheduler` is wired into `PeerSession`; `BlockDownloadCoordinator` composes `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) and `OrderedBlockBatchBuffer` (contiguous response release) behind a transport-agnostic `BlockRangeFetcher`; `Arc<PeerRegistry>` implements live peer fetching through `RemoteNodeHandle::fetch_blocks_by_index`; production startup wiring remains next.
+5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; `neo-system` has the download-to-import bridge; per-peer `BlockRequestScheduler` is wired into `PeerSession`; `BlockDownloadCoordinator` composes `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) and `OrderedBlockBatchBuffer` (contiguous response release) behind a transport-agnostic `BlockRangeFetcher`; `Arc<PeerRegistry>` implements live peer fetching through `RemoteNodeHandle::fetch_blocks_by_index`; `PeerRegistry::download_peers` exposes advertised-height peer snapshots and node composition registers the shared registry; production startup driver remains next.
 6. **Hot/Cold/Static tiering integration** (medium, big storage win)
 7. **Staged sync pipeline integration** (large, biggest overall impact)
 

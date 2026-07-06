@@ -458,6 +458,8 @@ impl PeerSession {
                     // C# `RemoteNode.LastBlockIndex = StartHeight` on the
                     // FullNode capability (RemoteNode.ProtocolHandler.cs:403).
                     self.peer_last_block_index = *start_height;
+                    self.registry
+                        .record_block_height(self.peer_id, *start_height);
                     // Update the global peer-reported live tip so the daemon's
                     // indexer-gate can detect catch-up vs near-tip operation.
                     neo_runtime::sync_metrics::set_peer_live_tip(*start_height as u64);

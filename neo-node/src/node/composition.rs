@@ -295,8 +295,12 @@ pub(in crate::node) async fn build_node(
 
     // ----- P2P service -----
     let channels_config = config.p2p.channels_config()?;
-    let (net_service, network) =
-        neo_network::LocalNodeService::with_config(Arc::clone(&settings), channels_config);
+    let peer_registry = Arc::new(neo_network::PeerRegistry::from_config(&channels_config));
+    let (net_service, network) = neo_network::LocalNodeService::with_config_and_registry(
+        Arc::clone(&settings),
+        channels_config,
+        Arc::clone(&peer_registry),
+    );
     let net_service = if ledger_mode.uses_local_replay_services() {
         net_service.with_inventory_sink(inv_tx)
     } else {
@@ -499,6 +503,7 @@ pub(in crate::node) async fn build_node(
     if let Some(tokens_tracker) = &tokens_tracker_service {
         service_registry.register(Arc::clone(tokens_tracker));
     }
+    service_registry.register(Arc::clone(&peer_registry));
 
     let node = Arc::new(
         neo_system::Node::builder()

@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
 use neo_network::{
-    LocalNodeService, NetworkCommand, SyncTask, SyncTaskKind, TaskId, TaskManagerService,
+    LocalNodeService, NetworkCommand, PeerRegistry, SyncTask, SyncTaskKind, TaskId,
+    TaskManagerService,
 };
 use neo_runtime::NetworkService;
 
@@ -76,6 +77,38 @@ async fn local_node_command_loop_dispatches_start() {
     assert_ne!(bound.port(), 0);
     assert_eq!(bound.ip(), start_addr.ip());
     assert_eq!(service.peer_count().await, 0);
+}
+
+#[tokio::test]
+async fn local_node_service_uses_supplied_peer_registry() {
+    let settings = Arc::new(ProtocolSettings::default());
+    let config = neo_network::ChannelsConfig::default();
+    let registry = Arc::new(PeerRegistry::from_config(&config));
+    let (service, handle) =
+        LocalNodeService::with_config_and_registry(settings, config, Arc::clone(&registry));
+    let task = tokio::spawn(service.run());
+
+    handle
+        .start("127.0.0.1:0".parse().unwrap())
+        .await
+        .expect("start");
+    let listen_port = handle.local_node_info().port();
+    let stream = tokio::net::TcpStream::connect(("127.0.0.1", listen_port))
+        .await
+        .expect("dial local listener");
+    let mut events = handle.subscribe();
+    let _ = next_peer_connected(&mut events).await;
+
+    assert_eq!(
+        registry.len(),
+        1,
+        "external registry observes accepted peer"
+    );
+
+    drop(stream);
+    handle.shutdown().await.expect("shutdown");
+    drop(handle);
+    task.await.expect("service task");
 }
 
 /// Await the `PeerConnected` event for any peer on `events`, with a

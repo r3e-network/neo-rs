@@ -937,6 +937,13 @@ db_path = "{}"
     assert!(
         running
             .node
+            .get_service::<neo_network::PeerRegistry>()
+            .is_some(),
+        "remote-ledger mode still shares the live peer registry for P2P downloader composition"
+    );
+    assert!(
+        running
+            .node
             .storage()
             .as_any()
             .downcast_ref::<neo_storage::persistence::providers::memory_store::MemoryStore>()

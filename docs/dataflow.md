@@ -89,8 +89,9 @@ assignment, peer bias, and retry accounting are now owned by
 values from any `BlockRangeFetcher`. `Arc<neo_network::PeerRegistry>` now
 implements that fetcher by resolving the assigned peer handle, sending
 `GetBlockByIndex`, and collecting the matching block frames into a batch; the
-remaining production integration is wiring the coordinator-driven downloader
-into node sync startup.
+same registry records advertised peer heights for downloader snapshots and is
+registered by the node composition root. The remaining production integration is
+starting the coordinator-driven downloader/import task from node sync startup.
 The canonical execution/persist path remains the `neo-blockchain` service loop.
 
 ```mermaid

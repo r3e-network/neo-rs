@@ -24,7 +24,9 @@ use std::sync::Arc;
 
 use crate::ChannelsConfig;
 
-use crate::download::{BlockDownloadBatch, BlockRangeAssignment, BlockRangeFetcher};
+use crate::download::{
+    BlockDownloadBatch, BlockDownloadPeer, BlockRangeAssignment, BlockRangeFetcher,
+};
 use crate::error::{NetworkError, NetworkResult};
 use crate::peer_id::PeerId;
 use crate::remote_node::RemoteNodeHandle;
@@ -46,6 +48,9 @@ struct PeerEntry {
     /// Used to answer `GetAddr` (C# `OnGetAddrMessageReceived` gossips
     /// `p.Listener`, not the ephemeral source endpoint).
     listener_addr: Option<SocketAddr>,
+    /// Last block height advertised by this peer's FullNode capability or
+    /// ping/pong payload.
+    last_block_index: Option<u32>,
 }
 
 /// Interior, lock-guarded state.
@@ -169,6 +174,7 @@ impl PeerRegistry {
                 remote_addr,
                 version_nonce: None,
                 listener_addr: None,
+                last_block_index: None,
             },
         );
         true
@@ -207,6 +213,36 @@ impl PeerRegistry {
         if let Some(entry) = inner.peers.get_mut(&peer_id) {
             entry.listener_addr = Some(listener_addr);
         }
+    }
+
+    /// Record the latest block height advertised by a peer.
+    ///
+    /// Called from the per-peer session when the `FullNode` capability is
+    /// received and on every post-handshake ping/pong height refresh.
+    pub fn record_block_height(&self, peer_id: PeerId, height: u32) {
+        let mut inner = self.inner.lock();
+        if let Some(entry) = inner.peers.get_mut(&peer_id) {
+            entry.last_block_index = Some(height);
+        }
+    }
+
+    /// Snapshot of connected peers that can serve block downloads.
+    ///
+    /// Peers only appear after they have advertised a block height. The list is
+    /// deterministic by peer id so downloader tests and logs are stable.
+    pub fn download_peers(&self) -> Vec<BlockDownloadPeer> {
+        let inner = self.inner.lock();
+        let mut peers = inner
+            .peers
+            .iter()
+            .filter_map(|(peer_id, entry)| {
+                entry
+                    .last_block_index
+                    .map(|height| BlockDownloadPeer::new(*peer_id, height))
+            })
+            .collect::<Vec<_>>();
+        peers.sort_by_key(|peer| peer.peer_id);
+        peers
     }
 
     /// Distinct advertised listener endpoints of currently connected peers,

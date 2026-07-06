@@ -233,6 +233,11 @@ async fn remote_node_handle_can_request_explicit_block_range() {
         20333,
     )
     .await;
+    assert_eq!(
+        registry.download_peers(),
+        vec![BlockDownloadPeer::new(peer_id, 0)],
+        "FullNode start height is captured for downloader peer snapshots"
+    );
 
     handle
         .request_blocks_by_index(BlockRequest::new(7, 3))
