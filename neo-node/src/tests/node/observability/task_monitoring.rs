@@ -24,8 +24,10 @@ static TELEMETRY_METRICS_SERIAL: LazyLock<tokio::sync::Mutex<()>> =
 #[test]
 fn node_long_running_background_tasks_are_spawned_under_observability_monitoring() {
     let node_source = include_str!("../../../node/mod.rs");
+    let composition_source = include_str!("../../../node/composition.rs");
+    let supervised_sources = format!("{node_source}\n{composition_source}");
     assert!(
-        node_source.contains("spawn_daemon_task"),
+        supervised_sources.contains("spawn_daemon_task"),
         "node composition should centralize long-running task spawning so observability can monitor exits and panics"
     );
 
@@ -39,7 +41,7 @@ fn node_long_running_background_tasks_are_spawned_under_observability_monitoring
         "indexer_runtime",
     ] {
         assert!(
-            node_source.contains(&format!("\"{task_name}\"")),
+            supervised_sources.contains(&format!("\"{task_name}\"")),
             "node task {task_name} should be spawned with an observability task name"
         );
     }

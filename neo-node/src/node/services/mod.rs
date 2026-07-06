@@ -19,6 +19,7 @@ use anyhow::Context;
 use tracing::{debug, info};
 
 use super::config::{NodeConfig, StorageSection, network_scoped_path, service_store_provider};
+use super::inventory_relay::FAST_SYNC_BURST_CAPACITY;
 
 type ServiceStore = Arc<dyn neo_storage::persistence::store::Store>;
 type TokensTrackerRuntime = (
@@ -69,7 +70,7 @@ pub(super) fn build_operational_services(
         let handlers = if state_service_fast_sync {
             neo_state_service::commit_handlers::StateServiceCommitHandlers::new_async_with_capacity(
                 Arc::clone(state_store),
-                super::FAST_SYNC_BURST_CAPACITY,
+                FAST_SYNC_BURST_CAPACITY,
             )
         } else {
             neo_state_service::commit_handlers::StateServiceCommitHandlers::new(Arc::clone(
