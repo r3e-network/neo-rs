@@ -95,6 +95,8 @@ pub(super) fn standard_contract_sources()
         (
             "NeoToken",
             concat!(
+                include_str!("../../neo_token/constants.rs"),
+                "\n",
                 include_str!("../../neo_token/storage/mod.rs"),
                 "\n",
                 include_str!("../../neo_token/storage/views.rs"),

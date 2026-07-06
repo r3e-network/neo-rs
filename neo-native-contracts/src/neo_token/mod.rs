@@ -10,6 +10,8 @@
 //!
 //! ## Contents
 //!
+//! - `constants`: protocol storage prefixes, defaults, reward ratios, and
+//!   event names.
 //! - `fast_forward`: state-equivalent empty-block reward batching.
 //! - `invoke`: native NEO invocation helpers.
 //! - `metadata`: Native contract metadata and descriptor helpers.
@@ -33,6 +35,7 @@ use num_bigint::BigInt;
 
 use crate::hashes::NEO_TOKEN_HASH;
 
+mod constants;
 mod fast_forward;
 mod invoke;
 mod metadata;
@@ -41,43 +44,15 @@ mod providers;
 mod storage;
 mod transfers;
 
+pub(in crate::neo_token) use constants::*;
+pub(crate) use constants::{
+    NEO_CANDIDATE_STATE_CHANGED_EVENT, NEO_COMMITTEE_CHANGED_EVENT, NEO_VOTE_EVENT,
+};
 pub(crate) use storage::CachedCommittee;
 #[allow(unused_imports)]
 use storage::CandidateState;
 use storage::NeoAccountStateView;
 pub(crate) use storage::candidate_signature_account;
-
-/// C# `NeoToken.Prefix_RegisterPrice`.
-const PREFIX_REGISTER_PRICE: u8 = 13;
-/// C# default candidate register price: 1000 GAS, in datoshi (1000 * 1e8).
-const DEFAULT_REGISTER_PRICE: i64 = 1000 * 100_000_000;
-/// C# `NeoToken.Prefix_GasPerBlock`.
-const PREFIX_GAS_PER_BLOCK: u8 = 29;
-/// C# default GAS-per-block at index 0: 5 GAS, in datoshi (5 * 1e8).
-const DEFAULT_GAS_PER_BLOCK: i64 = 5 * 100_000_000;
-/// C# `NeoToken.Prefix_Committee` — the cached `(pubkey, votes)` committee list.
-const PREFIX_COMMITTEE: u8 = 14;
-/// C# `NeoToken.Prefix_Candidate` — per-candidate `(Registered, Votes)` state.
-const PREFIX_CANDIDATE: u8 = 33;
-/// C# `NeoToken.Prefix_VoterRewardPerCommittee` — accumulated GAS-per-vote.
-const PREFIX_VOTER_REWARD_PER_COMMITTEE: u8 = 23;
-/// C# `NeoToken.Prefix_VotersCount` — total NEO that has voted (a BigInteger).
-const PREFIX_VOTERS_COUNT: u8 = 1;
-/// C# `NeoToken.NeoHolderRewardRatio` (10%).
-const NEO_HOLDER_REWARD_RATIO: i64 = 10;
-/// C# `NeoToken.CommitteeRewardRatio` (10%): the per-block GAS share minted to
-/// the committee member selected by `index % committeeCount`.
-const COMMITTEE_REWARD_RATIO: i64 = 10;
-/// C# `NeoToken.VoterRewardRatio` (80%): the GAS share accrued (on committee
-/// refresh blocks) to the voters of the committee.
-const VOTER_REWARD_RATIO: i64 = 80;
-/// C# `NeoToken.VoteFactor` (1e8): the zoom factor for per-vote GAS rewards.
-const VOTE_FACTOR: i64 = 100_000_000;
-/// C# `NeoToken.TotalAmount` = 100,000,000 NEO (decimals 0, so Factor = 1).
-const NEO_TOTAL_AMOUNT: i64 = 100_000_000;
-pub(crate) const NEO_CANDIDATE_STATE_CHANGED_EVENT: &str = "CandidateStateChanged";
-pub(crate) const NEO_VOTE_EVENT: &str = "Vote";
-pub(crate) const NEO_COMMITTEE_CHANGED_EVENT: &str = "CommitteeChanged";
 
 native_contract_handle!(
     /// The NeoToken native contract.
