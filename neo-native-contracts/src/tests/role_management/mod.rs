@@ -118,18 +118,21 @@ fn parse_role_arg_uses_shared_role_mapping() {
 #[test]
 fn invoke_role_integer_args_use_shared_raw_parser() {
     let source = include_str!("../../role_management/invoke.rs");
-    let start = source
-        .find("fn invoke_native(")
-        .expect("RoleManagement invoke_native exists");
-    let end = source[start..]
-        .find("other => Err")
-        .map(|offset| start + offset)
-        .expect("invoke default arm exists");
-    let invoke = &source[start..end];
+    let get_start = source
+        .find("fn invoke_get_designated_by_role(")
+        .expect("RoleManagement getter handler exists");
+    let designate_start = source
+        .find("fn invoke_designate_as_role(")
+        .expect("RoleManagement writer handler exists");
+    let getter = &source[get_start..designate_start];
+    let writer = &source[designate_start..];
 
-    assert!(invoke.contains("crate::args::raw_u32_arg"));
-    assert!(!invoke.contains("BigInt::from_signed_bytes_le(args"));
-    assert!(!invoke.contains("BigInt::from_signed_bytes_le(b)"));
+    assert!(getter.contains("crate::args::raw_u32_arg"));
+    assert!(writer.contains("crate::args::raw_u32_arg"));
+    assert!(!getter.contains("BigInt::from_signed_bytes_le(args"));
+    assert!(!getter.contains("BigInt::from_signed_bytes_le(b)"));
+    assert!(!writer.contains("BigInt::from_signed_bytes_le(args"));
+    assert!(!writer.contains("BigInt::from_signed_bytes_le(b)"));
 }
 
 #[test]

@@ -270,7 +270,11 @@ fn standard_contract_dispatch_sources()
         ),
         (
             "RoleManagement",
-            include_str!("../../role_management/invoke.rs"),
+            concat!(
+                include_str!("../../role_management/metadata.rs"),
+                "\n",
+                include_str!("../../role_management/invoke.rs"),
+            ),
         ),
         (
             "OracleContract",
