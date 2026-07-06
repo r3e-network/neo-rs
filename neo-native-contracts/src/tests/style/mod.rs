@@ -33,6 +33,8 @@ pub(super) fn standard_contract_sources()
                 "\n",
                 include_str!("../../contract_management/operations.rs"),
                 "\n",
+                include_str!("../../contract_management/initialize.rs"),
+                "\n",
                 include_str!("../../contract_management/invoke.rs"),
                 "\n",
                 include_str!("../../contract_management/metadata.rs"),

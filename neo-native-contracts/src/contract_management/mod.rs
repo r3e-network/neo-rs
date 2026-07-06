@@ -11,6 +11,7 @@
 //! ## Contents
 //!
 //! - `constants`: native event names, storage prefixes, and genesis defaults.
+//! - `initialize`: genesis deployment-setting seeding.
 //! - `invoke`: native method dispatch for query and lifecycle calls.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `operations`: native-contract operation handlers.
@@ -21,11 +22,10 @@ use crate::hashes::CONTRACT_MANAGEMENT_HASH;
 use neo_error::CoreResult;
 use neo_execution::{ApplicationEngine, ContractState, NativeContract, NativeEvent, NativeMethod};
 use neo_primitives::UInt160;
-use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
-use num_bigint::BigInt;
 
 mod constants;
+mod initialize;
 mod invoke;
 mod metadata;
 mod operations;
@@ -58,25 +58,8 @@ impl NativeContract for ContractManagement {
         &metadata::CONTRACT_MANAGEMENT_EVENTS
     }
 
-    /// C# `ContractManagement.InitializeAsync(engine, hardfork)` for `hardfork
-    /// == ActiveIn` (ContractManagement.cs:53-61; the contract is
-    /// genesis-active, so this runs while persisting block 0): seed
-    /// `Prefix_MinimumDeploymentFee` (10 GAS) and `Prefix_NextAvailableId` (1).
     fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
-        let snapshot = engine.snapshot_cache();
-        snapshot.add(
-            Self::minimum_deployment_fee_key(),
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
-                DEFAULT_MINIMUM_DEPLOYMENT_FEE,
-            ))),
-        );
-        snapshot.add(
-            Self::next_available_id_key(),
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
-                DEFAULT_NEXT_AVAILABLE_ID,
-            ))),
-        );
-        Ok(())
+        self.initialize_native(engine)
     }
 
     fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
