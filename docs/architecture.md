@@ -275,8 +275,9 @@ The detailed rules for this style live in
   `RemoteNodeHandle`, sending `GetBlockByIndex`, and collecting matching block
   frames into a batch. The node composition root shares and registers that
   registry, and the registry exposes advertised-height snapshots for range
-  scheduling. The remaining production integration layer is starting the
-  coordinator-backed downloader/import task from node sync startup.
+  scheduling. Local-ledger node startup disables legacy automatic per-peer
+  block requests and runs a supervised coordinator-backed downloader/import
+  task as the production P2P range-sync owner.
 
 - **Native dispatch is explicit at composition.** `neo-execution` still owns the
   low-level `NativeContractProvider` seam so the engine does not depend on

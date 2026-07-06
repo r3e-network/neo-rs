@@ -62,6 +62,7 @@ use crate::event::NetworkEvent;
 use crate::local_identity::LocalIdentity;
 use crate::peer_id::PeerId;
 use crate::peer_registry::PeerRegistry;
+use crate::service::block_sync_mode::BlockSyncMode;
 
 #[path = "../remote_node/session.rs"]
 mod session;
@@ -450,6 +451,8 @@ pub struct RemoteNodeService {
     inbound_tx: Option<mpsc::Sender<InboundInventory>>,
     /// Optional read-only ledger view for serving block requests.
     block_source: Option<Arc<dyn BlockSource>>,
+    /// Owner of outbound block range requests.
+    block_sync_mode: BlockSyncMode,
 }
 
 impl fmt::Debug for RemoteNodeService {
@@ -490,6 +493,7 @@ impl RemoteNodeService {
             timeouts: ConnectionTimeouts::default(),
             inbound_tx: None,
             block_source: None,
+            block_sync_mode: BlockSyncMode::default(),
         };
         (service, handle)
     }
@@ -512,6 +516,12 @@ impl RemoteNodeService {
     /// requests from this peer.
     pub fn with_block_source(mut self, block_source: Arc<dyn BlockSource>) -> Self {
         self.block_source = Some(block_source);
+        self
+    }
+
+    /// Select which component owns outbound block-sync range requests.
+    pub fn with_block_sync_mode(mut self, mode: BlockSyncMode) -> Self {
+        self.block_sync_mode = mode;
         self
     }
 
@@ -544,6 +554,7 @@ impl RemoteNodeService {
             timeouts,
             inbound_tx,
             block_source,
+            block_sync_mode,
         } = self;
 
         info!(
@@ -568,6 +579,7 @@ impl RemoteNodeService {
             peer_is_full_node: false,
             peer_last_block_index: 0,
             sync_scheduler: BlockRequestScheduler::default(),
+            block_sync_mode,
             peer_allows_compression: false,
             pending_outbound: Vec::new(),
             get_addr_sent: false,

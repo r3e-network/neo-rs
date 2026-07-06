@@ -27,7 +27,8 @@ use super::ledger_source::{LedgerBlockSource, RpcLedgerBlockSource};
 use super::observability;
 use super::remote_ledger::RemoteLedgerStatus;
 use super::services::{self, OperationalServices};
-use super::tasks::{TaskKind, spawn_daemon_task};
+use super::sync_downloader;
+use super::tasks::{TaskKind, spawn_daemon_task, spawn_daemon_task_result};
 
 /// The composed, running node and the handles that keep it alive.
 pub(in crate::node) struct RunningNode {
@@ -301,6 +302,8 @@ pub(in crate::node) async fn build_node(
         channels_config,
         Arc::clone(&peer_registry),
     );
+    let net_service =
+        net_service.with_block_sync_mode(neo_network::BlockSyncMode::ExternalCoordinator);
     let net_service = if ledger_mode.uses_local_replay_services() {
         net_service.with_inventory_sink(inv_tx)
     } else {
@@ -519,6 +522,22 @@ pub(in crate::node) async fn build_node(
             .map_err(|e| anyhow::anyhow!("node build failed: {e}"))?,
     );
     daemon_ctx.set_node(Arc::clone(&node));
+    if ledger_mode.uses_local_replay_services() {
+        spawn_daemon_task_result(
+            &mut handles,
+            observability.as_ref(),
+            &shutdown,
+            TaskKind::Normal,
+            "p2p_sync_downloader",
+            sync_downloader::run_coordinator_download_import(
+                blockchain.clone(),
+                node.sync_import_pipeline(),
+                Arc::clone(&peer_registry),
+                shutdown.clone(),
+                sync_downloader::default_p2p_block_download_config(),
+            ),
+        );
+    }
     if let Some((tracker_settings, tracker_store)) = tokens_tracker_runtime {
         daemon_ctx.set_tokens_tracker(Some(Arc::new(
             neo_rpc::plugins::tokens_tracker::TokensTracker::new(

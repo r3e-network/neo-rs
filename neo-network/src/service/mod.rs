@@ -11,12 +11,14 @@
 //! ## Contents
 //!
 //! - `command`: Command records sent into the service loop.
+//! - `block_sync_mode`: Ownership mode for outbound block range requests.
 //! - `event`: Event records emitted by the service loop.
 //! - `handle`: Typed handle used to interact with the service task.
 //! - `local_node`: Local peer state and connection behavior.
 //! - `remote_node`: Remote peer state and connection behavior.
 //! - `task_manager`: Network task coordination and lifecycle helpers.
 
+pub mod block_sync_mode;
 pub mod command;
 pub mod event;
 pub mod handle;
@@ -24,6 +26,7 @@ pub mod local_node;
 pub mod remote_node;
 pub mod task_manager;
 
+pub use block_sync_mode::BlockSyncMode;
 pub use command::NetworkCommand;
 pub use event::NetworkEvent;
 pub use handle::{

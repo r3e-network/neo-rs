@@ -32,6 +32,7 @@
 //! - `shutdown`: OS, stop-height, and essential-task shutdown waiting.
 //! - `startup_cleanup`: Startup import rollback, durable-mode restore, and
 //!   shutdown flush helpers.
+//! - `sync_downloader`: Coordinator-backed P2P block download startup.
 //! - `sync_metrics`: Sync-speed counters, summaries, and operator-facing
 //!   throughput status.
 //! - `tasks`: Task supervision, shutdown wiring, and background-service
@@ -65,6 +66,7 @@ mod seeds;
 mod services;
 mod shutdown;
 mod startup_cleanup;
+mod sync_downloader;
 mod sync_metrics;
 mod tasks;
 mod telemetry;

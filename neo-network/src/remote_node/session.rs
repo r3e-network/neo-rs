@@ -20,6 +20,7 @@ use crate::event::NetworkEvent;
 use crate::local_identity::LocalIdentity;
 use crate::peer_id::PeerId;
 use crate::peer_registry::PeerRegistry;
+use crate::service::block_sync_mode::BlockSyncMode;
 use crate::wire::Message;
 use neo_io::{MemoryReader, Serializable};
 use neo_payloads::p2p_payloads::{
@@ -92,6 +93,8 @@ pub(super) struct PeerSession {
     pub(super) peer_last_block_index: u32,
     /// Per-peer block-sync request planner.
     pub(super) sync_scheduler: BlockRequestScheduler,
+    /// Owner of outbound block range requests.
+    pub(super) block_sync_mode: BlockSyncMode,
     /// Whether outbound frames to this peer may be compressed
     /// (C# `VersionPayload.AllowCompression`: no `DisableCompression`
     /// capability present).
@@ -190,7 +193,9 @@ impl PeerSession {
                 _ = sync_timer.tick() => {
                     // C# `TaskManager` timer: keep the block-sync pipeline full
                     // while the ledger trails the peer.
-                    if let Err(reason) = self.request_blocks_if_behind(framed).await {
+                    if self.block_sync_mode.uses_legacy_per_peer_requests()
+                        && let Err(reason) = self.request_blocks_if_behind(framed).await
+                    {
                         return reason;
                     }
                 }
@@ -566,7 +571,9 @@ impl PeerSession {
         // C# `TaskManager` kicks off block sync as soon as a peer is ready:
         // if this peer is ahead of our ledger, request the first batch now
         // rather than waiting for the periodic timer.
-        self.request_blocks_if_behind(framed).await?;
+        if self.block_sync_mode.uses_legacy_per_peer_requests() {
+            self.request_blocks_if_behind(framed).await?;
+        }
         Ok(())
     }
 

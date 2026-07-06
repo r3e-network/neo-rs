@@ -90,8 +90,9 @@ values from any `BlockRangeFetcher`. `Arc<neo_network::PeerRegistry>` now
 implements that fetcher by resolving the assigned peer handle, sending
 `GetBlockByIndex`, and collecting the matching block frames into a batch; the
 same registry records advertised peer heights for downloader snapshots and is
-registered by the node composition root. The remaining production integration is
-starting the coordinator-driven downloader/import task from node sync startup.
+registered by the node composition root. Local-ledger node startup disables
+legacy automatic per-peer block requests and runs the coordinator-driven
+downloader/import task as the production P2P range-sync owner.
 The canonical execution/persist path remains the `neo-blockchain` service loop.
 
 ```mermaid

@@ -191,6 +191,54 @@ async fn node_requests_blocks_when_peer_is_ahead() {
     handle.shutdown().await.expect("shutdown");
 }
 
+/// Coordinator-owned sync mode: the per-peer session must not issue automatic
+/// `GetBlockByIndex` requests, because the shared downloader coordinator owns
+/// range assignment and uses explicit fetch commands instead.
+#[tokio::test]
+async fn external_coordinator_mode_suppresses_legacy_block_requests() {
+    let settings = Arc::new(ProtocolSettings::default());
+    let (service, handle) = LocalNodeService::with_config(settings, ChannelsConfig::default());
+    let service = service.with_block_sync_mode(BlockSyncMode::ExternalCoordinator);
+    tokio::spawn(service.run());
+    handle
+        .start("127.0.0.1:0".parse().unwrap())
+        .await
+        .expect("start");
+    let port = handle.local_node_info().port();
+
+    let network = ProtocolSettings::default().network;
+    let mut fake = fake_dial(port).await;
+    let _node_version = recv_frame(&mut fake).await.expect("node version");
+    let payload = VersionPayload::create(
+        network,
+        0xfa4e_0010,
+        "/fake-peer:0.0.1/".to_string(),
+        0,
+        vec![
+            NodeCapability::full_node(100),
+            NodeCapability::tcp_server(20333),
+        ],
+    );
+    fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
+        .await
+        .expect("send version");
+    let verack = recv_frame(&mut fake).await.expect("verack");
+    assert_eq!(verack.command, MessageCommand::Verack);
+    fake.send(verack_message()).await.expect("send verack");
+
+    match tokio::time::timeout(Duration::from_millis(350), fake.next()).await {
+        Err(_) => {}
+        Ok(Some(Ok(message))) => panic!(
+            "external coordinator mode should not emit legacy {:?} frame",
+            message.command
+        ),
+        Ok(Some(Err(err))) => panic!("frame decode failed while checking legacy sync: {err}"),
+        Ok(None) => panic!("peer connection closed while checking legacy sync suppression"),
+    }
+
+    handle.shutdown().await.expect("shutdown");
+}
+
 /// Transport fetcher seam: callers can explicitly ask one peer for an assigned
 /// block range without reimplementing `GetBlockByIndex` frame encoding.
 #[tokio::test]

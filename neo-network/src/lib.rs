@@ -45,11 +45,11 @@ pub use peers::{
     ConnectionTimeouts, PeerId, PeerRegistry, connection_timeouts, peer_id, peer_registry,
 };
 pub use service::{
-    BlockSource, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, InboundInventory, InventoryItem,
-    LocalNodeService, NetworkCommand, NetworkEvent, NetworkHandle, RemoteNodeCommand,
-    RemoteNodeHandle, RemoteNodeService, RemoteNodeState, SharedNetworkHandle, SyncTask,
-    SyncTaskKind, TaskId, TaskManagerCommand, TaskManagerHandle, TaskManagerService, command,
-    event, handle, local_node, remote_node, task_manager,
+    BlockSource, BlockSyncMode, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, InboundInventory,
+    InventoryItem, LocalNodeService, NetworkCommand, NetworkEvent, NetworkHandle,
+    RemoteNodeCommand, RemoteNodeHandle, RemoteNodeService, RemoteNodeState, SharedNetworkHandle,
+    SyncTask, SyncTaskKind, TaskId, TaskManagerCommand, TaskManagerHandle, TaskManagerService,
+    block_sync_mode, command, event, handle, local_node, remote_node, task_manager,
 };
 pub use wire::{
     Message, MessageCodec, MessageHeader, NetworkMessage, PAYLOAD_MAX_SIZE, ProtocolMessage,
