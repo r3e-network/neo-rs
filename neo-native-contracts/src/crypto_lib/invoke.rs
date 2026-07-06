@@ -37,27 +37,14 @@ impl CryptoLib {
         })
     }
 
-    fn invoke_hash_named(method: &str, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-        let data = Self::single_byte_array_arg(method, args)?;
-        Self::hash_method(method, data).ok_or_else(|| {
-            CoreError::invalid_operation(format!("CryptoLib method '{method}' is not implemented"))
-        })
-    }
-
-    fn invoke_bls12381_named(method: &str, args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
-        Self::bls12381_method(method, args).unwrap_or_else(|| {
-            Err(CoreError::invalid_operation(format!(
-                "CryptoLib method '{method}' is not implemented"
-            )))
-        })
-    }
-
     pub(super) fn invoke_sha256(
         &self,
         _engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        Self::invoke_hash_named("sha256", args)
+        Ok(Self::sha256_method(Self::single_byte_array_arg(
+            "sha256", args,
+        )?))
     }
 
     pub(super) fn invoke_ripemd160(
@@ -65,7 +52,10 @@ impl CryptoLib {
         _engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        Self::invoke_hash_named("ripemd160", args)
+        Ok(Self::ripemd160_method(Self::single_byte_array_arg(
+            "ripemd160",
+            args,
+        )?))
     }
 
     pub(super) fn invoke_keccak256(
@@ -73,7 +63,10 @@ impl CryptoLib {
         _engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        Self::invoke_hash_named("keccak256", args)
+        Ok(Self::keccak256_method(Self::single_byte_array_arg(
+            "keccak256",
+            args,
+        )?))
     }
 
     pub(super) fn invoke_murmur32(
@@ -182,7 +175,7 @@ impl CryptoLib {
         _engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        Self::invoke_bls12381_named("bls12381Serialize", args)
+        Self::bls12381_serialize_method(args)
     }
 
     pub(super) fn invoke_bls12381_deserialize(
@@ -190,7 +183,7 @@ impl CryptoLib {
         _engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        Self::invoke_bls12381_named("bls12381Deserialize", args)
+        Self::bls12381_deserialize_method(args)
     }
 
     pub(super) fn invoke_bls12381_equal(
@@ -198,7 +191,7 @@ impl CryptoLib {
         _engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        Self::invoke_bls12381_named("bls12381Equal", args)
+        Self::bls12381_equal_method(args)
     }
 
     pub(super) fn invoke_bls12381_add(
@@ -206,7 +199,7 @@ impl CryptoLib {
         _engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        Self::invoke_bls12381_named("bls12381Add", args)
+        Self::bls12381_add_method(args)
     }
 
     pub(super) fn invoke_bls12381_mul(
@@ -214,7 +207,7 @@ impl CryptoLib {
         _engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        Self::invoke_bls12381_named("bls12381Mul", args)
+        Self::bls12381_mul_method(args)
     }
 
     pub(super) fn invoke_bls12381_pairing(
@@ -222,6 +215,6 @@ impl CryptoLib {
         _engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
-        Self::invoke_bls12381_named("bls12381Pairing", args)
+        Self::bls12381_pairing_method(args)
     }
 }

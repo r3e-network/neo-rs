@@ -26,18 +26,17 @@ fn hex(bytes: &[u8]) -> String {
 fn hash_methods_match_csharp_vectors() {
     // C# CryptoLib.{Sha256,RIPEMD160,Keccak256}(utf8("abc")).
     assert_eq!(
-        hex(&CryptoLib::hash_method("sha256", b"abc").unwrap()),
+        hex(&CryptoLib::sha256_method(b"abc")),
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     );
     assert_eq!(
-        hex(&CryptoLib::hash_method("ripemd160", b"abc").unwrap()),
+        hex(&CryptoLib::ripemd160_method(b"abc")),
         "8eb208f7e05d987a9b044a8e98c6b087f15a0bfc"
     );
     assert_eq!(
-        hex(&CryptoLib::hash_method("keccak256", b"abc").unwrap()),
+        hex(&CryptoLib::keccak256_method(b"abc")),
         "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45"
     );
-    assert!(CryptoLib::hash_method("not_a_method", b"abc").is_none());
 }
 
 #[test]
@@ -231,11 +230,6 @@ fn bls12381_dispatch_matches_crypto_layer() {
     let g1 = hex::decode(BLS_G1).unwrap();
     let g2 = hex::decode(BLS_G2).unwrap();
     let gt = hex::decode(BLS_GT).unwrap();
-    let call = |m: &str, args: &[Vec<u8>]| {
-        CryptoLib::bls12381_method(m, args)
-            .expect("is a BLS method")
-            .expect("method succeeds")
-    };
     let scalar = |n: u8| {
         let mut s = [0u8; 32];
         s[0] = n;
@@ -243,60 +237,56 @@ fn bls12381_dispatch_matches_crypto_layer() {
     };
 
     // Deserialize normalizes to canonical bytes; Serialize returns them.
-    assert_eq!(call("bls12381Deserialize", std::slice::from_ref(&g1)), g1);
-    assert_eq!(call("bls12381Serialize", std::slice::from_ref(&g1)), g1);
+    assert_eq!(
+        CryptoLib::bls12381_deserialize_method(std::slice::from_ref(&g1)).unwrap(),
+        g1
+    );
+    assert_eq!(
+        CryptoLib::bls12381_serialize_method(std::slice::from_ref(&g1)).unwrap(),
+        g1
+    );
 
     // Pairing e(g1,g2) == s_gtHex — the headline C# vector through dispatch.
-    assert_eq!(call("bls12381Pairing", &[g1.clone(), g2.clone()]), gt);
+    assert_eq!(
+        CryptoLib::bls12381_pairing_method(&[g1.clone(), g2.clone()]).unwrap(),
+        gt
+    );
 
     // Add(gt,gt) == Mul(gt, 2): cross-checks the Add and Mul wiring.
     assert_eq!(
-        call("bls12381Add", &[gt.clone(), gt.clone()]),
-        call("bls12381Mul", &[gt.clone(), scalar(2), vec![0]])
+        CryptoLib::bls12381_add_method(&[gt.clone(), gt.clone()]).unwrap(),
+        CryptoLib::bls12381_mul_method(&[gt.clone(), scalar(2), vec![0]]).unwrap()
     );
 
     // gt*3 + gt*(-3) == gt*0 (identity): verifies Mul's `neg` flag + Add.
-    let pos = call("bls12381Mul", &[gt.clone(), scalar(3), vec![0]]);
-    let neg = call("bls12381Mul", &[gt.clone(), scalar(3), vec![1]]);
-    let identity = call("bls12381Mul", &[gt.clone(), scalar(0), vec![0]]);
+    let pos = CryptoLib::bls12381_mul_method(&[gt.clone(), scalar(3), vec![0]]).unwrap();
+    let neg = CryptoLib::bls12381_mul_method(&[gt.clone(), scalar(3), vec![1]]).unwrap();
+    let identity = CryptoLib::bls12381_mul_method(&[gt.clone(), scalar(0), vec![0]]).unwrap();
     assert_eq!(
-        call(
-            "bls12381Equal",
-            &[call("bls12381Add", &[pos, neg]), identity]
-        ),
+        CryptoLib::bls12381_equal_method(&[
+            CryptoLib::bls12381_add_method(&[pos, neg]).unwrap(),
+            identity
+        ])
+        .unwrap(),
         vec![1u8]
     );
 
     // Equal: same point true; a cross-group comparison FAULTS in C#
     // (`ArgumentException("BLS12-381 type mismatch")`), not returns false.
-    assert_eq!(call("bls12381Equal", &[g1.clone(), g1.clone()]), vec![1u8]);
+    assert_eq!(
+        CryptoLib::bls12381_equal_method(&[g1.clone(), g1.clone()]).unwrap(),
+        vec![1u8]
+    );
     assert!(
-        CryptoLib::bls12381_method("bls12381Equal", &[g1.clone(), g2.clone()])
-            .unwrap()
-            .is_err(),
+        CryptoLib::bls12381_equal_method(&[g1.clone(), g2.clone()]).is_err(),
         "cross-group bls12381Equal must fault like C#"
     );
 
     // Faults (Err -> VM fault): malformed point, swapped pairing operands,
     // wrong scalar length.
-    assert!(
-        CryptoLib::bls12381_method("bls12381Deserialize", &[vec![0u8; 47]])
-            .unwrap()
-            .is_err()
-    );
-    assert!(
-        CryptoLib::bls12381_method("bls12381Pairing", &[g2.clone(), g1.clone()])
-            .unwrap()
-            .is_err()
-    );
-    assert!(
-        CryptoLib::bls12381_method("bls12381Mul", &[gt.clone(), vec![0u8; 31], vec![0]])
-            .unwrap()
-            .is_err()
-    );
-
-    // A non-BLS method is not handled here (falls through to hash dispatch).
-    assert!(CryptoLib::bls12381_method("sha256", &[]).is_none());
+    assert!(CryptoLib::bls12381_deserialize_method(&[vec![0u8; 47]]).is_err());
+    assert!(CryptoLib::bls12381_pairing_method(&[g2.clone(), g1.clone()]).is_err());
+    assert!(CryptoLib::bls12381_mul_method(&[gt.clone(), vec![0u8; 31], vec![0]]).is_err());
 }
 
 #[test]

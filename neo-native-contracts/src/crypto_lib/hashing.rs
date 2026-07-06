@@ -9,17 +9,19 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
 impl CryptoLib {
-    /// Computes a CryptoLib hash method, returning `None` for an unknown method.
-    ///
-    /// Split out from [`CryptoLib::invoke_native`] so the dispatch + hashing can
-    /// be unit tested without constructing an [`neo_execution::ApplicationEngine`].
-    pub(super) fn hash_method(method: &str, data: &[u8]) -> Option<Vec<u8>> {
-        match method {
-            "sha256" => Some(Crypto::sha256(data).to_vec()),
-            "ripemd160" => Some(Crypto::ripemd160(data).to_vec()),
-            "keccak256" => Some(Crypto::keccak256(data).to_vec()),
-            _ => None,
-        }
+    /// Computes CryptoLib.sha256 over the input bytes.
+    pub(super) fn sha256_method(data: &[u8]) -> Vec<u8> {
+        Crypto::sha256(data).to_vec()
+    }
+
+    /// Computes CryptoLib.ripemd160 over the input bytes.
+    pub(super) fn ripemd160_method(data: &[u8]) -> Vec<u8> {
+        Crypto::ripemd160(data).to_vec()
+    }
+
+    /// Computes CryptoLib.keccak256 over the input bytes.
+    pub(super) fn keccak256_method(data: &[u8]) -> Vec<u8> {
+        Crypto::keccak256(data).to_vec()
     }
 
     /// C# native binding converts `uint seed` with `(uint)p.GetInteger()`, which

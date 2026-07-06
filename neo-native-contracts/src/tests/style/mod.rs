@@ -425,6 +425,21 @@ fn native_contract_manifest_methods_are_represented_in_dispatch_sources() {
 }
 
 #[test]
+fn native_contract_dispatch_uses_binding_tables_not_raw_method_switches() {
+    for (name, source) in standard_contract_dispatch_sources() {
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            !production.contains("match method"),
+            "{name} should dispatch native ABI methods through NativeMethodBinding tables, not raw method-name matches"
+        );
+        assert!(
+            production.contains("NativeMethodBinding::new("),
+            "{name} dispatch source should bind ABI metadata to concrete native handlers"
+        );
+    }
+}
+
+#[test]
 fn native_contract_metadata_tables_use_handle_name_prefixes() {
     let expected = [
         ("ContractManagement", "CONTRACT_MANAGEMENT"),
