@@ -114,10 +114,10 @@ fn parse_role_arg_uses_shared_role_mapping() {
 
 #[test]
 fn invoke_role_integer_args_use_shared_raw_parser() {
-    let source = include_str!("../../role_management/mod.rs");
+    let source = include_str!("../../role_management/invoke.rs");
     let start = source
-        .find("fn invoke(")
-        .expect("RoleManagement invoke exists");
+        .find("fn invoke_native(")
+        .expect("RoleManagement invoke_native exists");
     let end = source[start..]
         .find("other => Err")
         .map(|offset| start + offset)
