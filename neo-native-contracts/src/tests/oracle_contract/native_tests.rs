@@ -2,10 +2,11 @@ use super::super::request::OracleIdList;
 use super::super::*;
 use neo_crypto::Crypto;
 use neo_primitives::{CallFlags, ContractParameterType, UInt256};
+use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
-use neo_vm::Interoperable;
-use neo_vm_rs::StackValue;
+use neo_vm::{Interoperable, StackItem};
+use neo_vm_rs::{ExecutionEngineLimits, StackValue};
 
 /// Structural equality for StackValue that ignores the reference-identity ids
 /// on compound variants. Collection identity is not part of serialized
@@ -269,7 +270,7 @@ fn oracle_storage_codecs_use_stack_value_projection() {
     assert!(!id_list_decoder.contains("stack_value_as_bigint"));
     assert!(!id_list_decoder.contains("BinarySerializer::deserialize("));
 
-    let source = include_str!("../../oracle_contract/mod.rs");
+    let source = include_str!("../../oracle_contract/invoke.rs");
     // C# OracleContract.Request stores `BinarySerializer.Serialize(userData,
     // MaxUserDataLength, engine.Limits.MaxStackSize)` (OracleContract.cs:265).
     // The Rust request path only needs a value projection before reserializing
@@ -297,7 +298,7 @@ fn invoke_request_args_use_shared_raw_parsers() {
         &source[start_index..end_index]
     }
 
-    let source = include_str!("../../oracle_contract/mod.rs");
+    let source = include_str!("../../oracle_contract/invoke.rs");
     let set_price = slice_between(source, "\"setPrice\" =>", "\"request\" =>");
     assert!(set_price.contains("crate::args::raw_i64_arg"));
     assert!(!set_price.contains("BigInt::from_signed_bytes_le(args"));

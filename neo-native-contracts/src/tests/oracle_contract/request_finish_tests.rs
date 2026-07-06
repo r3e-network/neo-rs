@@ -9,15 +9,16 @@ use neo_manifest::{
 };
 use neo_payloads::signer::Signer;
 use neo_payloads::witness::Witness;
-use neo_payloads::{Block, BlockHeader, OracleResponse, TransactionAttribute};
+use neo_payloads::{Block, BlockHeader, OracleResponse, Transaction, TransactionAttribute};
 use neo_primitives::{
     CallFlags, ContractParameterType, OracleResponseCode, TriggerType, UInt256, Verifiable,
     WitnessScope,
 };
+use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
-use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::{OpCode, VmState};
+use neo_vm::{StackItem, script_builder::ScriptBuilder};
+use neo_vm_rs::{ExecutionEngineLimits, OpCode, VmState};
 use std::sync::Arc;
 
 /// Builds a tiny deployed contract with one `method(params)` descriptor,
