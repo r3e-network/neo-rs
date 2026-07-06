@@ -73,7 +73,7 @@ where
         }
     }
 
-    pub(super) fn reverify_mempool_after_persist(
+    pub(crate) fn reverify_mempool_after_persist(
         &self,
         block_index: u32,
         max_count: usize,

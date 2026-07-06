@@ -3,13 +3,12 @@ use std::sync::Arc;
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::block::Block;
 
-use crate::service::{BlockchainService, MempoolLike};
-
-use super::super::consensus_witness_stage::{
+use crate::pipeline::consensus_witness_stage::{
     NeoConsensusWitnessStage, SnapshotConsensusWitnessContext,
 };
-use super::super::stage_traits::EngineError;
-use super::super::verified_import_pipeline::VerifiedImportPipeline;
+use crate::pipeline::stage_traits::EngineError;
+use crate::pipeline::verified_import_pipeline::VerifiedImportPipeline;
+use crate::service::{BlockchainService, MempoolLike};
 
 impl<S, M> BlockchainService<S, M>
 where

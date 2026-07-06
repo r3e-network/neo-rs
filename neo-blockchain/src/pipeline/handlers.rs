@@ -12,26 +12,8 @@
 use crate::relay_result::RelayResult;
 use crate::service::{BlockchainService, MempoolLike};
 
-#[path = "../handlers/block_inventory.rs"]
-mod block_inventory;
-#[path = "../handlers/empty_fast_forward.rs"]
-mod empty_fast_forward;
-#[path = "../handlers/extensible.rs"]
-mod extensible;
-#[path = "../handlers/headers.rs"]
-mod headers;
-#[path = "../handlers/import.rs"]
-mod import;
-#[path = "../handlers/initialize.rs"]
-mod initialize;
-#[path = "../handlers/persist_completed.rs"]
-mod persist_completed;
-#[path = "../handlers/reverify.rs"]
-mod reverify;
-#[path = "../handlers/transactions.rs"]
-mod transactions;
-#[path = "../handlers/verification.rs"]
-mod verification;
+#[path = "../handlers/mod.rs"]
+mod service_handlers;
 
 impl<S, M> BlockchainService<S, M>
 where
