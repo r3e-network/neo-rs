@@ -60,14 +60,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tracing::debug;
-
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
-use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_manifest::CallFlags;
-use neo_payloads::ApplicationExecuted;
 use neo_payloads::{Block, Header, Witness};
 use neo_primitives::{TriggerType, UInt160, UInt256, Verifiable};
 use neo_storage::DataCache;
@@ -78,11 +74,15 @@ use neo_vm_rs::VmState as VMState;
 mod artifacts;
 mod metrics;
 mod trace;
+mod types;
 
 pub use artifacts::NativePersistNotification;
 use artifacts::{application_executed, collect_notifications};
 use metrics::record_tx_stage;
 use trace::{TraceTxFilter, trace_tx_frames, trace_tx_notifications};
+pub use types::{
+    NativePersistOptions, NativePersistOutcome, NativePersistResources, StagedNativePersist,
+};
 
 #[cfg(test)]
 use neo_vm::StackItem;
@@ -105,123 +105,6 @@ const NEO_TOKEN_ID: i32 = -5;
 /// C# `NeoToken.Prefix_Committee` (14): the cached-committee record —
 /// the first key genesis initialization writes.
 const NEO_PREFIX_COMMITTEE_KEY: u8 = 14;
-
-/// Outcome of [`persist_block_natives_with_resources`] for one block.
-#[derive(Debug, Clone, Default)]
-pub struct NativePersistOutcome {
-    /// Names of the native contracts whose `initialize()` ran at this
-    /// block (their activation block is this block).
-    pub initialized: Vec<String>,
-    /// Per-engine execution records, in C# `Blockchain.Persist` order:
-    /// the `OnPersist` engine, one entry per block transaction, then
-    /// the `PostPersist` engine (C# `allApplicationExecuted`).
-    pub application_executed: Vec<ApplicationExecuted>,
-    /// Notifications emitted by the `OnPersist` native hooks.
-    pub on_persist_notifications: Vec<NativePersistNotification>,
-    /// Notifications emitted by the `PostPersist` native hooks.
-    pub post_persist_notifications: Vec<NativePersistNotification>,
-}
-
-/// Controls which non-consensus replay artifacts native persistence materializes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NativePersistOptions {
-    /// Capture `ApplicationExecuted` records and cloned native notifications for
-    /// plugin/indexer replay. Disable only for explicit bulk-sync imports whose
-    /// consumers intentionally skip those replay hooks.
-    pub capture_replay_artifacts: bool,
-}
-
-impl Default for NativePersistOptions {
-    fn default() -> Self {
-        Self {
-            capture_replay_artifacts: true,
-        }
-    }
-}
-
-/// Reusable native-persistence resources for a sequence of blocks that share
-/// the same explicit native-contract provider and protocol settings.
-#[derive(Clone)]
-pub struct NativePersistResources {
-    provider: Arc<dyn NativeContractProvider>,
-    contracts: Arc<[Arc<dyn neo_execution::NativeContract>]>,
-}
-
-impl NativePersistResources {
-    /// Captures the canonical native-contract list once from an explicit
-    /// provider. The list order is the C# native registration order used by
-    /// both OnPersist and PostPersist hooks.
-    pub fn from_provider(provider: Arc<dyn NativeContractProvider>) -> Self {
-        let contracts = provider.all_native_contracts().into();
-        Self {
-            provider,
-            contracts,
-        }
-    }
-
-    /// Returns the canonical native contracts captured for this persistence
-    /// batch, in C# registration order.
-    pub fn contracts(&self) -> &[Arc<dyn neo_execution::NativeContract>] {
-        self.contracts.as_ref()
-    }
-
-    /// Returns the native-contract provider captured for this persistence batch.
-    pub fn provider(&self) -> Arc<dyn NativeContractProvider> {
-        Arc::clone(&self.provider)
-    }
-}
-
-/// A block persistence result whose storage writes are still staged in a child
-/// cache. The caller must run committing hooks against [`Self::snapshot`] and
-/// call [`Self::commit`] only after every pre-commit gate succeeds.
-pub struct StagedNativePersist {
-    /// The staged block writes, isolated from the canonical snapshot until
-    /// [`Self::commit`] is called.
-    snapshot: Arc<DataCache>,
-    /// Native persistence metadata and ApplicationExecuted records.
-    pub outcome: NativePersistOutcome,
-    block_index: u32,
-    n_tx: usize,
-    onpersist_us: u64,
-    tx_us: u64,
-    postpersist_us: u64,
-    total_start: std::time::Instant,
-}
-
-impl StagedNativePersist {
-    /// Returns the staged snapshot that committing hooks should inspect.
-    pub fn snapshot(&self) -> &DataCache {
-        self.snapshot.as_ref()
-    }
-
-    /// Publishes the staged writes into the canonical parent snapshot.
-    pub fn commit(&self) {
-        let cache_commit_start = std::time::Instant::now();
-        self.snapshot.commit();
-        let cache_commit_us = neo_runtime::time::elapsed_us(cache_commit_start.elapsed());
-        let total_us = neo_runtime::time::elapsed_us(self.total_start.elapsed());
-        neo_runtime::sync_metrics::record_native_persist(
-            self.block_index as u64,
-            self.n_tx as u64,
-            self.onpersist_us,
-            self.tx_us,
-            self.postpersist_us,
-            cache_commit_us,
-            total_us,
-        );
-        debug!(
-            target: "neo::sync",
-            index = self.block_index,
-            txs = self.n_tx,
-            onpersist_us = self.onpersist_us,
-            tx_stage_us = self.tx_us,
-            postpersist_us = self.postpersist_us,
-            cache_commit_us,
-            total_us,
-            "persist_block_natives timing"
-        );
-    }
-}
 
 /// C# `NativeContract.Ledger.Initialized(snapshot)` (LedgerContract.cs:91):
 /// whether the chain state has been bootstrapped, i.e. the genesis block
