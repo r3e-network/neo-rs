@@ -167,6 +167,8 @@ pub(super) fn standard_contract_sources()
                 "\n",
                 include_str!("../../oracle_contract/metadata.rs"),
                 "\n",
+                include_str!("../../oracle_contract/persist.rs"),
+                "\n",
                 include_str!("../../oracle_contract/mod.rs"),
             ),
         ),

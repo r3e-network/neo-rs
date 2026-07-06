@@ -1,7 +1,7 @@
 use super::super::request::OracleIdList;
 use super::super::*;
 use neo_crypto::Crypto;
-use neo_primitives::{CallFlags, ContractParameterType, UInt256};
+use neo_primitives::{CallFlags, ContractParameterType, UInt160, UInt256};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;

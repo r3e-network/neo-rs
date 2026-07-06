@@ -1,6 +1,7 @@
 use super::super::*;
 use crate::test_support::deploy_native as deploy_contract;
 use neo_config::ProtocolSettings;
+use neo_execution::Contract;
 use neo_execution::contract_state::ContractState;
 use neo_execution::native_contract::build_native_contract_state;
 use neo_manifest::{
@@ -11,8 +12,8 @@ use neo_payloads::signer::Signer;
 use neo_payloads::witness::Witness;
 use neo_payloads::{Block, BlockHeader, OracleResponse, Transaction, TransactionAttribute};
 use neo_primitives::{
-    CallFlags, ContractParameterType, OracleResponseCode, TriggerType, UInt256, Verifiable,
-    WitnessScope,
+    CallFlags, ContractParameterType, OracleResponseCode, TriggerType, UInt160, UInt256,
+    Verifiable, WitnessScope,
 };
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
