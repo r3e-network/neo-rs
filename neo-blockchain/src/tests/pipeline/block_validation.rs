@@ -1,6 +1,6 @@
 use super::*;
-use neo_primitives::TimeProvider;
 use neo_primitives::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
+use neo_primitives::{TimeProvider, UInt256};
 
 #[test]
 fn block_validation_error_display_messages_remain_stable() {
