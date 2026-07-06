@@ -92,7 +92,7 @@ impl OracleService {
                     OracleServiceError::BuildFailed("oracle contract missing".to_string())
                 })?;
 
-        let mut engine = ApplicationEngine::new(
+        let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
             TriggerType::Verification,
             Some(Arc::new(tx.clone())),
             Arc::new(snapshot.clone()),
@@ -100,6 +100,7 @@ impl OracleService {
             settings.clone(),
             neo_execution::helper::Helper::MAX_VERIFICATION_GAS,
             None,
+            Some(Arc::clone(&self.native_contract_provider)),
         )
         .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
 

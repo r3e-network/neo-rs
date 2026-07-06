@@ -1,5 +1,7 @@
 use super::super::{DEDUP_CACHE_TTL, FINISHED_CACHE_TTL, OracleService, OracleServiceSettings};
 use neo_config::ProtocolSettings;
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_native_contracts::StandardNativeProvider;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -23,6 +25,7 @@ fn oracle_service(enable_deduplication: bool) -> OracleService {
         system.clone(),
         system.clone(),
         system.clone(),
+        Arc::new(StandardNativeProvider::new()) as Arc<dyn NativeContractProvider>,
     )
     .expect("oracle service")
 }

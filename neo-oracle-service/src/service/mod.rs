@@ -29,6 +29,7 @@ mod utils;
 mod tests;
 
 use neo_crypto::ECPoint;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::Transaction;
 use neo_runtime::{ConfigProvider, StoreProvider, TxAdmission};
 use neo_wallets::Wallet;
@@ -244,6 +245,7 @@ pub struct OracleService {
     config: Arc<dyn ConfigProvider>,
     store: Arc<dyn StoreProvider>,
     tx: Arc<dyn TxAdmission>,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
     status: AtomicU8,
     self_ref: RwLock<Weak<OracleService>>,
     wallet: RwLock<Option<Arc<dyn Wallet>>>,

@@ -4,6 +4,7 @@ use super::super::{
 };
 #[cfg(feature = "oracle")]
 use super::super::{OracleHttpsProtocol, OracleNeoFsProtocol};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_runtime::{ConfigProvider, StoreProvider, TxAdmission};
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
@@ -19,6 +20,7 @@ impl OracleService {
         config: Arc<dyn ConfigProvider>,
         store: Arc<dyn StoreProvider>,
         tx: Arc<dyn TxAdmission>,
+        native_contract_provider: Arc<dyn NativeContractProvider>,
     ) -> Result<Self, OracleServiceError> {
         let mut settings = settings;
         settings.normalize();
@@ -27,6 +29,7 @@ impl OracleService {
             config,
             store,
             tx,
+            native_contract_provider,
             status: AtomicU8::new(OracleStatus::Unstarted.as_u8()),
             self_ref: RwLock::new(Weak::new()),
             wallet: RwLock::new(None),

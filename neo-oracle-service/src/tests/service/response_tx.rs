@@ -1,11 +1,12 @@
 use super::super::{OracleService, OracleServiceSettings};
 use neo_crypto::{ECCurve, ECPoint, Secp256r1Crypto};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{OracleResponse, OracleResponseCode, Signer, Transaction, Witness};
 use neo_storage::{DataCache, StorageKey};
 
 use neo_config::ProtocolSettings;
 use neo_io::Serializable;
-use neo_native_contracts::{LedgerContract, OracleRequest};
+use neo_native_contracts::{LedgerContract, OracleRequest, StandardNativeProvider};
 use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_storage::StorageItem;
 use neo_vm_rs::VmState as VMState;
@@ -94,6 +95,8 @@ fn create_response_tx_matches_csharp_fee_math() {
         system.clone(),
         system.clone(),
         system.clone(),
+        std::sync::Arc::new(StandardNativeProvider::new())
+            as std::sync::Arc<dyn NativeContractProvider>,
     )
     .expect("oracle service");
     let snapshot = service.snapshot_cache();
@@ -136,4 +139,21 @@ fn create_response_tx_matches_csharp_fee_math() {
     assert_eq!(OracleResponseCode::InsufficientFunds, response.code);
     assert_eq!(2_197_650, tx.network_fee());
     assert_eq!(7_802_350, tx.system_fee());
+}
+
+#[test]
+fn create_response_tx_uses_explicit_native_provider() {
+    let source = include_str!("../../service/transactions/response.rs");
+    assert!(
+        source.contains("new_with_shared_block_and_native_contract_provider"),
+        "oracle response verification must use the provider-aware engine constructor"
+    );
+    assert!(
+        source.contains("Arc::clone(&self.native_contract_provider)"),
+        "oracle response verification must use the OracleService-owned provider"
+    );
+    assert!(
+        !source.contains("ApplicationEngine::new("),
+        "oracle response verification must not fall back to ambient provider lookup"
+    );
 }
