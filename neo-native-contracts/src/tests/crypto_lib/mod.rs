@@ -13,6 +13,7 @@
 //! - Test modules and fixtures: grouped coverage for the surrounding domain.
 
 use super::*;
+use neo_config::Hardfork;
 use neo_crypto::murmur;
 use neo_primitives::ContractParameterType;
 

@@ -57,6 +57,8 @@ pub(super) fn standard_contract_sources()
             concat!(
                 include_str!("../../crypto_lib/metadata.rs"),
                 "\n",
+                include_str!("../../crypto_lib/invoke.rs"),
+                "\n",
                 include_str!("../../crypto_lib/mod.rs")
             ),
         ),
