@@ -130,20 +130,20 @@ impl MempoolLike for RecordingMempool {
 fn batch_header_verification_uses_explicit_native_provider_helper() {
     let source = include_str!("../../pipeline/handlers.rs");
     let verifier_start = source
-        .find("fn verify_header_against_snapshot_with_native_provider")
+        .find("fn verify_consensus_witness_against_snapshot_with_native_provider")
         .expect("provider-aware verifier exists");
     let verifier_end = source[verifier_start..]
-        .find("fn verify_header_with_batch_resources")
+        .find("fn verify_consensus_witness_with_batch_resources")
         .map(|offset| verifier_start + offset)
         .expect("batch verifier follows provider-aware verifier");
     let provider_aware_verifier = &source[verifier_start..verifier_end];
     assert!(
-        provider_aware_verifier.contains("verify_witness_with_native_provider"),
-        "provider-aware header verification must use the explicit-provider witness helper"
+        provider_aware_verifier.contains("SnapshotConsensusWitnessContext::new"),
+        "provider-aware header verification must build the consensus-witness stage context"
     );
 
     let start = source
-        .find("fn verify_header_with_batch_resources")
+        .find("fn verify_consensus_witness_with_batch_resources")
         .expect("batch header verifier exists");
     let end = source[start..]
         .find("fn collect_empty_fast_forward_run")
@@ -161,10 +161,10 @@ fn batch_header_verification_uses_explicit_native_provider_helper() {
 fn store_header_verification_uses_system_native_provider() {
     let source = include_str!("../../pipeline/handlers.rs");
     let verifier_start = source
-        .find("fn verify_header_against_store")
+        .find("fn verify_consensus_witness_against_store")
         .expect("store-backed header verifier exists");
     let verifier_end = source[verifier_start..]
-        .find("fn verify_header_against_snapshot")
+        .find("fn verify_consensus_witness_against_snapshot")
         .map(|offset| verifier_start + offset)
         .expect("snapshot verifier follows store verifier");
     let verifier = &source[verifier_start..verifier_end];
@@ -174,8 +174,8 @@ fn store_header_verification_uses_system_native_provider() {
         "store-backed header verification must use the provider exposed by SystemContext"
     );
     assert!(
-        verifier.contains("verify_header_against_snapshot_with_native_provider"),
-        "store-backed header verification must route through the explicit-provider verifier"
+        verifier.contains("verify_consensus_witness_against_snapshot_with_native_provider"),
+        "store-backed header verification must route through the explicit-provider consensus-witness stage"
     );
 }
 

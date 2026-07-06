@@ -4,9 +4,10 @@
 //! The `neo-engine` crate was deleted in ADR-027 because its entire public
 //! state API (`Pipeline`, `CanonicalChain`, `ChainTip`, `BlockBuffer`) had
 //! zero production consumers and `BlockchainEngineAdapter` was never
-//! instantiated. The two traits actually used by `NeoValidateStage`
-//! (`ValidateStage` + `PipelineStage`) and their supporting types now live
-//! here, next to the one concrete implementation that uses them.
+//! instantiated. The stage traits actually used by the concrete pipeline
+//! stages (`ValidateStage`, `ConsensusWitnessStage`, and `PipelineStage`) and
+//! their supporting types now live here, next to the implementations that use
+//! them.
 
 use std::fmt;
 
@@ -103,6 +104,8 @@ pub type EngineResult<T> = std::result::Result<T, EngineError>;
 pub enum StageId {
     /// Block validation (size, timestamp, merkle root, witnesses).
     Validate,
+    /// Consensus witness verification against the previous block's committee.
+    ConsensusWitness,
     /// Block execution (OnPersist → Application → PostPersist).
     Execute,
     /// Persistence (writing block + state to storage).
@@ -118,6 +121,7 @@ impl StageId {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Validate => "validate",
+            Self::ConsensusWitness => "consensus-witness",
             Self::Execute => "execute",
             Self::Persist => "persist",
             Self::Commit => "commit",
@@ -201,4 +205,13 @@ pub trait PipelineStage: Send + Sync + std::fmt::Debug + 'static {
 pub trait ValidateStage: PipelineStage {
     /// Validate the block. Returns `Ok` if the block passes all checks.
     async fn validate(&self, ctx: &StageContext, block: &Block) -> EngineResult<()>;
+}
+
+/// Consensus witness stage: verifies that a block header is authorized by the
+/// previous block's `NextConsensus` account.
+#[async_trait]
+pub trait ConsensusWitnessStage: PipelineStage {
+    /// Verify the block header's consensus witness.
+    async fn verify_consensus_witness(&self, ctx: &StageContext, block: &Block)
+    -> EngineResult<()>;
 }

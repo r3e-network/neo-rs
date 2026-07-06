@@ -33,7 +33,8 @@ use crate::service::{BlockchainService, MempoolLike};
 use crate::service_context::BlockPersistContext;
 use neo_runtime::BlockOrigin;
 
-use super::stage_traits::{StageContext, ValidateStage};
+use super::consensus_witness_stage::{NeoConsensusWitnessStage, SnapshotConsensusWitnessContext};
+use super::stage_traits::{EngineError, StageContext, ValidateStage};
 use super::validate_stage::{NeoValidateStage, SnapshotValidateContext};
 
 #[path = "../handlers/transactions.rs"]
@@ -44,7 +45,16 @@ where
     S: crate::service_context::SystemContext,
     M: MempoolLike,
 {
-    fn verify_header_against_store(&self, block: &Block) -> CoreResult<()> {
+    fn pipeline_error(block: &Block, error: EngineError) -> CoreError {
+        match error {
+            EngineError::ValidationFailed { reason, .. } => {
+                CoreError::other(format!("block {}: {reason}", block.index()))
+            }
+            other => CoreError::other(format!("block {}: {other}", block.index())),
+        }
+    }
+
+    fn verify_consensus_witness_against_store(&self, block: &Block) -> CoreResult<()> {
         let settings = self.system.settings();
         let snapshot = self.system.store_snapshot().ok_or_else(|| {
             CoreError::other(format!(
@@ -52,79 +62,42 @@ where
                 block.index()
             ))
         })?;
-        self.verify_header_against_snapshot_with_native_provider(
+        self.verify_consensus_witness_against_snapshot_with_native_provider(
             block,
-            settings.as_ref(),
-            snapshot.as_ref(),
+            settings,
+            snapshot,
             self.system.native_contract_provider(),
         )
     }
 
-    fn verify_header_against_snapshot_with_native_provider(
+    fn verify_consensus_witness_against_snapshot_with_native_provider(
         &self,
         block: &Block,
-        settings: &neo_config::ProtocolSettings,
-        snapshot: &neo_storage::DataCache,
+        settings: Arc<neo_config::ProtocolSettings>,
+        snapshot: Arc<neo_storage::DataCache>,
         native_contract_provider: Option<
             Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>,
         >,
     ) -> CoreResult<()> {
-        let index = block.index();
-        if i32::from(block.header.primary_index()) >= settings.validators_count {
-            return Err(CoreError::other(format!(
-                "block {index}: primary index out of range"
-            )));
-        }
-
-        let prev = neo_native_contracts::LedgerContract::new()
-            .get_trimmed_block(snapshot, block.header.prev_hash())
-            .ok()
-            .flatten()
-            .ok_or_else(|| CoreError::other(format!("block {index}: previous block not found")))?;
-        if prev.index() + 1 != index {
-            return Err(CoreError::other(format!(
-                "block {index}: previous block index mismatch"
-            )));
-        }
-        if prev.hash() != *block.header.prev_hash() {
-            return Err(CoreError::other(format!(
-                "block {index}: previous block hash mismatch"
-            )));
-        }
-        if block.header.timestamp() <= prev.header.timestamp() {
-            return Err(CoreError::other(format!(
-                "block {index}: timestamp not after previous block"
-            )));
-        }
-
-        let next_consensus = *prev.header.next_consensus();
-        if neo_execution::Helper::verify_witness_with_native_provider(
-            &block.header,
+        let stage = NeoConsensusWitnessStage::new(Arc::new(SnapshotConsensusWitnessContext::new(
             settings,
             snapshot,
-            &next_consensus,
-            &block.header.witness,
-            300_000_000,
             native_contract_provider,
-        )
-        .is_err()
-        {
-            return Err(CoreError::other(format!(
-                "block {index}: consensus witness verification failed"
-            )));
-        }
-        Ok(())
+        )));
+        stage
+            .verify_block(block)
+            .map_err(|error| Self::pipeline_error(block, error))
     }
 
-    fn verify_header_with_batch_resources(
+    fn verify_consensus_witness_with_batch_resources(
         &self,
         block: &Block,
         resources: &BatchPersistResources,
     ) -> CoreResult<()> {
-        self.verify_header_against_snapshot_with_native_provider(
+        self.verify_consensus_witness_against_snapshot_with_native_provider(
             block,
-            resources.settings.as_ref(),
-            resources.snapshot.as_ref(),
+            Arc::clone(&resources.settings),
+            Arc::clone(&resources.snapshot),
             Some(resources.native_persist.provider()),
         )
     }
@@ -151,7 +124,7 @@ where
         stage
             .validate(&ctx, block)
             .await
-            .map_err(|error| CoreError::other(format!("block {}: {error}", block.index())))
+            .map_err(|error| Self::pipeline_error(block, error))
     }
 
     fn collect_empty_fast_forward_run<'a>(
@@ -540,7 +513,9 @@ where
                         Arc::clone(&resources.snapshot),
                     )
                     .await
-                    .and_then(|()| self.verify_header_with_batch_resources(block, resources))
+                    .and_then(|()| {
+                        self.verify_consensus_witness_with_batch_resources(block, resources)
+                    })
                 } else {
                     let snapshot = match self.system.store_snapshot() {
                         Some(snapshot) => snapshot,
@@ -561,7 +536,7 @@ where
                         snapshot,
                     )
                     .await
-                    .and_then(|()| self.verify_header_against_store(block))
+                    .and_then(|()| self.verify_consensus_witness_against_store(block))
                 };
                 if let Err(error) = verify_result {
                     warn!(
@@ -927,7 +902,7 @@ where
         // sync must use the same consensus-witness rule at height 1 and at
         // height 10 million.
         if !pre_verified {
-            self.verify_header_against_store(block.as_ref())?;
+            self.verify_consensus_witness_against_store(block.as_ref())?;
         }
 
         let after_verify = wall_start.elapsed();

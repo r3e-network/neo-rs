@@ -18,11 +18,12 @@
 //! # Wiring Status
 //!
 //! Verified block import (`Import { verify: true }`) constructs this stage over
-//! the same snapshot used by native persistence before running the existing
-//! consensus-witness verifier. Live peer inventory still keeps its inline
-//! import-integrity and witness checks because that path intentionally follows
-//! C# `OnNewBlock` relay semantics and must not inherit consensus-production
-//! transaction-count limits.
+//! the same snapshot used by native persistence before running
+//! `NeoConsensusWitnessStage`. Live peer inventory still keeps its inline
+//! import-integrity checks because that path intentionally follows C#
+//! `OnNewBlock` relay semantics and must not inherit consensus-production
+//! transaction-count limits; its consensus witness check is routed through the
+//! same consensus-witness stage helper.
 //!
 //! # Bulk-Sync Behavior
 //!
