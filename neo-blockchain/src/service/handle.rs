@@ -365,6 +365,8 @@ impl BlockImport for BlockchainHandle {
         block.try_hash().map_err(|error| {
             ServiceError::invalid_input(format!("block hash serialization failed: {error}"))
         })?;
+        crate::block_validation::BlockValidator::validate_import_integrity(block)
+            .map_err(|error| ServiceError::invalid_input(error.to_string()))?;
         Ok(())
     }
 

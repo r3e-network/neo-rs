@@ -9,7 +9,7 @@
 //! the service pipeline before a block is admitted.
 
 use neo_crypto::MerkleTree;
-use neo_payloads::Witness;
+use neo_payloads::{Block, Witness};
 use neo_primitives::blockchain::marker_traits::BlockLike;
 use neo_primitives::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use neo_primitives::{TimeProvider, UInt256};
@@ -125,6 +125,25 @@ pub enum BlockValidationError {
 pub struct BlockValidator;
 
 impl BlockValidator {
+    /// Validates the stateless block-integrity checks shared by live inventory
+    /// import and the reusable [`neo_runtime::BlockImport::check`] boundary.
+    ///
+    /// This intentionally mirrors the structural subset of C# `Block.Verify`
+    /// used by `Blockchain.OnNewBlock`: block version, transaction merkle root,
+    /// and duplicate transaction hashes. It does **not** enforce
+    /// `MaxTransactionsPerBlock`; Neo C# treats that as a dBFT block-production
+    /// limit rather than a peer block validity rule.
+    pub fn validate_import_integrity(block: &Block) -> Result<(), BlockValidationError> {
+        Self::validate_block_version(block.version())?;
+        let tx_hashes = block.transaction_hashes().map_err(|err| {
+            BlockValidationError::HeaderValidationFailed {
+                reason: format!("failed to hash block transactions: {err}"),
+            }
+        })?;
+        Self::validate_merkle_root(block.header.merkle_root(), &tx_hashes)?;
+        Self::validate_no_duplicate_transactions(&tx_hashes)
+    }
+
     /// Validates block size against maximum allowed size.
     ///
     /// # Type Parameters

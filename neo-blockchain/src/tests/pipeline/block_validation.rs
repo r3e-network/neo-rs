@@ -223,6 +223,39 @@ fn validate_merkle_root_rejects_wrong_root_for_empty() {
 }
 
 #[test]
+fn validate_import_integrity_rejects_wrong_empty_block_merkle_root() {
+    let mut header = neo_payloads::Header::new();
+    header.set_merkle_root(UInt256::from([0x42; 32]));
+    let block = neo_payloads::Block::from_parts(header, Vec::new());
+
+    assert!(matches!(
+        BlockValidator::validate_import_integrity(&block),
+        Err(BlockValidationError::InvalidMerkleRoot { .. })
+    ));
+}
+
+#[test]
+fn validate_import_integrity_does_not_enforce_production_tx_limit() {
+    let mut block = neo_payloads::Block::new();
+    block.transactions = (0..=MAX_TRANSACTIONS_PER_BLOCK)
+        .map(|i| {
+            let mut tx = neo_payloads::Transaction::new();
+            tx.set_nonce(i as u32 + 1);
+            tx.set_script(vec![(i % 251) as u8, (i / 251) as u8]);
+            tx
+        })
+        .collect();
+    block
+        .try_rebuild_merkle_root()
+        .expect("valid transaction merkle root");
+
+    assert!(
+        BlockValidator::validate_import_integrity(&block).is_ok(),
+        "Neo C# treats MaxTransactionsPerBlock as a production limit, not a peer block validity rule"
+    );
+}
+
+#[test]
 fn validate_no_duplicate_transactions_accepts_unique() {
     let hash_a = UInt256::from_bytes(&[1u8; 32]).unwrap();
     let hash_b = UInt256::from_bytes(&[2u8; 32]).unwrap();

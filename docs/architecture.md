@@ -226,8 +226,11 @@ The detailed rules for this style live in
   `neo_runtime::BlockImport` is the shared import trait for consensus, sync, RPC,
   and fast-sync callers. `neo_runtime::BlockImportQueue` runs cheap preflight
   checks with bounded concurrency and then submits the verified batch to
-  `BlockImport::import_many` in original order. Execution, native persistence,
-  state-root updates, and durable storage still happen only inside
+  `BlockImport::import_many` in original order. `BlockchainHandle::check`
+  shares the live import path's stateless integrity checks (hash serialization,
+  block version, transaction merkle root, and duplicate transaction hashes), so
+  the queue is no longer a hash-only placeholder. Execution, native
+  persistence, state-root updates, and durable storage still happen only inside
   `neo-blockchain`. Peer-relayed block bursts enter the live inventory path
   through `BlockchainHandle::submit_inventory_blocks`, consensus-produced
   blocks use `submit_inventory_block`, extensible payloads use

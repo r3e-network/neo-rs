@@ -140,7 +140,7 @@ while let Some(cmd) = cmd_rx.recv().await {
 | Priority | Change | Benefit |
 |----------|--------|---------|
 | P0 | Staged sync pipeline integration | 3-5x sync speed, crash resume |
-| Primitives Done / Wiring Pending | Import queue boundary with bounded concurrent `check` | Reusable preverification surface; the queue is constructed only under `tests/` and is not yet on the production sync path |
+| Primitives Done / Wiring Pending | Import queue boundary with bounded concurrent `check` | Reusable preverification surface; `BlockchainHandle::check` now shares live stateless import-integrity checks, but the queue is constructed only under `tests/` and is not yet on the production sync path |
 | Primitives Done / Wiring Pending | Commit policy/checkpoint primitives plus import-stage driver | Tunable memory/i-o; the crash-resume seam is a design seam only (the sole `SyncStageCheckpointStore` impl is in-memory); driver is constructed only under `tests/` |
 | P2 | Warp sync / state sync | Minutes to sync instead of hours |
 
@@ -154,6 +154,10 @@ while let Some(cmd) = cmd_rx.recv().await {
 implements it and routes to the `neo-blockchain` service loop. The reusable
 `neo_runtime::BlockImportQueue` runs bounded concurrent `check` calls, then
 submits the verified batch to `BlockImport::import_many` in original order.
+`BlockchainHandle::check` now performs the live path's stateless import-integrity
+checks (hash serialization, block version, transaction merkle root, and duplicate
+transaction hashes), so queued preverification rejects malformed blocks before
+ordered import without enforcing the dBFT-only production transaction limit.
 `neo_runtime::SyncPipelineDriver` consumes contiguous sync batches, rejects
 height gaps, calls the import queue, and writes import-stage checkpoints
 according to `CommitPolicy` — but this behavior exercises only in unit tests;

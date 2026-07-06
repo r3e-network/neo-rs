@@ -85,6 +85,26 @@ fn handle_debug_includes_capacity() {
 }
 
 #[tokio::test]
+async fn handle_block_import_check_rejects_bad_empty_block_merkle_root() {
+    let (handle, _rx) = BlockchainHandle::with_capacity();
+    let mut header = neo_payloads::Header::new();
+    header.set_index(1);
+    header.set_merkle_root(neo_primitives::UInt256::from([0x42; 32]));
+    let block = neo_payloads::Block::from_parts(header, Vec::new());
+
+    let importer: &dyn neo_runtime::BlockImport = &handle;
+    let err = importer
+        .check(&block)
+        .await
+        .expect_err("bad empty-block merkle root must fail preverification");
+
+    assert!(
+        err.to_string().contains("Merkle root mismatch"),
+        "error should name merkle-root mismatch: {err}"
+    );
+}
+
+#[tokio::test]
 async fn handle_submits_inventory_block_batches_without_exposing_command_enum() {
     let (handle, mut cmd_rx, _event_tx) = BlockchainHandle::channel(4, 4);
     let block = Arc::new(neo_payloads::Block::new());

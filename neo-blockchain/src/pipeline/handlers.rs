@@ -851,33 +851,12 @@ where
 
         // Stateless block-integrity pre-checks before persisting a peer-relayed
         // block (the structural half of C# `Block.Verify`): version, transaction
-        // count, merkle root, and duplicate transactions.
+        // merkle root, and duplicate transaction hashes.
         if let Err(error) =
-            crate::block_validation::BlockValidator::validate_block_version(block.version())
+            crate::block_validation::BlockValidator::validate_import_integrity(block.as_ref())
         {
             return Err(CoreError::other(format!(
-                "block {index} has an invalid version: {error}"
-            )));
-        }
-        // C# Block.Verify delegates to Header.Verify only; MaxTransactionsPerBlock
-        // is a dBFT primary-side build limit, not a block-validity rule, so a peer
-        // block is NOT rejected on tx count here (matching C# v3.10.0). The P2P
-        // message-size limit already bounds how many transactions a block can carry.
-        let tx_hashes: Vec<neo_primitives::UInt256> =
-            block.transactions.iter().map(|tx| tx.hash()).collect();
-        if let Err(error) = crate::block_validation::BlockValidator::validate_merkle_root(
-            block.header.merkle_root(),
-            &tx_hashes,
-        ) {
-            return Err(CoreError::other(format!(
-                "block {index} failed merkle-root validation: {error}"
-            )));
-        }
-        if let Err(error) =
-            crate::block_validation::BlockValidator::validate_no_duplicate_transactions(&tx_hashes)
-        {
-            return Err(CoreError::other(format!(
-                "block {index} has duplicate transactions: {error}"
+                "block {index} failed import-integrity validation: {error}"
             )));
         }
 
