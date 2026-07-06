@@ -1,4 +1,4 @@
-//! Concrete [`Nep17MetadataReader`] implementation backed by
+//! Concrete [`neo_runtime::Nep17MetadataReader`] implementation backed by
 //! [`ApplicationEngine`].
 //!
 //! This is the execution-layer impl of the trait defined in `neo-runtime`.
@@ -27,16 +27,16 @@ use crate::native_contract_provider::NativeContractProvider;
 /// (`gas: 0_30000000L` — 0.3 GAS).
 const DESCRIPTOR_PROBE_GAS: i64 = 30_000_000;
 
-/// [`Nep17MetadataReader`] backed by [`ApplicationEngine`].
+/// [`neo_runtime::Nep17MetadataReader`] backed by [`ApplicationEngine`].
 ///
 /// Holds the snapshot and protocol settings needed to construct an
-/// `ApplicationEngine` for each `read_metadata` call. Cheap to clone
-/// (both fields are `Arc` / `Clone`).
+/// `ApplicationEngine` for each `read_metadata` call. Cheap to clone because
+/// the snapshot and native provider are `Arc`s and settings are cloneable.
 #[derive(Clone)]
 pub struct Nep17MetadataReaderImpl {
     snapshot: Arc<DataCache>,
     settings: ProtocolSettings,
-    native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
 }
 
 impl std::fmt::Debug for Nep17MetadataReaderImpl {
@@ -44,33 +44,12 @@ impl std::fmt::Debug for Nep17MetadataReaderImpl {
         f.debug_struct("Nep17MetadataReaderImpl")
             .field("snapshot", &"DataCache")
             .field("settings", &self.settings)
-            .field(
-                "native_contract_provider",
-                &self
-                    .native_contract_provider
-                    .as_ref()
-                    .map(|_| "NativeContractProvider"),
-            )
+            .field("native_contract_provider", &"NativeContractProvider")
             .finish()
     }
 }
 
 impl Nep17MetadataReaderImpl {
-    /// Construct a new reader over the given snapshot and settings.
-    ///
-    /// This compatibility constructor preserves the historical behavior: each
-    /// metadata read creates an `ApplicationEngine` through the ambient
-    /// native-contract provider bridge. New node/RPC composition paths should
-    /// prefer [`Self::new_with_native_contract_provider`] so the reader is
-    /// insulated from process-global provider replacement.
-    pub fn new(snapshot: Arc<DataCache>, settings: ProtocolSettings) -> Self {
-        Self {
-            snapshot,
-            settings,
-            native_contract_provider: None,
-        }
-    }
-
     /// Construct a new reader with an explicit native-contract provider.
     ///
     /// The provider is captured by the reader and passed into each probe engine,
@@ -85,7 +64,7 @@ impl Nep17MetadataReaderImpl {
         Self {
             snapshot,
             settings,
-            native_contract_provider: Some(native_contract_provider),
+            native_contract_provider,
         }
     }
 }
@@ -99,29 +78,16 @@ impl Nep17MetadataReader for Nep17MetadataReaderImpl {
             .map_err(|e| ServiceError::Internal(e.to_string()))?;
         let script = builder.to_array();
 
-        let mut engine = match &self.native_contract_provider {
-            Some(provider) => {
-                ApplicationEngine::new_with_shared_block_and_native_contract_provider(
-                    TriggerType::Application,
-                    None,
-                    Arc::clone(&self.snapshot),
-                    None,
-                    self.settings.clone(),
-                    DESCRIPTOR_PROBE_GAS,
-                    None,
-                    Some(Arc::clone(provider)),
-                )
-            }
-            None => ApplicationEngine::new(
-                TriggerType::Application,
-                None,
-                Arc::clone(&self.snapshot),
-                None,
-                self.settings.clone(),
-                DESCRIPTOR_PROBE_GAS,
-                None,
-            ),
-        }
+        let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
+            TriggerType::Application,
+            None,
+            Arc::clone(&self.snapshot),
+            None,
+            self.settings.clone(),
+            DESCRIPTOR_PROBE_GAS,
+            None,
+            Some(Arc::clone(&self.native_contract_provider)),
+        )
         .map_err(|e| ServiceError::Internal(e.to_string()))?;
         engine
             .load_script(script, CallFlags::READ_ONLY, None)

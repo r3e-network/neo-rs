@@ -51,7 +51,11 @@ fn nonexistent_asset_id_is_rejected() {
     let snapshot = Arc::new(DataCache::new(false));
     let settings = ProtocolSettings::default();
     let bogus = UInt160::from_bytes(&[0xAB; 20]).unwrap();
-    let reader = Nep17MetadataReaderImpl::new(Arc::clone(&snapshot), settings);
+    let reader = Nep17MetadataReaderImpl::new_with_native_contract_provider(
+        Arc::clone(&snapshot),
+        settings,
+        standard_native_provider(),
+    );
 
     let err = AssetDescriptor::new(snapshot, &reader, bogus)
         .expect_err("undeployed asset must be rejected");
