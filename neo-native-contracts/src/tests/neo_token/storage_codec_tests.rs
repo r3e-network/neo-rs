@@ -308,8 +308,9 @@ fn neo_storage_codecs_use_stack_value_projection() {
         "committee witness checks should reuse the byte-keyed committee address cache"
     );
 
+    let candidate_source = include_str!("../../neo_token/storage/candidates.rs");
     let candidate_decoder = slice_between(
-        source,
+        candidate_source,
         "fn decode_candidate_state",
         "fn encode_candidate_state",
     );
@@ -320,7 +321,7 @@ fn neo_storage_codecs_use_stack_value_projection() {
     assert!(!candidate_decoder.contains("BinarySerializer::deserialize("));
 
     let candidate_encoder = slice_between(
-        source,
+        candidate_source,
         "fn encode_candidate_state",
         "/// C# `GetCandidatesInternal`",
     );
@@ -330,7 +331,6 @@ fn neo_storage_codecs_use_stack_value_projection() {
     assert!(!candidate_encoder.contains("StackItem::from_struct"));
     assert!(!candidate_encoder.contains("BinarySerializer::serialize("));
 
-    let candidate_source = include_str!("../../neo_token/storage/candidates.rs");
     assert!(
         candidate_source.contains("HashMap<ECPoint, UInt160>"),
         "signature-account cache should key by ECPoint to avoid Vec allocation on cache hits"
@@ -346,7 +346,7 @@ fn neo_storage_codecs_use_stack_value_projection() {
     );
 
     let top_registered_candidates = slice_between(
-        source,
+        candidate_source,
         "fn top_registered_candidates",
         "/// Decodes a `CandidateState` storage value",
     );
@@ -381,7 +381,7 @@ fn neo_storage_codecs_use_stack_value_projection() {
     );
 
     let registered_candidate_entries = slice_between(
-        source,
+        candidate_source,
         "fn registered_candidate_entries",
         "/// [`registered_candidate_entries`] projected",
     );
