@@ -1,3 +1,4 @@
+use super::trace::TraceTxFilter;
 use super::*;
 // `invocation_script`/`verification_script` on `Witness` are trait methods.
 use neo_execution::native_contract_provider::{NativeProviderTestGuard, lock_native_provider};
