@@ -233,7 +233,7 @@ fn header_inventory_verification_uses_system_native_provider() {
 
 #[test]
 fn initialize_uses_system_native_provider_for_genesis_persist() {
-    let source = include_str!("../../pipeline/handlers.rs");
+    let source = include_str!("../../handlers/initialize.rs");
     let start = source
         .find("pub(crate) async fn initialize")
         .expect("initialize handler exists");
