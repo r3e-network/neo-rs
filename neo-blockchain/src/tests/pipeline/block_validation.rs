@@ -1,4 +1,5 @@
 use super::*;
+use neo_primitives::TimeProvider;
 use neo_primitives::constants::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 
 #[test]
