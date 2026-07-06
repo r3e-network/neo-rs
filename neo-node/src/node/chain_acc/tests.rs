@@ -1,12 +1,20 @@
 //! Regression tests for chain.acc import helpers.
 
+use super::batch::{PendingChainAccBatch, take_import_batch};
 use super::format::tests::{
     empty_block, empty_block_with_prev_hash, encode_chain_acc, linked_empty_blocks,
 };
+use super::range::{
+    bounded_chain_acc_import_range, chain_acc_import_record_count, count_only_stop_height_exceeded,
+    count_only_stop_height_reached,
+};
 use super::*;
-use neo_blockchain::BlockchainCommand;
+use neo_blockchain::{BlockchainCommand, command::ImportBlocksReply, handle::BlockchainHandle};
+use neo_payloads::block::Block;
 use neo_payloads::{Signer, Transaction, Witness};
 use neo_primitives::{UInt160, WitnessScope};
+use neo_storage::persistence::store::Store;
+use std::sync::Arc;
 
 fn signed_test_transaction(nonce: u32) -> Transaction {
     let mut tx = Transaction::new();
