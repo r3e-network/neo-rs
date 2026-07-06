@@ -238,9 +238,10 @@ impl ApplicationEngine {
             ));
         }
 
-        let hashes = crate::helper::known_script_hashes_for_verifying(
+        let hashes = crate::helper::known_script_hashes_for_verifying_with_native_provider(
             container.as_ref(),
             self.snapshot_cache.as_ref(),
+            self.native_contract_provider(),
         )?
         .unwrap_or_default();
         Ok(hashes.contains(hash))

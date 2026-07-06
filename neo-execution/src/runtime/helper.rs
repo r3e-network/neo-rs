@@ -422,19 +422,6 @@ impl Helper {
     }
 }
 
-/// Resolves C# `IVerifiable.GetScriptHashesForVerifying` for payloads whose
-/// verifying hashes need execution-layer native-contract state.
-pub(crate) fn known_script_hashes_for_verifying(
-    verifiable: &dyn Verifiable,
-    snapshot: &DataCache,
-) -> CoreResult<Option<Vec<UInt160>>> {
-    known_script_hashes_for_verifying_with_native_provider(
-        verifiable,
-        snapshot,
-        NativeContractLookup::native_contract_provider(),
-    )
-}
-
 pub(crate) fn known_script_hashes_for_verifying_with_native_provider(
     verifiable: &dyn Verifiable,
     snapshot: &DataCache,
