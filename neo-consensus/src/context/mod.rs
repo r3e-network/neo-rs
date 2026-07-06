@@ -17,13 +17,14 @@
 //!   checks.
 //! - `replay`: bounded message-hash replay protection.
 //! - `round`: view/block lifecycle resets.
+//! - `signatures`: prepare, commit, and change-view payload mutation helpers.
 //! - `state`: domain state records for the surrounding workflow.
 //! - `timer`: consensus timer policy and scheduling helpers.
 //! - `transactions`: proposal transaction availability and block-policy math.
 //! - `validator_info`: validator metadata records.
 //! - `tests`: Module-local tests and regression coverage.
 
-use crate::{ChangeViewReason, ConsensusError, ConsensusResult};
+use crate::ChangeViewReason;
 use lru::LruCache;
 #[cfg(test)]
 use neo_crypto::ECPoint;
@@ -65,6 +66,7 @@ mod persistence;
 mod quorum;
 mod replay;
 mod round;
+mod signatures;
 mod state;
 mod timer;
 mod transactions;
@@ -235,74 +237,6 @@ impl ConsensusContext {
             last_seen_messages: HashMap::new(),
             seen_message_hashes: Self::new_seen_message_cache(),
         }
-    }
-
-    /// Adds a prepare response invocation script
-    pub fn add_prepare_response(
-        &mut self,
-        validator_index: u8,
-        invocation_script: Vec<u8>,
-        preparation_hash: Option<UInt256>,
-    ) -> ConsensusResult<()> {
-        if validator_index as usize >= self.validator_count() {
-            return Err(ConsensusError::InvalidValidatorIndex(validator_index));
-        }
-        self.prepare_responses
-            .insert(validator_index, invocation_script);
-        if let Some(hash) = preparation_hash {
-            self.prepare_response_hashes.insert(validator_index, hash);
-        }
-        Ok(())
-    }
-
-    /// Adds a commit signature
-    pub fn add_commit(
-        &mut self,
-        validator_index: u8,
-        view_number: u8,
-        signature: Vec<u8>,
-    ) -> ConsensusResult<()> {
-        if validator_index as usize >= self.validator_count() {
-            return Err(ConsensusError::InvalidValidatorIndex(validator_index));
-        }
-        self.commits.insert(validator_index, signature);
-        self.commit_view_numbers
-            .insert(validator_index, view_number);
-        Ok(())
-    }
-
-    /// Adds a change view request
-    pub fn add_change_view(
-        &mut self,
-        validator_index: u8,
-        new_view: u8,
-        reason: ChangeViewReason,
-        timestamp: u64,
-    ) -> ConsensusResult<()> {
-        if validator_index as usize >= self.validator_count() {
-            return Err(ConsensusError::InvalidValidatorIndex(validator_index));
-        }
-        self.change_views
-            .insert(validator_index, (new_view, reason));
-        self.last_change_view_timestamps
-            .insert(validator_index, timestamp);
-        Ok(())
-    }
-
-    /// Collects all commit signatures for block finalization
-    #[must_use]
-    pub fn collect_commit_signatures(&self) -> Vec<(u8, Vec<u8>)> {
-        self.commits
-            .iter()
-            .filter(|(idx, _)| {
-                self.commit_view_numbers
-                    .get(idx)
-                    .copied()
-                    .unwrap_or(self.view_number)
-                    == self.view_number
-            })
-            .map(|(idx, sig)| (*idx, sig.clone()))
-            .collect()
     }
 }
 

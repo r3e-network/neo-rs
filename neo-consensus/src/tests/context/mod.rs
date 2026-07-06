@@ -13,6 +13,7 @@
 //! - Test modules and fixtures: grouped coverage for the surrounding domain.
 
 use super::*;
+use crate::ConsensusError;
 
 fn create_test_validators(count: usize) -> Vec<ValidatorInfo> {
     (0..count)
