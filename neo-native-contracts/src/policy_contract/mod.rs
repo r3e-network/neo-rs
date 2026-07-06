@@ -11,6 +11,7 @@
 //! ## Contents
 //!
 //! - `constants`: Protocol constants, storage prefixes, bounds, and event names.
+//! - `initialize`: genesis policy setting seeding.
 //! - `invoke`: Native method dispatch and runtime side effects.
 //! - `metadata`: Native contract metadata and descriptor helpers.
 //! - `provider`: Engine-facing blocked-contract and whitelisted-fee seams.
@@ -22,11 +23,10 @@ use crate::hashes::POLICY_CONTRACT_HASH;
 use neo_error::CoreResult;
 use neo_execution::{ApplicationEngine, NativeContract, NativeEvent, NativeMethod};
 use neo_primitives::UInt160;
-use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
-use num_bigint::BigInt;
 
 mod constants;
+mod initialize;
 mod invoke;
 mod metadata;
 mod provider;
@@ -73,34 +73,8 @@ impl NativeContract for PolicyContract {
         self.is_contract_blocked_native(snapshot, contract_hash)
     }
 
-    /// C# `PolicyContract.InitializeAsync(engine, hardfork)` for `hardfork ==
-    /// ActiveIn` (PolicyContract.cs:137-143; Policy is genesis-active, so this
-    /// runs while persisting block 0): seed `Prefix_FeePerByte` (1000),
-    /// `Prefix_ExecFeeFactor` (30), and `Prefix_StoragePrice` (100000). The
-    /// HF_Echidna / HF_Faun re-initialization branches live in
-    /// `initialize_for_hardfork`, triggered by `ContractManagement`'s
-    /// `on_persist` at those hardfork blocks.
     fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
-        let snapshot = engine.snapshot_cache();
-        snapshot.add(
-            Self::fee_per_byte_key(),
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
-                DEFAULT_FEE_PER_BYTE,
-            ))),
-        );
-        snapshot.add(
-            Self::exec_fee_factor_key(),
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
-                DEFAULT_EXEC_FEE_FACTOR,
-            ))),
-        );
-        snapshot.add(
-            Self::storage_price_key(),
-            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(
-                DEFAULT_STORAGE_PRICE,
-            ))),
-        );
-        Ok(())
+        self.initialize_native(engine)
     }
 
     fn whitelisted_fee(

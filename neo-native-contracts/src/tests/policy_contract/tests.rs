@@ -2,6 +2,7 @@ use super::*;
 use neo_primitives::UInt256;
 use neo_storage::StorageItem;
 use neo_vm::Interoperable;
+use num_bigint::BigInt;
 
 #[path = "surface.rs"]
 mod surface;

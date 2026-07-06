@@ -25,8 +25,10 @@ use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
 use neo_payloads::{Block, BlockHeader};
 use neo_primitives::{TriggerType, Verifiable, WitnessScope};
+use neo_storage::StorageItem;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::VmState;
+use num_bigint::BigInt;
 use std::sync::Arc;
 
 /// ProtocolSettings with HF_Faun scheduled from genesis.

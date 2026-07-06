@@ -153,6 +153,8 @@ pub(super) fn standard_contract_sources()
                 "\n",
                 include_str!("../../policy_contract/storage.rs"),
                 "\n",
+                include_str!("../../policy_contract/initialize.rs"),
+                "\n",
                 include_str!("../../policy_contract/invoke.rs"),
                 "\n",
                 include_str!("../../policy_contract/metadata.rs"),
