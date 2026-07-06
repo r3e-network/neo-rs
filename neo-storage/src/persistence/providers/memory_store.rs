@@ -1,5 +1,6 @@
 use super::memory_snapshot::MemorySnapshot;
 use crate::persistence::{
+    raw_overlay_store::RawOverlayStore,
     read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric},
     seek_direction::SeekDirection,
     store::{OnNewSnapshotDelegate, Store},
@@ -154,6 +155,41 @@ impl Store for MemoryStore {
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn as_raw_overlay_store(&self) -> Option<&dyn RawOverlayStore> {
+        Some(self)
+    }
+}
+
+impl RawOverlayStore for MemoryStore {
+    fn try_commit_raw_overlay(
+        &self,
+        overlay: &[(Vec<u8>, Option<Vec<u8>>)],
+    ) -> crate::error::StorageResult<bool> {
+        let mut guard = self.inner_data.write();
+        for (key, value) in overlay {
+            match value {
+                Some(value) => {
+                    guard.insert(key.clone(), value.clone());
+                }
+                None => {
+                    guard.remove(key);
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    fn try_commit_borrowed_raw_overlay(
+        &self,
+        visit: &mut dyn FnMut(&mut dyn FnMut(&[u8], Option<&[u8]>)),
+    ) -> crate::error::StorageResult<bool> {
+        let mut overlay = Vec::new();
+        visit(&mut |key, value| {
+            overlay.push((key.to_vec(), value.map(<[u8]>::to_vec)));
+        });
+        self.try_commit_raw_overlay(&overlay)
     }
 }
 

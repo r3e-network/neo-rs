@@ -5,6 +5,7 @@
 //!
 //! - the typed blockchain handle from `neo-blockchain`,
 //! - the typed network handle from `neo-network`,
+//! - the typed sync import pipeline handle used by downloader composition,
 //! - a [`WalletProvider`] for the optional node wallet,
 //! - the storage backend, mempool, header cache, and service registry,
 //! - and the native contract provider owned for NeoVM host calls.
@@ -37,6 +38,7 @@ use neo_storage::persistence::store_cache::StoreCache;
 use neo_error::{CoreError, CoreResult};
 
 use crate::error::NodeResult;
+use crate::sync_import_pipeline::SyncImportPipeline;
 use crate::wallet_provider::WalletProvider;
 use neo_runtime::ServiceRegistry;
 
@@ -64,6 +66,15 @@ pub struct Node {
     /// Network service handle. Other subsystems call methods on
     /// this to broadcast blocks / transactions.
     pub network: NetworkHandle,
+
+    /// Shared sync import pipeline entry point.
+    ///
+    /// The handle owns the bounded preverification queue and durable
+    /// import-stage checkpoint provider over the same blockchain/storage
+    /// handles as the rest of the node. Live inventory still uses the
+    /// inventory-aware blockchain handle directly until downloader integration
+    /// is widened.
+    pub sync_import_pipeline: Arc<SyncImportPipeline>,
 
     /// Shared memory pool. The same instance the blockchain service /
     /// transaction router admit into; RPC handlers read it for
@@ -101,6 +112,7 @@ impl std::fmt::Debug for Node {
             .field("wallets", &self.wallets)
             .field("blockchain", &"BlockchainHandle")
             .field("network", &"NetworkHandle")
+            .field("sync_import_pipeline", &self.sync_import_pipeline)
             .field("mempool", &self.mempool.total_count())
             .field("header_cache", &self.header_cache.count())
             .field("services", &self.services)
@@ -172,6 +184,11 @@ impl Node {
     /// Returns the network service handle.
     pub fn network(&self) -> NetworkHandle {
         self.network.clone()
+    }
+
+    /// Returns the composed sync import pipeline handle.
+    pub fn sync_import_pipeline(&self) -> Arc<SyncImportPipeline> {
+        Arc::clone(&self.sync_import_pipeline)
     }
 
     /// Returns the storage backend.

@@ -104,6 +104,25 @@ fn store_checkpoint_store_round_trips_and_overwrites_memory_backend() {
 }
 
 #[test]
+fn shared_store_checkpoint_store_round_trips_erased_memory_backend() {
+    let backing: Arc<dyn neo_storage::persistence::Store> = Arc::new(MemoryStore::new());
+    let store = SharedStoreSyncStageCheckpointStore::new(Arc::clone(&backing));
+    let checkpoint = SyncStageCheckpoint::new(SyncStageKind::Import, 77).with_counters(70, 4_096);
+
+    assert_eq!(store.checkpoint(SyncStageKind::Import).expect("get"), None);
+
+    store
+        .put_checkpoint(checkpoint.clone())
+        .expect("put checkpoint through erased store");
+
+    let fresh_view = SharedStoreSyncStageCheckpointStore::new(backing);
+    assert_eq!(
+        fresh_view.checkpoint(SyncStageKind::Import).expect("get"),
+        Some(checkpoint)
+    );
+}
+
+#[test]
 fn store_checkpoint_store_persists_across_mdbx_reopen() {
     let path = unique_test_path("sync-checkpoint-mdbx");
     let provider = MdbxStoreProvider::new(StorageConfig::default()).with_map_size(64 * 1024 * 1024);

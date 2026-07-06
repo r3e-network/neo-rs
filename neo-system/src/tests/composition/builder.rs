@@ -1,5 +1,6 @@
 use super::*;
 use neo_execution::native_contract_provider::NativeContractLookup;
+use neo_runtime::{BlockOrigin, SyncStageCheckpoint, SyncStageKind};
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 
 fn memory_store() -> Arc<dyn Store> {
@@ -71,6 +72,25 @@ fn builder_succeeds_with_required_services() {
         NativeContractLookup::native_contract_provider().is_none(),
         "NodeBuilder must keep the provider on the composed node instead of mutating the global bridge"
     );
+
+    let pipeline = node.sync_import_pipeline();
+    assert_eq!(pipeline.origin(), BlockOrigin::Sync);
+    assert!(
+        pipeline.import_queue().max_concurrency() >= 1,
+        "sync import queue must bound preverification without stalling"
+    );
+    let checkpoint = SyncStageCheckpoint::new(SyncStageKind::Import, 12).with_counters(12, 512);
+    pipeline
+        .checkpoint_store()
+        .put_checkpoint(checkpoint.clone())
+        .expect("default sync pipeline should persist checkpoints through node storage");
+    assert_eq!(
+        pipeline
+            .checkpoint_store()
+            .checkpoint(SyncStageKind::Import)
+            .expect("read checkpoint"),
+        Some(checkpoint)
+    );
 }
 
 #[test]
@@ -99,4 +119,24 @@ fn builder_keeps_custom_native_contract_provider_local() {
         NativeContractLookup::native_contract_provider().is_none(),
         "custom providers should be captured by the node, not installed globally"
     );
+}
+
+#[test]
+fn builder_keeps_custom_sync_import_pipeline_local() {
+    let storage = memory_store();
+    let settings = Arc::new(ProtocolSettings::default());
+    let (bc, _rx) = BlockchainHandle::with_capacity();
+    let (net, _nrx, _etx) = NetworkHandle::channel(8, 8);
+    let pipeline = Arc::new(SyncImportPipeline::new(bc.clone(), Arc::clone(&storage)));
+
+    let node = NodeBuilder::default()
+        .with_settings(settings)
+        .with_storage(storage)
+        .with_blockchain(bc)
+        .with_network(net)
+        .with_sync_import_pipeline(Arc::clone(&pipeline))
+        .build()
+        .expect("required services set");
+
+    assert!(Arc::ptr_eq(&node.sync_import_pipeline(), &pipeline));
 }

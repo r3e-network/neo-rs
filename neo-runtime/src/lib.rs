@@ -32,9 +32,9 @@ pub use service::{
     BlockchainEvent, CommitPolicy, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY,
     ExecutionOutcome, ExecutionPayload, ImportQueue, ImportedTip, InMemorySyncStageCheckpointStore,
     Nep17Metadata, Nep17MetadataReader, NetworkEvent, NetworkService, Service, ServiceRegistry,
-    StageProgress, StoreSyncStageCheckpointStore, SyncBlockBatch, SyncPipelineDriver,
-    SyncPipelineImportOutcome, SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind,
-    TxHash, ValidationResult,
+    SharedStoreSyncStageCheckpointStore, StageProgress, StoreSyncStageCheckpointStore,
+    SyncBlockBatch, SyncPipelineDriver, SyncPipelineImportOutcome, SyncStageCheckpoint,
+    SyncStageCheckpointStore, SyncStageKind, TxHash, ValidationResult,
 };
 pub use service::{
     block_import, blockchain, nep17, outcome, service_registry, services, sync_metrics,

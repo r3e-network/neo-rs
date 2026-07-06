@@ -312,6 +312,70 @@ where
     }
 }
 
+/// Store-backed checkpoint provider over an erased shared store handle.
+///
+/// Node composition usually owns storage as `Arc<dyn Store>` so RPC,
+/// blockchain, state-root, and sync services all share one provider-created
+/// backend. This adapter preserves the same durable checkpoint encoding as
+/// [`StoreSyncStageCheckpointStore`] while writing through the object-safe raw
+/// overlay extension exposed by production MDBX/RocksDB stores and the
+/// in-memory provider.
+#[derive(Debug)]
+pub struct SharedStoreSyncStageCheckpointStore {
+    store: Arc<dyn Store>,
+    write_lock: parking_lot::Mutex<()>,
+}
+
+impl SharedStoreSyncStageCheckpointStore {
+    /// Create a checkpoint store over a shared erased storage backend.
+    #[must_use]
+    pub fn new(store: Arc<dyn Store>) -> Self {
+        Self {
+            store,
+            write_lock: parking_lot::Mutex::new(()),
+        }
+    }
+
+    /// Return the shared store handle.
+    #[must_use]
+    pub fn store(&self) -> Arc<dyn Store> {
+        Arc::clone(&self.store)
+    }
+}
+
+impl SyncStageCheckpointStore for SharedStoreSyncStageCheckpointStore {
+    fn checkpoint(&self, stage: SyncStageKind) -> ServiceResult<Option<SyncStageCheckpoint>> {
+        let Some(bytes) = self.store.try_get_bytes(&checkpoint_key(stage)) else {
+            return Ok(None);
+        };
+        decode_checkpoint(stage, &bytes).map(Some)
+    }
+
+    fn put_checkpoint(&self, checkpoint: SyncStageCheckpoint) -> ServiceResult<()> {
+        let key = checkpoint_key(checkpoint.stage);
+        let value = encode_checkpoint(&checkpoint);
+        let Some(raw_overlay) = self.store.as_raw_overlay_store() else {
+            return Err(ServiceError::invalid_state(
+                "shared store does not support raw overlay sync checkpoint writes",
+            ));
+        };
+
+        let _guard = self.write_lock.lock();
+        let overlay = [(key, Some(value))];
+        if !raw_overlay
+            .try_commit_raw_overlay(&overlay)
+            .map_err(|err| storage_error("write sync checkpoint", err))?
+        {
+            return Err(ServiceError::invalid_state(
+                "shared store declined raw overlay sync checkpoint write",
+            ));
+        }
+        self.store
+            .flush()
+            .map_err(|err| storage_error("flush sync checkpoint", err))
+    }
+}
+
 fn checkpoint_key(stage: SyncStageKind) -> Vec<u8> {
     vec![
         STORE_CHECKPOINT_KEY_PREFIX[0],

@@ -11,7 +11,10 @@
 //! one is absent. There are no trait-object executor / consensus / engine
 //! fields to compose: those were removed in ADR-032 / ADR-033. The native
 //! contract provider can be supplied explicitly by a composition root; when it
-//! is not supplied, the builder owns the standard Neo N3 provider locally.
+//! is not supplied, the builder owns the standard Neo N3 provider locally. The
+//! sync import pipeline is also built by default from the same blockchain and
+//! storage handles so staged-sync callers can use one shared import/checkpoint
+//! boundary.
 
 use std::sync::Arc;
 use tracing::debug;
@@ -25,6 +28,7 @@ use neo_storage::persistence::store::Store;
 
 use crate::error::NodeResult;
 use crate::node::Node;
+use crate::sync_import_pipeline::SyncImportPipeline;
 use crate::wallet_provider::WalletProvider;
 use neo_runtime::ServiceRegistry;
 
@@ -40,6 +44,7 @@ pub struct NodeBuilder {
     header_cache: Option<Arc<HeaderCache>>,
     services: Option<ServiceRegistry>,
     native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+    sync_import_pipeline: Option<Arc<SyncImportPipeline>>,
 }
 
 impl std::fmt::Debug for NodeBuilder {
@@ -57,6 +62,7 @@ impl std::fmt::Debug for NodeBuilder {
                 "native_contract_provider",
                 &self.native_contract_provider.is_some(),
             )
+            .field("sync_import_pipeline", &self.sync_import_pipeline.is_some())
             .finish()
     }
 }
@@ -131,6 +137,15 @@ impl NodeBuilder {
         self
     }
 
+    /// Install a pre-composed sync import pipeline.
+    ///
+    /// When unset, [`Self::build`] creates one over the same blockchain handle
+    /// and storage provider installed on the node.
+    pub fn with_sync_import_pipeline(mut self, pipeline: Arc<SyncImportPipeline>) -> Self {
+        self.sync_import_pipeline = Some(pipeline);
+        self
+    }
+
     /// Finalise the builder.
     pub fn build(self) -> NodeResult<Node> {
         let settings = self
@@ -154,12 +169,19 @@ impl NodeBuilder {
         let mempool = self
             .mempool
             .unwrap_or_else(|| Arc::new(MemoryPool::new(&settings)));
+        let sync_import_pipeline = self.sync_import_pipeline.unwrap_or_else(|| {
+            Arc::new(SyncImportPipeline::new(
+                blockchain.clone(),
+                Arc::clone(&storage),
+            ))
+        });
         Ok(Node {
             settings,
             storage,
             wallets: self.wallets.unwrap_or_default(),
             blockchain,
             network,
+            sync_import_pipeline,
             mempool,
             header_cache: self.header_cache.unwrap_or_default(),
             services: self.services.unwrap_or_default(),

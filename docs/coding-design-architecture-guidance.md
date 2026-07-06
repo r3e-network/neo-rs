@@ -243,7 +243,9 @@ Priority order for crate refactors:
    validation, execution, native-persist, state-root, and durable-store
    implementation behind that trait. Use `neo_runtime::BlockImportQueue` for
    bounded concurrent preverification, but keep ordered import in
-   `BlockImport::import_many`.
+   `BlockImport::import_many`. Use `neo_system::SyncImportPipeline` as the
+   node-composed handle that binds the canonical blockchain importer, bounded
+   queue, shared store-backed sync checkpoints, and import-stage commit policy.
    Downloader code should expose `neo_network::BlockDownloader` streams and use
    `neo_runtime::SyncPipelineDriver` to convert contiguous downloaded batches
    into ordered import-queue submissions. Stage flushing and crash-resume
