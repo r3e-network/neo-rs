@@ -101,6 +101,8 @@ pub(super) fn standard_contract_sources()
                 "\n",
                 include_str!("../../neo_token/metadata.rs"),
                 "\n",
+                include_str!("../../neo_token/persist.rs"),
+                "\n",
                 include_str!("../../neo_token/invoke.rs"),
                 "\n",
                 include_str!("../../neo_token/mod.rs"),

@@ -62,13 +62,6 @@ fn visible_store_dump(snapshot: &DataCache) -> Vec<(Vec<u8>, Vec<u8>)> {
         .collect()
 }
 
-fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
-    let start_idx = source.find(start).expect("start marker exists");
-    let tail = &source[start_idx..];
-    let end_idx = tail.find(end).expect("end marker exists");
-    &tail[..end_idx]
-}
-
 #[test]
 fn on_persist_refresh_recomputes_committee_and_emits_committee_changed() {
     // Single-member committee (every block refreshes); HF_Cockatrice at 0
@@ -443,8 +436,7 @@ fn fast_forward_empty_block_rewards_matches_normal_hooks_across_multiple_nonzero
 
 #[test]
 fn post_persist_uses_cached_signature_account_for_rotating_committee_reward() {
-    let source = include_str!("../../neo_token/mod.rs");
-    let post_persist = slice_between(source, "fn post_persist", "fn invoke");
+    let post_persist = include_str!("../../neo_token/persist.rs");
     assert!(
         post_persist.contains("candidate_signature_account(&member)"),
         "per-block committee reward should reuse cached signature accounts"

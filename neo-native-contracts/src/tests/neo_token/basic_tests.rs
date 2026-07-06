@@ -344,7 +344,7 @@ fn neo_public_array_return_encoders_use_stack_value_projection() {
 
     let candidate_storage_source = include_str!("../../neo_token/storage/candidates.rs");
     let storage_source = include_str!("../../neo_token/storage/mod.rs");
-    let mod_source = include_str!("../../neo_token/mod.rs");
+    let persist_source = include_str!("../../neo_token/persist.rs");
     let candidate_encoder = slice_between(
         candidate_storage_source,
         "fn candidates_to_array_bytes",
@@ -383,7 +383,11 @@ fn neo_public_array_return_encoders_use_stack_value_projection() {
     assert!(points_item_adapter.contains("StackItem::try_from"));
     assert!(!points_item_adapter.contains("StackItem::from_array"));
 
-    let on_persist = slice_between(mod_source, "fn on_persist", "fn post_persist");
+    let on_persist = slice_between(
+        persist_source,
+        "fn on_persist_native",
+        "fn post_persist_native",
+    );
     assert!(on_persist.contains("points_to_stack_item"));
     assert!(!on_persist.contains("StackItem::from_array"));
 }
