@@ -1,8 +1,8 @@
 //! Response construction helpers for blockchain RPC methods.
 //!
 //! Handlers own lookup and request flow; this module owns C#-compatible JSON
-//! enrichment for blocks, headers, contracts, mempool entries, storage, and
-//! transactions.
+//! enrichment for blocks, headers, contracts, governance/native results,
+//! mempool entries, storage, and transactions.
 
 use crate::client::models::RpcContractState;
 use crate::server::rpc_exception::RpcException;
@@ -14,7 +14,8 @@ use neo_io::Serializable;
 use neo_mempool::PoolItem;
 use neo_native_contracts::LedgerContract;
 use neo_payloads::{Header, TransactionState, block::Block, transaction::Transaction};
-use neo_primitives::UInt256;
+use neo_primitives::{UInt256, hex_util};
+use num_bigint::BigInt;
 use serde_json::{Map, Value, json};
 
 pub(super) fn block_to_json(
@@ -150,6 +151,42 @@ pub(super) fn contract_state_to_json(contract: &ContractState) -> Value {
             .unwrap_or_else(|err| json!({"error": err.to_string()})),
         Err(err) => json!({"error": err.to_string()}),
     }
+}
+
+pub(super) fn native_contracts_to_json(contract_states: &[ContractState]) -> Value {
+    Value::Array(contract_states.iter().map(contract_state_to_json).collect())
+}
+
+pub(super) fn next_block_validator_to_json(public_key: &[u8], votes: i64) -> Value {
+    json!({
+        "publickey": hex_util::encode_hex(public_key),
+        "votes": votes,
+    })
+}
+
+pub(super) fn next_block_validators_to_json(validators: Vec<Value>) -> Value {
+    Value::Array(validators)
+}
+
+pub(super) fn candidate_to_json(public_key: &[u8], votes: &BigInt, active: bool) -> Value {
+    json!({
+        "publickey": hex_util::encode_hex(public_key),
+        "votes": votes.to_string(),
+        "active": active,
+    })
+}
+
+pub(super) fn candidates_to_json(candidates: Vec<Value>) -> Value {
+    Value::Array(candidates)
+}
+
+pub(super) fn committee_to_json(public_keys: &[Vec<u8>]) -> Value {
+    Value::Array(
+        public_keys
+            .iter()
+            .map(|point| Value::String(hex_util::encode_hex(point)))
+            .collect(),
+    )
 }
 
 pub(super) fn transaction_to_verbose_json(

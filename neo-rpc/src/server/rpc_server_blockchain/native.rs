@@ -1,8 +1,8 @@
 //! Native contract and governance RPC handlers.
 //!
 //! These handlers read native NEO/GAS contract state through the RPC native
-//! query facade. Keeping them here avoids mixing governance projection details
-//! into the blockchain route map.
+//! query facade. Keeping them here avoids mixing governance query flow into the
+//! blockchain route map; response projection stays in `responses`.
 
 use std::cmp::Reverse;
 use std::sync::Arc;
@@ -13,13 +13,15 @@ use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
 use neo_native_contracts::{LedgerContract, contract_management::ContractManagement};
-use neo_primitives::hex_util;
 use num_traits::ToPrimitive;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::RpcServerBlockchain;
 use super::request_helpers::NoParamsRequest;
-use super::responses::contract_state_to_json;
+use super::responses::{
+    candidate_to_json, candidates_to_json, committee_to_json, native_contracts_to_json,
+    next_block_validator_to_json, next_block_validators_to_json,
+};
 
 impl RpcServerBlockchain {
     pub(super) fn get_native_contracts(
@@ -58,9 +60,7 @@ impl RpcServerBlockchain {
 
         contract_states.sort_by_key(|state| Reverse(state.id));
 
-        Ok(Value::Array(
-            contract_states.iter().map(contract_state_to_json).collect(),
-        ))
+        Ok(native_contracts_to_json(&contract_states))
     }
 
     pub(super) fn get_next_block_validators(
@@ -97,11 +97,9 @@ impl RpcServerBlockchain {
                     RpcError::internal_server_error().with_data("candidate vote out of range"),
                 )
             })?;
-            result.push(json!({
-                "publickey": hex_util::encode_hex(&point),
-                "votes": votes_value}));
+            result.push(next_block_validator_to_json(&point, votes_value));
         }
-        Ok(Value::Array(result))
+        Ok(next_block_validators_to_json(result))
     }
 
     pub(super) fn get_candidates(
@@ -138,12 +136,9 @@ impl RpcServerBlockchain {
         let mut result = Vec::with_capacity(candidates.len());
         for (point, votes) in &candidates {
             let active = validators.iter().any(|validator| validator == point);
-            result.push(json!({
-                "publickey": hex_util::encode_hex(point),
-                "votes": votes.to_string(),
-                "active": active}));
+            result.push(candidate_to_json(point, votes, active));
         }
-        Ok(Value::Array(result))
+        Ok(candidates_to_json(result))
     }
 
     pub(super) fn get_committee(
@@ -163,10 +158,6 @@ impl RpcServerBlockchain {
                 .with_data(format!("committee not available: {err}"));
             RpcException::from(error)
         })?;
-        let members: Vec<Value> = committee
-            .iter()
-            .map(|point| Value::String(hex_util::encode_hex(point)))
-            .collect();
-        Ok(Value::Array(members))
+        Ok(committee_to_json(&committee))
     }
 }

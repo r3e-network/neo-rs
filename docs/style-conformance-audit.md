@@ -332,7 +332,9 @@ height, and verbose transaction enrichment (`confirmations`, `blockhash`, and
 `blocktime`) response shapes.
 Blockchain native/governance queries have moved out of the route map:
 `rpc_server_blockchain/native.rs` owns native contract listing, committee,
-validator, and candidate projections over `NativeQueries`.
+validator, and candidate query flow over `NativeQueries`, while
+`responses.rs` owns native-contract, committee, validator, and candidate
+response projection.
 `native_queries/script.rs` owns the C# `EmitDynamicCall` bytecode layout for
 read-only native probes; `native_queries/result.rs` owns NEO stack-result
 decoding for committee, validator, and candidate probes;
