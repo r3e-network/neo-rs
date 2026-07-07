@@ -843,6 +843,7 @@ fn empty_fast_forward_run_collection_borrows_import_batch_blocks() {
 #[test]
 fn bulk_import_clones_blocks_only_after_empty_fast_forward_attempt() {
     let source = include_str!("../../handlers/import.rs");
+    let persist_source = include_str!("../../handlers/import/persist.rs");
     let handle_import = source
         .split("pub(crate) async fn handle_import")
         .nth(1)
@@ -851,12 +852,20 @@ fn bulk_import_clones_blocks_only_after_empty_fast_forward_attempt() {
     let fast_forward_branch = handle_import
         .find("stage_empty_block_fast_forward")
         .expect("bulk import attempts empty-block fast-forward");
-    let block_clone = handle_import
-        .find("blocks[position].clone()")
-        .expect("normal persistence still needs an owned block");
+    let persistence_delegate = handle_import
+        .find("persist_import_block_for_command")
+        .expect("normal persistence delegates to accepted-block helper");
 
     assert!(
-        fast_forward_branch < block_clone,
+        fast_forward_branch < persistence_delegate,
         "bulk import should not clone a block before the empty-block fast-forward path can consume it by borrow"
+    );
+    assert!(
+        !handle_import.contains("blocks[position].clone()"),
+        "handle_import should not clone batch blocks directly before fast-forward decisions"
+    );
+    assert!(
+        persist_source.contains("let block = Arc::new(block.clone());"),
+        "normal persistence still needs an owned block inside the accepted-block helper"
     );
 }

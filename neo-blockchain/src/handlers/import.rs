@@ -12,6 +12,7 @@ use crate::service::{BlockchainService, MempoolLike};
 use crate::service_context::BlockPersistContext;
 
 mod finalization;
+mod persist;
 mod verification;
 
 impl<S, M> BlockchainService<S, M>
@@ -175,92 +176,18 @@ where
                 }
             }
 
-            // C# Blockchain.OnImport runs `Persist(block)` - the state
-            // transition - before the block becomes the new tip.
-            let transaction_block = !blocks[position].transactions.is_empty();
-            let clone_start = transaction_block.then(Instant::now);
-            let block = Arc::new(blocks[position].clone());
-            if let Some(start) = clone_start {
-                stats.transaction_block_clone_elapsed += start.elapsed();
-            }
-            let transaction_block = !block.transactions.is_empty();
-            let transaction_start = transaction_block.then(Instant::now);
-            let persisted = if bulk_sync {
-                if let Some(resources) = &batch_persist_resources {
-                    self.persist_block_sequence_with_resources(
-                        Arc::clone(&block),
-                        persist_options,
-                        resources,
-                    )
-                } else {
-                    self.persist_block_sequence_with_options(Arc::clone(&block), persist_options)
-                        .await
-                }
-            } else {
-                self.persist_block_sequence_with_options(Arc::clone(&block), persist_options)
-                    .await
-            };
-            if !persisted {
-                warn!(
-                    target: "neo",
-                    height = index,
-                    "import aborted: native persistence pipeline failed"
-                );
+            if !self
+                .persist_import_block_for_command(
+                    &blocks[position],
+                    bulk_sync,
+                    persist_options,
+                    persist_context,
+                    batch_persist_resources.as_ref(),
+                    &mut stats,
+                )
+                .await
+            {
                 return ImportBlocksReply::ok_with_stats(imported, stats);
-            }
-            if let Some(start) = transaction_start {
-                stats.transaction_blocks += 1;
-                stats.transaction_elapsed += start.elapsed();
-            }
-
-            let ledger_insert_start = transaction_block.then(Instant::now);
-            if let Err(error) = self.ledger.insert_block_arc(Arc::clone(&block)) {
-                warn!(
-                    target: "neo",
-                    %error,
-                    height = index,
-                    "failed to import block into ledger cache"
-                );
-                return ImportBlocksReply::ok_with_stats(imported, stats);
-            }
-            if let Some(start) = ledger_insert_start {
-                stats.transaction_ledger_insert_elapsed += start.elapsed();
-            }
-
-            // Normal live imports flush each block immediately. Trusted
-            // bulk-sync imports keep staging into the shared snapshot and flush
-            // once after the accepted batch, avoiding one RocksDB commit per
-            // block while preserving per-block native/state transitions.
-            if !bulk_sync {
-                self.system.commit_to_store();
-            }
-            let committed_hook_start = transaction_block.then(Instant::now);
-            self.system
-                .block_committed_with_context(block.as_ref(), persist_context);
-            if let Some(start) = committed_hook_start {
-                stats.transaction_committed_hook_elapsed += start.elapsed();
-            }
-
-            // Cold-start bulk sync imports a trusted local chain.acc package,
-            // so it stays on canonical state transitions only. Live import and
-            // peer-relay paths still mirror C# MemPool.UpdatePoolForBlockPersisted
-            // per block.
-            if !bulk_sync {
-                self.mempool.block_persisted(block.as_ref());
-                self.reverify_mempool_after_persist(
-                    index,
-                    self.system.settings().max_transactions_per_block as usize,
-                );
-            }
-            if !bulk_sync {
-                self.header_cache.remove_up_to(index);
-            }
-
-            if !bulk_sync {
-                let drained = self.handle_drain_unverified_blocks().await;
-                if drained > 0 {
-                    debug!(target: "neo", drained, "drained parked unverified blocks after import");
-                }
             }
             imported += 1;
             last_imported_height = Some(index);
