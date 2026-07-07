@@ -1,4 +1,5 @@
 use super::*;
+use crate::server::model::{BlockHashOrIndex, ContractNameOrHashOrId};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use neo_config::ProtocolSettings;

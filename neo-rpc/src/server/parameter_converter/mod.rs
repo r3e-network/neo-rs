@@ -10,6 +10,7 @@
 //!
 //! ## Contents
 //!
+//! - `domain`: Address, block, and contract identifier RPC conversions.
 //! - `scalar`: Scalar and byte-like RPC conversion implementations.
 //! - `signers`: RPC signer parameter parsing helpers.
 //! - `tests`: Module-local tests and regression coverage.
@@ -18,11 +19,11 @@ use neo_execution::contract_parameter::ContractParameter;
 use neo_primitives::UInt160;
 use neo_serialization::json::{JArray, JObject, JToken};
 
-use super::model::SignersAndWitnesses;
-use super::model::{Address, BlockHashOrIndex, ContractNameOrHashOrId};
+use super::model::{Address, SignersAndWitnesses};
 use super::rpc_error::RpcError;
 use super::rpc_exception::RpcException;
 
+mod domain;
 mod scalar;
 mod signers;
 #[cfg(test)]
@@ -54,91 +55,6 @@ impl ParameterConverter {
         ctx: &ConversionContext,
     ) -> Result<T, RpcException> {
         T::from_token(token, ctx)
-    }
-}
-
-impl RpcConvertible for Address {
-    fn from_token(token: &JToken, ctx: &ConversionContext) -> Result<Self, RpcException> {
-        let text = expect_string(token, "Expected address string")?;
-        parse_address(&text, ctx.address_version)
-    }
-}
-
-impl RpcConvertible for Vec<Address> {
-    fn from_token(token: &JToken, ctx: &ConversionContext) -> Result<Self, RpcException> {
-        let array = expect_array(token)?;
-        let mut result = Self::with_capacity(array.count());
-        for (index, item) in array.children().iter().enumerate() {
-            let token = item
-                .as_ref()
-                .ok_or_else(|| invalid_params(format!("Null address entry at index {index}")))?;
-            result.push(<Address as RpcConvertible>::from_token(token, ctx)?);
-        }
-        Ok(result)
-    }
-}
-
-impl RpcConvertible for BlockHashOrIndex {
-    fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
-        match token {
-            JToken::Number(value) => {
-                if value.is_nan() || value.is_infinite() {
-                    return Err(invalid_params(format!(
-                        "Invalid block index value: {}",
-                        token.to_string_value()
-                    )));
-                }
-                let rounded = value.round();
-                if (value - rounded).abs() > f64::EPSILON {
-                    return Err(invalid_params(format!(
-                        "Invalid block index value: {}",
-                        token.to_string_value()
-                    )));
-                }
-                if rounded < 0.0 || rounded > f64::from(u32::MAX) {
-                    return Err(invalid_params(format!(
-                        "Invalid block index value: {}",
-                        token.to_string_value()
-                    )));
-                }
-                Ok(Self::from_index(rounded as u32))
-            }
-            JToken::String(text) => Self::try_parse(text)
-                .ok_or_else(|| invalid_params(format!("Invalid block hash or index: {text}"))),
-            _ => Err(invalid_params("Expected block hash or index string")),
-        }
-    }
-}
-
-impl RpcConvertible for ContractNameOrHashOrId {
-    fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
-        match token {
-            JToken::Number(value) => {
-                if value.is_nan() || value.is_infinite() {
-                    return Err(invalid_params(format!(
-                        "Invalid contract identifier: {}",
-                        token.to_string_value()
-                    )));
-                }
-                let rounded = value.round();
-                if (value - rounded).abs() > f64::EPSILON {
-                    return Err(invalid_params(format!(
-                        "Invalid contract identifier: {}",
-                        token.to_string_value()
-                    )));
-                }
-                if rounded < f64::from(i32::MIN) || rounded > f64::from(i32::MAX) {
-                    return Err(invalid_params(format!(
-                        "Invalid contract identifier: {}",
-                        token.to_string_value()
-                    )));
-                }
-                Ok(Self::from_id(rounded as i32))
-            }
-            JToken::String(text) => Self::try_parse(text)
-                .ok_or_else(|| invalid_params(format!("Invalid contract identifier: {text}"))),
-            _ => Err(invalid_params("Expected contract identifier string")),
-        }
     }
 }
 
