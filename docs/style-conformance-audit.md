@@ -281,6 +281,12 @@ GAS/datoshi decoding; `rpc_server_settings/config.rs` owns
 `rpc_server_settings/registry.rs` owns process-wide loading, validation, and
 lookup. The root `rpc_server_settings/mod.rs` now keeps the serde-visible
 config records and re-exports the registry type.
+Shared RPC helpers now follow the same facade rule:
+`rpc_helpers/errors.rs` owns common `RpcException` constructors,
+`params.rs` owns generic positional parsing, `bytes.rs` owns Base64 and Neo
+wire-payload helpers, and `hashes.rs` owns address/UInt160/UInt256 parsing.
+The root `rpc_helpers/mod.rs` keeps the public helper API as re-exports plus
+the module map.
 Smart-contract request parsing now follows the same rule:
 `smart_contract/request.rs` owns positional parsing for invocation, contract
 verification, iterator-session, and unclaimed-GAS handlers, including

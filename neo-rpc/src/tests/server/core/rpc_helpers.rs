@@ -1,4 +1,6 @@
 use super::*;
+use neo_primitives::{UInt160, UInt256};
+use serde_json::Value;
 
 #[test]
 fn expect_uint256_param_with_message_parses_valid_hash() {
