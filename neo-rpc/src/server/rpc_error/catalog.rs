@@ -1,8 +1,8 @@
 //! Named Neo RPC error constructors.
 //!
-//! The root module owns the `RpcError` record and formatting behavior; this
-//! module owns the C#-compatible error catalog so codes/messages stay grouped
-//! and auditable.
+//! `record.rs` owns the `RpcError` record and formatting behavior; this module
+//! owns the C#-compatible error catalog so codes/messages stay grouped and
+//! auditable.
 
 use neo_primitives::UInt160;
 

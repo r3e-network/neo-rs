@@ -455,8 +455,9 @@ process-wide loading, validation, and lookup. The root
 enum, and public re-exports.
 RPC errors now follow the same catalog split: `rpc_error/catalog.rs` owns the
 C#-compatible named error constructors and contract-verification formatter,
-while `rpc_error/mod.rs` owns the `RpcError` record, data trimming, JSON
-projection, and `Display` / `Error` implementations.
+`rpc_error/record.rs` owns the `RpcError` record, data trimming, JSON
+projection, and `Display` / `Error` implementations, and `rpc_error/mod.rs`
+keeps only facade exports and the module map.
 Shared RPC helpers now follow the same facade rule:
 `rpc_helpers/errors.rs` owns common `RpcException` constructors,
 `params.rs` owns generic positional parsing and no-parameter request
