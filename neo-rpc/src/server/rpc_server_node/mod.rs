@@ -10,22 +10,22 @@
 //!
 //! ## Contents
 //!
+//! - `relay`: Transaction and block relay endpoint handlers.
 //! - `request`: Typed JSON-RPC request parsing helpers.
 //! - `tests`: Module-local tests and regression coverage.
 //! - `version`: C#-compatible `getversion` response construction.
 
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 #[cfg(test)]
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_network::handle::LocalNodeInfo;
 use serde_json::{Value, json};
 
+mod relay;
 mod request;
 mod version;
 
-use self::request::{RawTransactionRequest, SubmitBlockRequest};
 #[cfg(test)]
 use self::version::{
     LEDGER_PREFIX_CURRENT_BLOCK, POLICY_PREFIX_MAX_TRACEABLE_BLOCKS,
@@ -95,18 +95,6 @@ impl RpcServerNode {
                 "bad": Vec::<Value>::new(),
                 "connected": connected})
         })
-    }
-
-    fn send_raw_transaction(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let request = RawTransactionRequest::parse(params)?;
-        let relay_result = rpc_relay::relay_transaction(server, request.transaction)?;
-        rpc_relay::map_relay_result(relay_result)
-    }
-
-    fn submit_block(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let request = SubmitBlockRequest::parse(params)?;
-        let relay_result = rpc_relay::relay_block(server, request.block)?;
-        rpc_relay::map_relay_result(relay_result)
     }
 
     fn with_local_node<F>(server: &RpcServer, func: F) -> Result<Value, RpcException>
