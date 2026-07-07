@@ -13,7 +13,7 @@ use neo_native_contracts::LedgerContract;
 use serde_json::{Value, json};
 
 use super::RpcServerBlockchain;
-use super::request_helpers::RawTransactionRequest;
+use super::request_helpers::{RawTransactionRequest, TransactionHeightRequest};
 
 impl RpcServerBlockchain {
     pub(super) fn get_raw_transaction(
@@ -87,5 +87,24 @@ impl RpcServerBlockchain {
         }
 
         Ok(json)
+    }
+
+    pub(super) fn get_transaction_height(
+        server: &RpcServer,
+        params: &[Value],
+    ) -> Result<Value, RpcException> {
+        if let Some(remote) = server.remote_ledger_rpc() {
+            return remote
+                .call("gettransactionheight", params)
+                .map_err(RpcException::from);
+        }
+        let request = TransactionHeightRequest::parse(params)?;
+        let store = server.system().store_cache();
+        let ledger = LedgerContract::new();
+        let state = ledger
+            .get_transaction_state(store.data_cache(), &request.hash)
+            .map_err(internal_error)?
+            .ok_or_else(|| RpcException::from(RpcError::unknown_transaction()))?;
+        Ok(json!(state.block_index()))
     }
 }

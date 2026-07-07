@@ -120,6 +120,18 @@ impl RawTransactionRequest {
     }
 }
 
+pub(super) struct TransactionHeightRequest {
+    pub(super) hash: UInt256,
+}
+
+impl TransactionHeightRequest {
+    pub(super) fn parse(params: &[Value]) -> Result<Self, RpcException> {
+        Ok(Self {
+            hash: RpcServerBlockchain::expect_hash_param(params, 0, "gettransactionheight")?,
+        })
+    }
+}
+
 impl RpcServerBlockchain {
     pub(super) fn parse_block_identifier(
         params: &[Value],

@@ -332,22 +332,6 @@ impl RpcServerBlockchain {
         Ok(Value::Array(result))
     }
 
-    fn get_transaction_height(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        if let Some(remote) = server.remote_ledger_rpc() {
-            return remote
-                .call("gettransactionheight", params)
-                .map_err(RpcException::from);
-        }
-        let hash = Self::expect_hash_param(params, 0, "gettransactionheight")?;
-        let store = server.system().store_cache();
-        let ledger = LedgerContract::new();
-        let state = ledger
-            .get_transaction_state(store.data_cache(), &hash)
-            .map_err(internal_error)?
-            .ok_or_else(|| RpcException::from(RpcError::unknown_transaction()))?;
-        Ok(json!(state.block_index()))
-    }
-
     fn get_committee(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
         if let Some(remote) = server.remote_ledger_rpc() {
             return remote.call("getcommittee", &[]).map_err(RpcException::from);
