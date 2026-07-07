@@ -1,5 +1,6 @@
 use super::*;
-use crate::server::model::{BlockHashOrIndex, ContractNameOrHashOrId};
+use crate::server::model::{Address, BlockHashOrIndex, ContractNameOrHashOrId};
+use crate::server::rpc_error::RpcError;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use neo_config::ProtocolSettings;

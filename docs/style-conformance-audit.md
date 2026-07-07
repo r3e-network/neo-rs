@@ -249,10 +249,12 @@ Parameter conversion now follows the same module-map rule:
 and UUID `RpcConvertible` implementations. `parameter_converter/domain.rs`
 owns address arrays, block hash/index identifiers, and contract
 name/hash/id conversions. `parameter_converter/contract_parameters.rs` owns
-contract-parameter array conversion. `parameter_converter/tokens.rs` owns
+contract-parameter array conversion. `parameter_converter/errors.rs` owns
+shared `InvalidParams` construction, `parameter_converter/parsing.rs` owns
+shared address and UInt160 text parsing, and `parameter_converter/tokens.rs` owns
 generic `JToken` shape checks, numeric coercion, and serde JSON projection.
 The root `parameter_converter/mod.rs` keeps the converter facade, context,
-trait, and domain identifier helpers.
+trait, module map, and helper imports for child modules.
 The same split now covers token tracker handlers:
 `rpc_server_tokens_tracker/request.rs` owns account/time-window/token-id
 parsing, while `rpc_server_tokens_tracker/response.rs` owns balance, transfer

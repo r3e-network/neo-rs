@@ -12,20 +12,22 @@
 //!
 //! - `contract_parameters`: Contract-parameter array conversion.
 //! - `domain`: Address, block, and contract identifier RPC conversions.
+//! - `errors`: Shared conversion error constructors.
+//! - `parsing`: Shared address and hash text parsers.
 //! - `scalar`: Scalar and byte-like RPC conversion implementations.
 //! - `signers`: RPC signer parameter parsing helpers.
 //! - `tokens`: Generic `JToken` shape, numeric, and serde conversion helpers.
 //! - `tests`: Module-local tests and regression coverage.
 
-use neo_primitives::UInt160;
 use neo_serialization::json::JToken;
 
-use super::model::{Address, SignersAndWitnesses};
-use super::rpc_error::RpcError;
+use super::model::SignersAndWitnesses;
 use super::rpc_exception::RpcException;
 
 mod contract_parameters;
 mod domain;
+mod errors;
+mod parsing;
 mod scalar;
 mod signers;
 #[cfg(test)]
@@ -33,6 +35,8 @@ mod signers;
 mod tests;
 mod tokens;
 
+use errors::invalid_params;
+use parsing::{parse_address, parse_uint160};
 use tokens::{expect_array, expect_object, expect_string, jtoken_to_serde, numeric_from_token};
 
 /// Context supplied when converting RPC parameters.
@@ -67,31 +71,4 @@ impl RpcConvertible for SignersAndWitnesses {
     fn from_token(token: &JToken, ctx: &ConversionContext) -> Result<Self, RpcException> {
         signers::parse_signers_and_witnesses(token, ctx)
     }
-}
-
-pub(super) fn parse_address(text: &str, address_version: u8) -> Result<Address, RpcException> {
-    let mut result = None;
-    if UInt160::try_parse(text, &mut result) {
-        if let Some(hash) = result {
-            return Ok(Address::new(hash, address_version));
-        }
-    }
-
-    neo_wallets::wallet_helper::WalletAddress::to_script_hash(text, address_version)
-        .map(|hash| Address::new(hash, address_version))
-        .map_err(|_| invalid_params(format!("Invalid address: {text}")))
-}
-
-pub(super) fn parse_uint160(text: &str) -> Result<UInt160, RpcException> {
-    let mut result = None;
-    if UInt160::try_parse(text, &mut result) {
-        if let Some(value) = result {
-            return Ok(value);
-        }
-    }
-    Err(invalid_params(format!("Invalid UInt160 value: {text}")))
-}
-
-pub(super) fn invalid_params<T: Into<String>>(message: T) -> RpcException {
-    RpcException::from(RpcError::invalid_params().with_data(message.into()))
 }
