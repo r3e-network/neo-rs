@@ -126,9 +126,13 @@ High-signal clusters found during the first pass:
   as `format`, `reader`, `import`, `report`, `package`, `manifest`, and
   `workflow` while keeping behavior locked by tests.
 - `neo-node/src/node/mod.rs` still mixes CLI validation, storage preflight,
-  fast-sync mode cleanup, P2P wiring, inventory handling, RPC startup, and
-  shutdown. It needs a facade-oriented startup workflow, but only after focused
-  regression tests protect the modes.
+  P2P wiring, inventory handling, RPC startup, and shutdown. It needs a
+  facade-oriented startup workflow, but only after focused regression tests
+  protect the modes. Startup import orchestration has been moved out:
+  `node/startup_import.rs` owns chain.acc and fast-sync import sequencing,
+  stop-height handling, durable-mode restore, task abortion, and observability
+  error reporting while the lower `chain_acc` and `fast_sync` modules retain
+  package/import mechanics.
 - `neo-node/src/node/logging/mod.rs` is now a facade for logging setup:
   `logging/filter.rs` owns `RUST_LOG` / TOML directive selection,
   `logging/format.rs` owns operator-facing format parsing, and

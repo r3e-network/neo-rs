@@ -67,15 +67,15 @@ mod seeds;
 mod services;
 mod shutdown;
 mod startup_cleanup;
+mod startup_import;
 mod sync_downloader;
 mod sync_metrics;
 mod tasks;
 mod telemetry;
 
-use cli::{
-    LedgerMode, StoragePreflightMode, import_tip_reaches_stop_height, storage_preflight_mode,
-    validate_cli_mode,
-};
+#[cfg(test)]
+use cli::import_tip_reaches_stop_height;
+use cli::{LedgerMode, StoragePreflightMode, storage_preflight_mode, validate_cli_mode};
 use composition::{RunningNode, build_node};
 #[cfg(test)]
 use config::{NodeConfig, open_store, validate_config};
@@ -88,10 +88,8 @@ use rpc_runtime::start_rpc_server;
 use shutdown::wait_for_shutdown_signal;
 #[cfg(test)]
 use startup_cleanup::abort_fast_sync_store_mode;
-use startup_cleanup::{
-    abort_startup_after_import_failure, flush_state_service_for_shutdown,
-    restore_durable_store_mode,
-};
+use startup_cleanup::{flush_state_service_for_shutdown, restore_durable_store_mode};
+use startup_import::{StartupImportContext, StartupImportOutcome, run_startup_imports};
 use tasks::{TaskKind, spawn_daemon_task_result};
 
 pub use cli::NodeCli;
@@ -183,138 +181,18 @@ pub async fn run() -> anyhow::Result<()> {
     } = running_node;
     info!(target: "neo", "neo-system Node built; blockchain service running");
 
-    // Optional: import blocks from a chain.acc file before starting live sync.
-    if let Some(import_path) = &cli.import_chain {
-        let blockchain = node.blockchain();
-        match chain_acc::import_chain_acc_until_height(
-            &blockchain,
-            import_path,
-            false,
-            cli.stop_at_height,
-            Some(node.storage()),
-        )
-        .await
-        {
-            Ok(count) => {
-                restore_durable_store_mode(node.storage().as_ref(), &durable_service_stores)?;
-                info!(
-                    target: "neo",
-                    imported = count,
-                    "chain.acc import completed successfully; continuing with network sync"
-                );
-                match blockchain.get_height().await {
-                    Ok(height) if import_tip_reaches_stop_height(height, cli.stop_at_height) => {
-                        info!(
-                            target: "neo",
-                            height,
-                            stop_at_height = cli.stop_at_height.unwrap_or_default(),
-                            imported = count,
-                            "chain.acc import reached stop height; shutting down"
-                        );
-                        flush_state_service_for_shutdown(&node)?;
-                        restore_durable_store_mode(
-                            node.storage().as_ref(),
-                            &durable_service_stores,
-                        )?;
-                        for handle in handles {
-                            handle.abort();
-                        }
-                        return Ok(());
-                    }
-                    Ok(_) => {}
-                    Err(err) => {
-                        warn!(
-                            target: "neo",
-                            error = %err,
-                            "failed to read chain height after chain.acc import; continuing with network sync"
-                        );
-                    }
-                }
-            }
-            Err(err) => {
-                return Err(abort_startup_after_import_failure(
-                    &node,
-                    &durable_service_stores,
-                    std::mem::take(&mut handles),
-                    observability.as_ref(),
-                    "chain.acc import",
-                    err,
-                ));
-            }
-        }
-    }
-    if cli.fast_sync {
-        let blockchain = node.blockchain();
-        match fast_sync::run_fast_sync_report(
-            &blockchain,
-            node.storage(),
-            &config,
-            cli.storage_path.as_deref(),
-            cli.fast_sync_cache.as_deref(),
-            settings.network,
-            cli.stop_at_height,
-            cli.fast_sync_reference_rpc.as_deref(),
-            node.state_store().as_ref(),
-            node.get_service::<neo_state_service::commit_handlers::StateServiceCommitHandlers>()
-                .as_ref(),
-        )
-        .await
-        {
-            Ok(report) => {
-                if let Some(path) = &cli.fast_sync_report {
-                    fast_sync::write_fast_sync_report_sidecar(path, &report)?;
-                }
-                restore_durable_store_mode(node.storage().as_ref(), &durable_service_stores)?;
-                let count = report.import.imported_blocks;
-                info!(
-                    target: "neo::fast_sync",
-                    imported = count,
-                    package = %report.package.filename,
-                    end_height = report.package.end_height,
-                    average_blocks_per_second = report.import.average_blocks_per_second,
-                    throughput_status = ?report.import.throughput_status,
-                    "fast-sync package import completed successfully; continuing with network sync"
-                );
-                match blockchain.get_height().await {
-                    Ok(height) if import_tip_reaches_stop_height(height, cli.stop_at_height) => {
-                        info!(
-                            target: "neo::fast_sync",
-                            height,
-                            stop_at_height = cli.stop_at_height.unwrap_or_default(),
-                            imported = count,
-                            "fast-sync import reached stop height; shutting down"
-                        );
-                        flush_state_service_for_shutdown(&node)?;
-                        restore_durable_store_mode(
-                            node.storage().as_ref(),
-                            &durable_service_stores,
-                        )?;
-                        for handle in handles {
-                            handle.abort();
-                        }
-                        return Ok(());
-                    }
-                    Ok(_) => {}
-                    Err(err) => {
-                        warn!(
-                            target: "neo::fast_sync",
-                            error = %err,
-                            "failed to read chain height after fast-sync import; continuing with network sync"
-                        );
-                    }
-                }
-            }
-            Err(err) => {
-                return Err(abort_startup_after_import_failure(
-                    &node,
-                    &durable_service_stores,
-                    std::mem::take(&mut handles),
-                    observability.as_ref(),
-                    "fast-sync package import",
-                    err,
-                ));
-            }
-        }
+    let startup_import = run_startup_imports(StartupImportContext {
+        cli: &cli,
+        node: &node,
+        config: &config,
+        network: settings.network,
+        durable_service_stores: &durable_service_stores,
+        handles: &mut handles,
+        observability: observability.as_ref(),
+    })
+    .await?;
+    if startup_import == StartupImportOutcome::StopHeightReached {
+        return Ok(());
     }
 
     match telemetry::metrics_server_task(&config.telemetry.metrics, Arc::clone(&node)) {
