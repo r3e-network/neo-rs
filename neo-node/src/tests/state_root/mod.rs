@@ -1,9 +1,12 @@
 //! Tests for the node-level StateService driver codec and sender rotation.
 
 use super::*;
-use neo_crypto::Secp256r1Crypto;
-use neo_primitives::UInt256;
-use neo_state_service::{MessageType, StateRoot, Vote};
+use neo_crypto::{ECPoint, Secp256r1Crypto};
+use neo_io::{MemoryReader, Serializable, SerializableExtensions};
+use neo_payloads::Witness;
+use neo_primitives::{UInt160, UInt256};
+use neo_state_service::{MessageType, STATE_SERVICE_CATEGORY, StateRoot, Vote};
+use neo_vm::script_builder::RedeemScript;
 
 const NETWORK: u32 = 0x4E45_4F4E;
 
@@ -114,7 +117,7 @@ fn sender_rotates_backward_with_each_retry() {
 
 #[test]
 fn driver_verifies_signed_roots_with_explicit_native_provider() {
-    let source = include_str!("../../state_root/mod.rs");
+    let source = include_str!("../../state_root/driver.rs");
     assert!(
         source.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
         "StateRootDriver must own the native provider captured at node startup"

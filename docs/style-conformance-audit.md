@@ -139,6 +139,11 @@ High-signal clusters found during the first pass:
   recovery-log setup, and event routing; `payload.rs`, `proposal.rs`, `setup.rs`,
   and `hsm.rs` retain codec, proposal-policy, validator setup, and signer wiring
   responsibilities.
+- `neo-node/src/state_root/mod.rs` is now a facade for StateService wiring:
+  `state_root/codec.rs` owns the extensible payload envelope helpers,
+  `state_root/setup.rs` owns StateValidator key resolution, and
+  `state_root/driver.rs` owns the active vote/relay/persist task with explicit
+  native-provider verification.
 - `neo-node/src/node/services/mod.rs` now focuses on operational service
   composition. `services/state.rs` owns StateService MPT store and
   sync/async commit-handler construction, `services/read_side.rs` owns
