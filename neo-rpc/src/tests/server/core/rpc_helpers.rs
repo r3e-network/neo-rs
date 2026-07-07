@@ -3,6 +3,22 @@ use neo_primitives::{UInt160, UInt256};
 use serde_json::Value;
 
 #[test]
+fn no_params_request_accepts_empty_parameters() {
+    NoParamsRequest::parse(&[], "getversion").expect("no params");
+}
+
+#[test]
+fn no_params_request_rejects_unexpected_parameters() {
+    let err = NoParamsRequest::parse(&[Value::from(1_u64)], "getversion")
+        .expect_err("unexpected parameter");
+
+    assert!(
+        err.to_string().contains("getversion expects no parameters"),
+        "{err}"
+    );
+}
+
+#[test]
 fn expect_uint256_param_with_message_parses_valid_hash() {
     let hash = UInt256::zero();
     let params = [Value::String(hash.to_string())];

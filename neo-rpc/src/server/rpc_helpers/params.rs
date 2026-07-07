@@ -7,6 +7,23 @@ use serde_json::Value;
 
 use super::errors::invalid_params;
 
+/// Typed request for JSON-RPC methods that accept no positional parameters.
+#[derive(Debug)]
+pub struct NoParamsRequest;
+
+impl NoParamsRequest {
+    /// Rejects any supplied positional parameter and names the owning method in
+    /// the C#-compatible invalid-params message.
+    #[inline]
+    pub fn parse(params: &[Value], method: &str) -> Result<Self, RpcException> {
+        if params.is_empty() {
+            Ok(Self)
+        } else {
+            Err(invalid_params(format!("{method} expects no parameters")))
+        }
+    }
+}
+
 fn optional_unsigned_param<T>(
     value: Option<&Value>,
     default: T,

@@ -222,6 +222,8 @@ mod connection_count;
 mod get_peers;
 #[path = "../rpc_server_node/get_version.rs"]
 mod get_version;
+#[path = "../rpc_server_node/no_params.rs"]
+mod no_params;
 #[path = "../rpc_server_node/send_raw_transaction.rs"]
 mod send_raw_transaction;
 #[path = "../rpc_server_node/submit_block.rs"]

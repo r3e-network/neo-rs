@@ -3,19 +3,21 @@
 use neo_network::handle::LocalNodeInfo;
 use serde_json::{Value, json};
 
-use super::RpcServerNode;
+use super::{RpcServerNode, request::NoParamsRequest};
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
 
 impl RpcServerNode {
     pub(super) fn get_connection_count(
         server: &RpcServer,
-        _params: &[Value],
+        params: &[Value],
     ) -> Result<Value, RpcException> {
+        NoParamsRequest::parse(params, "getconnectioncount")?;
         Self::with_local_node(server, |node| json!(node.connected_peers_count()))
     }
 
-    pub(super) fn get_peers(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
+    pub(super) fn get_peers(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        NoParamsRequest::parse(params, "getpeers")?;
         // C# `RpcServer.GetPeers` (RpcServer.Node.cs): three arrays of
         // `{"address": ..., "port": ...}` objects.
         //

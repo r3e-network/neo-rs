@@ -1,14 +1,17 @@
-//! Typed request parsing for node RPC relay handlers.
+//! Typed request parsing for node RPC handlers.
 //!
-//! Node relay methods accept Base64-encoded wire payloads. Decoding and
-//! deserializing those payloads here keeps the handler focused on relay
-//! submission and relay-result mapping.
+//! Status/version methods validate their no-parameter contract here, while
+//! relay methods accept Base64-encoded wire payloads. Decoding and
+//! deserializing those payloads here keeps handlers focused on status
+//! projection, relay submission, and relay-result mapping.
 
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{expect_base64_param_with_decode_message, invalid_params};
 use neo_io::{MemoryReader, Serializable};
 use neo_payloads::{block::Block, transaction::Transaction};
 use serde_json::Value;
+
+pub(super) use crate::server::rpc_helpers::NoParamsRequest;
 
 pub(super) struct RawTransactionRequest {
     pub(super) transaction: Transaction,

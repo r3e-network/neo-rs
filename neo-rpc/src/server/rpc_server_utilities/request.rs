@@ -5,22 +5,10 @@
 
 use serde_json::Value;
 
-use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
+use crate::server::rpc_helpers::invalid_params;
 
-pub(super) struct NoParamsRequest;
-
-impl NoParamsRequest {
-    pub(super) fn parse(params: &[Value], method: &str) -> Result<Self, RpcException> {
-        if params.is_empty() {
-            Ok(Self)
-        } else {
-            Err(RpcException::from(
-                RpcError::invalid_params().with_data(format!("{method} expects no parameters")),
-            ))
-        }
-    }
-}
+pub(super) use crate::server::rpc_helpers::NoParamsRequest;
 
 pub(super) struct ValidateAddressRequest {
     pub(super) address: String,
@@ -28,9 +16,10 @@ pub(super) struct ValidateAddressRequest {
 
 impl ValidateAddressRequest {
     pub(super) fn parse(params: &[Value]) -> Result<Self, RpcException> {
-        let address = params.first().and_then(Value::as_str).ok_or_else(|| {
-            RpcException::from(RpcError::invalid_params().with_data("address parameter required"))
-        })?;
+        let address = params
+            .first()
+            .and_then(Value::as_str)
+            .ok_or_else(|| invalid_params("address parameter required"))?;
         Ok(Self {
             address: address.to_string(),
         })

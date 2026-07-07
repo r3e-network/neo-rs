@@ -34,7 +34,7 @@ pub use hashes::{
     parse_uint256, parse_uint256_text_with_label,
 };
 pub use params::{
-    expect_string_param, expect_string_param_with_message, expect_u32_param,
+    NoParamsRequest, expect_string_param, expect_string_param_with_message, expect_u32_param,
     expect_u32_param_with_message, expect_u64_param, optional_u64_param, optional_usize_param,
     parse_verbose,
 };

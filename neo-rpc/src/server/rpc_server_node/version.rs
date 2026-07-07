@@ -10,7 +10,7 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use serde_json::{Map, Value, json};
 
-use super::RpcServerNode;
+use super::{RpcServerNode, request::NoParamsRequest};
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
@@ -27,10 +27,8 @@ pub(super) const POLICY_PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT: u8 = 22;
 pub(super) const POLICY_PREFIX_MAX_TRACEABLE_BLOCKS: u8 = 23;
 
 impl RpcServerNode {
-    pub(super) fn get_version(
-        server: &RpcServer,
-        _params: &[Value],
-    ) -> Result<Value, RpcException> {
+    pub(super) fn get_version(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        NoParamsRequest::parse(params, "getversion")?;
         // C# `GetVersion` reads msperblock / maxtraceableblocks /
         // maxvaliduntilblockincrement through the `NeoSystemExtensions`
         // dynamic readers (Policy storage post-Echidna, static settings

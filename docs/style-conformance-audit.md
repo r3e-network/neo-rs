@@ -286,7 +286,9 @@ only service lookup, submission, and `OracleServiceError` mapping.
 Utility endpoints now use the same pattern: `rpc_server_utilities/request.rs`
 owns no-parameter validation for `listplugins` / `listservices` and
 `validateaddress` parameter parsing, while the root handler stays focused on
-inventory lookup and address validation.
+inventory lookup and address validation. The no-parameter request record is now
+shared through `rpc_helpers::NoParamsRequest` so endpoint families do not grow
+private copies of the same invalid-params contract.
 Node relay methods now follow the same boundary:
 `rpc_server_node/request.rs` owns Base64 decoding and Neo wire-payload
 deserialization for `sendrawtransaction` and `submitblock`;
@@ -299,7 +301,9 @@ Node version reporting now follows the same endpoint-family split:
 construction, dynamic Policy storage readers, remote-ledger version projection,
 and hardfork/public-key formatting. `rpc_server_node/status.rs` owns
 `getconnectioncount`, `getpeers`, and shared local-node projection for node
-status/version handlers. The root `rpc_server_node/mod.rs` is now only the
+status/version handlers. `rpc_server_node/request.rs` owns the shared
+no-parameter validation for status/version methods and the Base64 wire-payload
+decoding for relay methods. The root `rpc_server_node/mod.rs` is now only the
 handler-registration facade and module map.
 Blockchain storage methods now follow that request-boundary pattern:
 `rpc_server_blockchain/request_helpers.rs` owns contract identifier and Base64
@@ -391,8 +395,9 @@ while `rpc_error/mod.rs` owns the `RpcError` record, data trimming, JSON
 projection, and `Display` / `Error` implementations.
 Shared RPC helpers now follow the same facade rule:
 `rpc_helpers/errors.rs` owns common `RpcException` constructors,
-`params.rs` owns generic positional parsing, `bytes.rs` owns Base64 and Neo
-wire-payload helpers, and `hashes.rs` owns address/UInt160/UInt256 parsing.
+`params.rs` owns generic positional parsing and no-parameter request
+validation, `bytes.rs` owns Base64 and Neo wire-payload helpers, and
+`hashes.rs` owns address/UInt160/UInt256 parsing.
 The root `rpc_helpers/mod.rs` keeps the public helper API as re-exports plus
 the module map.
 Smart-contract request parsing now follows the same rule:
