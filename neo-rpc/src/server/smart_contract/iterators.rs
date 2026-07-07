@@ -4,8 +4,9 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
 
-use super::helpers::{internal_error, invalid_params, stack_item_to_json};
+use super::helpers::{internal_error, invalid_params};
 use super::request::{TerminateSessionRequest, TraverseIteratorRequest};
+use super::response::stack_item_to_json;
 
 pub(super) fn traverse_iterator(
     server: &RpcServer,

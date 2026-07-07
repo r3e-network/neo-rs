@@ -18,6 +18,7 @@
 //! - `iterators`: Iterator adapters exposed to contract execution and storage
 //!   search.
 //! - `request`: Typed request parsing for smart-contract handlers.
+//! - `response`: VM-state, stack-item, and notification JSON projection.
 //! - `script`: Dynamic-call script construction and parameter stack conversion.
 //! - `unclaimed_gas`: unclaimed GAS query handlers.
 //! - `tests`: Module-local tests and regression coverage.
@@ -29,6 +30,7 @@ mod invocation;
 mod invocation_wallet;
 mod iterators;
 mod request;
+mod response;
 mod script;
 mod unclaimed_gas;
 

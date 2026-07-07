@@ -12,11 +12,10 @@ use neo_vm::stack_item::StackItem;
 use neo_vm_rs::VmState as VMState;
 
 use super::diagnostics::{diagnostic_invocation_to_json, diagnostic_storage_changes};
-use super::helpers::{
-    final_rpc_vm_state_string, internal_error, notification_to_json, stack_item_to_json,
-};
+use super::helpers::internal_error;
 use super::invocation_wallet::process_invoke_with_wallet;
 use super::request::{InvokeFunctionRequest, InvokeScriptRequest};
+use super::response::{final_rpc_vm_state_string, notification_to_json, stack_item_to_json};
 use super::script::build_dynamic_call_script;
 
 pub(super) fn invoke_function(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {

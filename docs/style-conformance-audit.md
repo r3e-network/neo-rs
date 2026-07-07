@@ -391,12 +391,14 @@ Smart-contract request parsing now follows the same rule:
 verification, iterator-session, and unclaimed-GAS handlers, including
 signer/witness conversion, diagnostic defaults, UUID/count decoding, and
 address/hash normalization. The handler files stay focused on contract lookup,
-VM execution, iterator sessions, native GAS queries, and result projection,
+VM execution, iterator sessions, and native GAS queries,
 while `smart_contract/invocation_wallet.rs` owns wallet transaction
 materialization, available-account signing, and pending-signature projection for
 successful invokes. `smart_contract/diagnostics.rs` owns invoke diagnostic-tree
 and storage-change JSON projection. `smart_contract/script.rs` owns dynamic-call
 script construction and contract-parameter stack conversion.
+`smart_contract/response.rs` owns VM-state, stack-item, iterator-interface, and
+notification JSON projection.
 
 Recommended next patches, in order:
 

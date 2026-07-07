@@ -1,0 +1,82 @@
+//! Response projection helpers for smart-contract RPC handlers.
+//!
+//! This module owns the VM-facing JSON shapes shared by invoke, contract
+//! verification, and iterator-session handlers. Request parsing remains in the
+//! request/helper modules.
+
+use neo_payloads::NotifyEventArgs;
+use neo_vm::rpc_json::StackItemRpcJson;
+use neo_vm::stack_item::StackItem;
+use neo_vm_rs::VmState;
+use serde_json::{Value, json};
+
+use crate::server::rpc_exception::RpcException;
+use crate::server::rpc_helpers::internal_error;
+use crate::server::session::Session;
+
+const INVALID_OPERATION_CODE: i32 = -2146233079;
+
+pub(super) fn final_rpc_vm_state_string(state: VmState) -> Result<String, RpcException> {
+    state
+        .final_name()
+        .map(str::to_string)
+        .ok_or_else(|| internal_error(format!("{state:?} is not a final VM state")))
+}
+
+pub(super) fn stack_item_to_json(
+    item: &StackItem,
+    session: Option<&mut Session>,
+) -> Result<Value, RpcException> {
+    stack_item_to_json_with_budget(item, session, None)
+}
+
+pub(super) fn stack_item_to_json_limited(
+    item: &StackItem,
+    session: Option<&mut Session>,
+    max_size: usize,
+) -> Result<Value, RpcException> {
+    stack_item_to_json_with_budget(item, session, Some(max_size))
+}
+
+fn stack_item_to_json_with_budget(
+    item: &StackItem,
+    session: Option<&mut Session>,
+    max_size: Option<usize>,
+) -> Result<Value, RpcException> {
+    let mut value = StackItemRpcJson::stack_item_rpc_json_deferred_size_check(item, max_size)
+        .map_err(|err| stack_item_error(err.to_string()))?;
+    if let StackItem::InteropInterface(iface) = item {
+        if let Some(session) = session {
+            if let Some(iterator_id) = session.register_iterator_interface(iface) {
+                if let Value::Object(obj) = &mut value {
+                    obj.insert(
+                        // C# `RpcServer.SmartContract` emits `nameof(IIterator)` =
+                        // the literal "IIterator" for an iterator stack item.
+                        "interface".to_string(),
+                        Value::String("IIterator".to_string()),
+                    );
+                    obj.insert("id".to_string(), Value::String(iterator_id.to_string()));
+                }
+            }
+        }
+    }
+    Ok(value)
+}
+
+fn stack_item_error(message: impl Into<String>) -> RpcException {
+    RpcException::new(INVALID_OPERATION_CODE, message.into())
+}
+
+pub(super) fn notification_to_json(
+    notification: &NotifyEventArgs,
+    mut session: Option<&mut Session>,
+) -> Result<Value, RpcException> {
+    let mut state = Vec::new();
+    for entry in &notification.state {
+        state.push(stack_item_to_json(entry, session.as_deref_mut())?);
+    }
+    Ok(json!({
+        "eventname": notification.event_name,
+        "contract": notification.script_hash.to_string(),
+        "state": state}))
+}
