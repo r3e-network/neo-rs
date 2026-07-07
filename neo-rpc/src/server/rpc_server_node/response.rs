@@ -1,7 +1,83 @@
 //! Response construction helpers for node status RPC methods.
 
+use crate::server::RpcServerConfig;
+use neo_config::ProtocolSettings;
 use neo_network::handle::LocalNodeInfo;
+use neo_primitives::hardfork::Hardfork;
+use neo_primitives::hex_util;
 use serde_json::{Value, json};
+
+pub(super) fn version_to_json(
+    node: &LocalNodeInfo,
+    protocol: &ProtocolSettings,
+    rpc_settings: &RpcServerConfig,
+    dynamic_policy_values: (u32, u32, u32),
+) -> Value {
+    let (time_per_block_ms, max_traceable_blocks, max_valid_until_block_increment) =
+        dynamic_policy_values;
+
+    json!({
+        "tcpport": node.port(),
+        "nonce": node.nonce,
+        "useragent": node.user_agent,
+        "rpc": {
+            "maxiteratorresultitems": rpc_settings.max_iterator_result_items,
+            "sessionenabled": rpc_settings.session_enabled,
+        },
+        "protocol": {
+            "addressversion": protocol.address_version,
+            "network": protocol.network,
+            "validatorscount": protocol.validators_count,
+            "msperblock": time_per_block_ms,
+            "maxtraceableblocks": max_traceable_blocks,
+            "maxvaliduntilblockincrement": max_valid_until_block_increment,
+            "maxtransactionsperblock": protocol.max_transactions_per_block,
+            "memorypoolmaxtransactions": protocol.memory_pool_max_transactions,
+            "initialgasdistribution": protocol.initial_gas_distribution,
+            "hardforks": hardforks_to_json(protocol),
+            "standbycommittee": standby_committee_to_json(protocol),
+            "seedlist": seed_list_to_json(protocol),
+        },
+    })
+}
+
+fn hardforks_to_json(protocol: &ProtocolSettings) -> Vec<Value> {
+    Hardfork::all()
+        .iter()
+        .filter_map(|fork| {
+            protocol.hardforks.get(fork).map(|height| {
+                json!({
+                    "name": format_hardfork(*fork),
+                    "blockheight": height,
+                })
+            })
+        })
+        .collect()
+}
+
+fn standby_committee_to_json(protocol: &ProtocolSettings) -> Vec<Value> {
+    protocol
+        .standby_committee
+        .iter()
+        .map(|point| Value::String(format_public_key(point.as_bytes())))
+        .collect()
+}
+
+fn seed_list_to_json(protocol: &ProtocolSettings) -> Vec<Value> {
+    protocol
+        .seed_list
+        .iter()
+        .map(|seed| Value::String(seed.clone()))
+        .collect()
+}
+
+fn format_hardfork(fork: Hardfork) -> String {
+    format!("{fork:?}").trim_start_matches("Hf").to_string()
+}
+
+fn format_public_key(bytes: &[u8]) -> String {
+    hex_util::encode_hex(bytes)
+}
 
 pub(super) fn connection_count_to_json(node: &LocalNodeInfo) -> Value {
     json!(node.connected_peers_count())

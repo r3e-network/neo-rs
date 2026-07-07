@@ -1,16 +1,15 @@
-//! C#-compatible `getversion` response construction.
+//! Dynamic `getversion` policy lookup.
 
 use neo_config::ProtocolSettings;
 use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_primitives::hardfork::Hardfork;
-use neo_primitives::hex_util;
 use neo_storage::StorageKey;
 use neo_storage::persistence::DataCache;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
-use super::{RpcServerNode, request::NoParamsRequest};
+use super::{RpcServerNode, request::NoParamsRequest, response::version_to_json};
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
@@ -38,87 +37,7 @@ impl RpcServerNode {
             let system = server.system();
             let protocol = system.settings();
             let rpc_settings = server.settings();
-            let (time_per_block_ms, max_traceable_blocks, max_valid_until_block_increment) =
-                dynamic_settings;
-
-            let mut rpc_info = Map::new();
-            rpc_info.insert(
-                "maxiteratorresultitems".to_string(),
-                json!(rpc_settings.max_iterator_result_items),
-            );
-            rpc_info.insert(
-                "sessionenabled".to_string(),
-                Value::Bool(rpc_settings.session_enabled),
-            );
-
-            let mut protocol_info = Map::new();
-            protocol_info.insert(
-                "addressversion".to_string(),
-                json!(protocol.address_version),
-            );
-            protocol_info.insert("network".to_string(), json!(protocol.network));
-            protocol_info.insert(
-                "validatorscount".to_string(),
-                json!(protocol.validators_count),
-            );
-            protocol_info.insert("msperblock".to_string(), json!(time_per_block_ms));
-            protocol_info.insert(
-                "maxtraceableblocks".to_string(),
-                json!(max_traceable_blocks),
-            );
-            protocol_info.insert(
-                "maxvaliduntilblockincrement".to_string(),
-                json!(max_valid_until_block_increment),
-            );
-            protocol_info.insert(
-                "maxtransactionsperblock".to_string(),
-                json!(protocol.max_transactions_per_block),
-            );
-            protocol_info.insert(
-                "memorypoolmaxtransactions".to_string(),
-                json!(protocol.memory_pool_max_transactions),
-            );
-            protocol_info.insert(
-                "initialgasdistribution".to_string(),
-                json!(protocol.initial_gas_distribution),
-            );
-
-            let hardforks = Hardfork::all()
-                .iter()
-                .filter_map(|fork| {
-                    protocol.hardforks.get(fork).map(|height| {
-                        json!({
-                            "name": format_hardfork(*fork),
-                            "blockheight": height})
-                    })
-                })
-                .collect();
-            protocol_info.insert("hardforks".to_string(), Value::Array(hardforks));
-
-            let committee: Vec<Value> = protocol
-                .standby_committee
-                .iter()
-                .map(|point| Value::String(format_public_key(point.as_bytes())))
-                .collect();
-            protocol_info.insert("standbycommittee".to_string(), Value::Array(committee));
-
-            let seeds: Vec<Value> = protocol
-                .seed_list
-                .iter()
-                .map(|seed| Value::String(seed.clone()))
-                .collect();
-            protocol_info.insert("seedlist".to_string(), Value::Array(seeds));
-
-            let mut json = Map::new();
-            json.insert("tcpport".to_string(), json!(node.port()));
-            json.insert("nonce".to_string(), json!(node.nonce));
-            json.insert(
-                "useragent".to_string(),
-                Value::String(node.user_agent.clone()),
-            );
-            json.insert("rpc".to_string(), Value::Object(rpc_info));
-            json.insert("protocol".to_string(), Value::Object(protocol_info));
-            Value::Object(json)
+            version_to_json(node, &protocol, rpc_settings, dynamic_settings)
         })
     }
 }
@@ -230,12 +149,4 @@ fn remote_protocol_u32(
             "remote getversion protocol.{field} is out of u32 range: {value}"
         ))
     })
-}
-
-fn format_hardfork(fork: Hardfork) -> String {
-    format!("{fork:?}").trim_start_matches("Hf").to_string()
-}
-
-fn format_public_key(bytes: &[u8]) -> String {
-    hex_util::encode_hex(bytes)
 }

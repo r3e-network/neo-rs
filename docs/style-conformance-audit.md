@@ -306,12 +306,12 @@ deserialization for `sendrawtransaction` and `submitblock`;
 wallet submission paths, and `rpc_relay/runtime.rs` owns the synchronous bridge
 into async blockchain service calls.
 Node version reporting now follows the same endpoint-family split:
-`rpc_server_node/version.rs` owns C#-compatible `getversion` response
-construction, dynamic Policy storage readers, remote-ledger version projection,
-and hardfork/public-key formatting. `rpc_server_node/status.rs` owns
+`rpc_server_node/version.rs` owns dynamic Policy storage readers and
+remote-ledger version projection. `rpc_server_node/status.rs` owns
 `getconnectioncount`, `getpeers`, and shared local-node projection for node
 status/version handlers, while `rpc_server_node/response.rs` owns the
-C#-compatible connection-count and peer-list JSON shapes.
+C#-compatible version, connection-count, and peer-list JSON shapes, including
+hardfork/public-key formatting.
 `rpc_server_node/request.rs` owns the shared no-parameter validation for
 status/version methods and the Base64 wire-payload decoding for relay methods.
 The root `rpc_server_node/mod.rs` is now only the handler-registration facade
