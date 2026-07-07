@@ -21,20 +21,15 @@ mod iterators;
 
 use parking_lot::{Mutex, MutexGuard};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use neo_execution::ApplicationEngine;
 use neo_storage::persistence::StoreCache;
-use neo_vm::stack_item::{InteropInterface as VmInteropInterface, StackItem};
 use uuid::Uuid;
 
 use crate::server::diagnostic::Diagnostic;
-use neo_execution::iterators::IteratorInterop;
 
-use iterators::{IteratorEntry, StorageSessionIterator};
-
-pub use iterators::SessionIterator;
+use iterators::IteratorEntry;
 
 /// Represents an invocation session that can retain iterators between RPC calls.
 pub struct Session {
@@ -71,62 +66,6 @@ impl Session {
     /// Return the storage snapshot associated with this session.
     pub const fn snapshot(&self) -> &StoreCache {
         &self.snapshot
-    }
-
-    /// Return whether this session currently retains any iterators.
-    pub fn has_iterators(&self) -> bool {
-        !self.iterators.lock().is_empty()
-    }
-
-    /// Register a VM iterator interface and return the stable RPC iterator id.
-    ///
-    /// Re-registering the same VM iterator returns its existing UUID.
-    pub fn register_iterator_interface(
-        &self,
-        interface: &Arc<dyn VmInteropInterface>,
-    ) -> Option<Uuid> {
-        let iterator_interop = interface.as_any().downcast_ref::<IteratorInterop>()?;
-        let iterator_id = iterator_interop.id();
-
-        if let Some(existing) = self.iterator_lookup.lock().get(&iterator_id).copied() {
-            return Some(existing);
-        }
-
-        let iterator = {
-            let mut engine_guard = self.engine.lock();
-            engine_guard.take_storage_iterator(iterator_id)?
-        };
-
-        let uuid = Uuid::new_v4();
-        self.iterators.lock().insert(
-            uuid,
-            IteratorEntry {
-                inner: Box::new(StorageSessionIterator::new(iterator)),
-            },
-        );
-        self.iterator_lookup.lock().insert(iterator_id, uuid);
-
-        Some(uuid)
-    }
-
-    /// Read up to `count` items from a previously registered iterator.
-    pub fn traverse_iterator(
-        &self,
-        iterator_id: &Uuid,
-        count: usize,
-    ) -> Result<Vec<StackItem>, String> {
-        let mut iterators = self.iterators.lock();
-        let Some(entry) = iterators.get_mut(iterator_id) else {
-            return Err("Unknown iterator".to_string());
-        };
-
-        let mut remaining = count;
-        let mut values = Vec::new();
-        while remaining > 0 && entry.next() {
-            values.push(entry.value().map_err(|error| error.to_string())?);
-            remaining -= 1;
-        }
-        Ok(values)
     }
 
     /// Reset the session expiration timer to the current instant.

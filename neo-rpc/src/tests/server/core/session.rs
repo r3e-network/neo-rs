@@ -16,7 +16,7 @@ fn server_context_engine_paths_use_explicit_native_provider() {
         ),
         (
             "native queries",
-            include_str!("../../../server/native_queries/mod.rs"),
+            include_str!("../../../server/native_queries/execution.rs"),
         ),
         (
             "contract verify",
