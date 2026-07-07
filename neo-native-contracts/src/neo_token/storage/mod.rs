@@ -10,6 +10,7 @@
 //!
 //! ## Contents
 //!
+//! - `account`: NEO account-state codecs and balance reads.
 //! - `candidates`: NEO candidate storage codecs.
 //! - `committee`: committee cache readers, address derivation, and validator
 //!   key helpers.
@@ -21,6 +22,7 @@ use neo_error::CoreError;
 use neo_serialization::BinarySerializer;
 use num_traits::ToPrimitive;
 
+mod account;
 mod candidates;
 mod committee;
 mod keys;
@@ -95,18 +97,6 @@ impl NeoToken {
             }
         }
         BigInt::from(DEFAULT_GAS_PER_BLOCK)
-    }
-
-    /// Decodes a stored `NeoAccountState` struct into its fields.
-    pub(super) fn decode_neo_account_state(value: &[u8]) -> CoreResult<NeoAccountStateView> {
-        let decoded = crate::support::codec::decode_stack_value(value, "neo account state")?;
-        NeoAccountStateView::from_stack_value(decoded)
-    }
-
-    /// Encodes a `NeoAccountState` (`Struct[Balance, BalanceHeight, VoteTo,
-    /// LastGasPerVote]`) — the write counterpart of [`decode_neo_account_state`].
-    pub(super) fn encode_neo_account_state(state: &NeoAccountStateView) -> CoreResult<Vec<u8>> {
-        crate::support::codec::encode_storage_struct(state, "neo account state")
     }
 
     /// Reads the total voted NEO (`Prefix_VotersCount`), defaulting to zero.
@@ -233,30 +223,5 @@ impl NeoToken {
     {
         StackItem::try_from(Self::points_to_stack_value(points))
             .map_err(|e| CoreError::invalid_operation(format!("NeoToken point array: {e}")))
-    }
-
-    /// C# `GetAccountState`: the stored `NeoAccountState` struct bytes under
-    /// `Prefix_Account ++ account`, or `None` when the account has no entry. The
-    /// stored value is already the BinarySerializer-encoded struct (balance,
-    /// balanceHeight, voteTo, lastGasPerVote), which is exactly the Array/Struct
-    /// return shape — so it is returned as-is (the same pattern as
-    /// `getDesignatedByRole` / `getContract`).
-    pub(super) fn read_account_state(
-        &self,
-        snapshot: &DataCache,
-        account: &UInt160,
-    ) -> Option<Vec<u8>> {
-        let key = Self::account_key(account);
-        snapshot
-            .get(&key)
-            .map(|item| item.value_bytes().into_owned())
-    }
-
-    /// Reads the NEO balance from the NEO-specific account state.
-    pub(crate) fn balance_of(&self, snapshot: &DataCache, account: &UInt160) -> CoreResult<BigInt> {
-        let Some(bytes) = self.read_account_state(snapshot, account) else {
-            return Ok(BigInt::from(0));
-        };
-        Ok(Self::decode_neo_account_state(&bytes)?.balance)
     }
 }

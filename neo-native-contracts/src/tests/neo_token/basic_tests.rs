@@ -374,11 +374,7 @@ fn neo_public_array_return_encoders_use_stack_value_projection() {
     assert!(!points_bytes_encoder.contains("StackItem::from_array"));
     assert!(!points_bytes_encoder.contains("BinarySerializer::serialize("));
 
-    let points_item_adapter = slice_between(
-        storage_source,
-        "fn points_to_stack_item",
-        "/// C# `GetAccountState`",
-    );
+    let points_item_adapter = slice_between(storage_source, "fn points_to_stack_item", "\n}");
     assert!(points_item_adapter.contains("points_to_stack_value"));
     assert!(points_item_adapter.contains("StackItem::try_from"));
     assert!(!points_item_adapter.contains("StackItem::from_array"));

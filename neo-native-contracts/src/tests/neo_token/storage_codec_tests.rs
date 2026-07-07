@@ -256,7 +256,7 @@ fn neo_storage_codecs_use_stack_value_projection() {
         &source[start_index..end_index]
     }
 
-    let source = include_str!("../../neo_token/storage/mod.rs");
+    let source = include_str!("../../neo_token/storage/account.rs");
     let committee_source = include_str!("../../neo_token/storage/committee.rs");
     let account_decoder = slice_between(
         source,
@@ -272,7 +272,7 @@ fn neo_storage_codecs_use_stack_value_projection() {
     let account_encoder = slice_between(
         source,
         "fn encode_neo_account_state",
-        "fn read_voters_count",
+        "fn read_account_state",
     );
     assert!(account_encoder.contains("encode_storage_struct"));
     assert!(!account_encoder.contains("StackValue::Struct"));
