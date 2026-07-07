@@ -10,33 +10,32 @@
 //!
 //! ## Contents
 //!
+//! - `apply`: prepared block and notification application into indexes.
 //! - `block`: block and transaction materialization before indexing.
+//! - `commands`: public block and notification indexing commands.
 //! - `notifications`: notification projection and query logic.
 //! - `query`: query APIs for indexed data.
 //! - `reorg`: reorg-aware index update helpers.
 //! - `snapshot`: Read snapshot view for the surrounding store backend.
 //! - `tests`: Module-local tests and regression coverage.
 
+mod apply;
 mod block;
+mod commands;
 mod notifications;
 mod query;
 mod reorg;
 mod snapshot;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
-use neo_payloads::{ApplicationExecuted, Block};
 use neo_primitives::{UInt160, UInt256};
 
 #[cfg(test)]
 use crate::error::IndexerError;
-use crate::error::IndexerResult;
 use crate::model::{
     AccountTransactionRecord, BlockIndexRecord, NotificationIndexRecord, TransactionIndexRecord,
 };
-
-use block::{PreparedBlock, prepare_block};
-use notifications::{normalize_notification_records, prepare_notifications};
 
 /// Mutable in-memory index over canonical blocks and transactions.
 #[derive(Debug, Default)]
@@ -54,111 +53,6 @@ impl Indexer {
     /// Creates an empty index.
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Indexes a canonical block, replacing any previous block at the same
-    /// height. Replacing by height lets the service handle local reorg repair
-    /// without leaking stale transaction or account records.
-    pub fn index_block(&mut self, block: &Block) -> IndexerResult<BlockIndexRecord> {
-        let prepared = prepare_block(block)?;
-        Ok(self.apply_prepared_block(prepared))
-    }
-
-    /// Indexes a canonical block and its emitted smart-contract notifications.
-    ///
-    /// Re-indexing the same height or hash replaces the previous block,
-    /// transaction, account, and notification records.
-    pub fn index_block_with_application_executions(
-        &mut self,
-        block: &Block,
-        executions: &[ApplicationExecuted],
-    ) -> IndexerResult<BlockIndexRecord> {
-        let prepared = prepare_block(block)?;
-        let block_transactions = prepared
-            .transactions
-            .iter()
-            .map(|transaction| transaction.hash)
-            .collect::<HashSet<_>>();
-        let notifications =
-            prepare_notifications(&prepared.block, &block_transactions, executions)?;
-        let block_record = self.apply_prepared_block(prepared);
-        for notification in notifications {
-            self.index_notification_accounts(&notification);
-            self.notifications.push(notification);
-        }
-        Ok(block_record)
-    }
-
-    /// Indexes a canonical block with already materialized notification
-    /// records.
-    ///
-    /// This is used by daemon backfill paths that can recover historical
-    /// notifications from durable plugin data but no longer have the original
-    /// `ApplicationExecuted` values in memory.
-    pub fn index_block_with_notification_records(
-        &mut self,
-        block: &Block,
-        notifications: Vec<NotificationIndexRecord>,
-    ) -> IndexerResult<BlockIndexRecord> {
-        let prepared = prepare_block(block)?;
-        let notifications =
-            normalize_notification_records(&prepared.block, &prepared.transactions, notifications)?;
-        let block_record = self.apply_prepared_block(prepared);
-        for notification in notifications {
-            self.index_notification_accounts(&notification);
-            self.notifications.push(notification);
-        }
-        Ok(block_record)
-    }
-
-    fn index_notification_accounts(&mut self, notification: &NotificationIndexRecord) {
-        for account in &notification.accounts {
-            self.account_notifications
-                .entry(*account)
-                .or_default()
-                .push(notification.clone());
-        }
-    }
-
-    fn apply_prepared_block(&mut self, prepared: PreparedBlock) -> BlockIndexRecord {
-        let block_hash = prepared.block.hash;
-        let block_height = prepared.block.height;
-
-        if let Some(existing_hash) = self.block_hash_by_height.get(&block_height).copied() {
-            self.remove_block_by_hash(&existing_hash);
-        }
-        if self.blocks_by_hash.contains_key(&block_hash) {
-            self.remove_block_by_hash(&block_hash);
-        }
-
-        let tx_hashes = prepared
-            .transactions
-            .iter()
-            .map(|transaction| transaction.hash)
-            .collect::<Vec<_>>();
-
-        self.block_hash_by_height.insert(block_height, block_hash);
-        self.tx_hashes_by_block.insert(block_hash, tx_hashes);
-
-        for transaction in prepared.transactions {
-            for account in &transaction.signers {
-                self.account_transactions.entry(*account).or_default().push(
-                    AccountTransactionRecord {
-                        account: *account,
-                        tx_hash: transaction.hash,
-                        block_hash,
-                        block_height,
-                        transaction_index: transaction.transaction_index,
-                    },
-                );
-            }
-            self.transactions_by_hash
-                .insert(transaction.hash, transaction);
-        }
-
-        self.blocks_by_hash
-            .insert(block_hash, prepared.block.clone());
-        prepared.block
     }
 }
 

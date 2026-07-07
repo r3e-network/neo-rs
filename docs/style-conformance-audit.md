@@ -153,9 +153,11 @@ High-signal clusters found during the first pass:
 - `neo-native-contracts/src/lib.rs` contains NEP-17 stack-item construction,
   payment decoding, storage-byte helpers, and method builders. Move these into
   owned domain modules so the root remains a map.
-- `neo-indexer/src/indexer/mod.rs` is now closer to a mutable projection
-  facade: `indexer/block.rs` owns canonical block and transaction
-  materialization before records are applied to the in-memory indexes.
+- `neo-indexer/src/indexer/mod.rs` keeps the mutable projection struct and
+  constructor, `indexer/commands.rs` owns public block/notification indexing
+  commands, `indexer/apply.rs` owns prepared-record application into the
+  in-memory maps, and `indexer/block.rs` owns canonical block and transaction
+  materialization before records are applied.
 - `neo-indexer/src/service/mod.rs` keeps the service facade, constructors, and
   backend diagnostics, `service/commands.rs` owns public indexing/revert
   commands, `service/mutation.rs` owns persistence-aware mutation and rollback
