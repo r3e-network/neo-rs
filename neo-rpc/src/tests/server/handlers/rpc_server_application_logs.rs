@@ -1,5 +1,7 @@
 use super::*;
 use crate::application_logs::{ApplicationLogsService, ApplicationLogsSettings};
+use crate::server::rpc_error::RpcError;
+use crate::server::rpc_server::RpcServer;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_config::ProtocolSettings;
 use neo_primitives::UInt256;

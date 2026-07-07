@@ -289,10 +289,11 @@ and wallet-account script projection, while `rpc_server_wallet/response.rs`
 owns lifecycle success/string/account/list shapes plus balance, unclaimed-GAS,
 and network-fee response envelopes.
 ApplicationLogs now follows the same split: `rpc_server_application_logs/request.rs`
-owns hash and trigger-filter parsing, and `response.rs` owns the optional
-trigger filtering over stored C#-compatible log JSON. Direct handler tests cover
-transaction-log lookup, trigger filtering, unknown hashes, and missing service
-errors.
+owns hash and trigger-filter parsing, `lookup.rs` owns ApplicationLogs service
+lookup and block/transaction log retrieval, and `response.rs` owns the optional
+trigger filtering over stored C#-compatible log JSON. The root module now keeps
+only handler registration. Direct handler tests cover transaction-log lookup,
+trigger filtering, unknown hashes, and missing service errors.
 Oracle submission follows the request-boundary rule as well:
 `rpc_server_oracle/request.rs` owns Base64 decoding, request-id parsing, and
 secp256r1 public-key validation for `submitoracleresponse`; the handler keeps
