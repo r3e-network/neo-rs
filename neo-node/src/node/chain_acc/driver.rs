@@ -97,49 +97,6 @@ pub(in crate::node) async fn import_chain_acc_report_with_expected_range(
     .await
 }
 
-#[cfg(test)]
-pub(super) async fn import_chain_acc_from_reader<R>(
-    handle: &BlockchainHandle,
-    reader: &mut R,
-    path: Option<&Path>,
-    verify: bool,
-    expected_range: Option<ChainAccExpectedRange>,
-    storage: Option<Arc<dyn Store>>,
-) -> anyhow::Result<u64>
-where
-    R: Read + Seek,
-{
-    Ok(
-        import_chain_acc_from_reader_report(handle, reader, path, verify, expected_range, storage)
-            .await?
-            .imported,
-    )
-}
-
-#[cfg(test)]
-pub(super) async fn import_chain_acc_from_reader_report<R>(
-    handle: &BlockchainHandle,
-    reader: &mut R,
-    path: Option<&Path>,
-    verify: bool,
-    expected_range: Option<ChainAccExpectedRange>,
-    storage: Option<Arc<dyn Store>>,
-) -> anyhow::Result<ChainAccImportReport>
-where
-    R: Read + Seek,
-{
-    import_chain_acc_report_from_reader_until_height(
-        handle,
-        reader,
-        path,
-        verify,
-        expected_range,
-        None,
-        storage,
-    )
-    .await
-}
-
 pub(super) async fn import_chain_acc_from_reader_until_height<R>(
     handle: &BlockchainHandle,
     reader: &mut R,
@@ -165,7 +122,7 @@ where
     .imported)
 }
 
-async fn import_chain_acc_report_from_reader_until_height<R>(
+pub(in crate::node::chain_acc) async fn import_chain_acc_report_from_reader_until_height<R>(
     handle: &BlockchainHandle,
     reader: &mut R,
     path: Option<&Path>,

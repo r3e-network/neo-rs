@@ -205,13 +205,14 @@ compares `getstateroot` when a local StateService root is available.
 The chain.acc cleanup has started: production `PendingChainAccBatch`,
 `ChainAccImportComposition`, and `ChainAccImportReport` no longer carry
 test-only convenience helpers, and the root module no longer imports driver
-test helpers just for `tests.rs`.
+test helpers just for `tests.rs`. The driver reader convenience wrappers now
+live in the chain.acc test module instead of production `driver.rs`.
 
 Recommended next patches, in order:
 
 1. Split `neo-node/src/node/chain_acc/mod.rs` tests from implementation if any
    remaining test-only code is embedded in production paths; remaining targets
-   are the driver reader wrappers and format/metrics fixture modules.
+   are the format and metrics fixture modules.
 2. Add typed request/response helpers for one `neo-rpc` handler group, then use
    that pattern for the rest.
 3. Centralize GUI lock handling in `neo-gui` before fixing individual

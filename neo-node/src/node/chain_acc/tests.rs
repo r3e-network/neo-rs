@@ -4,8 +4,7 @@ use super::batch::{
     ChainAccImportComposition, PendingChainAccBatch, import_chain_acc_batch, take_import_batch,
 };
 use super::driver::{
-    import_chain_acc_from_reader, import_chain_acc_from_reader_report,
-    import_chain_acc_from_reader_until_height,
+    import_chain_acc_from_reader_until_height, import_chain_acc_report_from_reader_until_height,
 };
 use super::format::tests::{
     empty_block, empty_block_with_prev_hash, encode_chain_acc, linked_empty_blocks,
@@ -66,6 +65,47 @@ fn memory_store_with_ledger_tip(tip: u32, hash: neo_primitives::UInt256) -> Arc<
 
 fn pending_batch_is_empty_only(batch: &PendingChainAccBatch) -> bool {
     batch.len > 0 && batch.composition.empty_blocks > 0 && batch.composition.transaction_blocks == 0
+}
+
+async fn import_chain_acc_from_reader<R>(
+    handle: &BlockchainHandle,
+    reader: &mut R,
+    path: Option<&std::path::Path>,
+    verify: bool,
+    expected_range: Option<ChainAccExpectedRange>,
+    storage: Option<Arc<dyn Store>>,
+) -> anyhow::Result<u64>
+where
+    R: std::io::Read + std::io::Seek,
+{
+    Ok(
+        import_chain_acc_from_reader_report(handle, reader, path, verify, expected_range, storage)
+            .await?
+            .imported,
+    )
+}
+
+async fn import_chain_acc_from_reader_report<R>(
+    handle: &BlockchainHandle,
+    reader: &mut R,
+    path: Option<&std::path::Path>,
+    verify: bool,
+    expected_range: Option<ChainAccExpectedRange>,
+    storage: Option<Arc<dyn Store>>,
+) -> anyhow::Result<ChainAccImportReport>
+where
+    R: std::io::Read + std::io::Seek,
+{
+    import_chain_acc_report_from_reader_until_height(
+        handle,
+        reader,
+        path,
+        verify,
+        expected_range,
+        None,
+        storage,
+    )
+    .await
 }
 
 #[test]
