@@ -273,10 +273,14 @@ queries, and fee calculation. The same request module now also owns transfer,
 construction, and transfer/cancel orchestration. `rpc_server_wallet/signing.rs`
 owns C# `Wallet.Sign` parity, witness completion, network-fee adjustment, and
 relay result projection. `rpc_server_wallet/lifecycle.rs` owns open/close,
-address creation/listing, and WIF import/export orchestration; the root keeps
-shared wallet runtime helpers used across lifecycle and transfer paths, while
-`rpc_server_wallet/errors.rs` owns wallet-domain error projection and transfer
-insufficient-funds compatibility mapping into RPC exceptions.
+address creation/listing, and WIF import/export orchestration.
+`rpc_server_wallet/support.rs` owns shared wallet runtime helpers used across
+lifecycle, transfer, signing, and fee paths, including wallet lookup, wallet
+future bridging, address-version script-hash parsing, and signature-contract
+pubkey extraction. `rpc_server_wallet/errors.rs` owns wallet-domain error
+projection and transfer insufficient-funds compatibility mapping into RPC
+exceptions. The root wallet module now keeps only handler registration and the
+C# invalid-operation compatibility code shared by error projection tests.
 `rpc_server_wallet/balance.rs` owns `getwalletbalance`,
 `getwalletunclaimedgas`, and the native balance/unclaimed-GAS probe logic.
 `rpc_server_wallet/network_fee.rs` owns `calculatenetworkfee` request execution
