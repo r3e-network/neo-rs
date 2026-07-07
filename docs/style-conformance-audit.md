@@ -290,6 +290,9 @@ projection, while `request_helpers.rs` owns hash and verbose parsing.
 Blockchain native/governance queries have moved out of the route map:
 `rpc_server_blockchain/native.rs` owns native contract listing, committee,
 validator, and candidate projections over `NativeQueries`.
+`native_queries/script.rs` owns the C# `EmitDynamicCall` bytecode layout for
+read-only native probes, while `native_queries/mod.rs` keeps registry creation,
+engine execution, and NEO/GAS result projection.
 Blockchain block/header methods now follow the same route-facade split:
 `rpc_server_blockchain/blocks.rs` owns best hash, block/header counts,
 block-hash lookup, block/header retrieval, and block system-fee calculation.

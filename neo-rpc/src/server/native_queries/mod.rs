@@ -10,7 +10,9 @@
 //!
 //! ## Contents
 //!
-//! - `native_queries`: native-contract query helpers shared by RPC endpoints.
+//! - `script`: C#-compatible dynamic-call script construction.
+
+mod script;
 
 use std::sync::Arc;
 
@@ -20,59 +22,14 @@ use neo_manifest::CallFlags;
 use neo_primitives::{TriggerType, UInt160};
 use neo_storage::persistence::DataCache;
 use neo_vm::StackItem;
-use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
 
 use crate::server::rpc_server::RpcServer;
+use script::{NativeArg, build_native_call_script};
 
 /// Engine-script probes for native-contract reads.
 pub(crate) struct NativeQueries;
-
-/// Argument value for a native-contract probe call.
-pub(crate) enum NativeArg<'a> {
-    /// Raw byte-string argument (hashes, public keys, …).
-    Bytes(&'a [u8]),
-    /// Integer argument.
-    Int(i64),
-}
-
-/// Emits a dynamic call to `method` on `contract` with the given
-/// arguments and `CallFlags::READ_ONLY`, mirroring C#
-/// `ScriptBuilderExtensions.EmitDynamicCall`: push the argument array
-/// (reversed, then `PACK`), then call flags, method name, contract
-/// hash, and the `System.Contract.Call` syscall.
-fn emit_native_call(
-    builder: &mut ScriptBuilder,
-    contract: &UInt160,
-    method: &str,
-    args: &[NativeArg<'_>],
-) -> CoreResult<()> {
-    if args.is_empty() {
-        builder.emit_push_int(0);
-        builder.emit_pack();
-    } else {
-        for arg in args.iter().rev() {
-            match arg {
-                NativeArg::Bytes(bytes) => {
-                    builder.emit_push(bytes);
-                }
-                NativeArg::Int(value) => {
-                    builder.emit_push_int(*value);
-                }
-            }
-        }
-        builder.emit_push_int(args.len() as i64);
-        builder.emit_pack();
-    }
-    builder.emit_push_int(i64::from(CallFlags::READ_ONLY.bits()));
-    builder.emit_push(method.as_bytes());
-    builder.emit_push(&contract.to_array());
-    builder
-        .emit_syscall("System.Contract.Call")
-        .map_err(|err| CoreError::other(err.to_string()))?;
-    Ok(())
-}
 
 impl NativeQueries {
     /// Builds a [`neo_execution::NativeRegistry`] populated with the
@@ -97,9 +54,7 @@ impl NativeQueries {
         method: &str,
         args: &[NativeArg<'_>],
     ) -> CoreResult<StackItem> {
-        let mut builder = ScriptBuilder::new();
-        emit_native_call(&mut builder, contract, method, args)?;
-        let script = builder.to_array();
+        let script = build_native_call_script(contract, method, args)?;
 
         let system = server.system();
         let settings = system.settings().as_ref().clone();
