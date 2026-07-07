@@ -288,6 +288,9 @@ registration.
 and wallet-account script projection, while `rpc_server_wallet/response.rs`
 owns lifecycle success/string/account/list shapes plus balance, unclaimed-GAS,
 and network-fee response envelopes.
+`wallet_compat/errors.rs` owns C# wallet compatibility error vocabulary,
+`wallet_compat/signing.rs` owns C# `Wallet.Helper.Sign` parity, and the
+`wallet_compat` root now keeps only facade exports plus its module map.
 ApplicationLogs now follows the same split: `rpc_server_application_logs/request.rs`
 owns hash and trigger-filter parsing, `lookup.rs` owns ApplicationLogs service
 lookup and block/transaction log retrieval, and `response.rs` owns the optional
