@@ -33,6 +33,7 @@ use tokio::sync::{broadcast, mpsc};
 use crate::command::BlockchainCommand;
 
 mod construction;
+mod events;
 mod imports;
 mod inventory;
 mod lifecycle;
@@ -57,18 +58,6 @@ impl fmt::Debug for BlockchainHandle {
             .field("cmd_capacity", &self.cmd_tx.capacity())
             .field("event_receivers", &self.event_tx.receiver_count())
             .finish()
-    }
-}
-
-impl BlockchainHandle {
-    /// Subscribe to [`crate::RuntimeEvent`]s.
-    ///
-    /// Each call returns an *independent* receiver; dropping the
-    /// receiver automatically unregisters the subscription. The
-    /// broadcast queue is sized at construction time via
-    /// [`Self::channel`].
-    pub fn subscribe(&self) -> broadcast::Receiver<crate::RuntimeEvent> {
-        self.event_tx.subscribe()
     }
 }
 

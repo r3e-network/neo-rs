@@ -106,6 +106,26 @@ fn handle_debug_includes_capacity() {
     assert!(s.contains("BlockchainHandle"));
 }
 
+#[test]
+fn handle_subscribe_creates_independent_event_receivers() {
+    let (handle, _rx, event_tx) = BlockchainHandle::channel(4, 4);
+    let mut first = handle.subscribe();
+    let mut second = handle.subscribe();
+
+    event_tx
+        .send(crate::RuntimeEvent::Shutdown)
+        .expect("event receivers");
+
+    assert_eq!(
+        first.try_recv().expect("first event"),
+        crate::RuntimeEvent::Shutdown
+    );
+    assert_eq!(
+        second.try_recv().expect("second event"),
+        crate::RuntimeEvent::Shutdown
+    );
+}
+
 #[tokio::test]
 async fn handle_block_import_check_rejects_bad_empty_block_merkle_root() {
     let (handle, _rx) = BlockchainHandle::with_capacity();
