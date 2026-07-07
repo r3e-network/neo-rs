@@ -15,28 +15,26 @@
 //! - `lifecycle`: jsonrpsee startup, shutdown, and purge-task wiring.
 //! - `metrics`: Prometheus counters for RPC request/error totals.
 //! - `rate_limit`: RPC-server rate-limit configuration and error mapping.
+//! - `sessions`: invoke-session storage and expiration helpers.
 
 mod handler;
 mod http_policy;
 mod lifecycle;
 mod metrics;
 mod rate_limit;
+mod sessions;
 
-use parking_lot::{Mutex, RwLock, RwLockReadGuard};
+use parking_lot::{RwLock, RwLockReadGuard};
 use tokio::{sync::oneshot, task::JoinHandle};
-
-use uuid::Uuid;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
-use std::time::Duration;
 
 use super::middleware::GovernorRateLimiter;
 use super::node_context::NodeContext;
 use super::rpc_error::RpcError;
 use super::rpc_remote_ledger::RemoteLedgerRpcClient;
 use super::rpc_server_settings::RpcServerConfig;
-use super::session::Session;
 use neo_wallets::Wallet;
 
 pub use handler::{RpcCallback, RpcHandler};
@@ -61,7 +59,7 @@ pub struct RpcServer {
     /// Sessions contain `ApplicationEngine` which wraps `ExecutionEngine` with a raw pointer
     /// that is NOT thread-safe. Using `Mutex` instead of `RwLock` prevents accidental
     /// concurrent reads that would cause undefined behavior. See session.rs for details.
-    sessions: Arc<Mutex<HashMap<Uuid, Session>>>,
+    sessions: sessions::SessionStore,
     server_task: Option<JoinHandle<()>>,
     shutdown_signal: Option<oneshot::Sender<()>>,
     session_purge_task: Option<JoinHandle<()>>,
@@ -85,7 +83,7 @@ impl RpcServer {
             started: false,
             wallet: Arc::new(RwLock::new(None)),
             wallet_change_callback: None,
-            sessions: Arc::new(Mutex::new(HashMap::new())),
+            sessions: sessions::new_session_store(),
             server_task: None,
             shutdown_signal: None,
             session_purge_task: None,
@@ -191,48 +189,6 @@ impl RpcServer {
     /// Install a callback invoked whenever the active wallet changes.
     pub fn set_wallet_change_callback(&mut self, callback: Option<WalletChangeCallback>) {
         self.wallet_change_callback = callback;
-    }
-
-    const fn session_expiration(&self) -> Duration {
-        Duration::from_secs(self.settings.session_expiration_time)
-    }
-
-    /// Return whether invoke sessions are enabled.
-    #[must_use]
-    pub const fn session_enabled(&self) -> bool {
-        self.settings.session_enabled
-    }
-
-    /// Remove expired RPC invoke sessions.
-    pub fn purge_expired_sessions(&self) {
-        if !self.session_enabled() {
-            return;
-        }
-        let expiration = self.session_expiration();
-        let mut guard = self.sessions.lock();
-        guard.retain(|_, session| !session.is_expired(expiration));
-    }
-
-    /// Store an invoke session and return its generated id.
-    pub fn store_session(&self, session: Session) -> Uuid {
-        let id = Uuid::new_v4();
-        self.sessions.lock().insert(id, session);
-        id
-    }
-
-    /// Mutably access a stored session by id.
-    pub fn with_session_mut<F, R>(&self, id: &Uuid, func: F) -> Option<R>
-    where
-        F: FnOnce(&mut Session) -> R,
-    {
-        let mut guard = self.sessions.lock();
-        guard.get_mut(id).map(func)
-    }
-
-    /// Remove a stored session by id.
-    #[must_use]
-    pub fn terminate_session(&self, id: &Uuid) -> bool {
-        self.sessions.lock().remove(id).is_some()
     }
 
     pub(crate) fn handlers_guard(&self) -> RwLockReadGuard<'_, HashMap<String, Arc<RpcHandler>>> {
