@@ -268,6 +268,10 @@ RPC transport lifecycle follows the same split:
 handling, DoS-limit builder wiring, and session-purge task wiring; the root
 `rpc_server/mod.rs` now stays focused on server state, handler registration,
 wallet/session accessors, and rate-limit policy.
+RPC settings parsing has started the same decomposition:
+`rpc_server_settings/gas.rs` owns C#-compatible `MaxGasInvoke` and `MaxFee`
+GAS/datoshi decoding, while `rpc_server_settings/mod.rs` keeps the config
+record, defaults, process-wide registry, and validation.
 Smart-contract request parsing now follows the same rule:
 `smart_contract/request.rs` owns positional parsing for invocation, contract
 verification, iterator-session, and unclaimed-GAS handlers, including
