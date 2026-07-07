@@ -216,9 +216,11 @@ The first `neo-rpc` typed-helper pass is in `rpc_server_state`: positional
 StateService request parsing now lives in `rpc_server_state/request.rs`, and
 state-root / `findstates` JSON construction lives in
 `rpc_server_state/response.rs`. State proof handlers and the C# proof-payload
-codec now live in `rpc_server_state/proof.rs`. The handler module now
-orchestrates services, tries, and high-level state workflows instead of owning
-JSON parameter layout or proof-wire details.
+codec now live in `rpc_server_state/proof.rs`. Historical trie lookup mechanics
+for `getstate` / `findstates`, including root gating, storage-key construction,
+and C#-compatible trie error mapping, now live in
+`rpc_server_state/state_queries.rs`. The handler module now owns only handler
+registration, StateStore/MPT service lookup, and state-root metadata responses.
 Parameter conversion now follows the same module-map rule:
 `parameter_converter/scalar.rs` owns string, boolean, numeric, Base64 bytes,
 and UUID `RpcConvertible` implementations. `parameter_converter/domain.rs`

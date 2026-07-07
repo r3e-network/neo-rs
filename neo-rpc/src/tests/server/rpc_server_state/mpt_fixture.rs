@@ -1,6 +1,9 @@
 use super::*;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use neo_execution::ContractState;
 use neo_manifest::{ContractManifest, NefFile};
+use neo_primitives::UInt256;
 use neo_state_service::mpt_store::MptChange;
 use neo_vm_rs::OpCode;
 
