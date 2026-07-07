@@ -901,6 +901,8 @@ impl StoreSnapshot for RocksDbSnapshot {
 // These methods form the operational API for RocksDbStore (fast-sync, diagnostics).
 // The struct is crate-private so the compiler flags them as dead code, but they are
 // intentionally kept for use by higher-level subsystems.
+// Rationale: backend-specific operational hooks are reached through concrete
+// storage composition paths that are not visible to this module's lint pass.
 #[allow(dead_code)]
 impl RocksDbStore {
     /// Enables fast sync mode optimizations (disable WAL, reduce fsync).

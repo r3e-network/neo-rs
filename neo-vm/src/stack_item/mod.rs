@@ -27,6 +27,8 @@ pub mod map;
 /// Pointer stack item type.
 pub mod pointer;
 /// Core stack item enum and operations.
+// Rationale: the nested module name mirrors the C# StackItem domain while this
+// root module remains the facade for stack item subtypes.
 #[allow(clippy::module_inception)]
 pub mod stack_item;
 /// Struct stack item type.

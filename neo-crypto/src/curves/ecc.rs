@@ -97,11 +97,15 @@ impl ECCurve {
 /// - Uses constant-time comparison to prevent timing side-channel attacks.
 /// - The point data is zeroized on drop (a defense-in-depth measure even though
 ///   ECPoints contain public keys, not secret keys).
+// Rationale: `Zeroize` derives assign temporary values during generated drop
+// code; the lint noise is from the derive expansion, not runtime logic.
 #[allow(unused_assignments)]
 #[derive(Clone, Serialize, Zeroize, ZeroizeOnDrop)]
 pub struct ECPoint {
     /// The curve this point belongs to.
     #[zeroize(skip)]
+    // Rationale: `Zeroize` derive expansion assigns through this field even
+    // though it is skipped for actual zeroization.
     #[allow(unused_assignments)]
     curve: ECCurve,
     /// Compressed representation of the point (33 bytes for secp256r1/k1, 32 for Ed25519).

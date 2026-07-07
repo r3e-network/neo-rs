@@ -66,6 +66,8 @@ impl EvaluationStack {
 
     /// Returns the item at the specified index counting from the top of the
     /// stack (0-based) without removing it.
+    // Rationale: VM stack peeks are hot-path operations; bounds are checked
+    // explicitly before the unchecked access.
     #[allow(unsafe_code)]
     #[inline(always)]
     pub fn peek(&self, index_from_top: usize) -> VmResult<&StackItem> {
@@ -82,6 +84,8 @@ impl EvaluationStack {
     }
 
     /// Mutable version of [`Self::peek`].
+    // Rationale: VM stack mutable peeks are hot-path operations; bounds are
+    // checked explicitly before the unchecked access.
     #[allow(unsafe_code)]
     #[inline(always)]
     pub fn peek_mut(&mut self, index_from_top: usize) -> VmResult<&mut StackItem> {

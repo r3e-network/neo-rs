@@ -33,6 +33,8 @@ impl Session {
     ///
     /// The session owns the executed engine, a storage snapshot, any diagnostic
     /// output, and later any VM iterators exposed by the invocation result.
+    // Rationale: invocation sessions are the RPC execution composition seam and
+    // must receive providers, script, signers, witnesses, gas, and diagnostics explicitly.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         store_provider: Arc<dyn StoreProvider>,

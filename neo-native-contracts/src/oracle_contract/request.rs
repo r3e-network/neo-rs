@@ -28,6 +28,8 @@ pub struct OracleRequest {
 impl OracleRequest {
     /// Construct a new oracle request (used by tests and by the
     /// service when emitting transactions).
+    // Rationale: oracle requests mirror the on-chain native-contract record,
+    // so the constructor takes every persisted field explicitly.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         original_tx_id: UInt256,

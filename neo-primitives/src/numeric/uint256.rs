@@ -20,9 +20,11 @@ crate::uint_type! {
 }
 
 impl UInt256 {
-    #[allow(clippy::cast_possible_truncation)]
     #[must_use]
     /// Returns the Neo-compatible 32-bit hash code for this value.
+    // Rationale: Neo's C# hash-code algorithm intentionally folds unsigned
+    // 64-bit words into signed 32-bit values with truncating casts.
+    #[allow(clippy::cast_possible_truncation)]
     pub const fn hash_code(&self) -> i32 {
         let v1_hash = (self.value1 as i32) ^ ((self.value1 >> 32) as i32);
         let v2_hash = (self.value2 as i32) ^ ((self.value2 >> 32) as i32);

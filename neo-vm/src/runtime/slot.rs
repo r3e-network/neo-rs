@@ -90,6 +90,8 @@ impl Slot {
 
     /// Sets the item at the specified index in the slot.
     /// public `StackItem` this[int index] { internal set }
+    // Rationale: slot mutation uses checked bounds plus in-place replacement to
+    // match C# VM stack semantics without extra cloning.
     #[allow(unsafe_code)]
     #[inline]
     pub fn set(&mut self, index: usize, value: StackItem) -> VmResult<()> {

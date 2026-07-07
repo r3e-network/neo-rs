@@ -226,7 +226,9 @@ impl Pkcs11Signer {
     /// Worker-side initialization: load library, open session, login, find key.
     ///
     /// Returns `(session, key_handle, compressed_pubkey_33, script_hash)`.
-    #[allow(clippy::too_many_lines)] // Initialization is inherently sequential.
+    // Rationale: PKCS#11 session bootstrap is an ordered FFI protocol; splitting
+    // it would obscure required cleanup and error-context sequencing.
+    #[allow(clippy::too_many_lines)]
     fn worker_init(
         library_path: &std::path::Path,
         slot_cfg: Option<u64>,

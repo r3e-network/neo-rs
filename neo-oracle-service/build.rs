@@ -33,6 +33,9 @@ fn main() {
 fn set_env_var<K: AsRef<std::ffi::OsStr>, V: AsRef<std::ffi::OsStr>>(key: K, value: V) {
     // SAFETY: Build scripts run as short-lived single-purpose processes. This
     // mutation happens before invoking prost/tonic code that reads PROTOC.
+    // Rationale: Rust 2024 marks environment mutation unsafe; this build script
+    // performs it before any concurrent work and keeps the generated-code tool
+    // path deterministic.
     #[allow(unused_unsafe, unsafe_code)]
     unsafe {
         env::set_var(key, value);

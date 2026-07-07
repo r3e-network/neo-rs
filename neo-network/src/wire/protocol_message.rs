@@ -17,6 +17,8 @@ use neo_payloads::p2p_payloads::{
 use neo_payloads::{Block, ExtensiblePayload, HeadersPayload, MerkleBlockPayload, Transaction};
 
 /// Strongly-typed representation of every payload carried by the Neo P2P protocol.
+// Rationale: keeping payload variants inline avoids boxing allocations on the
+// wire decode path and preserves a direct C# message-to-payload mapping.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum ProtocolMessage {

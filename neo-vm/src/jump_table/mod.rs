@@ -159,6 +159,8 @@ impl JumpTable {
     }
 
     /// Gets the default jump table.
+    // Rationale: this inherent method preserves the historical VM API; the
+    // actual `Default` impl can delegate without changing call sites.
     #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
         // Use OnceLock for safe one-time initialization
@@ -212,6 +214,8 @@ impl JumpTable {
 
     /// Gets the handler for an opcode.
     /// This matches the C# implementation's indexer get accessor.
+    // Rationale: opcode handlers are stored in a fixed 256-entry table and the
+    // u8 opcode value proves the unchecked index bound.
     #[allow(unsafe_code)]
     #[inline(always)]
     #[must_use]
@@ -227,6 +231,8 @@ impl JumpTable {
     /// This is used in the hot execution loop where the opcode is already a `u8`.
     /// The `debug_assert` catches out-of-bounds access in debug builds while
     /// maintaining zero overhead in release builds.
+    // Rationale: raw opcode dispatch is the hottest VM path; u8 input proves
+    // the fixed-table bound without an extra release check.
     #[allow(unsafe_code)]
     #[inline(always)]
     #[must_use]
@@ -240,6 +246,8 @@ impl JumpTable {
 
     /// Sets the handler for an opcode.
     /// This matches the C# implementation's indexer set accessor.
+    // Rationale: opcode handlers are stored in a fixed 256-entry table and the
+    // u8 opcode value proves the unchecked index bound.
     #[allow(unsafe_code)]
     #[inline]
     pub fn set_handler(&mut self, opcode: OpCode, handler: InstructionHandler) {
@@ -316,6 +324,8 @@ impl std::ops::Index<OpCode> for JumpTable {
     ///
     /// Panics if no handler is registered for `opcode`. Production code should
     /// use [`JumpTable::execute`] instead, which returns a `VmResult`.
+    // Rationale: the `Index` trait cannot return `VmResult`; unsafe indexing is
+    // confined to the fixed opcode table and production dispatch uses `execute`.
     #[allow(unsafe_code)]
     #[inline]
     fn index(&self, opcode: OpCode) -> &Self::Output {
@@ -334,6 +344,8 @@ impl std::ops::Index<OpCode> for JumpTable {
 }
 
 impl std::ops::IndexMut<OpCode> for JumpTable {
+    // Rationale: mutable index access is retained for VM table setup; fixed
+    // opcode byte bounds protect the unchecked table access.
     #[allow(unsafe_code)]
     #[inline]
     fn index_mut(&mut self, opcode: OpCode) -> &mut Self::Output {

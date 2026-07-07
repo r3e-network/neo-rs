@@ -49,6 +49,8 @@ fn neofs_json_object_session_target(
     Some(out)
 }
 
+// Rationale: NeoFS v1 context JSON keeps array projection available for
+// protobuf parity even when current request shapes do not include it.
 #[allow(dead_code)]
 fn neofs_json_object_id_array(ids: &[neofs_v2::refs::ObjectId]) -> Option<String> {
     if ids.is_empty() {

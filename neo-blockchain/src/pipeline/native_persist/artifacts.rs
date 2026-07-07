@@ -85,6 +85,8 @@ pub(crate) fn stack_value_snapshot(item: &StackItem) -> StackValue {
                 pos <= i64::MAX as usize,
                 "pointer position {pos} exceeds i64::MAX"
             );
+            // Rationale: Neo VM pointer positions are serialized as signed C#
+            // integers; the debug assertion above preserves the cast invariant.
             #[allow(clippy::cast_possible_wrap)]
             StackValue::Pointer(pos as i64)
         }

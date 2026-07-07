@@ -1,3 +1,5 @@
+// Rationale: NeoFS v2 token fields are protobuf-parity helpers; individual
+// deployments may not exercise every projection branch.
 #![allow(dead_code)]
 
 use super::super::super::super::proto::neofs_v2;
@@ -5,6 +7,8 @@ use super::super::super::helpers::{json_string, json_u64_string, push_json_field
 use super::super::super::object::{neofs_json_owner_id, neofs_json_signature};
 use super::context::neofs_json_session_context_v2;
 
+// Rationale: token projection is kept as the stable entry point for optional
+// NeoFS v2 session support even when callers are feature-gated away.
 #[allow(dead_code)]
 pub(crate) fn neofs_json_session_token_v2(
     token: &neofs_v2::session::SessionTokenV2,

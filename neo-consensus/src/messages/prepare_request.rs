@@ -28,6 +28,8 @@ pub struct PrepareRequestMessage {
 
 impl PrepareRequestMessage {
     /// Creates a new `PrepareRequest` message
+    // Rationale: dBFT prepare-request fields map one-to-one to the wire
+    // message; keeping them explicit avoids hidden consensus defaults.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub const fn new(

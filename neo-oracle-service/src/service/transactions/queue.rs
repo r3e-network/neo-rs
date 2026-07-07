@@ -18,6 +18,9 @@ const MAX_PENDING_QUEUE_SIZE: usize = 10000;
 const MAX_TASK_PENDING_TIME: std::time::Duration = std::time::Duration::from_secs(12 * 60 * 60);
 
 impl OracleService {
+    // Rationale: response-transaction signing must carry the request id,
+    // oracle key/signature, primary/backup transactions, and their signatures
+    // as separate protocol fields.
     #[allow(clippy::too_many_arguments)]
     pub(in super::super) fn add_response_tx_sign(
         &self,

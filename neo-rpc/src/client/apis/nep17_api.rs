@@ -212,6 +212,8 @@ impl Nep17Api {
         .await
     }
 
+    // Rationale: this helper mirrors the C# NEP-17 overload where source,
+    // signer key, destination, amount, data, and assert flag are explicit.
     #[allow(clippy::too_many_arguments)]
     /// Create NEP17 token transfer transaction with explicit from and optional assert.
     pub async fn create_transfer_tx_with_from_and_assert(
@@ -245,6 +247,8 @@ impl Nep17Api {
         Ok(transaction)
     }
 
+    // Rationale: this helper mirrors the C# multi-signature transfer overload
+    // and keeps threshold, public keys, signing keys, and transfer data explicit.
     #[allow(clippy::too_many_arguments)]
     /// Create NEP17 token transfer transaction from multi-sig account.
     /// Matches C# `CreateTransferTxAsync` with multi-sig overload.
@@ -271,6 +275,8 @@ impl Nep17Api {
         .await
     }
 
+    // Rationale: this helper mirrors the C# multi-signature transfer overload
+    // with an explicit assert flag; grouping fields would obscure call-site intent.
     #[allow(clippy::too_many_arguments)]
     /// Create NEP17 token transfer transaction from multi-sig account with optional assert.
     pub async fn create_transfer_tx_multi_sig_with_assert(
@@ -417,8 +423,9 @@ impl Nep17Api {
         build_dynamic_call_script(script_hash, operation, &args, CallFlags::ALL)
     }
 
-    // reason: `&self` is required to call `self.emit_argument` recursively in the Array branch;
-    // removing it would require converting this to a free function and changing all call sites.
+    // Rationale: `&self` is required to call `self.emit_argument` recursively in
+    // the Array branch; removing it would require converting this to a free
+    // function and changing all call sites.
     #[allow(clippy::only_used_in_recursion)]
     fn emit_argument(
         &self,

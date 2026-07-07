@@ -6,6 +6,8 @@ mod tx_json;
 mod witness;
 mod witness_rule;
 
+// Rationale: these legacy public re-exports keep the client utility facade
+// stable while internal modules own the actual parsing implementations.
 #[allow(unused_imports)]
 pub use attributes::attribute_from_json;
 pub(crate) use nep::{
@@ -18,6 +20,8 @@ pub use parsing::optional_string;
 #[cfg(feature = "server")]
 pub(crate) use parsing::parse_script_hash_or_address_inner;
 pub(crate) use parsing::{base64_string_token, optional_base64_field_lossy};
+// Rationale: these helpers are intentionally re-exported as the client JSON
+// compatibility toolkit; individual builds may not use every helper.
 #[allow(unused_imports)]
 pub use parsing::{
     cloned_token_array, empty_array, insert_optional_string, jtoken_to_serde, object_array,
@@ -31,10 +35,14 @@ pub use parsing::{
     required_u32_number, required_u64_number, required_uint256, token_array,
 };
 pub use stack::{stack_items_from_json_field, stack_items_to_json};
+// Rationale: witness JSON helpers remain part of the public compatibility
+// facade even when a given feature set does not call all of them.
 #[allow(unused_imports)]
 pub use witness::{
     payload_witness_from_json, payload_witness_to_json, scripts_to_witness_json, witness_to_json,
 };
+// Rationale: witness-rule parsing is exported for C# wallet/RPC JSON
+// compatibility and can be unused in minimal client builds.
 #[allow(unused_imports)]
 pub use witness_rule::rule_from_json;
 

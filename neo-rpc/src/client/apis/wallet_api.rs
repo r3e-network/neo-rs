@@ -304,6 +304,8 @@ impl WalletApi {
         Ok((tx, hash.to_string()))
     }
 
+    // Rationale: this client method mirrors the C# multi-signature transfer
+    // overload, whose parameters are semantically distinct at the call site.
     #[allow(clippy::too_many_arguments)]
     /// Transfer NEP17 token from multi-sig account.
     /// Matches C# `TransferAsync` multi-sig overload.

@@ -400,10 +400,13 @@ and storage-change JSON projection. `smart_contract/script.rs` owns dynamic-call
 script construction and contract-parameter stack conversion.
 `smart_contract/response.rs` owns VM-state, stack-item, iterator-interface, and
 notification JSON projection.
+Production `#[allow(...)]` sites now carry nearby `Rationale:` comments. The
+comments classify each exception as protocol parity, generated NeoFS glue, HSM
+or BLST FFI shape, VM unsafe hot-path invariants, explicit composition arity,
+or client/RPC compatibility facade behavior. Test-only allows remain outside
+this production-rationale rule.
 
 Recommended next patches, in order:
 
 1. Apply the typed request/response-helper pattern to the remaining `neo-rpc`
    handler groups, using the wallet request split as the local template.
-2. Add comments to every remaining production `#[allow]` that explain the
-   protocol, FFI, generated-code, or C# parity reason.

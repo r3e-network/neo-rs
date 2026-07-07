@@ -51,6 +51,8 @@ pub(crate) use constants::{
     NEO_CANDIDATE_STATE_CHANGED_EVENT, NEO_COMMITTEE_CHANGED_EVENT, NEO_VOTE_EVENT,
 };
 pub(crate) use storage::CachedCommittee;
+// Rationale: this storage type is imported for native-contract parity paths
+// that are conditionally compiled or reached by integration-only flows.
 #[allow(unused_imports)]
 use storage::CandidateState;
 use storage::NeoAccountStateView;

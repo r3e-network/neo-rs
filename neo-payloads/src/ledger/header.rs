@@ -65,6 +65,8 @@ impl Header {
     /// Back-compat constructor taking a witness vector (Neo N3 headers carry
     /// exactly one witness; the first is used). Replaces the former
     /// `ledger::BlockHeader::new_with_witnesses(.., witnesses: Vec<Witness>)`.
+    // Rationale: header constructors expose the full serialized protocol field
+    // list explicitly, matching the reference node's header shape.
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_witnesses(
         version: u32,
@@ -92,6 +94,8 @@ impl Header {
 
     /// Creates a header from all of its parts (Neo N3 headers carry exactly one
     /// witness). Replaces the former `ledger::BlockHeader::new_with_witnesses(.., Vec<Witness>)`.
+    // Rationale: header construction is a protocol field list; grouping these
+    // values would hide the exact serialized hash order.
     #[allow(clippy::too_many_arguments)]
     pub fn from_parts(
         version: u32,

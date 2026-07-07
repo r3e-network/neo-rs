@@ -30,6 +30,8 @@ pub(super) fn parse_contract_parameters(
     }
 }
 
+// Rationale: parsing returns signer and witness vectors together because RPC
+// invoke compatibility treats them as one optional argument bundle.
 #[allow(clippy::type_complexity)]
 pub(super) fn parse_signers_and_witnesses(
     server: &RpcServer,

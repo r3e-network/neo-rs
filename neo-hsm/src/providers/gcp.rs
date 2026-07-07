@@ -50,6 +50,8 @@ pub struct GcpKmsSigner {
 
 impl GcpKmsSigner {
     /// Create a new signer (stub — does not connect to GCP).
+    // Rationale: this stub keeps the provider shape aligned with real HSM
+    // signers, but the constructor cannot currently fail.
     #[allow(clippy::missing_errors_doc)]
     pub fn new(cfg: GcpKmsConfig) -> HsmResult<Self> {
         Ok(Self { cfg })

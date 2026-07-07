@@ -187,6 +187,8 @@ impl ConsensusService {
             && !commit_sent
             && !self.context.not_accepting_payloads_due_to_view_changing()
         {
+            // Rationale: the nested shape follows recovery-payload validation
+            // order and keeps each optional C# recovery field guarded locally.
             #[allow(clippy::collapsible_if)]
             if !self.context.prepare_request_received {
                 if let Some(ref prep_req) = recovery.prepare_request_message {
@@ -214,6 +216,8 @@ impl ConsensusService {
                 }
             }
 
+            // Rationale: the nested guard makes the "set once from recovery"
+            // consensus invariant explicit beside the optional payload field.
             #[allow(clippy::collapsible_if)]
             if self.context.preparation_hash.is_none() {
                 if let Some(hash) = recovery.preparation_hash {

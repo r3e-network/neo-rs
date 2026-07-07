@@ -69,13 +69,15 @@ impl ApplicationEngine {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     /// Creates a new application engine with a shared optional persisting block
     /// and an explicit native-contract provider.
     ///
     /// This is the provider-aware variant used by composition and persistence
     /// code that already owns the native-contract provider. It avoids reading
     /// the process-global lookup bridge during engine construction.
+    // Rationale: engine construction must thread the full protocol, snapshot,
+    // gas, diagnostic, and provider context without hiding state in globals.
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_shared_block_and_native_contract_provider(
         trigger: TriggerType,
         script_container: Option<Arc<dyn Verifiable>>,
@@ -158,9 +160,11 @@ impl ApplicationEngine {
         Ok(app)
     }
 
-    #[allow(clippy::too_many_arguments)]
     /// Creates a new engine with preloaded native contract state and an
     /// explicit native-contract provider.
+    // Rationale: this constructor is the explicit test/import composition
+    // seam for preloaded native state plus provider-owned execution context.
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_preloaded_native_and_native_contract_provider(
         trigger: TriggerType,
         script_container: Option<Arc<dyn Verifiable>>,
@@ -244,6 +248,8 @@ impl ApplicationEngine {
         Ok(app)
     }
 
+    // Rationale: VM interop callbacks need one self-referential host pointer;
+    // the unsafe block below documents and confines that invariant.
     #[allow(unsafe_code)]
     pub(super) fn attach_host(&mut self) {
         let host: &mut dyn InteropHost = self;

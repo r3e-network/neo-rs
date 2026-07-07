@@ -127,6 +127,8 @@ impl ApplicationEngine {
         self.contracts.insert(hash, contract);
     }
 
+    // Rationale: loading a contract context mirrors the C# VM call-frame
+    // transition and keeps the protocol fields explicit at the boundary.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn load_contract_context(
         &mut self,

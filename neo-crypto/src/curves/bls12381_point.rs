@@ -111,6 +111,8 @@ pub const GT_SIZE: usize = 576;
 // short-lived operand for a single CryptoLib call (deserialize → operate →
 // serialize), never bulk-stored, and boxing would force `&**` on every raw
 // `blst_*` FFI pointer in the hot path.
+// Rationale: the large variant is intentionally inline for BLST FFI hot paths;
+// boxing would add pointer chasing to every CryptoLib group operation.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 pub enum Bls12381Point {

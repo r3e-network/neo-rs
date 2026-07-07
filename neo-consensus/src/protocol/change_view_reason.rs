@@ -4,6 +4,8 @@ use neo_primitives::protocol_enum;
 
 protocol_enum! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+    // Rationale: the macro emits C# protocol enum variants whose docs are
+    // carried by the generated public type instead of every generated item.
     #[allow(missing_docs)]
     /// Change view reason enum matching C# `ChangeViewReason` exactly
     pub ChangeViewReason {

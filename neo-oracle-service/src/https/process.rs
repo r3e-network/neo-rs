@@ -7,6 +7,8 @@ use neo_payloads::OracleResponseCode;
 use super::super::OracleServiceSettings;
 
 /// Maximum time to wait for response headers.
+// Rationale: kept as the explicit oracle HTTP policy constant while the
+// current reqwest path enforces timeout through client settings.
 #[allow(dead_code)]
 const HEADER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 

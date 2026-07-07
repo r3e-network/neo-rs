@@ -24,6 +24,8 @@ pub enum InteroperableError {
 neo_error::impl_error_from_struct!(neo_error::CoreError, InteroperableError => InvalidOperation);
 
 /// Host type that can project itself to and from a NeoVM stack value.
+// Rationale: `from_stack_value` follows the C# host-object mutation naming
+// rather than Rust's usual associated-constructor convention.
 #[allow(clippy::wrong_self_convention)]
 pub trait Interoperable: Send + Sync {
     /// Updates this value from a VM stack value.

@@ -65,6 +65,8 @@ where
     )
 }
 
+// Rationale: wallet transaction construction mirrors C# wallet context fields
+// and keeps balances/provider/max-gas inputs explicit for fee correctness.
 #[allow(clippy::too_many_arguments)]
 fn make_transaction_with_balances<W>(
     wallet: &W,

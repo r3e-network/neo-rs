@@ -74,6 +74,8 @@ pub(crate) struct HostPtr(
 // because the pointed-to host moves with it (the host is the parent struct
 // that owns the engine). All mutable access is serialized through
 // `&mut ExecutionEngine`.
+// Rationale: raw host pointers are confined to this VM interop bridge so the
+// execution engine can avoid per-callback dynamic ownership wrappers.
 #[allow(unsafe_code)]
 unsafe impl Send for HostPtr {}
 
@@ -84,6 +86,8 @@ impl HostPtr {
     ///
     /// The caller must guarantee that `ptr` is valid for the lifetime of this `HostPtr`
     /// and that no aliasing `&mut` references exist during method calls.
+    // Rationale: creating the raw host wrapper is the single unsafe entry point
+    // for the VM interop callback fast path.
     #[allow(unsafe_code)]
     pub(crate) unsafe fn new(ptr: *mut dyn InteropHost) -> Self {
         Self(ptr, std::marker::PhantomData)
@@ -101,6 +105,8 @@ impl HostPtr {
     /// # Safety (internal)
     ///
     /// Safe to call as long as the `HostPtr` invariants documented on the type are upheld.
+    // Rationale: callbacks stay allocation-free by using the proven host
+    // pointer invariant instead of boxing every VM host transition.
     #[allow(unsafe_code)]
     pub(crate) fn on_context_loaded(
         &self,
@@ -113,6 +119,8 @@ impl HostPtr {
     }
 
     /// Calls [`InteropHost::on_context_unloaded`] on the wrapped host.
+    // Rationale: callbacks stay allocation-free by using the proven host
+    // pointer invariant instead of boxing every VM host transition.
     #[allow(unsafe_code)]
     pub(crate) fn on_context_unloaded(
         &self,
@@ -125,6 +133,8 @@ impl HostPtr {
     }
 
     /// Calls [`InteropHost::pre_execute_instruction`] on the wrapped host.
+    // Rationale: instruction hooks are on the VM hot path and use the confined
+    // host pointer invariant to avoid dispatch wrapper allocation.
     #[allow(unsafe_code)]
     pub(crate) fn pre_execute_instruction(
         &self,
@@ -137,6 +147,8 @@ impl HostPtr {
     }
 
     /// Calls [`InteropHost::post_execute_instruction`] on the wrapped host.
+    // Rationale: instruction hooks are on the VM hot path and use the confined
+    // host pointer invariant to avoid dispatch wrapper allocation.
     #[allow(unsafe_code)]
     pub(crate) fn post_execute_instruction(
         &self,
@@ -149,6 +161,8 @@ impl HostPtr {
     }
 
     /// Calls [`InteropHost::invoke_syscall`] on the wrapped host.
+    // Rationale: syscall dispatch is a VM hot path and uses the confined host
+    // pointer invariant to avoid an additional ownership layer.
     #[allow(unsafe_code)]
     pub(crate) fn invoke_syscall(&self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()> {
         // SAFETY: Invariant maintained by constructor contract — the pointer is valid
@@ -157,6 +171,8 @@ impl HostPtr {
     }
 
     /// Calls [`InteropHost::on_callt`] on the wrapped host.
+    // Rationale: CALLT dispatch is a VM hot path and uses the confined host
+    // pointer invariant to avoid an additional ownership layer.
     #[allow(unsafe_code)]
     pub(crate) fn on_callt(&self, engine: &mut ExecutionEngine, token_id: u16) -> VmResult<()> {
         // SAFETY: Invariant maintained by constructor contract — the pointer is valid

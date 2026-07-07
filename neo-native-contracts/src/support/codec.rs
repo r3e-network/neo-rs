@@ -100,6 +100,8 @@ impl<'a> StructDecoder<'a> {
     }
 
     /// Returns `true` if the struct has no fields.
+    // Rationale: native-contract decoders keep this C#-parity helper available
+    // even when a specific contract path does not currently call it.
     #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()

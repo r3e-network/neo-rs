@@ -53,6 +53,8 @@ impl ConsensusBlockFields {
         UInt160::from_script(&ConsensusBlockFields::multisig_verification_script(&keys))
     }
 
+    // Rationale: header-hash construction is a protocol field list; grouping
+    // into an ad-hoc struct would hide the serialized hash order.
     #[allow(clippy::too_many_arguments)]
     pub(in crate::service) fn compute_header_hash(
         version: u32,

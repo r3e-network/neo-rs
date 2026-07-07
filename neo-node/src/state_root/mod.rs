@@ -503,6 +503,8 @@ impl StateRootDriver {
 /// `inbound_rx` (its sender is wired into the inventory forwarder before the
 /// network is built). Runs for validators (vote + aggregate + relay) and
 /// observers (verify + persist inbound signed roots) alike.
+// Rationale: the state-root driver is the node composition seam and must
+// receive every provider/handle explicitly instead of capturing globals.
 #[allow(clippy::too_many_arguments)]
 pub fn state_root_driver_task(
     setup: StateRootSetup,

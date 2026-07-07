@@ -1,4 +1,7 @@
 #[cfg(feature = "neofs-grpc")]
+// Rationale: this module wraps tonic/prost generated NeoFS protobuf code, so
+// generated naming, enum shape, documentation, and unused-field lints are
+// accepted at the boundary instead of rewritten locally.
 #[allow(
     clippy::doc_overindented_list_items,
     clippy::doc_lazy_continuation,

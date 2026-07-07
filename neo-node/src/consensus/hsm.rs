@@ -26,6 +26,8 @@ use tracing::{info, warn};
 // Without that feature enabled they have no consumers, so we silence the
 // dead-code lint: the struct is the configuration schema, and dropping a
 // field just because the feature is off would silently discard user config.
+// Rationale: the HSM TOML schema is valid without the `hsm` feature even
+// though signer-only fields are read only when that feature is enabled.
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
 pub struct HsmKeyConfig {

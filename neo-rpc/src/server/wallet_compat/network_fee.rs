@@ -126,6 +126,8 @@ where
         .map_err(|_| WalletCompatError::Other("network fee out of i64 range".to_string()))
 }
 
+// Rationale: fee calculation must thread transaction, snapshot, protocol
+// settings, native provider, contract hash, mutable script, and output counters.
 #[allow(clippy::too_many_arguments)]
 fn contract_verification_fee(
     tx: &Transaction,

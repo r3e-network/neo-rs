@@ -25,6 +25,8 @@ bitflags! {
     }
 }
 
+// Rationale: these C#-style aliases are a deliberate compatibility surface for
+// protocol and RPC code that mirrors reference-node names.
 #[allow(non_upper_case_globals)]
 impl TriggerType {
     /// C#-style alias for [`TriggerType::ON_PERSIST`].

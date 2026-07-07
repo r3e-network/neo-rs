@@ -32,6 +32,8 @@ impl ExecutionEngine {
     ///
     /// The caller must ensure that `host` remains valid for the lifetime of this
     /// `ExecutionEngine` and that no aliasing `&mut` references exist during callbacks.
+    // Rationale: the VM host pointer is installed once by the application
+    // engine to keep interop callbacks allocation-free on execution hot paths.
     #[allow(unsafe_code)]
     pub unsafe fn set_interop_host(&mut self, host: *mut dyn InteropHost) {
         // SAFETY: The caller is responsible for upholding the HostPtr invariants.
@@ -44,6 +46,8 @@ impl ExecutionEngine {
     }
 
     /// Returns a mutable reference to the configured interop host, if any.
+    // Rationale: interop lookup reuses the proven host pointer invariant rather
+    // than wrapping every callback in a heap-owned handle.
     #[allow(unsafe_code)]
     pub fn interop_host_mut(&mut self) -> Option<&mut dyn InteropHost> {
         self.interop_host.map(|h| {

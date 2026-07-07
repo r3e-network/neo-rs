@@ -208,6 +208,8 @@ macro_rules! __uint_type_as_ref {
     (true; $name:ident, $size:expr_2021, $($field:ident),+) => {
         impl AsRef<[u8; $size]> for $name {
             #[inline]
+            // Rationale: generated fixed-width integer newtypes are layout-checked
+            // below and expose zero-copy byte views on hot serialization paths.
             #[allow(unsafe_code)]
             fn as_ref(&self) -> &[u8; $size] {
                 const _: () = assert!(

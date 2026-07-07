@@ -467,6 +467,8 @@ impl fmt::Debug for RemoteNodeService {
 
 impl RemoteNodeService {
     /// Build a fresh `(service, handle)` pair.
+    // Rationale: remote-node construction is the P2P composition boundary, so
+    // dependencies stay explicit instead of being pulled from process globals.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         stream: TcpStream,
