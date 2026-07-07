@@ -6,6 +6,14 @@ use serde_json::{Value, json};
 use super::RpcServerIndexer;
 
 impl RpcServerIndexer {
+    pub(super) fn optional_block_to_json(record: Option<BlockIndexRecord>) -> Value {
+        record.map_or(Value::Null, Self::block_to_json)
+    }
+
+    pub(super) fn blocks_to_json(records: Vec<BlockIndexRecord>) -> Value {
+        Value::Array(records.into_iter().map(Self::block_to_json).collect())
+    }
+
     pub(super) fn block_to_json(record: BlockIndexRecord) -> Value {
         json!({
             "hash": record.hash.to_string(),
@@ -13,6 +21,27 @@ impl RpcServerIndexer {
             "time": record.timestamp,
             "txcount": record.transaction_count,
         })
+    }
+
+    pub(super) fn optional_transaction_to_json(
+        record: Option<TransactionIndexRecord>,
+        address_version: u8,
+    ) -> Value {
+        record
+            .map(|record| Self::transaction_to_json(&record, address_version))
+            .unwrap_or(Value::Null)
+    }
+
+    pub(super) fn transactions_to_json(
+        records: Vec<TransactionIndexRecord>,
+        address_version: u8,
+    ) -> Value {
+        Value::Array(
+            records
+                .into_iter()
+                .map(|record| Self::transaction_to_json(&record, address_version))
+                .collect(),
+        )
     }
 
     pub(super) fn transaction_to_json(
@@ -38,6 +67,18 @@ impl RpcServerIndexer {
         })
     }
 
+    pub(super) fn account_transactions_to_json(
+        records: Vec<AccountTransactionRecord>,
+        address_version: u8,
+    ) -> Value {
+        Value::Array(
+            records
+                .into_iter()
+                .map(|record| Self::account_transaction_to_json(&record, address_version))
+                .collect(),
+        )
+    }
+
     pub(super) fn account_transaction_to_json(
         record: &AccountTransactionRecord,
         address_version: u8,
@@ -50,6 +91,18 @@ impl RpcServerIndexer {
             "blockheight": record.block_height,
             "txindex": record.transaction_index,
         })
+    }
+
+    pub(super) fn notifications_to_json(
+        records: Vec<NotificationIndexRecord>,
+        address_version: u8,
+    ) -> Value {
+        Value::Array(
+            records
+                .into_iter()
+                .map(|record| Self::notification_to_json(&record, address_version))
+                .collect(),
+        )
     }
 
     pub(super) fn notification_to_json(
@@ -79,5 +132,9 @@ impl RpcServerIndexer {
                 })
             }).collect::<Vec<_>>(),
         })
+    }
+
+    pub(super) fn empty_list_to_json() -> Value {
+        Value::Array(Vec::new())
     }
 }

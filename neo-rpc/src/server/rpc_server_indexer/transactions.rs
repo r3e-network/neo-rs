@@ -17,11 +17,10 @@ impl RpcServerIndexer {
         let request = TransactionIndexRequest::parse(params)?;
         let service = Self::service(server)?;
         let address_version = server.system().settings().address_version;
-        Ok(service
+        let record = service
             .try_transaction(&request.hash)
-            .map_err(Self::indexer_error)?
-            .map(|record| Self::transaction_to_json(&record, address_version))
-            .unwrap_or(Value::Null))
+            .map_err(Self::indexer_error)?;
+        Ok(Self::optional_transaction_to_json(record, address_version))
     }
 
     pub(super) fn get_block_transactions(
@@ -34,17 +33,13 @@ impl RpcServerIndexer {
         let address_version = server.system().settings().address_version;
         let Some(block_hash) = Self::block_hash_from_selector_value(&service, request.selector)?
         else {
-            return Ok(Value::Array(Vec::new()));
+            return Ok(Self::empty_list_to_json());
         };
 
-        Ok(Value::Array(
-            service
-                .try_transactions_for_block(&block_hash, request.page.skip, request.page.limit)
-                .map_err(Self::indexer_error)?
-                .into_iter()
-                .map(|record| Self::transaction_to_json(&record, address_version))
-                .collect(),
-        ))
+        let records = service
+            .try_transactions_for_block(&block_hash, request.page.skip, request.page.limit)
+            .map_err(Self::indexer_error)?;
+        Ok(Self::transactions_to_json(records, address_version))
     }
 
     pub(super) fn get_address_transactions(
@@ -62,11 +57,8 @@ impl RpcServerIndexer {
 
         let records = service
             .try_transactions_for_account(&request.account, request.page.skip, request.page.limit)
-            .map_err(Self::indexer_error)?
-            .into_iter()
-            .map(|record| Self::account_transaction_to_json(&record, address_version))
-            .collect::<Vec<_>>();
-        Ok(Value::Array(records))
+            .map_err(Self::indexer_error)?;
+        Ok(Self::account_transactions_to_json(records, address_version))
     }
 
     pub(super) fn get_contract_transactions(
@@ -82,18 +74,14 @@ impl RpcServerIndexer {
         )?;
         let service = Self::service(server)?;
 
-        Ok(Value::Array(
-            service
-                .try_transactions_for_contract(
-                    &request.contract_hash,
-                    request.event_name.as_deref(),
-                    request.page.skip,
-                    request.page.limit,
-                )
-                .map_err(Self::indexer_error)?
-                .into_iter()
-                .map(|record| Self::transaction_to_json(&record, address_version))
-                .collect(),
-        ))
+        let records = service
+            .try_transactions_for_contract(
+                &request.contract_hash,
+                request.event_name.as_deref(),
+                request.page.skip,
+                request.page.limit,
+            )
+            .map_err(Self::indexer_error)?;
+        Ok(Self::transactions_to_json(records, address_version))
     }
 }

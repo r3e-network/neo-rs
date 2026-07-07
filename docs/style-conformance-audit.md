@@ -389,20 +389,23 @@ execution. The root `session/mod.rs` stays focused on retained session state,
 diagnostics, snapshots, expiration, and stable iterator IDs.
 Indexer block reads have started the same endpoint-family split:
 `rpc_server_indexer/blocks.rs` owns `getblockindex` and `getblockindexes`
-lookup and block-index projection, while `rpc_server_indexer/params.rs` owns
-the typed block-selector and page request records. `getindexerstatus` uses the
-shared no-parameter request record through `params.rs`, so indexer endpoints no
-longer carry a private duplicate validator.
+lookup, while `rpc_server_indexer/params.rs` owns the typed block-selector and
+page request records and `rpc_server_indexer/responses.rs` owns optional/list
+block-index projection. `getindexerstatus` uses the shared no-parameter request
+record through `params.rs`, so indexer endpoints no longer carry a private
+duplicate validator.
 `rpc_server_indexer/transactions.rs` owns transaction lookup and
 block/address/contract transaction list routing, while `params.rs` owns the
 typed transaction-hash and block-page request records for transaction index
 lookups and block transaction pages, plus address-page and contract-activity
-records for account and contract transaction queries.
+records for account and contract transaction queries. `responses.rs` owns
+transaction, account-transaction, optional-result, and list projection.
 `rpc_server_indexer/notifications.rs` owns address/block/transaction/contract
 notification routing, while `params.rs` owns the shared account, block,
-transaction, and contract-activity page request records. The root
-`rpc_server_indexer/mod.rs` now keeps handler registration, service lookup,
-shared error mapping, and shared selector types.
+transaction, and contract-activity page request records and `responses.rs` owns
+notification list projection. The root `rpc_server_indexer/mod.rs` now keeps
+handler registration, service lookup, shared error mapping, and shared selector
+types.
 RPC settings parsing has started the same decomposition:
 `rpc_server_settings/gas.rs` owns C#-compatible `MaxGasInvoke` and `MaxFee`
 GAS/datoshi decoding; `rpc_server_settings/config.rs` owns

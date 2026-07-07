@@ -22,7 +22,7 @@ impl RpcServerIndexer {
                 .try_block_by_hash(&hash)
                 .map_err(Self::indexer_error)?,
         };
-        Ok(record.map_or(Value::Null, Self::block_to_json))
+        Ok(Self::optional_block_to_json(record))
     }
 
     pub(super) fn get_block_indexes(
@@ -32,13 +32,9 @@ impl RpcServerIndexer {
         let service = Self::service(server)?;
         let request = PageRequest::parse(params, 0, STANDARD_PAGE_BOUNDS, "getblockindexes")?;
 
-        Ok(Value::Array(
-            service
-                .try_blocks(request.skip, request.limit)
-                .map_err(Self::indexer_error)?
-                .into_iter()
-                .map(Self::block_to_json)
-                .collect(),
-        ))
+        let records = service
+            .try_blocks(request.skip, request.limit)
+            .map_err(Self::indexer_error)?;
+        Ok(Self::blocks_to_json(records))
     }
 }

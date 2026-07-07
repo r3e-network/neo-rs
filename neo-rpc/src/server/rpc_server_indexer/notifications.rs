@@ -23,18 +23,10 @@ impl RpcServerIndexer {
         )?;
         let service = Self::service(server)?;
 
-        Ok(Value::Array(
-            service
-                .try_notifications_for_account(
-                    &request.account,
-                    request.page.skip,
-                    request.page.limit,
-                )
-                .map_err(Self::indexer_error)?
-                .into_iter()
-                .map(|record| Self::notification_to_json(&record, address_version))
-                .collect(),
-        ))
+        let records = service
+            .try_notifications_for_account(&request.account, request.page.skip, request.page.limit)
+            .map_err(Self::indexer_error)?;
+        Ok(Self::notifications_to_json(records, address_version))
     }
 
     pub(super) fn get_block_notifications(
@@ -47,17 +39,13 @@ impl RpcServerIndexer {
         let address_version = server.system().settings().address_version;
         let Some(block_hash) = Self::block_hash_from_selector_value(&service, request.selector)?
         else {
-            return Ok(Value::Array(Vec::new()));
+            return Ok(Self::empty_list_to_json());
         };
 
-        Ok(Value::Array(
-            service
-                .try_notifications_for_block(&block_hash, request.page.skip, request.page.limit)
-                .map_err(Self::indexer_error)?
-                .into_iter()
-                .map(|record| Self::notification_to_json(&record, address_version))
-                .collect(),
-        ))
+        let records = service
+            .try_notifications_for_block(&block_hash, request.page.skip, request.page.limit)
+            .map_err(Self::indexer_error)?;
+        Ok(Self::notifications_to_json(records, address_version))
     }
 
     pub(super) fn get_transaction_notifications(
@@ -72,18 +60,10 @@ impl RpcServerIndexer {
         let address_version = server.system().settings().address_version;
         let service = Self::service(server)?;
 
-        Ok(Value::Array(
-            service
-                .try_notifications_for_transaction(
-                    &request.hash,
-                    request.page.skip,
-                    request.page.limit,
-                )
-                .map_err(Self::indexer_error)?
-                .into_iter()
-                .map(|record| Self::notification_to_json(&record, address_version))
-                .collect(),
-        ))
+        let records = service
+            .try_notifications_for_transaction(&request.hash, request.page.skip, request.page.limit)
+            .map_err(Self::indexer_error)?;
+        Ok(Self::notifications_to_json(records, address_version))
     }
 
     pub(super) fn get_contract_notifications(
@@ -99,18 +79,14 @@ impl RpcServerIndexer {
         )?;
         let service = Self::service(server)?;
 
-        Ok(Value::Array(
-            service
-                .try_notifications_for_contract(
-                    &request.contract_hash,
-                    request.event_name.as_deref(),
-                    request.page.skip,
-                    request.page.limit,
-                )
-                .map_err(Self::indexer_error)?
-                .into_iter()
-                .map(|record| Self::notification_to_json(&record, address_version))
-                .collect(),
-        ))
+        let records = service
+            .try_notifications_for_contract(
+                &request.contract_hash,
+                request.event_name.as_deref(),
+                request.page.skip,
+                request.page.limit,
+            )
+            .map_err(Self::indexer_error)?;
+        Ok(Self::notifications_to_json(records, address_version))
     }
 }
