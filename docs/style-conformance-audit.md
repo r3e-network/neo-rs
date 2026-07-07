@@ -225,13 +225,15 @@ Wallet cleanup has started with the same boundary: `rpc_server_wallet/request.rs
 now owns management and network-fee request decoding (`dumpprivkey`,
 `getwalletbalance`, `importprivkey`, `openwallet`, `calculatenetworkfee`), so
 the wallet root handler can focus on wallet orchestration, native balance
-queries, and fee calculation.
+queries, and fee calculation. The same request module now also owns transfer,
+`sendmany`, signer, and cancel-transaction parameter decoding, leaving
+`transfers.rs` focused on descriptor lookup, amount conversion, transaction
+construction, signing, and relay.
 
 Recommended next patches, in order:
 
 1. Apply the typed request/response-helper pattern to the remaining `neo-rpc`
-   handler groups, continuing wallet transfer request parsing as the next
-   high-churn slice.
+   handler groups, using the wallet request split as the local template.
 2. Centralize GUI lock handling in `neo-gui` before fixing individual
    `lock().unwrap()` call sites.
 3. Add comments to every remaining production `#[allow]` that explain the

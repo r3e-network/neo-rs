@@ -9,41 +9,34 @@ use neo_payloads::conflicts::Conflicts;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
-use neo_primitives::{BigDecimal, UInt160, WitnessScope};
+#[cfg(test)]
+use neo_primitives::WitnessScope;
+use neo_primitives::{BigDecimal, UInt160};
 use neo_storage::persistence::DataCache;
 use neo_vm_rs::OpCode;
 use neo_wallets::{AssetDescriptor, TransferOutput, Wallet as CoreWallet};
 use num_traits::ToPrimitive;
 use serde_json::Value;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{
-    expect_string_param, internal_error, invalid_params, parse_uint160, parse_uint256,
-};
+use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_relay;
 use crate::server::rpc_server::RpcServer;
 use crate::server::wallet_compat;
 
-use super::support::{TransferParamLayout, TransferRequest, signature_contract_pubkey};
+use super::request::{
+    CancelTransactionRequest, SendManyOutputRequest, SendManyRequest, TransferRequest,
+};
+use super::support::signature_contract_pubkey;
 use super::{INVALID_OPERATION_HRESULT, RpcServerWallet};
 
 impl RpcServerWallet {
     pub(super) fn send_from(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let _ = Self::require_wallet(server)?;
-        let request = Self::parse_transfer_request(
-            server,
-            params,
-            TransferParamLayout {
-                method: "sendfrom",
-                from_index: Some(1),
-                to_index: 2,
-                amount_index: 3,
-                signers_index: 4,
-            },
-        )?;
+        let request =
+            TransferRequest::parse_send_from(params, server.system().settings().address_version)?;
         Self::process_transfer(
             server,
             request.asset,
@@ -60,16 +53,9 @@ impl RpcServerWallet {
         params: &[Value],
     ) -> Result<Value, RpcException> {
         let _ = Self::require_wallet(server)?;
-        let request = Self::parse_transfer_request(
-            server,
+        let request = TransferRequest::parse_send_to_address(
             params,
-            TransferParamLayout {
-                method: "sendtoaddress",
-                from_index: None,
-                to_index: 1,
-                amount_index: 2,
-                signers_index: 3,
-            },
+            server.system().settings().address_version,
         )?;
         Self::process_transfer(
             server,
@@ -84,28 +70,7 @@ impl RpcServerWallet {
 
     pub(super) fn send_many(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let wallet = Self::require_wallet(server)?;
-        if params.is_empty() {
-            return Err(invalid_params("sendmany requires at least one argument"));
-        }
-        let mut from: Option<UInt160> = None;
-        let mut index = 0;
-        if params[0].is_string() {
-            from = Some(Self::parse_script_hash(
-                server,
-                &expect_string_param(params, 0, "sendmany")?,
-            )?);
-            index = 1;
-        }
-
-        let outputs_value = params.get(index).cloned().unwrap_or(Value::Null);
-        let outputs_array = outputs_value
-            .as_array()
-            .ok_or_else(|| invalid_params(format!("Invalid 'to' parameter: {outputs_value}")))?;
-        if outputs_array.is_empty() {
-            return Err(invalid_params("Argument 'to' can't be empty."));
-        }
-
-        let signers = Self::parse_optional_signers(server, params, index + 1)?;
+        let request = SendManyRequest::parse(params, server.system().settings().address_version)?;
 
         let store = server.system().store_cache();
         let descriptor_snapshot = Arc::new(store.data_cache().clone());
@@ -119,46 +84,35 @@ impl RpcServerWallet {
                 .map_err(|err| neo_error::CoreError::other(err.to_string()))
         };
 
-        let transfers = outputs_array
+        let transfers = request
+            .outputs
             .iter()
             .enumerate()
             .map(|(i, entry)| Self::parse_send_many_output(server, &descriptor_cache, i, entry))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Self::build_and_relay(server, &wallet, &transfers, from, signers.as_deref())
-            .map_err(Self::invalid_operation_transfer_error)
+        Self::build_and_relay(
+            server,
+            &wallet,
+            &transfers,
+            request.from,
+            request.signers.as_deref(),
+        )
+        .map_err(Self::invalid_operation_transfer_error)
     }
 
     pub(super) fn cancel_transaction(
         server: &RpcServer,
         params: &[Value],
     ) -> Result<Value, RpcException> {
-        let txid = parse_uint256(params, 0, "canceltransaction")?;
-        let signers_value = params
-            .get(1)
-            .ok_or_else(|| invalid_params("canceltransaction requires signers"))?;
-        let signers_array = signers_value
-            .as_array()
-            .ok_or_else(|| invalid_params("canceltransaction signers must be an array"))?;
-        if signers_array.is_empty() {
-            return Err(RpcException::from(
-                RpcError::bad_request().with_data("No signer."),
-            ));
-        }
-
-        let signers = Self::parse_signer_array(
-            server,
-            signers_array,
-            "canceltransaction signers must be strings",
-            WitnessScope::NONE,
-        )?;
-
+        let request =
+            CancelTransactionRequest::parse(params, server.system().settings().address_version)?;
         let wallet = Self::require_wallet(server)?;
         let store = server.system().store_cache();
         let ledger = LedgerContract::new();
         let snapshot = store.data_cache();
         if ledger
-            .get_transaction_state(snapshot, &txid)
+            .get_transaction_state(snapshot, &request.txid)
             .map_err(|err| internal_error(err.to_string()))?
             .is_some()
         {
@@ -168,7 +122,7 @@ impl RpcServerWallet {
             ));
         }
 
-        let conflict_attr = TransactionAttribute::Conflicts(Conflicts::new(txid));
+        let conflict_attr = TransactionAttribute::Conflicts(Conflicts::new(request.txid));
         let script = vec![OpCode::RET.byte()];
         let snapshot_arc = Arc::new(snapshot.clone());
         let native_contract_provider = server.system().native_contract_provider();
@@ -178,21 +132,21 @@ impl RpcServerWallet {
             snapshot_arc.as_ref(),
             &settings,
             &script,
-            Some(signers[0].account),
-            &signers,
+            Some(request.signers[0].account),
+            &request.signers,
             std::slice::from_ref(&conflict_attr),
             &native_contract_provider,
             server.settings().max_gas_invoke,
         )
         .map_err(Self::wallet_compat_failure)?;
 
-        if let Some(conflict_tx) = server.system().mempool().get(&txid) {
+        if let Some(conflict_tx) = server.system().mempool().get(&request.txid) {
             let bumped = tx
                 .network_fee()
                 .max(conflict_tx.transaction.network_fee())
                 .saturating_add(1);
             tx.set_network_fee(bumped);
-        } else if let Some(extra_fee) = params.get(2).and_then(Value::as_str) {
+        } else if let Some(extra_fee) = request.extra_fee.as_deref() {
             // GAS has a fixed 8-decimal precision (C# NativeContract.GAS.Decimals).
             let decimals = 8u8;
             let fee = Self::parse_positive_amount(
@@ -211,111 +165,56 @@ impl RpcServerWallet {
         Self::sign_and_relay(server, &wallet, tx, snapshot_arc)
     }
 
+    #[cfg(test)]
     pub(super) fn parse_signers(
         server: &RpcServer,
         value: &Value,
     ) -> Result<Vec<Signer>, RpcException> {
-        let array = value
-            .as_array()
-            .ok_or_else(|| invalid_params("signers must be an array"))?;
-        Self::parse_signer_array(
-            server,
-            array,
-            "signer entries must be strings",
-            WitnessScope::CALLED_BY_ENTRY,
-        )
+        super::request::parse_signers(value, server.system().settings().address_version)
     }
 
+    #[cfg(test)]
     pub(super) fn parse_signer_array(
         server: &RpcServer,
         array: &[Value],
         entry_error: &'static str,
         scope: WitnessScope,
     ) -> Result<Vec<Signer>, RpcException> {
-        let mut signers = Vec::with_capacity(array.len());
-        for entry in array {
-            let addr = entry.as_str().ok_or_else(|| invalid_params(entry_error))?;
-            let hash = Self::parse_script_hash(server, addr)?;
-            signers.push(Signer::new(hash, scope));
-        }
-        Ok(signers)
-    }
-
-    fn parse_optional_signers(
-        server: &RpcServer,
-        params: &[Value],
-        index: usize,
-    ) -> Result<Option<Vec<Signer>>, RpcException> {
-        params
-            .get(index)
-            .map(|value| Self::parse_signers(server, value))
-            .transpose()
-    }
-
-    fn parse_transfer_request(
-        server: &RpcServer,
-        params: &[Value],
-        layout: TransferParamLayout,
-    ) -> Result<TransferRequest, RpcException> {
-        let asset = parse_uint160(params, 0, layout.method)?;
-        let from = layout
-            .from_index
-            .map(|index| {
-                expect_string_param(params, index, layout.method)
-                    .and_then(|text| Self::parse_script_hash(server, &text))
-            })
-            .transpose()?;
-        let to = Self::parse_script_hash(
-            server,
-            &expect_string_param(params, layout.to_index, layout.method)?,
-        )?;
-        let amount = expect_string_param(params, layout.amount_index, layout.method)?;
-        let signers = Self::parse_optional_signers(server, params, layout.signers_index)?;
-
-        Ok(TransferRequest {
-            asset,
-            from,
-            to,
-            amount,
-            signers,
-        })
+        super::request::parse_signer_array(
+            array,
+            server.system().settings().address_version,
+            entry_error,
+            scope,
+        )
     }
 
     fn parse_send_many_output(
         server: &RpcServer,
         descriptor_cache: &impl Fn(&UInt160) -> neo_error::CoreResult<AssetDescriptor>,
         index: usize,
-        entry: &Value,
+        entry: &SendManyOutputRequest,
     ) -> Result<TransferOutput, RpcException> {
-        let obj = entry
-            .as_object()
-            .ok_or_else(|| invalid_params(format!("Invalid 'to' parameter at {index}.")))?;
-        let asset_str = obj
-            .get("asset")
-            .and_then(|value| value.as_str())
-            .ok_or_else(|| invalid_params(format!("no 'asset' parameter at 'to[{index}]'.")))?;
-        let asset = UInt160::from_str(asset_str)
-            .map_err(|err| invalid_params(format!("invalid asset {asset_str}: {err}")))?;
-        let descriptor = descriptor_cache(&asset).map_err(|e| invalid_params(e.to_string()))?;
-        let value_str = obj
-            .get("value")
-            .and_then(|value| value.as_str())
+        let descriptor =
+            descriptor_cache(&entry.asset).map_err(|e| invalid_params(e.to_string()))?;
+        let value_str = entry
+            .value
+            .as_deref()
             .ok_or_else(|| invalid_params(format!("no 'value' parameter at 'to[{index}]'.")))?;
         let value = Self::parse_positive_amount(
             value_str,
             descriptor.decimals,
             || invalid_params(format!("Invalid 'to' parameter at {index}.")),
-            || invalid_params(format!("Amount of '{asset}' can't be negative.")),
+            || invalid_params(format!("Amount of '{}' can't be negative.", entry.asset)),
         )?;
-        let address_str = obj
-            .get("address")
-            .and_then(|value| value.as_str())
+        let address = entry
+            .address
+            .as_deref()
             .ok_or_else(|| invalid_params(format!("no 'address' parameter at 'to[{index}]'.")))?;
-        let to_hash = Self::parse_script_hash(server, address_str)?;
+        let to = Self::parse_script_hash(server, address)?;
         Ok(TransferOutput {
-            asset_id: asset,
+            asset_id: entry.asset,
             value,
-            script_hash: to_hash,
+            script_hash: to,
             data: None,
         })
     }
