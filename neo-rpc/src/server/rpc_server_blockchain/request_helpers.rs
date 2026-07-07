@@ -12,10 +12,68 @@ use crate::server::model::contract_name_or_hash_or_id::ContractNameOrHashOrId;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{
-    expect_u32_param_with_message, expect_uint256_param_with_message, internal_error,
+    expect_base64_param_with_messages, expect_u32_param_with_message,
+    expect_uint256_param_with_message, internal_error,
 };
 
 use super::RpcServerBlockchain;
+
+pub(super) struct GetStorageRequest {
+    pub(super) identifier: ContractNameOrHashOrId,
+    pub(super) key_bytes: Vec<u8>,
+}
+
+impl GetStorageRequest {
+    pub(super) fn parse(params: &[Value]) -> Result<Self, RpcException> {
+        Ok(Self {
+            identifier: RpcServerBlockchain::parse_contract_identifier(params, "getstorage")?,
+            key_bytes: expect_base64_param_with_messages(
+                params,
+                1,
+                "getstorage requires Base64 key parameter",
+                |key| format!("invalid Base64 storage key: {key}"),
+            )?,
+        })
+    }
+}
+
+pub(super) struct FindStorageRequest {
+    pub(super) identifier: ContractNameOrHashOrId,
+    pub(super) prefix_bytes: Vec<u8>,
+    pub(super) start: usize,
+}
+
+impl FindStorageRequest {
+    pub(super) fn parse(params: &[Value]) -> Result<Self, RpcException> {
+        Ok(Self {
+            identifier: RpcServerBlockchain::parse_contract_identifier(params, "findstorage")?,
+            prefix_bytes: expect_base64_param_with_messages(
+                params,
+                1,
+                "findstorage requires Base64 prefix parameter",
+                |prefix| format!("invalid Base64 storage prefix: {prefix}"),
+            )?,
+            start: parse_find_storage_start(params)?,
+        })
+    }
+}
+
+fn parse_find_storage_start(params: &[Value]) -> Result<usize, RpcException> {
+    match params.get(2) {
+        None => Ok(0),
+        Some(Value::Number(number)) => number
+            .as_u64()
+            .and_then(|value| usize::try_from(value).ok())
+            .ok_or_else(non_negative_start_error),
+        _ => Err(non_negative_start_error()),
+    }
+}
+
+fn non_negative_start_error() -> RpcException {
+    RpcException::from(
+        RpcError::invalid_params().with_data("start index must be a non-negative integer"),
+    )
+}
 
 impl RpcServerBlockchain {
     pub(super) fn parse_block_identifier(

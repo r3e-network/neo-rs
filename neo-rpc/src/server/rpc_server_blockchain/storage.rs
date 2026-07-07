@@ -6,7 +6,6 @@
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::expect_base64_param_with_messages;
 use crate::server::rpc_server::RpcServer;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_storage::StorageKey;
@@ -14,6 +13,7 @@ use neo_storage::persistence::SeekDirection;
 use serde_json::{Value, json};
 
 use super::RpcServerBlockchain;
+use super::request_helpers::{FindStorageRequest, GetStorageRequest};
 use super::responses::contract_state_to_json;
 
 impl RpcServerBlockchain {
@@ -39,17 +39,11 @@ impl RpcServerBlockchain {
                 .call("getstorage", params)
                 .map_err(RpcException::from);
         }
-        let identifier = Self::parse_contract_identifier(params, "getstorage")?;
-        let key_bytes = expect_base64_param_with_messages(
-            params,
-            1,
-            "getstorage requires Base64 key parameter",
-            |key| format!("invalid Base64 storage key: {key}"),
-        )?;
+        let request = GetStorageRequest::parse(params)?;
 
         let store = server.system().store_cache();
-        let contract_id = Self::resolve_contract_id(&store, &identifier)?;
-        let storage_key = StorageKey::new(contract_id, key_bytes);
+        let contract_id = Self::resolve_contract_id(&store, &request.identifier)?;
+        let storage_key = StorageKey::new(contract_id, request.key_bytes);
         let value = store
             .get(&storage_key)
             .ok_or_else(|| RpcException::from(RpcError::unknown_storage_item()))?;
@@ -65,35 +59,11 @@ impl RpcServerBlockchain {
                 .call("findstorage", params)
                 .map_err(RpcException::from);
         }
-        let identifier = Self::parse_contract_identifier(params, "findstorage")?;
-        let prefix_bytes = expect_base64_param_with_messages(
-            params,
-            1,
-            "findstorage requires Base64 prefix parameter",
-            |prefix| format!("invalid Base64 storage prefix: {prefix}"),
-        )?;
-        let start = match params.get(2) {
-            None => 0usize,
-            Some(Value::Number(number)) => number
-                .as_u64()
-                .and_then(|value| usize::try_from(value).ok())
-                .ok_or_else(|| {
-                    RpcException::from(
-                        RpcError::invalid_params()
-                            .with_data("start index must be a non-negative integer"),
-                    )
-                })?,
-            _ => {
-                return Err(RpcException::from(
-                    RpcError::invalid_params()
-                        .with_data("start index must be a non-negative integer"),
-                ));
-            }
-        };
+        let request = FindStorageRequest::parse(params)?;
 
         let store = server.system().store_cache();
-        let contract_id = Self::resolve_contract_id(&store, &identifier)?;
-        let prefix_key = StorageKey::new(contract_id, prefix_bytes);
+        let contract_id = Self::resolve_contract_id(&store, &request.identifier)?;
+        let prefix_key = StorageKey::new(contract_id, request.prefix_bytes);
         let iter = store.find(Some(&prefix_key), SeekDirection::Forward);
 
         let mut results = Vec::new();
@@ -104,7 +74,7 @@ impl RpcServerBlockchain {
             if key.id != contract_id {
                 continue;
             }
-            if skipped < start {
+            if skipped < request.start {
                 skipped += 1;
                 continue;
             }
@@ -120,7 +90,7 @@ impl RpcServerBlockchain {
 
         Ok(json!({
             "truncated": truncated,
-            "next": start + results.len(),
+            "next": request.start + results.len(),
             "results": results}))
     }
 }

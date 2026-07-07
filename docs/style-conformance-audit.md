@@ -246,6 +246,11 @@ Node relay methods now follow the same boundary:
 `rpc_server_node/request.rs` owns Base64 decoding and Neo wire-payload
 deserialization for `sendrawtransaction` and `submitblock`; the root handler
 keeps relay submission and relay-result mapping.
+Blockchain storage methods now follow that request-boundary pattern:
+`rpc_server_blockchain/request_helpers.rs` owns contract identifier and Base64
+key/prefix/start parsing for `getstorage` and `findstorage`, while
+`storage.rs` keeps contract resolution, storage lookup, pagination, and
+response construction.
 
 Recommended next patches, in order:
 
