@@ -170,6 +170,9 @@ High-signal clusters found during the first pass:
   `store/record_write.rs` owns snapshot-to-record materialization and puts, and
   `store/lifecycle.rs` owns schema detection, legacy snapshot migration, full
   store writes, and delta writes.
+- `neo-io/src/serializable/mod.rs` keeps the codec facade and module map,
+  `serializable/traits.rs` owns the `Serializable` and extension traits, and
+  `serializable/macros.rs` owns the declarative `impl_serializable!` helper.
 - `neo-storage` exposes broad `dyn Store` / `dyn StoreSnapshot` boundaries.
   This is valid for backend selection, but hot loops should keep borrowed
   visitor APIs or concrete paths where possible.
