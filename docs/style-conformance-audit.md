@@ -150,6 +150,10 @@ High-signal clusters found during the first pass:
   indexer, ApplicationLogs, and TokensTracker construction, while
   `services/store.rs` owns service-store opening, storage config inheritance,
   and fast-sync backend mode.
+- `neo-node/src/node/sync_metrics/mod.rs` now keeps the operator-facing
+  Prometheus summary flow. `sync_metrics/families.rs` owns bounded-label metric
+  family renderers, and `sync_metrics/writer.rs` owns the small text-format
+  label writers.
 - `neo-rpc` has the largest raw JSON surface. Many `Value` uses are correct at
   the transport edge, but handler internals should move repeated request and
   response shapes into typed parameter/result modules.

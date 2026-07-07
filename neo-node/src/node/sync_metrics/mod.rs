@@ -12,6 +12,15 @@
 //!
 //! - `sync_metrics`: Prometheus rendering for node sync metrics.
 
+mod families;
+mod writer;
+
+use families::{
+    append_native_contract_hooks, append_native_persist_tx_stages,
+    append_neo_token_candidate_counts, append_neo_token_committee_compute_stages,
+    append_neo_token_onpersist_stages, append_state_root_apply_metrics,
+};
+
 /// Render sync metrics as Prometheus-format text.
 pub fn render_prometheus() -> String {
     use neo_runtime::sync_metrics as m;
@@ -113,220 +122,14 @@ pub fn render_prometheus() -> String {
         state_apply.avg_changes,
     );
 
-    output.push_str(
-        "# HELP neo_state_service_mpt_apply_stage_calls_total Total fine-grained local StateService MPT apply stage observations\n\
-         # TYPE neo_state_service_mpt_apply_stage_calls_total counter\n\
-         # HELP neo_state_service_mpt_apply_stage_avg_us EWMA fine-grained local StateService MPT apply stage time (microseconds)\n\
-         # TYPE neo_state_service_mpt_apply_stage_avg_us gauge\n",
-    );
-    for stat in neo_state_service::StateRootApplyMetrics::state_root_apply_stage_stats() {
-        push_single_label_metric(
-            &mut output,
-            "neo_state_service_mpt_apply_stage_calls_total",
-            "stage",
-            stat.stage,
-            stat.calls,
-        );
-        push_single_label_metric(
-            &mut output,
-            "neo_state_service_mpt_apply_stage_avg_us",
-            "stage",
-            stat.stage,
-            stat.avg_us,
-        );
-    }
-    output.push_str(
-        "# HELP neo_state_service_mpt_apply_count_samples_total Total local StateService MPT apply count samples\n\
-         # TYPE neo_state_service_mpt_apply_count_samples_total counter\n\
-         # HELP neo_state_service_mpt_apply_items_total Cumulative local StateService MPT apply items\n\
-         # TYPE neo_state_service_mpt_apply_items_total counter\n\
-         # HELP neo_state_service_mpt_apply_avg_items EWMA local StateService MPT apply items per block\n\
-         # TYPE neo_state_service_mpt_apply_avg_items gauge\n",
-    );
-    for stat in neo_state_service::StateRootApplyMetrics::state_root_apply_count_stats() {
-        push_single_label_metric(
-            &mut output,
-            "neo_state_service_mpt_apply_count_samples_total",
-            "kind",
-            stat.kind,
-            stat.samples,
-        );
-        push_single_label_metric(
-            &mut output,
-            "neo_state_service_mpt_apply_items_total",
-            "kind",
-            stat.kind,
-            stat.total,
-        );
-        push_single_label_metric(
-            &mut output,
-            "neo_state_service_mpt_apply_avg_items",
-            "kind",
-            stat.kind,
-            stat.avg,
-        );
-    }
-
-    output.push_str(
-        "# HELP neo_sync_native_contract_hook_calls_total Total native contract persist hook calls by trigger and contract\n\
-         # TYPE neo_sync_native_contract_hook_calls_total counter\n\
-         # HELP neo_sync_native_contract_hook_avg_us EWMA native contract persist hook time by trigger and contract (microseconds)\n\
-         # TYPE neo_sync_native_contract_hook_avg_us gauge\n",
-    );
-    for stat in m::native_contract_hook_stats() {
-        push_native_hook_metric(
-            &mut output,
-            "neo_sync_native_contract_hook_calls_total",
-            stat.trigger,
-            stat.contract,
-            stat.contract_id,
-            stat.calls,
-        );
-        push_native_hook_metric(
-            &mut output,
-            "neo_sync_native_contract_hook_avg_us",
-            stat.trigger,
-            stat.contract,
-            stat.contract_id,
-            stat.avg_us,
-        );
-    }
-    output.push_str(
-        "# HELP neo_sync_native_persist_tx_stage_calls_total Total native persistence transaction-stage observations\n\
-         # TYPE neo_sync_native_persist_tx_stage_calls_total counter\n\
-         # HELP neo_sync_native_persist_tx_stage_avg_us EWMA native persistence transaction-stage time (microseconds)\n\
-         # TYPE neo_sync_native_persist_tx_stage_avg_us gauge\n",
-    );
-    for stat in m::native_persist_tx_stage_stats() {
-        push_single_label_metric(
-            &mut output,
-            "neo_sync_native_persist_tx_stage_calls_total",
-            "stage",
-            stat.stage,
-            stat.calls,
-        );
-        push_single_label_metric(
-            &mut output,
-            "neo_sync_native_persist_tx_stage_avg_us",
-            "stage",
-            stat.stage,
-            stat.avg_us,
-        );
-    }
-    output.push_str(
-        "# HELP neo_sync_neotoken_onpersist_stage_calls_total Total NeoToken OnPersist stage observations\n\
-         # TYPE neo_sync_neotoken_onpersist_stage_calls_total counter\n\
-         # HELP neo_sync_neotoken_onpersist_stage_avg_us EWMA NeoToken OnPersist stage time (microseconds)\n\
-         # TYPE neo_sync_neotoken_onpersist_stage_avg_us gauge\n",
-    );
-    for stat in m::neo_token_onpersist_stage_stats() {
-        push_single_label_metric(
-            &mut output,
-            "neo_sync_neotoken_onpersist_stage_calls_total",
-            "stage",
-            stat.stage,
-            stat.calls,
-        );
-        push_single_label_metric(
-            &mut output,
-            "neo_sync_neotoken_onpersist_stage_avg_us",
-            "stage",
-            stat.stage,
-            stat.avg_us,
-        );
-    }
-    output.push_str(
-        "# HELP neo_sync_neotoken_committee_compute_stage_calls_total Total NeoToken committee-compute stage observations\n\
-         # TYPE neo_sync_neotoken_committee_compute_stage_calls_total counter\n\
-         # HELP neo_sync_neotoken_committee_compute_stage_avg_us EWMA NeoToken committee-compute stage time (microseconds)\n\
-         # TYPE neo_sync_neotoken_committee_compute_stage_avg_us gauge\n",
-    );
-    for stat in m::neo_token_committee_compute_stage_stats() {
-        push_single_label_metric(
-            &mut output,
-            "neo_sync_neotoken_committee_compute_stage_calls_total",
-            "stage",
-            stat.stage,
-            stat.calls,
-        );
-        push_single_label_metric(
-            &mut output,
-            "neo_sync_neotoken_committee_compute_stage_avg_us",
-            "stage",
-            stat.stage,
-            stat.avg_us,
-        );
-    }
-    output.push_str(
-        "# HELP neo_sync_neotoken_committee_candidate_scan_samples_total Total NeoToken committee candidate-scan count samples\n\
-         # TYPE neo_sync_neotoken_committee_candidate_scan_samples_total counter\n\
-         # HELP neo_sync_neotoken_committee_candidate_scan_items_total Cumulative NeoToken committee candidate-scan items\n\
-         # TYPE neo_sync_neotoken_committee_candidate_scan_items_total counter\n\
-         # HELP neo_sync_neotoken_committee_candidate_scan_avg_items EWMA NeoToken committee candidate-scan items per scan\n\
-         # TYPE neo_sync_neotoken_committee_candidate_scan_avg_items gauge\n",
-    );
-    for stat in m::neo_token_committee_candidate_count_stats() {
-        push_single_label_metric(
-            &mut output,
-            "neo_sync_neotoken_committee_candidate_scan_samples_total",
-            "kind",
-            stat.kind,
-            stat.samples,
-        );
-        push_single_label_metric(
-            &mut output,
-            "neo_sync_neotoken_committee_candidate_scan_items_total",
-            "kind",
-            stat.kind,
-            stat.total,
-        );
-        push_single_label_metric(
-            &mut output,
-            "neo_sync_neotoken_committee_candidate_scan_avg_items",
-            "kind",
-            stat.kind,
-            stat.avg,
-        );
-    }
+    append_state_root_apply_metrics(&mut output);
+    append_native_contract_hooks(&mut output);
+    append_native_persist_tx_stages(&mut output);
+    append_neo_token_onpersist_stages(&mut output);
+    append_neo_token_committee_compute_stages(&mut output);
+    append_neo_token_candidate_counts(&mut output);
 
     output
-}
-
-fn push_single_label_metric(
-    output: &mut String,
-    metric: &str,
-    label_name: &str,
-    label_value: &str,
-    value: u64,
-) {
-    output.push_str(metric);
-    output.push('{');
-    output.push_str(label_name);
-    output.push_str("=\"");
-    output.push_str(label_value);
-    output.push_str("\"} ");
-    output.push_str(&value.to_string());
-    output.push('\n');
-}
-
-fn push_native_hook_metric(
-    output: &mut String,
-    metric: &str,
-    trigger: &str,
-    contract: &str,
-    contract_id: i32,
-    value: u64,
-) {
-    output.push_str(metric);
-    output.push_str("{trigger=\"");
-    output.push_str(trigger);
-    output.push_str("\",contract=\"");
-    output.push_str(contract);
-    output.push_str("\",id=\"");
-    output.push_str(&contract_id.to_string());
-    output.push_str("\"} ");
-    output.push_str(&value.to_string());
-    output.push('\n');
 }
 
 #[cfg(test)]
