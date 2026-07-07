@@ -1,12 +1,14 @@
 //! Response construction helpers for blockchain RPC methods.
 //!
 //! Handlers own lookup and request flow; this module owns C#-compatible JSON
-//! enrichment for blocks, headers, contracts, mempool entries, and transactions.
+//! enrichment for blocks, headers, contracts, mempool entries, storage, and
+//! transactions.
 
 use crate::client::models::RpcContractState;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_execution::contract_state::ContractState;
 use neo_io::Serializable;
 use neo_mempool::PoolItem;
@@ -54,6 +56,29 @@ pub(super) fn transaction_height_to_json(height: u32) -> Value {
     json!(height)
 }
 
+pub(super) fn storage_value_to_json(value: &[u8]) -> Value {
+    base64_bytes_to_json(value)
+}
+
+pub(super) fn find_storage_result_to_json(key_suffix: &[u8], value: &[u8]) -> Value {
+    json!({
+        "key": BASE64_STANDARD.encode(key_suffix),
+        "value": BASE64_STANDARD.encode(value),
+    })
+}
+
+pub(super) fn find_storage_page_to_json(
+    truncated: bool,
+    next: usize,
+    results: Vec<Value>,
+) -> Value {
+    json!({
+        "truncated": truncated,
+        "next": next,
+        "results": results,
+    })
+}
+
 pub(super) fn raw_mempool_hashes_to_json(items: &[PoolItem]) -> Value {
     Value::Array(mempool_hash_values(items))
 }
@@ -75,6 +100,10 @@ fn mempool_hash_values(items: &[PoolItem]) -> Vec<Value> {
         .iter()
         .map(|item| Value::String(item.hash().to_string()))
         .collect()
+}
+
+fn base64_bytes_to_json(bytes: &[u8]) -> Value {
+    Value::String(BASE64_STANDARD.encode(bytes))
 }
 
 pub(super) fn header_to_json(

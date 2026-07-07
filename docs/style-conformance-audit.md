@@ -317,7 +317,8 @@ Blockchain storage methods now follow that request-boundary pattern:
 `rpc_server_blockchain/request_helpers.rs` owns contract identifier and Base64
 key/prefix/start parsing for `getcontractstate`, `getstorage`, and
 `findstorage`, while `storage.rs` keeps contract resolution, storage lookup,
-pagination, and response construction.
+and pagination. `responses.rs` owns contract-state projection plus base64
+storage values and `findstorage` page envelopes.
 Blockchain mempool handling has been moved out of the large route map:
 `rpc_server_blockchain/mempool.rs` owns `getrawmempool` live-pool reads and
 ledger-height lookup, `request_helpers.rs` owns `shouldGetUnverified` parsing,

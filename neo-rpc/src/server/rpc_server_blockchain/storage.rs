@@ -2,19 +2,22 @@
 //!
 //! These handlers stay in the blockchain RPC group because they are part of the
 //! Neo JSON-RPC blockchain surface, but their parsing and storage iteration
-//! dependencies are isolated from the block and transaction handlers.
+//! dependencies are isolated from the block and transaction handlers. Response
+//! projection stays in `responses`.
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_storage::StorageKey;
 use neo_storage::persistence::SeekDirection;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::RpcServerBlockchain;
 use super::request_helpers::{FindStorageRequest, GetContractStateRequest, GetStorageRequest};
-use super::responses::contract_state_to_json;
+use super::responses::{
+    contract_state_to_json, find_storage_page_to_json, find_storage_result_to_json,
+    storage_value_to_json,
+};
 
 impl RpcServerBlockchain {
     pub(super) fn get_contract_state(
@@ -47,7 +50,7 @@ impl RpcServerBlockchain {
         let value = store
             .get(&storage_key)
             .ok_or_else(|| RpcException::from(RpcError::unknown_storage_item()))?;
-        Ok(Value::String(BASE64_STANDARD.encode(&*value.value_bytes())))
+        Ok(storage_value_to_json(value.value_bytes().as_ref()))
     }
 
     pub(super) fn find_storage(
@@ -83,14 +86,16 @@ impl RpcServerBlockchain {
                 break;
             }
 
-            results.push(json!({
-                "key": BASE64_STANDARD.encode(key.suffix()),
-                "value": BASE64_STANDARD.encode(&*value.value_bytes())}));
+            results.push(find_storage_result_to_json(
+                key.suffix(),
+                value.value_bytes().as_ref(),
+            ));
         }
 
-        Ok(json!({
-            "truncated": truncated,
-            "next": request.start + results.len(),
-            "results": results}))
+        Ok(find_storage_page_to_json(
+            truncated,
+            request.start + results.len(),
+            results,
+        ))
     }
 }
