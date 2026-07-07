@@ -27,7 +27,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use neo_payloads::{Block, ExtensiblePayload};
+use neo_payloads::Block;
 use neo_runtime::{
     BlockBatchImportOutcome, BlockImport, BlockImportOutcome, BlockOrigin, ImportedTip, Service,
     ServiceError,
@@ -37,6 +37,7 @@ use tokio::sync::{broadcast, mpsc};
 use crate::command::{AddTransactionReply, BlockchainCommand, ImportBlocksReply};
 use crate::import::Import;
 
+mod inventory;
 mod queries;
 
 /// Cheap-to-clone handle to a blockchain service.
@@ -104,64 +105,6 @@ impl BlockchainHandle {
     /// [`Self::channel`].
     pub fn subscribe(&self) -> broadcast::Receiver<crate::RuntimeEvent> {
         self.event_tx.subscribe()
-    }
-
-    /// Submit a peer-relayed inventory block burst to the live sync path.
-    ///
-    /// This keeps callers on a typed API while preserving the blockchain
-    /// service's inventory-specific semantics: relay policy, parked future
-    /// blocks, deferred batch store commit, unverified-drain handling, and
-    /// mempool maintenance all remain inside the service loop.
-    pub async fn submit_inventory_blocks(
-        &self,
-        blocks: Vec<Arc<Block>>,
-        relay: bool,
-        pre_verified: bool,
-    ) -> Result<(), ServiceError> {
-        if blocks.is_empty() {
-            return Ok(());
-        }
-        self.cmd_tx
-            .send(BlockchainCommand::InventoryBlocks {
-                blocks,
-                relay,
-                pre_verified,
-            })
-            .await
-            .map_err(|_| ServiceError::unavailable("blockchain command channel closed"))
-    }
-
-    /// Submit one block to the peer/consensus inventory path.
-    ///
-    /// Use this for live inventory semantics. RPC and local package imports
-    /// should use [`Self::import_block`] or [`Self::import_blocks_bulk`]
-    /// instead.
-    pub async fn submit_inventory_block(
-        &self,
-        block: Arc<Block>,
-        relay: bool,
-        pre_verified: bool,
-    ) -> Result<(), ServiceError> {
-        self.cmd_tx
-            .send(BlockchainCommand::InventoryBlock {
-                block,
-                relay,
-                pre_verified,
-            })
-            .await
-            .map_err(|_| ServiceError::unavailable("blockchain command channel closed"))
-    }
-
-    /// Submit an extensible payload to the live inventory path.
-    pub async fn submit_inventory_extensible(
-        &self,
-        payload: ExtensiblePayload,
-        relay: bool,
-    ) -> Result<(), ServiceError> {
-        self.cmd_tx
-            .send(BlockchainCommand::InventoryExtensible { payload, relay })
-            .await
-            .map_err(|_| ServiceError::unavailable("blockchain command channel closed"))
     }
 
     /// Request blockchain service initialization.
