@@ -274,6 +274,10 @@ RPC transport lifecycle follows the same split:
 handling, DoS-limit builder wiring, and session-purge task wiring; the root
 `rpc_server/mod.rs` now stays focused on server state, handler registration,
 wallet/session accessors, and rate-limit policy.
+RPC dispatch has the same production/test boundary now:
+`dispatch/mod.rs` owns handler resolution, rate-limit checks, remote-ledger
+proxy dispatch, and panic-policy handling, while its remote-ledger policy
+coverage tests live in `tests/server/core/dispatch.rs`.
 RPC settings parsing has started the same decomposition:
 `rpc_server_settings/gas.rs` owns C#-compatible `MaxGasInvoke` and `MaxFee`
 GAS/datoshi decoding; `rpc_server_settings/config.rs` owns
