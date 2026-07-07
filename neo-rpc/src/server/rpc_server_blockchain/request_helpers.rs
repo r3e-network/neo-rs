@@ -44,6 +44,18 @@ impl BlockPayloadRequest {
     }
 }
 
+pub(super) struct GetContractStateRequest {
+    pub(super) identifier: ContractNameOrHashOrId,
+}
+
+impl GetContractStateRequest {
+    pub(super) fn parse(params: &[Value]) -> Result<Self, RpcException> {
+        Ok(Self {
+            identifier: RpcServerBlockchain::parse_contract_identifier(params, "getcontractstate")?,
+        })
+    }
+}
+
 pub(super) struct GetStorageRequest {
     pub(super) identifier: ContractNameOrHashOrId,
     pub(super) key_bytes: Vec<u8>,

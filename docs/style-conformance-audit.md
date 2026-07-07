@@ -303,9 +303,9 @@ status/version handlers. The root `rpc_server_node/mod.rs` is now only the
 handler-registration facade and module map.
 Blockchain storage methods now follow that request-boundary pattern:
 `rpc_server_blockchain/request_helpers.rs` owns contract identifier and Base64
-key/prefix/start parsing for `getstorage` and `findstorage`, while
-`storage.rs` keeps contract resolution, storage lookup, pagination, and
-response construction.
+key/prefix/start parsing for `getcontractstate`, `getstorage`, and
+`findstorage`, while `storage.rs` keeps contract resolution, storage lookup,
+pagination, and response construction.
 Blockchain mempool handling has been moved out of the large route map:
 `rpc_server_blockchain/mempool.rs` owns `getrawmempool` live-pool reads and
 response construction, while `request_helpers.rs` owns `shouldGetUnverified`

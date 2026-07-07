@@ -13,7 +13,7 @@ use neo_storage::persistence::SeekDirection;
 use serde_json::{Value, json};
 
 use super::RpcServerBlockchain;
-use super::request_helpers::{FindStorageRequest, GetStorageRequest};
+use super::request_helpers::{FindStorageRequest, GetContractStateRequest, GetStorageRequest};
 use super::responses::contract_state_to_json;
 
 impl RpcServerBlockchain {
@@ -26,9 +26,9 @@ impl RpcServerBlockchain {
                 .call("getcontractstate", params)
                 .map_err(RpcException::from);
         }
-        let identifier = Self::parse_contract_identifier(params, "getcontractstate")?;
+        let request = GetContractStateRequest::parse(params)?;
         let store = server.system().store_cache();
-        let contract = Self::load_contract_state(&store, &identifier)?
+        let contract = Self::load_contract_state(&store, &request.identifier)?
             .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))?;
         Ok(contract_state_to_json(&contract))
     }
