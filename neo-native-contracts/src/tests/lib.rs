@@ -86,7 +86,7 @@ fn nep17_key_helpers_match_csharp_prefix_layout() {
 
 #[test]
 fn nep17_key_helpers_use_shared_storage_key_builders() {
-    let source = include_str!("../lib.rs");
+    let source = include_str!("../nep.rs");
     let start = source
         .find("pub(crate) fn nep17_total_supply_key(")
         .expect("NEP-17 key helpers exist");
@@ -104,14 +104,14 @@ fn nep17_key_helpers_use_shared_storage_key_builders() {
 
 #[test]
 fn nep17_balance_reader_uses_stack_value_projection() {
-    let source = include_str!("../lib.rs");
+    let source = include_str!("../nep.rs");
     let start = source
         .find("pub(crate) fn read_nep17_balance(")
         .expect("read_nep17_balance helper exists");
     let end = source[start..]
-        .find("#[cfg(test)]")
+        .find("/// Reads the NEP-17 total supply")
         .map(|offset| start + offset)
-        .expect("tests follow read_nep17_balance");
+        .expect("total supply reader follows read_nep17_balance");
     let helper = &source[start..end];
 
     // After the FungibleToken-helper extraction, read_nep17_balance delegates
