@@ -16,17 +16,12 @@
 //! - `response`: Utility RPC response construction helpers.
 //! - `tests`: Module-local tests and regression coverage.
 
-use serde_json::Value;
-
-use super::rpc_exception::RpcException;
-use super::rpc_server::{RpcHandler, RpcServer};
+use super::rpc_server::RpcHandler;
 
 mod address;
 mod inventory;
 mod request;
 mod response;
-
-use self::request::{NoParamsRequest, ValidateAddressRequest};
 
 /// RPC handler group for utility methods.
 pub struct RpcServerUtilities;
@@ -39,24 +34,6 @@ impl RpcServerUtilities {
             "listservices" => Self::list_services_handler,
             "validateaddress" => Self::validate_address_handler,
         ]
-    }
-
-    fn list_plugins_handler(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        NoParamsRequest::parse(params, "listplugins")?;
-        Ok(server.list_plugins())
-    }
-
-    fn list_services_handler(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        NoParamsRequest::parse(params, "listservices")?;
-        Ok(server.list_services())
-    }
-
-    fn validate_address_handler(
-        server: &RpcServer,
-        params: &[Value],
-    ) -> Result<Value, RpcException> {
-        let request = ValidateAddressRequest::parse(params)?;
-        Ok(server.validate_address(&request.address))
     }
 }
 

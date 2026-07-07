@@ -5,8 +5,21 @@
 
 use serde_json::Value;
 
+use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
+use crate::server::rpc_server_utilities::RpcServerUtilities;
+use crate::server::rpc_server_utilities::request::ValidateAddressRequest;
 use crate::server::rpc_server_utilities::response::validate_address_to_json;
+
+impl RpcServerUtilities {
+    pub(super) fn validate_address_handler(
+        server: &RpcServer,
+        params: &[Value],
+    ) -> Result<Value, RpcException> {
+        let request = ValidateAddressRequest::parse(params)?;
+        Ok(server.validate_address(&request.address))
+    }
+}
 
 impl RpcServer {
     /// Validate a Neo address against the node's configured address version.

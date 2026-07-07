@@ -303,7 +303,9 @@ now keeps only handler registration.
 Utility endpoints now use the same pattern: `rpc_server_utilities/request.rs`
 owns no-parameter validation for `listplugins` / `listservices` and
 `validateaddress` parameter parsing, `rpc_server_utilities/address.rs` owns
-address-version validation, and the root handler stays focused on RPC dispatch.
+address-version validation and `validateaddress` dispatch, while
+`rpc_server_utilities/inventory.rs` owns `listplugins` / `listservices`
+dispatch. The root utility module now keeps only handler registration.
 `rpc_server_utilities/response.rs` owns the `listplugins` plugin-entry/list,
 `listservices` service-entry/list, and `validateaddress` JSON shapes. The
 no-parameter request record is now shared through `rpc_helpers::NoParamsRequest`
