@@ -217,12 +217,15 @@ StateService request parsing now lives in `rpc_server_state/request.rs`, and
 state-root / `findstates` JSON construction lives in
 `rpc_server_state/response.rs`. The handler module now orchestrates services,
 tries, and proof generation instead of owning JSON parameter layout details.
+The same split now covers token tracker handlers:
+`rpc_server_tokens_tracker/request.rs` owns account/time-window/token-id
+parsing, while `rpc_server_tokens_tracker/response.rs` owns common balance and
+transfer response envelopes.
 
 Recommended next patches, in order:
 
 1. Apply the typed request/response-helper pattern to the remaining `neo-rpc`
-   handler groups, starting with the highest-churn wallet and tokens-tracker
-   methods.
+   handler groups, starting with the high-churn wallet methods.
 2. Centralize GUI lock handling in `neo-gui` before fixing individual
    `lock().unwrap()` call sites.
 3. Add comments to every remaining production `#[allow]` that explain the

@@ -3,9 +3,7 @@ use crate::plugins::tokens_tracker::{
     Nep11TransferKey, Nep17TransferKey, TokenTransfer, TokensTrackerService, find_range,
 };
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{
-    expect_script_hash_or_address_param, internal_error, invalid_params, optional_u64_param,
-};
+use crate::server::rpc_helpers::internal_error;
 use neo_execution::application_engine::TEST_MODE_GAS;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::Serializable;
@@ -28,31 +26,6 @@ pub(super) fn tracker_service(
         .system()
         .get_service::<TokensTrackerService>()
         .ok_or_else(|| internal_error("TokensTracker service not available"))
-}
-
-pub(super) fn parse_address_param(
-    params: &[Value],
-    index: usize,
-    method: &str,
-    address_version: u8,
-) -> Result<UInt160, RpcException> {
-    expect_script_hash_or_address_param(params, index, method, address_version)
-}
-
-pub(super) fn parse_optional_u64(value: Option<&Value>) -> Result<u64, RpcException> {
-    optional_u64_param(value, 0, "Expected unsigned integer")
-}
-
-pub(super) fn parse_token_id_param(
-    params: &[Value],
-    index: usize,
-    method: &str,
-) -> Result<Vec<u8>, RpcException> {
-    let text = params
-        .get(index)
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| invalid_params(format!("{method} requires tokenId parameter")))?;
-    hex_util::decode_hex(text).map_err(|_| invalid_params("Invalid tokenId"))
 }
 
 pub(super) fn collect_transfers(
@@ -264,8 +237,4 @@ pub(super) fn emit_contract_call_with_arg(
         .emit_syscall("System.Contract.Call")
         .map_err(|err| internal_error(err.to_string()))?;
     Ok(())
-}
-
-pub(super) fn current_time_millis() -> u64 {
-    neo_primitives::time::now_millis()
 }

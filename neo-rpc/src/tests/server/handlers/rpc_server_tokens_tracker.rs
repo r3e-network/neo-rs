@@ -24,6 +24,7 @@ use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};

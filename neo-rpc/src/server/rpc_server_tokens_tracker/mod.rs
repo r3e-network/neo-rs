@@ -11,6 +11,8 @@
 //! ## Contents
 //!
 //! - `helpers`: Shared helper functions for the surrounding module.
+//! - `request`: Typed JSON-RPC request parsing helpers.
+//! - `response`: Typed JSON-RPC response construction helpers.
 //! - `tests`: Module-local tests and regression coverage.
 
 use crate::plugins::tokens_tracker::{
@@ -18,7 +20,7 @@ use crate::plugins::tokens_tracker::{
 };
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{internal_error, invalid_params};
+use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_execution::application_engine::TEST_MODE_GAS;
@@ -30,16 +32,22 @@ use neo_primitives::hex_util;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm::stack_item::StackItem;
 use neo_vm_rs::VmState as VMState;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 mod helpers;
+mod request;
+mod response;
 #[cfg(test)]
 #[path = "../../tests/server/handlers/rpc_server_tokens_tracker.rs"]
 mod tests;
 
 use helpers::*;
+use request::{AccountRequest, Nep11PropertiesRequest, TransferHistoryRequest};
+use response::{
+    account_balances, nep11_balance_entry, nep11_token_entry, nep17_balance_entry, transfer_history,
+};
 
 /// RPC handler group for NEP-11 and NEP-17 token tracker methods.
 pub struct RpcServerTokensTracker;
@@ -65,12 +73,12 @@ impl RpcServerTokensTracker {
         }
 
         let address_version = server.system().settings().address_version;
-        let script_hash = parse_address_param(params, 0, "getnep11balances", address_version)?;
+        let request = AccountRequest::parse(params, "getnep11balances", address_version)?;
 
         let (balance_prefix, _, _) = Nep11Tracker::rpc_prefixes();
         let mut prefix = Vec::with_capacity(1 + UInt160::LENGTH);
         prefix.push(balance_prefix);
-        prefix.extend_from_slice(&script_hash.to_bytes());
+        prefix.extend_from_slice(&request.script_hash.to_bytes());
 
         let balances =
             find_prefix::<_, Nep11BalanceKey, TokenBalance>(service.store().as_ref(), &prefix)
@@ -123,25 +131,23 @@ impl RpcServerTokensTracker {
 
             let token_entries = tokens
                 .into_iter()
-                .map(|(token_id, balance)| {
-                    json!({
-                        "tokenid": token_id,
-                        "amount": balance.balance.to_string(),
-                        "lastupdatedblock": balance.last_updated_block})
-                })
+                .map(|(token_id, balance)| nep11_token_entry(token_id, balance))
                 .collect::<Vec<_>>();
 
-            results.push(json!({
-                "assethash": asset.to_string(),
-                "name": contract.manifest.name,
-                "symbol": symbol,
-                "decimals": decimals.to_string(),
-                "tokens": token_entries}));
+            results.push(nep11_balance_entry(
+                &asset,
+                &contract.manifest.name,
+                &symbol,
+                decimals,
+                token_entries,
+            ));
         }
 
-        Ok(json!({
-            "address": neo_wallets::wallet_helper::WalletAddress::to_address(&script_hash, address_version),
-            "balance": results}))
+        Ok(account_balances(
+            &request.script_hash,
+            address_version,
+            results,
+        ))
     }
 
     fn get_nep11_transfers(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -151,20 +157,7 @@ impl RpcServerTokensTracker {
         }
 
         let address_version = server.system().settings().address_version;
-        let script_hash = parse_address_param(params, 0, "getnep11transfers", address_version)?;
-
-        let now_ms = current_time_millis();
-        let start_time = parse_optional_u64(params.get(1))?;
-        let end_time = parse_optional_u64(params.get(2))?;
-        let start = if start_time == 0 {
-            now_ms.saturating_sub(7 * 24 * 60 * 60 * 1000)
-        } else {
-            start_time
-        };
-        let end = if end_time == 0 { now_ms } else { end_time };
-        if end < start {
-            return Err(invalid_params("endTime must be >= startTime"));
-        }
+        let request = TransferHistoryRequest::parse(params, "getnep11transfers", address_version)?;
 
         let (_, sent_prefix, received_prefix) = Nep11Tracker::rpc_prefixes();
         let max_results = service.settings().max_results_limit();
@@ -172,26 +165,28 @@ impl RpcServerTokensTracker {
         let sent = collect_nep11_transfers(
             service.store().as_ref(),
             sent_prefix,
-            &script_hash,
-            start,
-            end,
+            &request.script_hash,
+            request.start,
+            request.end,
             address_version,
             max_results,
         )?;
         let received = collect_nep11_transfers(
             service.store().as_ref(),
             received_prefix,
-            &script_hash,
-            start,
-            end,
+            &request.script_hash,
+            request.start,
+            request.end,
             address_version,
             max_results,
         )?;
 
-        Ok(json!({
-            "address": neo_wallets::wallet_helper::WalletAddress::to_address(&script_hash, address_version),
-            "sent": sent,
-            "received": received}))
+        Ok(transfer_history(
+            &request.script_hash,
+            address_version,
+            sent,
+            received,
+        ))
     }
 
     fn get_nep11_properties(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -201,16 +196,15 @@ impl RpcServerTokensTracker {
         }
 
         let address_version = server.system().settings().address_version;
-        let script_hash = parse_address_param(params, 0, "getnep11properties", address_version)?;
-        let token_id = parse_token_id_param(params, 1, "getnep11properties")?;
+        let request = Nep11PropertiesRequest::parse(params, address_version)?;
 
         let mut script = ScriptBuilder::new();
         emit_contract_call_with_arg(
             &mut script,
-            &script_hash,
+            &request.script_hash,
             "properties",
             CallFlags::READ_ONLY,
-            &token_id,
+            &request.token_id,
         )?;
 
         let system = server.system();
@@ -228,7 +222,7 @@ impl RpcServerTokensTracker {
         )
         .map_err(|err| internal_error(err.to_string()))?;
         engine
-            .load_script(script.to_array(), CallFlags::ALL, Some(script_hash))
+            .load_script(script.to_array(), CallFlags::ALL, Some(request.script_hash))
             .map_err(|err| internal_error(err.to_string()))?;
         engine
             .execute()
@@ -294,12 +288,12 @@ impl RpcServerTokensTracker {
         }
 
         let address_version = server.system().settings().address_version;
-        let script_hash = parse_address_param(params, 0, "getnep17balances", address_version)?;
+        let request = AccountRequest::parse(params, "getnep17balances", address_version)?;
 
         let (balance_prefix, _, _) = Nep17Tracker::rpc_prefixes();
         let mut prefix = Vec::with_capacity(1 + UInt160::LENGTH);
         prefix.push(balance_prefix);
-        prefix.extend_from_slice(&script_hash.to_bytes());
+        prefix.extend_from_slice(&request.script_hash.to_bytes());
 
         let balances =
             find_prefix::<_, Nep17BalanceKey, TokenBalance>(service.store().as_ref(), &prefix)
@@ -332,18 +326,20 @@ impl RpcServerTokensTracker {
                 continue;
             };
 
-            results.push(json!({
-                "assethash": key.asset_script_hash.to_string(),
-                "name": contract.manifest.name,
-                "symbol": symbol,
-                "decimals": decimals.to_string(),
-                "amount": value.balance.to_string(),
-                "lastupdatedblock": value.last_updated_block}));
+            results.push(nep17_balance_entry(
+                &key.asset_script_hash,
+                &contract.manifest.name,
+                &symbol,
+                decimals,
+                &value,
+            ));
         }
 
-        Ok(json!({
-            "address": neo_wallets::wallet_helper::WalletAddress::to_address(&script_hash, address_version),
-            "balance": results}))
+        Ok(account_balances(
+            &request.script_hash,
+            address_version,
+            results,
+        ))
     }
 
     fn get_nep17_transfers(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -353,20 +349,7 @@ impl RpcServerTokensTracker {
         }
 
         let address_version = server.system().settings().address_version;
-        let script_hash = parse_address_param(params, 0, "getnep17transfers", address_version)?;
-
-        let now_ms = current_time_millis();
-        let start_time = parse_optional_u64(params.get(1))?;
-        let end_time = parse_optional_u64(params.get(2))?;
-        let start = if start_time == 0 {
-            now_ms.saturating_sub(7 * 24 * 60 * 60 * 1000)
-        } else {
-            start_time
-        };
-        let end = if end_time == 0 { now_ms } else { end_time };
-        if end < start {
-            return Err(invalid_params("endTime must be >= startTime"));
-        }
+        let request = TransferHistoryRequest::parse(params, "getnep17transfers", address_version)?;
 
         let (_, sent_prefix, received_prefix) = Nep17Tracker::rpc_prefixes();
         let max_results = service.settings().max_results_limit();
@@ -374,25 +357,27 @@ impl RpcServerTokensTracker {
         let sent = collect_transfers(
             service.store().as_ref(),
             sent_prefix,
-            &script_hash,
-            start,
-            end,
+            &request.script_hash,
+            request.start,
+            request.end,
             address_version,
             max_results,
         )?;
         let received = collect_transfers(
             service.store().as_ref(),
             received_prefix,
-            &script_hash,
-            start,
-            end,
+            &request.script_hash,
+            request.start,
+            request.end,
             address_version,
             max_results,
         )?;
 
-        Ok(json!({
-            "address": neo_wallets::wallet_helper::WalletAddress::to_address(&script_hash, address_version),
-            "sent": sent,
-            "received": received}))
+        Ok(transfer_history(
+            &request.script_hash,
+            address_version,
+            sent,
+            received,
+        ))
     }
 }
