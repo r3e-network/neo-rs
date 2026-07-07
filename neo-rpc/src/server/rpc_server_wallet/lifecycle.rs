@@ -4,13 +4,17 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::Arc;
 
-use neo_wallets::{KeyPair, Nep6Wallet, Wallet as CoreWallet, WalletAccount, WalletError};
-use serde_json::{Map, Value};
+use neo_wallets::{KeyPair, Nep6Wallet, Wallet as CoreWallet, WalletError};
+use serde_json::Value;
 use zeroize::Zeroizing;
 
 use super::RpcServerWallet;
 use super::request::{
     DumpPrivKeyRequest, ImportPrivKeyRequest, NoParamsRequest, OpenWalletRequest,
+};
+use super::response::{
+    wallet_account_to_json, wallet_accounts_to_json, wallet_address_to_json, wallet_secret_to_json,
+    wallet_success_to_json,
 };
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
@@ -24,7 +28,7 @@ impl RpcServerWallet {
     ) -> Result<Value, RpcException> {
         NoParamsRequest::parse(params, "closewallet")?;
         server.set_wallet(None);
-        Ok(Value::Bool(true))
+        Ok(wallet_success_to_json())
     }
 
     pub(super) fn dump_priv_key(
@@ -46,7 +50,7 @@ impl RpcServerWallet {
         let wif = account.export_wif().map_err(|err| {
             RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
         })?;
-        Ok(Value::String(wif))
+        Ok(wallet_secret_to_json(wif))
     }
 
     pub(super) fn get_new_address(
@@ -64,7 +68,7 @@ impl RpcServerWallet {
             wallet_clone.create_account(key_bytes.as_ref()).await
         }))?;
         Self::save_wallet(&wallet)?;
-        Ok(Value::String(account.address()))
+        Ok(wallet_address_to_json(account.address()))
     }
 
     pub(super) fn import_priv_key(
@@ -81,7 +85,7 @@ impl RpcServerWallet {
             wallet_clone.import_wif(&privkey_value).await
         }))?;
         Self::save_wallet(&wallet)?;
-        Ok(Self::account_to_json(account.as_ref()))
+        Ok(wallet_account_to_json(account.as_ref()))
     }
 
     pub(super) fn list_address(
@@ -90,11 +94,7 @@ impl RpcServerWallet {
     ) -> Result<Value, RpcException> {
         NoParamsRequest::parse(params, "listaddress")?;
         let wallet = Self::require_wallet(server)?;
-        let mut entries = Vec::new();
-        for account in wallet.accounts() {
-            entries.push(Self::account_to_json(account.as_ref()));
-        }
-        Ok(Value::Array(entries))
+        Ok(wallet_accounts_to_json(wallet.accounts()))
     }
 
     pub(super) fn open_wallet(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -126,21 +126,6 @@ impl RpcServerWallet {
         };
         let wallet_arc: Arc<dyn CoreWallet> = Arc::new(wallet);
         server.set_wallet(Some(wallet_arc));
-        Ok(Value::Bool(true))
-    }
-
-    fn account_to_json(account: &(impl WalletAccount + ?Sized)) -> Value {
-        let has_key = account.has_key();
-        let mut map = Map::new();
-        map.insert("address".to_string(), Value::String(account.address()));
-        map.insert("haskey".to_string(), Value::Bool(has_key));
-        map.insert(
-            "label".to_string(),
-            account
-                .label()
-                .map_or(Value::Null, |label| Value::String(label.to_string())),
-        );
-        map.insert("watchonly".to_string(), Value::Bool(!has_key));
-        Value::Object(map)
+        Ok(wallet_success_to_json())
     }
 }
