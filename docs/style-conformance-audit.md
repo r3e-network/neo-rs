@@ -259,9 +259,10 @@ deserialization for `sendrawtransaction` and `submitblock`;
 Node version reporting now follows the same endpoint-family split:
 `rpc_server_node/version.rs` owns C#-compatible `getversion` response
 construction, dynamic Policy storage readers, remote-ledger version projection,
-and hardfork/public-key formatting. The root `rpc_server_node/mod.rs` keeps
-handler registration, peer status handlers, relay submission, and shared local
-node access.
+and hardfork/public-key formatting. `rpc_server_node/status.rs` owns
+`getconnectioncount`, `getpeers`, and shared local-node projection for node
+status/version handlers. The root `rpc_server_node/mod.rs` is now only the
+handler-registration facade and module map.
 Blockchain storage methods now follow that request-boundary pattern:
 `rpc_server_blockchain/request_helpers.rs` owns contract identifier and Base64
 key/prefix/start parsing for `getstorage` and `findstorage`, while
