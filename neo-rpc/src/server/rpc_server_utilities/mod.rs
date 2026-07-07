@@ -12,6 +12,7 @@
 //!
 //! - `inventory`: inventory payload traits and records.
 //! - `request`: Typed JSON-RPC request parsing helpers.
+//! - `response`: Utility RPC response construction helpers.
 //! - `tests`: Module-local tests and regression coverage.
 
 use serde_json::Value;
@@ -21,8 +22,10 @@ use super::rpc_server::{RpcHandler, RpcServer};
 
 mod inventory;
 mod request;
+mod response;
 
 use self::request::{NoParamsRequest, ValidateAddressRequest};
+use self::response::validate_address_to_json;
 
 /// RPC handler group for utility methods.
 pub struct RpcServerUtilities;
@@ -65,9 +68,7 @@ impl RpcServer {
             neo_wallets::wallet_helper::WalletAddress::to_script_hash(address, address_version)
                 .is_ok();
 
-        serde_json::json!({
-            "address": address,
-            "isvalid": is_valid})
+        validate_address_to_json(address, is_valid)
     }
 }
 

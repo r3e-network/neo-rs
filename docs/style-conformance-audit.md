@@ -288,7 +288,8 @@ only service lookup, submission, and `OracleServiceError` mapping.
 Utility endpoints now use the same pattern: `rpc_server_utilities/request.rs`
 owns no-parameter validation for `listplugins` / `listservices` and
 `validateaddress` parameter parsing, while the root handler stays focused on
-inventory lookup and address validation. The no-parameter request record is now
+inventory lookup and address validation. `rpc_server_utilities/response.rs`
+owns the `validateaddress` JSON shape. The no-parameter request record is now
 shared through `rpc_helpers::NoParamsRequest` so endpoint families do not grow
 private copies of the same invalid-params contract.
 Node relay methods now follow the same boundary:
