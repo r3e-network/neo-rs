@@ -35,6 +35,24 @@ impl TransactionIndexRequest {
     }
 }
 
+pub(super) struct TransactionPageRequest {
+    pub(super) hash: UInt256,
+    pub(super) page: PageRequest,
+}
+
+impl TransactionPageRequest {
+    pub(super) fn parse(
+        params: &[Value],
+        bounds: PageBounds,
+        method: &str,
+    ) -> Result<Self, RpcException> {
+        Ok(Self {
+            hash: RpcServerIndexer::expect_uint256(params, 0, method)?,
+            page: PageRequest::parse(params, 1, bounds, method)?,
+        })
+    }
+}
+
 pub(super) struct BlockPageRequest {
     pub(super) selector: BlockSelector,
     pub(super) page: PageRequest,
@@ -49,6 +67,53 @@ impl BlockPageRequest {
         Ok(Self {
             selector: RpcServerIndexer::parse_block_selector(params, method)?,
             page: PageRequest::parse(params, 1, bounds, method)?,
+        })
+    }
+}
+
+pub(super) struct AccountPageRequest {
+    pub(super) account: UInt160,
+    pub(super) page: PageRequest,
+}
+
+impl AccountPageRequest {
+    pub(super) fn parse(
+        params: &[Value],
+        address_version: u8,
+        bounds: PageBounds,
+        method: &str,
+    ) -> Result<Self, RpcException> {
+        Ok(Self {
+            account: RpcServerIndexer::expect_account(params, 0, method, address_version)?,
+            page: PageRequest::parse(params, 1, bounds, method)?,
+        })
+    }
+}
+
+pub(super) struct ContractActivityRequest {
+    pub(super) contract_hash: UInt160,
+    pub(super) event_name: Option<String>,
+    pub(super) page: PageRequest,
+}
+
+impl ContractActivityRequest {
+    pub(super) fn parse(
+        params: &[Value],
+        address_version: u8,
+        bounds: PageBounds,
+        method: &str,
+    ) -> Result<Self, RpcException> {
+        let (contract_hash, event_name, skip, limit) =
+            RpcServerIndexer::parse_contract_activity_params(
+                params,
+                address_version,
+                method,
+                bounds,
+            )?;
+        Ok(Self {
+            contract_hash,
+            event_name,
+            page: PageRequest { skip, limit },
         })
     }
 }
@@ -139,14 +204,6 @@ impl RpcServerIndexer {
                 "{method} expects hash string or height integer"
             ))),
         }
-    }
-
-    pub(super) fn block_hash_from_selector(
-        service: &IndexerService,
-        params: &[Value],
-        method: &str,
-    ) -> Result<Option<UInt256>, RpcException> {
-        Self::block_hash_from_selector_value(service, Self::parse_block_selector(params, method)?)
     }
 
     pub(super) fn block_hash_from_selector_value(

@@ -370,10 +370,13 @@ the typed block-selector and page request records.
 `rpc_server_indexer/transactions.rs` owns transaction lookup and
 block/address/contract transaction list routing, while `params.rs` owns the
 typed transaction-hash and block-page request records for transaction index
-lookups and block transaction pages.
+lookups and block transaction pages, plus address-page and contract-activity
+records for account and contract transaction queries.
 `rpc_server_indexer/notifications.rs` owns address/block/transaction/contract
-notification routing. The root `rpc_server_indexer/mod.rs` now keeps handler
-registration, service lookup, shared error mapping, and shared selector types.
+notification routing, while `params.rs` owns the shared account, block,
+transaction, and contract-activity page request records. The root
+`rpc_server_indexer/mod.rs` now keeps handler registration, service lookup,
+shared error mapping, and shared selector types.
 RPC settings parsing has started the same decomposition:
 `rpc_server_settings/gas.rs` owns C#-compatible `MaxGasInvoke` and `MaxFee`
 GAS/datoshi decoding; `rpc_server_settings/config.rs` owns
