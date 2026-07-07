@@ -173,6 +173,10 @@ High-signal clusters found during the first pass:
 - `neo-io/src/serializable/mod.rs` keeps the codec facade and module map,
   `serializable/traits.rs` owns the `Serializable` and extension traits, and
   `serializable/macros.rs` owns the declarative `impl_serializable!` helper.
+- `neo-payloads/src/transaction_attribute/mod.rs` keeps the attribute enum,
+  constructors, and generic attribute helpers, while `transaction_attribute/wire.rs`
+  owns type-byte dispatch plus `Serializable`, `fees.rs` owns policy-backed
+  network-fee calculation, and `json.rs` owns RPC/JSON projection.
 - `neo-storage` exposes broad `dyn Store` / `dyn StoreSnapshot` boundaries.
   This is valid for backend selection, but hot loops should keep borrowed
   visitor APIs or concrete paths where possible.

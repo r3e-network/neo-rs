@@ -1,4 +1,6 @@
 use super::*;
+use crate::Transaction;
+use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_primitives::{TransactionAttributeType, UInt160, UInt256, WitnessScope};
 use neo_storage::{DataCache, StorageItem, StorageKey};
 use num_bigint::BigInt;
