@@ -11,8 +11,10 @@
 //! ## Contents
 //!
 //! - `auth`: transport authentication marker and Basic header verification.
+//! - `codec`: transport parameter decoding and JSON-RPC error projection.
 
 mod auth;
+mod codec;
 
 use super::dispatch::Dispatch;
 use super::rpc_error::RpcError;
@@ -20,13 +22,14 @@ use super::rpc_server::{RPC_ERR_TOTAL, RPC_REQ_TOTAL, RpcServer};
 use jsonrpsee::RpcModule;
 use jsonrpsee::core::RegisterMethodError;
 use jsonrpsee::server::Extensions;
-use jsonrpsee::types::{ErrorObjectOwned, Params};
+use jsonrpsee::types::ErrorObjectOwned;
 use parking_lot::RwLock;
 use serde_json::Value;
 use std::collections::HashSet;
 use std::sync::{Arc, Weak};
 
 pub(crate) use auth::{RpcAuthState, verify_basic_auth_header};
+use codec::{error_object, parse_array_params};
 
 /// Shared context used by the jsonrpsee RPC module.
 #[derive(Clone)]
@@ -129,30 +132,4 @@ fn dispatch(
     }
 
     Dispatch::invoke_rpc_handler(&server, handler, method, params).map_err(error_object)
-}
-
-fn parse_array_params(params: Params<'_>) -> Result<Vec<Value>, ErrorObjectOwned> {
-    let Some(raw) = params.as_str() else {
-        return Ok(Vec::new());
-    };
-
-    if raw.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    match serde_json::from_str::<Value>(raw) {
-        Ok(Value::Array(values)) => Ok(values),
-        Ok(_) => Err(error_object(RpcError::invalid_request())),
-        Err(err) => Err(error_object(
-            RpcError::invalid_params().with_data(err.to_string()),
-        )),
-    }
-}
-
-fn error_object(error: RpcError) -> ErrorObjectOwned {
-    ErrorObjectOwned::owned(
-        error.code(),
-        error.error_message(),
-        error.data().map(std::string::ToString::to_string),
-    )
 }

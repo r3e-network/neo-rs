@@ -341,8 +341,9 @@ handle, wallet accessors, and wallet-change callbacks, and
 `rpc_server/sessions.rs` owns invoke-session storage, expiration, mutation,
 and termination helpers.
 `jsonrpsee_adapter/auth.rs` owns the transport-auth extension marker and Basic
-header verification, while `jsonrpsee_adapter/mod.rs` keeps module registration,
-parameter decoding, and dispatch bridging.
+header verification, `jsonrpsee_adapter/codec.rs` owns transport parameter
+decoding and Neo error-object projection, and `jsonrpsee_adapter/mod.rs` keeps
+module registration and dispatch bridging.
 RPC dispatch has the same production/test boundary now:
 `dispatch/mod.rs` owns handler resolution, rate-limit checks, remote-ledger
 proxy dispatch, and panic-policy handling, while its remote-ledger policy
