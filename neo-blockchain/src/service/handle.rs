@@ -29,10 +29,11 @@ use std::fmt;
 use neo_runtime::{Service, ServiceError};
 use tokio::sync::{broadcast, mpsc};
 
-use crate::command::{AddTransactionReply, BlockchainCommand};
+use crate::command::BlockchainCommand;
 
 mod imports;
 mod inventory;
+mod mempool;
 mod queries;
 
 /// Cheap-to-clone handle to a blockchain service.
@@ -108,26 +109,6 @@ impl BlockchainHandle {
             .send(BlockchainCommand::Initialize)
             .await
             .map_err(|_| ServiceError::unavailable("blockchain command channel closed"))
-    }
-
-    /// Add a transaction to the mempool.
-    pub async fn add_transaction(
-        &self,
-        transaction: neo_payloads::Transaction,
-    ) -> Result<AddTransactionReply, ServiceError> {
-        let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
-        self.cmd_tx
-            .send(BlockchainCommand::AddTransaction {
-                transaction,
-                reply: reply_tx,
-            })
-            .await
-            .map_err(|_| {
-                ServiceError::ServiceUnavailable("blockchain command channel closed".to_string())
-            })?;
-        reply_rx.await.map_err(|_| {
-            ServiceError::ServiceUnavailable("blockchain command reply dropped".to_string())
-        })
     }
 
     /// Request graceful shutdown of the service loop. The command

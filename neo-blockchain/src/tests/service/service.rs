@@ -180,6 +180,40 @@ async fn handle_submits_extensible_inventory_without_exposing_command_enum() {
 }
 
 #[tokio::test]
+async fn handle_add_transaction_round_trips_service_reply() {
+    let (handle, mut cmd_rx, _event_tx) = BlockchainHandle::channel(4, 4);
+    let transaction = neo_payloads::Transaction::new();
+    let expected_hash = transaction.try_hash().expect("transaction hash");
+
+    let task = tokio::spawn(async move {
+        handle
+            .add_transaction(transaction)
+            .await
+            .expect("add transaction reply")
+    });
+
+    match cmd_rx.recv().await.expect("add transaction command") {
+        BlockchainCommand::AddTransaction { transaction, reply } => {
+            assert_eq!(
+                transaction.try_hash().expect("submitted transaction hash"),
+                expected_hash
+            );
+            reply
+                .send(crate::command::AddTransactionReply {
+                    result: VerifyResult::Succeed,
+                    hash: expected_hash,
+                })
+                .expect("reply send");
+        }
+        other => panic!("expected AddTransaction command, got {other:?}"),
+    }
+
+    let reply = task.await.expect("add transaction task");
+    assert_eq!(reply.result, VerifyResult::Succeed);
+    assert_eq!(reply.hash, expected_hash);
+}
+
+#[tokio::test]
 async fn handle_initializes_without_exposing_command_enum() {
     let (handle, mut cmd_rx, _event_tx) = BlockchainHandle::channel(4, 4);
 
