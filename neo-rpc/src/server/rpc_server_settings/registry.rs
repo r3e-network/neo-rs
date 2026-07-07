@@ -2,7 +2,7 @@
 //!
 //! This module owns loading, validation, and access to the active
 //! `RpcServerSettings`. Keeping registry state here leaves `mod.rs` as the
-//! serde-visible settings schema and module map.
+//! module map and public re-export surface.
 
 use std::sync::LazyLock;
 

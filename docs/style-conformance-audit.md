@@ -323,10 +323,11 @@ registration, service lookup, shared error mapping, and shared selector types.
 RPC settings parsing has started the same decomposition:
 `rpc_server_settings/gas.rs` owns C#-compatible `MaxGasInvoke` and `MaxFee`
 GAS/datoshi decoding; `rpc_server_settings/config.rs` owns
-`RpcServerConfig` default construction and redacted debug formatting; and
-`rpc_server_settings/registry.rs` owns process-wide loading, validation, and
-lookup. The root `rpc_server_settings/mod.rs` now keeps the serde-visible
-config records and re-exports the registry type.
+the `RpcServerConfig` serde schema, C# aliases/defaults, duration projections,
+and redacted debug formatting; and `rpc_server_settings/registry.rs` owns
+process-wide loading, validation, and lookup. The root
+`rpc_server_settings/mod.rs` now keeps only the module map, exception-policy
+enum, and public re-exports.
 Shared RPC helpers now follow the same facade rule:
 `rpc_helpers/errors.rs` owns common `RpcException` constructors,
 `params.rs` owns generic positional parsing, `bytes.rs` owns Base64 and Neo

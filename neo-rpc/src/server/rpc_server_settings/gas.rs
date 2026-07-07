@@ -2,8 +2,8 @@
 //!
 //! C# RpcServer settings accept `MaxGasInvoke` and `MaxFee` as either GAS units
 //! or datoshi-scale integer values. This module keeps that compatibility parser
-//! out of the settings record so the root module stays focused on configuration
-//! shape and process-wide registry behavior.
+//! out of the settings record so `config.rs` stays focused on the schema and
+//! endpoint-level defaults.
 
 use neo_error::CoreResult;
 use serde::Deserialize;
