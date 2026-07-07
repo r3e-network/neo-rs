@@ -2,9 +2,10 @@ use super::*;
 
 use std::collections::HashMap;
 
+use neo_error::CoreResult;
 use neo_io::Serializable;
 use neo_payloads::{Block, Header, Signer, Transaction, Witness};
-use neo_primitives::{UInt160, WitnessScope};
+use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_storage::DataCache;
 
 fn test_transaction(nonce: u32) -> Transaction {
