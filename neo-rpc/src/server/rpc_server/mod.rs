@@ -14,11 +14,13 @@
 //! - `http_policy`: HTTP policy helpers for the RPC server.
 //! - `lifecycle`: jsonrpsee startup, shutdown, and purge-task wiring.
 //! - `metrics`: Prometheus counters for RPC request/error totals.
+//! - `rate_limit`: RPC-server rate-limit configuration and error mapping.
 
 mod handler;
 mod http_policy;
 mod lifecycle;
 mod metrics;
+mod rate_limit;
 
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use tokio::{sync::oneshot, task::JoinHandle};
@@ -26,11 +28,10 @@ use tokio::{sync::oneshot, task::JoinHandle};
 use uuid::Uuid;
 
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use super::middleware::{GovernorRateLimiter, RateLimitCheckResult, RateLimitConfig};
+use super::middleware::GovernorRateLimiter;
 use super::node_context::NodeContext;
 use super::rpc_error::RpcError;
 use super::rpc_remote_ledger::RemoteLedgerRpcClient;
@@ -41,6 +42,7 @@ use neo_wallets::Wallet;
 pub use handler::{RpcCallback, RpcHandler};
 pub(crate) use handler::{protected_rpc_handler, rpc_handler};
 pub use metrics::{RPC_ERR_TOTAL, RPC_REQ_TOTAL};
+use rate_limit::rate_limiter_from_settings;
 
 /// Type alias for wallet change callback to reduce complexity.
 pub type WalletChangeCallback = Arc<dyn Fn(Option<Arc<dyn Wallet>>) + Send + Sync>;
@@ -123,17 +125,6 @@ impl RpcServer {
     #[must_use]
     pub fn remote_ledger_rpc(&self) -> Option<&RemoteLedgerRpcClient> {
         self.remote_ledger_rpc.as_ref()
-    }
-
-    /// Apply configured server-side rate limiting for one RPC method call.
-    pub(crate) fn check_rate_limit(&self, method: &str) -> Result<(), RpcError> {
-        match self
-            .rate_limiter
-            .check_for_method(global_rate_limit_key(), method)
-        {
-            RateLimitCheckResult::Allowed | RateLimitCheckResult::Disabled => Ok(()),
-            RateLimitCheckResult::Blocked => Err(RpcError::too_many_requests()),
-        }
     }
 
     /// Enable WebSocket subscriptions
@@ -288,15 +279,4 @@ impl RpcServer {
         http_policy::auth_credentials_from_settings(&self.settings)
             .map(|credentials| credentials.map(Arc::new))
     }
-}
-
-fn rate_limiter_from_settings(settings: &RpcServerConfig) -> GovernorRateLimiter {
-    GovernorRateLimiter::new(RateLimitConfig {
-        max_rps: settings.max_requests_per_second,
-        burst: settings.rate_limit_burst,
-    })
-}
-
-fn global_rate_limit_key() -> IpAddr {
-    IpAddr::V4(Ipv4Addr::UNSPECIFIED)
 }

@@ -299,9 +299,11 @@ RPC transport lifecycle follows the same split:
 `rpc_server/lifecycle.rs` owns jsonrpsee startup, shutdown, TLS placeholder
 handling, DoS-limit builder wiring, and session-purge task wiring;
 `rpc_server/handler.rs` owns callback/descriptor bindings, and
-`rpc_server/metrics.rs` owns Prometheus request/error counters. The root
-`rpc_server/mod.rs` now stays focused on server state, registration maps,
-wallet/session accessors, and rate-limit policy.
+`rpc_server/metrics.rs` owns Prometheus request/error counters.
+`rpc_server/rate_limit.rs` owns the RPC-server adapter from `RpcServerConfig`
+to the governor limiter plus blocked-call error mapping. The root
+`rpc_server/mod.rs` now stays focused on server state, registration maps, and
+wallet/session accessors.
 RPC dispatch has the same production/test boundary now:
 `dispatch/mod.rs` owns handler resolution, rate-limit checks, remote-ledger
 proxy dispatch, and panic-policy handling, while its remote-ledger policy
