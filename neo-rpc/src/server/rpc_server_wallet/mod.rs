@@ -21,17 +21,7 @@
 //! - `transfers`: wallet transfer RPC handlers.
 //! - `tests`: Module-local tests and regression coverage.
 
-#[cfg(test)]
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_primitives::UInt160;
-#[cfg(test)]
-use neo_primitives::WitnessScope;
-#[cfg(test)]
-use neo_vm_rs::OpCode;
-#[cfg(test)]
-use neo_wallets::WalletError;
-#[cfg(test)]
-use neo_wallets::{KeyPair, Nep6Wallet};
 use neo_wallets::{Wallet as CoreWallet, WalletResult};
 use std::future::Future;
 use std::pin::Pin;
@@ -41,8 +31,6 @@ use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
-#[cfg(test)]
-use support::signature_contract_pubkey;
 
 mod balance;
 mod errors;

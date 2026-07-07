@@ -1,6 +1,8 @@
+use super::support::signature_contract_pubkey;
 use super::*;
 use crate::server::rpc_helpers::invalid_params;
 use crate::server::rpc_server_settings::RpcServerConfig;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_config::ProtocolSettings;
 use neo_crypto::Secp256r1Crypto;
 use neo_execution::helper::Helper as ContractHelper;
@@ -12,13 +14,15 @@ use neo_payloads::get_sign_data_vec;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
-use neo_primitives::UInt256;
+use neo_primitives::{UInt256, WitnessScope};
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm_rs::VmState as VMState;
+use neo_vm_rs::{OpCode, VmState as VMState};
 use neo_wallets::wallet_helper::WalletAddress as wallet_helper;
+use neo_wallets::{KeyPair, Nep6Wallet, WalletError};
 use num_bigint::BigInt;
 use serde_json::{Value, json};
 use std::fs;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::runtime::{Handle, Runtime};
 
