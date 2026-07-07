@@ -15,7 +15,7 @@
 //! - `invocation`: smart-contract invocation handlers.
 //! - `iterators`: Iterator adapters exposed to contract execution and storage
 //!   search.
-//! - `request`: Typed request parsing for smart-contract invocation handlers.
+//! - `request`: Typed request parsing for smart-contract handlers.
 //! - `unclaimed_gas`: unclaimed GAS query handlers.
 //! - `tests`: Module-local tests and regression coverage.
 

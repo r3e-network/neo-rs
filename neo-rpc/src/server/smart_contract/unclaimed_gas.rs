@@ -1,8 +1,6 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
 use neo_native_contracts::{NeoToken, ledger_contract::LedgerContract};
-use neo_primitives::UInt160;
 use neo_wallets::wallet_helper::WalletAddress as address_helper;
 use serde_json::{Value, json};
 
@@ -11,20 +9,15 @@ use crate::server::native_queries;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
 
-use super::helpers::{expect_string_param, internal_error, invalid_params};
+use super::helpers::internal_error;
+use super::request::GetUnclaimedGasRequest;
 
 pub(super) fn get_unclaimed_gas(
     server: &RpcServer,
     params: &[Value],
 ) -> Result<Value, RpcException> {
-    let address_text = expect_string_param(params, 0, "getunclaimedgas")?;
     let version = server.system().settings().address_version;
-    let script_hash = if let Ok(hash) = UInt160::from_str(&address_text) {
-        hash
-    } else {
-        address_helper::to_script_hash(&address_text, version)
-            .map_err(|e| invalid_params(e.to_string()))?
-    };
+    let request = GetUnclaimedGasRequest::parse(params, version)?;
 
     let store = server.system().store_cache();
     let ledger = LedgerContract::new();
@@ -38,11 +31,11 @@ pub(super) fn get_unclaimed_gas(
         server,
         snapshot,
         &neo_hash,
-        &script_hash,
+        &request.script_hash,
         height,
     )
     .map_err(internal_error)?;
-    let address = address_helper::to_address(&script_hash, version);
+    let address = address_helper::to_address(&request.script_hash, version);
 
     Ok(json!({
          "address": address,

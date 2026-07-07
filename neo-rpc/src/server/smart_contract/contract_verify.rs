@@ -17,18 +17,14 @@ use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
 use neo_vm_rs::OpCode;
 
-use super::helpers::{
-    expect_script_hash_param, final_rpc_vm_state_string, internal_error, parse_contract_parameters,
-    parse_signers_and_witnesses, stack_item_to_json_limited,
-};
+use super::helpers::{final_rpc_vm_state_string, internal_error, stack_item_to_json_limited};
+use super::request::InvokeContractVerifyRequest;
 
 pub(super) fn invoke_contract_verify(
     server: &RpcServer,
     params: &[Value],
 ) -> Result<Value, RpcException> {
-    let script_hash = expect_script_hash_param(params, 0, "invokecontractverify")?;
-    let parameters = parse_contract_parameters(params.get(1))?;
-    let (signers, witnesses) = parse_signers_and_witnesses(server, params.get(2))?;
+    let request = InvokeContractVerifyRequest::parse(server, params)?;
 
     let system = server.system();
     let store_cache = system.store_cache();
@@ -36,7 +32,7 @@ pub(super) fn invoke_contract_verify(
 
     let contract = neo_native_contracts::ContractManagement::get_contract_from_snapshot(
         snapshot_cache.as_ref(),
-        &script_hash,
+        &request.script_hash,
     )
     .map_err(|err| internal_error(err.to_string()))?
     .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))?;
@@ -44,12 +40,12 @@ pub(super) fn invoke_contract_verify(
     let verify_method = contract
         .manifest
         .abi
-        .get_method_ref("verify", parameters.len())
+        .get_method_ref("verify", request.parameters.len())
         .cloned()
         .ok_or_else(|| {
             RpcException::from(RpcError::invalid_contract_verification_hash(
                 &contract.hash,
-                parameters.len() as i32,
+                request.parameters.len() as i32,
             ))
         })?;
 
@@ -61,13 +57,17 @@ pub(super) fn invoke_contract_verify(
         ));
     }
 
-    let signers = signers
-        .unwrap_or_else(|| vec![Signer::new(script_hash, neo_primitives::WitnessScope::NONE)]);
-    let mut witnesses = witnesses.unwrap_or_default();
+    let signers = request.signers.unwrap_or_else(|| {
+        vec![Signer::new(
+            request.script_hash,
+            neo_primitives::WitnessScope::NONE,
+        )]
+    });
+    let mut witnesses = request.witnesses.unwrap_or_default();
 
     let mut invocation_script = Vec::new();
-    if !parameters.is_empty() {
-        invocation_script = build_verification_invocation_script(&parameters)?;
+    if !request.parameters.is_empty() {
+        invocation_script = build_verification_invocation_script(&request.parameters)?;
         if witnesses.is_empty() {
             witnesses.push(Witness::new_with_scripts(
                 invocation_script.clone(),

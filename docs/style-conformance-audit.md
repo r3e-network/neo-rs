@@ -252,11 +252,12 @@ key/prefix/start parsing for `getstorage` and `findstorage`, while
 `storage.rs` keeps contract resolution, storage lookup, pagination, and
 response construction.
 Smart-contract request parsing now follows the same rule:
-`smart_contract/request.rs` owns positional parsing for `invokefunction` and
-`invokescript`, including signer/witness conversion and diagnostic defaults,
-and iterator-session parsing for `traverseiterator` / `terminatesession`, while
-`invocation.rs` and `iterators.rs` stay focused on script construction, VM
-execution, wallet signing, iterator sessions, and result projection.
+`smart_contract/request.rs` owns positional parsing for invocation, contract
+verification, iterator-session, and unclaimed-GAS handlers, including
+signer/witness conversion, diagnostic defaults, UUID/count decoding, and
+address/hash normalization. The handler files stay focused on contract lookup,
+VM execution, wallet signing, iterator sessions, native GAS queries, and result
+projection.
 
 Recommended next patches, in order:
 
