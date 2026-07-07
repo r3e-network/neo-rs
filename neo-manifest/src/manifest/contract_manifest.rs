@@ -13,13 +13,14 @@ use neo_error::CoreResult;
 use neo_primitives::UInt160;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Maximum length of a contract manifest in bytes.
 pub const MAX_MANIFEST_LENGTH: usize = u16::MAX as usize;
 
 mod json;
 mod stack;
+mod validation;
 mod wire;
 
 /// Represents the manifest of a smart contract.
@@ -88,89 +89,6 @@ impl ContractManifest {
     /// Converts the manifest to JSON.
     pub fn to_json(&self) -> CoreResult<Value> {
         serde_json::to_value(self).map_err(|e| CoreError::serialization(e.to_string()))
-    }
-
-    /// Validates the manifest.
-    pub fn validate(&self) -> CoreResult<()> {
-        // Validate name
-        if self.name.is_empty() {
-            return Err(CoreError::invalid_data("Contract name cannot be empty"));
-        }
-
-        if !self.features.is_empty() {
-            return Err(CoreError::invalid_data("Features field must be empty"));
-        }
-
-        let mut seen_standards = HashSet::new();
-        for standard in &self.supported_standards {
-            if standard.is_empty() {
-                return Err(CoreError::invalid_data(
-                    "Supported standards cannot include empty strings",
-                ));
-            }
-            if !seen_standards.insert(standard) {
-                return Err(CoreError::invalid_data(
-                    "Supported standards must be unique",
-                ));
-            }
-        }
-
-        // Validate manifest size
-        if self.size() > MAX_MANIFEST_LENGTH {
-            return Err(CoreError::invalid_data(
-                "Manifest exceeds maximum allowed length",
-            ));
-        }
-
-        // Validate groups
-        let mut group_keys = Vec::new();
-        for group in &self.groups {
-            group.validate()?;
-            if group_keys.iter().any(|key| key == &group.pub_key) {
-                return Err(CoreError::invalid_data(
-                    "Duplicate group public key in manifest",
-                ));
-            }
-            group_keys.push(group.pub_key.clone());
-        }
-
-        // Validate permissions. Neo N3 allows empty permissions arrays, which
-        // means the contract is not allowed to call any external methods.
-        let mut permission_contracts = Vec::new();
-        for permission in &self.permissions {
-            permission.validate()?;
-            if permission_contracts
-                .iter()
-                .any(|contract| contract == &permission.contract)
-            {
-                return Err(CoreError::invalid_data(
-                    "Duplicate permission contract in manifest",
-                ));
-            }
-            permission_contracts.push(permission.contract.clone());
-        }
-
-        if let WildCardContainer::List(trusts) = &self.trusts {
-            let mut seen_trusts = Vec::new();
-            for trust in trusts {
-                if seen_trusts.iter().any(|existing| existing == trust) {
-                    return Err(CoreError::invalid_data("Duplicate trust entry in manifest"));
-                }
-                seen_trusts.push(trust.clone());
-                if let ContractPermissionDescriptor::Group(pub_key) = trust {
-                    if !pub_key.is_valid() {
-                        return Err(CoreError::invalid_data(
-                            "Invalid group public key in trusts",
-                        ));
-                    }
-                }
-            }
-        }
-
-        // Validate ABI
-        self.abi.validate()?;
-
-        Ok(())
     }
 
     /// Checks if the contract can call another contract.

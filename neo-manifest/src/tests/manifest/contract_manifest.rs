@@ -213,6 +213,39 @@ fn contract_manifest_parse_rejects_duplicate_json_entries() {
 }
 
 #[test]
+fn contract_manifest_validate_rejects_constructed_invariants() {
+    let assert_invalid = |mutate: fn(&mut ContractManifest)| {
+        let mut manifest = ContractManifest::new("sample".to_string());
+        mutate(&mut manifest);
+        assert!(manifest.validate().is_err());
+    };
+
+    assert_invalid(|manifest| {
+        manifest.name.clear();
+    });
+    assert_invalid(|manifest| {
+        manifest
+            .features
+            .insert("feature".to_string(), serde_json::json!({}));
+    });
+    assert_invalid(|manifest| {
+        manifest.supported_standards = vec!["NEP-17".to_string(), "NEP-17".to_string()];
+    });
+    assert_invalid(|manifest| {
+        manifest.permissions = vec![
+            ContractPermission::default_wildcard(),
+            ContractPermission::default_wildcard(),
+        ];
+    });
+    assert_invalid(|manifest| {
+        manifest.trusts = WildCardContainer::create(vec![
+            ContractPermissionDescriptor::create_wildcard(),
+            ContractPermissionDescriptor::create_wildcard(),
+        ]);
+    });
+}
+
+#[test]
 fn contract_manifest_binary_wire_round_trips_and_size_matches_bytes() {
     let manifest = ContractManifest::parse(&deployable_manifest_json().to_string())
         .expect("valid manifest parses");
