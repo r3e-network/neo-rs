@@ -63,6 +63,14 @@ pub(super) fn insert_session(result: &mut Map<String, Value>, session_id: impl T
     result.insert("session".to_string(), Value::String(session_id.to_string()));
 }
 
+pub(super) fn iterator_values_to_json(values: Vec<Value>) -> Value {
+    Value::Array(values)
+}
+
+pub(super) fn terminate_session_to_json(terminated: bool) -> Value {
+    Value::Bool(terminated)
+}
+
 pub(super) fn final_rpc_vm_state_string(state: VmState) -> Result<String, RpcException> {
     state
         .final_name()

@@ -6,7 +6,7 @@ use crate::server::rpc_server::RpcServer;
 
 use super::helpers::{internal_error, invalid_params};
 use super::request::{TerminateSessionRequest, TraverseIteratorRequest};
-use super::response::stack_item_to_json;
+use super::response::{iterator_values_to_json, stack_item_to_json, terminate_session_to_json};
 
 pub(super) fn traverse_iterator(
     server: &RpcServer,
@@ -33,7 +33,7 @@ pub(super) fn traverse_iterator(
                     for item in items {
                         values.push(stack_item_to_json(&item, session_ref.as_deref_mut())?);
                     }
-                    Ok(Value::Array(values))
+                    Ok(iterator_values_to_json(values))
                 }
                 Err(message) if message == "Unknown iterator" => {
                     Err(RpcException::from(RpcError::unknown_iterator()))
@@ -55,5 +55,7 @@ pub(super) fn terminate_session(
     }
     let request = TerminateSessionRequest::parse(params)?;
     server.purge_expired_sessions();
-    Ok(Value::Bool(server.terminate_session(&request.session_id)))
+    Ok(terminate_session_to_json(
+        server.terminate_session(&request.session_id),
+    ))
 }
