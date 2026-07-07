@@ -118,10 +118,10 @@ High-signal clusters found during the first pass:
   (`neo_vm::Interoperable`, `neo_vm_rs::StackValue`) and raw
   `serde_json::Value` fields (`features`, `extra`). Core manifest models
   should stay pure, with JSON/stack adapters moved to adapter modules.
-- `neo-config/src/settings/protocol.rs` mixes settings data, built-in network
-  presets, file/stream loading, serde `Value` parsing, hardfork sequencing, and
-  validation. Move these into protocol `presets`, `load`, `parse`, and
-  `validate` modules.
+- `neo-config/src/settings/protocol.rs` still mixes file/stream loading, serde
+  `Value` parsing, hardfork sequencing, and validation. Built-in network
+  presets have been moved to `settings/protocol/presets.rs`; continue splitting
+  the remaining loader/parser/validation responsibilities.
 - `neo-node/src/node/chain_acc/mod.rs` and `neo-node/src/node/fast_sync/mod.rs`
   are very large workflow modules. They should be split into domain files such
   as `format`, `reader`, `import`, `report`, `package`, `manifest`, and
@@ -203,8 +203,9 @@ Recommended next patches, in order:
 1. Introduce typed wrappers for manifest `features` and `extra` now that
    `ContractManifest` JSON, stack, wire, and validation responsibilities are
    split into separate modules.
-2. Split `neo-config/src/settings/protocol.rs` into protocol presets, loading,
-   parsing, and validation modules.
+2. Continue splitting `neo-config/src/settings/protocol.rs` into protocol
+   loading, parsing, and validation modules now that built-in presets live in
+   `settings/protocol/presets.rs`.
 3. Convert `neo-node/src/node/sync_metrics/mod.rs` internal
    `write!().expect("write metrics line")` calls to infallible string building
    or error-aware helpers.
