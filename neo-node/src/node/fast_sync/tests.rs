@@ -140,6 +140,14 @@ fn import_report(
     }
 }
 
+fn import_report_with_hot_metrics(
+    mut report: chain_acc::ChainAccImportReport,
+    hot_metrics: chain_acc::ImportHotMetrics,
+) -> chain_acc::ChainAccImportReport {
+    report.hot_metrics = hot_metrics;
+    report
+}
+
 fn import_report_with_composition(
     imported: u64,
     last_imported_tip: Option<chain_acc::LocalLedgerTip>,
@@ -423,29 +431,32 @@ fn fast_sync_report_preserves_package_and_import_proof() {
         &package,
         Path::new("/cache/chain.0.acc.zip"),
         Path::new("/cache/chain.0.acc/chain.0.acc"),
-        import.with_hot_metrics(chain_acc::ImportHotMetrics {
-            state_service_mpt_apply_attempts: 101,
-            state_service_mpt_apply_failures: 1,
-            state_service_mpt_apply_height: 100,
-            state_service_mpt_avg_total_us: 2_000,
-            state_service_mpt_avg_project_us: 210,
-            state_service_mpt_avg_trie_us: 2_100,
-            state_service_mpt_avg_changes: 12,
-            state_service_mpt_enqueue_blocking_avg_us: 99,
-            state_service_mpt_queue_wait_avg_us: 111,
-            state_service_mpt_mutate_changes_avg_us: 310,
-            state_service_mpt_root_hash_avg_us: 410,
-            state_service_mpt_trie_commit_avg_us: 1_200,
-            state_service_mpt_backing_commit_avg_us: 1_300,
-            state_service_mpt_publish_generation_avg_us: 140,
-            state_service_mpt_overlay_entries_avg: 22,
-            state_service_mpt_batch_blocks_avg: 7,
-            native_persist_avg_total_us: 3_000,
-            native_persist_tx_hot_stage: "application",
-            native_persist_tx_hot_stage_avg_us: 1_700,
-            rocksdb_batch_avg_flush_duration_ms: 11,
-            rocksdb_batch_pending_operations: 19,
-        }),
+        import_report_with_hot_metrics(
+            import,
+            chain_acc::ImportHotMetrics {
+                state_service_mpt_apply_attempts: 101,
+                state_service_mpt_apply_failures: 1,
+                state_service_mpt_apply_height: 100,
+                state_service_mpt_avg_total_us: 2_000,
+                state_service_mpt_avg_project_us: 210,
+                state_service_mpt_avg_trie_us: 2_100,
+                state_service_mpt_avg_changes: 12,
+                state_service_mpt_enqueue_blocking_avg_us: 99,
+                state_service_mpt_queue_wait_avg_us: 111,
+                state_service_mpt_mutate_changes_avg_us: 310,
+                state_service_mpt_root_hash_avg_us: 410,
+                state_service_mpt_trie_commit_avg_us: 1_200,
+                state_service_mpt_backing_commit_avg_us: 1_300,
+                state_service_mpt_publish_generation_avg_us: 140,
+                state_service_mpt_overlay_entries_avg: 22,
+                state_service_mpt_batch_blocks_avg: 7,
+                native_persist_avg_total_us: 3_000,
+                native_persist_tx_hot_stage: "application",
+                native_persist_tx_hot_stage_avg_us: 1_700,
+                rocksdb_batch_avg_flush_duration_ms: 11,
+                rocksdb_batch_pending_operations: 19,
+            },
+        ),
         None,
     );
 
@@ -538,7 +549,8 @@ fn write_fast_sync_report_sidecar_serializes_machine_readable_proof() {
         &package,
         &temp.path().join("chain.0.acc.zip"),
         &temp.path().join("chain.0.acc/chain.0.acc"),
-        import_report(101, Some(import_tip), 0.0505, 2000.0).with_hot_metrics(
+        import_report_with_hot_metrics(
+            import_report(101, Some(import_tip), 0.0505, 2000.0),
             chain_acc::ImportHotMetrics {
                 state_service_mpt_apply_attempts: 101,
                 state_service_mpt_apply_failures: 1,

@@ -41,11 +41,6 @@ impl PendingChainAccBatch {
         }
     }
 
-    #[cfg(test)]
-    pub(super) fn is_empty_only(&self) -> bool {
-        self.len > 0 && self.composition.is_empty_only()
-    }
-
     pub(super) fn should_flush(&self, batch_len: usize) -> bool {
         debug_assert_eq!(self.len, batch_len);
         batch_len >= IMPORT_BATCH_SIZE
@@ -122,16 +117,6 @@ pub(super) struct ChainAccImportComposition {
 }
 
 impl ChainAccImportComposition {
-    #[cfg(test)]
-    pub(super) fn has_transaction_blocks(&self) -> bool {
-        self.transaction_blocks > 0
-    }
-
-    #[cfg(test)]
-    pub(super) fn is_empty_only(&self) -> bool {
-        self.empty_blocks > 0 && !self.has_transaction_blocks()
-    }
-
     pub(super) fn record_imported(
         &mut self,
         batch: Self,

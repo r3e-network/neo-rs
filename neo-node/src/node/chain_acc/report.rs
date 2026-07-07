@@ -39,14 +39,6 @@ pub(in crate::node) struct ChainAccImportReport {
     pub(in crate::node) hot_metrics: ImportHotMetrics,
 }
 
-impl ChainAccImportReport {
-    #[cfg(test)]
-    pub(in crate::node) fn with_hot_metrics(mut self, hot_metrics: ImportHotMetrics) -> Self {
-        self.hot_metrics = hot_metrics;
-        self
-    }
-}
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(in crate::node) struct ImportHotMetrics {
     pub(in crate::node) state_service_mpt_apply_attempts: u64,

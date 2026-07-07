@@ -25,11 +25,6 @@ mod range;
 mod report;
 
 pub use driver::import_chain_acc_until_height;
-#[cfg(test)]
-use driver::{
-    import_chain_acc_from_reader, import_chain_acc_from_reader_report,
-    import_chain_acc_from_reader_until_height,
-};
 pub(super) use driver::{import_chain_acc_report_with_expected_range, local_ledger_tip};
 pub(super) use report::{ChainAccImportReport, ImportHotMetrics, LocalLedgerTip};
 

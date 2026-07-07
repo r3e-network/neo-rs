@@ -3,6 +3,10 @@
 use super::batch::{
     ChainAccImportComposition, PendingChainAccBatch, import_chain_acc_batch, take_import_batch,
 };
+use super::driver::{
+    import_chain_acc_from_reader, import_chain_acc_from_reader_report,
+    import_chain_acc_from_reader_until_height,
+};
 use super::format::tests::{
     empty_block, empty_block_with_prev_hash, encode_chain_acc, linked_empty_blocks,
 };
@@ -58,6 +62,10 @@ fn memory_store_with_ledger_tip(tip: u32, hash: neo_primitives::UInt256) -> Arc<
     );
     cache.commit();
     store
+}
+
+fn pending_batch_is_empty_only(batch: &PendingChainAccBatch) -> bool {
+    batch.len > 0 && batch.composition.empty_blocks > 0 && batch.composition.transaction_blocks == 0
 }
 
 #[test]
@@ -1214,18 +1222,18 @@ fn pending_chain_acc_batch_tracks_transaction_presence_without_scanning_blocks()
     let empty = empty_block(0);
     pending.record_pushed(&empty);
 
-    assert!(pending.is_empty_only());
+    assert!(pending_batch_is_empty_only(&pending));
     assert!(!pending.should_flush(1));
 
     let tx = non_empty_block_with_prev_hash(1, empty.hash(), vec![signed_test_transaction(1)]);
     pending.record_pushed(&tx);
 
-    assert!(!pending.is_empty_only());
+    assert!(!pending_batch_is_empty_only(&pending));
     assert!(!pending.should_flush(2));
     for index in 2..IMPORT_BATCH_SIZE {
         pending.record_pushed(&empty_block(index as u32));
     }
-    assert!(!pending.is_empty_only());
+    assert!(!pending_batch_is_empty_only(&pending));
     assert!(pending.should_flush(IMPORT_BATCH_SIZE));
 }
 
