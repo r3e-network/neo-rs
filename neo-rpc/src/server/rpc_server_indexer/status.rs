@@ -1,8 +1,9 @@
 use neo_indexer::{IndexerError, IndexerService, IndexerStatus};
 use neo_native_contracts::LedgerContract;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::RpcServerIndexer;
+use super::responses::ApplicationLogsStatus;
 use crate::application_logs::ApplicationLogsService;
 use crate::server::rpc_server::RpcServer;
 
@@ -17,23 +18,8 @@ impl RpcServerIndexer {
 
     fn status_json(server: &RpcServer, service: &IndexerService, status: IndexerStatus) -> Value {
         let ledger_height = Self::ledger_height(server);
-        json!({
-            "indexedheight": status.indexed_height,
-            "indexedhash": status.indexed_hash.map(|hash| hash.to_string()),
-            "indexedblocks": status.indexed_blocks,
-            "indexedtransactions": status.indexed_transactions,
-            "indexedaccounts": status.indexed_accounts,
-            "indexednotifications": status.indexed_notifications,
-            "indexednotificationaccounts": status.indexed_notification_accounts,
-            "ledgerheight": ledger_height,
-            "blocksbehind": status.blocks_behind(ledger_height),
-            "synced": status.is_synced_with(ledger_height),
-            "applicationlogs": Self::application_logs_status_json(server),
-            "persistent": service.is_persistent(),
-            "persistencemode": service.persistence_mode(),
-            "snapshotpath": service.snapshot_path().map(|path| path.display().to_string()),
-            "storepath": service.store_path().map(|path| path.display().to_string()),
-        })
+        let application_logs = Self::application_logs_status(server);
+        Self::indexer_status_to_json(service, status, ledger_height, application_logs)
     }
 
     fn ledger_height(server: &RpcServer) -> Option<u32> {
@@ -41,21 +27,23 @@ impl RpcServerIndexer {
         LedgerContract::new().current_index(store.data_cache()).ok()
     }
 
-    fn application_logs_status_json(server: &RpcServer) -> Value {
+    fn application_logs_status(server: &RpcServer) -> ApplicationLogsStatus {
         match server.system().get_service::<ApplicationLogsService>() {
             Some(logs) => {
                 let settings = logs.settings();
-                json!({
-                    "enabled": true,
-                    "notificationrecovery": true,
-                    "path": settings.path.as_str(),
-                    "debug": settings.debug,
-                })
+                ApplicationLogsStatus {
+                    enabled: true,
+                    notification_recovery: true,
+                    path: Some(settings.path.clone()),
+                    debug: Some(settings.debug),
+                }
             }
-            None => json!({
-                "enabled": false,
-                "notificationrecovery": false,
-            }),
+            None => ApplicationLogsStatus {
+                enabled: false,
+                notification_recovery: false,
+                path: None,
+                debug: None,
+            },
         }
     }
 }

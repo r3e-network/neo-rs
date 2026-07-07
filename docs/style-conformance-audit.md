@@ -394,8 +394,10 @@ Indexer block reads have started the same endpoint-family split:
 lookup, while `rpc_server_indexer/params.rs` owns the typed block-selector and
 page request records and `rpc_server_indexer/responses.rs` owns optional/list
 block-index projection. `getindexerstatus` uses the shared no-parameter request
-record through `params.rs`, so indexer endpoints no longer carry a private
-duplicate validator.
+record through `params.rs`; `status.rs` owns status/service lookup while
+`responses.rs` owns the status and ApplicationLogs availability projection, so
+indexer endpoints no longer carry private duplicate validators or inline status
+envelopes.
 `rpc_server_indexer/transactions.rs` owns transaction lookup and
 block/address/contract transaction list routing, while `params.rs` owns the
 typed transaction-hash and block-page request records for transaction index
