@@ -208,16 +208,15 @@ test-only convenience helpers, and the root module no longer imports driver
 test helpers just for `tests.rs`. The driver reader convenience wrappers now
 live in the chain.acc test module instead of production `driver.rs`, and the
 format parser tests/fixtures now live in `chain_acc/format_tests.rs` instead of
-inside production `format.rs`.
+inside production `format.rs`. The metrics projection tests and synthetic
+hot-path fixture builder now live in `chain_acc/metrics_tests.rs`, leaving
+`metrics.rs` focused on runtime progress and hot-metric projection.
 
 Recommended next patches, in order:
 
-1. Split `neo-node/src/node/chain_acc/mod.rs` tests from implementation if any
-   remaining test-only code is embedded in production paths; remaining targets
-   are the metrics fixture module.
-2. Add typed request/response helpers for one `neo-rpc` handler group, then use
+1. Add typed request/response helpers for one `neo-rpc` handler group, then use
    that pattern for the rest.
-3. Centralize GUI lock handling in `neo-gui` before fixing individual
+2. Centralize GUI lock handling in `neo-gui` before fixing individual
    `lock().unwrap()` call sites.
-4. Add comments to every remaining production `#[allow]` that explain the
+3. Add comments to every remaining production `#[allow]` that explain the
    protocol, FFI, generated-code, or C# parity reason.

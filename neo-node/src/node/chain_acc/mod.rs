@@ -23,6 +23,8 @@ mod format;
 #[cfg(test)]
 mod format_tests;
 mod metrics;
+#[cfg(test)]
+mod metrics_tests;
 mod range;
 mod report;
 
