@@ -11,6 +11,8 @@
 //! ## Contents
 //!
 //! - `backend`: durable backend kind, diagnostics, and persistence dispatch.
+//! - `commands`: public indexing and revert commands.
+//! - `mutation`: persistence-aware mutation and rollback mechanics.
 //! - `notification_queries`: notification query API.
 //! - `persistence`: Persistence traits, snapshots, transactions, and cache
 //!   overlays.
@@ -20,27 +22,26 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use neo_payloads::{ApplicationExecuted, Block};
-use neo_primitives::UInt256;
 use neo_storage::persistence::Store;
 use parking_lot::{Mutex, RwLock};
 
 use crate::error::IndexerResult;
 use crate::indexer::Indexer;
-use crate::model::{BlockIndexRecord, IndexerSnapshot, NotificationIndexRecord};
 use crate::store;
 
 mod backend;
+mod commands;
+mod mutation;
 mod notification_queries;
 mod persistence;
 mod query;
 
 use backend::PersistenceBackend;
+use persistence::read_snapshot;
 #[cfg(test)]
 use persistence::temporary_snapshot_path;
 #[cfg(test)]
 use persistence::write_snapshot;
-use persistence::{MutationPersistenceMode, PendingPersistence, read_snapshot};
 
 /// Shared indexer service registered in `neo_system::ServiceRegistry`.
 #[derive(Clone)]
@@ -138,149 +139,6 @@ impl IndexerService {
         self.persistence
             .as_deref()
             .and_then(PersistenceBackend::store_path)
-    }
-
-    /// Indexes a canonical block.
-    pub fn index_block(&self, block: &Block) -> IndexerResult<BlockIndexRecord> {
-        self.mutate_indexer(|indexer| {
-            let record = indexer.index_block(block)?;
-            Ok((record, true))
-        })
-    }
-
-    /// Indexes a canonical block and its emitted smart-contract notifications.
-    pub fn index_block_with_application_executions(
-        &self,
-        block: &Block,
-        executions: &[ApplicationExecuted],
-    ) -> IndexerResult<BlockIndexRecord> {
-        self.mutate_indexer(|indexer| {
-            let record = indexer.index_block_with_application_executions(block, executions)?;
-            Ok((record, true))
-        })
-    }
-
-    /// Indexes a canonical block with notification records recovered from
-    /// durable plugin data.
-    pub fn index_block_with_notification_records(
-        &self,
-        block: &Block,
-        notifications: Vec<NotificationIndexRecord>,
-    ) -> IndexerResult<BlockIndexRecord> {
-        self.mutate_indexer(|indexer| {
-            let record = indexer.index_block_with_notification_records(block, notifications)?;
-            Ok((record, true))
-        })
-    }
-
-    /// Removes an indexed block by hash.
-    pub fn remove_block_by_hash(&self, hash: &UInt256) -> IndexerResult<Option<BlockIndexRecord>> {
-        self.mutate_indexer(|indexer| {
-            let removed = indexer.remove_block_by_hash(hash);
-            let should_persist = removed.is_some();
-            Ok((removed, should_persist))
-        })
-    }
-
-    /// Removes an indexed block by height.
-    pub fn remove_block_at_height(&self, height: u32) -> IndexerResult<Option<BlockIndexRecord>> {
-        self.mutate_indexer(|indexer| {
-            let removed = indexer.remove_block_at_height(height);
-            let should_persist = removed.is_some();
-            Ok((removed, should_persist))
-        })
-    }
-
-    /// Removes all indexed blocks above `height`.
-    pub fn revert_to_height(&self, height: u32) -> IndexerResult<Vec<BlockIndexRecord>> {
-        self.mutate_indexer(|indexer| {
-            let removed = indexer.revert_to_height(height);
-            let should_persist = !removed.is_empty();
-            Ok((removed, should_persist))
-        })
-    }
-
-    fn persistence_guard(&self) -> Option<parking_lot::MutexGuard<'_, ()>> {
-        self.persistence.as_ref().map(|_| self.persist_lock.lock())
-    }
-
-    fn snapshot_for_persistence(&self, indexer: &Indexer) -> Option<IndexerSnapshot> {
-        self.persistence.as_ref().map(|_| indexer.snapshot())
-    }
-
-    fn persistence_mode_for_mutation(&self) -> MutationPersistenceMode {
-        self.persistence.as_deref().map_or(
-            MutationPersistenceMode::None,
-            PersistenceBackend::mutation_mode,
-        )
-    }
-
-    fn mutate_indexer<T>(
-        &self,
-        mutate: impl FnOnce(&mut Indexer) -> IndexerResult<(T, bool)>,
-    ) -> IndexerResult<T> {
-        let _persist_guard = self.persistence_guard();
-        let mode = self.persistence_mode_for_mutation();
-        let (result, change, rollback_snapshot) = {
-            let mut indexer = self.inner.write();
-            let rollback_snapshot = if mode.is_persistent() {
-                Some(indexer.snapshot())
-            } else {
-                None
-            };
-            let (result, should_persist) = mutate(&mut indexer)?;
-            let change = if should_persist {
-                match mode {
-                    MutationPersistenceMode::None => None,
-                    MutationPersistenceMode::JsonFile => self
-                        .snapshot_for_persistence(&indexer)
-                        .map(PendingPersistence::JsonSnapshot),
-                    MutationPersistenceMode::Store => {
-                        let previous = rollback_snapshot.clone().ok_or(
-                            crate::IndexerError::MissingRollbackSnapshot {
-                                mode: "service-store",
-                            },
-                        )?;
-                        Some(PendingPersistence::StoreDelta {
-                            previous,
-                            current: indexer.snapshot(),
-                        })
-                    }
-                }
-            } else {
-                None
-            };
-            (result, change, rollback_snapshot)
-        };
-        if let Err(err) = self.persist_change(change) {
-            if let Some(snapshot) = rollback_snapshot {
-                self.restore_indexer_after_persistence_failure(snapshot);
-            }
-            return Err(err);
-        }
-        Ok(result)
-    }
-
-    fn persist_change(&self, change: Option<PendingPersistence>) -> IndexerResult<()> {
-        match (self.persistence.as_deref(), change) {
-            (Some(backend), Some(change)) => backend.persist_change(change),
-            _ => Ok(()),
-        }
-    }
-
-    fn restore_indexer_after_persistence_failure(&self, snapshot: IndexerSnapshot) {
-        match Indexer::from_snapshot(snapshot) {
-            Ok(indexer) => {
-                *self.inner.write() = indexer;
-            }
-            Err(err) => {
-                tracing::error!(
-                    target: "neo::indexer",
-                    error = %err,
-                    "failed to roll back in-memory indexer after persistence failure"
-                );
-            }
-        }
     }
 }
 

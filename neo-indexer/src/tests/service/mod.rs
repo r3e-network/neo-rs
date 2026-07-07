@@ -16,6 +16,7 @@
 
 use super::*;
 use crate::IndexerError;
+use crate::model::{BlockIndexRecord, IndexerSnapshot};
 use crate::store::{
     ACCOUNT_TRANSACTION_PREFIX, BLOCK_BY_HASH_PREFIX, BLOCK_BY_HEIGHT_PREFIX,
     LEGACY_STORE_SNAPSHOT_KEY, NOTIFICATION_BY_ACCOUNT_PREFIX, NOTIFICATION_BY_BLOCK_PREFIX,

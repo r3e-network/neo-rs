@@ -156,9 +156,11 @@ High-signal clusters found during the first pass:
 - `neo-indexer/src/indexer/mod.rs` is now closer to a mutable projection
   facade: `indexer/block.rs` owns canonical block and transaction
   materialization before records are applied to the in-memory indexes.
-- `neo-indexer/src/service/mod.rs` keeps the service facade and mutation
-  orchestration, while `service/backend.rs` owns durable backend kind,
-  diagnostic paths, mutation mode selection, and persistence dispatch.
+- `neo-indexer/src/service/mod.rs` keeps the service facade, constructors, and
+  backend diagnostics, `service/commands.rs` owns public indexing/revert
+  commands, `service/mutation.rs` owns persistence-aware mutation and rollback
+  mechanics, and `service/backend.rs` owns durable backend kind, diagnostic
+  paths, mutation mode selection, and persistence dispatch.
 - `neo-storage` exposes broad `dyn Store` / `dyn StoreSnapshot` boundaries.
   This is valid for backend selection, but hot loops should keep borrowed
   visitor APIs or concrete paths where possible.
