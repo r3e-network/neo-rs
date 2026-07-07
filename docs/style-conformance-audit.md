@@ -286,6 +286,11 @@ adapters, and disposal; `session/dummy_block.rs` owns the C#-compatible
 `ApplicationEngine.CreateDummyBlock` construction used by stateless invokes.
 The root `session/mod.rs` stays focused on session lifecycle, execution setup,
 diagnostics, snapshots, expiration, and stable iterator IDs.
+Indexer block reads have started the same endpoint-family split:
+`rpc_server_indexer/blocks.rs` owns `getblockindex` and `getblockindexes`
+lookup, pagination, and block-index projection; the root
+`rpc_server_indexer/mod.rs` now keeps handler registration, service lookup, and
+shared error mapping for the remaining endpoint families.
 RPC settings parsing has started the same decomposition:
 `rpc_server_settings/gas.rs` owns C#-compatible `MaxGasInvoke` and `MaxFee`
 GAS/datoshi decoding; `rpc_server_settings/config.rs` owns
