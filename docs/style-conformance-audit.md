@@ -110,18 +110,17 @@ Initial scan coverage: 28 workspace members plus support crates, with roughly
 High-signal clusters found during the first pass:
 
 - `neo-manifest/src/manifest/contract_manifest.rs` has been decomposed into
-  root/domain, `json`, `stack`, `wire`, and `validation` modules. The remaining
-  manifest cleanup is to replace raw `serde_json::Value` fields (`features`,
-  `extra`) with typed boundary wrappers and to keep permission/trust policy
+  root/domain, `json`, `stack`, `wire`, `validation`, and typed `fields`
+  modules. The remaining manifest cleanup is to keep permission/trust policy
   readable at the domain layer.
 - `neo-manifest` protocol types still depend on VM/runtime projection details
-  (`neo_vm::Interoperable`, `neo_vm_rs::StackValue`) and raw
-  `serde_json::Value` fields (`features`, `extra`). Core manifest models
-  should stay pure, with JSON/stack adapters moved to adapter modules.
-- `neo-config/src/settings/protocol.rs` still mixes file/stream loading, serde
-  `Value` parsing, hardfork sequencing, and validation. Built-in network
-  presets have been moved to `settings/protocol/presets.rs`; continue splitting
-  the remaining loader/parser/validation responsibilities.
+  (`neo_vm::Interoperable`, `neo_vm_rs::StackValue`). Core manifest models
+  should keep stack adapters out of top-level domain flow.
+- `neo-config/src/settings/protocol.rs` still mixes serde `Value` parsing,
+  hardfork sequencing, and validation. Built-in network presets have been moved
+  to `settings/protocol/presets.rs`, and file/stream loading has been moved to
+  `settings/protocol/load.rs`; continue splitting parser/validation
+  responsibilities.
 - `neo-node/src/node/chain_acc/mod.rs` and `neo-node/src/node/fast_sync/mod.rs`
   are very large workflow modules. They should be split into domain files such
   as `format`, `reader`, `import`, `report`, `package`, `manifest`, and
@@ -200,22 +199,19 @@ local store did not durably reach the reported imported tip.
 
 Recommended next patches, in order:
 
-1. Introduce typed wrappers for manifest `features` and `extra` now that
-   `ContractManifest` JSON, stack, wire, and validation responsibilities are
-   split into separate modules.
-2. Continue splitting `neo-config/src/settings/protocol.rs` into protocol
-   loading, parsing, and validation modules now that built-in presets live in
-   `settings/protocol/presets.rs`.
-3. Convert `neo-node/src/node/sync_metrics/mod.rs` internal
+1. Continue splitting `neo-config/src/settings/protocol.rs` into protocol
+   parsing and validation modules now that built-in presets and loading live in
+   `settings/protocol/presets.rs` and `settings/protocol/load.rs`.
+2. Convert `neo-node/src/node/sync_metrics/mod.rs` internal
    `write!().expect("write metrics line")` calls to infallible string building
    or error-aware helpers.
-4. Add reference RPC `getblock` / `getstateroot` validation after fast-sync
+3. Add reference RPC `getblock` / `getstateroot` validation after fast-sync
    package import so local durability is followed by consensus/state proof.
-5. Split `neo-node/src/node/chain_acc/mod.rs` tests from implementation if any
+4. Split `neo-node/src/node/chain_acc/mod.rs` tests from implementation if any
    remaining test-only code is embedded in production paths.
-6. Add typed request/response helpers for one `neo-rpc` handler group, then use
+5. Add typed request/response helpers for one `neo-rpc` handler group, then use
    that pattern for the rest.
-7. Centralize GUI lock handling in `neo-gui` before fixing individual
+6. Centralize GUI lock handling in `neo-gui` before fixing individual
    `lock().unwrap()` call sites.
-8. Add comments to every remaining production `#[allow]` that explain the
+7. Add comments to every remaining production `#[allow]` that explain the
    protocol, FFI, generated-code, or C# parity reason.
