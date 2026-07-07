@@ -49,6 +49,10 @@ pub(super) fn system_fee_to_json(system_fee: i64) -> Value {
     Value::String(system_fee.to_string())
 }
 
+pub(super) fn transaction_height_to_json(height: u32) -> Value {
+    json!(height)
+}
+
 pub(super) fn header_to_json(
     server: &RpcServer,
     header: &Header,
