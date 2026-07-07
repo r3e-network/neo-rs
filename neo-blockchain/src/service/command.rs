@@ -204,6 +204,8 @@ pub enum BlockchainCommand {
     RelayResult(RelayResult),
     /// Initialize the blockchain service.
     Initialize,
+    /// Stop the blockchain service command loop after previously queued work.
+    Shutdown,
     /// Check unverified cache and persist any ready consecutive blocks.
     /// Also invoked by the service after a block/import advances the tip so
     /// parked out-of-order blocks continue immediately once their gap closes.

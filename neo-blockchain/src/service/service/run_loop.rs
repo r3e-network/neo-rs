@@ -6,6 +6,7 @@
 //! making progress during catch-up.
 
 use super::{BlockchainService, MempoolLike};
+use crate::command::BlockchainCommand;
 
 const MAX_DRAIN_PER_BATCH: u32 = 128;
 
@@ -27,11 +28,17 @@ where
     /// consensus ticks, and other services.
     pub async fn run(mut self) {
         tracing::debug!(target: "neo", "blockchain service run loop started");
-        while let Some(cmd) = self.cmd_rx.recv().await {
+        'service: while let Some(cmd) = self.cmd_rx.recv().await {
+            if matches!(cmd, BlockchainCommand::Shutdown) {
+                break;
+            }
             self.dispatch(cmd).await;
 
             let mut drained = 0u32;
             while let Ok(cmd) = self.cmd_rx.try_recv() {
+                if matches!(cmd, BlockchainCommand::Shutdown) {
+                    break 'service;
+                }
                 self.dispatch(cmd).await;
                 drained += 1;
                 if drained >= MAX_DRAIN_PER_BATCH {

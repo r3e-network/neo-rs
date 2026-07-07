@@ -680,6 +680,7 @@ fn dispatch_command_variants_is_exhaustive() {
             BlockchainCommand::DrainUnverified => unreachable!(),
             BlockchainCommand::RelayResult(_) => unreachable!(),
             BlockchainCommand::Initialize => unreachable!(),
+            BlockchainCommand::Shutdown => unreachable!(),
             BlockchainCommand::AddTransaction { .. } => unreachable!(),
             BlockchainCommand::GetHeight { .. } => unreachable!(),
             BlockchainCommand::GetBlock { .. } => unreachable!(),
@@ -739,7 +740,7 @@ fn dispatch_command_variants_is_exhaustive() {
     // count above. Bump this when adding a new variant and
     // add a corresponding arm in both `exhaustive_dispatch` and
     // `BlockchainService::dispatch` in `service.rs`.
-    const EXPECTED_VARIANTS: usize = 20;
+    const EXPECTED_VARIANTS: usize = 21;
     assert!(seen.len() <= EXPECTED_VARIANTS);
 
     // Keep the helper symbol alive so the dispatch table is not

@@ -77,6 +77,28 @@ async fn run_loop_processes_simple_command() {
     task.await.expect("service task");
 }
 
+#[tokio::test]
+async fn handle_shutdown_stops_service_run_loop() {
+    let system = Arc::new(TestContext);
+    let ledger = Arc::new(LedgerContext::default());
+    let header_cache = Arc::new(HeaderCache::default());
+    let mempool = Arc::new(TestMempool);
+    let (service, handle) = BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let task = tokio::spawn(async move {
+        service.run().await;
+        let _ = done_tx.send(());
+    });
+
+    handle.shutdown().await.expect("shutdown request");
+    tokio::task::spawn_blocking(move || done_rx.recv_timeout(std::time::Duration::from_secs(1)))
+        .await
+        .expect("shutdown wait task")
+        .expect("service run loop should stop after shutdown");
+    task.await.expect("service task");
+}
+
 #[test]
 fn handle_debug_includes_capacity() {
     let (handle, _rx) = BlockchainHandle::with_capacity();

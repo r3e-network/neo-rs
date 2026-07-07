@@ -95,6 +95,7 @@ where
             BlockchainCommand::Initialize => {
                 self.initialize().await;
             }
+            BlockchainCommand::Shutdown => {}
             BlockchainCommand::AddTransaction { transaction, reply } => {
                 let _ = reply.send(self.add_transaction(transaction).await);
             }

@@ -11,8 +11,9 @@
 //!    ([`BlockchainHandle::submit_inventory_blocks`],
 //!    [`BlockchainHandle::submit_inventory_block`],
 //!    [`BlockchainHandle::submit_inventory_extensible`],
-//!    [`BlockchainHandle::initialize`]): send one-way service work without
-//!    exposing [`crate::BlockchainCommand`] to the caller.
+//!    [`BlockchainHandle::initialize`], [`BlockchainHandle::shutdown`]): send
+//!    one-way service work without exposing [`crate::BlockchainCommand`] to the
+//!    caller.
 //! 2. **Request/response** ([`BlockchainHandle::import_block`],
 //!    [`BlockchainHandle::get_block`], [`BlockchainHandle::get_block_by_height`],
 //!    [`BlockchainHandle::get_height`]): translate the method call into a
@@ -26,13 +27,14 @@
 
 use std::fmt;
 
-use neo_runtime::{Service, ServiceError};
+use neo_runtime::Service;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::command::BlockchainCommand;
 
 mod imports;
 mod inventory;
+mod lifecycle;
 mod mempool;
 mod queries;
 
@@ -101,28 +103,6 @@ impl BlockchainHandle {
     /// [`Self::channel`].
     pub fn subscribe(&self) -> broadcast::Receiver<crate::RuntimeEvent> {
         self.event_tx.subscribe()
-    }
-
-    /// Request blockchain service initialization.
-    pub async fn initialize(&self) -> Result<(), ServiceError> {
-        self.cmd_tx
-            .send(BlockchainCommand::Initialize)
-            .await
-            .map_err(|_| ServiceError::unavailable("blockchain command channel closed"))
-    }
-
-    /// Request graceful shutdown of the service loop. The command
-    /// channel will be closed once the in-flight command finishes, at
-    /// which point every pending `tell` will start returning
-    /// [`ServiceError::ServiceUnavailable`].
-    pub async fn shutdown(&self) -> Result<(), ServiceError> {
-        // The service loop is driven by `recv().await`; closing the
-        // sender is the canonical shutdown signal. We don't expose a
-        // dedicated `Shutdown` variant yet because the legacy command
-        // set never used one — the service stops on its own once all
-        // senders are dropped.
-        drop(self.cmd_tx.clone());
-        Ok(())
     }
 }
 
