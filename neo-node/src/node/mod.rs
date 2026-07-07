@@ -22,6 +22,8 @@
 //! - `inventory_relay`: Inbound peer-inventory batching and service forwarding.
 //! - `ledger_source`: Local and remote ledger source abstractions used by node
 //!   modes.
+//! - `live_services`: Post-import telemetry, P2P, seed dialing, RPC, and
+//!   observability heartbeat startup.
 //! - `logging`: Logging, tracing, and operator diagnostics setup.
 //! - `observability`: Metrics and observability endpoint wiring.
 //! - `remote_ledger`: RPC-backed ledger source used when the node runs without
@@ -43,7 +45,6 @@
 use clap::Parser;
 #[cfg(test)]
 use neo_config::ProtocolSettings;
-use std::net::SocketAddr;
 #[cfg(test)]
 use std::path::Path;
 use std::sync::Arc;
@@ -58,6 +59,7 @@ mod fast_sync;
 mod indexer_runtime;
 mod inventory_relay;
 mod ledger_source;
+mod live_services;
 mod logging;
 mod observability;
 mod remote_ledger;
@@ -78,19 +80,22 @@ use cli::import_tip_reaches_stop_height;
 use cli::{LedgerMode, StoragePreflightMode, storage_preflight_mode, validate_cli_mode};
 use composition::{RunningNode, build_node};
 #[cfg(test)]
+use config::default_p2p_port;
+#[cfg(test)]
 use config::{NodeConfig, open_store, validate_config};
-use config::{default_p2p_port, load_config, validate_config_for_ledger_mode, validate_storage};
+use config::{load_config, validate_config_for_ledger_mode, validate_storage};
 #[cfg(test)]
 use context::DaemonContext;
 #[cfg(test)]
 use inventory_relay::{FAST_SYNC_BURST_CAPACITY, flush_inventory_block_batch};
+use live_services::start_live_services;
+#[cfg(test)]
 use rpc_runtime::start_rpc_server;
 use shutdown::wait_for_shutdown_signal;
 #[cfg(test)]
 use startup_cleanup::abort_fast_sync_store_mode;
 use startup_cleanup::{flush_state_service_for_shutdown, restore_durable_store_mode};
 use startup_import::{StartupImportContext, StartupImportOutcome, run_startup_imports};
-use tasks::{TaskKind, spawn_daemon_task_result};
 
 pub use cli::NodeCli;
 
@@ -195,100 +200,17 @@ pub async fn run() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    match telemetry::metrics_server_task(&config.telemetry.metrics, Arc::clone(&node)) {
-        Ok(Some(task)) => spawn_daemon_task_result(
-            &mut handles,
-            observability.as_ref(),
-            &shutdown,
-            TaskKind::Normal,
-            "telemetry_metrics",
-            task,
-        ),
-        Ok(None) => {}
-        Err(err) => {
-            let err = err.context("failed to start metrics endpoint");
-            if let Some(observability) = &observability {
-                observability.report_startup_error(&err);
-            }
-            for handle in handles {
-                handle.abort();
-            }
-            return Err(err);
-        }
-    }
-
-    // ----- P2P listener -----
-    let p2p_port = config
-        .p2p
-        .port
-        .unwrap_or(default_p2p_port(settings.network));
-    let p2p_bind = config.p2p.bind_address.as_deref().unwrap_or("0.0.0.0");
-    match format!("{p2p_bind}:{p2p_port}").parse::<SocketAddr>() {
-        Ok(bind_addr) => match network.start(bind_addr).await {
-            Ok(()) => info!(target: "neo", %bind_addr, "P2P listener started"),
-            Err(err) => {
-                warn!(target: "neo", %bind_addr, error = %err, "failed to start P2P listener");
-                if let Some(observability) = &observability {
-                    observability.report_runtime_error("p2p_listener", &err);
-                }
-            }
-        },
-        Err(err) => {
-            warn!(target: "neo", addr = %format!("{p2p_bind}:{p2p_port}"), error = %err, "invalid P2P bind address");
-            if let Some(observability) = &observability {
-                observability.report_runtime_error("p2p_bind_address", &err);
-            }
-        }
-    }
-
-    if ledger_mode.uses_local_replay_services() {
-        let seed_nodes = if config.p2p.seed_nodes.is_empty() {
-            settings.seed_list.clone()
-        } else {
-            config.p2p.seed_nodes.clone()
-        };
-        if let Some(handle) = seeds::spawn_seed_dialing(
-            seed_nodes,
-            network.clone(),
-            observability.clone(),
-            shutdown.clone(),
-        ) {
-            handles.push(handle);
-        }
-    } else {
-        info!(
-            target: "neo::remote_ledger",
-            "seed dialing disabled; remote-ledger mode does not sync blocks into a local canonical ledger"
-        );
-    }
-
-    // ----- RPC server -----
-    let _rpc_keepalive = if config.rpc.enabled {
-        match start_rpc_server(
-            &node,
-            &config,
-            settings.network,
-            ledger_mode.remote_endpoint(),
-        ) {
-            Ok(server) => Some(server),
-            Err(err) => {
-                let err = err.context("failed to start RPC server");
-                if let Some(observability) = &observability {
-                    observability.report_startup_error(&err);
-                }
-                for handle in handles {
-                    handle.abort();
-                }
-                return Err(err);
-            }
-        }
-    } else {
-        info!(target: "neo", "RPC server disabled in config");
-        None
-    };
-    if let Some(observability) = &observability {
-        handles.extend(observability.spawn_heartbeat_tasks(Arc::clone(&node)));
-    }
+    let _live_service_guards = start_live_services(
+        &node,
+        &network,
+        &mut handles,
+        &shutdown,
+        &config,
+        settings.network,
+        ledger_mode,
+        observability.as_ref(),
+    )
+    .await?;
 
     // Wait for a shutdown signal, handling SIGTERM as well as Ctrl-C (SIGINT)
     // so `kill`/`pkill`, Docker, and systemd all stop the node gracefully. The
