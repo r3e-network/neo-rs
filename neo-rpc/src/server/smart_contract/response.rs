@@ -80,3 +80,13 @@ pub(super) fn notification_to_json(
         "contract": notification.script_hash.to_string(),
         "state": state}))
 }
+
+pub(super) fn unclaimed_gas_to_json(address: String, unclaimed_datoshi: impl ToString) -> Value {
+    json!({
+        "address": address,
+        // C# GetUnclaimedGas returns the raw datoshi BigInteger as a string
+        // (NEO.UnclaimedGas(...).ToString()), e.g. "100000000" for 1 GAS - not
+        // the decimal form. Wrapping in BigDecimal would divide by 10^8.
+        "unclaimed": unclaimed_datoshi.to_string(),
+    })
+}

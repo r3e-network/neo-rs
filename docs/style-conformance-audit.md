@@ -439,7 +439,7 @@ successful invokes. `smart_contract/diagnostics.rs` owns invoke diagnostic-tree
 and storage-change JSON projection. `smart_contract/script.rs` owns dynamic-call
 script construction and contract-parameter stack conversion.
 `smart_contract/response.rs` owns VM-state, stack-item, iterator-interface, and
-notification JSON projection.
+notification/unclaimed-GAS JSON projection.
 Production `#[allow(...)]` sites now carry nearby `Rationale:` comments. The
 comments classify each exception as protocol parity, generated NeoFS glue, HSM
 or BLST FFI shape, VM unsafe hot-path invariants, explicit composition arity,

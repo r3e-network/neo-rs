@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use neo_native_contracts::{NeoToken, ledger_contract::LedgerContract};
 use neo_wallets::wallet_helper::WalletAddress as address_helper;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::server::native_queries;
 
@@ -11,6 +11,7 @@ use crate::server::rpc_server::RpcServer;
 
 use super::helpers::internal_error;
 use super::request::GetUnclaimedGasRequest;
+use super::response::unclaimed_gas_to_json;
 
 pub(super) fn get_unclaimed_gas(
     server: &RpcServer,
@@ -37,11 +38,5 @@ pub(super) fn get_unclaimed_gas(
     .map_err(internal_error)?;
     let address = address_helper::to_address(&request.script_hash, version);
 
-    Ok(json!({
-         "address": address,
-         // C# GetUnclaimedGas returns the raw datoshi BigInteger as a string
-         // (NEO.UnclaimedGas(...).ToString()), e.g. "100000000" for 1 GAS — not
-         // the decimal form. Wrapping in BigDecimal would divide by 10^8.
-         "unclaimed": unclaimed.to_string()
-    }))
+    Ok(unclaimed_gas_to_json(address, unclaimed))
 }
