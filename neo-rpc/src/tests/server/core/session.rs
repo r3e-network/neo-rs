@@ -1,8 +1,11 @@
 use super::*;
 use neo_config::ProtocolSettings;
+use neo_execution::iterators::{IteratorInterop, StorageIterator};
 use neo_primitives::FindOptions;
 use neo_storage::{StorageItem, StorageKey};
+use neo_vm::stack_item::{InteropInterface as VmInteropInterface, StackItem};
 use neo_vm_rs::{OpCode, VmState};
+use std::sync::Arc;
 
 #[test]
 fn server_context_engine_paths_use_explicit_native_provider() {

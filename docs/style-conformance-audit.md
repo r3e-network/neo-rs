@@ -280,6 +280,12 @@ RPC dispatch has the same production/test boundary now:
 `dispatch/mod.rs` owns handler resolution, rate-limit checks, remote-ledger
 proxy dispatch, and panic-policy handling, while its remote-ledger policy
 coverage tests live in `tests/server/core/dispatch.rs`.
+RPC invocation sessions now follow the same facade rule:
+`session/iterators.rs` owns retained iterator registration payloads, traversal
+adapters, and disposal; `session/dummy_block.rs` owns the C#-compatible
+`ApplicationEngine.CreateDummyBlock` construction used by stateless invokes.
+The root `session/mod.rs` stays focused on session lifecycle, execution setup,
+diagnostics, snapshots, expiration, and stable iterator IDs.
 RPC settings parsing has started the same decomposition:
 `rpc_server_settings/gas.rs` owns C#-compatible `MaxGasInvoke` and `MaxFee`
 GAS/datoshi decoding; `rpc_server_settings/config.rs` owns

@@ -10,7 +10,12 @@
 //!
 //! ## Contents
 //!
+//! - `dummy_block`: C#-compatible dummy persisting block construction.
+//! - `iterators`: RPC session iterator retention and disposal helpers.
 //! - `tests`: Module-local tests and regression coverage.
+
+mod dummy_block;
+mod iterators;
 
 use neo_error::{CoreError, CoreResult};
 use neo_execution::native_contract_provider::NativeContractProvider;
@@ -20,8 +25,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use neo_execution::ApplicationEngine;
-use neo_execution::iterators::iterator::StorageIterator as _;
-use neo_execution::iterators::{IteratorInterop, StorageIterator};
 use neo_manifest::CallFlags;
 use neo_native_contracts::ledger_contract::LedgerContract;
 use neo_native_contracts::policy_contract::PolicyContract;
@@ -29,7 +32,6 @@ use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
 use neo_payloads::witness::Witness;
-use neo_payloads::{Block, Header};
 use neo_primitives::TriggerType;
 use neo_primitives::Verifiable;
 use neo_runtime::{ConfigProvider, StoreProvider};
@@ -39,41 +41,12 @@ use rand::random;
 use uuid::Uuid;
 
 use crate::server::diagnostic::Diagnostic;
+use neo_execution::iterators::IteratorInterop;
 
-/// Trait representing an iterator stored within an RPC session.
-pub trait SessionIterator: Send {
-    /// Advance the iterator to the next item.
-    fn next(&mut self) -> bool;
-    /// Return the current item.
-    fn value(&self) -> CoreResult<StackItem>;
-    /// Release any resources owned by the iterator.
-    fn dispose(&mut self);
-}
+use dummy_block::create_dummy_block;
+use iterators::{IteratorEntry, StorageSessionIterator};
 
-/// Wrapper storing iterator instances with automatic disposal.
-struct IteratorEntry {
-    inner: Box<dyn SessionIterator>,
-}
-
-impl IteratorEntry {
-    fn next(&mut self) -> bool {
-        self.inner.next()
-    }
-
-    fn value(&self) -> CoreResult<StackItem> {
-        self.inner.value()
-    }
-
-    fn dispose(&mut self) {
-        self.inner.dispose();
-    }
-}
-
-impl Drop for IteratorEntry {
-    fn drop(&mut self) {
-        self.dispose();
-    }
-}
+pub use iterators::SessionIterator;
 
 /// Represents an invocation session that can retain iterators between RPC calls.
 pub struct Session {
@@ -84,31 +57,6 @@ pub struct Session {
     iterators: Mutex<HashMap<Uuid, IteratorEntry>>,
     iterator_lookup: Mutex<HashMap<u32, Uuid>>,
     start_time: Mutex<Instant>,
-}
-
-#[derive(Debug)]
-struct StorageSessionIterator {
-    iterator: StorageIterator,
-}
-
-impl StorageSessionIterator {
-    const fn new(iterator: StorageIterator) -> Self {
-        Self { iterator }
-    }
-}
-
-impl SessionIterator for StorageSessionIterator {
-    fn next(&mut self) -> bool {
-        self.iterator.next()
-    }
-
-    fn value(&self) -> CoreResult<StackItem> {
-        self.iterator.value()
-    }
-
-    fn dispose(&mut self) {
-        self.iterator.dispose();
-    }
 }
 
 impl Session {
@@ -298,55 +246,6 @@ impl Session {
     pub fn is_expired(&self, expiration: Duration) -> bool {
         self.start_time.lock().elapsed() >= expiration
     }
-}
-
-/// Builds the dummy persisting block for a stateless RPC invoke, mirroring C#
-/// `ApplicationEngine.CreateDummyBlock(IReadOnlyStore snapshot, ProtocolSettings
-/// settings)`.
-///
-/// The block reads the current (last-persisted) block from the ledger and sets:
-/// - `Version = 0`
-/// - `PrevHash = LedgerContract.CurrentHash(snapshot)`
-/// - `MerkleRoot = UInt256::default()` (C# `new UInt256()`)
-/// - `Timestamp = currentBlock.Timestamp + GetTimePerBlock(snapshot, settings)`
-///   where the per-block time is the Policy-aware `MillisecondsPerBlock`
-///   (static setting pre-HF_Echidna, Policy storage value from HF_Echidna on)
-/// - `Index = currentBlock.Index + 1`
-/// - `NextConsensus = currentBlock.NextConsensus`
-/// - `Witness = Witness.Empty`, `Transactions = []`
-/// - `Nonce`/`PrimaryIndex` left at their zero defaults (C# does not set them).
-///
-/// Returns `None` (leaving the engine without a persisting block, as before)
-/// when the ledger has no current block yet — e.g. a store without a persisted
-/// genesis — matching the C# pre-genesis `KeyNotFoundException` corner where a
-/// dummy block cannot be constructed.
-fn create_dummy_block(
-    snapshot: &neo_storage::persistence::DataCache,
-    settings: &neo_config::ProtocolSettings,
-) -> Option<Block> {
-    let ledger = LedgerContract::new();
-    let current_hash = ledger.current_hash(snapshot).ok()?;
-    let current_block = ledger.get_trimmed_block(snapshot, &current_hash).ok()??;
-
-    let milliseconds_per_block = PolicyContract::new()
-        .get_milliseconds_per_block_snapshot(snapshot, settings)
-        .unwrap_or(settings.milliseconds_per_block);
-
-    let mut header = Header::new();
-    header.set_version(0);
-    header.set_prev_hash(current_hash);
-    header.set_merkle_root(neo_primitives::UInt256::default());
-    header.set_timestamp(
-        current_block
-            .header
-            .timestamp()
-            .saturating_add(u64::from(milliseconds_per_block)),
-    );
-    header.set_index(current_block.header.index().saturating_add(1));
-    header.set_next_consensus(*current_block.header.next_consensus());
-    header.witness = Witness::empty();
-
-    Some(Block::from_parts(header, Vec::new()))
 }
 
 // THREAD SAFETY
