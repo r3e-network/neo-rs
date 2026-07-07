@@ -309,6 +309,9 @@ handling, DoS-limit builder wiring, and session-purge task wiring;
 to the governor limiter plus blocked-call error mapping. The root
 `rpc_server/mod.rs` now stays focused on server state, registration maps, and
 wallet/session accessors.
+`jsonrpsee_adapter/auth.rs` owns the transport-auth extension marker and Basic
+header verification, while `jsonrpsee_adapter/mod.rs` keeps module registration,
+parameter decoding, and dispatch bridging.
 RPC dispatch has the same production/test boundary now:
 `dispatch/mod.rs` owns handler resolution, rate-limit checks, remote-ledger
 proxy dispatch, and panic-policy handling, while its remote-ledger policy
