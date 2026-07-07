@@ -109,11 +109,11 @@ Initial scan coverage: 28 workspace members plus support crates, with roughly
 
 High-signal clusters found during the first pass:
 
-- `neo-manifest/src/manifest/contract_manifest.rs` is a large multi-layer
-  protocol file. It currently owns JSON encoding/decoding, wire
-  serialization, validation, uniqueness checks, permission/trust policy, and
-  VM interop. Split it into domain/json/wire/validation modules before adding
-  new manifest behavior.
+- `neo-manifest/src/manifest/contract_manifest.rs` has been decomposed into
+  root/domain, `json`, `stack`, `wire`, and `validation` modules. The remaining
+  manifest cleanup is to replace raw `serde_json::Value` fields (`features`,
+  `extra`) with typed boundary wrappers and to keep permission/trust policy
+  readable at the domain layer.
 - `neo-manifest` protocol types still depend on VM/runtime projection details
   (`neo_vm::Interoperable`, `neo_vm_rs::StackValue`) and raw
   `serde_json::Value` fields (`features`, `extra`). Core manifest models
@@ -200,9 +200,9 @@ local store did not durably reach the reported imported tip.
 
 Recommended next patches, in order:
 
-1. Split `neo-manifest/src/manifest/contract_manifest.rs` into
-   domain/json/wire/validation modules and introduce typed wrappers for
-   manifest `features` and `extra`.
+1. Introduce typed wrappers for manifest `features` and `extra` now that
+   `ContractManifest` JSON, stack, wire, and validation responsibilities are
+   split into separate modules.
 2. Split `neo-config/src/settings/protocol.rs` into protocol presets, loading,
    parsing, and validation modules.
 3. Convert `neo-node/src/node/sync_metrics/mod.rs` internal
