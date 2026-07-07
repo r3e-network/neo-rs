@@ -11,6 +11,7 @@
 //! ## Contents
 //!
 //! - `balance`: wallet balance RPC handlers.
+//! - `lifecycle`: wallet open/close, key import/export, and address listing handlers.
 //! - `request`: Typed JSON-RPC request parsing helpers.
 //! - `support`: Shared support helpers that keep domain modules focused.
 //! - `transfers`: wallet transfer RPC handlers.
@@ -24,19 +25,16 @@ use neo_primitives::UInt160;
 use neo_primitives::WitnessScope;
 #[cfg(test)]
 use neo_vm_rs::OpCode;
-use neo_wallets::{
-    KeyPair, Nep6Wallet, Wallet as CoreWallet, WalletAccount, WalletError, WalletResult,
-};
+#[cfg(test)]
+use neo_wallets::{KeyPair, Nep6Wallet};
+use neo_wallets::{Wallet as CoreWallet, WalletError, WalletResult};
 use num_bigint::BigInt;
 use num_traits::Zero;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use std::future::Future;
-use std::io::ErrorKind;
-use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::runtime::{Builder as RuntimeBuilder, Handle};
-use zeroize::Zeroizing;
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
@@ -47,14 +45,12 @@ use crate::server::wallet_compat;
 use support::signature_contract_pubkey;
 
 mod balance;
+mod lifecycle;
 mod request;
 mod support;
 mod transfers;
 
-use self::request::{
-    DumpPrivKeyRequest, ImportPrivKeyRequest, NetworkFeeRequest, OpenWalletRequest,
-    WalletBalanceRequest,
-};
+use self::request::{NetworkFeeRequest, WalletBalanceRequest};
 
 /// RPC handler group for wallet management and transfer methods.
 pub struct RpcServerWallet;
@@ -85,44 +81,6 @@ impl RpcServerWallet {
             "sendmany" => Self::send_many,
             "canceltransaction" => Self::cancel_transaction,
         ]
-    }
-
-    fn close_wallet(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
-        server.set_wallet(None);
-        Ok(Value::Bool(true))
-    }
-
-    fn dump_priv_key(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let request =
-            DumpPrivKeyRequest::parse(params, server.system().settings().address_version)?;
-        let script_hash = request.script_hash;
-        let wallet = Self::require_wallet(server)?;
-        let account = wallet.account(&script_hash).ok_or_else(|| {
-            RpcException::from(RpcError::unknown_account().with_data(script_hash.to_string()))
-        })?;
-        if !account.has_key() {
-            return Err(RpcException::from(
-                RpcError::unknown_account().with_data(format!("{script_hash} is watch-only")),
-            ));
-        }
-        let wif = account.export_wif().map_err(|err| {
-            RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
-        })?;
-        Ok(Value::String(wif))
-    }
-
-    fn get_new_address(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
-        let wallet = Self::require_wallet(server)?;
-        let key_pair = KeyPair::generate().map_err(|err| {
-            RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
-        })?;
-        let wallet_clone = Arc::clone(&wallet);
-        let key_bytes = Zeroizing::new(*key_pair.private_key());
-        let account = Self::await_wallet_future(Box::pin(async move {
-            wallet_clone.create_account(key_bytes.as_ref()).await
-        }))?;
-        Self::save_wallet(&wallet)?;
-        Ok(Value::String(account.address()))
     }
 
     fn get_wallet_balance(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -167,61 +125,6 @@ impl RpcServerWallet {
             total += gas;
         }
         Ok(Value::String(total.to_string()))
-    }
-
-    fn import_priv_key(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let request = ImportPrivKeyRequest::parse(params)?;
-        KeyPair::from_wif(&request.wif)
-            .map_err(|err| invalid_params(format!("invalid WIF: {err}")))?;
-        let wallet = Self::require_wallet(server)?;
-        let wallet_clone = Arc::clone(&wallet);
-        let privkey_value = request.wif;
-        let account = Self::await_wallet_future(Box::pin(async move {
-            wallet_clone.import_wif(&privkey_value).await
-        }))?;
-        Self::save_wallet(&wallet)?;
-        Ok(Self::account_to_json(account.as_ref()))
-    }
-
-    fn list_address(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
-        let wallet = Self::require_wallet(server)?;
-        let mut entries = Vec::new();
-        for account in wallet.accounts() {
-            entries.push(Self::account_to_json(account.as_ref()));
-        }
-        Ok(Value::Array(entries))
-    }
-
-    fn open_wallet(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let request = OpenWalletRequest::parse(params)?;
-        if !Path::new(&request.path).exists() {
-            return Err(RpcException::from(RpcError::wallet_not_found()));
-        }
-        let system = server.system();
-        let settings = system.settings();
-        let wallet = Nep6Wallet::from_file(&request.path, &request.password, settings);
-        let wallet = match wallet {
-            Ok(wallet) => wallet,
-            Err(WalletError::InvalidPassword) => {
-                return Err(RpcException::from(
-                    RpcError::wallet_not_supported().with_data("Invalid password."),
-                ));
-            }
-            Err(WalletError::WalletFileNotFound(_)) => {
-                return Err(RpcException::from(RpcError::wallet_not_found()));
-            }
-            Err(WalletError::Io(ref err)) if err.kind() == ErrorKind::NotFound => {
-                return Err(RpcException::from(RpcError::wallet_not_found()));
-            }
-            Err(err) => {
-                return Err(RpcException::from(
-                    RpcError::wallet_not_supported().with_data(err.to_string()),
-                ));
-            }
-        };
-        let wallet_arc: Arc<dyn CoreWallet> = Arc::new(wallet);
-        server.set_wallet(Some(wallet_arc));
-        Ok(Value::Bool(true))
     }
 
     fn calculate_network_fee(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -323,21 +226,6 @@ impl RpcServerWallet {
                 RpcException::from(RpcError::wallet_not_supported().with_data(other.to_string()))
             }
         }
-    }
-
-    fn account_to_json(account: &(impl WalletAccount + ?Sized)) -> Value {
-        let has_key = account.has_key();
-        let mut map = Map::new();
-        map.insert("address".to_string(), Value::String(account.address()));
-        map.insert("haskey".to_string(), Value::Bool(has_key));
-        map.insert(
-            "label".to_string(),
-            account
-                .label()
-                .map_or(Value::Null, |label| Value::String(label.to_string())),
-        );
-        map.insert("watchonly".to_string(), Value::Bool(!has_key));
-        Value::Object(map)
     }
 
     fn require_wallet(server: &RpcServer) -> Result<Arc<dyn CoreWallet>, RpcException> {

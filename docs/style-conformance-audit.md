@@ -234,7 +234,10 @@ the wallet root handler can focus on wallet orchestration, native balance
 queries, and fee calculation. The same request module now also owns transfer,
 `sendmany`, signer, and cancel-transaction parameter decoding, leaving
 `transfers.rs` focused on descriptor lookup, amount conversion, transaction
-construction, signing, and relay.
+construction, signing, and relay. `rpc_server_wallet/lifecycle.rs` owns
+open/close, address creation/listing, and WIF import/export endpoints; the root
+keeps shared wallet runtime/error helpers used across lifecycle and transfer
+paths.
 ApplicationLogs now follows the same split: `rpc_server_application_logs/request.rs`
 owns hash and trigger-filter parsing, and `response.rs` owns the optional
 trigger filtering over stored C#-compatible log JSON. Direct handler tests cover
