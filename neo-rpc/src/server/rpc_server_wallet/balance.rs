@@ -12,7 +12,7 @@ use num_traits::{ToPrimitive, Zero};
 use serde_json::{Value, json};
 
 use super::RpcServerWallet;
-use super::request::WalletBalanceRequest;
+use super::request::{NoParamsRequest, WalletBalanceRequest};
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
@@ -35,8 +35,9 @@ impl RpcServerWallet {
 
     pub(super) fn get_wallet_unclaimed_gas(
         server: &RpcServer,
-        _params: &[Value],
+        params: &[Value],
     ) -> Result<Value, RpcException> {
+        NoParamsRequest::parse(params, "getwalletunclaimedgas")?;
         let wallet = Self::require_wallet(server)?;
         let store = server.system().store_cache();
         let ledger = LedgerContract::new();

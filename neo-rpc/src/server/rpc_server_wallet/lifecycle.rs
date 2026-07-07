@@ -9,7 +9,9 @@ use serde_json::{Map, Value};
 use zeroize::Zeroizing;
 
 use super::RpcServerWallet;
-use super::request::{DumpPrivKeyRequest, ImportPrivKeyRequest, OpenWalletRequest};
+use super::request::{
+    DumpPrivKeyRequest, ImportPrivKeyRequest, NoParamsRequest, OpenWalletRequest,
+};
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::invalid_params;
@@ -18,8 +20,9 @@ use crate::server::rpc_server::RpcServer;
 impl RpcServerWallet {
     pub(super) fn close_wallet(
         server: &RpcServer,
-        _params: &[Value],
+        params: &[Value],
     ) -> Result<Value, RpcException> {
+        NoParamsRequest::parse(params, "closewallet")?;
         server.set_wallet(None);
         Ok(Value::Bool(true))
     }
@@ -48,8 +51,9 @@ impl RpcServerWallet {
 
     pub(super) fn get_new_address(
         server: &RpcServer,
-        _params: &[Value],
+        params: &[Value],
     ) -> Result<Value, RpcException> {
+        NoParamsRequest::parse(params, "getnewaddress")?;
         let wallet = Self::require_wallet(server)?;
         let key_pair = KeyPair::generate().map_err(|err| {
             RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
@@ -82,8 +86,9 @@ impl RpcServerWallet {
 
     pub(super) fn list_address(
         server: &RpcServer,
-        _params: &[Value],
+        params: &[Value],
     ) -> Result<Value, RpcException> {
+        NoParamsRequest::parse(params, "listaddress")?;
         let wallet = Self::require_wallet(server)?;
         let mut entries = Vec::new();
         for account in wallet.accounts() {

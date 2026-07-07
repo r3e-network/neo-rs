@@ -225,6 +225,8 @@ mod cancel_transaction;
 mod lifecycle;
 #[path = "../rpc_server_wallet/network_fee.rs"]
 mod network_fee;
+#[path = "../rpc_server_wallet/no_params.rs"]
+mod no_params;
 #[path = "../rpc_server_wallet/send_from.rs"]
 mod send_from;
 #[path = "../rpc_server_wallet/send_many.rs"]

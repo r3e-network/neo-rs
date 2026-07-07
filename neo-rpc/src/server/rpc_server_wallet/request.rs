@@ -17,6 +17,8 @@ use crate::server::rpc_helpers::{
     parse_script_hash_or_address_with_error, parse_uint160, parse_uint256,
 };
 
+pub(super) use crate::server::rpc_helpers::NoParamsRequest;
+
 pub(super) struct DumpPrivKeyRequest {
     pub(super) script_hash: UInt160,
 }

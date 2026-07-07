@@ -259,7 +259,8 @@ NEP-11 property VM invocation. The root token-tracker module is now just the
 method registry plus module map.
 Wallet cleanup has started with the same boundary: `rpc_server_wallet/request.rs`
 now owns management and network-fee request decoding (`dumpprivkey`,
-`getwalletbalance`, `importprivkey`, `openwallet`, `calculatenetworkfee`), so
+`getwalletbalance`, `importprivkey`, `openwallet`, `calculatenetworkfee`) and
+no-parameter validation for close/list/new-address/unclaimed-GAS methods, so
 the wallet root handler can focus on wallet orchestration, native balance
 queries, and fee calculation. The same request module now also owns transfer,
 `sendmany`, signer, and cancel-transaction parameter decoding, leaving
