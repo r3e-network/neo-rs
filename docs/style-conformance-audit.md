@@ -356,7 +356,8 @@ read-only native probes; `native_queries/result.rs` owns NEO stack-result
 decoding for committee, validator, and candidate probes;
 `native_queries/execution.rs` owns read-only VM setup and HALT validation;
 `native_queries/registry.rs` owns standard native-contract registry
-construction; and `native_queries/mod.rs` keeps the public query facade.
+construction; `native_queries/neo.rs` owns the NEO native-token read probes;
+and `native_queries/mod.rs` keeps only the `NativeQueries` type and module map.
 Blockchain block/header methods now follow the same route-facade split:
 `rpc_server_blockchain/blocks.rs` owns best hash, block/header counts,
 block-hash lookup, block/header retrieval, and block system-fee calculation,
