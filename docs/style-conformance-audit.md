@@ -303,10 +303,12 @@ Node version reporting now follows the same endpoint-family split:
 construction, dynamic Policy storage readers, remote-ledger version projection,
 and hardfork/public-key formatting. `rpc_server_node/status.rs` owns
 `getconnectioncount`, `getpeers`, and shared local-node projection for node
-status/version handlers. `rpc_server_node/request.rs` owns the shared
-no-parameter validation for status/version methods and the Base64 wire-payload
-decoding for relay methods. The root `rpc_server_node/mod.rs` is now only the
-handler-registration facade and module map.
+status/version handlers, while `rpc_server_node/response.rs` owns the
+C#-compatible connection-count and peer-list JSON shapes.
+`rpc_server_node/request.rs` owns the shared no-parameter validation for
+status/version methods and the Base64 wire-payload decoding for relay methods.
+The root `rpc_server_node/mod.rs` is now only the handler-registration facade
+and module map.
 Blockchain storage methods now follow that request-boundary pattern:
 `rpc_server_blockchain/request_helpers.rs` owns contract identifier and Base64
 key/prefix/start parsing for `getcontractstate`, `getstorage`, and

@@ -12,6 +12,7 @@
 //!
 //! - `relay`: Transaction and block relay endpoint handlers.
 //! - `request`: Typed JSON-RPC request parsing helpers.
+//! - `response`: C#-compatible node status response construction.
 //! - `status`: Peer status endpoint handlers.
 //! - `tests`: Module-local tests and regression coverage.
 //! - `version`: C#-compatible `getversion` response construction.
@@ -20,6 +21,7 @@ use crate::server::rpc_server::RpcHandler;
 
 mod relay;
 mod request;
+mod response;
 mod status;
 mod version;
 
