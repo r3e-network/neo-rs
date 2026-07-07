@@ -10,6 +10,7 @@
 //!
 //! ## Contents
 //!
+//! - `proof`: State proof RPC handlers and proof payload codec.
 //! - `request`: Typed JSON-RPC request parsing helpers.
 //! - `response`: Typed JSON-RPC response construction helpers.
 //! - `tests`: Module-local tests and regression coverage.
@@ -19,30 +20,20 @@ use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use neo_crypto::mpt_trie::{MptError, MptResult, MptStoreSnapshot, Trie};
+use neo_crypto::mpt_trie::{MptError, Trie};
 use neo_execution::contract_state::ContractState;
-use neo_io::MemoryReader;
 use neo_primitives::{UInt160, UInt256};
 use neo_state_service::StateStore;
 use neo_state_service::mpt_store::{MptReadSnapshot, MptStore};
 use neo_state_service::state_store::StateStoreLookup;
 use serde_json::{Value, json};
-use std::collections::HashSet;
 use std::sync::Arc;
 
+mod proof;
 mod request;
 mod response;
-use request::{FindStatesRequest, StateKeyRequest, StateRootRequest, VerifyProofRequest};
+use request::{FindStatesRequest, StateKeyRequest, StateRootRequest};
 use response::{FindStatesResponse, state_root_to_json};
-
-/// Upper bound on a proof storage key (mirrors C#
-/// `StateService.MaxKeyLength`: 64 key bytes + the i32 contract-id
-/// prefix).
-const MAX_PROOF_KEY_LENGTH: usize = 64 + std::mem::size_of::<i32>();
-
-/// Upper bound on a single proof node (an MPT node never exceeds the
-/// 1 KiB C# `Node.MaxLength` by far; allow ample slack).
-const MAX_PROOF_NODE_LENGTH: usize = 4096;
 
 /// `ContractManagement::ID` (C# `NativeContract.ContractManagement.Id`).
 const CONTRACT_MANAGEMENT_ID: i32 = -1;
@@ -55,25 +46,6 @@ const PREFIX_CONTRACT: u8 = 8;
 /// C# `StateServiceSettings.MaxFindResultItems` default (the plugin
 /// caps every `findstates` page at this many results).
 const MAX_FIND_RESULT_ITEMS: usize = 100;
-
-/// Zero-state snapshot used purely to pin `Trie`'s type parameter for
-/// the associated [`Trie::verify_proof`] call (which builds its own
-/// internal proof store and never touches the parameter type).
-struct ProofVerifySnapshot;
-
-impl MptStoreSnapshot for ProofVerifySnapshot {
-    fn try_get(&self, _key: &[u8]) -> MptResult<Option<Vec<u8>>> {
-        Ok(None)
-    }
-
-    fn put(&self, _key: Vec<u8>, _value: Vec<u8>) -> MptResult<()> {
-        Ok(())
-    }
-
-    fn delete(&self, _key: Vec<u8>) -> MptResult<()> {
-        Ok(())
-    }
-}
 
 /// RPC handler group for StateService methods.
 pub struct RpcServerState;
@@ -141,42 +113,6 @@ impl RpcServerState {
             })
             .ok_or_else(|| RpcException::from(RpcError::unknown_state_root()))?;
         Ok(state_root_to_json(&state_root))
-    }
-
-    /// `getproof(roothash, scripthash, key)` — C#
-    /// `StatePlugin.GetProof`: resolves the contract id under the
-    /// requested root, builds the Merkle proof for the storage key and
-    /// returns the Base64 proof payload (`VarBytes(storage_key)` +
-    /// `VarInt(count)` + `VarBytes` per node).
-    fn get_proof(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let mpt = Self::mpt_store(server)?;
-        let request = StateKeyRequest::parse_get_proof(params)?;
-
-        // One frozen view per request (C# `GetStoreSnapshot()`): the
-        // root gate and the trie walk read the same generation, so a
-        // concurrent block commit cannot prune nodes mid-walk.
-        let snapshot = mpt.snapshot();
-        Self::check_root_hash(&snapshot, &request.root_hash)?;
-        let mut trie = snapshot.open_trie(Some(request.root_hash));
-        let contract_id = Self::historical_contract_id(&mut trie, &request.script_hash)?;
-        let payload = Self::proof_payload(&mut trie, contract_id, &request.key)?;
-        Ok(Value::String(payload))
-    }
-
-    fn verify_proof(_server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let request = VerifyProofRequest::parse(params)?;
-        let (key, nodes) = Self::decode_proof_payload(&request.proof_bytes).ok_or_else(|| {
-            RpcException::from(RpcError::invalid_params().with_data("invalid proof payload"))
-        })?;
-        let proof: HashSet<Vec<u8>> = nodes.into_iter().collect();
-        let value = Trie::<ProofVerifySnapshot>::verify_proof(request.root_hash, &key, &proof)
-            .map_err(|_| {
-                RpcException::from(
-                    RpcError::verification_failed()
-                        .with_data("failed to verify state proof against supplied root"),
-                )
-            })?;
-        Ok(Value::String(BASE64_STANDARD.encode(value)))
     }
 
     /// `getstate(roothash, scripthash, key)` — C# `StatePlugin.GetState`:
@@ -319,23 +255,6 @@ impl RpcServerState {
         Ok(contract.id)
     }
 
-    /// C# `StatePlugin.GetProof(Trie, int, byte[])`: builds the proof
-    /// for `(contract_id, key)` and serializes the payload
-    /// (`UnknownStorageItem` when the key is not in the trie).
-    fn proof_payload(
-        trie: &mut Trie<MptReadSnapshot>,
-        contract_id: i32,
-        key: &[u8],
-    ) -> Result<String, RpcException> {
-        let storage_key = Self::storage_key_bytes(contract_id, key);
-        let proof = trie
-            .try_get_proof(&storage_key)
-            .map_err(|err| Self::trie_lookup_error("proof query", &err))?
-            .ok_or_else(|| RpcException::from(RpcError::unknown_storage_item()))?;
-        let nodes: Vec<Vec<u8>> = proof.into_iter().collect();
-        Ok(BASE64_STANDARD.encode(Self::encode_proof_payload(&storage_key, &nodes)?))
-    }
-
     /// Serializes `(contract_id, key)` as the C# `StorageKey.ToArray()`
     /// bytes the state trie is keyed by: little-endian `i32` id + key.
     fn storage_key_bytes(contract_id: i32, key: &[u8]) -> Vec<u8> {
@@ -371,18 +290,6 @@ impl RpcServerState {
         }
     }
 
-    /// Converts a `neo_io::IoError` from the in-memory `BinaryWriter` into
-    /// an internal RPC error. The current writer writes to a `Vec<u8>` and
-    /// cannot fail, but keeping the conversion in one place lets
-    /// `encode_proof_payload` use `?` and stay resilient to a future
-    /// streaming writer.
-    fn writer_error_to_rpc(err: neo_io::IoError) -> RpcException {
-        RpcException::from(
-            RpcError::internal_server_error()
-                .with_data(format!("proof payload encoding failed: {err}")),
-        )
-    }
-
     /// The state-root cache does not persist the MPT trie, so queries
     /// that must walk historical tries cannot be answered.
     fn proofs_unsupported() -> RpcException {
@@ -390,44 +297,6 @@ impl RpcServerState {
             "the state service in this build records validated state roots only and does not \
              persist the MPT trie required for state/proof queries",
         ))
-    }
-
-    /// Decodes the C# StateService proof payload: `VarBytes(key)` then
-    /// `VarInt(count)` proof nodes, each `VarBytes`.
-    fn decode_proof_payload(bytes: &[u8]) -> Option<(Vec<u8>, Vec<Vec<u8>>)> {
-        let mut reader = MemoryReader::new(bytes);
-        let key = reader.read_var_bytes(MAX_PROOF_KEY_LENGTH).ok()?;
-        let count = reader.read_var_int(u32::MAX as u64).ok()?;
-        let mut nodes = Vec::with_capacity(usize::try_from(count).ok()?);
-        for _ in 0..count {
-            nodes.push(reader.read_var_bytes(MAX_PROOF_NODE_LENGTH).ok()?);
-        }
-        Some((key, nodes))
-    }
-
-    /// Encodes the C# StateService proof payload (the inverse of
-    /// [`Self::decode_proof_payload`]): `WriteVarBytes(storage_key)`,
-    /// `WriteVarInt(count)`, then each node as `VarBytes` — the exact
-    /// layout `StatePlugin.GetProof` emits.
-    ///
-    /// Returns `Err` if the underlying `BinaryWriter` fails. The in-memory
-    /// `BinaryWriter` cannot fail in practice, but propagating the `?` here
-    /// ensures that any future writer change surfaces an internal error
-    /// instead of silently producing a truncated/malformed proof payload.
-    fn encode_proof_payload(key: &[u8], nodes: &[Vec<u8>]) -> Result<Vec<u8>, RpcException> {
-        let mut writer = neo_io::BinaryWriter::new();
-        writer
-            .write_var_bytes(key)
-            .map_err(Self::writer_error_to_rpc)?;
-        writer
-            .write_var_int(nodes.len() as u64)
-            .map_err(Self::writer_error_to_rpc)?;
-        for node in nodes {
-            writer
-                .write_var_bytes(node)
-                .map_err(Self::writer_error_to_rpc)?;
-        }
-        Ok(writer.into_bytes())
     }
 }
 

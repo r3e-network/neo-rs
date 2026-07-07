@@ -215,8 +215,10 @@ hot-path fixture builder now live in `chain_acc/metrics_tests.rs`, leaving
 The first `neo-rpc` typed-helper pass is in `rpc_server_state`: positional
 StateService request parsing now lives in `rpc_server_state/request.rs`, and
 state-root / `findstates` JSON construction lives in
-`rpc_server_state/response.rs`. The handler module now orchestrates services,
-tries, and proof generation instead of owning JSON parameter layout details.
+`rpc_server_state/response.rs`. State proof handlers and the C# proof-payload
+codec now live in `rpc_server_state/proof.rs`. The handler module now
+orchestrates services, tries, and high-level state workflows instead of owning
+JSON parameter layout or proof-wire details.
 The same split now covers token tracker handlers:
 `rpc_server_tokens_tracker/request.rs` owns account/time-window/token-id
 parsing, while `rpc_server_tokens_tracker/response.rs` owns common balance and
