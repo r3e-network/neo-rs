@@ -9,7 +9,7 @@ use crate::hardfork::HardforkManager;
 use neo_primitives::constants;
 use std::collections::HashMap;
 
-use super::{CommitteeParser, ProtocolSettings};
+use super::{ProtocolSettings, parse::CommitteeParser};
 
 impl ProtocolSettings {
     /// Returns the C# `ProtocolSettings.Default` fallback record.

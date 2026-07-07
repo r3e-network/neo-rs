@@ -116,11 +116,11 @@ High-signal clusters found during the first pass:
 - `neo-manifest` protocol types still depend on VM/runtime projection details
   (`neo_vm::Interoperable`, `neo_vm_rs::StackValue`). Core manifest models
   should keep stack adapters out of top-level domain flow.
-- `neo-config/src/settings/protocol.rs` still mixes serde `Value` parsing,
-  hardfork sequencing, and validation. Built-in network presets have been moved
-  to `settings/protocol/presets.rs`, and file/stream loading has been moved to
-  `settings/protocol/load.rs`; continue splitting parser/validation
-  responsibilities.
+- `neo-config/src/settings/protocol.rs` still owns hardfork sequencing and
+  validation. Built-in network presets have been moved to
+  `settings/protocol/presets.rs`, file/stream loading has been moved to
+  `settings/protocol/load.rs`, and JSON/raw config parsing has been moved to
+  `settings/protocol/parse.rs`; continue splitting validation responsibilities.
 - `neo-node/src/node/chain_acc/mod.rs` and `neo-node/src/node/fast_sync/mod.rs`
   are very large workflow modules. They should be split into domain files such
   as `format`, `reader`, `import`, `report`, `package`, `manifest`, and
@@ -199,9 +199,10 @@ local store did not durably reach the reported imported tip.
 
 Recommended next patches, in order:
 
-1. Continue splitting `neo-config/src/settings/protocol.rs` into protocol
-   parsing and validation modules now that built-in presets and loading live in
-   `settings/protocol/presets.rs` and `settings/protocol/load.rs`.
+1. Move `neo-config/src/settings/protocol.rs` hardfork sequencing and validation
+   into a protocol validation module now that built-in presets, loading, and
+   parsing live in `settings/protocol/presets.rs`, `settings/protocol/load.rs`,
+   and `settings/protocol/parse.rs`.
 2. Convert `neo-node/src/node/sync_metrics/mod.rs` internal
    `write!().expect("write metrics line")` calls to infallible string building
    or error-aware helpers.
