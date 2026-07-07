@@ -10,7 +10,8 @@
 //!
 //! ## Contents
 //!
-//! - `inventory`: inventory payload traits and records.
+//! - `address`: address validation against the node address version.
+//! - `inventory`: runtime service and plugin inventory lookup.
 //! - `request`: Typed JSON-RPC request parsing helpers.
 //! - `response`: Utility RPC response construction helpers.
 //! - `tests`: Module-local tests and regression coverage.
@@ -20,12 +21,12 @@ use serde_json::Value;
 use super::rpc_exception::RpcException;
 use super::rpc_server::{RpcHandler, RpcServer};
 
+mod address;
 mod inventory;
 mod request;
 mod response;
 
 use self::request::{NoParamsRequest, ValidateAddressRequest};
-use self::response::validate_address_to_json;
 
 /// RPC handler group for utility methods.
 pub struct RpcServerUtilities;
@@ -56,19 +57,6 @@ impl RpcServerUtilities {
     ) -> Result<Value, RpcException> {
         let request = ValidateAddressRequest::parse(params)?;
         Ok(server.validate_address(&request.address))
-    }
-}
-
-impl RpcServer {
-    /// Validate a Neo address against the node's configured address version.
-    #[must_use]
-    pub fn validate_address(&self, address: &str) -> Value {
-        let address_version = self.system().settings().address_version;
-        let is_valid =
-            neo_wallets::wallet_helper::WalletAddress::to_script_hash(address, address_version)
-                .is_ok();
-
-        validate_address_to_json(address, is_valid)
     }
 }
 
