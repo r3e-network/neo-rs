@@ -5,6 +5,13 @@ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use neo_state_service::StateRoot;
 use serde_json::{Map, Value, json};
 
+pub(super) fn state_height_to_json(index: Option<u32>) -> Value {
+    let index = index.map_or(Value::Null, |index| json!(index));
+    json!({
+        "localrootindex": index,
+        "validatedrootindex": index})
+}
+
 /// JSON response for `findstates`.
 pub(super) struct FindStatesResponse {
     first_proof: Option<String>,

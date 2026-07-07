@@ -22,7 +22,7 @@ use crate::server::rpc_server::{RpcHandler, RpcServer};
 use neo_state_service::StateStore;
 use neo_state_service::mpt_store::MptStore;
 use neo_state_service::state_store::StateStoreLookup;
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::sync::Arc;
 
 mod proof;
@@ -30,7 +30,7 @@ mod request;
 mod response;
 mod state_queries;
 use request::{NoParamsRequest, StateRootRequest};
-use response::state_root_to_json;
+use response::{state_height_to_json, state_root_to_json};
 
 /// C# `StateServiceSettings.MaxFindResultItems` default (the plugin
 /// caps every `findstates` page at this many results).
@@ -76,17 +76,12 @@ impl RpcServerState {
         // verification pipeline runs; fall back to the live MptStore, which is
         // written by the block-apply pipeline, so a running node reports a real
         // height instead of null.
-        let index = state_store
-            .current_local_index()
-            .or_else(|| {
-                Self::mpt_store(server)
-                    .ok()
-                    .and_then(|mpt| mpt.current_local_root_index())
-            })
-            .map_or(Value::Null, |index| json!(index));
-        Ok(json!({
-            "localrootindex": index,
-            "validatedrootindex": index}))
+        let index = state_store.current_local_index().or_else(|| {
+            Self::mpt_store(server)
+                .ok()
+                .and_then(|mpt| mpt.current_local_root_index())
+        });
+        Ok(state_height_to_json(index))
     }
 
     fn get_state_root(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {

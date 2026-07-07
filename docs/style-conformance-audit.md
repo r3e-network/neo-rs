@@ -233,9 +233,10 @@ hot-path fixture builder now live in `chain_acc/metrics_tests.rs`, leaving
 The first `neo-rpc` typed-helper pass is in `rpc_server_state`: positional
 StateService request parsing now lives in `rpc_server_state/request.rs`, and
 `getstateheight` shares the same no-parameter request validation as other
-zero-argument RPC methods. State-root / `findstates` JSON construction lives in
-`rpc_server_state/response.rs`. State proof handlers and the C# proof-payload
-codec now live in `rpc_server_state/proof.rs`. Historical trie lookup mechanics
+zero-argument RPC methods. State-height, state-root, and `findstates` JSON
+construction lives in `rpc_server_state/response.rs`. State proof handlers and
+the C# proof-payload codec now live in `rpc_server_state/proof.rs`. Historical
+trie lookup mechanics
 for `getstate` / `findstates`, including root gating, storage-key construction,
 and C#-compatible trie error mapping, now live in
 `rpc_server_state/state_queries.rs`. The handler module now owns only handler
