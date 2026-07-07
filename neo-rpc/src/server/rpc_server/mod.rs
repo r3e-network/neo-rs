@@ -10,19 +10,19 @@
 //!
 //! ## Contents
 //!
+//! - `handler`: RPC callback and handler descriptor bindings.
 //! - `http_policy`: HTTP policy helpers for the RPC server.
 //! - `lifecycle`: jsonrpsee startup, shutdown, and purge-task wiring.
+//! - `metrics`: Prometheus counters for RPC request/error totals.
 
+mod handler;
 mod http_policy;
 mod lifecycle;
+mod metrics;
 
 use parking_lot::{Mutex, RwLock, RwLockReadGuard};
-use prometheus::Counter;
-use serde_json::Value;
-use std::sync::LazyLock;
 use tokio::{sync::oneshot, task::JoinHandle};
 
-use tracing::warn;
 use uuid::Uuid;
 
 use std::collections::HashMap;
@@ -36,83 +36,14 @@ use super::rpc_error::RpcError;
 use super::rpc_remote_ledger::RemoteLedgerRpcClient;
 use super::rpc_server_settings::RpcServerConfig;
 use super::session::Session;
-use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 use neo_wallets::Wallet;
 
-/// Callback signature used by registered RPC handlers.
-pub type RpcCallback =
-    dyn Fn(&RpcServer, &[Value]) -> Result<Value, RpcException> + Send + Sync + 'static;
+pub use handler::{RpcCallback, RpcHandler};
+pub(crate) use handler::{protected_rpc_handler, rpc_handler};
+pub use metrics::{RPC_ERR_TOTAL, RPC_REQ_TOTAL};
 
 /// Type alias for wallet change callback to reduce complexity.
 pub type WalletChangeCallback = Arc<dyn Fn(Option<Arc<dyn Wallet>>) + Send + Sync>;
-
-/// Registered RPC method descriptor and callback.
-pub struct RpcHandler {
-    descriptor: RpcMethodDescriptor,
-    callback: Arc<RpcCallback>,
-}
-
-impl RpcHandler {
-    /// Create an RPC handler from a method descriptor and callback.
-    pub fn new(descriptor: RpcMethodDescriptor, callback: Arc<RpcCallback>) -> Self {
-        Self {
-            descriptor,
-            callback,
-        }
-    }
-
-    /// Return this handler's method descriptor.
-    #[must_use]
-    pub const fn descriptor(&self) -> &RpcMethodDescriptor {
-        &self.descriptor
-    }
-
-    /// Return a clone of this handler's callback.
-    #[must_use]
-    pub fn callback(&self) -> Arc<RpcCallback> {
-        Arc::clone(&self.callback)
-    }
-}
-
-pub(crate) fn rpc_handler(
-    name: &'static str,
-    func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
-) -> RpcHandler {
-    RpcHandler::new(RpcMethodDescriptor::new(name), Arc::new(func))
-}
-
-pub(crate) fn protected_rpc_handler(
-    name: &'static str,
-    func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
-) -> RpcHandler {
-    RpcHandler::new(RpcMethodDescriptor::new_protected(name), Arc::new(func))
-}
-
-/// Total number of RPC requests dispatched by this process.
-pub static RPC_REQ_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    let counter =
-        Counter::new("neo_rpc_requests_total", "Total RPC requests").unwrap_or_else(|_| {
-            Counter::new("neo_rpc_requests_total_invalid", "Invalid")
-                .expect("fallback counter creation should never fail")
-        });
-    if let Err(err) = prometheus::register(Box::new(counter.clone())) {
-        warn!("Failed to register neo_rpc_requests_total: {}", err);
-    }
-    counter
-});
-
-/// Total number of RPC requests that returned an RPC error.
-pub static RPC_ERR_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    let counter = Counter::new("neo_rpc_errors_total", "Total RPC errors").unwrap_or_else(|_| {
-        Counter::new("neo_rpc_errors_total_invalid", "Invalid")
-            .expect("fallback counter creation should never fail")
-    });
-    if let Err(err) = prometheus::register(Box::new(counter.clone())) {
-        warn!("Failed to register neo_rpc_errors_total: {}", err);
-    }
-    counter
-});
 
 /// JSON-RPC server for a Neo node.
 pub struct RpcServer {

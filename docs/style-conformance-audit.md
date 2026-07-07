@@ -271,8 +271,10 @@ validator, and candidate projections over `NativeQueries`; `mod.rs` now keeps
 only registration plus the remaining block/header legacy handlers.
 RPC transport lifecycle follows the same split:
 `rpc_server/lifecycle.rs` owns jsonrpsee startup, shutdown, TLS placeholder
-handling, DoS-limit builder wiring, and session-purge task wiring; the root
-`rpc_server/mod.rs` now stays focused on server state, handler registration,
+handling, DoS-limit builder wiring, and session-purge task wiring;
+`rpc_server/handler.rs` owns callback/descriptor bindings, and
+`rpc_server/metrics.rs` owns Prometheus request/error counters. The root
+`rpc_server/mod.rs` now stays focused on server state, registration maps,
 wallet/session accessors, and rate-limit policy.
 RPC dispatch has the same production/test boundary now:
 `dispatch/mod.rs` owns handler resolution, rate-limit checks, remote-ledger
