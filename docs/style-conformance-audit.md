@@ -251,6 +251,10 @@ Blockchain storage methods now follow that request-boundary pattern:
 key/prefix/start parsing for `getstorage` and `findstorage`, while
 `storage.rs` keeps contract resolution, storage lookup, pagination, and
 response construction.
+Blockchain mempool handling has been moved out of the large route map:
+`rpc_server_blockchain/mempool.rs` owns `getrawmempool` live-pool reads and
+response construction, while `request_helpers.rs` owns `shouldGetUnverified`
+parsing and `mod.rs` stays closer to registration plus remaining legacy groups.
 Smart-contract request parsing now follows the same rule:
 `smart_contract/request.rs` owns positional parsing for invocation, contract
 verification, iterator-session, and unclaimed-GAS handlers, including

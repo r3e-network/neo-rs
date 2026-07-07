@@ -75,6 +75,37 @@ fn non_negative_start_error() -> RpcException {
     )
 }
 
+pub(super) struct RawMemPoolRequest {
+    pub(super) include_unverified: bool,
+}
+
+impl RawMemPoolRequest {
+    pub(super) fn parse(params: &[Value]) -> Result<Self, RpcException> {
+        Ok(Self {
+            include_unverified: parse_should_get_unverified(params.first())?,
+        })
+    }
+}
+
+fn parse_should_get_unverified(value: Option<&Value>) -> Result<bool, RpcException> {
+    match value {
+        None => Ok(false),
+        Some(Value::Bool(value)) => Ok(*value),
+        Some(Value::Number(number)) => match number.as_u64() {
+            Some(0) => Ok(false),
+            Some(1) => Ok(true),
+            _ => Err(should_get_unverified_error()),
+        },
+        _ => Err(should_get_unverified_error()),
+    }
+}
+
+fn should_get_unverified_error() -> RpcException {
+    RpcException::from(
+        RpcError::invalid_params().with_data("shouldGetUnverified must be a boolean"),
+    )
+}
+
 impl RpcServerBlockchain {
     pub(super) fn parse_block_identifier(
         params: &[Value],

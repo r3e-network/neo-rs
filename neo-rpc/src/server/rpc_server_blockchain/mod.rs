@@ -12,6 +12,7 @@
 //!
 //! - `request_helpers`: RPC request parsing helpers.
 //! - `responses`: RPC response construction helpers.
+//! - `mempool`: Mempool RPC handlers.
 //! - `storage`: Contract-state and contract-storage RPC handlers.
 //! - `tests`: Module-local tests and regression coverage.
 
@@ -28,6 +29,7 @@ use crate::server::ledger_queries;
 use crate::server::native_queries;
 use serde_json::{Value, json};
 
+mod mempool;
 mod request_helpers;
 mod responses;
 mod storage;
@@ -210,64 +212,6 @@ impl RpcServerBlockchain {
             .map(neo_payloads::Transaction::system_fee)
             .sum();
         Ok(Value::String(system_fee.to_string()))
-    }
-
-    fn get_raw_mem_pool(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        if let Some(remote) = server.remote_ledger_rpc() {
-            return remote
-                .call("getrawmempool", params)
-                .map_err(RpcException::from);
-        }
-        let include_unverified = match params.first() {
-            None => false,
-            Some(Value::Bool(value)) => *value,
-            Some(Value::Number(number)) => match number.as_u64() {
-                Some(0) => false,
-                Some(1) => true,
-                _ => {
-                    return Err(RpcException::from(
-                        RpcError::invalid_params()
-                            .with_data("shouldGetUnverified must be a boolean"),
-                    ));
-                }
-            },
-            _ => {
-                return Err(RpcException::from(
-                    RpcError::invalid_params().with_data("shouldGetUnverified must be a boolean"),
-                ));
-            }
-        };
-
-        let pool = server.system().mempool();
-        if !include_unverified {
-            let hashes: Vec<Value> = pool
-                .verified_snapshot()
-                .iter()
-                .map(|item| Value::String(item.hash().to_string()))
-                .collect();
-            return Ok(Value::Array(hashes));
-        }
-
-        let (verified, unverified) = (pool.verified_snapshot(), pool.unverified_snapshot());
-
-        let store = server.system().store_cache();
-        let ledger = LedgerContract::new();
-        let height = ledger
-            .current_index(store.data_cache())
-            .map_err(internal_error)?;
-        let verified_hashes: Vec<Value> = verified
-            .iter()
-            .map(|item| Value::String(item.hash().to_string()))
-            .collect();
-        let unverified_hashes: Vec<Value> = unverified
-            .iter()
-            .map(|item| Value::String(item.hash().to_string()))
-            .collect();
-
-        Ok(json!({
-            "height": height,
-            "verified": verified_hashes,
-            "unverified": unverified_hashes}))
     }
 
     fn get_raw_transaction(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
