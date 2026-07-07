@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_execution::{ApplicationEngine, TriggerType};
 use neo_manifest::CallFlags;
 use neo_payloads::signer::Signer;
@@ -9,7 +8,7 @@ use neo_payloads::transaction_attribute::TransactionAttribute;
 use neo_payloads::witness::Witness;
 use neo_primitives::ContractParameterType;
 use rand::random;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_error_factory;
@@ -19,7 +18,9 @@ use neo_vm_rs::OpCode;
 
 use super::helpers::internal_error;
 use super::request::InvokeContractVerifyRequest;
-use super::response::{final_rpc_vm_state_string, stack_item_to_json_limited};
+use super::response::{
+    final_rpc_vm_state_string, insert_stack, invoke_result_base_to_json, stack_item_to_json_limited,
+};
 use super::script::contract_parameter_to_stack_value;
 
 pub(super) fn invoke_contract_verify(
@@ -130,18 +131,13 @@ pub(super) fn invoke_contract_verify(
         exception = Value::String(err.to_string());
     }
 
-    let mut result = json!({
-        "script": BASE64_STANDARD.encode(&invocation_script),
-        "state": state,
-        "gasconsumed": engine.fee_consumed().to_string(),
-        "exception": exception});
+    let mut result =
+        invoke_result_base_to_json(&invocation_script, state, engine.fee_consumed(), exception);
     if stack_error.is_none() {
-        if let Value::Object(ref mut obj) = result {
-            obj.insert("stack".to_string(), Value::Array(stack_items));
-        }
+        insert_stack(&mut result, stack_items);
     }
 
-    Ok(result)
+    Ok(Value::Object(result))
 }
 
 fn build_verification_invocation_script(
