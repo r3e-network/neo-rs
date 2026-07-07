@@ -646,7 +646,7 @@ mod transactions;
 #[test]
 fn dispatch_command_variants_is_exhaustive() {
     // The exhaustive match in `BlockchainService::dispatch` (in
-    // `service.rs`) is the real compile-time exhaustiveness
+    // `service/service/dispatch.rs`) is the real compile-time exhaustiveness
     // check. Any new variant added to `BlockchainCommand` will
     // fail to compile there until the dispatch arm is added. This
     // test documents that invariant and additionally verifies the
@@ -660,7 +660,7 @@ fn dispatch_command_variants_is_exhaustive() {
     // `unreachable!()`d because the test does not actually
     // invoke it; the function's job is to fail to compile when
     // the variant list drifts. The match has the same arm count
-    // as the real dispatch in `service.rs`.
+    // as the real dispatch in `service/service/dispatch.rs`.
     #[allow(dead_code, unreachable_code)]
     fn exhaustive_dispatch(_cmd: BlockchainCommand) -> std::convert::Infallible {
         match _cmd {
