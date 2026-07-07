@@ -332,6 +332,10 @@ and redacted debug formatting; and `rpc_server_settings/registry.rs` owns
 process-wide loading, validation, and lookup. The root
 `rpc_server_settings/mod.rs` now keeps only the module map, exception-policy
 enum, and public re-exports.
+RPC errors now follow the same catalog split: `rpc_error/catalog.rs` owns the
+C#-compatible named error constructors and contract-verification formatter,
+while `rpc_error/mod.rs` owns the `RpcError` record, data trimming, JSON
+projection, and `Display` / `Error` implementations.
 Shared RPC helpers now follow the same facade rule:
 `rpc_helpers/errors.rs` owns common `RpcException` constructors,
 `params.rs` owns generic positional parsing, `bytes.rs` owns Base64 and Neo
