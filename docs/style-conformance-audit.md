@@ -248,8 +248,9 @@ queries, and fee calculation. The same request module now also owns transfer,
 construction, signing, and relay. `rpc_server_wallet/lifecycle.rs` owns
 open/close, address creation/listing, and WIF import/export endpoints; the root
 keeps shared wallet runtime helpers used across lifecycle and transfer paths,
-while `rpc_server_wallet/errors.rs` owns wallet-domain error projection into
-RPC exceptions. `rpc_server_wallet/balance.rs` owns `getwalletbalance`,
+while `rpc_server_wallet/errors.rs` owns wallet-domain error projection and
+transfer insufficient-funds compatibility mapping into RPC exceptions.
+`rpc_server_wallet/balance.rs` owns `getwalletbalance`,
 `getwalletunclaimedgas`, and the native balance/unclaimed-GAS probe logic.
 `rpc_server_wallet/network_fee.rs` owns `calculatenetworkfee` request execution
 and wallet-account script projection.

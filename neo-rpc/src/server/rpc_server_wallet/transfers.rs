@@ -26,12 +26,14 @@ use crate::server::rpc_relay;
 use crate::server::rpc_server::RpcServer;
 use crate::server::wallet_compat;
 
-use super::errors::wallet_compat_failure;
+use super::RpcServerWallet;
+use super::errors::{
+    invalid_operation_transfer_error, send_from_transfer_error, wallet_compat_failure,
+};
 use super::request::{
     CancelTransactionRequest, SendManyOutputRequest, SendManyRequest, TransferRequest,
 };
 use super::support::signature_contract_pubkey;
-use super::{INVALID_OPERATION_HRESULT, RpcServerWallet};
 
 impl RpcServerWallet {
     pub(super) fn send_from(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -46,7 +48,7 @@ impl RpcServerWallet {
             request.amount,
             request.signers.as_deref(),
         )
-        .map_err(Self::send_from_transfer_error)
+        .map_err(send_from_transfer_error)
     }
 
     pub(super) fn send_to_address(
@@ -66,7 +68,7 @@ impl RpcServerWallet {
             request.amount,
             request.signers.as_deref(),
         )
-        .map_err(Self::invalid_operation_transfer_error)
+        .map_err(invalid_operation_transfer_error)
     }
 
     pub(super) fn send_many(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -99,7 +101,7 @@ impl RpcServerWallet {
             request.from,
             request.signers.as_deref(),
         )
-        .map_err(Self::invalid_operation_transfer_error)
+        .map_err(invalid_operation_transfer_error)
     }
 
     pub(super) fn cancel_transaction(
@@ -234,32 +236,6 @@ impl RpcServerWallet {
             return Err(non_positive_amount());
         }
         Ok(value)
-    }
-
-    fn send_from_transfer_error(err: RpcException) -> RpcException {
-        Self::map_insufficient_funds(err, |_| {
-            RpcException::from(
-                RpcError::invalid_request().with_data("Can not process this request."),
-            )
-        })
-    }
-
-    fn invalid_operation_transfer_error(err: RpcException) -> RpcException {
-        Self::map_insufficient_funds(err, |rpc_error| {
-            RpcException::new(INVALID_OPERATION_HRESULT, rpc_error.error_message())
-        })
-    }
-
-    fn map_insufficient_funds(
-        err: RpcException,
-        map_insufficient: impl FnOnce(RpcError) -> RpcException,
-    ) -> RpcException {
-        let rpc_error: RpcError = err.into();
-        if rpc_error.code() == RpcError::insufficient_funds_wallet().code() {
-            map_insufficient(rpc_error)
-        } else {
-            RpcException::from(rpc_error)
-        }
     }
 
     fn process_transfer(

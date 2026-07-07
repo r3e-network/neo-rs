@@ -1,7 +1,8 @@
 //! Wallet-domain error projection for RPC handlers.
 //!
-//! Wallet modules use this boundary to keep C#-compatible RPC error codes and
-//! messages centralized while handler files stay focused on request execution.
+//! Wallet modules use this boundary to keep C#-compatible RPC error codes,
+//! messages, and transfer compatibility mappings centralized while handler
+//! files stay focused on request execution.
 
 use neo_wallets::WalletError;
 
@@ -36,5 +37,29 @@ pub(super) fn wallet_failure(err: WalletError) -> RpcException {
             RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
         }
         other => RpcException::from(RpcError::wallet_not_supported().with_data(other.to_string())),
+    }
+}
+
+pub(super) fn send_from_transfer_error(err: RpcException) -> RpcException {
+    map_insufficient_funds(err, |_| {
+        RpcException::from(RpcError::invalid_request().with_data("Can not process this request."))
+    })
+}
+
+pub(super) fn invalid_operation_transfer_error(err: RpcException) -> RpcException {
+    map_insufficient_funds(err, |rpc_error| {
+        RpcException::new(super::INVALID_OPERATION_HRESULT, rpc_error.error_message())
+    })
+}
+
+fn map_insufficient_funds(
+    err: RpcException,
+    map_insufficient: impl FnOnce(RpcError) -> RpcException,
+) -> RpcException {
+    let rpc_error: RpcError = err.into();
+    if rpc_error.code() == RpcError::insufficient_funds_wallet().code() {
+        map_insufficient(rpc_error)
+    } else {
+        RpcException::from(rpc_error)
     }
 }
