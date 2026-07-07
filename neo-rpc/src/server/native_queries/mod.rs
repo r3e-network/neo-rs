@@ -10,84 +10,32 @@
 //!
 //! ## Contents
 //!
+//! - `execution`: Read-only native-call engine execution.
+//! - `registry`: Standard native-contract registry construction.
 //! - `result`: Native stack-result decoding.
 //! - `script`: C#-compatible dynamic-call script construction.
 
+mod execution;
+mod registry;
 mod result;
 mod script;
 
 use std::sync::Arc;
 
 use neo_error::{CoreError, CoreResult};
-use neo_execution::ApplicationEngine;
-use neo_manifest::CallFlags;
-use neo_primitives::{TriggerType, UInt160};
+use neo_primitives::UInt160;
 use neo_storage::persistence::DataCache;
-use neo_vm::StackItem;
-use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
 
 use crate::server::rpc_server::RpcServer;
+use execution::invoke_native_read;
 use result::{candidate_entries, stack_array_of_bytes};
-use script::{NativeArg, build_native_call_script};
+use script::NativeArg;
 
 /// Engine-script probes for native-contract reads.
 pub(crate) struct NativeQueries;
 
 impl NativeQueries {
-    /// Builds a [`neo_execution::NativeRegistry`] populated with the
-    /// standard native contracts. `NativeRegistry::new()` is *empty* by
-    /// design; the canonical contract set lives in
-    /// [`neo_native_contracts::standard_native_contracts`].
-    pub(crate) fn native_registry() -> neo_execution::NativeRegistry {
-        let mut registry = neo_execution::NativeRegistry::new();
-        for contract in neo_native_contracts::standard_native_contracts() {
-            registry.register(contract);
-        }
-        registry
-    }
-
-    /// Runs a single read-only native-method call against `snapshot` and
-    /// returns the top of the result stack. Faults are surfaced as errors
-    /// (the native reads probed here cannot fault on healthy state).
-    pub(crate) fn invoke_native_read(
-        server: &RpcServer,
-        snapshot: Arc<DataCache>,
-        contract: &UInt160,
-        method: &str,
-        args: &[NativeArg<'_>],
-    ) -> CoreResult<StackItem> {
-        let script = build_native_call_script(contract, method, args)?;
-
-        let system = server.system();
-        let settings = system.settings().as_ref().clone();
-        let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
-            TriggerType::Application,
-            None,
-            snapshot,
-            None,
-            settings,
-            server.settings().max_gas_invoke,
-            None,
-            Some(system.native_contract_provider()),
-        )
-        .map_err(|err| CoreError::other(err.to_string()))?;
-        engine
-            .load_script(script, CallFlags::READ_ONLY, None)
-            .map_err(|err| CoreError::other(err.to_string()))?;
-        let state = engine.execute_allow_fault();
-        if state != VMState::HALT {
-            return Err(CoreError::other(format!(
-                "native read '{method}' did not HALT (VM state: {state:?})"
-            )));
-        }
-        engine
-            .result_stack()
-            .peek(0)
-            .cloned()
-            .map_err(|err| CoreError::other(err.to_string()))
-    }
-
     /// `NEO.unclaimedGas(account, end)` — the amount of unclaimed GAS for
     /// `account` at the `end` block height.
     pub(crate) fn neo_unclaimed_gas(
@@ -98,7 +46,7 @@ impl NativeQueries {
         end: u32,
     ) -> CoreResult<BigInt> {
         let account_bytes = account.to_bytes();
-        let item = NativeQueries::invoke_native_read(
+        let item = invoke_native_read(
             server,
             snapshot,
             neo_hash,
@@ -118,8 +66,7 @@ impl NativeQueries {
         snapshot: Arc<DataCache>,
         neo_hash: &UInt160,
     ) -> CoreResult<Vec<Vec<u8>>> {
-        let item =
-            NativeQueries::invoke_native_read(server, snapshot, neo_hash, "getCommittee", &[])?;
+        let item = invoke_native_read(server, snapshot, neo_hash, "getCommittee", &[])?;
         stack_array_of_bytes(&item)
     }
 
@@ -129,13 +76,7 @@ impl NativeQueries {
         snapshot: Arc<DataCache>,
         neo_hash: &UInt160,
     ) -> CoreResult<Vec<Vec<u8>>> {
-        let item = NativeQueries::invoke_native_read(
-            server,
-            snapshot,
-            neo_hash,
-            "getNextBlockValidators",
-            &[],
-        )?;
+        let item = invoke_native_read(server, snapshot, neo_hash, "getNextBlockValidators", &[])?;
         stack_array_of_bytes(&item)
     }
 
@@ -145,8 +86,7 @@ impl NativeQueries {
         snapshot: Arc<DataCache>,
         neo_hash: &UInt160,
     ) -> CoreResult<Vec<(Vec<u8>, BigInt)>> {
-        let item =
-            NativeQueries::invoke_native_read(server, snapshot, neo_hash, "getCandidates", &[])?;
+        let item = invoke_native_read(server, snapshot, neo_hash, "getCandidates", &[])?;
         candidate_entries(&item)
     }
 
@@ -158,7 +98,7 @@ impl NativeQueries {
         neo_hash: &UInt160,
         pubkey: &[u8],
     ) -> CoreResult<BigInt> {
-        let item = NativeQueries::invoke_native_read(
+        let item = invoke_native_read(
             server,
             snapshot,
             neo_hash,

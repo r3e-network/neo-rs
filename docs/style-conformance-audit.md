@@ -318,9 +318,10 @@ Blockchain native/governance queries have moved out of the route map:
 validator, and candidate projections over `NativeQueries`.
 `native_queries/script.rs` owns the C# `EmitDynamicCall` bytecode layout for
 read-only native probes; `native_queries/result.rs` owns NEO stack-result
-decoding for committee, validator, and candidate probes; and
-`native_queries/mod.rs` keeps registry creation, engine execution, and public
-query method wiring.
+decoding for committee, validator, and candidate probes;
+`native_queries/execution.rs` owns read-only VM setup and HALT validation;
+`native_queries/registry.rs` owns standard native-contract registry
+construction; and `native_queries/mod.rs` keeps the public query facade.
 Blockchain block/header methods now follow the same route-facade split:
 `rpc_server_blockchain/blocks.rs` owns best hash, block/header counts,
 block-hash lookup, block/header retrieval, and block system-fee calculation.
