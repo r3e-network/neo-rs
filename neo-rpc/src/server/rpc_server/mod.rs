@@ -17,6 +17,7 @@
 //! - `rate_limit`: RPC-server rate-limit configuration and error mapping.
 //! - `registry`: RPC handler registration and transport method projection.
 //! - `sessions`: invoke-session storage and expiration helpers.
+//! - `wallet`: active-wallet state and wallet-change callbacks.
 
 mod handler;
 mod http_policy;
@@ -25,6 +26,7 @@ mod metrics;
 mod rate_limit;
 mod registry;
 mod sessions;
+mod wallet;
 
 use parking_lot::RwLock;
 use tokio::{sync::oneshot, task::JoinHandle};
@@ -37,15 +39,12 @@ use super::node_context::NodeContext;
 use super::rpc_error::RpcError;
 use super::rpc_remote_ledger::RemoteLedgerRpcClient;
 use super::rpc_server_settings::RpcServerConfig;
-use neo_wallets::Wallet;
 
 pub use handler::{RpcCallback, RpcHandler};
 pub(crate) use handler::{protected_rpc_handler, rpc_handler};
 pub use metrics::{RPC_ERR_TOTAL, RPC_REQ_TOTAL};
 use rate_limit::rate_limiter_from_settings;
-
-/// Type alias for wallet change callback to reduce complexity.
-pub type WalletChangeCallback = Arc<dyn Fn(Option<Arc<dyn Wallet>>) + Send + Sync>;
+pub use wallet::WalletChangeCallback;
 
 /// JSON-RPC server for a Neo node.
 pub struct RpcServer {
@@ -53,7 +52,7 @@ pub struct RpcServer {
     settings: RpcServerConfig,
     handler_lookup: Arc<RwLock<HashMap<String, Arc<RpcHandler>>>>,
     started: bool,
-    wallet: Arc<RwLock<Option<Arc<dyn Wallet>>>>,
+    wallet: wallet::WalletHandle,
     wallet_change_callback: Option<WalletChangeCallback>,
     /// Session storage using Mutex instead of `RwLock` to enforce exclusive access.
     ///
@@ -83,7 +82,7 @@ impl RpcServer {
             settings,
             handler_lookup: Arc::new(RwLock::new(HashMap::new())),
             started: false,
-            wallet: Arc::new(RwLock::new(None)),
+            wallet: wallet::new_wallet_handle(),
             wallet_change_callback: None,
             sessions: sessions::new_session_store(),
             server_task: None,
@@ -159,25 +158,6 @@ impl RpcServer {
     #[must_use]
     pub const fn is_started(&self) -> bool {
         self.started
-    }
-
-    /// Set or clear the wallet exposed to wallet RPC methods.
-    pub fn set_wallet(&self, wallet: Option<Arc<dyn Wallet>>) {
-        *self.wallet.write() = wallet;
-        if let Some(callback) = &self.wallet_change_callback {
-            callback(self.wallet.read().clone());
-        }
-    }
-
-    /// Return the wallet currently exposed to wallet RPC methods.
-    #[must_use]
-    pub fn wallet(&self) -> Option<Arc<dyn Wallet>> {
-        self.wallet.read().clone()
-    }
-
-    /// Install a callback invoked whenever the active wallet changes.
-    pub fn set_wallet_change_callback(&mut self, callback: Option<WalletChangeCallback>) {
-        self.wallet_change_callback = callback;
     }
 
     /// Return whether complete HTTP Basic RPC credentials are configured.
