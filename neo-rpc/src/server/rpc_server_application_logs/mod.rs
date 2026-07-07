@@ -10,19 +10,25 @@
 //!
 //! ## Contents
 //!
-//! - `rpc_server_application_logs`: application-log RPC endpoint implementation.
+//! - `request`: Typed JSON-RPC request parsing helpers.
+//! - `response`: Application-log response filtering helpers.
+//! - `tests`: Module-local tests and regression coverage.
 
 use crate::application_logs::ApplicationLogsService;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{
-    expect_uint256_param_with_message, internal_error, invalid_params,
-};
+use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
-use neo_primitives::TriggerType;
-use neo_primitives::UInt256;
 use serde_json::Value;
-use std::str::FromStr;
+
+mod request;
+mod response;
+
+use self::request::ApplicationLogRequest;
+
+#[cfg(test)]
+#[path = "../../tests/server/handlers/rpc_server_application_logs.rs"]
+mod tests;
 
 /// RPC handler group for the `ApplicationLogs` plugin methods.
 pub struct RpcServerApplicationLogs;
@@ -36,55 +42,24 @@ impl RpcServerApplicationLogs {
     }
 
     fn get_application_log(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let hash = Self::expect_hash_param(params, 0)?;
-        let trigger_filter = match params.get(1) {
-            None | Some(Value::Null) => None,
-            Some(Value::String(v)) if v.trim().is_empty() => None,
-            Some(Value::String(v)) => Some(v.trim().to_string()),
-            _ => {
-                return Err(invalid_params(
-                    "getapplicationlog expects string parameter 2",
-                ));
-            }
-        };
-
+        let request = ApplicationLogRequest::parse(params)?;
         let service = server
             .system()
             .get_service::<ApplicationLogsService>()
             .ok_or_else(|| internal_error("ApplicationLogs service not available"))?;
 
-        let mut raw = service
-            .get_block_log(&hash)
-            .or_else(|| service.get_transaction_log(&hash))
+        let raw = service
+            .get_block_log(&request.hash)
+            .or_else(|| service.get_transaction_log(&request.hash))
             .ok_or_else(|| {
                 RpcException::from(
                     RpcError::invalid_params().with_data("Unknown transaction/blockhash"),
                 )
             })?;
 
-        if let Some(filter) = trigger_filter {
-            if TriggerType::from_str(&filter).is_ok() {
-                if let Value::Object(obj) = &mut raw {
-                    if let Some(Value::Array(executions)) = obj.get_mut("executions") {
-                        executions.retain(|e| {
-                            e.get("trigger")
-                                .and_then(Value::as_str)
-                                .is_some_and(|v| v.eq_ignore_ascii_case(&filter))
-                        });
-                    }
-                }
-            }
-        }
-        Ok(raw)
-    }
-
-    #[inline]
-    fn expect_hash_param(params: &[Value], index: usize) -> Result<UInt256, RpcException> {
-        expect_uint256_param_with_message(
-            params,
-            index,
-            format!("getapplicationlog expects string parameter {}", index + 1),
-            "hash",
-        )
+        Ok(response::apply_trigger_filter(
+            raw,
+            request.trigger_filter.as_deref(),
+        ))
     }
 }

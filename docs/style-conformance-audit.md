@@ -229,6 +229,11 @@ queries, and fee calculation. The same request module now also owns transfer,
 `sendmany`, signer, and cancel-transaction parameter decoding, leaving
 `transfers.rs` focused on descriptor lookup, amount conversion, transaction
 construction, signing, and relay.
+ApplicationLogs now follows the same split: `rpc_server_application_logs/request.rs`
+owns hash and trigger-filter parsing, and `response.rs` owns the optional
+trigger filtering over stored C#-compatible log JSON. Direct handler tests cover
+transaction-log lookup, trigger filtering, unknown hashes, and missing service
+errors.
 
 Recommended next patches, in order:
 
