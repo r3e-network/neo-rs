@@ -4,6 +4,7 @@ use neo_native_contracts::LedgerContract;
 use serde_json::{Value, json};
 
 use super::RpcServerBlockchain;
+use super::request_helpers::{BlockHeightRequest, BlockPayloadRequest};
 use super::responses::{block_to_json, header_to_json};
 use crate::server::ledger_queries;
 use crate::server::model::block_hash_or_index::BlockHashOrIndex as RpcBlockHashOrIndex;
@@ -81,18 +82,18 @@ impl RpcServerBlockchain {
                 .call("getblockhash", params)
                 .map_err(RpcException::from);
         }
-        let height = Self::expect_u32_param(params, 0, "getblockhash")?;
+        let request = BlockHeightRequest::parse(params, "getblockhash")?;
         let store = server.system().store_cache();
         let ledger = LedgerContract::new();
         let current = ledger
             .current_index(store.data_cache())
             .map_err(internal_error)?;
-        if height > current {
+        if request.height > current {
             return Err(RpcException::from(RpcError::unknown_height()));
         }
 
         let hash = ledger
-            .get_block_hash(store.data_cache(), height)
+            .get_block_hash(store.data_cache(), request.height)
             .map_err(internal_error)?
             .ok_or_else(|| RpcException::from(RpcError::unknown_block()))?;
         Ok(Value::String(hash.to_string()))
@@ -102,12 +103,11 @@ impl RpcServerBlockchain {
         if let Some(remote) = server.remote_ledger_rpc() {
             return remote.call("getblock", params).map_err(RpcException::from);
         }
-        let identifier = Self::parse_block_identifier(params, "getblock")?;
-        let verbose = Self::parse_verbose(params.get(1))?;
+        let request = BlockPayloadRequest::parse(params, "getblock")?;
         let store = server.system().store_cache();
         let ledger = LedgerContract::new();
-        let block = Self::fetch_payload_block(&store, &identifier)?;
-        if verbose {
+        let block = Self::fetch_payload_block(&store, &request.identifier)?;
+        if request.verbose {
             let current_index = ledger
                 .current_index(store.data_cache())
                 .map_err(internal_error)?;
@@ -129,13 +129,12 @@ impl RpcServerBlockchain {
                 .call("getblockheader", params)
                 .map_err(RpcException::from);
         }
-        let identifier = Self::parse_block_identifier(params, "getblockheader")?;
-        let verbose = Self::parse_verbose(params.get(1))?;
+        let request = BlockPayloadRequest::parse(params, "getblockheader")?;
         let store = server.system().store_cache();
         let ledger = LedgerContract::new();
-        let block = Self::fetch_payload_block(&store, &identifier)?;
+        let block = Self::fetch_payload_block(&store, &request.identifier)?;
         let header = &block.header;
-        if verbose {
+        if request.verbose {
             let current_index = ledger
                 .current_index(store.data_cache())
                 .map_err(internal_error)?;
@@ -157,20 +156,22 @@ impl RpcServerBlockchain {
                 .call("getblocksysfee", params)
                 .map_err(RpcException::from);
         }
-        let height = Self::expect_u32_param(params, 0, "getblocksysfee")?;
+        let request = BlockHeightRequest::parse(params, "getblocksysfee")?;
         let store = server.system().store_cache();
         let ledger = LedgerContract::new();
         let current = ledger
             .current_index(store.data_cache())
             .map_err(internal_error)?;
-        if height > current {
+        if request.height > current {
             return Err(RpcException::from(RpcError::unknown_height()));
         }
 
-        let block =
-            ledger_queries::get_full_block(store.data_cache(), &RpcBlockHashOrIndex::Index(height))
-                .map_err(internal_error)?
-                .ok_or_else(|| RpcException::from(RpcError::unknown_block()))?;
+        let block = ledger_queries::get_full_block(
+            store.data_cache(),
+            &RpcBlockHashOrIndex::Index(request.height),
+        )
+        .map_err(internal_error)?
+        .ok_or_else(|| RpcException::from(RpcError::unknown_block()))?;
 
         let system_fee: i64 = block
             .transactions

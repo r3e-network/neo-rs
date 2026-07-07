@@ -18,6 +18,32 @@ use crate::server::rpc_helpers::{
 
 use super::RpcServerBlockchain;
 
+pub(super) struct BlockHeightRequest {
+    pub(super) height: u32,
+}
+
+impl BlockHeightRequest {
+    pub(super) fn parse(params: &[Value], method: &str) -> Result<Self, RpcException> {
+        Ok(Self {
+            height: RpcServerBlockchain::expect_u32_param(params, 0, method)?,
+        })
+    }
+}
+
+pub(super) struct BlockPayloadRequest {
+    pub(super) identifier: RpcBlockHashOrIndex,
+    pub(super) verbose: bool,
+}
+
+impl BlockPayloadRequest {
+    pub(super) fn parse(params: &[Value], method: &str) -> Result<Self, RpcException> {
+        Ok(Self {
+            identifier: RpcServerBlockchain::parse_block_identifier(params, method)?,
+            verbose: RpcServerBlockchain::parse_verbose(params.get(1))?,
+        })
+    }
+}
+
 pub(super) struct GetStorageRequest {
     pub(super) identifier: ContractNameOrHashOrId,
     pub(super) key_bytes: Vec<u8>,

@@ -325,7 +325,9 @@ decoding for committee, validator, and candidate probes;
 construction; and `native_queries/mod.rs` keeps the public query facade.
 Blockchain block/header methods now follow the same route-facade split:
 `rpc_server_blockchain/blocks.rs` owns best hash, block/header counts,
-block-hash lookup, block/header retrieval, and block system-fee calculation.
+block-hash lookup, block/header retrieval, and block system-fee calculation,
+while `request_helpers.rs` owns the typed height and block-payload request
+records for `getblockhash`, `getblock`, `getblockheader`, and `getblocksysfee`.
 The root `rpc_server_blockchain/mod.rs` is now only handler registration and
 module wiring.
 RPC transport lifecycle follows the same split:
