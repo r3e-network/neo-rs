@@ -35,10 +35,6 @@ mod dispatch;
 mod run_loop;
 mod store_reads;
 
-// `AddTransactionReply` is re-exported from `crate::command` for
-// downstream callers; the service uses it through that re-export.
-pub use crate::command::AddTransactionReply as _AddTransactionReplyAlias;
-
 /// Reth-style blockchain service.
 ///
 /// The service owns the command channel (mpsc), the event channel
