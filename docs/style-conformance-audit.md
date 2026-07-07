@@ -263,6 +263,11 @@ Blockchain native/governance queries have moved out of the route map:
 `rpc_server_blockchain/native.rs` owns native contract listing, committee,
 validator, and candidate projections over `NativeQueries`; `mod.rs` now keeps
 only registration plus the remaining block/header legacy handlers.
+RPC transport lifecycle follows the same split:
+`rpc_server/lifecycle.rs` owns jsonrpsee startup, shutdown, TLS placeholder
+handling, DoS-limit builder wiring, and session-purge task wiring; the root
+`rpc_server/mod.rs` now stays focused on server state, handler registration,
+wallet/session accessors, and rate-limit policy.
 Smart-contract request parsing now follows the same rule:
 `smart_contract/request.rs` owns positional parsing for invocation, contract
 verification, iterator-session, and unclaimed-GAS handlers, including
