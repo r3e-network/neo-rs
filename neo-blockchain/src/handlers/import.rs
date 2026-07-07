@@ -12,6 +12,7 @@ use crate::service::{BlockchainService, MempoolLike};
 use crate::service_context::BlockPersistContext;
 
 mod finalization;
+mod verification;
 
 impl<S, M> BlockchainService<S, M>
 where
@@ -131,48 +132,17 @@ where
                 }
             }
 
-            if import.verify {
-                let verify_result = if let Some(resources) = &batch_persist_resources {
-                    self.verify_import_block_with_pipeline(
+            if import.verify
+                && !self
+                    .verify_import_block_for_command(
                         block,
                         current_height,
                         bulk_sync,
-                        Arc::clone(&resources.settings),
-                        Arc::clone(&resources.snapshot),
-                        Some(resources.native_persist.provider()),
+                        batch_persist_resources.as_ref(),
                     )
                     .await
-                } else {
-                    let snapshot = match self.system.store_snapshot() {
-                        Some(snapshot) => snapshot,
-                        None => {
-                            warn!(
-                                target: "neo",
-                                height = index,
-                                "import aborted: store snapshot unavailable for block validation"
-                            );
-                            return ImportBlocksReply::ok_with_stats(imported, stats);
-                        }
-                    };
-                    self.verify_import_block_with_pipeline(
-                        block,
-                        current_height,
-                        bulk_sync,
-                        self.system.settings(),
-                        snapshot,
-                        self.system.native_contract_provider(),
-                    )
-                    .await
-                };
-                if let Err(error) = verify_result {
-                    warn!(
-                        target: "neo",
-                        %error,
-                        height = index,
-                        "import aborted: block verification failed"
-                    );
-                    return ImportBlocksReply::ok_with_stats(imported, stats);
-                }
+            {
+                return ImportBlocksReply::ok_with_stats(imported, stats);
             }
 
             if bulk_sync && let Some(resources) = &batch_persist_resources {

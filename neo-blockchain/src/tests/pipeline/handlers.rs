@@ -134,7 +134,7 @@ impl MempoolLike for RecordingMempool {
 #[test]
 fn verified_import_pipeline_uses_explicit_native_providers() {
     let source = include_str!("../../handlers/verification.rs");
-    let import_source = include_str!("../../handlers/import.rs");
+    let import_source = include_str!("../../handlers/import/verification.rs");
     let helper_start = source
         .find("fn verify_import_block_with_pipeline")
         .expect("verified import helper exists");
@@ -149,12 +149,12 @@ fn verified_import_pipeline_uses_explicit_native_providers() {
     );
 
     let import_start = import_source
-        .find("if import.verify")
-        .expect("verified import branch exists");
+        .find("pub(crate) async fn verify_import_block_for_command")
+        .expect("verified import command helper exists");
     let import_end = import_source[import_start..]
-        .find("if bulk_sync && let Some(resources)")
+        .find("if let Err(error) = verify_result")
         .map(|offset| import_start + offset)
-        .expect("persistence branch follows verified import branch");
+        .expect("verification result handling follows provider selection");
     let branch = &import_source[import_start..import_end];
 
     assert!(
