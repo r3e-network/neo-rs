@@ -10,14 +10,15 @@ use neo_payloads::signer::Signer;
 use neo_payloads::witness::Witness;
 use neo_primitives::UInt160;
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::expect_base64_param_with_decode_message;
 use crate::server::rpc_server::RpcServer;
 
 use super::helpers::{
-    expect_script_hash_param, expect_string_param, parse_contract_parameters,
-    parse_signers_and_witnesses,
+    expect_script_hash_param, expect_string_param, expect_u32_param, expect_uuid_param,
+    parse_contract_parameters, parse_signers_and_witnesses,
 };
 
 pub(super) struct InvokeFunctionRequest {
@@ -73,4 +74,32 @@ impl InvokeScriptRequest {
 
 fn parse_diagnostic_flag(value: Option<&Value>) -> bool {
     value.and_then(Value::as_bool).unwrap_or(false)
+}
+
+pub(super) struct TraverseIteratorRequest {
+    pub(super) session_id: Uuid,
+    pub(super) iterator_id: Uuid,
+    pub(super) count: u32,
+}
+
+impl TraverseIteratorRequest {
+    pub(super) fn parse(params: &[Value]) -> Result<Self, RpcException> {
+        Ok(Self {
+            session_id: expect_uuid_param(params, 0, "traverseiterator")?,
+            iterator_id: expect_uuid_param(params, 1, "traverseiterator")?,
+            count: expect_u32_param(params, 2, "traverseiterator")?,
+        })
+    }
+}
+
+pub(super) struct TerminateSessionRequest {
+    pub(super) session_id: Uuid,
+}
+
+impl TerminateSessionRequest {
+    pub(super) fn parse(params: &[Value]) -> Result<Self, RpcException> {
+        Ok(Self {
+            session_id: expect_uuid_param(params, 0, "terminatesession")?,
+        })
+    }
 }
