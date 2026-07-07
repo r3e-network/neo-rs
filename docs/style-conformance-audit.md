@@ -134,6 +134,9 @@ High-signal clusters found during the first pass:
   `logging/format.rs` owns operator-facing format parsing, and
   `logging/rotation.rs` owns file writer construction plus size-based archive
   rotation.
+- `neo-node/src/node/services/mod.rs` now focuses on operational service
+  composition, while `services/store.rs` owns service-store opening, storage
+  config inheritance, and fast-sync backend mode.
 - `neo-rpc` has the largest raw JSON surface. Many `Value` uses are correct at
   the transport edge, but handler internals should move repeated request and
   response shapes into typed parameter/result modules.

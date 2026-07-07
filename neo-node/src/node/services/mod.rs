@@ -10,18 +10,22 @@
 //!
 //! ## Contents
 //!
-//! - `services`: operational service construction for state, indexer, logs, and token trackers.
+//! - `store`: service-store opening and fast-sync backend mode.
 
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context;
-use tracing::{debug, info};
+use tracing::info;
 
-use super::config::{NodeConfig, StorageSection, network_scoped_path, service_store_provider};
+use super::config::{NodeConfig, network_scoped_path, service_store_provider};
 use super::inventory_relay::FAST_SYNC_BURST_CAPACITY;
 
-type ServiceStore = Arc<dyn neo_storage::persistence::store::Store>;
+mod store;
+
+use store::ServiceStore;
+pub(in crate::node) use store::open_service_store_with_storage_config;
+
 type TokensTrackerRuntime = (
     neo_rpc::plugins::tokens_tracker::TokensTrackerSettings,
     ServiceStore,
@@ -251,29 +255,4 @@ fn build_tokens_tracker_services(
         "tokens tracker service enabled"
     );
     Ok((Some(service), Some((tracker_settings, tracker_store))))
-}
-
-pub(in crate::node) fn open_service_store_with_storage_config(
-    service_name: &'static str,
-    storage_provider: &str,
-    storage: &StorageSection,
-    path: &Path,
-    network: u32,
-    fast_sync: bool,
-) -> anyhow::Result<ServiceStore> {
-    use neo_storage::persistence::StoreFactory;
-
-    let path = network_scoped_path(path, network);
-    info!(target: "neo", service = service_name, backend = storage_provider, path = %path.display(), "opening service store");
-    let cfg = storage.storage_config_for_path(path);
-    let store = StoreFactory::get_store_with_config(storage_provider, cfg).map_err(|err| {
-        anyhow::anyhow!("failed to open {service_name} {storage_provider} store: {err}")
-    })?;
-    if fast_sync {
-        if let Some(fs) = store.as_fast_sync_store() {
-            fs.enable_fast_sync_mode();
-            debug!(target: "neo", service = service_name, "enabled service store fast-sync mode");
-        }
-    }
-    Ok(store)
 }
