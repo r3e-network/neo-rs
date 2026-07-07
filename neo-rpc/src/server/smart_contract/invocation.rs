@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crate::server::rpc_helpers::expect_base64_param_with_decode_message;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::signer::Signer;
@@ -25,10 +24,9 @@ use neo_vm_rs::VmState as VMState;
 
 use super::helpers::{
     build_dynamic_call_script, diagnostic_invocation_to_json, diagnostic_storage_changes,
-    expect_script_hash_param, expect_string_param, final_rpc_vm_state_string, internal_error,
-    notification_to_json, parse_contract_parameters, parse_signers_and_witnesses,
-    stack_item_to_json,
+    final_rpc_vm_state_string, internal_error, notification_to_json, stack_item_to_json,
 };
+use super::request::{InvokeFunctionRequest, InvokeScriptRequest};
 
 const TRANSACTION_TYPE_NAME: &str = "Neo.Network.P2P.Payloads.Transaction";
 
@@ -45,33 +43,27 @@ struct PendingSignatureItem {
 }
 
 pub(super) fn invoke_function(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-    let script_hash = expect_script_hash_param(params, 0, "invokefunction")?;
-    let operation = expect_string_param(params, 1, "invokefunction")?;
-    let parameters = parse_contract_parameters(params.get(2))?;
-    let (signers, witnesses) = parse_signers_and_witnesses(server, params.get(3))?;
-    let use_diagnostic = params
-        .get(4)
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-
-    let script = build_dynamic_call_script(script_hash, &operation, &parameters)?;
-    execute_script(server, script, signers, witnesses, use_diagnostic)
+    let request = InvokeFunctionRequest::parse(server, params)?;
+    let script =
+        build_dynamic_call_script(request.script_hash, &request.operation, &request.parameters)?;
+    execute_script(
+        server,
+        script,
+        request.signers,
+        request.witnesses,
+        request.use_diagnostic,
+    )
 }
 
 pub(super) fn invoke_script(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-    let script = expect_base64_param_with_decode_message(
-        params,
-        0,
-        "invokescript",
-        "invalid script payload",
-    )?;
-    let (signers, witnesses) = parse_signers_and_witnesses(server, params.get(1))?;
-    let use_diagnostic = params
-        .get(2)
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-
-    execute_script(server, script, signers, witnesses, use_diagnostic)
+    let request = InvokeScriptRequest::parse(server, params)?;
+    execute_script(
+        server,
+        request.script,
+        request.signers,
+        request.witnesses,
+        request.use_diagnostic,
+    )
 }
 
 fn execute_script(
