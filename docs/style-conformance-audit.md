@@ -256,6 +256,12 @@ Node relay methods now follow the same boundary:
 `rpc_server_node/request.rs` owns Base64 decoding and Neo wire-payload
 deserialization for `sendrawtransaction` and `submitblock`; the root handler
 keeps relay submission and relay-result mapping.
+Node version reporting now follows the same endpoint-family split:
+`rpc_server_node/version.rs` owns C#-compatible `getversion` response
+construction, dynamic Policy storage readers, remote-ledger version projection,
+and hardfork/public-key formatting. The root `rpc_server_node/mod.rs` keeps
+handler registration, peer status handlers, relay submission, and shared local
+node access.
 Blockchain storage methods now follow that request-boundary pattern:
 `rpc_server_blockchain/request_helpers.rs` owns contract identifier and Base64
 key/prefix/start parsing for `getstorage` and `findstorage`, while
