@@ -219,6 +219,12 @@ state-root / `findstates` JSON construction lives in
 codec now live in `rpc_server_state/proof.rs`. The handler module now
 orchestrates services, tries, and high-level state workflows instead of owning
 JSON parameter layout or proof-wire details.
+Parameter conversion now follows the same module-map rule:
+`parameter_converter/scalar.rs` owns string, boolean, numeric, Base64 bytes,
+and UUID `RpcConvertible` implementations. The root
+`parameter_converter/mod.rs` keeps the converter facade, domain identifier
+conversions, contract-parameter conversion, and shared helper functions used by
+signer/domain parsers.
 The same split now covers token tracker handlers:
 `rpc_server_tokens_tracker/request.rs` owns account/time-window/token-id
 parsing, while `rpc_server_tokens_tracker/response.rs` owns common balance and

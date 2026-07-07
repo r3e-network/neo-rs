@@ -1,10 +1,12 @@
 use super::*;
+use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use neo_config::ProtocolSettings;
 use neo_payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 use neo_primitives::ContractParameterType;
 use neo_primitives::{UInt160, UInt256};
-use neo_serialization::json::{JArray, JObject, JToken};
+use neo_serialization::json::{JArray, JObject, JToken, MAX_SAFE_INTEGER};
+use uuid::Uuid;
 
 fn ctx() -> ConversionContext {
     ConversionContext::new(ProtocolSettings::default().address_version)
