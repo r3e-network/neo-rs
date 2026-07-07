@@ -197,18 +197,18 @@ clearing the fast-sync marker. This is not full reference-node/state-root
 validation; it only prevents marking a fast-sync package complete when the
 local store did not durably reach the reported imported tip.
 
+The fast-sync reference proof now follows that local durability gate with
+optional reference RPC validation: it fetches and decodes the raw `getblock`
+payload at the imported tip, compares the decoded block height and hash, and
+compares `getstateroot` when a local StateService root is available.
+
 Recommended next patches, in order:
 
-1. Convert `neo-node/src/node/sync_metrics/mod.rs` internal
-   `write!().expect("write metrics line")` calls to infallible string building
-   or error-aware helpers.
-2. Add reference RPC `getblock` / `getstateroot` validation after fast-sync
-   package import so local durability is followed by consensus/state proof.
-3. Split `neo-node/src/node/chain_acc/mod.rs` tests from implementation if any
+1. Split `neo-node/src/node/chain_acc/mod.rs` tests from implementation if any
    remaining test-only code is embedded in production paths.
-4. Add typed request/response helpers for one `neo-rpc` handler group, then use
+2. Add typed request/response helpers for one `neo-rpc` handler group, then use
    that pattern for the rest.
-5. Centralize GUI lock handling in `neo-gui` before fixing individual
+3. Centralize GUI lock handling in `neo-gui` before fixing individual
    `lock().unwrap()` call sites.
-6. Add comments to every remaining production `#[allow]` that explain the
+4. Add comments to every remaining production `#[allow]` that explain the
    protocol, FFI, generated-code, or C# parity reason.

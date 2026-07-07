@@ -17,6 +17,7 @@ use super::report::{
 use super::write_fast_sync_report_sidecar;
 use crate::node::chain_acc;
 use crate::node::config::NodeConfig;
+use neo_io::{BinaryWriter, Serializable};
 use neo_storage::persistence::store::Store;
 use serde_json::Value;
 use std::io::{Read, Write};
@@ -92,6 +93,18 @@ fn state_store_with_local_root(
     let root_hash = root_before.expect("root applied");
     assert_eq!(mpt.current_local_root(), Some((tip, root_hash)));
     (state_store, root_hash)
+}
+
+fn empty_block(index: u32) -> neo_payloads::Block {
+    let mut header = neo_payloads::Header::new();
+    header.set_index(index);
+    neo_payloads::Block::from_parts(header, Vec::new())
+}
+
+fn serialized_hex<T: Serializable>(payload: &T) -> String {
+    let mut writer = BinaryWriter::new();
+    payload.serialize(&mut writer).expect("serialize payload");
+    hex::encode(writer.into_bytes())
 }
 
 fn import_report(
@@ -851,33 +864,35 @@ fn fast_sync_post_import_state_root_proof_rejects_stale_local_root() {
 }
 
 #[tokio::test]
-async fn fast_sync_reference_block_tip_proof_accepts_matching_upstream_hash() {
+async fn fast_sync_reference_block_tip_proof_accepts_matching_upstream_block() {
+    let block = empty_block(100);
     let imported_tip = chain_acc::LocalLedgerTip {
-        height: 100,
-        hash: neo_primitives::UInt256::from([0xAB; 32]),
+        height: block.index(),
+        hash: block.try_hash().expect("block hash"),
     };
-    let endpoint = serve_rpc_once(
-        "getblockhash",
-        serde_json::json!(imported_tip.hash.to_string()),
-    );
+    let endpoint = serve_rpc_once("getblock", serde_json::json!(serialized_hex(&block)));
 
     reference::verify_block_tip(&endpoint, &test_package(0, 100), imported_tip)
         .await
-        .expect("matching upstream block hash");
+        .expect("matching upstream raw block");
 }
 
 #[tokio::test]
-async fn fast_sync_reference_block_tip_proof_rejects_mismatched_upstream_hash() {
+async fn fast_sync_reference_block_tip_proof_rejects_mismatched_upstream_block_hash() {
     let imported_tip = chain_acc::LocalLedgerTip {
         height: 100,
         hash: neo_primitives::UInt256::from([0xAB; 32]),
     };
-    let upstream_hash = neo_primitives::UInt256::from([0xCD; 32]);
-    let endpoint = serve_rpc_once("getblockhash", serde_json::json!(upstream_hash.to_string()));
+    let upstream_block = empty_block(100);
+    let upstream_hash = upstream_block.try_hash().expect("block hash");
+    let endpoint = serve_rpc_once(
+        "getblock",
+        serde_json::json!(serialized_hex(&upstream_block)),
+    );
 
     let err = reference::verify_block_tip(&endpoint, &test_package(0, 100), imported_tip)
         .await
-        .expect_err("mismatched upstream block hash must fail");
+        .expect_err("mismatched upstream raw block hash must fail");
 
     assert!(
         err.to_string()
@@ -894,6 +909,37 @@ async fn fast_sync_reference_block_tip_proof_rejects_mismatched_upstream_hash() 
     );
     assert!(
         err.to_string().contains(&upstream_hash.to_string()),
+        "unexpected error: {err}"
+    );
+}
+
+#[tokio::test]
+async fn fast_sync_reference_block_tip_proof_rejects_wrong_upstream_block_height() {
+    let upstream_block = empty_block(99);
+    let imported_tip = chain_acc::LocalLedgerTip {
+        height: 100,
+        hash: upstream_block.try_hash().expect("block hash"),
+    };
+    let endpoint = serve_rpc_once(
+        "getblock",
+        serde_json::json!(serialized_hex(&upstream_block)),
+    );
+
+    let err = reference::verify_block_tip(&endpoint, &test_package(0, 100), imported_tip)
+        .await
+        .expect_err("wrong upstream block height must fail");
+
+    assert!(
+        err.to_string()
+            .contains("fast-sync reference block height mismatch"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.to_string().contains("imported height 100"),
+        "unexpected error: {err}"
+    );
+    assert!(
+        err.to_string().contains("upstream block height 99"),
         "unexpected error: {err}"
     );
 }

@@ -12,7 +12,8 @@ use serde_json::{Value, json};
 use tracing::warn;
 
 use super::client::rpc_call_blocking;
-use super::payload::{decode_remote_serialized_payload, parse_remote_mempool_hashes};
+use super::payload::parse_remote_mempool_hashes;
+use crate::node::rpc_payload::decode_remote_serialized_payload;
 
 /// Read-only ledger view backed by a remote JSON-RPC endpoint.
 ///

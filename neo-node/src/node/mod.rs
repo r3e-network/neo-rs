@@ -61,6 +61,7 @@ mod ledger_source;
 mod logging;
 mod observability;
 mod remote_ledger;
+mod rpc_payload;
 mod rpc_runtime;
 mod seeds;
 mod services;

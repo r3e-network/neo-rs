@@ -1,12 +1,13 @@
 //! Reference-node checks for fast-sync completion.
 
 use anyhow::Context;
-use neo_primitives::UInt256;
+use neo_io::{MemoryReader, Serializable};
 use std::sync::Arc;
 
 use super::local::LocalStateRootTip;
 use super::package::FastSyncPackage;
 use super::report::{FastSyncBlockReferenceProof, FastSyncStateRootReferenceProof};
+use crate::node::rpc_payload::decode_remote_serialized_payload;
 
 fn reference_rpc_client(endpoint: &str) -> anyhow::Result<neo_rpc::RpcClient> {
     let url = url::Url::parse(endpoint)
@@ -22,22 +23,42 @@ pub(super) async fn verify_block_tip(
     imported_tip: super::super::chain_acc::LocalLedgerTip,
 ) -> anyhow::Result<FastSyncBlockReferenceProof> {
     let client = reference_rpc_client(endpoint)?;
-    let upstream_hash = client
-        .get_block_hash(imported_tip.height)
+    let upstream_block = client
+        .get_block_hex(&imported_tip.height.to_string())
         .await
         .map_err(|err| {
             anyhow::anyhow!(
-                "fast-sync reference RPC getblockhash({}) failed for package {} at endpoint {}: {err}",
+                "fast-sync reference RPC getblock({}) raw failed for package {} at endpoint {}: {err}",
                 imported_tip.height,
                 package.filename,
                 endpoint
             )
         })?;
-    let upstream_hash = UInt256::parse(&upstream_hash).map_err(|err| {
+    let upstream_block = decode_remote_serialized_payload(&upstream_block, "block", |bytes| {
+        neo_payloads::Block::deserialize(&mut MemoryReader::new(bytes))
+            .map_err(|err| anyhow::anyhow!("deserializing fast-sync reference block: {err}"))
+    })
+    .map_err(|err| {
         anyhow::anyhow!(
-            "fast-sync reference RPC returned invalid block hash for height {} from package {}: {err}",
+            "fast-sync reference RPC returned invalid raw block for height {} from package {}: {err}",
             imported_tip.height,
             package.filename
+        )
+    })?;
+    let upstream_height = upstream_block.index();
+    if upstream_height != imported_tip.height {
+        anyhow::bail!(
+            "fast-sync reference block height mismatch for package {}: imported height {}, upstream block height {}",
+            package.filename,
+            imported_tip.height,
+            upstream_height
+        );
+    }
+    let upstream_hash = upstream_block.try_hash().map_err(|err| {
+        anyhow::anyhow!(
+            "fast-sync reference block hash calculation failed for package {} at height {}: {err}",
+            package.filename,
+            imported_tip.height
         )
     })?;
 
