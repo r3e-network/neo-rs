@@ -280,8 +280,12 @@ Blockchain transaction lookup now follows the same split:
 projection, while `request_helpers.rs` owns hash and verbose parsing.
 Blockchain native/governance queries have moved out of the route map:
 `rpc_server_blockchain/native.rs` owns native contract listing, committee,
-validator, and candidate projections over `NativeQueries`; `mod.rs` now keeps
-only registration plus the remaining block/header legacy handlers.
+validator, and candidate projections over `NativeQueries`.
+Blockchain block/header methods now follow the same route-facade split:
+`rpc_server_blockchain/blocks.rs` owns best hash, block/header counts,
+block-hash lookup, block/header retrieval, and block system-fee calculation.
+The root `rpc_server_blockchain/mod.rs` is now only handler registration and
+module wiring.
 RPC transport lifecycle follows the same split:
 `rpc_server/lifecycle.rs` owns jsonrpsee startup, shutdown, TLS placeholder
 handling, DoS-limit builder wiring, and session-purge task wiring;
