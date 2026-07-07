@@ -161,6 +161,10 @@ High-signal clusters found during the first pass:
   commands, `service/mutation.rs` owns persistence-aware mutation and rollback
   mechanics, and `service/backend.rs` owns durable backend kind, diagnostic
   paths, mutation mode selection, and persistence dispatch.
+- `neo-indexer/src/store/mod.rs` now keeps durable-store facade exports,
+  key/record/status module wiring, and test-only key re-exports, while
+  `store/lifecycle.rs` owns schema detection, legacy snapshot migration, full
+  store writes, and delta writes.
 - `neo-storage` exposes broad `dyn Store` / `dyn StoreSnapshot` boundaries.
   This is valid for backend selection, but hot loops should keep borrowed
   visitor APIs or concrete paths where possible.
