@@ -1,13 +1,13 @@
 //! JSON parsing and JSON-specific consistency checks for `ContractManifest`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use neo_error::{CoreError, CoreResult};
 use serde_json::Value;
 
 use crate::manifest::{
     ContractAbi, ContractGroup, ContractManifest, ContractPermission, ContractPermissionDescriptor,
-    WildCardContainer,
+    ManifestExtra, ManifestFeatures, WildCardContainer,
 };
 
 use super::MAX_MANIFEST_LENGTH;
@@ -124,12 +124,12 @@ impl ContractManifest {
         let manifest = Self {
             name,
             groups,
-            features: HashMap::new(),
+            features: ManifestFeatures::empty(),
             supported_standards,
             abi,
             permissions,
             trusts,
-            extra,
+            extra: extra.map(ManifestExtra::from_value).transpose()?,
         };
 
         manifest.validate_manifest_json_uniqueness()?;

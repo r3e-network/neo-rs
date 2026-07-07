@@ -7,7 +7,7 @@ use neo_primitives::constants::{MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
 
 use crate::manifest::{
     ContractAbi, ContractGroup, ContractManifest, ContractPermission, ContractPermissionDescriptor,
-    WildCardContainer,
+    ManifestExtra, ManifestFeatures, WildCardContainer,
 };
 
 fn map_json_error(err: serde_json::Error) -> IoError {
@@ -145,7 +145,8 @@ impl ContractManifest {
         }
 
         let features_json = reader.read_var_string(MAX_SCRIPT_LENGTH)?;
-        let features = serde_json::from_str(&features_json).map_err(map_json_error)?;
+        let features: ManifestFeatures =
+            serde_json::from_str(&features_json).map_err(map_json_error)?;
 
         let standards_count = reader.read_var_int(256)? as usize;
         let mut supported_standards = Vec::with_capacity(standards_count);
@@ -181,7 +182,7 @@ impl ContractManifest {
         let extra = if extra_json.is_empty() {
             None
         } else {
-            Some(serde_json::from_str(&extra_json).map_err(map_json_error)?)
+            Some(serde_json::from_str::<ManifestExtra>(&extra_json).map_err(map_json_error)?)
         };
 
         Ok(Self {

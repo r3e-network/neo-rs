@@ -6,7 +6,7 @@ use neo_execution::contract_state::ContractState;
 use neo_execution::native_contract::build_native_contract_state;
 use neo_manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
-    ContractPermission, NefFile, WildCardContainer,
+    ContractPermission, ManifestFeatures, NefFile, WildCardContainer,
 };
 use neo_payloads::signer::Signer;
 use neo_payloads::witness::Witness;
@@ -56,7 +56,7 @@ fn mock_contract_state(hash: UInt160, method: &str, params: usize) -> ContractSt
     let manifest = ContractManifest {
         name: "MockOracleClient".to_string(),
         groups: Vec::new(),
-        features: std::collections::HashMap::new(),
+        features: ManifestFeatures::empty(),
         supported_standards: Vec::new(),
         abi: ContractAbi::new(vec![descriptor], Vec::new()),
         permissions: vec![ContractPermission::default_wildcard()],

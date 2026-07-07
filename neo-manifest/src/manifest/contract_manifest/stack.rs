@@ -3,11 +3,10 @@
 use neo_error::CoreError;
 use neo_vm::{Interoperable, InteroperableError};
 use neo_vm_rs::StackValue;
-use serde_json::Value;
 
 use crate::manifest::{
     ContractAbi, ContractGroup, ContractManifest, ContractPermission, ContractPermissionDescriptor,
-    WildCardContainer,
+    ManifestExtra, WildCardContainer,
 };
 
 impl Interoperable for ContractManifest {
@@ -57,7 +56,9 @@ impl ContractManifest {
         };
 
         let extra_bytes = match &self.extra {
-            Some(extra) => neo_serialization::JsonSerializer::encode_value_csharp_compatible(extra),
+            Some(extra) => {
+                neo_serialization::JsonSerializer::encode_value_csharp_compatible(extra.as_value())
+            }
             None => b"null".to_vec(),
         };
 
@@ -211,7 +212,7 @@ impl ContractManifest {
     }
 }
 
-fn parse_extra_bytes(bytes: &[u8]) -> Result<Option<Value>, CoreError> {
+fn parse_extra_bytes(bytes: &[u8]) -> Result<Option<ManifestExtra>, CoreError> {
     if bytes.is_empty() {
         return Err(CoreError::invalid_format(
             "ContractManifest extra must not be empty",
@@ -227,9 +228,9 @@ fn parse_extra_bytes(bytes: &[u8]) -> Result<Option<Value>, CoreError> {
         }
     };
 
-    match serde_json::from_str::<Value>(text) {
-        Ok(Value::Null) => Ok(None),
-        Ok(value @ Value::Object(_)) => Ok(Some(value)),
+    match serde_json::from_str::<serde_json::Value>(text) {
+        Ok(serde_json::Value::Null) => Ok(None),
+        Ok(value @ serde_json::Value::Object(_)) => Ok(Some(ManifestExtra::from_value(value)?)),
         Ok(_) => Err(CoreError::invalid_format(
             "ContractManifest extra must be a JSON object or null",
         )),

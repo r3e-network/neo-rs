@@ -29,7 +29,7 @@ pub use call_flags::CallFlags;
 pub use manifest::{
     ContractAbi, ContractEventDescriptor, ContractGroup, ContractManifest,
     ContractMethodDescriptor, ContractParameterDefinition, ContractPermission,
-    ContractPermissionDescriptor, WildCardContainer,
+    ContractPermissionDescriptor, ManifestExtra, ManifestFeatures, WildCardContainer,
 };
 pub use method_token::MethodToken;
 pub use nef_file::NefFile;

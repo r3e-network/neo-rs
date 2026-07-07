@@ -60,9 +60,12 @@ fn deployable_manifest_json() -> Value {
 #[test]
 fn extra_with_ampersand_uses_csharp_escape() {
     let m = ContractManifest {
-        extra: Some(serde_json::json!({
-            "description": "NEO, GAS, & FLM on Neo N3"
-        })),
+        extra: Some(
+            ManifestExtra::from_value(serde_json::json!({
+                "description": "NEO, GAS, & FLM on Neo N3"
+            }))
+            .expect("object extra"),
+        ),
         ..Default::default()
     };
     let value = m.to_stack_value();
@@ -94,9 +97,12 @@ fn contract_manifest_projects_to_stack_value() {
             "description": "GAS & NEO"
         }),
     );
-    manifest.extra = Some(serde_json::json!({
-        "description": "NEO, GAS, & FLM on Neo N3"
-    }));
+    manifest.extra = Some(
+        ManifestExtra::from_value(serde_json::json!({
+            "description": "NEO, GAS, & FLM on Neo N3"
+        }))
+        .expect("object extra"),
+    );
 
     let value = manifest.to_stack_value();
     let StackValue::Struct(items) = value else {
@@ -150,7 +156,9 @@ fn contract_manifest_projects_to_stack_value() {
 fn contract_manifest_reads_stack_value() {
     let mut source = ContractManifest::new("sample".to_string());
     source.supported_standards = vec!["NEP-17".to_string()];
-    source.extra = Some(serde_json::json!({"description": "ok"}));
+    source.extra = Some(
+        ManifestExtra::from_value(serde_json::json!({"description": "ok"})).expect("object extra"),
+    );
 
     let mut decoded = ContractManifest::default();
     decoded
@@ -243,6 +251,14 @@ fn contract_manifest_validate_rejects_constructed_invariants() {
             ContractPermissionDescriptor::create_wildcard(),
         ]);
     });
+}
+
+#[test]
+fn manifest_extra_wrapper_accepts_only_json_objects() {
+    assert!(ManifestExtra::from_value(serde_json::json!({"description": "ok"})).is_ok());
+    assert!(ManifestExtra::from_value(serde_json::Value::Null).is_err());
+    assert!(ManifestExtra::from_value(serde_json::json!(["not", "object"])).is_err());
+    assert!(ManifestExtra::from_value(serde_json::json!("not object")).is_err());
 }
 
 #[test]

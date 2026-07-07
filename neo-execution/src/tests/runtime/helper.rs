@@ -4,8 +4,8 @@ use crate::native_contract_provider::{
 };
 use crate::{ContractState, NativeContract, NativeMethod};
 use neo_manifest::{
-    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractPermission, NefFile,
-    WildCardContainer,
+    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractPermission, ManifestFeatures,
+    NefFile, WildCardContainer,
 };
 use neo_payloads::{Block, Header, OracleResponse, Signer, Transaction, TransactionAttribute};
 use neo_primitives::{
@@ -120,7 +120,7 @@ fn build_verify_contract(hash: UInt160) -> ContractState {
     let manifest = ContractManifest {
         name: "VerifyContract".to_string(),
         groups: Vec::new(),
-        features: std::collections::HashMap::new(),
+        features: ManifestFeatures::empty(),
         supported_standards: Vec::new(),
         abi: ContractAbi::new(vec![verify], Vec::new()),
         permissions: vec![ContractPermission::default_wildcard()],

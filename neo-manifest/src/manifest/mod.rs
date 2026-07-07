@@ -43,7 +43,7 @@ pub mod wild_card_container;
 pub use contract_abi::ContractAbi;
 pub use contract_event_descriptor::ContractEventDescriptor;
 pub use contract_group::ContractGroup;
-pub use contract_manifest::ContractManifest;
+pub use contract_manifest::{ContractManifest, ManifestExtra, ManifestFeatures};
 pub use contract_method_descriptor::ContractMethodDescriptor;
 pub use contract_parameter_definition::ContractParameterDefinition;
 pub use contract_permission::ContractPermission;

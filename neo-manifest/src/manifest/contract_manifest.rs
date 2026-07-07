@@ -13,15 +13,17 @@ use neo_error::CoreResult;
 use neo_primitives::UInt160;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
-use std::collections::HashMap;
 
 /// Maximum length of a contract manifest in bytes.
 pub const MAX_MANIFEST_LENGTH: usize = u16::MAX as usize;
 
+mod fields;
 mod json;
 mod stack;
 mod validation;
 mod wire;
+
+pub use fields::{ManifestExtra, ManifestFeatures};
 
 /// Represents the manifest of a smart contract.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,7 +37,7 @@ pub struct ContractManifest {
 
     /// The features supported by the contract.
     #[serde(default)]
-    pub features: HashMap<String, Value>,
+    pub features: ManifestFeatures,
 
     /// The standards supported by the contract.
     #[serde(default, rename = "supportedstandards")]
@@ -54,7 +56,7 @@ pub struct ContractManifest {
 
     /// Additional metadata.
     #[serde(default)]
-    pub extra: Option<Value>,
+    pub extra: Option<ManifestExtra>,
 }
 
 impl ContractManifest {
@@ -63,7 +65,7 @@ impl ContractManifest {
         Self {
             name,
             groups: Vec::new(),
-            features: HashMap::new(),
+            features: ManifestFeatures::empty(),
             supported_standards: Vec::new(),
             abi: ContractAbi::default(),
             permissions: vec![ContractPermission::default_wildcard()],
@@ -77,7 +79,7 @@ impl ContractManifest {
         Self {
             name,
             groups: Vec::new(),
-            features: HashMap::new(),
+            features: ManifestFeatures::empty(),
             supported_standards: Vec::new(),
             abi: ContractAbi::default(),
             permissions: vec![ContractPermission::default_wildcard()],
@@ -130,7 +132,7 @@ impl Default for ContractManifest {
         Self {
             name: "DefaultContract".to_string(),
             groups: Vec::new(),
-            features: HashMap::new(),
+            features: ManifestFeatures::empty(),
             supported_standards: Vec::new(),
             abi: ContractAbi::default(),
             permissions: vec![ContractPermission::default_wildcard()],

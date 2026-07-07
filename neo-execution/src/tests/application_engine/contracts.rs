@@ -6,7 +6,7 @@ use neo_config::Hardfork;
 use neo_crypto::{ECCurve, ECPoint};
 use neo_manifest::{
     ContractAbi, ContractGroup, ContractManifest, ContractMethodDescriptor,
-    ContractParameterDefinition, ContractPermission, NefFile, WildCardContainer,
+    ContractParameterDefinition, ContractPermission, ManifestFeatures, NefFile, WildCardContainer,
 };
 use neo_payloads::{OracleResponse, Signer, Transaction, TransactionAttribute};
 use neo_primitives::{ContractParameterType, OracleResponseCode, WitnessScope};
@@ -512,7 +512,7 @@ fn build_mock_contract(hash: UInt160) -> ContractState {
     let manifest = ContractManifest {
         name: "MockContract".to_string(),
         groups: Vec::new(),
-        features: std::collections::HashMap::new(),
+        features: ManifestFeatures::empty(),
         supported_standards: Vec::new(),
         abi,
         permissions: vec![ContractPermission::default_wildcard()],
@@ -1075,7 +1075,7 @@ fn build_returning_mock(
     let manifest = ContractManifest {
         name: "ReturningMock".to_string(),
         groups: Vec::new(),
-        features: std::collections::HashMap::new(),
+        features: ManifestFeatures::empty(),
         supported_standards: Vec::new(),
         abi,
         permissions: vec![ContractPermission::default_wildcard()],
