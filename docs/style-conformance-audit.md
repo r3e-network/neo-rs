@@ -164,7 +164,10 @@ High-signal clusters found during the first pass:
   mechanics, and `service/backend.rs` owns durable backend kind, diagnostic
   paths, mutation mode selection, and persistence dispatch.
 - `neo-indexer/src/store/mod.rs` now keeps durable-store facade exports,
-  key/record/status module wiring, and test-only key re-exports, while
+  key/record/status module wiring, and test-only key re-exports.
+  `store/record_codec.rs` owns JSON serde for individual records,
+  `store/record_read.rs` owns lookup, paging, and filtered reads,
+  `store/record_write.rs` owns snapshot-to-record materialization and puts, and
   `store/lifecycle.rs` owns schema detection, legacy snapshot migration, full
   store writes, and delta writes.
 - `neo-storage` exposes broad `dyn Store` / `dyn StoreSnapshot` boundaries.

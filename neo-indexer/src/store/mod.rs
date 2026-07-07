@@ -12,12 +12,16 @@
 //!
 //! - `keys`: indexer store key builders and key-prefix constants.
 //! - `lifecycle`: store-backed indexer lifecycle, migration, and delta writes.
-//! - `records`: encoded indexer record pages and lookup helpers.
+//! - `record_codec`: JSON encoding and decoding for store records.
+//! - `record_read`: encoded record lookup, paging, and filtered reads.
+//! - `record_write`: snapshot-to-record materialization and writes.
 //! - `status`: store status summary helpers.
 
 mod keys;
 mod lifecycle;
-mod records;
+mod record_codec;
+mod record_read;
+mod record_write;
 mod status;
 
 pub(crate) use keys::{
@@ -26,7 +30,7 @@ pub(crate) use keys::{
     notification_by_transaction_prefix, transaction_by_block_prefix, transaction_by_hash_key,
 };
 pub(crate) use lifecycle::{read_indexer, write_indexer_delta};
-pub(crate) use records::{
+pub(crate) use record_read::{
     get_record, read_record_page, read_record_page_filtered, read_record_prefix_filtered,
 };
 pub(crate) use status::status;

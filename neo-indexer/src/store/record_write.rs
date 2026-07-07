@@ -1,9 +1,8 @@
-//! JSON record encoding and paged reads for the Neo indexer service store.
+//! Snapshot-to-record materialization and store writes.
 
 use std::collections::BTreeMap;
 
-use neo_storage::persistence::{SeekDirection, StoreSnapshot};
-use serde::{Serialize, de::DeserializeOwned};
+use neo_storage::persistence::StoreSnapshot;
 
 use super::keys::{
     STORE_SCHEMA_VERSION, STORE_SCHEMA_VERSION_KEY, account_transaction_key, block_by_hash_key,
@@ -11,83 +10,9 @@ use super::keys::{
     notification_by_chain_key, notification_by_contract_key, notification_by_transaction_key,
     transaction_by_chain_key, transaction_by_hash_key,
 };
+use super::record_codec::encode_record;
 use crate::error::{IndexerError, IndexerResult};
 use crate::model::{AccountTransactionRecord, IndexerSnapshot};
-
-pub(crate) fn get_record<T>(snapshot: &dyn StoreSnapshot, key: Vec<u8>) -> IndexerResult<Option<T>>
-where
-    T: DeserializeOwned,
-{
-    snapshot
-        .try_get(&key)
-        .map(|value| decode_record(key, value))
-        .transpose()
-}
-
-pub(crate) fn read_record_page<T>(
-    snapshot: &dyn StoreSnapshot,
-    prefix: &[u8],
-    skip: usize,
-    limit: usize,
-) -> IndexerResult<Vec<T>>
-where
-    T: DeserializeOwned,
-{
-    read_record_page_filtered(snapshot, prefix, |_| true, skip, limit)
-}
-
-pub(crate) fn read_record_page_filtered<T>(
-    snapshot: &dyn StoreSnapshot,
-    prefix: &[u8],
-    mut filter: impl FnMut(&T) -> bool,
-    skip: usize,
-    limit: usize,
-) -> IndexerResult<Vec<T>>
-where
-    T: DeserializeOwned,
-{
-    if limit == 0 {
-        return Ok(Vec::new());
-    }
-
-    let prefix = prefix.to_vec();
-    let mut skipped = 0usize;
-    let mut records = Vec::new();
-    for (key, value) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
-        let record = decode_record(key, value)?;
-        if !filter(&record) {
-            continue;
-        }
-        if skipped < skip {
-            skipped += 1;
-            continue;
-        }
-        records.push(record);
-        if records.len() >= limit {
-            break;
-        }
-    }
-    Ok(records)
-}
-
-pub(crate) fn read_record_prefix_filtered<T>(
-    snapshot: &dyn StoreSnapshot,
-    prefix: &[u8],
-    mut filter: impl FnMut(&T) -> bool,
-) -> IndexerResult<Vec<T>>
-where
-    T: DeserializeOwned,
-{
-    let prefix = prefix.to_vec();
-    let mut records = Vec::new();
-    for (key, value) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
-        let record = decode_record(key, value)?;
-        if filter(&record) {
-            records.push(record);
-        }
-    }
-    Ok(records)
-}
 
 pub(super) fn encode_records(
     indexer_snapshot: &IndexerSnapshot,
@@ -162,20 +87,6 @@ pub(super) fn encode_records(
     Ok(records)
 }
 
-pub(super) fn read_record_prefix<T>(
-    snapshot: &dyn StoreSnapshot,
-    prefix: &[u8],
-) -> IndexerResult<Vec<T>>
-where
-    T: DeserializeOwned,
-{
-    let prefix = prefix.to_vec();
-    snapshot
-        .find(Some(&prefix), SeekDirection::Forward)
-        .map(|(key, value)| decode_record(key, value))
-        .collect()
-}
-
 pub(super) fn put_records(
     snapshot: &mut dyn StoreSnapshot,
     records: BTreeMap<Vec<u8>, Vec<u8>>,
@@ -194,19 +105,9 @@ fn insert_record<T>(
     value: &T,
 ) -> IndexerResult<()>
 where
-    T: Serialize,
+    T: serde::Serialize,
 {
-    let bytes = serde_json::to_vec(value).map_err(|source| IndexerError::StoreRecordEncode {
-        key: key.clone(),
-        source,
-    })?;
+    let (key, bytes) = encode_record(key, value)?;
     records.insert(key, bytes);
     Ok(())
-}
-
-pub(super) fn decode_record<T>(key: Vec<u8>, value: Vec<u8>) -> IndexerResult<T>
-where
-    T: DeserializeOwned,
-{
-    serde_json::from_slice(&value).map_err(|source| IndexerError::StoreRecordDecode { key, source })
 }

@@ -8,7 +8,8 @@ use super::keys::{
     BLOCK_BY_HEIGHT_PREFIX, LEGACY_STORE_SNAPSHOT_KEY, NOTIFICATION_BY_CHAIN_PREFIX, STORE_PREFIX,
     STORE_SCHEMA_VERSION, STORE_SCHEMA_VERSION_KEY, TRANSACTION_BY_CHAIN_PREFIX,
 };
-use super::records;
+use super::record_read::read_record_prefix;
+use super::record_write::{encode_records, put_records};
 use crate::error::{IndexerError, IndexerResult};
 use crate::indexer::Indexer;
 use crate::model::IndexerSnapshot;
@@ -33,11 +34,11 @@ pub(crate) fn write_indexer(
     store: &Arc<dyn Store>,
     indexer_snapshot: &IndexerSnapshot,
 ) -> IndexerResult<()> {
-    let records = records::encode_records(indexer_snapshot)?;
+    let records = encode_records(indexer_snapshot)?;
     let mut snapshot = store.snapshot();
     let snapshot = Arc::get_mut(&mut snapshot).ok_or(IndexerError::StoreSnapshotShared)?;
     clear_indexer_store(snapshot)?;
-    records::put_records(snapshot, records)?;
+    put_records(snapshot, records)?;
     snapshot
         .try_commit()
         .map_err(|source| IndexerError::StoreRecordWrite { source })
@@ -48,8 +49,8 @@ pub(crate) fn write_indexer_delta(
     previous: &IndexerSnapshot,
     current: &IndexerSnapshot,
 ) -> IndexerResult<()> {
-    let previous_records = records::encode_records(previous)?;
-    let current_records = records::encode_records(current)?;
+    let previous_records = encode_records(previous)?;
+    let current_records = encode_records(current)?;
     let mut snapshot = store.snapshot();
     let snapshot = Arc::get_mut(&mut snapshot).ok_or(IndexerError::StoreSnapshotShared)?;
     snapshot
@@ -102,9 +103,9 @@ fn read_records(snapshot: &dyn StoreSnapshot) -> IndexerResult<Indexer> {
         });
     }
 
-    let blocks = records::read_record_prefix(snapshot, BLOCK_BY_HEIGHT_PREFIX)?;
-    let transactions = records::read_record_prefix(snapshot, TRANSACTION_BY_CHAIN_PREFIX)?;
-    let notifications = records::read_record_prefix(snapshot, NOTIFICATION_BY_CHAIN_PREFIX)?;
+    let blocks = read_record_prefix(snapshot, BLOCK_BY_HEIGHT_PREFIX)?;
+    let transactions = read_record_prefix(snapshot, TRANSACTION_BY_CHAIN_PREFIX)?;
+    let notifications = read_record_prefix(snapshot, NOTIFICATION_BY_CHAIN_PREFIX)?;
     Indexer::from_snapshot(IndexerSnapshot::with_notifications(
         blocks,
         transactions,

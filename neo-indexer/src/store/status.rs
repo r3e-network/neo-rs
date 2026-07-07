@@ -9,7 +9,7 @@ use super::keys::{
     ACCOUNT_TRANSACTION_PREFIX, BLOCK_BY_HEIGHT_PREFIX, NOTIFICATION_BY_ACCOUNT_PREFIX,
     NOTIFICATION_BY_CHAIN_PREFIX, TRANSACTION_BY_CHAIN_PREFIX,
 };
-use super::records;
+use super::record_codec::decode_record;
 use crate::error::IndexerResult;
 use crate::model::{BlockIndexRecord, IndexerStatus};
 
@@ -41,7 +41,7 @@ fn latest_block(snapshot: &dyn StoreSnapshot) -> IndexerResult<Option<BlockIndex
     snapshot
         .find(Some(&prefix), SeekDirection::Backward)
         .next()
-        .map(|(key, value)| records::decode_record(key, value))
+        .map(|(key, value)| decode_record(key, value))
         .transpose()
 }
 
