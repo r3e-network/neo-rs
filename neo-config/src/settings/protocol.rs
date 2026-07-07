@@ -1,8 +1,10 @@
-use crate::hardfork::{Hardfork, HardforkManager};
+use crate::hardfork::Hardfork;
+#[cfg(test)]
+use crate::hardfork::HardforkManager;
 use neo_crypto::ECPoint;
 #[cfg(test)]
 use neo_primitives::constants;
-use std::collections::{HashMap, hash_map::Entry};
+use std::collections::HashMap;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -62,6 +64,7 @@ neo_error::impl_error_from_struct!(neo_error::CoreError, ProtocolConfigError => 
 mod load;
 mod parse;
 mod presets;
+mod validation;
 
 /// Represents the protocol settings of the NEO system.
 /// Matches C# ProtocolSettings record exactly
@@ -158,59 +161,6 @@ impl ProtocolSettings {
     /// NEF/ABI even before their activation height.
     pub fn is_hardfork_defined(&self, hardfork: Hardfork) -> bool {
         self.hardforks.contains_key(&hardfork)
-    }
-
-    /// Ensures omitted hardforks are included.
-    /// Matches C# EnsureOmmitedHardforks method
-    fn ensure_omitted_hardforks(hardforks: HashMap<Hardfork, u32>) -> HashMap<Hardfork, u32> {
-        let mut hardforks = hardforks;
-        let mut encountered_configured = false;
-        for hardfork in HardforkManager::all() {
-            match hardforks.entry(hardfork) {
-                Entry::Occupied(_) => encountered_configured = true,
-                Entry::Vacant(entry) if !encountered_configured => {
-                    entry.insert(0);
-                }
-                _ => break,
-            }
-        }
-        hardforks
-    }
-
-    fn validate_hardfork_sequence(
-        hardforks: &HashMap<Hardfork, u32>,
-    ) -> Result<(), ProtocolConfigError> {
-        let all = HardforkManager::all();
-        let mut previous_index: Option<usize> = None;
-        let mut previous_height: Option<u32> = None;
-
-        for (index, hardfork) in all.iter().enumerate() {
-            if let Some(&height) = hardforks.get(hardfork) {
-                if let Some(prev_index) = previous_index {
-                    if index - prev_index > 1 {
-                        let missing = all[prev_index + 1];
-                        return Err(ProtocolConfigError::InvalidHardforkSequence(format!(
-                            "Hardfork {:?} is configured while {:?} is missing. Configure every hardfork sequentially.",
-                            hardfork, missing
-                        )));
-                    }
-                }
-
-                if let Some(prev_height) = previous_height {
-                    if height < prev_height {
-                        return Err(ProtocolConfigError::InvalidHardforkSequence(format!(
-                            "Hardfork {:?} activates at block {}, which is before previously configured height {}.",
-                            hardfork, height, prev_height
-                        )));
-                    }
-                }
-
-                previous_index = Some(index);
-                previous_height = Some(height);
-            }
-        }
-
-        Ok(())
     }
 }
 

@@ -116,11 +116,11 @@ High-signal clusters found during the first pass:
 - `neo-manifest` protocol types still depend on VM/runtime projection details
   (`neo_vm::Interoperable`, `neo_vm_rs::StackValue`). Core manifest models
   should keep stack adapters out of top-level domain flow.
-- `neo-config/src/settings/protocol.rs` still owns hardfork sequencing and
-  validation. Built-in network presets have been moved to
-  `settings/protocol/presets.rs`, file/stream loading has been moved to
-  `settings/protocol/load.rs`, and JSON/raw config parsing has been moved to
-  `settings/protocol/parse.rs`; continue splitting validation responsibilities.
+- `neo-config/src/settings/protocol.rs` is now a typed settings facade. Built-in
+  network presets live in `settings/protocol/presets.rs`, file/stream loading
+  lives in `settings/protocol/load.rs`, JSON/raw config parsing lives in
+  `settings/protocol/parse.rs`, and hardfork sequence rules live in
+  `settings/protocol/validation.rs`.
 - `neo-node/src/node/chain_acc/mod.rs` and `neo-node/src/node/fast_sync/mod.rs`
   are very large workflow modules. They should be split into domain files such
   as `format`, `reader`, `import`, `report`, `package`, `manifest`, and
@@ -199,20 +199,16 @@ local store did not durably reach the reported imported tip.
 
 Recommended next patches, in order:
 
-1. Move `neo-config/src/settings/protocol.rs` hardfork sequencing and validation
-   into a protocol validation module now that built-in presets, loading, and
-   parsing live in `settings/protocol/presets.rs`, `settings/protocol/load.rs`,
-   and `settings/protocol/parse.rs`.
-2. Convert `neo-node/src/node/sync_metrics/mod.rs` internal
+1. Convert `neo-node/src/node/sync_metrics/mod.rs` internal
    `write!().expect("write metrics line")` calls to infallible string building
    or error-aware helpers.
-3. Add reference RPC `getblock` / `getstateroot` validation after fast-sync
+2. Add reference RPC `getblock` / `getstateroot` validation after fast-sync
    package import so local durability is followed by consensus/state proof.
-4. Split `neo-node/src/node/chain_acc/mod.rs` tests from implementation if any
+3. Split `neo-node/src/node/chain_acc/mod.rs` tests from implementation if any
    remaining test-only code is embedded in production paths.
-5. Add typed request/response helpers for one `neo-rpc` handler group, then use
+4. Add typed request/response helpers for one `neo-rpc` handler group, then use
    that pattern for the rest.
-6. Centralize GUI lock handling in `neo-gui` before fixing individual
+5. Centralize GUI lock handling in `neo-gui` before fixing individual
    `lock().unwrap()` call sites.
-7. Add comments to every remaining production `#[allow]` that explain the
+6. Add comments to every remaining production `#[allow]` that explain the
    protocol, FFI, generated-code, or C# parity reason.
