@@ -18,6 +18,8 @@ use crate::server::rpc_helpers::{
 
 use super::RpcServerBlockchain;
 
+pub(super) use crate::server::rpc_helpers::NoParamsRequest;
+
 pub(super) struct BlockHeightRequest {
     pub(super) height: u32,
 }

@@ -4,7 +4,7 @@ use neo_native_contracts::LedgerContract;
 use serde_json::{Value, json};
 
 use super::RpcServerBlockchain;
-use super::request_helpers::{BlockHeightRequest, BlockPayloadRequest};
+use super::request_helpers::{BlockHeightRequest, BlockPayloadRequest, NoParamsRequest};
 use super::responses::{block_to_json, header_to_json};
 use crate::server::ledger_queries;
 use crate::server::model::block_hash_or_index::BlockHashOrIndex as RpcBlockHashOrIndex;
@@ -16,8 +16,9 @@ use crate::server::rpc_server::RpcServer;
 impl RpcServerBlockchain {
     pub(super) fn get_best_block_hash(
         server: &RpcServer,
-        _params: &[Value],
+        params: &[Value],
     ) -> Result<Value, RpcException> {
+        NoParamsRequest::parse(params, "getbestblockhash")?;
         if let Some(remote) = server.remote_ledger_rpc() {
             return remote
                 .call("getbestblockhash", &[])
@@ -33,8 +34,9 @@ impl RpcServerBlockchain {
 
     pub(super) fn get_block_count(
         server: &RpcServer,
-        _params: &[Value],
+        params: &[Value],
     ) -> Result<Value, RpcException> {
+        NoParamsRequest::parse(params, "getblockcount")?;
         if let Some(remote) = server.remote_ledger_rpc() {
             return remote
                 .call("getblockcount", &[])
@@ -51,8 +53,9 @@ impl RpcServerBlockchain {
 
     pub(super) fn get_block_header_count(
         server: &RpcServer,
-        _params: &[Value],
+        params: &[Value],
     ) -> Result<Value, RpcException> {
+        NoParamsRequest::parse(params, "getblockheadercount")?;
         if let Some(remote) = server.remote_ledger_rpc() {
             return remote
                 .call("getblockheadercount", &[])

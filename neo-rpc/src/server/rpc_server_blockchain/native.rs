@@ -18,13 +18,15 @@ use num_traits::ToPrimitive;
 use serde_json::{Value, json};
 
 use super::RpcServerBlockchain;
+use super::request_helpers::NoParamsRequest;
 use super::responses::contract_state_to_json;
 
 impl RpcServerBlockchain {
     pub(super) fn get_native_contracts(
         server: &RpcServer,
-        _params: &[Value],
+        params: &[Value],
     ) -> Result<Value, RpcException> {
+        NoParamsRequest::parse(params, "getnativecontracts")?;
         if let Some(remote) = server.remote_ledger_rpc() {
             return remote
                 .call("getnativecontracts", &[])
@@ -63,8 +65,9 @@ impl RpcServerBlockchain {
 
     pub(super) fn get_next_block_validators(
         server: &RpcServer,
-        _params: &[Value],
+        params: &[Value],
     ) -> Result<Value, RpcException> {
+        NoParamsRequest::parse(params, "getnextblockvalidators")?;
         if let Some(remote) = server.remote_ledger_rpc() {
             return remote
                 .call("getnextblockvalidators", &[])
@@ -103,8 +106,9 @@ impl RpcServerBlockchain {
 
     pub(super) fn get_candidates(
         server: &RpcServer,
-        _params: &[Value],
+        params: &[Value],
     ) -> Result<Value, RpcException> {
+        NoParamsRequest::parse(params, "getcandidates")?;
         if let Some(remote) = server.remote_ledger_rpc() {
             return remote
                 .call("getcandidates", &[])
@@ -144,8 +148,9 @@ impl RpcServerBlockchain {
 
     pub(super) fn get_committee(
         server: &RpcServer,
-        _params: &[Value],
+        params: &[Value],
     ) -> Result<Value, RpcException> {
+        NoParamsRequest::parse(params, "getcommittee")?;
         if let Some(remote) = server.remote_ledger_rpc() {
             return remote.call("getcommittee", &[]).map_err(RpcException::from);
         }

@@ -333,6 +333,9 @@ Blockchain block/header methods now follow the same route-facade split:
 block-hash lookup, block/header retrieval, and block system-fee calculation,
 while `request_helpers.rs` owns the typed height and block-payload request
 records for `getblockhash`, `getblock`, `getblockheader`, and `getblocksysfee`.
+The same request-helper module re-exports `NoParamsRequest` so blockchain
+status/native methods reject unexpected parameters before local lookup or
+remote-ledger forwarding.
 The root `rpc_server_blockchain/mod.rs` is now only handler registration and
 module wiring.
 RPC transport lifecycle follows the same split:

@@ -245,6 +245,8 @@ mod contracts;
 mod mempool;
 #[path = "../rpc_server_blockchain/native_and_errors.rs"]
 mod native_and_errors;
+#[path = "../rpc_server_blockchain/no_params.rs"]
+mod no_params;
 #[path = "../rpc_server_blockchain/storage.rs"]
 mod storage;
 #[path = "../rpc_server_blockchain/transactions.rs"]
