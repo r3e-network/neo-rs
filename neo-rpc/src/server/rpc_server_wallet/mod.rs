@@ -36,8 +36,6 @@ mod transfers;
 /// RPC handler group for wallet management and transfer methods.
 pub struct RpcServerWallet;
 
-const INVALID_OPERATION_HRESULT: i32 = -2146233079;
-
 impl RpcServerWallet {
     /// Registers all wallet RPC handlers.
     ///

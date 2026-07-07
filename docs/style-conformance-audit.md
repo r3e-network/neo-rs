@@ -279,8 +279,9 @@ lifecycle, transfer, signing, and fee paths, including wallet lookup, wallet
 future bridging, address-version script-hash parsing, and signature-contract
 pubkey extraction. `rpc_server_wallet/errors.rs` owns wallet-domain error
 projection and transfer insufficient-funds compatibility mapping into RPC
-exceptions. The root wallet module now keeps only handler registration and the
-C# invalid-operation compatibility code shared by error projection tests.
+exceptions, including the C# invalid-operation compatibility code shared by
+error projection tests. The root wallet module now keeps only handler
+registration.
 `rpc_server_wallet/balance.rs` owns `getwalletbalance`,
 `getwalletunclaimedgas`, and the native balance/unclaimed-GAS probe logic.
 `rpc_server_wallet/network_fee.rs` owns `calculatenetworkfee` request execution

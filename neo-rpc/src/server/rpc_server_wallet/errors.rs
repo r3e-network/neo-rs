@@ -10,6 +10,10 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::wallet_compat;
 
+/// .NET `InvalidOperationException.HResult`, used by C# wallet transfer
+/// compatibility responses.
+pub(super) const INVALID_OPERATION_HRESULT: i32 = -2146233079;
+
 pub(super) fn wallet_compat_failure(err: wallet_compat::WalletCompatError) -> RpcException {
     match err {
         wallet_compat::WalletCompatError::InsufficientFunds(_) => {
@@ -48,7 +52,7 @@ pub(super) fn send_from_transfer_error(err: RpcException) -> RpcException {
 
 pub(super) fn invalid_operation_transfer_error(err: RpcException) -> RpcException {
     map_insufficient_funds(err, |rpc_error| {
-        RpcException::new(super::INVALID_OPERATION_HRESULT, rpc_error.error_message())
+        RpcException::new(INVALID_OPERATION_HRESULT, rpc_error.error_message())
     })
 }
 

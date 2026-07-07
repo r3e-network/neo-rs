@@ -1,3 +1,4 @@
+use super::errors::INVALID_OPERATION_HRESULT;
 use super::support::signature_contract_pubkey;
 use super::*;
 use crate::server::rpc_error::RpcError;
