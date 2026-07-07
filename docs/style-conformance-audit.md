@@ -129,6 +129,11 @@ High-signal clusters found during the first pass:
   fast-sync mode cleanup, P2P wiring, inventory handling, RPC startup, and
   shutdown. It needs a facade-oriented startup workflow, but only after focused
   regression tests protect the modes.
+- `neo-node/src/node/logging/mod.rs` is now a facade for logging setup:
+  `logging/filter.rs` owns `RUST_LOG` / TOML directive selection,
+  `logging/format.rs` owns operator-facing format parsing, and
+  `logging/rotation.rs` owns file writer construction plus size-based archive
+  rotation.
 - `neo-rpc` has the largest raw JSON surface. Many `Value` uses are correct at
   the transport edge, but handler internals should move repeated request and
   response shapes into typed parameter/result modules.
