@@ -13,11 +13,11 @@ use neo_vm_rs::VmState as VMState;
 
 use super::diagnostics::{diagnostic_invocation_to_json, diagnostic_storage_changes};
 use super::helpers::{
-    build_dynamic_call_script, final_rpc_vm_state_string, internal_error, notification_to_json,
-    stack_item_to_json,
+    final_rpc_vm_state_string, internal_error, notification_to_json, stack_item_to_json,
 };
 use super::invocation_wallet::process_invoke_with_wallet;
 use super::request::{InvokeFunctionRequest, InvokeScriptRequest};
+use super::script::build_dynamic_call_script;
 
 pub(super) fn invoke_function(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
     let request = InvokeFunctionRequest::parse(server, params)?;

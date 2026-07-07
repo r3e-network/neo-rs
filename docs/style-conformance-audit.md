@@ -395,7 +395,8 @@ VM execution, iterator sessions, native GAS queries, and result projection,
 while `smart_contract/invocation_wallet.rs` owns wallet transaction
 materialization, available-account signing, and pending-signature projection for
 successful invokes. `smart_contract/diagnostics.rs` owns invoke diagnostic-tree
-and storage-change JSON projection.
+and storage-change JSON projection. `smart_contract/script.rs` owns dynamic-call
+script construction and contract-parameter stack conversion.
 
 Recommended next patches, in order:
 

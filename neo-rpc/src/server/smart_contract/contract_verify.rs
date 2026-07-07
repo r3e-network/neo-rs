@@ -19,6 +19,7 @@ use neo_vm_rs::OpCode;
 
 use super::helpers::{final_rpc_vm_state_string, internal_error, stack_item_to_json_limited};
 use super::request::InvokeContractVerifyRequest;
+use super::script::contract_parameter_to_stack_value;
 
 pub(super) fn invoke_contract_verify(
     server: &RpcServer,
@@ -147,7 +148,7 @@ fn build_verification_invocation_script(
 ) -> Result<Vec<u8>, RpcException> {
     let mut builder = neo_vm::script_builder::ScriptBuilder::new();
     for parameter in parameters.iter().rev() {
-        let item = super::helpers::contract_parameter_to_stack_value(parameter)?;
+        let item = contract_parameter_to_stack_value(parameter)?;
         builder
             .emit_push_stack_value(&item)
             .map_err(|err| internal_error(err.to_string()))?;
