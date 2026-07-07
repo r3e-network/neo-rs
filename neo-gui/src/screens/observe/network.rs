@@ -5,12 +5,13 @@ use egui_extras::{Column, TableBuilder};
 
 use crate::app::NeoGuiApp;
 use crate::rpc::Peer;
+use crate::sync::lock;
 use crate::theme;
 use crate::widgets;
 
 pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
     let (peers, conns) = {
-        let s = app.state.lock().unwrap();
+        let s = lock(&app.state, "NodeState");
         (
             s.peers.clone(),
             s.status.as_ref().map(|st| st.connections).unwrap_or(0),
@@ -23,14 +24,22 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
     ui.horizontal_wrapped(|ui| {
         let p = peers.clone().unwrap_or_default();
         widgets::stat_card(ui, "Connected", conns.to_string(), theme::OK);
-        widgets::stat_card(ui, "Known", p.unconnected.len().to_string(), theme::ACCENT_DIM);
+        widgets::stat_card(
+            ui,
+            "Known",
+            p.unconnected.len().to_string(),
+            theme::ACCENT_DIM,
+        );
         widgets::stat_card(ui, "Bad", p.bad.len().to_string(), theme::ERR);
     });
     ui.add_space(14.0);
 
     let Some(p) = peers else {
         widgets::card(ui, |ui| {
-            ui.label(egui::RichText::new("No peer data — is the node connected?").color(theme::TEXT_MUTED));
+            ui.label(
+                egui::RichText::new("No peer data — is the node connected?")
+                    .color(theme::TEXT_MUTED),
+            );
         });
         return;
     };
@@ -59,10 +68,18 @@ fn peer_table(ui: &mut Ui, id: &str, peers: &[Peer]) {
             .column(Column::auto().at_least(80.0))
             .header(22.0, |mut header| {
                 header.col(|ui| {
-                    ui.label(egui::RichText::new("Address").strong().color(theme::TEXT_MUTED));
+                    ui.label(
+                        egui::RichText::new("Address")
+                            .strong()
+                            .color(theme::TEXT_MUTED),
+                    );
                 });
                 header.col(|ui| {
-                    ui.label(egui::RichText::new("Port").strong().color(theme::TEXT_MUTED));
+                    ui.label(
+                        egui::RichText::new("Port")
+                            .strong()
+                            .color(theme::TEXT_MUTED),
+                    );
                 });
             })
             .body(|mut body| {

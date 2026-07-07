@@ -48,8 +48,10 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
     ui.heading("Signer & key management");
     ui.add_space(6.0);
     ui.label(
-        egui::RichText::new("Where the validator signing key lives and how transactions are ordered.")
-            .color(theme::TEXT_MUTED),
+        egui::RichText::new(
+            "Where the validator signing key lives and how transactions are ordered.",
+        )
+        .color(theme::TEXT_MUTED),
     );
     ui.add_space(12.0);
 
@@ -62,7 +64,10 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
                     .size(14.0)
                     .color(if selected { theme::ACCENT } else { theme::TEXT });
                 if ui
-                    .add_sized([ui.available_width(), 36.0], egui::SelectableLabel::new(selected, label))
+                    .add_sized(
+                        [ui.available_width(), 36.0],
+                        egui::SelectableLabel::new(selected, label),
+                    )
                     .clicked()
                 {
                     app.signer_backend = i;
@@ -74,11 +79,20 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
         ui.vertical(|ui| {
             let b = &BACKENDS[app.signer_backend.min(BACKENDS.len() - 1)];
             widgets::card(ui, |ui| {
-                ui.label(egui::RichText::new(b.name).size(16.0).strong().color(theme::ACCENT));
+                ui.label(
+                    egui::RichText::new(b.name)
+                        .size(16.0)
+                        .strong()
+                        .color(theme::ACCENT),
+                );
                 ui.add_space(6.0);
                 ui.label(egui::RichText::new(b.summary).color(theme::TEXT));
                 ui.add_space(12.0);
-                ui.label(egui::RichText::new("Example node config").color(theme::TEXT_MUTED).size(12.0));
+                ui.label(
+                    egui::RichText::new("Example node config")
+                        .color(theme::TEXT_MUTED)
+                        .size(12.0),
+                );
                 ui.add_space(4.0);
                 let mut cfg = b.config.to_string();
                 ui.add(

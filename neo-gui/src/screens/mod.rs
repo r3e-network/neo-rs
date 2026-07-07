@@ -72,8 +72,14 @@ pub enum Screen {
 /// Grouped navigation, in sidebar order.
 pub const NAV: &[(&str, &[Screen])] = &[
     ("OVERVIEW", &[Screen::Dashboard]),
-    ("OPERATE", &[Screen::Node, Screen::Configuration, Screen::Plugins]),
-    ("OBSERVE", &[Screen::Monitoring, Screen::Network, Screen::Integrations]),
+    (
+        "OPERATE",
+        &[Screen::Node, Screen::Configuration, Screen::Plugins],
+    ),
+    (
+        "OBSERVE",
+        &[Screen::Monitoring, Screen::Network, Screen::Integrations],
+    ),
     ("INTERACT", &[Screen::Contracts, Screen::Wallet]),
     ("SECURE", &[Screen::Keys]),
     ("SYSTEM", &[Screen::Settings]),

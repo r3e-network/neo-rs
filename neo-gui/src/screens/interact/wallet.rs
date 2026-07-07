@@ -8,6 +8,7 @@ use egui::Ui;
 use serde_json::json;
 
 use crate::app::NeoGuiApp;
+use crate::sync::lock;
 use crate::theme;
 use crate::widgets;
 
@@ -44,7 +45,10 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
             });
         ui.add_space(10.0);
         ui.horizontal(|ui| {
-            if ui.button(egui::RichText::new("Open wallet").strong()).clicked() {
+            if ui
+                .button(egui::RichText::new("Open wallet").strong())
+                .clicked()
+            {
                 let params = json!([app.wallet_path.clone(), app.wallet_password.clone()]);
                 app.run_rpc_to(ui.ctx(), "openwallet", params, app.wallet_out.clone());
             }
@@ -52,7 +56,12 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
                 app.run_rpc_to(ui.ctx(), "listaddress", json!([]), app.wallet_out.clone());
             }
             if ui.button("Balances").clicked() {
-                app.run_rpc_to(ui.ctx(), "getwalletbalance", json!([]), app.wallet_out.clone());
+                app.run_rpc_to(
+                    ui.ctx(),
+                    "getwalletbalance",
+                    json!([]),
+                    app.wallet_out.clone(),
+                );
             }
             if ui.button("Close wallet").clicked() {
                 app.run_rpc_to(ui.ctx(), "closewallet", json!([]), app.wallet_out.clone());
@@ -62,7 +71,7 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
 
     ui.add_space(14.0);
     widgets::section(ui, "Result");
-    let out = app.wallet_out.lock().expect("Wallet output mutex poisoned").clone();
+    let out = lock(&app.wallet_out, "Wallet output").clone();
     widgets::card(ui, |ui| match out {
         Some(mut text) => {
             ui.add(

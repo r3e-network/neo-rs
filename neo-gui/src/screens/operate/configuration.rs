@@ -10,8 +10,7 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
     ui.heading("Configuration");
     ui.add_space(6.0);
     ui.label(
-        egui::RichText::new("Edit the node's TOML configuration file.")
-            .color(theme::TEXT_MUTED),
+        egui::RichText::new("Edit the node's TOML configuration file.").color(theme::TEXT_MUTED),
     );
     ui.add_space(12.0);
 
@@ -39,7 +38,10 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
                 });
             }
             if ui
-                .add_enabled(!app.config_text.is_empty(), egui::Button::new(egui::RichText::new("Save").strong()))
+                .add_enabled(
+                    !app.config_text.is_empty(),
+                    egui::Button::new(egui::RichText::new("Save").strong()),
+                )
                 .clicked()
             {
                 app.config_status = Some(match toml_check(&app.config_text) {
@@ -53,7 +55,10 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
         });
         if let Some(status) = &app.config_status {
             ui.add_space(6.0);
-            let color = if status.starts_with("Saved") || status.starts_with("Valid") || status.starts_with("Loaded") {
+            let color = if status.starts_with("Saved")
+                || status.starts_with("Valid")
+                || status.starts_with("Loaded")
+            {
                 theme::OK
             } else {
                 theme::WARN
@@ -66,17 +71,21 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
     widgets::section(ui, "Editor");
     widgets::card(ui, |ui| {
         if app.config_text.is_empty() {
-            ui.label(egui::RichText::new("Load a config file to edit it here.").color(theme::TEXT_MUTED));
+            ui.label(
+                egui::RichText::new("Load a config file to edit it here.").color(theme::TEXT_MUTED),
+            );
             return;
         }
-        egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
-            ui.add(
-                egui::TextEdit::multiline(&mut app.config_text)
-                    .code_editor()
-                    .desired_rows(24)
-                    .desired_width(f32::INFINITY),
-            );
-        });
+        egui::ScrollArea::vertical()
+            .max_height(420.0)
+            .show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut app.config_text)
+                        .code_editor()
+                        .desired_rows(24)
+                        .desired_width(f32::INFINITY),
+                );
+            });
     });
 }
 
@@ -95,7 +104,13 @@ fn toml_check(text: &str) -> Result<(), String> {
             if !t.ends_with(']') {
                 return Err(format!("line {}: unterminated section header", i + 1));
             }
-        } else if !t.contains('=') && !t.starts_with('"') && !t.ends_with(',') && !t.ends_with(']') && !t.ends_with('{') && !t.ends_with('}') {
+        } else if !t.contains('=')
+            && !t.starts_with('"')
+            && !t.ends_with(',')
+            && !t.ends_with(']')
+            && !t.ends_with('{')
+            && !t.ends_with('}')
+        {
             depth_ok = depth_ok && false;
             return Err(format!("line {}: expected `key = value`", i + 1));
         }

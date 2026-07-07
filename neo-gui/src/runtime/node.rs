@@ -6,6 +6,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
 use crate::rpc::{NodeStatus, Peers};
+use crate::sync::lock;
 
 /// Shared, poller-updated view of the connected node.
 pub type SharedState = Arc<Mutex<NodeState>>;
@@ -47,10 +48,18 @@ pub struct HostMetrics {
 
 impl HostMetrics {
     pub fn mem_percent(&self) -> f32 {
-        if self.mem_total == 0 { 0.0 } else { self.mem_used as f32 / self.mem_total as f32 * 100.0 }
+        if self.mem_total == 0 {
+            0.0
+        } else {
+            self.mem_used as f32 / self.mem_total as f32 * 100.0
+        }
     }
     pub fn disk_percent(&self) -> f32 {
-        if self.disk_total == 0 { 0.0 } else { self.disk_used as f32 / self.disk_total as f32 * 100.0 }
+        if self.disk_total == 0 {
+            0.0
+        } else {
+            self.disk_used as f32 / self.disk_total as f32 * 100.0
+        }
     }
 }
 
@@ -123,9 +132,12 @@ impl LocalNode {
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut child = cmd.spawn()?;
 
-        for stream in [child.stdout.take().map(Capture::Out), child.stderr.take().map(Capture::Err)]
-            .into_iter()
-            .flatten()
+        for stream in [
+            child.stdout.take().map(Capture::Out),
+            child.stderr.take().map(Capture::Err),
+        ]
+        .into_iter()
+        .flatten()
         {
             let logs = Arc::clone(&self.logs);
             std::thread::spawn(move || stream.pump(&logs));
@@ -144,7 +156,7 @@ impl LocalNode {
 
     /// Snapshot the captured log tail.
     pub fn log_lines(&self) -> Vec<String> {
-        self.logs.lock().map(|l| l.iter().cloned().collect()).unwrap_or_default()
+        lock(&self.logs, "LocalNode logs").iter().cloned().collect()
     }
 }
 
@@ -160,11 +172,10 @@ impl Capture {
             Capture::Err(s) => Box::new(BufReader::new(s)),
         };
         for line in reader.lines().map_while(Result::ok) {
-            if let Ok(mut l) = logs.lock() {
-                l.push_back(line);
-                while l.len() > 2000 {
-                    l.pop_front();
-                }
+            let mut l = lock(logs, "LocalNode logs");
+            l.push_back(line);
+            while l.len() > 2000 {
+                l.pop_front();
             }
         }
     }

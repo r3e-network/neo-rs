@@ -5,9 +5,9 @@
 
 use std::time::Duration;
 
-use anyhow::{Context as _, Result, anyhow};
+use anyhow::{anyhow, Context as _, Result};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 /// A JSON-RPC client bound to one node endpoint.
 #[derive(Clone)]

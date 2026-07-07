@@ -166,9 +166,10 @@ High-signal clusters found during the first pass:
   `Verifier<C = Arc<dyn StateRootCalculator>>` and
   `StateStore::with_mpt_store(..., Arc<dyn Store>)`. Prefer concrete
   constructors as the primary surface and name erased constructors explicitly.
-- `neo-gui` is outside the workspace and has several `Mutex::lock().unwrap()`
-  sites. It should either handle poison errors at the UI boundary or centralize
-  locking helpers.
+- `neo-gui` is outside the workspace, but GUI mutex poison handling is now
+  centralized in `neo-gui/src/sync.rs`; shell, runtime, and screen modules use
+  that helper instead of choosing per-call `unwrap` / `expect` / silent-ignore
+  behavior.
 - `neo-oracle-service` has the densest lint-allow count and several
   generated/NeoFS adapter modules. Allows should be narrowed or annotated.
 - Existing git hygiene rules exclude local ledgers, RocksDB state,
@@ -404,7 +405,5 @@ Recommended next patches, in order:
 
 1. Apply the typed request/response-helper pattern to the remaining `neo-rpc`
    handler groups, using the wallet request split as the local template.
-2. Centralize GUI lock handling in `neo-gui` before fixing individual
-   `lock().unwrap()` call sites.
-3. Add comments to every remaining production `#[allow]` that explain the
+2. Add comments to every remaining production `#[allow]` that explain the
    protocol, FFI, generated-code, or C# parity reason.

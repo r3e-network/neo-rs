@@ -15,6 +15,7 @@
 //! - `screens`: Operator UI screens grouped by workflow area.
 //! - `shell`: GUI application shell, event loop, and top-level window
 //!   composition.
+//! - `sync`: Shared synchronization helpers for GUI state.
 //! - `ui`: Reusable GUI theme and widget helpers.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -23,6 +24,7 @@ mod client;
 mod runtime;
 mod screens;
 mod shell;
+mod sync;
 mod ui;
 
 use client::rpc;

@@ -5,6 +5,7 @@ use std::time::Duration;
 use egui::Ui;
 
 use crate::app::NeoGuiApp;
+use crate::sync::lock;
 use crate::theme;
 use crate::widgets;
 
@@ -22,12 +23,15 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
     widgets::card(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("RPC endpoint").color(theme::TEXT_MUTED));
-            ui.add(egui::TextEdit::singleline(&mut app.url_edit).desired_width(360.0).hint_text("http://127.0.0.1:10332"));
+            ui.add(
+                egui::TextEdit::singleline(&mut app.url_edit)
+                    .desired_width(360.0)
+                    .hint_text("http://127.0.0.1:10332"),
+            );
             if ui.button(egui::RichText::new("Connect").strong()).clicked() {
-                if let Ok(mut c) = app.cfg.lock() {
-                    c.url = app.url_edit.trim().to_string();
-                    c.enabled = true;
-                }
+                let mut c = lock(&app.cfg, "PollerCfg");
+                c.url = app.url_edit.trim().to_string();
+                c.enabled = true;
             }
         });
         ui.add_space(8.0);
@@ -41,20 +45,19 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
         });
 
         ui.add_space(8.0);
-        let mut enabled = app.cfg.lock().map(|c| c.enabled).unwrap_or(true);
-        if ui.checkbox(&mut enabled, "Poll the node automatically").changed() {
-            if let Ok(mut c) = app.cfg.lock() {
-                c.enabled = enabled;
-            }
+        let mut enabled = lock(&app.cfg, "PollerCfg").enabled;
+        if ui
+            .checkbox(&mut enabled, "Poll the node automatically")
+            .changed()
+        {
+            lock(&app.cfg, "PollerCfg").enabled = enabled;
         }
 
-        let mut secs = app.cfg.lock().map(|c| c.interval.as_secs()).unwrap_or(2);
+        let mut secs = lock(&app.cfg, "PollerCfg").interval.as_secs();
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Poll interval (s)").color(theme::TEXT_MUTED));
             if ui.add(egui::Slider::new(&mut secs, 1..=30)).changed() {
-                if let Ok(mut c) = app.cfg.lock() {
-                    c.interval = Duration::from_secs(secs.max(1));
-                }
+                lock(&app.cfg, "PollerCfg").interval = Duration::from_secs(secs.max(1));
             }
         });
     });

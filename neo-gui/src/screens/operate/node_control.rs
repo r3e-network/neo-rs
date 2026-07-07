@@ -3,6 +3,7 @@
 use egui::Ui;
 
 use crate::app::NeoGuiApp;
+use crate::sync::lock;
 use crate::theme;
 use crate::widgets;
 
@@ -10,8 +11,7 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
     ui.heading("Node");
     ui.add_space(6.0);
     ui.label(
-        egui::RichText::new("Run and supervise a local neo-node process.")
-            .color(theme::TEXT_MUTED),
+        egui::RichText::new("Run and supervise a local neo-node process.").color(theme::TEXT_MUTED),
     );
     ui.add_space(12.0);
 
@@ -49,13 +49,15 @@ pub fn ui(app: &mut NeoGuiApp, ui: &mut Ui) {
             } else {
                 let can_start = !app.local.binary.trim().is_empty();
                 if ui
-                    .add_enabled(can_start, egui::Button::new(egui::RichText::new("▶ Start").strong()))
+                    .add_enabled(
+                        can_start,
+                        egui::Button::new(egui::RichText::new("▶ Start").strong()),
+                    )
                     .clicked()
                 {
                     if let Err(e) = app.local.start() {
-                        if let Ok(mut o) = app.rpc_out.lock() {
-                            *o = Some(format!("failed to start node: {e}"));
-                        }
+                        *lock(&app.rpc_out, "RPC output") =
+                            Some(format!("failed to start node: {e}"));
                     }
                 }
             }
