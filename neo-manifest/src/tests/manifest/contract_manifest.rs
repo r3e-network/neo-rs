@@ -194,6 +194,24 @@ fn contract_manifest_parse_uses_csharp_json_field_rules() {
 }
 
 #[test]
+fn contract_manifest_parse_rejects_duplicate_json_entries() {
+    let mut duplicate_standards = deployable_manifest_json();
+    duplicate_standards["supportedstandards"] = serde_json::json!(["NEP-17", "NEP-17"]);
+    assert!(ContractManifest::parse(&duplicate_standards.to_string()).is_err());
+
+    let mut duplicate_permissions = deployable_manifest_json();
+    duplicate_permissions["permissions"] = serde_json::json!([
+        { "contract": "*", "methods": "*" },
+        { "contract": "*", "methods": "*" }
+    ]);
+    assert!(ContractManifest::parse(&duplicate_permissions.to_string()).is_err());
+
+    let mut duplicate_trusts = deployable_manifest_json();
+    duplicate_trusts["trusts"] = serde_json::json!(["*", "*"]);
+    assert!(ContractManifest::parse(&duplicate_trusts.to_string()).is_err());
+}
+
+#[test]
 fn contract_manifest_rejects_non_empty_features_stack_value_like_csharp() {
     let source = ContractManifest::new("sample".to_string());
     let mut items = stack_items_from_manifest(&source);
