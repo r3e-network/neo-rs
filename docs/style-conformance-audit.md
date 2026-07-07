@@ -400,6 +400,12 @@ coverage tests live in `tests/server/core/dispatch.rs`.
 `rpc_remote_ledger/transport.rs` owns blocking upstream RPC calls, shared HTTP
 client construction, and response validation. The root remote-ledger module now
 keeps only facade exports plus the module map.
+RPC relay follows the same split: `rpc_relay/transaction.rs` owns mempool
+admission through the blockchain service, `rpc_relay/block.rs` owns block
+preflight and import orchestration, `rpc_relay/result.rs` owns relay-result
+projection, and `rpc_relay/runtime.rs` owns the synchronous bridge for async
+service calls. The root relay module now keeps facade exports and the module
+map only.
 RPC invocation sessions now follow the same facade rule:
 `session/iterators.rs` owns retained iterator registration payloads, traversal
 adapters, and disposal; `session/dummy_block.rs` owns the C#-compatible
