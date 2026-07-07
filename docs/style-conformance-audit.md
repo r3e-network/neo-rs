@@ -290,9 +290,10 @@ Indexer block reads have started the same endpoint-family split:
 `rpc_server_indexer/blocks.rs` owns `getblockindex` and `getblockindexes`
 lookup, pagination, and block-index projection.
 `rpc_server_indexer/transactions.rs` owns transaction lookup and
-block/address/contract transaction list routing. The root
-`rpc_server_indexer/mod.rs` now keeps handler registration, service lookup,
-shared error mapping, and the remaining notification endpoint family.
+block/address/contract transaction list routing.
+`rpc_server_indexer/notifications.rs` owns address/block/transaction/contract
+notification routing. The root `rpc_server_indexer/mod.rs` now keeps handler
+registration, service lookup, shared error mapping, and shared selector types.
 RPC settings parsing has started the same decomposition:
 `rpc_server_settings/gas.rs` owns C#-compatible `MaxGasInvoke` and `MaxFee`
 GAS/datoshi decoding; `rpc_server_settings/config.rs` owns
