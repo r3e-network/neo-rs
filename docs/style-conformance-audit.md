@@ -332,10 +332,11 @@ handling, DoS-limit builder wiring, and session-purge task wiring;
 `rpc_server/handler.rs` owns callback/descriptor bindings, and
 `rpc_server/metrics.rs` owns Prometheus request/error counters.
 `rpc_server/rate_limit.rs` owns the RPC-server adapter from `RpcServerConfig`
-to the governor limiter plus blocked-call error mapping. The root
-`rpc_server/mod.rs` now stays focused on server state, registration maps, and
-wallet accessors, while `rpc_server/sessions.rs` owns invoke-session storage,
-expiration, mutation, and termination helpers.
+to the governor limiter plus blocked-call error mapping.
+`rpc_server/registry.rs` owns handler registration, handler-map reads, and
+transport method projection. The root `rpc_server/mod.rs` now stays focused on
+server state and wallet accessors, while `rpc_server/sessions.rs` owns
+invoke-session storage, expiration, mutation, and termination helpers.
 `jsonrpsee_adapter/auth.rs` owns the transport-auth extension marker and Basic
 header verification, while `jsonrpsee_adapter/mod.rs` keeps module registration,
 parameter decoding, and dispatch bridging.
