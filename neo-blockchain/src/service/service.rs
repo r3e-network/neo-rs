@@ -31,6 +31,8 @@ use crate::internal::UnverifiedBlocksList;
 use crate::ledger_context::LedgerContext;
 use crate::service_context::SystemContext;
 
+mod run_loop;
+
 // `AddTransactionReply` is re-exported from `crate::command` for
 // downstream callers; the service uses it through that re-export.
 pub use crate::command::AddTransactionReply as _AddTransactionReplyAlias;
@@ -150,46 +152,6 @@ where
             crate::blockchain::DEFAULT_COMMAND_CAPACITY,
             crate::blockchain::DEFAULT_EVENT_CAPACITY,
         )
-    }
-
-    /// Drive the service loop until the command channel is closed.
-    ///
-    /// Every command is dispatched to a synchronous handler method
-    /// on the service struct; the loop itself is just
-    /// `while let Some(cmd) = self.cmd_rx.recv().await`, expressed as a normal
-    /// `async fn` over typed channels.
-    ///
-    /// After processing the first command, drains ALL pending commands in the
-    /// channel without awaiting between them. This is critical for sync
-    /// throughput: when 500+ blocks arrive in a batch, processing them
-    /// one-at-a-time with an `await` yield between each causes the unverified
-    /// block cache to overflow and drop blocks. Batching the drain keeps the
-    /// cache from filling and sustains network-speed processing.
-    pub async fn run(mut self) {
-        tracing::debug!(target: "neo", "blockchain service run loop started");
-        while let Some(cmd) = self.cmd_rx.recv().await {
-            self.dispatch(cmd).await;
-            // Drain all remaining pending commands without yielding to the
-            // runtime — keeps the pipeline full during catch-up bursts.
-            // Bounded to 128 commands per batch to prevent starving other
-            // async tasks during sustained catch-up. The yield point gives
-            // the runtime a chance to schedule network I/O, consensus ticks,
-            // and other services.
-            const MAX_DRAIN_PER_BATCH: u32 = 128;
-            let mut drained = 0u32;
-            while let Ok(cmd) = self.cmd_rx.try_recv() {
-                self.dispatch(cmd).await;
-                drained += 1;
-                if drained >= MAX_DRAIN_PER_BATCH {
-                    // Yield to the runtime so other async tasks can make
-                    // progress, then resume draining if there are more
-                    // pending commands in the channel.
-                    tokio::task::yield_now().await;
-                    drained = 0;
-                }
-            }
-        }
-        tracing::debug!(target: "neo", "blockchain service run loop exited");
     }
 
     /// Dispatch a single command to its handler. Public for testing
