@@ -11,15 +11,18 @@
 //! ## Contents
 //!
 //! - `inventory`: inventory payload traits and records.
+//! - `request`: Typed JSON-RPC request parsing helpers.
 //! - `tests`: Module-local tests and regression coverage.
 
 use serde_json::Value;
 
-use super::rpc_error::RpcError;
 use super::rpc_exception::RpcException;
 use super::rpc_server::{RpcHandler, RpcServer};
 
 mod inventory;
+mod request;
+
+use self::request::{NoParamsRequest, ValidateAddressRequest};
 
 /// RPC handler group for utility methods.
 pub struct RpcServerUtilities;
@@ -35,12 +38,12 @@ impl RpcServerUtilities {
     }
 
     fn list_plugins_handler(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        Self::expect_no_params(params, "listplugins")?;
+        NoParamsRequest::parse(params, "listplugins")?;
         Ok(server.list_plugins())
     }
 
     fn list_services_handler(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        Self::expect_no_params(params, "listservices")?;
+        NoParamsRequest::parse(params, "listservices")?;
         Ok(server.list_services())
     }
 
@@ -48,20 +51,8 @@ impl RpcServerUtilities {
         server: &RpcServer,
         params: &[Value],
     ) -> Result<Value, RpcException> {
-        let address = params.first().and_then(|v| v.as_str()).ok_or_else(|| {
-            RpcException::from(RpcError::invalid_params().with_data("address parameter required"))
-        })?;
-        Ok(server.validate_address(address))
-    }
-
-    fn expect_no_params(params: &[Value], method: &str) -> Result<(), RpcException> {
-        if params.is_empty() {
-            Ok(())
-        } else {
-            Err(RpcException::from(
-                RpcError::invalid_params().with_data(format!("{method} expects no parameters")),
-            ))
-        }
+        let request = ValidateAddressRequest::parse(params)?;
+        Ok(server.validate_address(&request.address))
     }
 }
 

@@ -238,6 +238,10 @@ Oracle submission follows the request-boundary rule as well:
 `rpc_server_oracle/request.rs` owns Base64 decoding, request-id parsing, and
 secp256r1 public-key validation for `submitoracleresponse`; the handler keeps
 only service lookup, submission, and `OracleServiceError` mapping.
+Utility endpoints now use the same pattern: `rpc_server_utilities/request.rs`
+owns no-parameter validation for `listplugins` / `listservices` and
+`validateaddress` parameter parsing, while the root handler stays focused on
+inventory lookup and address validation.
 
 Recommended next patches, in order:
 
