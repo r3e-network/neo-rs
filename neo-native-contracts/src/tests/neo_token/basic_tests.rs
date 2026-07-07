@@ -343,7 +343,7 @@ fn neo_public_array_return_encoders_use_stack_value_projection() {
     );
 
     let candidate_storage_source = include_str!("../../neo_token/storage/candidates.rs");
-    let storage_source = include_str!("../../neo_token/storage/mod.rs");
+    let points_storage_source = include_str!("../../neo_token/storage/points.rs");
     let persist_source = include_str!("../../neo_token/persist.rs");
     let candidate_encoder = slice_between(
         candidate_storage_source,
@@ -357,7 +357,7 @@ fn neo_public_array_return_encoders_use_stack_value_projection() {
     assert!(!candidate_encoder.contains("BinarySerializer::serialize("));
 
     let points_value_projector = slice_between(
-        storage_source,
+        points_storage_source,
         "fn points_to_stack_value",
         "fn points_to_array_bytes",
     );
@@ -365,7 +365,7 @@ fn neo_public_array_return_encoders_use_stack_value_projection() {
     assert!(!points_value_projector.contains("StackItem::from_array"));
 
     let points_bytes_encoder = slice_between(
-        storage_source,
+        points_storage_source,
         "fn points_to_array_bytes",
         "fn points_to_stack_item",
     );
@@ -374,7 +374,8 @@ fn neo_public_array_return_encoders_use_stack_value_projection() {
     assert!(!points_bytes_encoder.contains("StackItem::from_array"));
     assert!(!points_bytes_encoder.contains("BinarySerializer::serialize("));
 
-    let points_item_adapter = slice_between(storage_source, "fn points_to_stack_item", "\n}");
+    let points_item_adapter =
+        slice_between(points_storage_source, "fn points_to_stack_item", "\n}");
     assert!(points_item_adapter.contains("points_to_stack_value"));
     assert!(points_item_adapter.contains("StackItem::try_from"));
     assert!(!points_item_adapter.contains("StackItem::from_array"));
