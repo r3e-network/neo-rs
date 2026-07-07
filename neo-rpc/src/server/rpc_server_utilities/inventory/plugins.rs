@@ -1,10 +1,9 @@
-use serde_json::{Value, json};
-
-use super::interface_values;
 use crate::application_logs::ApplicationLogsService;
 use crate::plugins::tokens_tracker::TokensTrackerService;
 use crate::server::rpc_server::RpcServer;
+use crate::server::rpc_server_utilities::response::{plugin_entry_to_json, plugins_to_json};
 use neo_indexer::IndexerService;
+use serde_json::Value;
 
 impl RpcServer {
     /// List built-in service plugins for Neo RPC compatibility.
@@ -13,12 +12,8 @@ impl RpcServer {
         let version = plugin_version(compat);
         let persistence_interfaces = ["IPersistencePlugin"];
         let storage_interfaces = ["IStoragePlugin"];
-        let plugin_entry = |name: &str, interfaces: &[&str]| {
-            json!({
-                "name": name,
-                "version": version,
-                "interfaces": interface_values(interfaces)})
-        };
+        let plugin_entry =
+            |name: &str, interfaces: &[&str]| plugin_entry_to_json(name, &version, interfaces);
         let mut plugins = Vec::new();
 
         plugins.push(plugin_entry("RpcServer", &[]));
@@ -58,13 +53,7 @@ impl RpcServer {
             plugins.push(plugin_entry(&store_name, &storage_interfaces));
         }
 
-        plugins.sort_by(|a, b| {
-            let a_name = a.get("name").and_then(Value::as_str).unwrap_or("");
-            let b_name = b.get("name").and_then(Value::as_str).unwrap_or("");
-            a_name.cmp(b_name)
-        });
-
-        Value::Array(plugins)
+        plugins_to_json(plugins)
     }
 }
 
