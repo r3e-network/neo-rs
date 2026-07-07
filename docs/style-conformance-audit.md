@@ -340,7 +340,9 @@ Blockchain block/header methods now follow the same route-facade split:
 `rpc_server_blockchain/blocks.rs` owns best hash, block/header counts,
 block-hash lookup, block/header retrieval, and block system-fee calculation,
 while `request_helpers.rs` owns the typed height and block-payload request
-records for `getblockhash`, `getblock`, `getblockheader`, and `getblocksysfee`.
+records for `getblockhash`, `getblock`, `getblockheader`, and `getblocksysfee`,
+and `responses.rs` owns the hash/count/base64/system-fee envelopes plus verbose
+block/header JSON enrichment.
 The same request-helper module re-exports `NoParamsRequest` so blockchain
 status/native methods reject unexpected parameters before local lookup or
 remote-ledger forwarding.

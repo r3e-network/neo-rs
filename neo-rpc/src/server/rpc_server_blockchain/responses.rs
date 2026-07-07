@@ -33,6 +33,22 @@ pub(super) fn block_to_json(
     Value::Object(json)
 }
 
+pub(super) fn hash_to_json(hash: &UInt256) -> Value {
+    Value::String(hash.to_string())
+}
+
+pub(super) fn count_to_json(count: u32) -> Value {
+    json!(count)
+}
+
+pub(super) fn base64_payload_to_json(payload: String) -> Value {
+    Value::String(payload)
+}
+
+pub(super) fn system_fee_to_json(system_fee: i64) -> Value {
+    Value::String(system_fee.to_string())
+}
+
 pub(super) fn header_to_json(
     server: &RpcServer,
     header: &Header,

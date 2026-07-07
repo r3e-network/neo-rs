@@ -1,11 +1,14 @@
 //! Block, header, height, and chain-tip RPC handlers.
 
 use neo_native_contracts::LedgerContract;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::RpcServerBlockchain;
 use super::request_helpers::{BlockHeightRequest, BlockPayloadRequest, NoParamsRequest};
-use super::responses::{block_to_json, header_to_json};
+use super::responses::{
+    base64_payload_to_json, block_to_json, count_to_json, hash_to_json, header_to_json,
+    system_fee_to_json,
+};
 use crate::server::ledger_queries;
 use crate::server::model::block_hash_or_index::BlockHashOrIndex as RpcBlockHashOrIndex;
 use crate::server::rpc_error::RpcError;
@@ -29,7 +32,7 @@ impl RpcServerBlockchain {
         let hash = ledger
             .current_hash(store.data_cache())
             .map_err(internal_error)?;
-        Ok(Value::String(hash.to_string()))
+        Ok(hash_to_json(&hash))
     }
 
     pub(super) fn get_block_count(
@@ -48,7 +51,7 @@ impl RpcServerBlockchain {
             .current_index(store.data_cache())
             .map_err(internal_error)?
             .saturating_add(1);
-        Ok(json!(count))
+        Ok(count_to_json(count))
     }
 
     pub(super) fn get_block_header_count(
@@ -73,7 +76,7 @@ impl RpcServerBlockchain {
                 .current_index(store.data_cache())
                 .map_err(internal_error)?
         };
-        Ok(json!(base_height.saturating_add(1)))
+        Ok(count_to_json(base_height.saturating_add(1)))
     }
 
     pub(super) fn get_block_hash(
@@ -99,7 +102,7 @@ impl RpcServerBlockchain {
             .get_block_hash(store.data_cache(), request.height)
             .map_err(internal_error)?
             .ok_or_else(|| RpcException::from(RpcError::unknown_block()))?;
-        Ok(Value::String(hash.to_string()))
+        Ok(hash_to_json(&hash))
     }
 
     pub(super) fn get_block(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -120,7 +123,7 @@ impl RpcServerBlockchain {
             return Ok(block_to_json(server, &block, current_index, next_hash));
         }
 
-        Ok(Value::String(serialize_to_base64(&block)?))
+        Ok(base64_payload_to_json(serialize_to_base64(&block)?))
     }
 
     pub(super) fn get_block_header(
@@ -147,7 +150,7 @@ impl RpcServerBlockchain {
             return Ok(header_to_json(server, header, current_index, next_hash));
         }
 
-        Ok(Value::String(serialize_to_base64(header)?))
+        Ok(base64_payload_to_json(serialize_to_base64(header)?))
     }
 
     pub(super) fn get_block_sys_fee(
@@ -181,6 +184,6 @@ impl RpcServerBlockchain {
             .iter()
             .map(neo_payloads::Transaction::system_fee)
             .sum();
-        Ok(Value::String(system_fee.to_string()))
+        Ok(system_fee_to_json(system_fee))
     }
 }
