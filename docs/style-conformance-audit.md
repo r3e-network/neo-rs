@@ -365,7 +365,8 @@ execution. The root `session/mod.rs` stays focused on retained session state,
 diagnostics, snapshots, expiration, and stable iterator IDs.
 Indexer block reads have started the same endpoint-family split:
 `rpc_server_indexer/blocks.rs` owns `getblockindex` and `getblockindexes`
-lookup, pagination, and block-index projection.
+lookup and block-index projection, while `rpc_server_indexer/params.rs` owns
+the typed block-selector and page request records.
 `rpc_server_indexer/transactions.rs` owns transaction lookup and
 block/address/contract transaction list routing.
 `rpc_server_indexer/notifications.rs` owns address/block/transaction/contract

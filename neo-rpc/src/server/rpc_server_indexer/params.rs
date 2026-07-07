@@ -9,6 +9,36 @@ use crate::server::rpc_helpers::{
     optional_usize_param, parse_uint256_text_with_label,
 };
 
+pub(super) struct BlockIndexRequest {
+    pub(super) selector: BlockSelector,
+}
+
+impl BlockIndexRequest {
+    pub(super) fn parse(params: &[Value]) -> Result<Self, RpcException> {
+        RpcServerIndexer::expect_exact_params(params, 1, "getblockindex")?;
+        Ok(Self {
+            selector: RpcServerIndexer::parse_block_selector(params, "getblockindex")?,
+        })
+    }
+}
+
+pub(super) struct PageRequest {
+    pub(super) skip: usize,
+    pub(super) limit: usize,
+}
+
+impl PageRequest {
+    pub(super) fn parse(
+        params: &[Value],
+        skip_index: usize,
+        bounds: PageBounds,
+        method: &str,
+    ) -> Result<Self, RpcException> {
+        let (skip, limit) = RpcServerIndexer::parse_page(params, skip_index, bounds, method)?;
+        Ok(Self { skip, limit })
+    }
+}
+
 impl RpcServerIndexer {
     pub(super) fn expect_exact_params(
         params: &[Value],
