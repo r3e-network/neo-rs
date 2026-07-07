@@ -11,8 +11,10 @@
 //! ## Contents
 //!
 //! - `result`: C#-compatible relay-result projection into JSON-RPC responses.
+//! - `runtime`: synchronous bridge for async service calls.
 
 mod result;
+mod runtime;
 
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
@@ -21,26 +23,9 @@ use neo_blockchain::RelayResult;
 use neo_payloads::VerifyResult;
 use neo_payloads::{Block, InventoryType, Transaction};
 use neo_runtime::{BlockImport, BlockImportOutcome, BlockOrigin};
-use tokio::runtime::{Handle, Runtime};
-use tokio::task::block_in_place;
 
 pub(super) use result::map_relay_result;
-
-/// Drives an async service round-trip to completion from a synchronous
-/// RPC handler. Uses the ambient multi-thread runtime when one exists
-/// (the jsonrpsee server path), and a throwaway runtime otherwise (direct
-/// handler invocation in tests).
-pub(super) fn block_on_service<F, T>(future: F) -> Result<T, RpcException>
-where
-    F: std::future::Future<Output = T>,
-{
-    if let Ok(handle) = Handle::try_current() {
-        Ok(block_in_place(|| handle.block_on(future)))
-    } else {
-        let runtime = Runtime::new().map_err(|err| internal_error(err.to_string()))?;
-        Ok(runtime.block_on(future))
-    }
-}
+use runtime::block_on_service;
 
 /// Relays a transaction through the blockchain service's mempool
 /// admission path and returns the verify outcome as a [`RelayResult`].

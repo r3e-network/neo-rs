@@ -271,7 +271,8 @@ Node relay methods now follow the same boundary:
 deserialization for `sendrawtransaction` and `submitblock`;
 `rpc_server_node/relay.rs` owns endpoint orchestration, while
 `rpc_relay/result.rs` owns C#-compatible relay-result mapping for both node and
-wallet submission paths.
+wallet submission paths, and `rpc_relay/runtime.rs` owns the synchronous bridge
+into async blockchain service calls.
 Node version reporting now follows the same endpoint-family split:
 `rpc_server_node/version.rs` owns C#-compatible `getversion` response
 construction, dynamic Policy storage readers, remote-ledger version projection,
