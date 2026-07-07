@@ -221,11 +221,17 @@ The same split now covers token tracker handlers:
 `rpc_server_tokens_tracker/request.rs` owns account/time-window/token-id
 parsing, while `rpc_server_tokens_tracker/response.rs` owns common balance and
 transfer response envelopes.
+Wallet cleanup has started with the same boundary: `rpc_server_wallet/request.rs`
+now owns management and network-fee request decoding (`dumpprivkey`,
+`getwalletbalance`, `importprivkey`, `openwallet`, `calculatenetworkfee`), so
+the wallet root handler can focus on wallet orchestration, native balance
+queries, and fee calculation.
 
 Recommended next patches, in order:
 
 1. Apply the typed request/response-helper pattern to the remaining `neo-rpc`
-   handler groups, starting with the high-churn wallet methods.
+   handler groups, continuing wallet transfer request parsing as the next
+   high-churn slice.
 2. Centralize GUI lock handling in `neo-gui` before fixing individual
    `lock().unwrap()` call sites.
 3. Add comments to every remaining production `#[allow]` that explain the

@@ -11,6 +11,7 @@
 //! ## Contents
 //!
 //! - `balance`: wallet balance RPC handlers.
+//! - `request`: Typed JSON-RPC request parsing helpers.
 //! - `support`: Shared support helpers that keep domain modules focused.
 //! - `transfers`: wallet transfer RPC handlers.
 //! - `tests`: Module-local tests and regression coverage.
@@ -18,7 +19,6 @@
 #[cfg(test)]
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_native_contracts::{LedgerContract, NeoToken};
-use neo_payloads::transaction::Transaction;
 use neo_primitives::UInt160;
 #[cfg(test)]
 use neo_primitives::WitnessScope;
@@ -40,18 +40,21 @@ use zeroize::Zeroizing;
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{
-    expect_base64_param_with_decode_message, expect_string_param, internal_error, invalid_params,
-    parse_script_hash_or_address_with_error, parse_uint160,
-};
+use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use crate::server::wallet_compat;
 #[cfg(test)]
 use support::signature_contract_pubkey;
 
 mod balance;
+mod request;
 mod support;
 mod transfers;
+
+use self::request::{
+    DumpPrivKeyRequest, ImportPrivKeyRequest, NetworkFeeRequest, OpenWalletRequest,
+    WalletBalanceRequest,
+};
 
 /// RPC handler group for wallet management and transfer methods.
 pub struct RpcServerWallet;
@@ -90,8 +93,9 @@ impl RpcServerWallet {
     }
 
     fn dump_priv_key(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let address = expect_string_param(params, 0, "dumpprivkey")?;
-        let script_hash = Self::parse_script_hash(server, &address)?;
+        let request =
+            DumpPrivKeyRequest::parse(params, server.system().settings().address_version)?;
+        let script_hash = request.script_hash;
         let wallet = Self::require_wallet(server)?;
         let account = wallet.account(&script_hash).ok_or_else(|| {
             RpcException::from(RpcError::unknown_account().with_data(script_hash.to_string()))
@@ -122,13 +126,13 @@ impl RpcServerWallet {
     }
 
     fn get_wallet_balance(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let asset = parse_uint160(params, 0, "getwalletbalance")?;
+        let request = WalletBalanceRequest::parse(params)?;
         let wallet = Self::require_wallet(server)?;
         // C# GetWalletBalance sums per-account `balanceOf` script probes
         // (Wallet.GetAvailable). The engine-script path below invokes the
         // same native `balanceOf` / `decimals` methods for every NEP-17
         // asset, NEO and GAS included.
-        let balance = Self::calculate_nep17_balance(server, wallet.as_ref(), &asset)?;
+        let balance = Self::calculate_nep17_balance(server, wallet.as_ref(), &request.asset)?;
         Ok(json!({"balance": balance.to_string()}))
     }
 
@@ -166,11 +170,12 @@ impl RpcServerWallet {
     }
 
     fn import_priv_key(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let privkey = expect_string_param(params, 0, "importprivkey")?;
-        KeyPair::from_wif(&privkey).map_err(|err| invalid_params(format!("invalid WIF: {err}")))?;
+        let request = ImportPrivKeyRequest::parse(params)?;
+        KeyPair::from_wif(&request.wif)
+            .map_err(|err| invalid_params(format!("invalid WIF: {err}")))?;
         let wallet = Self::require_wallet(server)?;
         let wallet_clone = Arc::clone(&wallet);
-        let privkey_value = privkey;
+        let privkey_value = request.wif;
         let account = Self::await_wallet_future(Box::pin(async move {
             wallet_clone.import_wif(&privkey_value).await
         }))?;
@@ -188,14 +193,13 @@ impl RpcServerWallet {
     }
 
     fn open_wallet(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let path = expect_string_param(params, 0, "openwallet")?;
-        let password = expect_string_param(params, 1, "openwallet")?;
-        if !Path::new(&path).exists() {
+        let request = OpenWalletRequest::parse(params)?;
+        if !Path::new(&request.path).exists() {
             return Err(RpcException::from(RpcError::wallet_not_found()));
         }
         let system = server.system();
         let settings = system.settings();
-        let wallet = Nep6Wallet::from_file(&path, &password, settings);
+        let wallet = Nep6Wallet::from_file(&request.path, &request.password, settings);
         let wallet = match wallet {
             Ok(wallet) => wallet,
             Err(WalletError::InvalidPassword) => {
@@ -221,17 +225,7 @@ impl RpcServerWallet {
     }
 
     fn calculate_network_fee(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let raw = expect_base64_param_with_decode_message(
-            params,
-            0,
-            "calculatenetworkfee",
-            "Invalid transaction payload",
-        )?;
-        let transaction = Transaction::from_bytes(&raw).map_err(|err| {
-            RpcException::from(
-                RpcError::invalid_params().with_data(format!("Invalid transaction: {err}")),
-            )
-        })?;
+        let request = NetworkFeeRequest::parse(params)?;
         let system = server.system();
         let store = system.store_cache();
         let settings = system.settings();
@@ -245,7 +239,7 @@ impl RpcServerWallet {
             })
         };
         let fee = wallet_compat::calculate_network_fee(
-            &transaction,
+            &request.transaction,
             store.data_cache(),
             &settings,
             &native_contract_provider,
@@ -258,9 +252,7 @@ impl RpcServerWallet {
 
     fn parse_script_hash(server: &RpcServer, value: &str) -> Result<UInt160, RpcException> {
         let version = server.system().settings().address_version;
-        parse_script_hash_or_address_with_error(value, version, |err| {
-            invalid_params(err.to_string())
-        })
+        request::parse_wallet_script_hash(value, version)
     }
 
     fn await_wallet_future<T: Send + 'static>(
