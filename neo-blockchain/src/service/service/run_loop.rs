@@ -5,8 +5,9 @@
 //! without yielding, then yield periodically so network and consensus tasks keep
 //! making progress during catch-up.
 
-use super::{BlockchainService, MempoolLike};
+use super::BlockchainService;
 use crate::command::BlockchainCommand;
+use crate::service::MempoolLike;
 
 const MAX_DRAIN_PER_BATCH: u32 = 128;
 

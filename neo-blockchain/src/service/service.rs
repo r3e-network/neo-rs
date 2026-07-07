@@ -20,7 +20,6 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
-use neo_primitives::verify_result::VerifyResult;
 use parking_lot::Mutex;
 use tokio::sync::{broadcast, mpsc};
 
@@ -29,6 +28,7 @@ use crate::handle::BlockchainHandle;
 use crate::header_cache::HeaderCache;
 use crate::internal::UnverifiedBlocksList;
 use crate::ledger_context::LedgerContext;
+use crate::service::MempoolLike;
 use crate::service_context::SystemContext;
 
 mod dispatch;
@@ -154,99 +154,6 @@ where
             crate::blockchain::DEFAULT_COMMAND_CAPACITY,
             crate::blockchain::DEFAULT_EVENT_CAPACITY,
         )
-    }
-}
-
-/// Minimal mempool facade used by the high-level service API.
-///
-/// The trait exists so the blockchain service can be unit-tested
-/// with a mock mempool; the production implementation forwards to the real
-/// `MemoryPool` type. The shape is intentionally tiny — the full mempool surface (verification context,
-/// conflict attribute detection, reverify queue) lives in
-/// `neo-mempool` and is exposed by the [`SystemContext`] trait.
-pub trait MempoolLike: std::fmt::Debug + Send + Sync {
-    /// Try to add a transaction to the mempool. Returns the verify
-    /// result.
-    fn try_add(
-        &self,
-        tx: &neo_payloads::Transaction,
-        snapshot: &neo_storage::DataCache,
-        settings: &neo_config::ProtocolSettings,
-    ) -> VerifyResult;
-
-    /// Try to add a transaction using a cached state-independent
-    /// verification result. When `cached_state_independent` is
-    /// `Some(VerifyResult::Succeed)` the mempool skips redundant
-    /// signature verification and only performs state-dependent
-    /// checks. Should only be used when the caller has already
-    /// verified the transaction's signatures (e.g. through
-    /// `TransactionRouter::preverify`).
-    fn try_add_cached(
-        &self,
-        tx: &neo_payloads::Transaction,
-        snapshot: &neo_storage::DataCache,
-        settings: &neo_config::ProtocolSettings,
-        cached_state_independent: Option<VerifyResult>,
-    ) -> VerifyResult;
-
-    /// Update the pool after `block` is persisted (C# `MemoryPool.
-    /// UpdatePoolForBlockPersisted`): remove the block's transactions and evict
-    /// pooled transactions that conflict with the persisted ones. Default no-op
-    /// for test mocks without a real pool.
-    fn block_persisted(&self, _block: &neo_payloads::Block) {}
-
-    /// Returns whether the pool has unverified transactions that could be
-    /// promoted after a post-persist snapshot becomes available.
-    fn has_unverified_transactions(&self) -> bool {
-        false
-    }
-
-    /// Reverify the highest-priority unverified transactions against the live
-    /// post-persist snapshot. Returns `true` when unverified transactions remain.
-    fn reverify_top_unverified(
-        &self,
-        _snapshot: &neo_storage::DataCache,
-        _max_count: usize,
-    ) -> bool {
-        false
-    }
-}
-
-impl MempoolLike for neo_mempool::MemoryPool {
-    fn try_add(
-        &self,
-        tx: &neo_payloads::Transaction,
-        snapshot: &neo_storage::DataCache,
-        _settings: &neo_config::ProtocolSettings,
-    ) -> VerifyResult {
-        neo_mempool::MemoryPool::try_add(self, tx.clone(), snapshot)
-    }
-
-    fn try_add_cached(
-        &self,
-        tx: &neo_payloads::Transaction,
-        snapshot: &neo_storage::DataCache,
-        _settings: &neo_config::ProtocolSettings,
-        cached_state_independent: Option<VerifyResult>,
-    ) -> VerifyResult {
-        neo_mempool::MemoryPool::try_add_cached(
-            self,
-            tx.clone(),
-            snapshot,
-            cached_state_independent,
-        )
-    }
-
-    fn block_persisted(&self, block: &neo_payloads::Block) {
-        let _ = self.update_pool_for_block_persisted(&block.transactions);
-    }
-
-    fn has_unverified_transactions(&self) -> bool {
-        self.unverified_count() > 0
-    }
-
-    fn reverify_top_unverified(&self, snapshot: &neo_storage::DataCache, max_count: usize) -> bool {
-        neo_mempool::MemoryPool::reverify_top_unverified(self, snapshot, max_count)
     }
 }
 

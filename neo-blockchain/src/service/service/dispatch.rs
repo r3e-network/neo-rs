@@ -5,8 +5,9 @@
 //! match in one place preserves Rust's compile-time exhaustiveness check for
 //! command variants.
 
-use super::{BlockchainService, MempoolLike};
+use super::BlockchainService;
 use crate::command::BlockchainCommand;
+use crate::service::MempoolLike;
 
 impl<S, M> BlockchainService<S, M>
 where

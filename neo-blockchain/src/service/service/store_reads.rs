@@ -5,8 +5,9 @@
 //! separate and forces it through the same [`StorageLedgerProvider`] used by
 //! other ledger readers.
 
-use super::{BlockchainService, MempoolLike};
+use super::BlockchainService;
 use crate::ledger_provider::BlockProvider;
+use crate::service::MempoolLike;
 
 impl<S, M> BlockchainService<S, M>
 where

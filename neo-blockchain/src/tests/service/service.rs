@@ -1,6 +1,7 @@
 use super::*;
 use crate::command::BlockchainCommand;
 use crate::handle::BlockchainHandle;
+use neo_primitives::verify_result::VerifyResult;
 use std::sync::Arc;
 
 /// Trivial in-memory mempool used by the unit tests.
