@@ -3,6 +3,7 @@ use crate::server::model::{BlockHashOrIndex, ContractNameOrHashOrId};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use neo_config::ProtocolSettings;
+use neo_execution::contract_parameter::ContractParameter;
 use neo_payloads::transaction::MAX_TRANSACTION_ATTRIBUTES;
 use neo_primitives::ContractParameterType;
 use neo_primitives::{UInt160, UInt256};

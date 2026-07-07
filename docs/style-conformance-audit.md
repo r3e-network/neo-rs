@@ -223,9 +223,9 @@ Parameter conversion now follows the same module-map rule:
 `parameter_converter/scalar.rs` owns string, boolean, numeric, Base64 bytes,
 and UUID `RpcConvertible` implementations. `parameter_converter/domain.rs`
 owns address arrays, block hash/index identifiers, and contract
-name/hash/id conversions. The root `parameter_converter/mod.rs` keeps the
-converter facade, contract-parameter conversion, and shared helper functions
-used by signer/domain parsers.
+name/hash/id conversions. `parameter_converter/contract_parameters.rs` owns
+contract-parameter array conversion. The root `parameter_converter/mod.rs`
+keeps the converter facade and shared helper functions used by child parsers.
 The same split now covers token tracker handlers:
 `rpc_server_tokens_tracker/request.rs` owns account/time-window/token-id
 parsing, while `rpc_server_tokens_tracker/response.rs` owns common balance and

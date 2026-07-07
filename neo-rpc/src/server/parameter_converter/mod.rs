@@ -10,12 +10,12 @@
 //!
 //! ## Contents
 //!
+//! - `contract_parameters`: Contract-parameter array conversion.
 //! - `domain`: Address, block, and contract identifier RPC conversions.
 //! - `scalar`: Scalar and byte-like RPC conversion implementations.
 //! - `signers`: RPC signer parameter parsing helpers.
 //! - `tests`: Module-local tests and regression coverage.
 
-use neo_execution::contract_parameter::ContractParameter;
 use neo_primitives::UInt160;
 use neo_serialization::json::{JArray, JObject, JToken};
 
@@ -23,6 +23,7 @@ use super::model::{Address, SignersAndWitnesses};
 use super::rpc_error::RpcError;
 use super::rpc_exception::RpcException;
 
+mod contract_parameters;
 mod domain;
 mod scalar;
 mod signers;
@@ -61,24 +62,6 @@ impl ParameterConverter {
 impl RpcConvertible for SignersAndWitnesses {
     fn from_token(token: &JToken, ctx: &ConversionContext) -> Result<Self, RpcException> {
         signers::parse_signers_and_witnesses(token, ctx)
-    }
-}
-
-impl RpcConvertible for Vec<ContractParameter> {
-    fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
-        let array = expect_array(token)?;
-        let mut parameters = Self::with_capacity(array.count());
-        for (index, item) in array.children().iter().enumerate() {
-            let token = item.as_ref().ok_or_else(|| {
-                invalid_params(format!("Invalid contract parameter at index {index}"))
-            })?;
-            let value = jtoken_to_serde(token);
-            let parameter = ContractParameter::from_json(&value).map_err(|e| {
-                invalid_params(format!("Invalid contract parameter at index {index}: {e}"))
-            })?;
-            parameters.push(parameter);
-        }
-        Ok(parameters)
     }
 }
 
