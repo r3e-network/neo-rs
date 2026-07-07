@@ -2,19 +2,70 @@ use std::sync::Arc;
 
 use neo_execution::application_engine::ApplicationEngine;
 use neo_manifest::CallFlags;
+use neo_native_contracts::{LedgerContract, NeoToken};
 use neo_primitives::{BigDecimal, TriggerType, UInt160};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::{OpCode, VmState as VMState};
 use neo_wallets::Wallet as CoreWallet;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
+use serde_json::{Value, json};
 
 use super::RpcServerWallet;
+use super::request::WalletBalanceRequest;
+use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_server::RpcServer;
 
 impl RpcServerWallet {
+    pub(super) fn get_wallet_balance(
+        server: &RpcServer,
+        params: &[Value],
+    ) -> Result<Value, RpcException> {
+        let request = WalletBalanceRequest::parse(params)?;
+        let wallet = Self::require_wallet(server)?;
+        // C# GetWalletBalance sums per-account `balanceOf` script probes
+        // (Wallet.GetAvailable). The engine-script path below invokes the
+        // same native `balanceOf` / `decimals` methods for every NEP-17
+        // asset, NEO and GAS included.
+        let balance = Self::calculate_nep17_balance(server, wallet.as_ref(), &request.asset)?;
+        Ok(json!({"balance": balance.to_string()}))
+    }
+
+    pub(super) fn get_wallet_unclaimed_gas(
+        server: &RpcServer,
+        _params: &[Value],
+    ) -> Result<Value, RpcException> {
+        let wallet = Self::require_wallet(server)?;
+        let store = server.system().store_cache();
+        let ledger = LedgerContract::new();
+        let height = ledger
+            .current_index(store.data_cache())
+            .map_err(|err| {
+                RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
+            })?
+            .saturating_add(1);
+        let neo_hash = NeoToken::script_hash();
+        let snapshot = Arc::new(store.data_cache().clone());
+        let mut total = BigInt::zero();
+        for account in wallet.accounts() {
+            // C# GetWalletUnclaimedGas sums NativeContract.NEO.UnclaimedGas
+            // per account; the engine probe invokes the same native
+            // `unclaimedGas(account, end)` method.
+            let gas = crate::server::native_queries::NativeQueries::neo_unclaimed_gas(
+                server,
+                Arc::clone(&snapshot),
+                &neo_hash,
+                &account.script_hash(),
+                height,
+            )
+            .map_err(internal_error)?;
+            total += gas;
+        }
+        Ok(Value::String(total.to_string()))
+    }
+
     pub(super) fn calculate_nep17_balance<W>(
         server: &RpcServer,
         wallet: &W,
