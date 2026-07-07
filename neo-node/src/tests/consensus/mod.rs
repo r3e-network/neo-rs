@@ -13,20 +13,30 @@
 //! - `proposal`: consensus proposal construction helpers.
 
 use super::*;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use neo_blockchain::BlockchainHandle;
+use neo_config::ProtocolSettings;
 use neo_consensus::{
-    ChangeViewMessage, ChangeViewReason, ConsensusContext, ConsensusMessageType,
-    messages::PrepareRequestMessage,
+    ChangeViewMessage, ChangeViewReason, ConsensusContext, ConsensusEvent, ConsensusMessageType,
+    ConsensusService, ValidatorInfo,
+    messages::{ConsensusPayload, PrepareRequestMessage},
 };
-use neo_crypto::signature::Secp256r1Crypto;
+use neo_crypto::{ECPoint, signature::Secp256r1Crypto};
 use neo_io::Serializable;
-use neo_mempool::PoolItem;
+use neo_mempool::{MemoryPool, PoolItem};
+use neo_native_contracts::LedgerContract;
+use neo_network::NetworkHandle;
 use neo_payloads::{ExtensiblePayload, Signer, Transaction, TransactionAttribute, Witness};
-use neo_primitives::{UInt160, VerifyResult, WitnessScope};
+use neo_primitives::{UInt160, UInt256, VerifyResult, WitnessScope};
 use neo_serialization::BinarySerializer;
-use neo_storage::{StorageItem, StorageKey};
+use neo_storage::{StorageItem, StorageKey, persistence::DataCache};
 use neo_vm::StackItem;
 use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::OpCode;
+use parking_lot::RwLock;
+use tokio::sync::mpsc;
 
 #[path = "proposal.rs"]
 mod proposal;

@@ -134,6 +134,11 @@ High-signal clusters found during the first pass:
   `logging/format.rs` owns operator-facing format parsing, and
   `logging/rotation.rs` owns file writer construction plus size-based archive
   rotation.
+- `neo-node/src/consensus/mod.rs` is now a facade for validator-node consensus
+  wiring: `consensus/driver.rs` owns the dBFT driver task, round snapshots,
+  recovery-log setup, and event routing; `payload.rs`, `proposal.rs`, `setup.rs`,
+  and `hsm.rs` retain codec, proposal-policy, validator setup, and signer wiring
+  responsibilities.
 - `neo-node/src/node/services/mod.rs` now focuses on operational service
   composition. `services/state.rs` owns StateService MPT store and
   sync/async commit-handler construction, `services/read_side.rs` owns
