@@ -10,9 +10,10 @@
 //!
 //! ## Contents
 //!
-//! - `rpc_relay`: transaction relay helpers for RPC submission.
+//! - `result`: C#-compatible relay-result projection into JSON-RPC responses.
 
-use crate::server::rpc_error::RpcError;
+mod result;
+
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
@@ -20,67 +21,10 @@ use neo_blockchain::RelayResult;
 use neo_payloads::VerifyResult;
 use neo_payloads::{Block, InventoryType, Transaction};
 use neo_runtime::{BlockImport, BlockImportOutcome, BlockOrigin};
-use serde_json::{Value, json};
 use tokio::runtime::{Handle, Runtime};
 use tokio::task::block_in_place;
 
-pub(super) fn map_relay_result(result: RelayResult) -> Result<Value, RpcException> {
-    match result.result {
-        // C# GetRelayResult attaches WithData(reason.ToString()) to EVERY non-success
-        // case, so both the error message suffix and the `data` field carry the
-        // VerifyResult name. Mirror that for sendrawtransaction/submitblock parity.
-        VerifyResult::Succeed => Ok(json!({"hash": result.hash.to_string()})),
-        VerifyResult::AlreadyExists => Err(RpcException::from(
-            RpcError::already_exists().with_data("AlreadyExists"),
-        )),
-        VerifyResult::AlreadyInPool => Err(RpcException::from(
-            RpcError::already_in_pool().with_data("AlreadyInPool"),
-        )),
-        VerifyResult::OutOfMemory => Err(RpcException::from(
-            RpcError::mempool_cap_reached().with_data("OutOfMemory"),
-        )),
-        VerifyResult::InvalidScript => Err(RpcException::from(
-            RpcError::invalid_script().with_data("InvalidScript"),
-        )),
-        VerifyResult::InvalidAttribute => Err(RpcException::from(
-            RpcError::invalid_attribute().with_data("InvalidAttribute"),
-        )),
-        VerifyResult::InvalidSignature => Err(RpcException::from(
-            RpcError::invalid_signature().with_data("InvalidSignature"),
-        )),
-        VerifyResult::OverSize => Err(RpcException::from(
-            RpcError::invalid_size().with_data("OverSize"),
-        )),
-        VerifyResult::Expired => Err(RpcException::from(
-            RpcError::expired_transaction().with_data("Expired"),
-        )),
-        // C# `RpcServer.Node` maps NotYetValid to `RpcError.ExpiredTransaction`
-        // (NOT the default VerificationFailed): both Expired and NotYetValid were
-        // reported as ExpiredTransaction before the split, and the code is kept
-        // stable for clients (RpcServer.Node.cs:102-106).
-        VerifyResult::NotYetValid => Err(RpcException::from(
-            RpcError::expired_transaction().with_data("NotYetValid"),
-        )),
-        VerifyResult::InsufficientFunds => Err(RpcException::from(
-            RpcError::insufficient_funds().with_data("InsufficientFunds"),
-        )),
-        VerifyResult::PolicyFail => Err(RpcException::from(
-            RpcError::policy_failed().with_data("PolicyFail"),
-        )),
-        VerifyResult::UnableToVerify => Err(RpcException::from(
-            RpcError::verification_failed().with_data("UnableToVerify"),
-        )),
-        VerifyResult::Invalid => Err(RpcException::from(
-            RpcError::verification_failed().with_data("Invalid"),
-        )),
-        VerifyResult::HasConflicts => Err(RpcException::from(
-            RpcError::verification_failed().with_data("HasConflicts"),
-        )),
-        VerifyResult::Unknown => Err(RpcException::from(
-            RpcError::verification_failed().with_data("Unknown"),
-        )),
-    }
-}
+pub(super) use result::map_relay_result;
 
 /// Drives an async service round-trip to completion from a synchronous
 /// RPC handler. Uses the ambient multi-thread runtime when one exists

@@ -266,7 +266,9 @@ inventory lookup and address validation.
 Node relay methods now follow the same boundary:
 `rpc_server_node/request.rs` owns Base64 decoding and Neo wire-payload
 deserialization for `sendrawtransaction` and `submitblock`;
-`rpc_server_node/relay.rs` owns relay submission and relay-result mapping.
+`rpc_server_node/relay.rs` owns endpoint orchestration, while
+`rpc_relay/result.rs` owns C#-compatible relay-result mapping for both node and
+wallet submission paths.
 Node version reporting now follows the same endpoint-family split:
 `rpc_server_node/version.rs` owns C#-compatible `getversion` response
 construction, dynamic Policy storage readers, remote-ledger version projection,
