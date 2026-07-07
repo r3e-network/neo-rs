@@ -1,5 +1,3 @@
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_execution::ApplicationEngine;
 use neo_execution::contract_parameter::{ContractParameter, ContractParameterValue};
 use neo_manifest::CallFlags;
 use neo_payloads::NotifyEventArgs;
@@ -11,10 +9,9 @@ use neo_vm::rpc_json::StackItemRpcJson;
 use neo_vm::stack_item::StackItem;
 use neo_vm_rs::{StackValue, VmState};
 use num_traits::ToPrimitive;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::server::diagnostic::{Diagnostic, DiagnosticInvocation};
 use crate::server::model::signers_and_witnesses::SignersAndWitnesses;
 use crate::server::parameter_converter::{ConversionContext, ParameterConverter};
 use crate::server::rpc_exception::RpcException;
@@ -221,41 +218,6 @@ pub(super) fn notification_to_json(
         "eventname": notification.event_name,
         "contract": notification.script_hash.to_string(),
         "state": state}))
-}
-
-pub(super) fn diagnostic_invocation_to_json(diagnostic: &Diagnostic) -> Value {
-    fn to_json_node(node: DiagnosticInvocation) -> Value {
-        let mut obj = Map::new();
-        obj.insert("hash".to_string(), Value::String(node.hash.to_string()));
-        if !node.children.is_empty() {
-            let children = node
-                .children
-                .into_iter()
-                .map(to_json_node)
-                .collect::<Vec<_>>();
-            obj.insert("call".to_string(), Value::Array(children));
-        }
-        Value::Object(obj)
-    }
-
-    match diagnostic.invocation_root() {
-        Some(root) => to_json_node(root),
-        None => Value::Null,
-    }
-}
-
-pub(super) fn diagnostic_storage_changes(engine: &ApplicationEngine) -> Value {
-    let changes = engine.snapshot_cache().tracked_items();
-    let entries = changes
-        .into_iter()
-        .map(|(key, trackable)| {
-            json!({
-                "state": format!("{:?}", trackable.state),
-                "key": BASE64_STANDARD.encode(key.to_array()),
-                "value": BASE64_STANDARD.encode(&*trackable.item.value_bytes())})
-        })
-        .collect::<Vec<_>>();
-    Value::Array(entries)
 }
 
 pub(super) fn expect_uuid_param(

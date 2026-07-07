@@ -394,7 +394,8 @@ address/hash normalization. The handler files stay focused on contract lookup,
 VM execution, iterator sessions, native GAS queries, and result projection,
 while `smart_contract/invocation_wallet.rs` owns wallet transaction
 materialization, available-account signing, and pending-signature projection for
-successful invokes.
+successful invokes. `smart_contract/diagnostics.rs` owns invoke diagnostic-tree
+and storage-change JSON projection.
 
 Recommended next patches, in order:
 

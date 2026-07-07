@@ -11,6 +11,7 @@
 //! ## Contents
 //!
 //! - `contract_verify`: smart-contract verification handlers.
+//! - `diagnostics`: Diagnostic invoke-tree and storage-change JSON helpers.
 //! - `helpers`: Shared helper functions for the surrounding module.
 //! - `invocation`: smart-contract invocation handlers.
 //! - `invocation_wallet`: wallet transaction signing for successful invokes.
@@ -21,6 +22,7 @@
 //! - `tests`: Module-local tests and regression coverage.
 
 mod contract_verify;
+mod diagnostics;
 mod helpers;
 mod invocation;
 mod invocation_wallet;
