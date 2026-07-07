@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 
 use super::RpcServerBlockchain;
 use super::request_helpers::{RawTransactionRequest, TransactionHeightRequest};
+use super::responses::transaction_to_verbose_json;
 
 impl RpcServerBlockchain {
     pub(super) fn get_raw_transaction(
@@ -54,39 +55,7 @@ impl RpcServerBlockchain {
             return Ok(Value::String(serialize_to_base64(&tx)?));
         }
 
-        let settings = system.settings();
-        let mut json = tx.to_json(&settings);
-        if let (Value::Object(obj), Some(state)) = (&mut json, state) {
-            let block_index = state.block_index();
-            let current_index = ledger
-                .current_index(store.data_cache())
-                .map_err(internal_error)?;
-            let confirmations = current_index.saturating_sub(block_index).saturating_add(1);
-            obj.insert("confirmations".to_string(), json!(confirmations));
-
-            // C# GetRawTransaction verbose adds only blockhash, confirmations and
-            // blocktime to Transaction.ToJson (RpcServer.Blockchain.cs:373-381);
-            // it does NOT add a vmstate field (that belongs to getapplicationlog).
-            // Emitting it here surprises strict clients / response-diff tooling.
-            if let Some(block_hash) = ledger
-                .get_block_hash(store.data_cache(), block_index)
-                .map_err(internal_error)?
-            {
-                obj.insert(
-                    "blockhash".to_string(),
-                    Value::String(block_hash.to_string()),
-                );
-
-                if let Some(block) = ledger
-                    .get_trimmed_block(store.data_cache(), &block_hash)
-                    .map_err(internal_error)?
-                {
-                    obj.insert("blocktime".to_string(), json!(block.header.timestamp()));
-                }
-            }
-        }
-
-        Ok(json)
+        transaction_to_verbose_json(server, &tx, state.as_ref())
     }
 
     pub(super) fn get_transaction_height(

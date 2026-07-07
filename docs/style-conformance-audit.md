@@ -316,8 +316,9 @@ response construction, while `request_helpers.rs` owns `shouldGetUnverified`
 parsing and `mod.rs` stays closer to registration plus remaining legacy groups.
 Blockchain transaction lookup now follows the same split:
 `rpc_server_blockchain/transactions.rs` owns `getrawtransaction` and
-`gettransactionheight` pool/ledger lookup plus C#-compatible verbose
-projection, while `request_helpers.rs` owns hash and verbose parsing.
+`gettransactionheight` pool/ledger lookup, `request_helpers.rs` owns hash and
+verbose parsing, and `responses.rs` owns C#-compatible verbose transaction
+enrichment (`confirmations`, `blockhash`, and `blocktime`).
 Blockchain native/governance queries have moved out of the route map:
 `rpc_server_blockchain/native.rs` owns native contract listing, committee,
 validator, and candidate projections over `NativeQueries`.
