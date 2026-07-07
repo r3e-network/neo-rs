@@ -20,6 +20,8 @@
 mod batch;
 mod driver;
 mod format;
+#[cfg(test)]
+mod format_tests;
 mod metrics;
 mod range;
 mod report;

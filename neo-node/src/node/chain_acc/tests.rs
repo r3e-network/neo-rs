@@ -6,7 +6,7 @@ use super::batch::{
 use super::driver::{
     import_chain_acc_from_reader_until_height, import_chain_acc_report_from_reader_until_height,
 };
-use super::format::tests::{
+use super::format_tests::{
     empty_block, empty_block_with_prev_hash, encode_chain_acc, linked_empty_blocks,
 };
 use super::range::{
