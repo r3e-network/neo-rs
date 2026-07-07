@@ -1,7 +1,11 @@
+use super::submission::map_oracle_error;
 use super::*;
+use crate::server::rpc_error::RpcError;
+use crate::server::rpc_server::RpcServer;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_config::ProtocolSettings;
 use neo_crypto::Secp256r1Crypto;
+use neo_oracle_service::OracleServiceError;
 use serde_json::Value;
 
 fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {

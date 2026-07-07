@@ -296,9 +296,10 @@ only handler registration. Direct handler tests cover transaction-log lookup,
 trigger filtering, unknown hashes, and missing service errors.
 Oracle submission follows the request-boundary rule as well:
 `rpc_server_oracle/request.rs` owns Base64 decoding, request-id parsing, and
-secp256r1 public-key validation for `submitoracleresponse`; the handler keeps
-only service lookup, submission, and `OracleServiceError` mapping, while
-`rpc_server_oracle/response.rs` owns the empty success payload.
+secp256r1 public-key validation for `submitoracleresponse`; `submission.rs`
+owns service lookup, submission, and `OracleServiceError` mapping, while
+`rpc_server_oracle/response.rs` owns the empty success payload. The root module
+now keeps only handler registration.
 Utility endpoints now use the same pattern: `rpc_server_utilities/request.rs`
 owns no-parameter validation for `listplugins` / `listservices` and
 `validateaddress` parameter parsing, `rpc_server_utilities/address.rs` owns
