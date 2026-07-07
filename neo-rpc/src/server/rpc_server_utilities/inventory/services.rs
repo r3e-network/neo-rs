@@ -1,6 +1,3 @@
-use serde_json::{Value, json};
-
-use super::interface_values;
 use crate::application_logs::ApplicationLogsService;
 use crate::plugins::tokens_tracker::TokensTrackerService;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
@@ -10,15 +7,17 @@ use crate::server::rpc_server_oracle::RpcServerOracle;
 use crate::server::rpc_server_state::RpcServerState;
 use crate::server::rpc_server_tokens_tracker::RpcServerTokensTracker;
 use crate::server::rpc_server_utilities::RpcServerUtilities;
+use crate::server::rpc_server_utilities::response::{service_entry_to_json, services_to_json};
 use neo_indexer::IndexerService;
 use neo_oracle_service::OracleService;
+use serde_json::{Value, json};
 
 impl RpcServer {
     /// List runtime services and their RPC method groups for node operators.
     pub fn list_services(&self) -> Value {
         let persistence_interfaces = ["IPersistencePlugin"];
-        Value::Array(vec![
-            service_entry(
+        services_to_json(vec![
+            service_entry_to_json(
                 "RpcServer",
                 &[],
                 handler_names(RpcServerUtilities::register_handlers()),
@@ -39,7 +38,7 @@ impl RpcServer {
 
     fn state_service_entry(&self, interfaces: &[&str]) -> Value {
         let state_store = self.system().state_store();
-        service_entry(
+        service_entry_to_json(
             "StateService",
             interfaces,
             handler_names(RpcServerState::register_handlers()),
@@ -55,7 +54,7 @@ impl RpcServer {
 
     fn application_logs_entry(&self, interfaces: &[&str]) -> Value {
         let application_logs = self.system().get_service::<ApplicationLogsService>();
-        service_entry(
+        service_entry_to_json(
             "ApplicationLogs",
             interfaces,
             handler_names(RpcServerApplicationLogs::register_handlers()),
@@ -75,7 +74,7 @@ impl RpcServer {
 
     fn tokens_tracker_entry(&self, interfaces: &[&str]) -> Value {
         let tokens_tracker = self.system().get_service::<TokensTrackerService>();
-        service_entry(
+        service_entry_to_json(
             "TokensTracker",
             interfaces,
             handler_names(RpcServerTokensTracker::register_handlers()),
@@ -103,7 +102,7 @@ impl RpcServer {
             },
             None => (false, false, Value::Null),
         };
-        service_entry(
+        service_entry_to_json(
             "NeoIndexer",
             interfaces,
             handler_names(RpcServerIndexer::register_handlers()),
@@ -115,7 +114,7 @@ impl RpcServer {
 
     fn oracle_entry(&self) -> Value {
         let oracle = self.system().get_service::<OracleService>();
-        service_entry(
+        service_entry_to_json(
             "OracleService",
             &[],
             handler_names(RpcServerOracle::register_handlers()),
@@ -139,22 +138,4 @@ fn handler_names(handlers: Vec<RpcHandler>) -> Vec<String> {
         .into_iter()
         .map(|handler| handler.descriptor().name.clone())
         .collect()
-}
-
-fn service_entry(
-    name: &str,
-    interfaces: &[&str],
-    methods: Vec<String>,
-    enabled: bool,
-    ready: bool,
-    status: Value,
-) -> Value {
-    json!({
-        "name": name,
-        "enabled": enabled,
-        "ready": ready,
-        "interfaces": interface_values(interfaces),
-        "methods": methods,
-        "status": status,
-    })
 }

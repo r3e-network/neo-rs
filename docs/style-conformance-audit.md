@@ -295,10 +295,10 @@ Utility endpoints now use the same pattern: `rpc_server_utilities/request.rs`
 owns no-parameter validation for `listplugins` / `listservices` and
 `validateaddress` parameter parsing, while the root handler stays focused on
 inventory lookup and address validation. `rpc_server_utilities/response.rs`
-owns the `listplugins` plugin-entry/list and `validateaddress` JSON shapes. The
-no-parameter request record is now shared through `rpc_helpers::NoParamsRequest`
-so endpoint families do not grow private copies of the same invalid-params
-contract.
+owns the `listplugins` plugin-entry/list, `listservices` service-entry/list, and
+`validateaddress` JSON shapes. The no-parameter request record is now shared
+through `rpc_helpers::NoParamsRequest` so endpoint families do not grow private
+copies of the same invalid-params contract.
 Node relay methods now follow the same boundary:
 `rpc_server_node/request.rs` owns Base64 decoding and Neo wire-payload
 deserialization for `sendrawtransaction` and `submitblock`;
