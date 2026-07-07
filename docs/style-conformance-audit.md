@@ -272,8 +272,9 @@ RPC settings parsing has started the same decomposition:
 `rpc_server_settings/gas.rs` owns C#-compatible `MaxGasInvoke` and `MaxFee`
 GAS/datoshi decoding; `rpc_server_settings/config.rs` owns
 `RpcServerConfig` default construction and redacted debug formatting; and
-`rpc_server_settings/mod.rs` keeps the serde-visible config record,
-process-wide registry, and validation.
+`rpc_server_settings/registry.rs` owns process-wide loading, validation, and
+lookup. The root `rpc_server_settings/mod.rs` now keeps the serde-visible
+config records and re-exports the registry type.
 Smart-contract request parsing now follows the same rule:
 `smart_contract/request.rs` owns positional parsing for invocation, contract
 verification, iterator-session, and unclaimed-GAS handlers, including
