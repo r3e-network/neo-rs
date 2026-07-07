@@ -10,11 +10,12 @@
 //!
 //! ## Contents
 //!
+//! - `request`: Typed JSON-RPC request parsing helpers.
+//! - `response`: Typed JSON-RPC response construction helpers.
 //! - `tests`: Module-local tests and regression coverage.
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{expect_base64_param_with_message, expect_u32_param_with_message};
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
@@ -22,12 +23,17 @@ use neo_crypto::mpt_trie::{MptError, MptResult, MptStoreSnapshot, Trie};
 use neo_execution::contract_state::ContractState;
 use neo_io::MemoryReader;
 use neo_primitives::{UInt160, UInt256};
+use neo_state_service::StateStore;
 use neo_state_service::mpt_store::{MptReadSnapshot, MptStore};
 use neo_state_service::state_store::StateStoreLookup;
-use neo_state_service::{StateRoot, StateStore};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::sync::Arc;
+
+mod request;
+mod response;
+use request::{FindStatesRequest, StateKeyRequest, StateRootRequest, VerifyProofRequest};
+use response::{FindStatesResponse, state_root_to_json};
 
 /// Upper bound on a proof storage key (mirrors C#
 /// `StateService.MaxKeyLength`: 64 key bytes + the i32 contract-id
@@ -122,19 +128,19 @@ impl RpcServerState {
     }
 
     fn get_state_root(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let index = Self::expect_u32(params, 0, "getstateroot")?;
+        let request = StateRootRequest::parse(params)?;
         let state_store = Self::state_store(server)?;
         let state_root = state_store
-            .get_state_root(StateStoreLookup::ByBlockIndex(index))
+            .get_state_root(StateStoreLookup::ByBlockIndex(request.index))
             .or_else(|| {
                 // Fall back to the live MptStore (written by apply_block_changes)
                 // when the verification StateStore cache is empty.
                 Self::mpt_store(server)
                     .ok()
-                    .and_then(|mpt| mpt.get_state_root(index))
+                    .and_then(|mpt| mpt.get_state_root(request.index))
             })
             .ok_or_else(|| RpcException::from(RpcError::unknown_state_root()))?;
-        Ok(Self::state_root_to_json(&state_root))
+        Ok(state_root_to_json(&state_root))
     }
 
     /// `getproof(roothash, scripthash, key)` — C#
@@ -144,30 +150,27 @@ impl RpcServerState {
     /// `VarInt(count)` + `VarBytes` per node).
     fn get_proof(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let mpt = Self::mpt_store(server)?;
-        let root_hash = Self::parse_uint256(params, 0, "getproof")?;
-        let script_hash = Self::parse_uint160(params, 1, "getproof")?;
-        let key = Self::parse_base64(params, 2, "getproof", "Base64 storage key")?;
+        let request = StateKeyRequest::parse_get_proof(params)?;
 
         // One frozen view per request (C# `GetStoreSnapshot()`): the
         // root gate and the trie walk read the same generation, so a
         // concurrent block commit cannot prune nodes mid-walk.
         let snapshot = mpt.snapshot();
-        Self::check_root_hash(&snapshot, &root_hash)?;
-        let mut trie = snapshot.open_trie(Some(root_hash));
-        let contract_id = Self::historical_contract_id(&mut trie, &script_hash)?;
-        let payload = Self::proof_payload(&mut trie, contract_id, &key)?;
+        Self::check_root_hash(&snapshot, &request.root_hash)?;
+        let mut trie = snapshot.open_trie(Some(request.root_hash));
+        let contract_id = Self::historical_contract_id(&mut trie, &request.script_hash)?;
+        let payload = Self::proof_payload(&mut trie, contract_id, &request.key)?;
         Ok(Value::String(payload))
     }
 
     fn verify_proof(_server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let root_hash = Self::parse_uint256(params, 0, "verifyproof")?;
-        let proof_bytes = Self::parse_base64(params, 1, "verifyproof", "Base64 proof payload")?;
-        let (key, nodes) = Self::decode_proof_payload(&proof_bytes).ok_or_else(|| {
+        let request = VerifyProofRequest::parse(params)?;
+        let (key, nodes) = Self::decode_proof_payload(&request.proof_bytes).ok_or_else(|| {
             RpcException::from(RpcError::invalid_params().with_data("invalid proof payload"))
         })?;
         let proof: HashSet<Vec<u8>> = nodes.into_iter().collect();
-        let value =
-            Trie::<ProofVerifySnapshot>::verify_proof(root_hash, &key, &proof).map_err(|_| {
+        let value = Trie::<ProofVerifySnapshot>::verify_proof(request.root_hash, &key, &proof)
+            .map_err(|_| {
                 RpcException::from(
                     RpcError::verification_failed()
                         .with_data("failed to verify state proof against supplied root"),
@@ -187,15 +190,13 @@ impl RpcServerState {
     /// itself uses for the identical condition in `getproof`.
     fn get_state(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let mpt = Self::mpt_store(server)?;
-        let root_hash = Self::parse_uint256(params, 0, "getstate")?;
-        let script_hash = Self::parse_uint160(params, 1, "getstate")?;
-        let key = Self::parse_base64(params, 2, "getstate", "Base64 storage key")?;
+        let request = StateKeyRequest::parse_get_state(params)?;
 
         let snapshot = mpt.snapshot();
-        Self::check_root_hash(&snapshot, &root_hash)?;
-        let mut trie = snapshot.open_trie(Some(root_hash));
-        let contract_id = Self::historical_contract_id(&mut trie, &script_hash)?;
-        let storage_key = Self::storage_key_bytes(contract_id, &key);
+        Self::check_root_hash(&snapshot, &request.root_hash)?;
+        let mut trie = snapshot.open_trie(Some(request.root_hash));
+        let contract_id = Self::historical_contract_id(&mut trie, &request.script_hash)?;
+        let storage_key = Self::storage_key_bytes(contract_id, &request.key);
         let value = trie
             .try_get_value(&storage_key)
             .map_err(|err| Self::trie_lookup_error("getstate", &err))?
@@ -212,19 +213,16 @@ impl RpcServerState {
     /// page has more than one entry, last) returned key.
     fn find_states(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
         let mpt = Self::mpt_store(server)?;
-        let root_hash = Self::parse_uint256(params, 0, "findstates")?;
-        let script_hash = Self::parse_uint160(params, 1, "findstates")?;
-        let prefix = Self::parse_base64(params, 2, "findstates", "Base64 key prefix")?;
-        let from_key = Self::parse_optional_base64(params, 3, "findstates", "Base64 from-key")?;
-        let count = Self::parse_find_count(params, 4)?;
+        let request = FindStatesRequest::parse(params)?;
 
         let snapshot = mpt.snapshot();
-        Self::check_root_hash(&snapshot, &root_hash)?;
-        let mut trie = snapshot.open_trie(Some(root_hash));
-        let contract_id = Self::historical_contract_id(&mut trie, &script_hash)?;
+        Self::check_root_hash(&snapshot, &request.root_hash)?;
+        let mut trie = snapshot.open_trie(Some(request.root_hash));
+        let contract_id = Self::historical_contract_id(&mut trie, &request.script_hash)?;
 
-        let prefix_key = Self::storage_key_bytes(contract_id, &prefix);
-        let from_storage_key = from_key
+        let prefix_key = Self::storage_key_bytes(contract_id, &request.prefix);
+        let from_storage_key = request
+            .from_key
             .as_ref()
             .filter(|from| !from.is_empty())
             .map(|from| Self::storage_key_bytes(contract_id, from));
@@ -236,10 +234,10 @@ impl RpcServerState {
         // `count + 1` entries — the probe's only job is to tell us
         // whether the page is truncated.
         let mut entries = trie
-            .find_limited(&prefix_key, from_storage_key.as_deref(), count + 1)
+            .find_limited(&prefix_key, from_storage_key.as_deref(), request.count + 1)
             .map_err(Self::find_error)?;
-        let truncated = entries.len() > count;
-        entries.truncate(count);
+        let truncated = entries.len() > request.count;
+        entries.truncate(request.count);
         let results: Vec<(Vec<u8>, Vec<u8>)> = entries
             .into_iter()
             .map(|entry| {
@@ -248,37 +246,19 @@ impl RpcServerState {
             })
             .collect();
 
-        let mut response = Map::new();
-        if let Some((first_key, _)) = results.first() {
-            response.insert(
-                "firstProof".to_string(),
-                Value::String(Self::proof_payload(&mut trie, contract_id, first_key)?),
-            );
-        }
-        if results.len() > 1 {
-            if let Some((last_key, _)) = results.last() {
-                response.insert(
-                    "lastProof".to_string(),
-                    Value::String(Self::proof_payload(&mut trie, contract_id, last_key)?),
-                );
-            }
-        }
-        response.insert("truncated".to_string(), Value::Bool(truncated));
-        response.insert(
-            "results".to_string(),
-            Value::Array(
-                results
-                    .into_iter()
-                    .map(|(key, value)| {
-                        json!({
-                            "key": BASE64_STANDARD.encode(key),
-                            "value": BASE64_STANDARD.encode(value),
-                        })
-                    })
-                    .collect(),
-            ),
-        );
-        Ok(Value::Object(response))
+        let first_proof = results
+            .first()
+            .map(|(first_key, _)| Self::proof_payload(&mut trie, contract_id, first_key))
+            .transpose()?;
+        let last_proof = if results.len() > 1 {
+            results
+                .last()
+                .map(|(last_key, _)| Self::proof_payload(&mut trie, contract_id, last_key))
+                .transpose()?
+        } else {
+            None
+        };
+        Ok(FindStatesResponse::new(first_proof, last_proof, truncated, results).into_json())
     }
 
     /// C# `StatePlugin.CheckRootHash`: without `FullState`, only the
@@ -448,170 +428,6 @@ impl RpcServerState {
                 .map_err(Self::writer_error_to_rpc)?;
         }
         Ok(writer.into_bytes())
-    }
-
-    fn parse_uint256(params: &[Value], idx: usize, method: &str) -> Result<UInt256, RpcException> {
-        Self::parse_uint_parameter(params, idx, method, "UInt256", UInt256::parse)
-    }
-
-    fn parse_uint160(params: &[Value], idx: usize, method: &str) -> Result<UInt160, RpcException> {
-        Self::parse_uint_parameter(params, idx, method, "UInt160", UInt160::parse)
-    }
-
-    fn parse_uint_parameter<T, E>(
-        params: &[Value],
-        idx: usize,
-        method: &str,
-        type_name: &str,
-        parse: impl FnOnce(&str) -> Result<T, E>,
-    ) -> Result<T, RpcException> {
-        let value = params.get(idx).and_then(Value::as_str).ok_or_else(|| {
-            RpcException::from(RpcError::invalid_params().with_data(format!(
-                "{method} expects {type_name} parameter at index {idx}"
-            )))
-        })?;
-        parse(value).map_err(|_| {
-            RpcException::from(
-                RpcError::invalid_params()
-                    .with_data(format!("failed to parse {type_name} parameter")),
-            )
-        })
-    }
-
-    fn parse_base64(
-        params: &[Value],
-        idx: usize,
-        method: &str,
-        descriptor: &str,
-    ) -> Result<Vec<u8>, RpcException> {
-        expect_base64_param_with_message(
-            params,
-            idx,
-            format!("{method} expects {descriptor} at index {idx}"),
-        )
-    }
-
-    /// Parses an optional Base64 parameter: absent or `null` maps to
-    /// `None` (the C# binder's `byte[] key = null` default).
-    fn parse_optional_base64(
-        params: &[Value],
-        idx: usize,
-        method: &str,
-        descriptor: &str,
-    ) -> Result<Option<Vec<u8>>, RpcException> {
-        match params.get(idx) {
-            None | Some(Value::Null) => Ok(None),
-            Some(_) => Self::parse_base64(params, idx, method, descriptor).map(Some),
-        }
-    }
-
-    /// Parses the optional `findstates` count with the C# binder's
-    /// accepting behaviour: absent or `null` falls back to the C#
-    /// parameter default (`int count = 0`, i.e. `MaxFindResultItems`);
-    /// present tokens go through the `ParameterConverter.ToNumeric<int>`
-    /// conversion; non-positive results select the default page size
-    /// and explicit values are capped at [`MAX_FIND_RESULT_ITEMS`].
-    fn parse_find_count(params: &[Value], idx: usize) -> Result<usize, RpcException> {
-        let requested = match params.get(idx) {
-            None | Some(Value::Null) => 0i32,
-            Some(value) => Self::to_numeric_i32(value)?,
-        };
-        if requested <= 0 {
-            return Ok(MAX_FIND_RESULT_ITEMS);
-        }
-        Ok((requested as usize).min(MAX_FIND_RESULT_ITEMS))
-    }
-
-    /// C# `ParameterConverter.ToNumeric<int>` (ParameterConverter.cs):
-    /// funnels the token through `JToken.AsNumber()` and requires the
-    /// result to be an integral value within `i32` range — so JSON
-    /// strings ("2"), float-integral numbers (2.0), and booleans are
-    /// accepted exactly as the C# binder accepts them, while
-    /// fractional, out-of-range, and non-numeric tokens are rejected
-    /// with the C# `InvalidParams` data string.
-    fn to_numeric_i32(value: &Value) -> Result<i32, RpcException> {
-        let number = Self::token_as_number(value);
-        // C# checks the `int` range first and then
-        // `IsValidInteger` (an exact integral remainder; NaN fails
-        // it). Infinity fails the range check; both reject the same
-        // way here.
-        if !(number >= f64::from(i32::MIN) && number <= f64::from(i32::MAX)) || number % 1.0 != 0.0
-        {
-            return Err(RpcException::from(
-                RpcError::invalid_params()
-                    .with_data(format!("Invalid System.Int32 value: {value}")),
-            ));
-        }
-        Ok(number as i32)
-    }
-
-    /// Neo.Json `JToken.AsNumber()`: numbers pass through, strings
-    /// parse as invariant floating-point text (`JString.AsNumber` —
-    /// the empty string is `0`, surrounding whitespace is allowed,
-    /// unparseable text is NaN), booleans map to `1`/`0`
-    /// (`JBoolean.AsNumber`), and every other token is NaN
-    /// (`JToken.AsNumber` base).
-    fn token_as_number(value: &Value) -> f64 {
-        match value {
-            Value::Number(number) => number.as_f64().unwrap_or(f64::NAN),
-            Value::String(text) => {
-                if text.is_empty() {
-                    return 0.0;
-                }
-                let trimmed = text.trim();
-                if trimmed.is_empty() {
-                    f64::NAN
-                } else {
-                    trimmed.parse::<f64>().unwrap_or(f64::NAN)
-                }
-            }
-            Value::Bool(flag) => {
-                if *flag {
-                    1.0
-                } else {
-                    0.0
-                }
-            }
-            _ => f64::NAN,
-        }
-    }
-
-    fn expect_u32(params: &[Value], idx: usize, method: &str) -> Result<u32, RpcException> {
-        expect_u32_param_with_message(
-            params,
-            idx,
-            format!("{method} expects unsigned integer parameter"),
-        )
-    }
-
-    fn state_root_to_json(root: &StateRoot) -> Value {
-        let mut obj = Map::new();
-        obj.insert("version".to_string(), json!(root.version));
-        obj.insert("index".to_string(), json!(root.index));
-        obj.insert(
-            "roothash".to_string(),
-            Value::String(root.root_hash.to_string()),
-        );
-        // C# `StateRoot.ToJson`: `witnesses = [] | [Witness.ToJson()]`, where a
-        // witness is `{ invocation: base64, verification: base64 }`. Emitted when
-        // the root is signed (an aggregated StateValidators witness).
-        let witnesses = match root.witness() {
-            None => Vec::new(),
-            Some(witness) => {
-                let mut w = Map::new();
-                w.insert(
-                    "invocation".to_string(),
-                    Value::String(BASE64_STANDARD.encode(&witness.invocation_script)),
-                );
-                w.insert(
-                    "verification".to_string(),
-                    Value::String(BASE64_STANDARD.encode(&witness.verification_script)),
-                );
-                vec![Value::Object(w)]
-            }
-        };
-        obj.insert("witnesses".to_string(), Value::Array(witnesses));
-        Value::Object(obj)
     }
 }
 

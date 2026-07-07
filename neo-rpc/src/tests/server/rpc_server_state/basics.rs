@@ -65,7 +65,7 @@ async fn state_root_rejects_unknown_index() {
 
 #[test]
 fn state_uint_parsers_preserve_csharp_binder_errors() {
-    let err = RpcServerState::parse_uint256(&[], 0, "getproof").expect_err("missing UInt256");
+    let err = super::request::parse_uint256(&[], 0, "getproof").expect_err("missing UInt256");
     let rpc_error: RpcError = err.into();
     assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
     assert_eq!(
@@ -73,7 +73,7 @@ fn state_uint_parsers_preserve_csharp_binder_errors() {
         Some("getproof expects UInt256 parameter at index 0")
     );
 
-    let err = RpcServerState::parse_uint160(&[], 1, "getproof").expect_err("missing UInt160");
+    let err = super::request::parse_uint160(&[], 1, "getproof").expect_err("missing UInt160");
     let rpc_error: RpcError = err.into();
     assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
     assert_eq!(
@@ -81,13 +81,13 @@ fn state_uint_parsers_preserve_csharp_binder_errors() {
         Some("getproof expects UInt160 parameter at index 1")
     );
 
-    let err = RpcServerState::parse_uint256(&[json!("not-a-hash")], 0, "getproof")
+    let err = super::request::parse_uint256(&[json!("not-a-hash")], 0, "getproof")
         .expect_err("invalid UInt256");
     let rpc_error: RpcError = err.into();
     assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
     assert_eq!(rpc_error.data(), Some("failed to parse UInt256 parameter"));
 
-    let err = RpcServerState::parse_uint160(&[json!("not-a-hash")], 0, "getproof")
+    let err = super::request::parse_uint160(&[json!("not-a-hash")], 0, "getproof")
         .expect_err("invalid UInt160");
     let rpc_error: RpcError = err.into();
     assert_eq!(rpc_error.code(), RpcError::invalid_params().code());

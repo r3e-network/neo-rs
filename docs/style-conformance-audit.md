@@ -212,10 +212,17 @@ inside production `format.rs`. The metrics projection tests and synthetic
 hot-path fixture builder now live in `chain_acc/metrics_tests.rs`, leaving
 `metrics.rs` focused on runtime progress and hot-metric projection.
 
+The first `neo-rpc` typed-helper pass is in `rpc_server_state`: positional
+StateService request parsing now lives in `rpc_server_state/request.rs`, and
+state-root / `findstates` JSON construction lives in
+`rpc_server_state/response.rs`. The handler module now orchestrates services,
+tries, and proof generation instead of owning JSON parameter layout details.
+
 Recommended next patches, in order:
 
-1. Add typed request/response helpers for one `neo-rpc` handler group, then use
-   that pattern for the rest.
+1. Apply the typed request/response-helper pattern to the remaining `neo-rpc`
+   handler groups, starting with the highest-churn wallet and tokens-tracker
+   methods.
 2. Centralize GUI lock handling in `neo-gui` before fixing individual
    `lock().unwrap()` call sites.
 3. Add comments to every remaining production `#[allow]` that explain the
