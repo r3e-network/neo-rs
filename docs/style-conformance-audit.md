@@ -242,6 +242,10 @@ Utility endpoints now use the same pattern: `rpc_server_utilities/request.rs`
 owns no-parameter validation for `listplugins` / `listservices` and
 `validateaddress` parameter parsing, while the root handler stays focused on
 inventory lookup and address validation.
+Node relay methods now follow the same boundary:
+`rpc_server_node/request.rs` owns Base64 decoding and Neo wire-payload
+deserialization for `sendrawtransaction` and `submitblock`; the root handler
+keeps relay submission and relay-result mapping.
 
 Recommended next patches, in order:
 

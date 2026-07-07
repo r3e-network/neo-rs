@@ -10,21 +10,18 @@
 //!
 //! ## Contents
 //!
+//! - `request`: Typed JSON-RPC request parsing helpers.
 //! - `tests`: Module-local tests and regression coverage.
 
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{
-    expect_base64_param_with_decode_message, internal_error, invalid_params,
-};
+use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_relay;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 #[cfg(test)]
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_config::ProtocolSettings;
-use neo_io::{MemoryReader, Serializable};
 use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_network::handle::LocalNodeInfo;
-use neo_payloads::{block::Block, transaction::Transaction};
 use neo_primitives::hardfork::Hardfork;
 use neo_primitives::hex_util;
 use neo_storage::StorageKey;
@@ -32,6 +29,10 @@ use neo_storage::persistence::DataCache;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use serde_json::{Map, Value, json};
+
+mod request;
+
+use self::request::{RawTransactionRequest, SubmitBlockRequest};
 
 #[cfg(test)]
 #[path = "../../tests/server/handlers/rpc_server_node.rs"]
@@ -313,29 +314,14 @@ impl RpcServerNode {
     }
 
     fn send_raw_transaction(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let raw = expect_base64_param_with_decode_message(
-            params,
-            0,
-            "sendrawtransaction",
-            "Invalid transaction payload",
-        )?;
-        let transaction = Transaction::from_bytes(&raw)
-            .map_err(|err| invalid_params(format!("Invalid transaction: {err}")))?;
-        let relay_result = rpc_relay::relay_transaction(server, transaction)?;
+        let request = RawTransactionRequest::parse(params)?;
+        let relay_result = rpc_relay::relay_transaction(server, request.transaction)?;
         rpc_relay::map_relay_result(relay_result)
     }
 
     fn submit_block(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let raw = expect_base64_param_with_decode_message(
-            params,
-            0,
-            "submitblock",
-            "Invalid block payload",
-        )?;
-        let mut reader = MemoryReader::new(&raw);
-        let block = <Block as Serializable>::deserialize(&mut reader)
-            .map_err(|err| invalid_params(format!("Invalid block: {err}")))?;
-        let relay_result = rpc_relay::relay_block(server, block)?;
+        let request = SubmitBlockRequest::parse(params)?;
+        let relay_result = rpc_relay::relay_block(server, request.block)?;
         rpc_relay::map_relay_result(relay_result)
     }
 
