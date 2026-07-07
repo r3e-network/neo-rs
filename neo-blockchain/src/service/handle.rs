@@ -32,6 +32,7 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::command::BlockchainCommand;
 
+mod construction;
 mod imports;
 mod inventory;
 mod lifecycle;
@@ -60,41 +61,6 @@ impl fmt::Debug for BlockchainHandle {
 }
 
 impl BlockchainHandle {
-    /// Build a `(handle, command-receiver, event-sender)` triple.
-    ///
-    /// The caller is expected to spawn the blockchain command loop on
-    /// the returned `mpsc::Receiver`, and to use the returned
-    /// `broadcast::Sender` (or hand it to the loop) to publish events.
-    /// Most callers should prefer [`BlockchainHandle::with_capacity`]
-    /// when they do not need to drive the loop themselves.
-    pub fn channel(
-        cmd_capacity: usize,
-        event_capacity: usize,
-    ) -> (
-        Self,
-        mpsc::Receiver<BlockchainCommand>,
-        broadcast::Sender<crate::RuntimeEvent>,
-    ) {
-        let (cmd_tx, cmd_rx) = mpsc::channel(cmd_capacity);
-        let (event_tx, _event_rx) = broadcast::channel(event_capacity);
-        let handle = Self {
-            cmd_tx,
-            event_tx: event_tx.clone(),
-        };
-        (handle, cmd_rx, event_tx)
-    }
-
-    /// Build a [`BlockchainHandle`] with default capacities and return
-    /// the command receiver that the caller's blockchain loop should
-    /// drive.
-    pub fn with_capacity() -> (Self, mpsc::Receiver<BlockchainCommand>) {
-        let (handle, cmd_rx, _event_tx) = Self::channel(
-            crate::blockchain::DEFAULT_COMMAND_CAPACITY,
-            crate::blockchain::DEFAULT_EVENT_CAPACITY,
-        );
-        (handle, cmd_rx)
-    }
-
     /// Subscribe to [`crate::RuntimeEvent`]s.
     ///
     /// Each call returns an *independent* receiver; dropping the
