@@ -10,6 +10,7 @@
 //!
 //! ## Contents
 //!
+//! - `state`: StateService MPT store and commit-handler construction.
 //! - `store`: service-store opening and fast-sync backend mode.
 
 use std::path::Path;
@@ -19,10 +20,11 @@ use anyhow::Context;
 use tracing::info;
 
 use super::config::{NodeConfig, network_scoped_path, service_store_provider};
-use super::inventory_relay::FAST_SYNC_BURST_CAPACITY;
 
+mod state;
 mod store;
 
+use state::StateServiceRuntime;
 use store::ServiceStore;
 pub(in crate::node) use store::open_service_store_with_storage_config;
 
@@ -66,28 +68,19 @@ pub(super) fn build_operational_services(
         });
     }
 
-    let state_service_fast_sync = service_fast_sync && config.state_service.track_during_catchup;
     let storage_provider = service_store_provider(config)?;
-    let (state_store, state_service_store) =
-        build_state_store(config, network, &storage_provider, state_service_fast_sync)?;
-    let state_service = state_store.as_ref().map(|state_store| {
-        let handlers = if state_service_fast_sync {
-            neo_state_service::commit_handlers::StateServiceCommitHandlers::new_async_with_capacity(
-                Arc::clone(state_store),
-                FAST_SYNC_BURST_CAPACITY,
-            )
-        } else {
-            neo_state_service::commit_handlers::StateServiceCommitHandlers::new(Arc::clone(
-                state_store,
-            ))
-        };
-        Arc::new(handlers)
-    });
+    let state_runtime =
+        state::build_state_service_runtime(config, network, &storage_provider, service_fast_sync)?;
     let indexer_service = build_indexer_service(config, network, &storage_provider)?;
     let application_logs_service =
         build_application_logs_service(config, network, &storage_provider)?;
     let (tokens_tracker_service, tokens_tracker_runtime) =
         build_tokens_tracker_services(config, network, &storage_provider)?;
+    let StateServiceRuntime {
+        state_store,
+        state_service,
+        durable_store: state_service_store,
+    } = state_runtime;
     let durable_stores = state_service_store.into_iter().collect();
 
     Ok(OperationalServices {
@@ -99,52 +92,6 @@ pub(super) fn build_operational_services(
         tokens_tracker_runtime,
         durable_stores,
     })
-}
-
-fn build_state_store(
-    config: &NodeConfig,
-    network: u32,
-    storage_provider: &str,
-    fast_sync: bool,
-) -> anyhow::Result<(
-    Option<Arc<neo_state_service::StateStore>>,
-    Option<ServiceStore>,
-)> {
-    if !config.state_service.enabled {
-        return Ok((None, None));
-    }
-
-    let mut durable_store = None;
-    let state_store = if let Some(path) = &config.state_service.path {
-        let backing = open_service_store_with_storage_config(
-            "StateService",
-            storage_provider,
-            &config.storage,
-            path,
-            network,
-            fast_sync,
-        )?;
-        durable_store = Some(Arc::clone(&backing) as ServiceStore);
-        Arc::new(
-            neo_state_service::StateStore::with_mpt_store(config.state_service.full_state, backing)
-                .with_context(|| {
-                    format!(
-                        "opening StateService MPT store at {}",
-                        network_scoped_path(path, network).display()
-                    )
-                })?,
-        )
-    } else {
-        Arc::new(neo_state_service::StateStore::with_mpt(
-            config.state_service.full_state,
-        ))
-    };
-    info!(
-        target: "neo",
-        full_state = config.state_service.full_state,
-        "state service MPT store enabled"
-    );
-    Ok((Some(state_store), durable_store))
 }
 
 fn build_indexer_service(
