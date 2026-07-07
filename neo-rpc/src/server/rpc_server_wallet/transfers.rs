@@ -26,6 +26,7 @@ use crate::server::rpc_relay;
 use crate::server::rpc_server::RpcServer;
 use crate::server::wallet_compat;
 
+use super::errors::wallet_compat_failure;
 use super::request::{
     CancelTransactionRequest, SendManyOutputRequest, SendManyRequest, TransferRequest,
 };
@@ -138,7 +139,7 @@ impl RpcServerWallet {
             &native_contract_provider,
             server.settings().max_gas_invoke,
         )
-        .map_err(Self::wallet_compat_failure)?;
+        .map_err(wallet_compat_failure)?;
 
         if let Some(conflict_tx) = server.system().mempool().get(&request.txid) {
             let bumped = tx
@@ -318,7 +319,7 @@ impl RpcServerWallet {
             &native_contract_provider,
             server.settings().max_gas_invoke,
         )
-        .map_err(Self::wallet_compat_failure)?;
+        .map_err(wallet_compat_failure)?;
 
         Self::sign_and_relay(server, wallet, tx, snapshot_arc)
     }

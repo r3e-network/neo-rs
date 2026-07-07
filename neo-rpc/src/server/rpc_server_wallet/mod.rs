@@ -11,6 +11,7 @@
 //! ## Contents
 //!
 //! - `balance`: wallet balance RPC handlers.
+//! - `errors`: Wallet-domain error projection into RPC exceptions.
 //! - `lifecycle`: wallet open/close, key import/export, and address listing handlers.
 //! - `network_fee`: transaction network-fee estimation handler.
 //! - `request`: Typed JSON-RPC request parsing helpers.
@@ -26,8 +27,10 @@ use neo_primitives::WitnessScope;
 #[cfg(test)]
 use neo_vm_rs::OpCode;
 #[cfg(test)]
+use neo_wallets::WalletError;
+#[cfg(test)]
 use neo_wallets::{KeyPair, Nep6Wallet};
-use neo_wallets::{Wallet as CoreWallet, WalletError, WalletResult};
+use neo_wallets::{Wallet as CoreWallet, WalletResult};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -36,11 +39,11 @@ use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
-use crate::server::wallet_compat;
 #[cfg(test)]
 use support::signature_contract_pubkey;
 
 mod balance;
+mod errors;
 mod lifecycle;
 mod network_fee;
 mod request;
@@ -111,46 +114,12 @@ impl RpcServerWallet {
                 })?
                 .block_on(future)
         };
-        result.map_err(Self::wallet_failure)
+        result.map_err(errors::wallet_failure)
     }
 
     fn save_wallet(wallet: &Arc<dyn CoreWallet>) -> Result<(), RpcException> {
         let wallet_clone = Arc::clone(wallet);
         Self::await_wallet_future(Box::pin(async move { wallet_clone.save().await }))
-    }
-
-    fn wallet_compat_failure(err: wallet_compat::WalletCompatError) -> RpcException {
-        match err {
-            wallet_compat::WalletCompatError::InsufficientFunds(_) => {
-                RpcException::from(RpcError::insufficient_funds_wallet())
-            }
-            wallet_compat::WalletCompatError::Other(message) => {
-                RpcException::from(RpcError::wallet_not_supported().with_data(message))
-            }
-        }
-    }
-
-    fn wallet_failure(err: WalletError) -> RpcException {
-        match err {
-            WalletError::InvalidPassword => {
-                RpcException::from(RpcError::wallet_not_supported().with_data("Invalid password."))
-            }
-            WalletError::WalletFileNotFound(path) => {
-                RpcException::from(RpcError::wallet_not_found().with_data(path))
-            }
-            WalletError::AccountNotFound(hash) => {
-                RpcException::from(RpcError::unknown_account().with_data(format!("{hash}")))
-            }
-            WalletError::InsufficientFunds => {
-                RpcException::from(RpcError::insufficient_funds_wallet())
-            }
-            WalletError::Io(err) => {
-                RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
-            }
-            other => {
-                RpcException::from(RpcError::wallet_not_supported().with_data(other.to_string()))
-            }
-        }
     }
 
     fn require_wallet(server: &RpcServer) -> Result<Arc<dyn CoreWallet>, RpcException> {
