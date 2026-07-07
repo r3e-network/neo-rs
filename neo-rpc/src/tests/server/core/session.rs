@@ -20,8 +20,8 @@ fn server_context_engine_paths_use_explicit_native_provider() {
             include_str!("../../../server/smart_contract/contract_verify.rs"),
         ),
         (
-            "token tracker handlers",
-            include_str!("../../../server/rpc_server_tokens_tracker/mod.rs"),
+            "token tracker properties",
+            include_str!("../../../server/rpc_server_tokens_tracker/properties.rs"),
         ),
         (
             "token tracker helpers",

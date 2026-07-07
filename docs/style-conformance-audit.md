@@ -222,7 +222,11 @@ JSON parameter layout or proof-wire details.
 The same split now covers token tracker handlers:
 `rpc_server_tokens_tracker/request.rs` owns account/time-window/token-id
 parsing, while `rpc_server_tokens_tracker/response.rs` owns common balance and
-transfer response envelopes.
+transfer response envelopes. Handler mechanics are now separated by endpoint
+family as well: `balances.rs` owns NEP-11/NEP-17 balance enrichment,
+`transfers.rs` owns transfer-history routing, and `properties.rs` owns the
+NEP-11 property VM invocation. The root token-tracker module is now just the
+method registry plus module map.
 Wallet cleanup has started with the same boundary: `rpc_server_wallet/request.rs`
 now owns management and network-fee request decoding (`dumpprivkey`,
 `getwalletbalance`, `importprivkey`, `openwallet`, `calculatenetworkfee`), so

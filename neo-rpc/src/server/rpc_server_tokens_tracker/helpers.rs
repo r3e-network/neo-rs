@@ -4,6 +4,7 @@ use crate::plugins::tokens_tracker::{
 };
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
+use crate::server::rpc_server::RpcServer;
 use neo_execution::application_engine::TEST_MODE_GAS;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::Serializable;
@@ -16,8 +17,6 @@ use neo_vm_rs::VmState as VMState;
 use num_traits::ToPrimitive;
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
-
-use super::RpcServer;
 
 pub(super) fn tracker_service(
     server: &RpcServer,

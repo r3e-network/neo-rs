@@ -1,33 +1,45 @@
 use super::*;
 use crate::plugins::tokens_tracker::{
-    Nep11TransferKey, Nep17TransferKey, TokenTransfer, TokensTrackerService, TokensTrackerSettings,
-    find_range,
+    Nep11BalanceKey, Nep11Tracker, Nep11TransferKey, Nep17BalanceKey, Nep17Tracker,
+    Nep17TransferKey, TokenBalance, TokenTransfer, TokensTrackerService, TokensTrackerSettings,
+    find_prefix, find_range,
 };
 use crate::server::NodeContext;
+use crate::server::rpc_error::RpcError;
 use crate::server::rpc_server::RpcHandler;
+use crate::server::rpc_server::RpcServer;
 use crate::server::rpc_server_settings::RpcServerConfig;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_config::ProtocolSettings;
 use neo_execution::ContractState;
+use neo_execution::application_engine::TEST_MODE_GAS;
+use neo_execution::{ApplicationEngine, TriggerType};
 use neo_io::{Serializable, SerializableExtensions};
+use neo_manifest::CallFlags;
 use neo_manifest::NefFile;
 use neo_manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
 };
 use neo_native_contracts::GasToken;
 use neo_native_contracts::NativeContract;
+use neo_native_contracts::contract_management::ContractManagement;
 use neo_primitives::ContractParameterType;
+use neo_primitives::UInt160;
 use neo_primitives::UInt256;
 use neo_storage::persistence::Store;
 use neo_storage::persistence::providers::MemoryStoreProvider;
 use neo_storage::{StorageItem, StorageKey};
+use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use super::helpers::{emit_contract_call, query_asset_metadata};
 
 fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
     handlers
