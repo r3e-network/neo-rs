@@ -38,7 +38,10 @@ fn server_context_engine_paths_use_explicit_native_provider() {
             "wallet compat network fee",
             include_str!("../../../server/wallet_compat/network_fee.rs"),
         ),
-        ("session", include_str!("../../../server/session/mod.rs")),
+        (
+            "session",
+            include_str!("../../../server/session/execution.rs"),
+        ),
     ];
 
     for (name, source) in sources {

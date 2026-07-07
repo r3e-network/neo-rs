@@ -309,8 +309,10 @@ coverage tests live in `tests/server/core/dispatch.rs`.
 RPC invocation sessions now follow the same facade rule:
 `session/iterators.rs` owns retained iterator registration payloads, traversal
 adapters, and disposal; `session/dummy_block.rs` owns the C#-compatible
-`ApplicationEngine.CreateDummyBlock` construction used by stateless invokes.
-The root `session/mod.rs` stays focused on session lifecycle, execution setup,
+`ApplicationEngine.CreateDummyBlock` construction used by stateless invokes;
+and `session/execution.rs` owns `Session::new`, including the transaction
+container, dummy persisting block, native provider threading, and initial script
+execution. The root `session/mod.rs` stays focused on retained session state,
 diagnostics, snapshots, expiration, and stable iterator IDs.
 Indexer block reads have started the same endpoint-family split:
 `rpc_server_indexer/blocks.rs` owns `getblockindex` and `getblockindexes`
