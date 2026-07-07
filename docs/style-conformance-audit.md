@@ -390,8 +390,11 @@ handle, wallet accessors, and wallet-change callbacks, and
 and termination helpers.
 `jsonrpsee_adapter/auth.rs` owns the transport-auth extension marker and Basic
 header verification, `jsonrpsee_adapter/codec.rs` owns transport parameter
-decoding and Neo error-object projection, and `jsonrpsee_adapter/mod.rs` keeps
-module registration and dispatch bridging.
+decoding and Neo error-object projection, `jsonrpsee_adapter/context.rs` owns
+the callback context, `jsonrpsee_adapter/module.rs` owns dynamic method
+registration and request/error counters, and `jsonrpsee_adapter/dispatch.rs`
+owns per-request handler resolution plus auth-gated dispatch. The root adapter
+module now keeps only facade exports and the module map.
 RPC dispatch has the same production/test boundary now:
 `dispatch/mod.rs` owns handler resolution, rate-limit checks, and remote-ledger
 proxy dispatch, while `dispatch/panic_policy.rs` owns local handler panic
