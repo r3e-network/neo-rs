@@ -14,8 +14,6 @@
 
 /// Render sync metrics as Prometheus-format text.
 pub fn render_prometheus() -> String {
-    use std::fmt::Write as _;
-
     use neo_runtime::sync_metrics as m;
 
     let height = m::height();
@@ -122,18 +120,20 @@ pub fn render_prometheus() -> String {
          # TYPE neo_state_service_mpt_apply_stage_avg_us gauge\n",
     );
     for stat in neo_state_service::StateRootApplyMetrics::state_root_apply_stage_stats() {
-        writeln!(
-            output,
-            "neo_state_service_mpt_apply_stage_calls_total{{stage=\"{}\"}} {}",
-            stat.stage, stat.calls
-        )
-        .expect("write metrics line");
-        writeln!(
-            output,
-            "neo_state_service_mpt_apply_stage_avg_us{{stage=\"{}\"}} {}",
-            stat.stage, stat.avg_us
-        )
-        .expect("write metrics line");
+        push_single_label_metric(
+            &mut output,
+            "neo_state_service_mpt_apply_stage_calls_total",
+            "stage",
+            stat.stage,
+            stat.calls,
+        );
+        push_single_label_metric(
+            &mut output,
+            "neo_state_service_mpt_apply_stage_avg_us",
+            "stage",
+            stat.stage,
+            stat.avg_us,
+        );
     }
     output.push_str(
         "# HELP neo_state_service_mpt_apply_count_samples_total Total local StateService MPT apply count samples\n\
@@ -144,24 +144,27 @@ pub fn render_prometheus() -> String {
          # TYPE neo_state_service_mpt_apply_avg_items gauge\n",
     );
     for stat in neo_state_service::StateRootApplyMetrics::state_root_apply_count_stats() {
-        writeln!(
-            output,
-            "neo_state_service_mpt_apply_count_samples_total{{kind=\"{}\"}} {}",
-            stat.kind, stat.samples
-        )
-        .expect("write metrics line");
-        writeln!(
-            output,
-            "neo_state_service_mpt_apply_items_total{{kind=\"{}\"}} {}",
-            stat.kind, stat.total
-        )
-        .expect("write metrics line");
-        writeln!(
-            output,
-            "neo_state_service_mpt_apply_avg_items{{kind=\"{}\"}} {}",
-            stat.kind, stat.avg
-        )
-        .expect("write metrics line");
+        push_single_label_metric(
+            &mut output,
+            "neo_state_service_mpt_apply_count_samples_total",
+            "kind",
+            stat.kind,
+            stat.samples,
+        );
+        push_single_label_metric(
+            &mut output,
+            "neo_state_service_mpt_apply_items_total",
+            "kind",
+            stat.kind,
+            stat.total,
+        );
+        push_single_label_metric(
+            &mut output,
+            "neo_state_service_mpt_apply_avg_items",
+            "kind",
+            stat.kind,
+            stat.avg,
+        );
     }
 
     output.push_str(
@@ -171,18 +174,22 @@ pub fn render_prometheus() -> String {
          # TYPE neo_sync_native_contract_hook_avg_us gauge\n",
     );
     for stat in m::native_contract_hook_stats() {
-        writeln!(
-            output,
-            "neo_sync_native_contract_hook_calls_total{{trigger=\"{}\",contract=\"{}\",id=\"{}\"}} {}",
-            stat.trigger, stat.contract, stat.contract_id, stat.calls
-        )
-        .expect("write metrics line");
-        writeln!(
-            output,
-            "neo_sync_native_contract_hook_avg_us{{trigger=\"{}\",contract=\"{}\",id=\"{}\"}} {}",
-            stat.trigger, stat.contract, stat.contract_id, stat.avg_us
-        )
-        .expect("write metrics line");
+        push_native_hook_metric(
+            &mut output,
+            "neo_sync_native_contract_hook_calls_total",
+            stat.trigger,
+            stat.contract,
+            stat.contract_id,
+            stat.calls,
+        );
+        push_native_hook_metric(
+            &mut output,
+            "neo_sync_native_contract_hook_avg_us",
+            stat.trigger,
+            stat.contract,
+            stat.contract_id,
+            stat.avg_us,
+        );
     }
     output.push_str(
         "# HELP neo_sync_native_persist_tx_stage_calls_total Total native persistence transaction-stage observations\n\
@@ -191,18 +198,20 @@ pub fn render_prometheus() -> String {
          # TYPE neo_sync_native_persist_tx_stage_avg_us gauge\n",
     );
     for stat in m::native_persist_tx_stage_stats() {
-        writeln!(
-            output,
-            "neo_sync_native_persist_tx_stage_calls_total{{stage=\"{}\"}} {}",
-            stat.stage, stat.calls
-        )
-        .expect("write metrics line");
-        writeln!(
-            output,
-            "neo_sync_native_persist_tx_stage_avg_us{{stage=\"{}\"}} {}",
-            stat.stage, stat.avg_us
-        )
-        .expect("write metrics line");
+        push_single_label_metric(
+            &mut output,
+            "neo_sync_native_persist_tx_stage_calls_total",
+            "stage",
+            stat.stage,
+            stat.calls,
+        );
+        push_single_label_metric(
+            &mut output,
+            "neo_sync_native_persist_tx_stage_avg_us",
+            "stage",
+            stat.stage,
+            stat.avg_us,
+        );
     }
     output.push_str(
         "# HELP neo_sync_neotoken_onpersist_stage_calls_total Total NeoToken OnPersist stage observations\n\
@@ -211,18 +220,20 @@ pub fn render_prometheus() -> String {
          # TYPE neo_sync_neotoken_onpersist_stage_avg_us gauge\n",
     );
     for stat in m::neo_token_onpersist_stage_stats() {
-        writeln!(
-            output,
-            "neo_sync_neotoken_onpersist_stage_calls_total{{stage=\"{}\"}} {}",
-            stat.stage, stat.calls
-        )
-        .expect("write metrics line");
-        writeln!(
-            output,
-            "neo_sync_neotoken_onpersist_stage_avg_us{{stage=\"{}\"}} {}",
-            stat.stage, stat.avg_us
-        )
-        .expect("write metrics line");
+        push_single_label_metric(
+            &mut output,
+            "neo_sync_neotoken_onpersist_stage_calls_total",
+            "stage",
+            stat.stage,
+            stat.calls,
+        );
+        push_single_label_metric(
+            &mut output,
+            "neo_sync_neotoken_onpersist_stage_avg_us",
+            "stage",
+            stat.stage,
+            stat.avg_us,
+        );
     }
     output.push_str(
         "# HELP neo_sync_neotoken_committee_compute_stage_calls_total Total NeoToken committee-compute stage observations\n\
@@ -231,18 +242,20 @@ pub fn render_prometheus() -> String {
          # TYPE neo_sync_neotoken_committee_compute_stage_avg_us gauge\n",
     );
     for stat in m::neo_token_committee_compute_stage_stats() {
-        writeln!(
-            output,
-            "neo_sync_neotoken_committee_compute_stage_calls_total{{stage=\"{}\"}} {}",
-            stat.stage, stat.calls
-        )
-        .expect("write metrics line");
-        writeln!(
-            output,
-            "neo_sync_neotoken_committee_compute_stage_avg_us{{stage=\"{}\"}} {}",
-            stat.stage, stat.avg_us
-        )
-        .expect("write metrics line");
+        push_single_label_metric(
+            &mut output,
+            "neo_sync_neotoken_committee_compute_stage_calls_total",
+            "stage",
+            stat.stage,
+            stat.calls,
+        );
+        push_single_label_metric(
+            &mut output,
+            "neo_sync_neotoken_committee_compute_stage_avg_us",
+            "stage",
+            stat.stage,
+            stat.avg_us,
+        );
     }
     output.push_str(
         "# HELP neo_sync_neotoken_committee_candidate_scan_samples_total Total NeoToken committee candidate-scan count samples\n\
@@ -253,25 +266,145 @@ pub fn render_prometheus() -> String {
          # TYPE neo_sync_neotoken_committee_candidate_scan_avg_items gauge\n",
     );
     for stat in m::neo_token_committee_candidate_count_stats() {
-        writeln!(
-            output,
-            "neo_sync_neotoken_committee_candidate_scan_samples_total{{kind=\"{}\"}} {}",
-            stat.kind, stat.samples
-        )
-        .expect("write metrics line");
-        writeln!(
-            output,
-            "neo_sync_neotoken_committee_candidate_scan_items_total{{kind=\"{}\"}} {}",
-            stat.kind, stat.total
-        )
-        .expect("write metrics line");
-        writeln!(
-            output,
-            "neo_sync_neotoken_committee_candidate_scan_avg_items{{kind=\"{}\"}} {}",
-            stat.kind, stat.avg
-        )
-        .expect("write metrics line");
+        push_single_label_metric(
+            &mut output,
+            "neo_sync_neotoken_committee_candidate_scan_samples_total",
+            "kind",
+            stat.kind,
+            stat.samples,
+        );
+        push_single_label_metric(
+            &mut output,
+            "neo_sync_neotoken_committee_candidate_scan_items_total",
+            "kind",
+            stat.kind,
+            stat.total,
+        );
+        push_single_label_metric(
+            &mut output,
+            "neo_sync_neotoken_committee_candidate_scan_avg_items",
+            "kind",
+            stat.kind,
+            stat.avg,
+        );
     }
 
     output
+}
+
+fn push_single_label_metric(
+    output: &mut String,
+    metric: &str,
+    label_name: &str,
+    label_value: &str,
+    value: u64,
+) {
+    output.push_str(metric);
+    output.push('{');
+    output.push_str(label_name);
+    output.push_str("=\"");
+    output.push_str(label_value);
+    output.push_str("\"} ");
+    output.push_str(&value.to_string());
+    output.push('\n');
+}
+
+fn push_native_hook_metric(
+    output: &mut String,
+    metric: &str,
+    trigger: &str,
+    contract: &str,
+    contract_id: i32,
+    value: u64,
+) {
+    output.push_str(metric);
+    output.push_str("{trigger=\"");
+    output.push_str(trigger);
+    output.push_str("\",contract=\"");
+    output.push_str(contract);
+    output.push_str("\",id=\"");
+    output.push_str(&contract_id.to_string());
+    output.push_str("\"} ");
+    output.push_str(&value.to_string());
+    output.push('\n');
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_prometheus;
+
+    #[test]
+    fn render_prometheus_keeps_labelled_metric_families() {
+        neo_state_service::metrics::StateRootApplyMetrics::record_stage(
+            neo_state_service::metrics::StateRootApplyStage::RootHash,
+            17,
+        );
+        neo_state_service::metrics::StateRootApplyMetrics::record_count(
+            neo_state_service::metrics::StateRootApplyCountKind::OverlayEntries,
+            3,
+        );
+        neo_runtime::sync_metrics::record_native_contract_hook(
+            neo_runtime::sync_metrics::NativePersistHook::OnPersist,
+            -5,
+            23,
+        );
+        neo_runtime::sync_metrics::record_native_persist_tx_stage(
+            neo_runtime::sync_metrics::NativePersistTxStage::Execute,
+            29,
+        );
+        neo_runtime::sync_metrics::record_neo_token_onpersist_stage(
+            neo_runtime::sync_metrics::NeoTokenOnPersistStage::RefreshTotal,
+            31,
+        );
+        neo_runtime::sync_metrics::record_neo_token_committee_compute_stage(
+            neo_runtime::sync_metrics::NeoTokenCommitteeComputeStage::TopCandidateMaintenance,
+            37,
+        );
+        neo_runtime::sync_metrics::record_neo_token_committee_candidate_count(
+            neo_runtime::sync_metrics::NeoTokenCommitteeCandidateCount::EligibleCandidates,
+            5,
+        );
+
+        let output = render_prometheus();
+
+        assert!(output.contains("# HELP neo_sync_height Current block height"));
+        assert!(
+            output.contains("neo_state_service_mpt_apply_stage_calls_total{stage=\"root_hash\"} "),
+            "state-root stage labels should stay Prometheus-compatible"
+        );
+        assert!(
+            output.contains(
+                "neo_state_service_mpt_apply_count_samples_total{kind=\"overlay_entries\"} "
+            ),
+            "state-root count labels should stay Prometheus-compatible"
+        );
+        assert!(
+            output.contains(
+                "neo_sync_native_contract_hook_calls_total{trigger=\"onpersist\",contract=\"NeoToken\",id=\"-5\"} "
+            ),
+            "native hook labels should preserve trigger, contract, and id"
+        );
+        assert!(
+            output.contains("neo_sync_native_persist_tx_stage_calls_total{stage=\"execute\"} "),
+            "native transaction-stage labels should stay stable"
+        );
+        assert!(
+            output.contains(
+                "neo_sync_neotoken_onpersist_stage_calls_total{stage=\"refresh_total\"} "
+            ),
+            "NeoToken OnPersist stage labels should stay stable"
+        );
+        assert!(
+            output.contains(
+                "neo_sync_neotoken_committee_compute_stage_calls_total{stage=\"top_candidate_maintenance\"} "
+            ),
+            "NeoToken committee-compute stage labels should stay stable"
+        );
+        assert!(
+            output.contains(
+                "neo_sync_neotoken_committee_candidate_scan_samples_total{kind=\"eligible_candidates\"} "
+            ),
+            "NeoToken candidate-scan count labels should stay stable"
+        );
+    }
 }
