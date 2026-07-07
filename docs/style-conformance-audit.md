@@ -259,6 +259,10 @@ Blockchain transaction lookup now follows the same split:
 `rpc_server_blockchain/transactions.rs` owns `getrawtransaction` and
 `gettransactionheight` pool/ledger lookup plus C#-compatible verbose
 projection, while `request_helpers.rs` owns hash and verbose parsing.
+Blockchain native/governance queries have moved out of the route map:
+`rpc_server_blockchain/native.rs` owns native contract listing, committee,
+validator, and candidate projections over `NativeQueries`; `mod.rs` now keeps
+only registration plus the remaining block/header legacy handlers.
 Smart-contract request parsing now follows the same rule:
 `smart_contract/request.rs` owns positional parsing for invocation, contract
 verification, iterator-session, and unclaimed-GAS handlers, including
