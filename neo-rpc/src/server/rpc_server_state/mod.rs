@@ -29,7 +29,7 @@ mod proof;
 mod request;
 mod response;
 mod state_queries;
-use request::StateRootRequest;
+use request::{NoParamsRequest, StateRootRequest};
 use response::state_root_to_json;
 
 /// C# `StateServiceSettings.MaxFindResultItems` default (the plugin
@@ -67,7 +67,8 @@ impl RpcServerState {
         state_store.mpt().ok_or_else(Self::proofs_unsupported)
     }
 
-    fn get_state_height(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
+    fn get_state_height(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        NoParamsRequest::parse(params, "getstateheight")?;
         let state_store = Self::state_store(server)?;
         // The state-root cache records roots once they are validated, so the
         // local and validated indexes coincide in this build. The verification

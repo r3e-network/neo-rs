@@ -3,13 +3,11 @@ use super::*;
 #[tokio::test(flavor = "multi_thread")]
 async fn state_handlers_error_when_service_not_registered() {
     let server = make_server_without_state();
-    for method in [
-        "getstateheight",
-        "getstateroot",
-        "getproof",
-        "getstate",
-        "findstates",
-    ] {
+    let err = call(&server, "getstateheight", &[]).expect_err("service missing");
+    let rpc_error: RpcError = err.into();
+    assert_eq!(rpc_error.code(), RpcError::internal_server_error().code());
+
+    for method in ["getstateroot", "getproof", "getstate", "findstates"] {
         let params = [json!(0)];
         let err = call(&server, method, &params).expect_err("service missing");
         let rpc_error: RpcError = err.into();
@@ -19,6 +17,19 @@ async fn state_handlers_error_when_service_not_registered() {
             "{method} should fail without a registered state store"
         );
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn state_height_rejects_unexpected_parameters() {
+    let (_system, _state_store, server) = make_server_with_state();
+    let err = call(&server, "getstateheight", &[json!(0)]).expect_err("unexpected params");
+    let rpc_error: RpcError = err.into();
+
+    assert_eq!(rpc_error.code(), RpcError::invalid_params().code());
+    assert_eq!(
+        rpc_error.data(),
+        Some("getstateheight expects no parameters")
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

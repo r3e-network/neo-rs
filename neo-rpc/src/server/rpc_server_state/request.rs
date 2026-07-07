@@ -12,6 +12,8 @@ use serde_json::Value;
 
 use super::MAX_FIND_RESULT_ITEMS;
 
+pub(super) use crate::server::rpc_helpers::NoParamsRequest;
+
 pub(super) struct StateRootRequest {
     pub(super) index: u32,
 }
