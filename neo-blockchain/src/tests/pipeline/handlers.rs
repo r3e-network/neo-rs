@@ -843,26 +843,35 @@ fn empty_fast_forward_run_collection_borrows_import_batch_blocks() {
 #[test]
 fn bulk_import_clones_blocks_only_after_empty_fast_forward_attempt() {
     let source = include_str!("../../handlers/import.rs");
+    let empty_fast_forward_source = include_str!("../../handlers/import/empty_fast_forward.rs");
     let persist_source = include_str!("../../handlers/import/persist.rs");
     let handle_import = source
         .split("pub(crate) async fn handle_import")
         .nth(1)
         .and_then(|tail| tail.split("impl<S, M> BlockchainService").next())
         .expect("handle_import source");
-    let fast_forward_branch = handle_import
-        .find("stage_empty_block_fast_forward")
+    let fast_forward_delegate = handle_import
+        .find("try_bulk_empty_fast_forward")
         .expect("bulk import attempts empty-block fast-forward");
     let persistence_delegate = handle_import
         .find("persist_import_block_for_command")
         .expect("normal persistence delegates to accepted-block helper");
 
     assert!(
-        fast_forward_branch < persistence_delegate,
+        fast_forward_delegate < persistence_delegate,
         "bulk import should not clone a block before the empty-block fast-forward path can consume it by borrow"
     );
     assert!(
         !handle_import.contains("blocks[position].clone()"),
         "handle_import should not clone batch blocks directly before fast-forward decisions"
+    );
+    assert!(
+        empty_fast_forward_source.contains("stage_empty_block_fast_forward"),
+        "bulk empty-block helper must own the state-equivalent fast-forward attempt"
+    );
+    assert!(
+        !empty_fast_forward_source.contains("Arc::new(block.clone())"),
+        "bulk empty-block helper must borrow batch blocks instead of cloning them"
     );
     assert!(
         persist_source.contains("let block = Arc::new(block.clone());"),

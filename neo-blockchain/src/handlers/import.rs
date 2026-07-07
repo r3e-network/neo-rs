@@ -1,16 +1,15 @@
-use std::sync::Arc;
 use std::time::Instant;
 
-use tracing::{debug, warn};
+use tracing::warn;
 
 use crate::command::{ImportBlocksReply, ImportBlocksStats};
-use crate::empty_block_fast_forward::stage_empty_block_fast_forward;
 use crate::import::Import;
 use crate::internal::ImportDisposition;
 use crate::native_persist::NativePersistOptions;
 use crate::service::{BlockchainService, MempoolLike};
 use crate::service_context::BlockPersistContext;
 
+mod empty_fast_forward;
 mod finalization;
 mod persist;
 mod verification;
@@ -84,53 +83,19 @@ where
 
             if bulk_sync
                 && !import.verify
-                && self.system.allows_empty_block_fast_forward()
                 && let Some(resources) = &batch_persist_resources
-            {
-                let run = Self::collect_empty_fast_forward_run(
+                && let Some((fast_forwarded, last_height)) = self.try_bulk_empty_fast_forward(
                     &blocks,
                     position,
                     current_height,
-                    resources.settings.as_ref(),
-                    &resources.native_persist,
-                );
-                if !run.is_empty() {
-                    let empty_start = Instant::now();
-                    match stage_empty_block_fast_forward(
-                        Arc::clone(&resources.snapshot),
-                        &run,
-                        resources.settings.as_ref(),
-                        persist_options,
-                        persist_context,
-                        &resources.native_persist,
-                        current_height,
-                    ) {
-                        Ok(staged) => {
-                            staged.commit();
-                            stats.empty_blocks += run.len();
-                            stats.empty_elapsed += empty_start.elapsed();
-                            if let Some(last_block) = run.last() {
-                                // Fast-forward is only enabled when no component
-                                // needs the per-block observer stream. Keep
-                                // ledger history in the durable store and only
-                                // advance the hot in-memory tip for the batch.
-                                self.ledger.record_tip(last_block.index());
-                                imported += run.len();
-                                last_imported_height = Some(last_block.index());
-                            }
-                            position += run.len();
-                            continue;
-                        }
-                        Err(error) => {
-                            debug!(
-                                target: "neo::sync",
-                                height = index,
-                                error = %error,
-                                "empty-block fast-forward fell back to normal persistence"
-                            );
-                        }
-                    }
-                }
+                    resources,
+                    &mut stats,
+                )
+            {
+                imported += fast_forwarded;
+                last_imported_height = Some(last_height);
+                position += fast_forwarded;
+                continue;
             }
 
             if import.verify
