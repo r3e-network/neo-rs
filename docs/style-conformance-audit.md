@@ -253,12 +253,13 @@ The root `parameter_converter/mod.rs` keeps the converter facade, context,
 trait, and domain identifier helpers.
 The same split now covers token tracker handlers:
 `rpc_server_tokens_tracker/request.rs` owns account/time-window/token-id
-parsing, while `rpc_server_tokens_tracker/response.rs` owns common balance and
-transfer response envelopes. Handler mechanics are now separated by endpoint
-family as well: `balances.rs` owns NEP-11/NEP-17 balance enrichment,
-`transfers.rs` owns transfer-history routing, and `properties.rs` owns the
-NEP-11 property VM invocation. The root token-tracker module is now just the
-method registry plus module map.
+parsing, while `rpc_server_tokens_tracker/response.rs` owns balance, transfer
+entry, token-entry, and transfer-history response envelopes. Handler mechanics
+are now separated by endpoint family as well: `balances.rs` owns NEP-11/NEP-17
+balance enrichment, `transfers.rs` owns transfer-history routing,
+`helpers.rs` owns tracker service lookup and transfer range ordering, and
+`properties.rs` owns the NEP-11 property VM invocation. The root token-tracker
+module is now just the method registry plus module map.
 Wallet cleanup has started with the same boundary: `rpc_server_wallet/request.rs`
 now owns management and network-fee request decoding (`dumpprivkey`,
 `getwalletbalance`, `importprivkey`, `openwallet`, `calculatenetworkfee`) and

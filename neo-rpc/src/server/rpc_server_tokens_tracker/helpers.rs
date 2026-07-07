@@ -10,13 +10,14 @@ use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::Serializable;
 use neo_manifest::CallFlags;
 use neo_primitives::UInt160;
-use neo_primitives::hex_util;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
 use num_traits::ToPrimitive;
-use serde_json::{Map, Value, json};
+use serde_json::Value;
 use std::sync::Arc;
+
+use super::response::{nep11_transfer_entry, transfer_entries, transfer_entry};
 
 pub(super) fn tracker_service(
     server: &RpcServer,
@@ -42,9 +43,8 @@ pub(super) fn collect_transfers(
         script_hash,
         start,
         end,
-        address_version,
         max_results,
-        |_, _| {},
+        |key, value| transfer_entry(key, value, address_version),
     )
 }
 
@@ -63,14 +63,8 @@ pub(super) fn collect_nep11_transfers(
         script_hash,
         start,
         end,
-        address_version,
         max_results,
-        |key, entry| {
-            entry.insert(
-                "tokenid".to_string(),
-                Value::String(hex_util::encode_hex(&key.token)),
-            );
-        },
+        |key, value| nep11_transfer_entry(key, value, address_version),
     )
 }
 
@@ -80,14 +74,13 @@ fn collect_transfer_entries<K, S, F>(
     script_hash: &UInt160,
     start: u64,
     end: u64,
-    address_version: u8,
     max_results: usize,
-    add_extra_fields: F,
+    project_entry: F,
 ) -> Result<Value, RpcException>
 where
     K: Serializable + TokenTransferKeyView,
     S: neo_storage::persistence::Store + ?Sized,
-    F: Fn(&K, &mut Map<String, Value>),
+    F: Fn(&K, &TokenTransfer) -> Value,
 {
     let mut prefix_bytes = Vec::with_capacity(1 + UInt160::LENGTH);
     prefix_bytes.push(prefix);
@@ -114,52 +107,10 @@ where
 
     let mut entries = Vec::new();
     for (_, (key, value)) in limited {
-        let mut entry = transfer_entry_to_json(&key, &value, address_version);
-        add_extra_fields(&key, &mut entry);
-        entries.push(Value::Object(entry));
+        entries.push(project_entry(&key, &value));
     }
 
-    Ok(Value::Array(entries))
-}
-
-fn transfer_entry_to_json<K>(
-    key: &K,
-    value: &TokenTransfer,
-    address_version: u8,
-) -> Map<String, Value>
-where
-    K: TokenTransferKeyView,
-{
-    let transfer_address = if value.user_script_hash == UInt160::zero() {
-        Value::Null
-    } else {
-        Value::String(neo_wallets::wallet_helper::WalletAddress::to_address(
-            &value.user_script_hash,
-            address_version,
-        ))
-    };
-
-    let mut entry = Map::new();
-    entry.insert("timestamp".to_string(), json!(key.timestamp_ms()));
-    entry.insert(
-        "assethash".to_string(),
-        Value::String(key.asset_script_hash().to_string()),
-    );
-    entry.insert("transferaddress".to_string(), transfer_address);
-    entry.insert(
-        "amount".to_string(),
-        Value::String(value.amount.to_string()),
-    );
-    entry.insert("blockindex".to_string(), json!(value.block_index));
-    entry.insert(
-        "transfernotifyindex".to_string(),
-        json!(key.block_xfer_notification_index()),
-    );
-    entry.insert(
-        "txhash".to_string(),
-        Value::String(value.tx_hash.to_string()),
-    );
-    entry
+    Ok(transfer_entries(entries))
 }
 
 pub(super) fn query_asset_metadata(
