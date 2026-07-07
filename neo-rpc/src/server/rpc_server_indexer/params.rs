@@ -2,7 +2,8 @@ use neo_indexer::IndexerService;
 use neo_primitives::{UInt160, UInt256};
 use serde_json::Value;
 
-use super::{BlockSelector, PageBounds, RpcServerIndexer};
+use super::RpcServerIndexer;
+use super::support::{BlockSelector, PageBounds};
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{
     expect_script_hash_or_address_param, expect_uint256_param_with_message, invalid_params,

@@ -15,38 +15,19 @@
 //! - `params`: RPC endpoint parameter records.
 //! - `responses`: RPC response construction helpers.
 //! - `status`: RPC status response records.
+//! - `support`: Shared support types and service helpers.
 //! - `tests`: Module-local tests and regression coverage.
 //! - `transactions`: Transaction-index RPC endpoint handlers.
 
-use std::sync::Arc;
-
-use neo_indexer::{IndexerError, IndexerService};
-use neo_primitives::UInt256;
-use serde_json::Value;
-
-use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::internal_error;
-use crate::server::rpc_server::{RpcHandler, RpcServer};
+use crate::server::rpc_server::RpcHandler;
 
 mod blocks;
 mod notifications;
 mod params;
 mod responses;
 mod status;
+mod support;
 mod transactions;
-
-use params::NoParamsRequest;
-
-const STANDARD_PAGE_BOUNDS: PageBounds = PageBounds {
-    default_limit: 100,
-    max_limit: 1_000,
-};
-
-#[derive(Debug, Clone, Copy)]
-struct PageBounds {
-    default_limit: usize,
-    max_limit: usize,
-}
 
 /// RPC method group for the read-side Neo indexer service.
 pub struct RpcServerIndexer;
@@ -68,28 +49,6 @@ impl RpcServerIndexer {
             "getcontractnotifications" => Self::get_contract_notifications,
         ]
     }
-
-    fn get_indexer_status(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        NoParamsRequest::parse(params, "getindexerstatus")?;
-        let service = Self::service(server)?;
-        Self::indexer_status_json(server, &service).map_err(Self::indexer_error)
-    }
-
-    fn service(server: &RpcServer) -> Result<Arc<IndexerService>, RpcException> {
-        server
-            .system()
-            .get_service::<IndexerService>()
-            .ok_or_else(|| internal_error("NeoIndexer service not available"))
-    }
-
-    fn indexer_error(error: IndexerError) -> RpcException {
-        internal_error(format!("NeoIndexer service read failed: {error}"))
-    }
-}
-
-enum BlockSelector {
-    Height(u32),
-    Hash(UInt256),
 }
 
 #[cfg(test)]

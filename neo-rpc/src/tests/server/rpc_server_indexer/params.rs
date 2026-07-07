@@ -7,7 +7,8 @@ use neo_indexer::IndexerService;
 use neo_primitives::UInt256;
 use serde_json::Value;
 
-use super::super::{RpcServerIndexer, STANDARD_PAGE_BOUNDS};
+use super::super::RpcServerIndexer;
+use super::super::support::STANDARD_PAGE_BOUNDS;
 use super::support::{account, assert_invalid_params, find_handler};
 
 #[test]

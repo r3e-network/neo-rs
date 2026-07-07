@@ -2,10 +2,11 @@
 
 use serde_json::Value;
 
+use super::RpcServerIndexer;
 use super::params::{
     AccountPageRequest, BlockPageRequest, ContractActivityRequest, TransactionIndexRequest,
 };
-use super::{RpcServerIndexer, STANDARD_PAGE_BOUNDS};
+use super::support::STANDARD_PAGE_BOUNDS;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
 

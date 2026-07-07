@@ -3,11 +3,22 @@ use neo_native_contracts::LedgerContract;
 use serde_json::Value;
 
 use super::RpcServerIndexer;
+use super::params::NoParamsRequest;
 use super::responses::ApplicationLogsStatus;
 use crate::application_logs::ApplicationLogsService;
+use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
 
 impl RpcServerIndexer {
+    pub(super) fn get_indexer_status(
+        server: &RpcServer,
+        params: &[Value],
+    ) -> Result<Value, RpcException> {
+        NoParamsRequest::parse(params, "getindexerstatus")?;
+        let service = Self::service(server)?;
+        Self::indexer_status_json(server, &service).map_err(Self::indexer_error)
+    }
+
     pub(crate) fn indexer_status_json(
         server: &RpcServer,
         service: &IndexerService,

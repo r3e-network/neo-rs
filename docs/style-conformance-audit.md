@@ -396,10 +396,11 @@ Indexer block reads have started the same endpoint-family split:
 lookup, while `rpc_server_indexer/params.rs` owns the typed block-selector and
 page request records and `rpc_server_indexer/responses.rs` owns optional/list
 block-index projection. `getindexerstatus` uses the shared no-parameter request
-record through `params.rs`; `status.rs` owns status/service lookup while
-`responses.rs` owns the status and ApplicationLogs availability projection, so
-indexer endpoints no longer carry private duplicate validators or inline status
-envelopes.
+record through `params.rs`; `status.rs` owns status handling and status lookup,
+`support.rs` owns IndexerService lookup, shared error mapping, page bounds, and
+block selector types, while `responses.rs` owns the status and ApplicationLogs
+availability projection. Indexer endpoints no longer carry private duplicate
+validators or inline status envelopes.
 `rpc_server_indexer/transactions.rs` owns transaction lookup and
 block/address/contract transaction list routing, while `params.rs` owns the
 typed transaction-hash and block-page request records for transaction index
@@ -410,8 +411,7 @@ transaction, account-transaction, optional-result, and list projection.
 notification routing, while `params.rs` owns the shared account, block,
 transaction, and contract-activity page request records and `responses.rs` owns
 notification list projection. The root `rpc_server_indexer/mod.rs` now keeps
-handler registration, service lookup, shared error mapping, and shared selector
-types.
+only handler registration.
 RPC settings parsing has started the same decomposition:
 `rpc_server_settings/gas.rs` owns C#-compatible `MaxGasInvoke` and `MaxFee`
 GAS/datoshi decoding; `rpc_server_settings/config.rs` owns
