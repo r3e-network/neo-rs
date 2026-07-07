@@ -239,6 +239,8 @@ open/close, address creation/listing, and WIF import/export endpoints; the root
 keeps shared wallet runtime/error helpers used across lifecycle and transfer
 paths. `rpc_server_wallet/balance.rs` owns `getwalletbalance`,
 `getwalletunclaimedgas`, and the native balance/unclaimed-GAS probe logic.
+`rpc_server_wallet/network_fee.rs` owns `calculatenetworkfee` request execution
+and wallet-account script projection.
 ApplicationLogs now follows the same split: `rpc_server_application_logs/request.rs`
 owns hash and trigger-filter parsing, and `response.rs` owns the optional
 trigger filtering over stored C#-compatible log JSON. Direct handler tests cover

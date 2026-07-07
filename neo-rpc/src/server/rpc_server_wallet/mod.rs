@@ -12,6 +12,7 @@
 //!
 //! - `balance`: wallet balance RPC handlers.
 //! - `lifecycle`: wallet open/close, key import/export, and address listing handlers.
+//! - `network_fee`: transaction network-fee estimation handler.
 //! - `request`: Typed JSON-RPC request parsing helpers.
 //! - `support`: Shared support helpers that keep domain modules focused.
 //! - `transfers`: wallet transfer RPC handlers.
@@ -27,7 +28,6 @@ use neo_vm_rs::OpCode;
 #[cfg(test)]
 use neo_wallets::{KeyPair, Nep6Wallet};
 use neo_wallets::{Wallet as CoreWallet, WalletError, WalletResult};
-use serde_json::{Value, json};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -35,7 +35,6 @@ use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::invalid_params;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use crate::server::wallet_compat;
 #[cfg(test)]
@@ -43,11 +42,10 @@ use support::signature_contract_pubkey;
 
 mod balance;
 mod lifecycle;
+mod network_fee;
 mod request;
 mod support;
 mod transfers;
-
-use self::request::NetworkFeeRequest;
 
 /// RPC handler group for wallet management and transfer methods.
 pub struct RpcServerWallet;
@@ -78,32 +76,6 @@ impl RpcServerWallet {
             "sendmany" => Self::send_many,
             "canceltransaction" => Self::cancel_transaction,
         ]
-    }
-
-    fn calculate_network_fee(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let request = NetworkFeeRequest::parse(params)?;
-        let system = server.system();
-        let store = system.store_cache();
-        let settings = system.settings();
-        let native_contract_provider = system.native_contract_provider();
-        let wallet = server.wallet();
-        let account_script = |hash: &UInt160| -> Option<Vec<u8>> {
-            wallet.as_ref().and_then(|wallet| {
-                wallet
-                    .account(hash)
-                    .and_then(|account| account.contract().map(|contract| contract.script.clone()))
-            })
-        };
-        let fee = wallet_compat::calculate_network_fee(
-            &request.transaction,
-            store.data_cache(),
-            &settings,
-            &native_contract_provider,
-            &account_script,
-            server.settings().max_gas_invoke,
-        )
-        .map_err(|err| invalid_params(err.to_string()))?;
-        Ok(json!({"networkfee": fee.to_string()}))
     }
 
     fn parse_script_hash(server: &RpcServer, value: &str) -> Result<UInt160, RpcException> {
