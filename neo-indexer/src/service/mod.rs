@@ -10,6 +10,7 @@
 //!
 //! ## Contents
 //!
+//! - `backend`: durable backend kind, diagnostics, and persistence dispatch.
 //! - `notification_queries`: notification query API.
 //! - `persistence`: Persistence traits, snapshots, transactions, and cache
 //!   overlays.
@@ -29,13 +30,17 @@ use crate::indexer::Indexer;
 use crate::model::{BlockIndexRecord, IndexerSnapshot, NotificationIndexRecord};
 use crate::store;
 
+mod backend;
 mod notification_queries;
 mod persistence;
 mod query;
 
+use backend::PersistenceBackend;
 #[cfg(test)]
 use persistence::temporary_snapshot_path;
-use persistence::{MutationPersistenceMode, PendingPersistence, read_snapshot, write_snapshot};
+#[cfg(test)]
+use persistence::write_snapshot;
+use persistence::{MutationPersistenceMode, PendingPersistence, read_snapshot};
 
 /// Shared indexer service registered in `neo_system::ServiceRegistry`.
 #[derive(Clone)]
@@ -54,14 +59,6 @@ impl std::fmt::Debug for IndexerService {
             .field("store_path", &self.store_path())
             .finish_non_exhaustive()
     }
-}
-
-enum PersistenceBackend {
-    JsonFile(PathBuf),
-    Store {
-        store: Arc<dyn Store>,
-        path: Option<PathBuf>,
-    },
 }
 
 impl Default for IndexerService {
@@ -90,7 +87,7 @@ impl IndexerService {
         Ok(Self {
             inner: Arc::new(RwLock::new(indexer)),
             persist_lock: Arc::new(Mutex::new(())),
-            persistence: Some(Arc::new(PersistenceBackend::JsonFile(path))),
+            persistence: Some(Arc::new(PersistenceBackend::json_file(path))),
         })
     }
 
@@ -109,10 +106,10 @@ impl IndexerService {
         Ok(Self {
             inner: Arc::new(RwLock::new(indexer)),
             persist_lock: Arc::new(Mutex::new(())),
-            persistence: Some(Arc::new(PersistenceBackend::Store {
+            persistence: Some(Arc::new(PersistenceBackend::store(
                 store,
-                path: path.map(Into::into),
-            })),
+                path.map(Into::into),
+            ))),
         })
     }
 
@@ -123,30 +120,24 @@ impl IndexerService {
 
     /// Returns a stable name for the configured persistence backend.
     pub fn persistence_mode(&self) -> &'static str {
-        match self.persistence.as_deref() {
-            None => "memory",
-            Some(PersistenceBackend::JsonFile(_)) => "json-snapshot",
-            Some(PersistenceBackend::Store { .. }) => "service-store",
-        }
+        self.persistence
+            .as_deref()
+            .map_or("memory", PersistenceBackend::mode_name)
     }
 
     /// Returns the persistent JSON snapshot path, if this service was opened
     /// with one.
     pub fn snapshot_path(&self) -> Option<&Path> {
-        match self.persistence.as_deref() {
-            Some(PersistenceBackend::JsonFile(path)) => Some(path.as_path()),
-            _ => None,
-        }
+        self.persistence
+            .as_deref()
+            .and_then(PersistenceBackend::snapshot_path)
     }
 
     /// Returns the persistent service-store path, if one was supplied.
     pub fn store_path(&self) -> Option<&Path> {
-        match self.persistence.as_deref() {
-            Some(PersistenceBackend::Store {
-                path: Some(path), ..
-            }) => Some(path.as_path()),
-            _ => None,
-        }
+        self.persistence
+            .as_deref()
+            .and_then(PersistenceBackend::store_path)
     }
 
     /// Indexes a canonical block.
@@ -218,11 +209,10 @@ impl IndexerService {
     }
 
     fn persistence_mode_for_mutation(&self) -> MutationPersistenceMode {
-        match self.persistence.as_deref() {
-            Some(PersistenceBackend::JsonFile(_)) => MutationPersistenceMode::JsonFile,
-            Some(PersistenceBackend::Store { .. }) => MutationPersistenceMode::Store,
-            None => MutationPersistenceMode::None,
-        }
+        self.persistence.as_deref().map_or(
+            MutationPersistenceMode::None,
+            PersistenceBackend::mutation_mode,
+        )
     }
 
     fn mutate_indexer<T>(
@@ -273,14 +263,7 @@ impl IndexerService {
 
     fn persist_change(&self, change: Option<PendingPersistence>) -> IndexerResult<()> {
         match (self.persistence.as_deref(), change) {
-            (
-                Some(PersistenceBackend::JsonFile(path)),
-                Some(PendingPersistence::JsonSnapshot(snapshot)),
-            ) => write_snapshot(path, &snapshot),
-            (
-                Some(PersistenceBackend::Store { store, .. }),
-                Some(PendingPersistence::StoreDelta { previous, current }),
-            ) => store::write_indexer_delta(store, &previous, &current),
+            (Some(backend), Some(change)) => backend.persist_change(change),
             _ => Ok(()),
         }
     }

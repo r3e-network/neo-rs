@@ -127,10 +127,9 @@ impl IndexerService {
     }
 
     fn store_backend(&self) -> Option<Arc<dyn Store>> {
-        match self.persistence.as_deref() {
-            Some(PersistenceBackend::Store { store, .. }) => Some(Arc::clone(store)),
-            _ => None,
-        }
+        self.persistence
+            .as_deref()
+            .and_then(PersistenceBackend::store_backend)
     }
 
     pub(super) fn read_store_or_indexer<T>(
