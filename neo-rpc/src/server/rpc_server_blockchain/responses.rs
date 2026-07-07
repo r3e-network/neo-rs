@@ -1,7 +1,7 @@
 //! Response construction helpers for blockchain RPC methods.
 //!
 //! Handlers own lookup and request flow; this module owns C#-compatible JSON
-//! enrichment for blocks, headers, contracts, and transactions.
+//! enrichment for blocks, headers, contracts, mempool entries, and transactions.
 
 use crate::client::models::RpcContractState;
 use crate::server::rpc_exception::RpcException;
@@ -9,6 +9,7 @@ use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
 use neo_execution::contract_state::ContractState;
 use neo_io::Serializable;
+use neo_mempool::PoolItem;
 use neo_native_contracts::LedgerContract;
 use neo_payloads::{Header, TransactionState, block::Block, transaction::Transaction};
 use neo_primitives::UInt256;
@@ -51,6 +52,29 @@ pub(super) fn system_fee_to_json(system_fee: i64) -> Value {
 
 pub(super) fn transaction_height_to_json(height: u32) -> Value {
     json!(height)
+}
+
+pub(super) fn raw_mempool_hashes_to_json(items: &[PoolItem]) -> Value {
+    Value::Array(mempool_hash_values(items))
+}
+
+pub(super) fn raw_mempool_with_unverified_to_json(
+    height: u32,
+    verified: &[PoolItem],
+    unverified: &[PoolItem],
+) -> Value {
+    json!({
+        "height": height,
+        "verified": mempool_hash_values(verified),
+        "unverified": mempool_hash_values(unverified),
+    })
+}
+
+fn mempool_hash_values(items: &[PoolItem]) -> Vec<Value> {
+    items
+        .iter()
+        .map(|item| Value::String(item.hash().to_string()))
+        .collect()
 }
 
 pub(super) fn header_to_json(

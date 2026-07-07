@@ -1,17 +1,19 @@
 //! Mempool RPC handlers.
 //!
-//! This module keeps mempool-specific reads and response construction out of
-//! the blockchain routing map. Request decoding stays in `request_helpers` so
-//! the handler body can focus on the live pool snapshot and ledger height.
+//! This module keeps mempool-specific reads out of the blockchain routing map.
+//! Request decoding stays in `request_helpers` and response projection stays in
+//! `responses`, so the handler body can focus on the live pool snapshot and
+//! ledger height.
 
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
 use neo_native_contracts::LedgerContract;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::RpcServerBlockchain;
 use super::request_helpers::RawMemPoolRequest;
+use super::responses::{raw_mempool_hashes_to_json, raw_mempool_with_unverified_to_json};
 
 impl RpcServerBlockchain {
     pub(super) fn get_raw_mem_pool(
@@ -27,12 +29,7 @@ impl RpcServerBlockchain {
 
         let pool = server.system().mempool();
         if !request.include_unverified {
-            let hashes: Vec<Value> = pool
-                .verified_snapshot()
-                .iter()
-                .map(|item| Value::String(item.hash().to_string()))
-                .collect();
-            return Ok(Value::Array(hashes));
+            return Ok(raw_mempool_hashes_to_json(&pool.verified_snapshot()));
         }
 
         let (verified, unverified) = (pool.verified_snapshot(), pool.unverified_snapshot());
@@ -42,18 +39,10 @@ impl RpcServerBlockchain {
         let height = ledger
             .current_index(store.data_cache())
             .map_err(internal_error)?;
-        let verified_hashes: Vec<Value> = verified
-            .iter()
-            .map(|item| Value::String(item.hash().to_string()))
-            .collect();
-        let unverified_hashes: Vec<Value> = unverified
-            .iter()
-            .map(|item| Value::String(item.hash().to_string()))
-            .collect();
-
-        Ok(json!({
-            "height": height,
-            "verified": verified_hashes,
-            "unverified": unverified_hashes}))
+        Ok(raw_mempool_with_unverified_to_json(
+            height,
+            &verified,
+            &unverified,
+        ))
     }
 }

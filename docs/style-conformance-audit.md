@@ -320,8 +320,9 @@ key/prefix/start parsing for `getcontractstate`, `getstorage`, and
 pagination, and response construction.
 Blockchain mempool handling has been moved out of the large route map:
 `rpc_server_blockchain/mempool.rs` owns `getrawmempool` live-pool reads and
-response construction, while `request_helpers.rs` owns `shouldGetUnverified`
-parsing and `mod.rs` stays closer to registration plus remaining legacy groups.
+ledger-height lookup, `request_helpers.rs` owns `shouldGetUnverified` parsing,
+and `responses.rs` owns the verified-hash array and verbose mempool response
+envelopes. `mod.rs` stays closer to registration plus remaining legacy groups.
 Blockchain transaction lookup now follows the same split:
 `rpc_server_blockchain/transactions.rs` owns `getrawtransaction` and
 `gettransactionheight` pool/ledger lookup, `request_helpers.rs` owns hash and
