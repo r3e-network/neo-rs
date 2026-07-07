@@ -4,17 +4,64 @@
 //! verification, and iterator-session handlers. Request parsing remains in the
 //! request/helper modules.
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_payloads::NotifyEventArgs;
 use neo_vm::rpc_json::StackItemRpcJson;
 use neo_vm::stack_item::StackItem;
 use neo_vm_rs::VmState;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::session::Session;
 
 const INVALID_OPERATION_CODE: i32 = -2146233079;
+
+pub(super) fn invoke_result_base_to_json(
+    script: &[u8],
+    state: String,
+    gas_consumed: impl ToString,
+    exception: Value,
+) -> Map<String, Value> {
+    let mut result = Map::new();
+    result.insert(
+        "script".to_string(),
+        Value::String(BASE64_STANDARD.encode(script)),
+    );
+    result.insert("state".to_string(), Value::String(state));
+    result.insert(
+        "gasconsumed".to_string(),
+        Value::String(gas_consumed.to_string()),
+    );
+    result.insert("exception".to_string(), exception);
+    result
+}
+
+pub(super) fn insert_notifications(result: &mut Map<String, Value>, notifications: Vec<Value>) {
+    result.insert("notifications".to_string(), Value::Array(notifications));
+}
+
+pub(super) fn insert_stack(result: &mut Map<String, Value>, stack_items: Vec<Value>) {
+    result.insert("stack".to_string(), Value::Array(stack_items));
+}
+
+pub(super) fn insert_diagnostics(
+    result: &mut Map<String, Value>,
+    invocation: Value,
+    storage: Value,
+) {
+    result.insert(
+        "diagnostics".to_string(),
+        json!({
+            "invokedcontracts": invocation,
+            "storagechanges": storage,
+        }),
+    );
+}
+
+pub(super) fn insert_session(result: &mut Map<String, Value>, session_id: impl ToString) {
+    result.insert("session".to_string(), Value::String(session_id.to_string()));
+}
 
 pub(super) fn final_rpc_vm_state_string(state: VmState) -> Result<String, RpcException> {
     state

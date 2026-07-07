@@ -1,8 +1,7 @@
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_payloads::signer::Signer;
 use neo_payloads::witness::Witness;
 
-use serde_json::{Map, Value, json};
+use serde_json::Value;
 
 use crate::server::diagnostic::Diagnostic;
 use crate::server::rpc_exception::RpcException;
@@ -15,7 +14,10 @@ use super::diagnostics::{diagnostic_invocation_to_json, diagnostic_storage_chang
 use super::helpers::internal_error;
 use super::invocation_wallet::process_invoke_with_wallet;
 use super::request::{InvokeFunctionRequest, InvokeScriptRequest};
-use super::response::{final_rpc_vm_state_string, notification_to_json, stack_item_to_json};
+use super::response::{
+    final_rpc_vm_state_string, insert_diagnostics, insert_notifications, insert_session,
+    insert_stack, invoke_result_base_to_json, notification_to_json, stack_item_to_json,
+};
 use super::script::build_dynamic_call_script;
 
 pub(super) fn invoke_function(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
@@ -100,16 +102,8 @@ fn execute_script(
             diagnostics_snapshot,
         )
     };
-    let gas_consumed = system_fee.to_string();
-
-    let mut result = Map::new();
-    result.insert(
-        "script".to_string(),
-        Value::String(BASE64_STANDARD.encode(session.script())),
-    );
-    result.insert("state".to_string(), Value::String(engine_state));
-    result.insert("gasconsumed".to_string(), Value::String(gas_consumed));
-    result.insert("exception".to_string(), exception_value);
+    let mut result =
+        invoke_result_base_to_json(session.script(), engine_state, system_fee, exception_value);
 
     let notifications = {
         let mut session_ref = Some(&mut session);
@@ -122,7 +116,7 @@ fn execute_script(
         }
         entries
     };
-    result.insert("notifications".to_string(), Value::Array(notifications));
+    insert_notifications(&mut result, notifications);
 
     let stack_items = {
         let mut session_ref = Some(&mut session);
@@ -135,15 +129,10 @@ fn execute_script(
         }
         entries
     };
-    result.insert("stack".to_string(), Value::Array(stack_items));
+    insert_stack(&mut result, stack_items);
 
     if let Some((invocation, storage)) = diagnostics_snapshot {
-        result.insert(
-            "diagnostics".to_string(),
-            json!({
-                "invokedcontracts": invocation,
-                "storagechanges": storage}),
-        );
+        insert_diagnostics(&mut result, invocation, storage);
     }
 
     if vm_state != VMState::FAULT {
@@ -160,7 +149,7 @@ fn execute_script(
     if server.session_enabled() && session.has_iterators() {
         server.purge_expired_sessions();
         let session_id = server.store_session(session);
-        result.insert("session".to_string(), Value::String(session_id.to_string()));
+        insert_session(&mut result, session_id);
     }
 
     Ok(Value::Object(result))
