@@ -15,6 +15,7 @@
 //! - `lifecycle`: wallet open/close, key import/export, and address listing handlers.
 //! - `network_fee`: transaction network-fee estimation handler.
 //! - `request`: Typed JSON-RPC request parsing helpers.
+//! - `response`: Wallet RPC response construction helpers.
 //! - `signing`: C#-compatible wallet signing and relay finalization.
 //! - `support`: Shared support helpers that keep domain modules focused.
 //! - `transfers`: wallet transfer RPC handlers.
@@ -48,6 +49,7 @@ mod errors;
 mod lifecycle;
 mod network_fee;
 mod request;
+mod response;
 mod signing;
 mod support;
 mod transfers;

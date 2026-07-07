@@ -9,10 +9,11 @@ use neo_vm_rs::{OpCode, VmState as VMState};
 use neo_wallets::Wallet as CoreWallet;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::RpcServerWallet;
 use super::request::{NoParamsRequest, WalletBalanceRequest};
+use super::response::{wallet_balance_to_json, wallet_unclaimed_gas_to_json};
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
@@ -30,7 +31,7 @@ impl RpcServerWallet {
         // same native `balanceOf` / `decimals` methods for every NEP-17
         // asset, NEO and GAS included.
         let balance = Self::calculate_nep17_balance(server, wallet.as_ref(), &request.asset)?;
-        Ok(json!({"balance": balance.to_string()}))
+        Ok(wallet_balance_to_json(&balance))
     }
 
     pub(super) fn get_wallet_unclaimed_gas(
@@ -64,7 +65,7 @@ impl RpcServerWallet {
             .map_err(internal_error)?;
             total += gas;
         }
-        Ok(Value::String(total.to_string()))
+        Ok(wallet_unclaimed_gas_to_json(&total))
     }
 
     pub(super) fn calculate_nep17_balance<W>(

@@ -1,10 +1,11 @@
 //! Wallet transaction network-fee estimation handler.
 
 use neo_primitives::UInt160;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::RpcServerWallet;
 use super::request::NetworkFeeRequest;
+use super::response::network_fee_to_json;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::invalid_params;
 use crate::server::rpc_server::RpcServer;
@@ -37,6 +38,6 @@ impl RpcServerWallet {
             server.settings().max_gas_invoke,
         )
         .map_err(|err| invalid_params(err.to_string()))?;
-        Ok(json!({"networkfee": fee.to_string()}))
+        Ok(network_fee_to_json(fee))
     }
 }
