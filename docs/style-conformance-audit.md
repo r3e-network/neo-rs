@@ -345,8 +345,9 @@ header verification, `jsonrpsee_adapter/codec.rs` owns transport parameter
 decoding and Neo error-object projection, and `jsonrpsee_adapter/mod.rs` keeps
 module registration and dispatch bridging.
 RPC dispatch has the same production/test boundary now:
-`dispatch/mod.rs` owns handler resolution, rate-limit checks, remote-ledger
-proxy dispatch, and panic-policy handling, while its remote-ledger policy
+`dispatch/mod.rs` owns handler resolution, rate-limit checks, and remote-ledger
+proxy dispatch, while `dispatch/panic_policy.rs` owns local handler panic
+capture and `UnhandledExceptionPolicy` application. Remote-ledger policy
 coverage tests live in `tests/server/core/dispatch.rs`.
 `rpc_remote_ledger/policy.rs` owns the remote-ledger proxy method catalog,
 while `rpc_remote_ledger/mod.rs` keeps the blocking upstream RPC client and

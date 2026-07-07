@@ -10,17 +10,16 @@
 //!
 //! ## Contents
 //!
-//! - `dispatch`: RPC dispatch table and handler invocation helpers.
+//! - `panic_policy`: RPC handler panic capture and exception-policy handling.
+
+mod panic_policy;
 
 use super::rpc_error::RpcError;
 use super::rpc_remote_ledger::should_proxy_remote_ledger_method;
 use super::rpc_server::{RpcHandler, RpcServer};
-use super::rpc_server_settings::{RpcServerSettings, UnhandledExceptionPolicy};
 use parking_lot::RwLock;
 use std::collections::HashSet;
-use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, Weak};
-use tracing::error;
 
 pub struct Dispatch;
 
@@ -69,8 +68,7 @@ impl Dispatch {
         method: &str,
         params: &[serde_json::Value],
     ) -> Result<serde_json::Value, RpcError> {
-        let policy = RpcServerSettings::current().exception_policy();
-        let callback = handler.callback();
+        let policy = panic_policy::current_policy();
         let canonical_method = handler.descriptor().name.clone();
         let remote_ledger = {
             let server_guard = server_arc.read();
@@ -84,45 +82,7 @@ impl Dispatch {
         if let Some(remote) = remote_ledger {
             return remote.call(&canonical_method, params);
         }
-        let call_result = panic::catch_unwind(AssertUnwindSafe(|| {
-            let server_guard = server_arc.read();
-            (callback)(&server_guard, params)
-        }));
-
-        match call_result {
-            Ok(Ok(result)) => Ok(result),
-            Ok(Err(err)) => Err(RpcError::from(err)),
-            Err(payload) => {
-                error!(
-                    target: "neo::rpc",
-                    method,
-                    error = panic_message(&payload),
-                    "rpc handler panicked"
-                );
-                match policy {
-                    UnhandledExceptionPolicy::StopPlugin => {
-                        let mut server = server_arc.write();
-                        server.stop_rpc_server();
-                    }
-                    UnhandledExceptionPolicy::StopNode => std::process::exit(1),
-                    UnhandledExceptionPolicy::Terminate => std::process::abort(),
-                    UnhandledExceptionPolicy::Ignore
-                    | UnhandledExceptionPolicy::Log
-                    | UnhandledExceptionPolicy::Continue => {}
-                }
-                Err(RpcError::internal_server_error())
-            }
-        }
-    }
-}
-
-fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
-    if let Some(message) = payload.downcast_ref::<&str>() {
-        (*message).to_string()
-    } else if let Some(message) = payload.downcast_ref::<String>() {
-        message.clone()
-    } else {
-        "panic".to_string()
+        panic_policy::invoke_local_handler(server_arc, handler.as_ref(), method, params, policy)
     }
 }
 
