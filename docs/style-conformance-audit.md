@@ -316,6 +316,9 @@ RPC dispatch has the same production/test boundary now:
 `dispatch/mod.rs` owns handler resolution, rate-limit checks, remote-ledger
 proxy dispatch, and panic-policy handling, while its remote-ledger policy
 coverage tests live in `tests/server/core/dispatch.rs`.
+`rpc_remote_ledger/policy.rs` owns the remote-ledger proxy method catalog,
+while `rpc_remote_ledger/mod.rs` keeps the blocking upstream RPC client and
+response validation.
 RPC invocation sessions now follow the same facade rule:
 `session/iterators.rs` owns retained iterator registration payloads, traversal
 adapters, and disposal; `session/dummy_block.rs` owns the C#-compatible
