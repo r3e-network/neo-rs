@@ -255,6 +255,10 @@ Blockchain mempool handling has been moved out of the large route map:
 `rpc_server_blockchain/mempool.rs` owns `getrawmempool` live-pool reads and
 response construction, while `request_helpers.rs` owns `shouldGetUnverified`
 parsing and `mod.rs` stays closer to registration plus remaining legacy groups.
+Blockchain transaction lookup now follows the same split:
+`rpc_server_blockchain/transactions.rs` owns `getrawtransaction` pool/ledger
+lookup and C#-compatible verbose projection, while `request_helpers.rs` owns
+hash and verbose parsing.
 Smart-contract request parsing now follows the same rule:
 `smart_contract/request.rs` owns positional parsing for invocation, contract
 verification, iterator-session, and unclaimed-GAS handlers, including

@@ -106,6 +106,20 @@ fn should_get_unverified_error() -> RpcException {
     )
 }
 
+pub(super) struct RawTransactionRequest {
+    pub(super) hash: UInt256,
+    pub(super) verbose: bool,
+}
+
+impl RawTransactionRequest {
+    pub(super) fn parse(params: &[Value]) -> Result<Self, RpcException> {
+        Ok(Self {
+            hash: RpcServerBlockchain::expect_hash_param(params, 0, "getrawtransaction")?,
+            verbose: RpcServerBlockchain::parse_verbose(params.get(1))?,
+        })
+    }
+}
+
 impl RpcServerBlockchain {
     pub(super) fn parse_block_identifier(
         params: &[Value],

@@ -14,6 +14,7 @@
 //! - `responses`: RPC response construction helpers.
 //! - `mempool`: Mempool RPC handlers.
 //! - `storage`: Contract-state and contract-storage RPC handlers.
+//! - `transactions`: Transaction RPC handlers.
 //! - `tests`: Module-local tests and regression coverage.
 
 use crate::server::model::block_hash_or_index::BlockHashOrIndex as RpcBlockHashOrIndex;
@@ -33,6 +34,7 @@ mod mempool;
 mod request_helpers;
 mod responses;
 mod storage;
+mod transactions;
 use responses::{block_to_json, contract_state_to_json, header_to_json};
 
 /// RPC handler group for blockchain query methods.
@@ -212,78 +214,6 @@ impl RpcServerBlockchain {
             .map(neo_payloads::Transaction::system_fee)
             .sum();
         Ok(Value::String(system_fee.to_string()))
-    }
-
-    fn get_raw_transaction(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        if let Some(remote) = server.remote_ledger_rpc() {
-            return remote
-                .call("getrawtransaction", params)
-                .map_err(RpcException::from);
-        }
-        let hash = Self::expect_hash_param(params, 0, "getrawtransaction")?;
-        let verbose = Self::parse_verbose(params.get(1))?;
-        let system = server.system();
-
-        let tx_from_pool = system.mempool().get(&hash);
-
-        if !verbose {
-            if let Some(item) = tx_from_pool {
-                return Ok(Value::String(serialize_to_base64(
-                    item.transaction.as_ref(),
-                )?));
-            }
-        }
-
-        let store = system.store_cache();
-        let ledger = LedgerContract::new();
-        let state = ledger
-            .get_transaction_state(store.data_cache(), &hash)
-            .map_err(internal_error)?;
-
-        // Convert Arc<Transaction> to Transaction for uniform handling
-        let transaction = tx_from_pool
-            .map(|item| (*item.transaction).clone())
-            .or_else(|| state.as_ref().and_then(|s| s.transaction.clone()));
-        let tx = transaction.ok_or_else(|| RpcException::from(RpcError::unknown_transaction()))?;
-
-        if !verbose {
-            return Ok(Value::String(serialize_to_base64(&tx)?));
-        }
-
-        let settings = system.settings();
-        let mut json = tx.to_json(&settings);
-        if let (Value::Object(obj), Some(state)) = (&mut json, state) {
-            let block_index = state.block_index();
-            let current_index = ledger
-                .current_index(store.data_cache())
-                .map_err(internal_error)?;
-            let confirmations = current_index.saturating_sub(block_index).saturating_add(1);
-            obj.insert("confirmations".to_string(), json!(confirmations));
-
-            // C# GetRawTransaction verbose adds only blockhash, confirmations and
-            // blocktime to Transaction.ToJson (RpcServer.Blockchain.cs:373-381);
-            // it does NOT add a vmstate field (that belongs to getapplicationlog).
-            // Emitting it here surprises strict clients / response-diff tooling.
-
-            if let Some(block_hash) = ledger
-                .get_block_hash(store.data_cache(), block_index)
-                .map_err(internal_error)?
-            {
-                obj.insert(
-                    "blockhash".to_string(),
-                    Value::String(block_hash.to_string()),
-                );
-
-                if let Some(block) = ledger
-                    .get_trimmed_block(store.data_cache(), &block_hash)
-                    .map_err(internal_error)?
-                {
-                    obj.insert("blocktime".to_string(), json!(block.header.timestamp()));
-                }
-            }
-        }
-
-        Ok(json)
     }
 
     fn get_native_contracts(server: &RpcServer, _params: &[Value]) -> Result<Value, RpcException> {
