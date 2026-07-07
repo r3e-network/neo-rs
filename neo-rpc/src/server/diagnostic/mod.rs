@@ -10,87 +10,32 @@
 //!
 //! ## Contents
 //!
-//! - `diagnostic`: RPC diagnostic and health-check handlers.
+//! - `invocation_tree`: invocation-tree capture state and snapshots.
+
+mod invocation_tree;
 
 use neo_execution::ApplicationEngine;
 use neo_execution::diagnostic::Diagnostic as DiagnosticTrait;
 use neo_execution::execution_context_state::ExecutionContextState;
-use neo_primitives::UInt160;
 use neo_vm::execution_context::ExecutionContext;
 use neo_vm_rs::Instruction;
 use parking_lot::Mutex;
 use std::fmt;
 use std::sync::Arc;
 
+pub(crate) use invocation_tree::DiagnosticInvocation;
+use invocation_tree::InvocationTree;
+
 /// Diagnostics helper mirroring `Neo.Plugins.RpcServer.Diagnostic`.
 #[derive(Clone, Default)]
 pub struct Diagnostic {
-    inner: Arc<Mutex<DiagnosticState>>,
-}
-
-#[derive(Default)]
-struct DiagnosticState {
-    nodes: Vec<InvocationNode>,
-    root: Option<usize>,
-    current_node: Option<usize>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct DiagnosticInvocation {
-    pub(crate) hash: UInt160,
-    pub(crate) children: Vec<DiagnosticInvocation>,
-}
-
-struct InvocationNode {
-    hash: UInt160,
-    parent: Option<usize>,
-    children: Vec<usize>,
-}
-
-impl DiagnosticState {
-    fn add_root(&mut self, hash: UInt160) -> usize {
-        self.nodes.clear();
-        self.nodes.push(InvocationNode {
-            hash,
-            parent: None,
-            children: Vec::new(),
-        });
-        self.root = Some(0);
-        0
-    }
-
-    fn add_child(&mut self, parent: usize, hash: UInt160) -> usize {
-        let child = self.nodes.len();
-        self.nodes.push(InvocationNode {
-            hash,
-            parent: Some(parent),
-            children: Vec::new(),
-        });
-        self.nodes[parent].children.push(child);
-        child
-    }
-
-    fn root_snapshot(&self) -> Option<DiagnosticInvocation> {
-        self.root.map(|root| self.snapshot_node(root))
-    }
-
-    fn snapshot_node(&self, index: usize) -> DiagnosticInvocation {
-        let node = &self.nodes[index];
-        DiagnosticInvocation {
-            hash: node.hash,
-            children: node
-                .children
-                .iter()
-                .map(|child| self.snapshot_node(*child))
-                .collect(),
-        }
-    }
+    inner: Arc<Mutex<InvocationTree>>,
 }
 
 impl Diagnostic {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(DiagnosticState::default())),
+            inner: Arc::new(Mutex::new(InvocationTree::default())),
         }
     }
 
@@ -119,20 +64,12 @@ impl DiagnosticTrait for Diagnostic {
         };
 
         if let Some(script_hash) = script_hash {
-            let mut inner = self.inner.lock();
-            let next_node = match inner.current_node {
-                Some(parent) => inner.add_child(parent, script_hash),
-                None => inner.add_root(script_hash),
-            };
-            inner.current_node = Some(next_node);
+            self.inner.lock().load_context(script_hash);
         }
     }
 
     fn context_unloaded(&mut self, _context: &ExecutionContext) {
-        let mut inner = self.inner.lock();
-        inner.current_node = inner
-            .current_node
-            .and_then(|current| inner.nodes.get(current).and_then(|node| node.parent));
+        self.inner.lock().unload_context();
     }
 
     fn pre_execute_instruction(&mut self, _instruction: &Instruction) {}

@@ -414,6 +414,11 @@ and `session/execution.rs` owns `Session::new`, including the transaction
 container, dummy persisting block, native provider threading, and initial script
 execution. The root `session/mod.rs` stays focused on retained session state,
 diagnostics, snapshots, expiration, and stable iterator IDs.
+RPC diagnostics also follow the adapter/state split:
+`diagnostic/invocation_tree.rs` owns diagnostic invocation-tree capture,
+parent/child traversal, and snapshots, while `diagnostic/mod.rs` owns the
+`neo_execution::diagnostic::Diagnostic` trait adapter and public diagnostic
+facade.
 Indexer block reads have started the same endpoint-family split:
 `rpc_server_indexer/blocks.rs` owns `getblockindex` and `getblockindexes`
 lookup, while `rpc_server_indexer/params.rs` owns the typed block-selector and
