@@ -2,6 +2,7 @@
 
 use serde_json::Value;
 
+use super::params::{BlockPageRequest, TransactionIndexRequest};
 use super::{RpcServerIndexer, STANDARD_PAGE_BOUNDS};
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
@@ -11,12 +12,11 @@ impl RpcServerIndexer {
         server: &RpcServer,
         params: &[Value],
     ) -> Result<Value, RpcException> {
-        Self::expect_exact_params(params, 1, "gettransactionindex")?;
+        let request = TransactionIndexRequest::parse(params)?;
         let service = Self::service(server)?;
-        let hash = Self::expect_uint256(params, 0, "gettransactionindex")?;
         let address_version = server.system().settings().address_version;
         Ok(service
-            .try_transaction(&hash)
+            .try_transaction(&request.hash)
             .map_err(Self::indexer_error)?
             .map(|record| Self::transaction_to_json(&record, address_version))
             .unwrap_or(Value::Null))
@@ -26,19 +26,18 @@ impl RpcServerIndexer {
         server: &RpcServer,
         params: &[Value],
     ) -> Result<Value, RpcException> {
+        let request =
+            BlockPageRequest::parse(params, STANDARD_PAGE_BOUNDS, "getblocktransactions")?;
         let service = Self::service(server)?;
         let address_version = server.system().settings().address_version;
-        let (skip, limit) =
-            Self::parse_page(params, 1, STANDARD_PAGE_BOUNDS, "getblocktransactions")?;
-        let Some(block_hash) =
-            Self::block_hash_from_selector(&service, params, "getblocktransactions")?
+        let Some(block_hash) = Self::block_hash_from_selector_value(&service, request.selector)?
         else {
             return Ok(Value::Array(Vec::new()));
         };
 
         Ok(Value::Array(
             service
-                .try_transactions_for_block(&block_hash, skip, limit)
+                .try_transactions_for_block(&block_hash, request.page.skip, request.page.limit)
                 .map_err(Self::indexer_error)?
                 .into_iter()
                 .map(|record| Self::transaction_to_json(&record, address_version))

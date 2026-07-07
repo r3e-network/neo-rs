@@ -368,7 +368,9 @@ Indexer block reads have started the same endpoint-family split:
 lookup and block-index projection, while `rpc_server_indexer/params.rs` owns
 the typed block-selector and page request records.
 `rpc_server_indexer/transactions.rs` owns transaction lookup and
-block/address/contract transaction list routing.
+block/address/contract transaction list routing, while `params.rs` owns the
+typed transaction-hash and block-page request records for transaction index
+lookups and block transaction pages.
 `rpc_server_indexer/notifications.rs` owns address/block/transaction/contract
 notification routing. The root `rpc_server_indexer/mod.rs` now keeps handler
 registration, service lookup, shared error mapping, and shared selector types.

@@ -22,6 +22,37 @@ impl BlockIndexRequest {
     }
 }
 
+pub(super) struct TransactionIndexRequest {
+    pub(super) hash: UInt256,
+}
+
+impl TransactionIndexRequest {
+    pub(super) fn parse(params: &[Value]) -> Result<Self, RpcException> {
+        RpcServerIndexer::expect_exact_params(params, 1, "gettransactionindex")?;
+        Ok(Self {
+            hash: RpcServerIndexer::expect_uint256(params, 0, "gettransactionindex")?,
+        })
+    }
+}
+
+pub(super) struct BlockPageRequest {
+    pub(super) selector: BlockSelector,
+    pub(super) page: PageRequest,
+}
+
+impl BlockPageRequest {
+    pub(super) fn parse(
+        params: &[Value],
+        bounds: PageBounds,
+        method: &str,
+    ) -> Result<Self, RpcException> {
+        Ok(Self {
+            selector: RpcServerIndexer::parse_block_selector(params, method)?,
+            page: PageRequest::parse(params, 1, bounds, method)?,
+        })
+    }
+}
+
 pub(super) struct PageRequest {
     pub(super) skip: usize,
     pub(super) limit: usize,
@@ -115,7 +146,14 @@ impl RpcServerIndexer {
         params: &[Value],
         method: &str,
     ) -> Result<Option<UInt256>, RpcException> {
-        Ok(match Self::parse_block_selector(params, method)? {
+        Self::block_hash_from_selector_value(service, Self::parse_block_selector(params, method)?)
+    }
+
+    pub(super) fn block_hash_from_selector_value(
+        service: &IndexerService,
+        selector: BlockSelector,
+    ) -> Result<Option<UInt256>, RpcException> {
+        Ok(match selector {
             BlockSelector::Height(height) => service
                 .try_block_by_height(height)
                 .map_err(Self::indexer_error)?
