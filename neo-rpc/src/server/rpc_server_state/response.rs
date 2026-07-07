@@ -12,6 +12,14 @@ pub(super) fn state_height_to_json(index: Option<u32>) -> Value {
         "validatedrootindex": index})
 }
 
+pub(super) fn proof_payload_to_json(payload: String) -> Value {
+    Value::String(payload)
+}
+
+pub(super) fn base64_state_value_to_json(value: &[u8]) -> Value {
+    Value::String(BASE64_STANDARD.encode(value))
+}
+
 /// JSON response for `findstates`.
 pub(super) struct FindStatesResponse {
     first_proof: Option<String>,

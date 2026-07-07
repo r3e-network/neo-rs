@@ -19,6 +19,7 @@ use crate::server::rpc_server::RpcServer;
 
 use super::RpcServerState;
 use super::request::{StateKeyRequest, VerifyProofRequest};
+use super::response::{base64_state_value_to_json, proof_payload_to_json};
 
 /// Upper bound on a proof storage key (mirrors C#
 /// `StateService.MaxKeyLength`: 64 key bytes + the i32 contract-id
@@ -66,7 +67,7 @@ impl RpcServerState {
         let mut trie = snapshot.open_trie(Some(request.root_hash));
         let contract_id = Self::historical_contract_id(&mut trie, &request.script_hash)?;
         let payload = Self::proof_payload(&mut trie, contract_id, &request.key)?;
-        Ok(Value::String(payload))
+        Ok(proof_payload_to_json(payload))
     }
 
     pub(super) fn verify_proof(
@@ -85,7 +86,7 @@ impl RpcServerState {
                         .with_data("failed to verify state proof against supplied root"),
                 )
             })?;
-        Ok(Value::String(BASE64_STANDARD.encode(value)))
+        Ok(base64_state_value_to_json(&value))
     }
 
     /// C# `StatePlugin.GetProof(Trie, int, byte[])`: builds the proof

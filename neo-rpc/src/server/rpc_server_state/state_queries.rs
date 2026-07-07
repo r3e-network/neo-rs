@@ -4,8 +4,6 @@
 //! historical MPT root before reading storage entries. Keeping that trie
 //! workflow here leaves the root module as the handler map and service facade.
 
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use neo_crypto::mpt_trie::{MptError, Trie};
 use neo_execution::contract_state::ContractState;
 use neo_primitives::{UInt160, UInt256};
@@ -18,7 +16,7 @@ use crate::server::rpc_server::RpcServer;
 
 use super::RpcServerState;
 use super::request::{FindStatesRequest, StateKeyRequest};
-use super::response::FindStatesResponse;
+use super::response::{FindStatesResponse, base64_state_value_to_json};
 
 /// `ContractManagement::ID` (C# `NativeContract.ContractManagement.Id`).
 const CONTRACT_MANAGEMENT_ID: i32 = -1;
@@ -51,7 +49,7 @@ impl RpcServerState {
             .try_get_value(&storage_key)
             .map_err(|err| Self::trie_lookup_error("getstate", &err))?
             .ok_or_else(|| RpcException::from(RpcError::unknown_storage_item()))?;
-        Ok(Value::String(BASE64_STANDARD.encode(value)))
+        Ok(base64_state_value_to_json(&value))
     }
 
     /// `findstates(roothash, scripthash, prefix, [key], [count])` — C#
