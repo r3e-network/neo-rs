@@ -1,4 +1,5 @@
 use super::*;
+use neo_io::{BinaryWriter, MemoryReader};
 use neo_vm_rs::StackValue;
 
 /// Structural equality for StackValue that ignores the reference-identity ids
@@ -209,6 +210,23 @@ fn contract_manifest_parse_rejects_duplicate_json_entries() {
     let mut duplicate_trusts = deployable_manifest_json();
     duplicate_trusts["trusts"] = serde_json::json!(["*", "*"]);
     assert!(ContractManifest::parse(&duplicate_trusts.to_string()).is_err());
+}
+
+#[test]
+fn contract_manifest_binary_wire_round_trips_and_size_matches_bytes() {
+    let manifest = ContractManifest::parse(&deployable_manifest_json().to_string())
+        .expect("valid manifest parses");
+    let mut writer = BinaryWriter::new();
+    manifest.serialize(&mut writer).expect("serialize manifest");
+    let bytes = writer.into_bytes();
+
+    assert_eq!(manifest.size(), bytes.len());
+
+    let mut reader = MemoryReader::new(&bytes);
+    let decoded = ContractManifest::deserialize(&mut reader).expect("deserialize manifest");
+
+    assert_eq!(decoded, manifest);
+    assert_eq!(reader.position(), bytes.len());
 }
 
 #[test]
