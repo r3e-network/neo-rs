@@ -396,8 +396,10 @@ proxy dispatch, while `dispatch/panic_policy.rs` owns local handler panic
 capture and `UnhandledExceptionPolicy` application. Remote-ledger policy
 coverage tests live in `tests/server/core/dispatch.rs`.
 `rpc_remote_ledger/policy.rs` owns the remote-ledger proxy method catalog,
-while `rpc_remote_ledger/mod.rs` keeps the blocking upstream RPC client and
-response validation.
+`rpc_remote_ledger/client.rs` owns the stable client facade, and
+`rpc_remote_ledger/transport.rs` owns blocking upstream RPC calls, shared HTTP
+client construction, and response validation. The root remote-ledger module now
+keeps only facade exports plus the module map.
 RPC invocation sessions now follow the same facade rule:
 `session/iterators.rs` owns retained iterator registration payloads, traversal
 adapters, and disposal; `session/dummy_block.rs` owns the C#-compatible
