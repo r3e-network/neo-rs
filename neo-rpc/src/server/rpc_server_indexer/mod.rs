@@ -35,6 +35,8 @@ mod responses;
 mod status;
 mod transactions;
 
+use params::NoParamsRequest;
+
 const STANDARD_PAGE_BOUNDS: PageBounds = PageBounds {
     default_limit: 100,
     max_limit: 1_000,
@@ -68,7 +70,7 @@ impl RpcServerIndexer {
     }
 
     fn get_indexer_status(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        Self::expect_no_params(params, "getindexerstatus")?;
+        NoParamsRequest::parse(params, "getindexerstatus")?;
         let service = Self::service(server)?;
         Self::indexer_status_json(server, &service).map_err(Self::indexer_error)
     }

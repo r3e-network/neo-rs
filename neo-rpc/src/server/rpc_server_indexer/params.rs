@@ -9,6 +9,8 @@ use crate::server::rpc_helpers::{
     optional_usize_param, parse_uint256_text_with_label,
 };
 
+pub(super) use crate::server::rpc_helpers::NoParamsRequest;
+
 pub(super) struct BlockIndexRequest {
     pub(super) selector: BlockSelector,
 }
@@ -148,14 +150,6 @@ impl RpcServerIndexer {
                 "{method} expects exactly {expected} {}",
                 Self::parameter_word(expected)
             )))
-        }
-    }
-
-    pub(super) fn expect_no_params(params: &[Value], method: &str) -> Result<(), RpcException> {
-        if params.is_empty() {
-            Ok(())
-        } else {
-            Err(invalid_params(format!("{method} expects no parameters")))
         }
     }
 
