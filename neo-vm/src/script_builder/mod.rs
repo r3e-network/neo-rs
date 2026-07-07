@@ -10,8 +10,12 @@
 //!
 //! ## Contents
 //!
+//! - `error`: typed script-building errors.
+//! - `invocation`: witness invocation-script helpers.
 //! - `redeem_script`: redeem-script construction helpers.
 
+mod error;
+mod invocation;
 pub mod redeem_script;
 
 use neo_vm_rs::OpCode;
@@ -19,27 +23,9 @@ use neo_vm_rs::StackValue;
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
 
+pub use error::{ScriptBuilderError, ScriptBuilderResult};
+pub use invocation::signature_from_invocation;
 pub use redeem_script::{RedeemScript, RedeemScriptError};
-
-/// Errors raised while constructing a VM script.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum ScriptBuilderError {
-    /// The requested script-building operation is invalid.
-    #[error("{0}")]
-    InvalidOperation(String),
-}
-
-impl ScriptBuilderError {
-    /// Creates an [`ScriptBuilderError::InvalidOperation`] from any message.
-    pub fn invalid_operation(message: impl Into<String>) -> Self {
-        Self::InvalidOperation(message.into())
-    }
-}
-
-neo_error::impl_error_from_struct!(neo_error::CoreError, ScriptBuilderError => InvalidOperation);
-
-/// Convenience result alias for fallible script-building operations.
-pub type ScriptBuilderResult<T> = Result<T, ScriptBuilderError>;
 
 /// Helps construct VM scripts programmatically.
 pub struct ScriptBuilder {
@@ -323,19 +309,6 @@ impl ScriptBuilder {
         self.emit_opcode(OpCode::APPEND)
     }
 
-    /// Push a signature onto the stack as a single-sig invocation script.
-    ///
-    /// For a 64-byte secp256r1 signature this produces the canonical
-    /// `PUSHDATA1 0x40 <64-byte sig>` sequence (66 bytes total) that
-    /// Neo witness invocation scripts use. The output is byte-identical
-    /// to the hand-rolled `PUSHDATA1 + len + sig` construction that was
-    /// previously duplicated across neo-consensus and neo-node.
-    ///
-    /// This is the inverse of [`signature_from_invocation`].
-    pub fn invocation_from_signature(&mut self, signature: &[u8]) -> &mut Self {
-        self.emit_push(signature)
-    }
-
     /// Emits a pack operation.
     #[inline]
     pub fn emit_pack(&mut self) -> &mut Self {
@@ -368,24 +341,6 @@ impl Default for ScriptBuilder {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Extract the raw signature from a `PUSHDATA1 0x40 <64-byte sig>` invocation
-/// script.
-///
-/// Returns `None` if the script doesn't match this exact shape (wrong length,
-/// wrong opcode, or wrong length byte). This is the inverse of
-/// [`ScriptBuilder::invocation_from_signature`].
-///
-/// The returned slice borrows from `script` — no allocation.
-pub fn signature_from_invocation(script: &[u8]) -> Option<&[u8]> {
-    if script.len() != 66 {
-        return None;
-    }
-    if script[0] != OpCode::PUSHDATA1.byte() || script[1] != 0x40 {
-        return None;
-    }
-    Some(&script[2..66])
 }
 
 fn pad_signed(bytes: &[u8], target_len: usize, negative: bool) -> Vec<u8> {
