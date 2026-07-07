@@ -1,8 +1,8 @@
 //! StateService proof RPC handlers and proof payload codec.
 //!
 //! `getproof` and `verifyproof` share the C# StateService proof payload
-//! format. Keeping that logic here leaves the root state handler focused on
-//! service lookup, root/state queries, and `findstates` orchestration.
+//! format. Keeping that logic here leaves the root state module focused on
+//! handler registration while support and query modules own runtime mechanics.
 
 use std::collections::HashSet;
 

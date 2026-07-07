@@ -2,7 +2,8 @@
 //!
 //! `getstate` and `findstates` both resolve the contract id through the
 //! historical MPT root before reading storage entries. Keeping that trie
-//! workflow here leaves the root module as the handler map and service facade.
+//! workflow here leaves the root module as the handler map while support owns
+//! StateService/MPT lookup.
 
 use neo_crypto::mpt_trie::{MptError, Trie};
 use neo_execution::contract_state::ContractState;
@@ -56,7 +57,7 @@ impl RpcServerState {
     /// `StatePlugin.FindStates`: enumerates storage entries under
     /// `prefix`, resuming strictly after the optional `key`, capped at
     /// `count` (default and maximum
-    /// [`super::MAX_FIND_RESULT_ITEMS`]). The response carries the page,
+    /// [`super::support::MAX_FIND_RESULT_ITEMS`]). The response carries the page,
     /// `truncated`, and Merkle proofs for the first (and, when the
     /// page has more than one entry, last) returned key.
     pub(super) fn find_states(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {

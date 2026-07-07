@@ -1,9 +1,12 @@
 use super::*;
+use crate::server::rpc_error::RpcError;
+use crate::server::rpc_exception::RpcException;
 use neo_config::ProtocolSettings;
 use neo_crypto::mpt_trie::MptStoreSnapshot;
-use neo_state_service::StateRoot;
-use serde_json::json;
+use neo_state_service::{StateRoot, StateStore};
+use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::server::rpc_server::RpcServer;
 

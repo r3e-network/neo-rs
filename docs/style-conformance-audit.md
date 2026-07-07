@@ -236,12 +236,14 @@ StateService request parsing now lives in `rpc_server_state/request.rs`, and
 zero-argument RPC methods. State-height, state-root, `getproof`/`verifyproof`
 payload envelopes, `getstate` value envelopes, and `findstates` JSON
 construction live in `rpc_server_state/response.rs`. State proof handlers and
-the C# proof-payload codec now live in `rpc_server_state/proof.rs`. Historical
-trie lookup mechanics
-for `getstate` / `findstates`, including root gating, storage-key construction,
-and C#-compatible trie error mapping, now live in
-`rpc_server_state/state_queries.rs`. The handler module now owns only handler
-registration, StateStore/MPT service lookup, and state-root metadata responses.
+the C# proof-payload codec now live in `rpc_server_state/proof.rs`.
+`rpc_server_state/roots.rs` owns `getstateheight` / `getstateroot`
+orchestration and MPT fallback reads. Historical trie lookup mechanics for
+`getstate` / `findstates`, including root gating, storage-key construction, and
+C#-compatible trie error mapping, now live in
+`rpc_server_state/state_queries.rs`. `rpc_server_state/support.rs` owns
+StateStore/MPT service lookup, `UnsupportedState` error construction, and the
+`findstates` page cap. The handler module now owns only handler registration.
 Parameter conversion now follows the same module-map rule:
 `parameter_converter/scalar.rs` owns string, boolean, numeric, Base64 bytes,
 and UUID `RpcConvertible` implementations. `parameter_converter/domain.rs`

@@ -10,7 +10,7 @@ use crate::server::rpc_helpers::{expect_base64_param_with_message, expect_u32_pa
 use neo_primitives::{UInt160, UInt256};
 use serde_json::Value;
 
-use super::MAX_FIND_RESULT_ITEMS;
+use super::support::MAX_FIND_RESULT_ITEMS;
 
 pub(super) use crate::server::rpc_helpers::NoParamsRequest;
 
