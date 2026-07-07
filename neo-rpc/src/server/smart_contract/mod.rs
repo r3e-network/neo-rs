@@ -13,6 +13,7 @@
 //! - `contract_verify`: smart-contract verification handlers.
 //! - `helpers`: Shared helper functions for the surrounding module.
 //! - `invocation`: smart-contract invocation handlers.
+//! - `invocation_wallet`: wallet transaction signing for successful invokes.
 //! - `iterators`: Iterator adapters exposed to contract execution and storage
 //!   search.
 //! - `request`: Typed request parsing for smart-contract handlers.
@@ -22,6 +23,7 @@
 mod contract_verify;
 mod helpers;
 mod invocation;
+mod invocation_wallet;
 mod iterators;
 mod request;
 mod unclaimed_gas;
