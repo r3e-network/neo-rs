@@ -11,6 +11,7 @@
 //! ## Contents
 //!
 //! - `request`: Typed JSON-RPC request parsing helpers.
+//! - `response`: Oracle RPC response construction helpers.
 //! - `tests`: Module-local tests and regression coverage.
 
 use crate::server::rpc_error::RpcError;
@@ -18,12 +19,14 @@ use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::invalid_params;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use neo_oracle_service::{OracleService, OracleServiceError};
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::sync::Arc;
 
 mod request;
+mod response;
 
 use self::request::SubmitOracleResponseRequest;
+use self::response::submit_oracle_response_to_json;
 
 /// RPC handler group for Oracle service methods.
 pub struct RpcServerOracle;
@@ -48,7 +51,7 @@ impl RpcServerOracle {
             )
             .map_err(map_oracle_error)?;
 
-        Ok(json!({}))
+        Ok(submit_oracle_response_to_json())
     }
 }
 

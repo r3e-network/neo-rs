@@ -21,6 +21,14 @@ fn submit_params(pubkey: Vec<u8>) -> [Value; 4] {
 }
 
 #[test]
+fn submit_oracle_response_success_shape_is_empty_object() {
+    let result = super::response::submit_oracle_response_to_json();
+    let object = result.as_object().expect("object");
+
+    assert!(object.is_empty());
+}
+
+#[test]
 fn submit_oracle_response_rejects_invalid_public_key() {
     let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(
