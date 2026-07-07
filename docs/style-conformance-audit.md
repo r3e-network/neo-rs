@@ -234,6 +234,10 @@ owns hash and trigger-filter parsing, and `response.rs` owns the optional
 trigger filtering over stored C#-compatible log JSON. Direct handler tests cover
 transaction-log lookup, trigger filtering, unknown hashes, and missing service
 errors.
+Oracle submission follows the request-boundary rule as well:
+`rpc_server_oracle/request.rs` owns Base64 decoding, request-id parsing, and
+secp256r1 public-key validation for `submitoracleresponse`; the handler keeps
+only service lookup, submission, and `OracleServiceError` mapping.
 
 Recommended next patches, in order:
 

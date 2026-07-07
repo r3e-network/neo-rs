@@ -10,16 +10,20 @@
 //!
 //! ## Contents
 //!
+//! - `request`: Typed JSON-RPC request parsing helpers.
 //! - `tests`: Module-local tests and regression coverage.
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{expect_base64_param, invalid_params};
+use crate::server::rpc_helpers::invalid_params;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
-use neo_crypto::{ECCurve, ECPoint};
 use neo_oracle_service::{OracleService, OracleServiceError};
 use serde_json::{Value, json};
 use std::sync::Arc;
+
+mod request;
+
+use self::request::SubmitOracleResponseRequest;
 
 /// RPC handler group for Oracle service methods.
 pub struct RpcServerOracle;
@@ -33,18 +37,15 @@ impl RpcServerOracle {
     }
 
     fn submit_oracle_response(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let oracle_pubkey_bytes = expect_base64_param(params, 0, "submitoracleresponse")?;
-        let request_id =
-            crate::server::rpc_helpers::expect_u64_param(params, 1, "submitoracleresponse")?;
-        let tx_sign = expect_base64_param(params, 2, "submitoracleresponse")?;
-        let msg_sign = expect_base64_param(params, 3, "submitoracleresponse")?;
-
-        let oracle_pub = ECPoint::from_bytes_with_curve(ECCurve::Secp256r1, &oracle_pubkey_bytes)
-            .map_err(|_| invalid_params("Invalid oracle public key"))?;
-
+        let request = SubmitOracleResponseRequest::parse(params)?;
         let service = oracle_service(server)?;
         service
-            .submit_oracle_response(oracle_pub, request_id, tx_sign, msg_sign)
+            .submit_oracle_response(
+                request.oracle_pubkey,
+                request.request_id,
+                request.tx_signature,
+                request.message_signature,
+            )
             .map_err(map_oracle_error)?;
 
         Ok(json!({}))
