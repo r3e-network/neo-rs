@@ -111,13 +111,6 @@ impl NotifyEventArgs {
             state_array,
         ]))
     }
-
-    /// Builds the C# `NotifyEventArgs.ToStackItem` layout with a caller-prepared
-    /// state array.
-    pub fn to_stack_item_with_state_array(&self, state_array: StackItem) -> StackItem {
-        self.try_to_stack_item_with_state_array(state_array)
-            .expect("notification StackValue projection must be StackItem-compatible")
-    }
 }
 
 impl fmt::Debug for NotifyEventArgs {
