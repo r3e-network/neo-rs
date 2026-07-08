@@ -77,21 +77,19 @@ fn server_context_engine_paths_use_explicit_native_provider() {
 
 #[test]
 fn rpc_server_ledger_reads_use_provider_boundaries() {
-    let sources = [(
-        "session dummy block",
-        include_str!("../../../server/session/dummy_block.rs"),
-    )];
-
-    for (name, source) in sources {
-        assert!(
-            source.contains("StorageLedgerProviderFactory"),
-            "{name} should read ledger records through the provider factory"
-        );
-        assert!(
-            !source.contains("LedgerContract::new()"),
-            "{name} should not construct native LedgerContract directly"
-        );
-    }
+    let session_dummy_block = include_str!("../../../server/session/dummy_block.rs");
+    assert!(
+        session_dummy_block.contains("NativeSessionLedgerProviderFactory"),
+        "session dummy block should read ledger records through the session ledger provider factory"
+    );
+    assert!(
+        !session_dummy_block.contains("StorageLedgerProviderFactory"),
+        "session dummy block should not construct storage ledger providers directly"
+    );
+    assert!(
+        !session_dummy_block.contains("LedgerContract::new()"),
+        "session dummy block should not construct native LedgerContract directly"
+    );
 
     let current_height_sources = [
         (
@@ -209,6 +207,16 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
     assert!(
         wallet_provider.contains("StorageLedgerProviderFactory"),
         "wallet transaction-state reads still belong to the local provider adapter"
+    );
+
+    let session_provider = include_str!("../../../server/session/ledger_provider.rs");
+    assert!(session_provider.contains("trait SessionLedgerProvider"));
+    assert!(session_provider.contains("trait SessionLedgerProviderFactory"));
+    assert!(session_provider.contains("fn current_header"));
+    assert!(session_provider.contains("struct NativeSessionLedgerProviderFactory"));
+    assert!(
+        session_provider.contains("StorageLedgerProviderFactory"),
+        "session current-header reads still belong to the local provider adapter"
     );
 }
 

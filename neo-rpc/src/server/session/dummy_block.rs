@@ -1,11 +1,11 @@
 //! C#-compatible dummy persisting block construction for stateless invokes.
 
-use neo_blockchain::{
-    BlockProvider, ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory,
-};
 use neo_payloads::witness::Witness;
 use neo_payloads::{Block, Header};
 
+use super::ledger_provider::{
+    NativeSessionLedgerProviderFactory, SessionLedgerProvider, SessionLedgerProviderFactory,
+};
 use super::native_provider::{
     NativeSessionProviderFactory, SessionNativeProvider, SessionNativeProviderFactory,
 };
@@ -34,9 +34,10 @@ pub(super) fn create_dummy_block(
     snapshot: &neo_storage::persistence::DataCache,
     settings: &neo_config::ProtocolSettings,
 ) -> Option<Block> {
-    let provider = StorageLedgerProviderFactory.provider(snapshot);
-    let current_hash = provider.current_hash().ok()?;
-    let current_header = provider.header_by_hash(&current_hash).ok()??;
+    let (current_hash, current_header) = NativeSessionLedgerProviderFactory
+        .provider()
+        .current_header(snapshot)
+        .ok()??;
 
     let milliseconds_per_block = NativeSessionProviderFactory
         .provider()
