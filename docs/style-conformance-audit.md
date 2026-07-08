@@ -271,7 +271,10 @@ High-signal clusters found during the first pass:
   status encoding, `service/error.rs` owns typed service errors, and
   `service/task.rs` owns pending response-signature task state, while
   `service/cache.rs` owns request deduplication, finished-request expiry, URL
-  admission checks, and monitoring counters.
+  admission checks, and monitoring counters. HTTPS client construction now
+  returns a typed initialization error instead of panicking during service
+  startup; remaining production `expect` sites in NeoFS signing and HTTP client
+  construction should be classified next.
 - Existing git hygiene rules exclude local ledgers, RocksDB state,
   checkpoints, logs, and build outputs. A scan did not find obvious tracked
   chain.acc/RocksDB artifacts, but runtime-data checks should stay in CI.

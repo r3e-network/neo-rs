@@ -42,7 +42,7 @@ impl OracleService {
             #[cfg(feature = "oracle")]
             counter: AtomicU64::new(1),
             #[cfg(feature = "oracle")]
-            https: OracleHttpsProtocol::new(),
+            https: OracleHttpsProtocol::new()?,
             #[cfg(feature = "oracle")]
             neofs: OracleNeoFsProtocol::new(),
         })

@@ -29,6 +29,9 @@ pub enum OracleServiceError {
     /// Building the oracle response transaction failed.
     #[error("oracle response build failed: {0}")]
     BuildFailed(String),
+    /// Constructing the HTTPS client failed during service initialization.
+    #[error("oracle HTTPS client initialization failed: {0}")]
+    HttpClientInitialization(String),
     /// Request processing failed with an implementation-specific reason.
     #[error("oracle processing error: {0}")]
     Processing(String),
