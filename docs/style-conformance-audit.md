@@ -140,6 +140,8 @@ High-signal clusters found during the first pass:
   Shutdown coordination now lives in `node/shutdown_flow.rs`, which owns signal
   outcome handling, observability reporting for signal failures, task
   cancellation/abort grace, state-service flush, and durable-store restoration.
+  Node composition now carries the dBFT validator handle through the same
+  startup tuple as the consensus setup instead of recovering it with `expect`.
 - `neo-node/src/node/logging/mod.rs` is now a facade for logging setup:
   `logging/filter.rs` owns `RUST_LOG` / TOML directive selection,
   `logging/format.rs` owns operator-facing format parsing, and

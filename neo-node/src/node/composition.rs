@@ -378,8 +378,9 @@ pub(in crate::node) async fn build_node(
     // Spawn the round-driving task now that the network relay handle exists.
     // A configured key that is not in the current validator set stays idle but
     // keeps tracking imports so it can participate after a committee change.
-    if let (Some(setup), Some(inbound_rx), Some(tx_feed_rx)) = (
+    if let (Some(setup), Some(validators), Some(inbound_rx), Some(tx_feed_rx)) = (
         consensus_setup.filter(|_| ledger_mode.uses_local_replay_services()),
+        consensus_validators,
         consensus_inbound_rx,
         consensus_tx_feed_rx,
     ) {
@@ -395,7 +396,7 @@ pub(in crate::node) async fn build_node(
             Arc::clone(&mempool),
             network.clone(),
             Arc::clone(&settings),
-            consensus_validators.expect("configured consensus has validators"),
+            validators,
             Arc::clone(&store),
             consensus_data_dir.as_deref(),
             inbound_rx,
