@@ -5,13 +5,13 @@
 //! corrupt or unreadable live state is never hidden behind older archive data.
 
 use neo_error::CoreResult;
-use neo_payloads::{Block, Header, Transaction};
+use neo_payloads::{Block, Header, Transaction, TransactionState};
 use neo_primitives::UInt256;
 use neo_storage::DataCache;
 
 use super::{
     BlockProvider, ChainTipProvider, LedgerProvider, LedgerProviderFactory, StorageLedgerProvider,
-    TxProvider,
+    TransactionStateProvider, TxProvider,
 };
 
 /// Provider that reads hot native Ledger records first and falls back to cold
@@ -78,6 +78,19 @@ where
         match self.hot.transaction_by_hash(hash)? {
             Some(transaction) => Ok(Some(transaction)),
             None => self.cold.transaction_by_hash(hash),
+        }
+    }
+}
+
+impl<Hot, Cold> TransactionStateProvider for HotColdLedgerProvider<Hot, Cold>
+where
+    Hot: TransactionStateProvider,
+    Cold: TransactionStateProvider,
+{
+    fn transaction_state_by_hash(&self, hash: &UInt256) -> CoreResult<Option<TransactionState>> {
+        match self.hot.transaction_state_by_hash(hash)? {
+            Some(state) => Ok(Some(state)),
+            None => self.cold.transaction_state_by_hash(hash),
         }
     }
 }

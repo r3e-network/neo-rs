@@ -25,7 +25,8 @@ pub use empty::{EmptyLedgerProvider, EmptyLedgerProviderFactory};
 pub use hot_cold::{HotColdLedgerProvider, HotColdLedgerProviderFactory};
 pub use storage::{StorageLedgerProvider, StorageLedgerProviderFactory};
 pub use traits::{
-    BlockProvider, ChainTipProvider, LedgerProvider, LedgerProviderFactory, TxProvider,
+    BlockProvider, ChainTipProvider, LedgerProvider, LedgerProviderFactory,
+    TransactionStateProvider, TxProvider,
 };
 
 #[cfg(test)]

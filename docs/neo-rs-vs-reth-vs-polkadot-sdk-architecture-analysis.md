@@ -16,8 +16,10 @@ tests/ephemeral nodes. The ledger read boundary has a hot native-record
 provider, a hot/cold router, and an explicit `EmptyLedgerProvider` for nodes
 without an installed cold archive, so composition roots can keep one provider
 shape before static files land. Current-tip reads are exposed as the separate
-`ChainTipProvider` capability, keeping RPC and peer-serving code on the same
-provider seam instead of reaching into the native Ledger contract directly.
+`ChainTipProvider` capability, and raw transaction-state records (including
+conflict stubs) are exposed as `TransactionStateProvider`, keeping RPC and
+peer-serving code on the same provider seam instead of reaching into the native
+Ledger contract directly.
 Raw key/value bytes remain C# compatible through
 `StorageKey` / `StorageItem`, and `StorageKey` / `KeyBuilder` over those raw
 bytes is the live encoding on every storage access path.

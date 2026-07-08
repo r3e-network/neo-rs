@@ -2,11 +2,13 @@
 
 use neo_error::{CoreError, CoreResult};
 use neo_native_contracts::LedgerContract;
-use neo_payloads::{Block, Header, Transaction};
+use neo_payloads::{Block, Header, Transaction, TransactionState};
 use neo_primitives::UInt256;
 use neo_storage::DataCache;
 
-use super::{BlockProvider, ChainTipProvider, LedgerProviderFactory, TxProvider};
+use super::{
+    BlockProvider, ChainTipProvider, LedgerProviderFactory, TransactionStateProvider, TxProvider,
+};
 
 /// Storage-backed provider over Neo ledger native-contract records.
 pub struct StorageLedgerProvider<'a> {
@@ -69,6 +71,12 @@ impl TxProvider for StorageLedgerProvider<'_> {
         Ok(LedgerContract::new()
             .get_transaction_state(self.snapshot, hash)?
             .and_then(|state| state.transaction))
+    }
+}
+
+impl TransactionStateProvider for StorageLedgerProvider<'_> {
+    fn transaction_state_by_hash(&self, hash: &UInt256) -> CoreResult<Option<TransactionState>> {
+        LedgerContract::new().get_transaction_state(self.snapshot, hash)
     }
 }
 

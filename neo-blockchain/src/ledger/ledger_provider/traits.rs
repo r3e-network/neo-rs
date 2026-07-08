@@ -5,7 +5,7 @@
 //! cold, or routed provider implementation.
 
 use neo_error::CoreResult;
-use neo_payloads::{Block, Header, Transaction};
+use neo_payloads::{Block, Header, Transaction, TransactionState};
 use neo_primitives::UInt256;
 use neo_storage::DataCache;
 
@@ -122,5 +122,26 @@ where
 {
     fn transaction_by_hash(&self, hash: &UInt256) -> CoreResult<Option<Transaction>> {
         (**self).transaction_by_hash(hash)
+    }
+}
+
+/// Read-only access to the raw persisted transaction-state record.
+///
+/// This capability is deliberately separate from [`TxProvider`]: Neo ledger
+/// storage can contain conflict stubs whose `TransactionState` has a block
+/// index but no full transaction. Public transaction lookups should hide those
+/// stubs, while height/conflict-aware callers must be able to see them.
+pub trait TransactionStateProvider {
+    /// Returns the persisted transaction-state record for `hash`, including
+    /// conflict stubs.
+    fn transaction_state_by_hash(&self, hash: &UInt256) -> CoreResult<Option<TransactionState>>;
+}
+
+impl<P> TransactionStateProvider for &P
+where
+    P: TransactionStateProvider + ?Sized,
+{
+    fn transaction_state_by_hash(&self, hash: &UInt256) -> CoreResult<Option<TransactionState>> {
+        (**self).transaction_state_by_hash(hash)
     }
 }

@@ -5,11 +5,11 @@
 //! files or another immutable archive are absent.
 
 use neo_error::CoreResult;
-use neo_payloads::{Block, Header, Transaction};
+use neo_payloads::{Block, Header, Transaction, TransactionState};
 use neo_primitives::UInt256;
 use neo_storage::DataCache;
 
-use super::{BlockProvider, LedgerProviderFactory, TxProvider};
+use super::{BlockProvider, LedgerProviderFactory, TransactionStateProvider, TxProvider};
 
 /// Ledger provider that always reports clean misses.
 #[derive(Clone, Copy, Debug, Default)]
@@ -31,6 +31,12 @@ impl BlockProvider for EmptyLedgerProvider {
 
 impl TxProvider for EmptyLedgerProvider {
     fn transaction_by_hash(&self, _hash: &UInt256) -> CoreResult<Option<Transaction>> {
+        Ok(None)
+    }
+}
+
+impl TransactionStateProvider for EmptyLedgerProvider {
+    fn transaction_state_by_hash(&self, _hash: &UInt256) -> CoreResult<Option<TransactionState>> {
         Ok(None)
     }
 }

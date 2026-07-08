@@ -9,7 +9,9 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, serialize_to_base64};
 use crate::server::rpc_server::RpcServer;
-use neo_native_contracts::LedgerContract;
+use neo_blockchain::{
+    LedgerProviderFactory, StorageLedgerProviderFactory, TransactionStateProvider,
+};
 use serde_json::Value;
 
 use super::RpcServerBlockchain;
@@ -42,9 +44,9 @@ impl RpcServerBlockchain {
         }
 
         let store = system.store_cache();
-        let ledger = LedgerContract::new();
-        let state = ledger
-            .get_transaction_state(store.data_cache(), &request.hash)
+        let state = StorageLedgerProviderFactory
+            .provider(store.data_cache())
+            .transaction_state_by_hash(&request.hash)
             .map_err(internal_error)?;
 
         // Convert Arc<Transaction> to Transaction for uniform handling.
@@ -71,9 +73,9 @@ impl RpcServerBlockchain {
         }
         let request = TransactionHeightRequest::parse(params)?;
         let store = server.system().store_cache();
-        let ledger = LedgerContract::new();
-        let state = ledger
-            .get_transaction_state(store.data_cache(), &request.hash)
+        let state = StorageLedgerProviderFactory
+            .provider(store.data_cache())
+            .transaction_state_by_hash(&request.hash)
             .map_err(internal_error)?
             .ok_or_else(|| RpcException::from(RpcError::unknown_transaction()))?;
         Ok(transaction_height_to_json(state.block_index()))

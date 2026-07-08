@@ -4,9 +4,10 @@ use std::collections::HashMap;
 
 use neo_error::CoreResult;
 use neo_io::Serializable;
-use neo_payloads::{Block, Header, Signer, Transaction, Witness};
+use neo_payloads::{Block, Header, Signer, Transaction, TransactionAttribute, Witness};
 use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_storage::DataCache;
+use neo_vm_rs::VmState;
 
 fn test_transaction(nonce: u32) -> Transaction {
     let mut tx = Transaction::new();
@@ -68,6 +69,16 @@ fn storage_ledger_provider_reconstructs_block_and_transaction_from_ledger_record
         .expect("load transaction")
         .expect("transaction present");
     assert_eq!(transaction_bytes(&stored_tx), transaction_bytes(&tx));
+    let stored_state = provider
+        .transaction_state_by_hash(&tx_hash)
+        .expect("load transaction state")
+        .expect("transaction state present");
+    assert_eq!(stored_state.block_index, 7);
+    assert_eq!(stored_state.state, VmState::NONE);
+    assert_eq!(
+        stored_state.transaction.expect("state transaction").hash(),
+        tx_hash
+    );
     assert!(TxProvider::contains_transaction(&provider, &tx_hash).expect("contains transaction"));
 }
 
@@ -135,6 +146,12 @@ fn empty_ledger_provider_reports_clean_misses() {
             .contains_transaction(&hash)
             .expect("empty contains lookup")
     );
+    assert!(
+        provider
+            .transaction_state_by_hash(&hash)
+            .expect("empty state lookup")
+            .is_none()
+    );
 }
 
 #[test]
@@ -183,6 +200,7 @@ struct ColdLedgerProvider {
     headers: HashMap<UInt256, Header>,
     blocks: HashMap<UInt256, Block>,
     transactions: HashMap<UInt256, Transaction>,
+    states: HashMap<UInt256, neo_payloads::TransactionState>,
 }
 
 impl ColdLedgerProvider {
@@ -191,10 +209,23 @@ impl ColdLedgerProvider {
         self.hashes.insert(block.index(), block_hash);
         self.headers.insert(block_hash, block.header.clone());
         for transaction in &block.transactions {
-            self.transactions
-                .insert(transaction.hash(), transaction.clone());
+            let hash = transaction.hash();
+            self.transactions.insert(hash, transaction.clone());
+            self.states.insert(
+                hash,
+                neo_payloads::TransactionState::new(
+                    block.index(),
+                    Some(transaction.clone()),
+                    VmState::NONE,
+                ),
+            );
         }
         self.blocks.insert(block_hash, block);
+        self
+    }
+
+    fn with_state(mut self, hash: UInt256, state: neo_payloads::TransactionState) -> Self {
+        self.states.insert(hash, state);
         self
     }
 }
@@ -216,6 +247,15 @@ impl BlockProvider for ColdLedgerProvider {
 impl TxProvider for ColdLedgerProvider {
     fn transaction_by_hash(&self, hash: &UInt256) -> CoreResult<Option<Transaction>> {
         Ok(self.transactions.get(hash).cloned())
+    }
+}
+
+impl TransactionStateProvider for ColdLedgerProvider {
+    fn transaction_state_by_hash(
+        &self,
+        hash: &UInt256,
+    ) -> CoreResult<Option<neo_payloads::TransactionState>> {
+        Ok(self.states.get(hash).cloned())
     }
 }
 
@@ -271,4 +311,66 @@ fn hot_cold_ledger_provider_prefers_hot_records() {
         .expect("hot block");
     assert_eq!(loaded.hash(), hot_block.hash());
     assert_eq!(loaded.transactions[0].hash(), hot_tx.hash());
+}
+
+#[test]
+fn storage_ledger_provider_exposes_conflict_stub_state_without_transaction() {
+    let cache = DataCache::new(false);
+    let conflict_hash = UInt256::from_bytes(&[0xAB; 32]).expect("conflict hash");
+    let signer_account = UInt160::from_bytes(&[0x11; 20]).expect("signer");
+    let mut tx = test_transaction(4100);
+    tx.set_signers(vec![Signer::new(signer_account, WitnessScope::NONE)]);
+    tx.set_attributes(vec![TransactionAttribute::Conflicts(
+        neo_payloads::Conflicts::new(conflict_hash),
+    )]);
+    let mut header = Header::new();
+    header.set_index(41);
+    let block = Block::from_parts(header, vec![tx]);
+    let block_hash = block.header.try_hash().expect("block hash");
+    crate::ledger_records::LedgerRecords::write_on_persist_records(&cache, &block, &block_hash)
+        .expect("on-persist records");
+    let provider = StorageLedgerProvider::new(&cache);
+
+    let state = provider
+        .transaction_state_by_hash(&conflict_hash)
+        .expect("conflict state")
+        .expect("conflict stub");
+    assert_eq!(state.block_index, 41);
+    assert!(state.transaction.is_none());
+    assert!(
+        !provider
+            .contains_transaction(&conflict_hash)
+            .expect("stub is not a full transaction")
+    );
+}
+
+#[test]
+fn hot_cold_transaction_state_prefers_hot_conflict_stub_over_cold_transaction() {
+    let hot = DataCache::new(false);
+    let conflict_hash = UInt256::from_bytes(&[0xBC; 32]).expect("conflict hash");
+    let signer_account = UInt160::from_bytes(&[0x44; 20]).expect("signer");
+    let mut hot_tx = test_transaction(4200);
+    hot_tx.set_signers(vec![Signer::new(signer_account, WitnessScope::NONE)]);
+    hot_tx.set_attributes(vec![TransactionAttribute::Conflicts(
+        neo_payloads::Conflicts::new(conflict_hash),
+    )]);
+    let mut header = Header::new();
+    header.set_index(42);
+    let hot_block = Block::from_parts(header, vec![hot_tx]);
+    let hot_hash = hot_block.header.try_hash().expect("hot block hash");
+    crate::ledger_records::LedgerRecords::write_on_persist_records(&hot, &hot_block, &hot_hash)
+        .expect("hot on-persist records");
+
+    let cold = ColdLedgerProvider::default().with_state(
+        conflict_hash,
+        neo_payloads::TransactionState::new(7, Some(test_transaction(7)), VmState::NONE),
+    );
+    let provider = HotColdLedgerProvider::new(StorageLedgerProvider::new(&hot), cold);
+
+    let state = provider
+        .transaction_state_by_hash(&conflict_hash)
+        .expect("routed state")
+        .expect("hot stub wins");
+    assert_eq!(state.block_index, 42);
+    assert!(state.transaction.is_none());
 }
