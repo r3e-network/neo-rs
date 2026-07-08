@@ -369,12 +369,13 @@ pub trait BlockDownloader:
     fn config(&self) -> &BlockDownloadConfig;
     fn poll_next_batch(...) -> Poll<Option<NetworkResult<BlockDownloadBatch>>>;
 }
-// WIRED: per-peer request policy (BlockRequestScheduler, used by PeerSession).
-// COMPOSED: SyncDownloadImportDriver drains BlockDownloader into SyncImportPipeline.
-// IMPLEMENTED-BUT-UNWIRED (constructed only in neo-network/src/tests/):
-//   - cross-peer range policy (CrossPeerBlockRangeScheduler)
-//   - ordered response buffering (OrderedBlockBatchBuffer)
-// The async transport stream remains the next implementation step.
+// WIRED: per-peer compatibility policy (BlockRequestScheduler, used by PeerSession).
+// WIRED: cross-peer range policy + retry accounting (CrossPeerBlockRangeScheduler).
+// WIRED: contiguous response release (OrderedBlockBatchBuffer).
+// WIRED: transport-agnostic coordinator stream (BlockDownloadCoordinator).
+// WIRED: live peer fetching through Arc<PeerRegistry>: BlockRangeFetcher.
+// WIRED: SyncDownloadImportDriver drains BlockDownloader into SyncImportPipeline.
+// Node startup owns range sync through the coordinator-backed downloader/import task.
 ```
 
 ---
@@ -488,12 +489,12 @@ pub struct TransactionState {
 |--------|-------|---------|-------------|------------|--------|
 | Staged sync pipeline integration | ★★★★★ | ★★ | ★★★★ | ★★★★ | Large |
 | Hot/Cold/Static tiering | ★★★ | ★★★★★ | ★★★ | ★★★ | Medium |
-| Import queue + concurrent verify | ★★★★ | - | ★★★ | ★★★ | Driver handoff done; peer scheduler medium |
+| Import queue + concurrent verify | ★★★★ | - | ★★★ | ★★★ | Runtime queue and production download-to-import bridge wired |
 | Stage commit policy + checkpoints | ★★★ | - | ★★★★ | ★★ | Import-stage driver done |
 | Compact derive macro | ★★ | ★★★★ | - | ★★ | Small |
 | Task supervision | - | - | ★★★★★ | ★★ | Done |
-| BlockDownloader as Stream | ★★★ | - | ★★ | ★★★ | Boundary + download-to-import bridge + per-peer scheduler wired; coordinator composes cross-peer range scheduler + ordered buffer; registry-backed peer fetcher, peer snapshots, and startup driver done |
-| Essential task monitoring | - | - | ★★★★★ | ★ | Small |
+| BlockDownloader as Stream | ★★★ | - | ★★ | ★★★ | Boundary, coordinator, registry-backed peer fetcher, peer snapshots, and startup driver wired |
+| Essential task monitoring | - | - | ★★★★★ | ★ | Done |
 | Metrics infrastructure | - | - | ★★★★ | ★★ | Medium |
 
 ---
