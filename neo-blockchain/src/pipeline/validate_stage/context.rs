@@ -1,8 +1,8 @@
 use std::fmt;
 use std::sync::Arc;
 
+use crate::ledger_provider::{BlockProvider, StorageLedgerProvider};
 use neo_config::ProtocolSettings;
-use neo_native_contracts::LedgerContract;
 use neo_primitives::UInt256;
 use neo_storage::DataCache;
 
@@ -51,8 +51,8 @@ impl SnapshotValidateContext {
         Self { settings, snapshot }
     }
 
-    fn ledger(&self) -> LedgerContract {
-        LedgerContract::new()
+    fn provider(&self) -> StorageLedgerProvider<'_> {
+        StorageLedgerProvider::new(self.snapshot.as_ref())
     }
 }
 
@@ -62,23 +62,15 @@ impl ValidateContext for SnapshotValidateContext {
     }
 
     fn prev_block_hash(&self, height: u32) -> Option<UInt256> {
-        self.ledger()
-            .get_block_hash(self.snapshot.as_ref(), height)
-            .ok()
-            .flatten()
+        self.provider().block_hash_by_index(height).ok().flatten()
     }
 
     fn prev_block_timestamp(&self, height: u32) -> Option<u64> {
-        let ledger = self.ledger();
-        let hash = ledger
-            .get_block_hash(self.snapshot.as_ref(), height)
-            .ok()
-            .flatten()?;
-        ledger
-            .get_trimmed_block(self.snapshot.as_ref(), &hash)
+        self.provider()
+            .header_by_index(height)
             .ok()
             .flatten()
-            .map(|block| block.header.timestamp())
+            .map(|header| header.timestamp())
     }
 
     fn validators_count(&self) -> i32 {

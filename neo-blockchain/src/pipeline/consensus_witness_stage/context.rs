@@ -1,10 +1,10 @@
 use std::fmt;
 use std::sync::Arc;
 
+use crate::ledger_provider::{BlockProvider, StorageLedgerProvider};
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::LedgerContract;
 use neo_payloads::Block;
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::DataCache;
@@ -88,15 +88,15 @@ impl ConsensusWitnessContext for SnapshotConsensusWitnessContext {
     }
 
     fn parent_header(&self, block: &Block) -> CoreResult<ParentHeaderContext> {
-        let prev = LedgerContract::new()
-            .get_trimmed_block(self.snapshot.as_ref(), block.header.prev_hash())?
+        let prev = StorageLedgerProvider::new(self.snapshot.as_ref())
+            .header_by_hash(block.header.prev_hash())?
             .ok_or_else(|| CoreError::other("previous block not found"))?;
 
         Ok(ParentHeaderContext {
             hash: prev.hash(),
             index: prev.index(),
-            timestamp: prev.header.timestamp(),
-            next_consensus: *prev.header.next_consensus(),
+            timestamp: prev.timestamp(),
+            next_consensus: *prev.next_consensus(),
         })
     }
 }
