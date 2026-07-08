@@ -37,12 +37,6 @@ impl MerkleBlockPayload {
         }
     }
 
-    /// Creates from a block and filter flags.
-    pub fn create(block: &mut Block, filter_bits: Vec<bool>) -> Self {
-        Self::try_create(block, filter_bits)
-            .expect("block transactions must be serializable to create a merkle block payload")
-    }
-
     /// Creates from a block and filter flags, failing closed if any transaction
     /// hash cannot be represented on the wire.
     pub fn try_create(block: &mut Block, filter_bits: Vec<bool>) -> CoreResult<Self> {

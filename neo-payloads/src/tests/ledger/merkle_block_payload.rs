@@ -114,19 +114,3 @@ fn try_create_rejects_unserializable_transaction_hash() {
 
     assert!(MerkleBlockPayload::try_create(&mut block, vec![true]).is_err());
 }
-
-#[test]
-fn try_create_matches_legacy_create_for_valid_block() {
-    let mut block = Block::new();
-    block
-        .transactions
-        .push(transaction_with_script(vec![OpCode::PUSH1.byte()]));
-    let mut legacy_block = block.clone();
-
-    let fallible = MerkleBlockPayload::try_create(&mut block, vec![true]).unwrap();
-    let legacy = MerkleBlockPayload::create(&mut legacy_block, vec![true]);
-
-    assert_eq!(fallible.hashes, legacy.hashes);
-    assert_eq!(fallible.flags, legacy.flags);
-    assert_eq!(fallible.tx_count, legacy.tx_count);
-}

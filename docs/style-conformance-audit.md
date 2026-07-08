@@ -709,6 +709,9 @@ instead of runtime parsing/emission paths guarded by production `expect()`.
 `neo-payloads/src/execution/notify_event_args.rs` now exposes only the fallible
 notification StackItem projection path; the unused infallible wrapper that
 panicked on conversion errors was removed.
+`neo-payloads/src/ledger/merkle_block_payload.rs` now keeps only
+`try_create`; the unused `create` wrapper that converted transaction hash
+serialization errors into a panic was removed.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.
