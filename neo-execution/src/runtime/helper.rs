@@ -109,17 +109,6 @@ impl Helper {
         .map_err(Into::into)
     }
 
-    /// Creates a multi-sig redeem script (panics on invalid input).
-    ///
-    /// Prefer `try_multi_sig_redeem_script` for fallible construction.
-    #[inline]
-    pub fn multi_sig_redeem_script(m: usize, public_keys: &[Vec<u8>]) -> Vec<u8> {
-        Self::try_multi_sig_redeem_script(m, public_keys).expect(
-            "multi-sig redeem script construction failed: \
-             m must be in [1, 1024] and m <= public_keys.len()",
-        )
-    }
-
     /// Computes the hash of a deployed contract.
     pub fn get_contract_hash(sender: &UInt160, nef_checksum: u32, name: &str) -> UInt160 {
         let mut builder = ScriptBuilder::new();

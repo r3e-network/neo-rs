@@ -770,6 +770,13 @@ panic-shaped benchmark startup path.
 errors through the existing GUI error-display paths. The mutex-poison recovery
 test also uses the shared lock helper to create the poisoned state, leaving the
 GUI production scan free of `unwrap`/`expect` sites.
+`neo-execution` native ABI composition now builds descriptors through
+panic-free static-metadata helpers that log malformed native table invariants
+instead of aborting while preserving the valid descriptor bytes. The unused
+infallible `Helper::multi_sig_redeem_script` compatibility wrapper was removed;
+callers use the existing `try_multi_sig_redeem_script` path. The remaining
+`neo-execution` unwrap/expect files are source-adjacent `#[cfg(test)]` modules
+that should be moved under `src/tests` or rewritten in a follow-up.
 
 Recommended next patches, in order:
 

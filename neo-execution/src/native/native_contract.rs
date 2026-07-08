@@ -569,21 +569,20 @@ impl NativeEvent {
     /// Creates a new ungated event declaration from `(name, type)` parameter
     /// pairs.
     ///
-    /// Panics only on inputs that are statically invalid as manifest data
-    /// (empty event name or duplicate parameter names), which for the fixed
-    /// native event tables is a compile-time-style invariant.
     pub fn new(order: i32, name: &str, parameters: &[(&str, ContractParameterType)]) -> Self {
         let parameters = parameters
             .iter()
             .map(|(parameter_name, parameter_type)| {
-                ContractParameterDefinition::new((*parameter_name).to_string(), *parameter_type)
-                    .expect("native event parameter definition")
+                native_static_parameter_definition(
+                    (*parameter_name).to_string(),
+                    *parameter_type,
+                    name,
+                )
             })
             .collect();
         Self {
             order,
-            descriptor: ContractEventDescriptor::new(name.to_string(), parameters)
-                .expect("native event descriptor"),
+            descriptor: native_static_event_descriptor(name.to_string(), parameters),
             active_in: None,
             deprecated_in: None,
         }
@@ -673,19 +672,17 @@ pub fn build_native_contract_state<T: NativeContract + ?Sized>(
                 } else {
                     format!("arg{index}")
                 };
-                ContractParameterDefinition::new(name, *param_type)
-                    .expect("native parameter definition")
+                native_static_parameter_definition(name, *param_type, &method.name)
             })
             .collect();
 
-        let descriptor = ContractMethodDescriptor::new(
+        let descriptor = native_static_method_descriptor(
             method.name.clone(),
             parameters,
             method.return_type,
             offset,
             method.safe,
-        )
-        .expect("native method descriptor");
+        );
         abi_methods.push(descriptor);
     }
 
@@ -697,6 +694,87 @@ pub fn build_native_contract_state<T: NativeContract + ?Sized>(
     manifest.abi = ContractAbi::new(abi_methods, events);
 
     ContractState::new(contract.id(), contract.hash(), nef, manifest)
+}
+
+fn native_static_parameter_definition(
+    name: String,
+    param_type: ContractParameterType,
+    owner: &str,
+) -> ContractParameterDefinition {
+    if name.is_empty() {
+        tracing::error!(
+            target: "neo",
+            owner,
+            "native ABI parameter name is empty"
+        );
+    }
+    if param_type == ContractParameterType::Void {
+        tracing::error!(
+            target: "neo",
+            owner,
+            parameter = name.as_str(),
+            "native ABI parameter type is Void"
+        );
+    }
+    ContractParameterDefinition { name, param_type }
+}
+
+fn native_static_event_descriptor(
+    name: String,
+    parameters: Vec<ContractParameterDefinition>,
+) -> ContractEventDescriptor {
+    log_duplicate_native_parameters("event", &name, &parameters);
+    if name.is_empty() {
+        tracing::error!(target: "neo", "native event name is empty");
+    }
+    ContractEventDescriptor { name, parameters }
+}
+
+fn native_static_method_descriptor(
+    name: String,
+    parameters: Vec<ContractParameterDefinition>,
+    return_type: ContractParameterType,
+    offset: i32,
+    safe: bool,
+) -> ContractMethodDescriptor {
+    log_duplicate_native_parameters("method", &name, &parameters);
+    if name.is_empty() {
+        tracing::error!(target: "neo", "native method name is empty");
+    }
+    if offset < 0 {
+        tracing::error!(
+            target: "neo",
+            method = name.as_str(),
+            offset,
+            "native method offset is negative"
+        );
+    }
+    ContractMethodDescriptor {
+        name,
+        parameters,
+        return_type,
+        offset,
+        safe,
+    }
+}
+
+fn log_duplicate_native_parameters(
+    kind: &'static str,
+    owner: &str,
+    parameters: &[ContractParameterDefinition],
+) {
+    let mut names = std::collections::HashSet::new();
+    for parameter in parameters {
+        if !names.insert(parameter.name.as_str()) {
+            tracing::error!(
+                target: "neo",
+                kind,
+                owner,
+                parameter = parameter.name.as_str(),
+                "duplicate native ABI parameter name"
+            );
+        }
+    }
 }
 
 #[cfg(test)]
