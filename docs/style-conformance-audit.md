@@ -298,8 +298,10 @@ High-signal clusters found during the first pass:
   backing snapshots, matching the batched empty-block fast path.
   `storage/mpt_store.rs` now returns typed `MptError::InvalidOperation` values
   for lazy-trie and non-empty-batch invariants instead of using production
-  `expect()`; the remaining state-service production `expect()` is limited to
-  async worker spawn setup in `service/commit_handlers.rs`.
+  `expect()`. `service/commit_handlers.rs` exposes fallible async-worker
+  constructors, and `neo-node/src/node/services/state.rs` uses that path during
+  node composition, so the style audit no longer reports `neo-state-service` in
+  the production unwrap/expect section.
 - `neo-gui` is outside the workspace, but GUI mutex poison handling is now
   centralized in `neo-gui/src/sync.rs`; shell, runtime, and screen modules use
   that helper instead of choosing per-call `unwrap` / `expect` / silent-ignore

@@ -22,6 +22,7 @@ use neo_payloads::Block;
 use neo_payloads::{CommittedHandler, CommittingHandler};
 use neo_storage::DataCache;
 use std::any::Any;
+use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TryRecvError};
@@ -57,13 +58,38 @@ impl StateServiceCommitHandlers {
         Self::new_async_with_capacity(state_store, DEFAULT_ASYNC_QUEUE_CAPACITY)
     }
 
+    /// Constructs an async pipeline, returning the worker spawn failure instead
+    /// of falling back to synchronous mode.
+    pub fn try_new_async(state_store: Arc<StateStore>) -> io::Result<Self> {
+        Self::try_new_async_with_capacity(state_store, DEFAULT_ASYNC_QUEUE_CAPACITY)
+    }
+
     /// Constructs an async pipeline with an explicit queue capacity.
     pub fn new_async_with_capacity(state_store: Arc<StateStore>, queue_capacity: usize) -> Self {
-        let worker = AsyncStateRootWorker::spawn(Arc::clone(&state_store), queue_capacity);
-        Self {
+        match Self::try_new_async_with_capacity(Arc::clone(&state_store), queue_capacity) {
+            Ok(handlers) => handlers,
+            Err(err) => {
+                warn!(
+                    target: "neo.state_service",
+                    error = %err,
+                    "failed to spawn local state-root worker; falling back to synchronous commits"
+                );
+                Self::new(state_store)
+            }
+        }
+    }
+
+    /// Constructs an async pipeline with an explicit queue capacity, returning
+    /// the worker spawn failure instead of falling back to synchronous mode.
+    pub fn try_new_async_with_capacity(
+        state_store: Arc<StateStore>,
+        queue_capacity: usize,
+    ) -> io::Result<Self> {
+        let worker = AsyncStateRootWorker::spawn(Arc::clone(&state_store), queue_capacity)?;
+        Ok(Self {
             state_store,
             worker: Some(worker),
-        }
+        })
     }
 
     /// Returns a clone of the inner state store.
@@ -280,7 +306,7 @@ struct AsyncStateRootWorker {
 }
 
 impl AsyncStateRootWorker {
-    fn spawn(state_store: Arc<StateStore>, queue_capacity: usize) -> Self {
+    fn spawn(state_store: Arc<StateStore>, queue_capacity: usize) -> io::Result<Self> {
         let capacity = queue_capacity.max(1);
         let (tx, rx) = std::sync::mpsc::sync_channel(capacity);
         let failed = Arc::new(AtomicBool::new(false));
@@ -304,9 +330,16 @@ impl AsyncStateRootWorker {
                     worker_applied_batch_sizes,
                 )
             })
-            .expect("spawn StateService MPT worker");
+            .map_err(|err| {
+                warn!(
+                    target: "neo.state_service",
+                    error = %err,
+                    "failed to spawn local state-root worker"
+                );
+                err
+            })?;
 
-        Self {
+        Ok(Self {
             tx,
             queue_capacity: capacity,
             failed,
@@ -314,7 +347,7 @@ impl AsyncStateRootWorker {
             #[cfg(test)]
             applied_batch_sizes,
             handle: parking_lot::Mutex::new(Some(handle)),
-        }
+        })
     }
 
     fn queue_capacity(&self) -> usize {

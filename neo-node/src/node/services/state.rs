@@ -26,19 +26,23 @@ pub(super) fn build_state_service_runtime(
     let state_service_fast_sync = service_fast_sync && config.state_service.track_during_catchup;
     let (state_store, durable_store) =
         build_state_store(config, network, storage_provider, state_service_fast_sync)?;
-    let state_service = state_store.as_ref().map(|state_store| {
-        let handlers = if state_service_fast_sync {
-            neo_state_service::commit_handlers::StateServiceCommitHandlers::new_async_with_capacity(
-                Arc::clone(state_store),
-                FAST_SYNC_BURST_CAPACITY,
-            )
-        } else {
+    let state_service = match state_store.as_ref() {
+        Some(state_store) if state_service_fast_sync => {
+            let handlers =
+                neo_state_service::commit_handlers::StateServiceCommitHandlers::try_new_async_with_capacity(
+                    Arc::clone(state_store),
+                    FAST_SYNC_BURST_CAPACITY,
+                )
+                .context("spawning StateService MPT worker")?;
+            Some(Arc::new(handlers))
+        }
+        Some(state_store) => Some(Arc::new(
             neo_state_service::commit_handlers::StateServiceCommitHandlers::new(Arc::clone(
                 state_store,
-            ))
-        };
-        Arc::new(handlers)
-    });
+            )),
+        )),
+        None => None,
+    };
 
     Ok(StateServiceRuntime {
         state_store,
