@@ -22,6 +22,17 @@ use neo_storage::persistence::DataCache;
 
 use crate::server::model::block_hash_or_index::BlockHashOrIndex;
 
+/// Ledger context attached to a verbose transaction response.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TransactionLedgerContext {
+    /// Number of confirmations relative to the current persisted height.
+    pub(crate) confirmations: u32,
+    /// Block hash for the transaction height, when the ledger index exists.
+    pub(crate) block_hash: Option<UInt256>,
+    /// Block timestamp for `block_hash`, when the header is still available.
+    pub(crate) block_time: Option<u64>,
+}
+
 /// Resolves a block identifier (height or hash) to the block hash, or
 /// `None` when an index has no persisted hash entry.
 ///
@@ -87,6 +98,30 @@ pub(crate) fn current_index_and_next_hash(
     let current_index = provider.current_index()?;
     let next_hash = provider.block_hash_by_index(index.saturating_add(1))?;
     Ok((current_index, next_hash))
+}
+
+/// Returns the ledger metadata that C# adds to verbose transaction JSON:
+/// confirmations, block hash, and block timestamp.
+pub(crate) fn transaction_context(
+    snapshot: &DataCache,
+    block_index: u32,
+) -> CoreResult<TransactionLedgerContext> {
+    let provider = StorageLedgerProviderFactory.provider(snapshot);
+    let current_index = provider.current_index()?;
+    let confirmations = current_index.saturating_sub(block_index).saturating_add(1);
+    let block_hash = provider.block_hash_by_index(block_index)?;
+    let block_time = match block_hash {
+        Some(hash) => provider
+            .header_by_hash(&hash)?
+            .map(|header| header.timestamp()),
+        None => None,
+    };
+
+    Ok(TransactionLedgerContext {
+        confirmations,
+        block_hash,
+        block_time,
+    })
 }
 
 /// Loads the full block for `identifier`, reconstructing the

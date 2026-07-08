@@ -5,13 +5,11 @@
 //! mempool entries, storage, and transactions.
 
 use crate::client::models::RpcContractState;
+use crate::server::ledger_queries;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_blockchain::{
-    BlockProvider, ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory,
-};
 use neo_execution::contract_state::ContractState;
 use neo_io::Serializable;
 use neo_mempool::PoolItem;
@@ -214,31 +212,23 @@ fn append_ledger_transaction_context(
 ) -> Result<(), RpcException> {
     let system = server.system();
     let store = system.store_cache();
-    let factory = StorageLedgerProviderFactory;
-    let provider = factory.provider(store.data_cache());
     let block_index = state.block_index();
-    let current_index = provider.current_index().map_err(internal_error)?;
-    let confirmations = current_index.saturating_sub(block_index).saturating_add(1);
-    obj.insert("confirmations".to_string(), json!(confirmations));
+    let context = ledger_queries::transaction_context(store.data_cache(), block_index)
+        .map_err(internal_error)?;
+    obj.insert("confirmations".to_string(), json!(context.confirmations));
 
     // C# GetRawTransaction verbose adds only blockhash, confirmations and
     // blocktime to Transaction.ToJson (RpcServer.Blockchain.cs:373-381);
     // it does NOT add a vmstate field (that belongs to getapplicationlog).
     // Emitting it here surprises strict clients / response-diff tooling.
-    if let Some(block_hash) = provider
-        .block_hash_by_index(block_index)
-        .map_err(internal_error)?
-    {
+    if let Some(block_hash) = context.block_hash {
         obj.insert(
             "blockhash".to_string(),
             Value::String(block_hash.to_string()),
         );
 
-        if let Some(header) = provider
-            .header_by_hash(&block_hash)
-            .map_err(internal_error)?
-        {
-            obj.insert("blocktime".to_string(), json!(header.timestamp()));
+        if let Some(block_time) = context.block_time {
+            obj.insert("blocktime".to_string(), json!(block_time));
         }
     }
 

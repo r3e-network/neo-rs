@@ -154,6 +154,16 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
         "transaction RPC handlers should not construct the storage ledger provider directly"
     );
 
+    let blockchain_responses = include_str!("../../../server/rpc_server_blockchain/responses.rs");
+    assert!(
+        blockchain_responses.contains("ledger_queries::transaction_context"),
+        "verbose transaction response context should use the shared ledger-query boundary"
+    );
+    assert!(
+        !blockchain_responses.contains("StorageLedgerProviderFactory"),
+        "blockchain response projection should not construct storage ledger providers directly"
+    );
+
     let blockchain_provider =
         include_str!("../../../server/rpc_server_blockchain/ledger_provider.rs");
     assert!(blockchain_provider.contains("trait BlockchainLedgerProvider"));
