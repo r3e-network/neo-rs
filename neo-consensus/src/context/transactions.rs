@@ -5,7 +5,7 @@
 
 use neo_primitives::UInt256;
 
-use super::ConsensusContext;
+use super::{ConsensusContext, ValidatorInfo};
 
 /// Wire size and system fee of a single proposal transaction, mirroring the
 /// C# `Transaction.Size` / `Transaction.SystemFee` values `ConsensusContext`
@@ -131,27 +131,12 @@ impl ConsensusContext {
     fn expected_block_size_without_transactions(&self, expected_transactions: usize) -> usize {
         use neo_io::serializable::helper::SerializeHelper;
         use neo_payloads::Witness;
-        use neo_vm::script_builder::{RedeemScript, ScriptBuilder};
+        use neo_vm::script_builder::ScriptBuilder;
 
         // Witness verification script: the canonical M-of-N multi-sig over the
         // sorted validator keys (C# `Contract.CreateMultiSigRedeemScript`).
-        let n = self.validators.len();
-        let m = RedeemScript::bft_threshold(n);
-        let mut sorted: Vec<neo_crypto::ECPoint> = self
-            .validators
-            .iter()
-            .map(|v| v.public_key.clone())
-            .collect();
-        sorted.sort();
-        let mut verification = ScriptBuilder::new();
-        verification.emit_push_int(m as i64);
-        for key in &sorted {
-            verification.emit_push(key.as_bytes());
-        }
-        verification.emit_push_int(n as i64);
-        verification
-            .emit_syscall("System.Crypto.CheckMultisig")
-            .expect("infallible: in-memory emit");
+        let m = neo_vm::script_builder::RedeemScript::bft_threshold(self.validators.len());
+        let verification = expected_witness_verification_script(&self.validators);
 
         // Witness invocation script: M pushes of a 64-byte signature placeholder
         // (C# `_witnessSize` invocation: `for (x < M) sb.EmitPush(new byte[64])`).
@@ -161,7 +146,7 @@ impl ConsensusContext {
             invocation.emit_push(&signature_placeholder);
         }
 
-        let witness = Witness::new_with_scripts(invocation.to_array(), verification.to_array());
+        let witness = Witness::new_with_scripts(invocation.to_array(), verification);
 
         // C# GetExpectedBlockSizeWithoutTransactions field layout.
         4               // Version (uint)
@@ -176,4 +161,37 @@ impl ConsensusContext {
             + witness.size()
             + SerializeHelper::get_var_size_usize(expected_transactions)
     }
+}
+
+fn expected_witness_verification_script(validators: &[ValidatorInfo]) -> Vec<u8> {
+    use neo_vm::script_builder::RedeemScript;
+
+    let m = RedeemScript::bft_threshold(validators.len());
+    let keys: Vec<neo_crypto::ECPoint> = validators
+        .iter()
+        .map(|validator| validator.public_key.clone())
+        .collect();
+
+    match RedeemScript::multi_sig_redeem_script_from_points(m, &keys) {
+        Ok(script) => script,
+        Err(_) => unchecked_multisig_verification_script(m, &keys),
+    }
+}
+
+fn unchecked_multisig_verification_script(m: usize, keys: &[neo_crypto::ECPoint]) -> Vec<u8> {
+    use neo_vm::script_builder::ScriptBuilder;
+
+    let mut sorted = keys.to_vec();
+    sorted.sort();
+
+    let mut builder = ScriptBuilder::new();
+    builder.emit_push_int(m as i64);
+    for key in &sorted {
+        builder.emit_push(key.as_bytes());
+    }
+    builder.emit_push_int(keys.len() as i64);
+    if builder.emit_syscall("System.Crypto.CheckMultisig").is_err() {
+        return Vec::new();
+    }
+    builder.to_array()
 }

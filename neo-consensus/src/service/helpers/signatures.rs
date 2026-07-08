@@ -115,12 +115,10 @@ impl ConsensusService {
         // Get public key bytes
         let pub_key_bytes = validator.public_key.encoded();
 
-        match Secp256r1Crypto::verify(data, &sig_bytes, &pub_key_bytes) {
-            Ok(valid) => valid,
-            Err(e) => {
-                debug!(error = %e, "Signature verification failed");
-                false
-            }
+        let verification = Secp256r1Crypto::verify(data, &sig_bytes, &pub_key_bytes);
+        if let Err(error) = &verification {
+            debug!(error = %error, "Signature verification failed");
         }
+        matches!(verification, Ok(true))
     }
 }

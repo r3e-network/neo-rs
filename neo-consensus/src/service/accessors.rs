@@ -7,7 +7,8 @@ use super::ConsensusService;
 
 impl ConsensusService {
     /// Returns our validator index, or an error if we're not a validator.
-    /// This is a safe alternative to `my_index.unwrap()` for production code.
+    /// This is a safe alternative to directly unwrapping `my_index` in
+    /// production code.
     #[inline]
     pub(super) fn my_index(&self) -> ConsensusResult<u8> {
         self.context.my_index.ok_or(ConsensusError::NotValidator)

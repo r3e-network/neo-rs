@@ -198,7 +198,10 @@ High-signal clusters found during the first pass:
 - `neo-consensus/src/context/mod.rs` keeps the public `ConsensusContext` state
   shape and module map, while `context/construction.rs` owns fresh-round field
   defaults and `context/policy.rs` owns dBFT default policy constants and
-  bounded-cache limits.
+  bounded-cache limits. Context replay-cache construction, expected witness-size
+  accounting, and signature verification helpers now avoid production
+  `unwrap` / `expect` calls; the style audit no longer reports
+  `neo-consensus` in the production unwrap/expect section.
 - `neo-consensus/src/messages/mod.rs` keeps the dBFT message module map and
   re-exports. `messages/payload.rs` owns the shared `ExtensiblePayload.Data`
   DBFT envelope and common message-byte helper, while each message module owns

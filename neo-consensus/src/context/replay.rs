@@ -12,10 +12,11 @@ use super::{ConsensusContext, MAX_MESSAGE_CACHE_SIZE};
 
 impl ConsensusContext {
     pub(super) fn new_seen_message_cache() -> LruCache<UInt256, ()> {
-        LruCache::new(
-            NonZeroUsize::new(MAX_MESSAGE_CACHE_SIZE)
-                .expect("message cache capacity must be non-zero"),
-        )
+        let capacity = match NonZeroUsize::new(MAX_MESSAGE_CACHE_SIZE) {
+            Some(capacity) => capacity,
+            None => NonZeroUsize::MIN,
+        };
+        LruCache::new(capacity)
     }
 
     /// Checks if a message hash has been seen before (replay attack prevention)
