@@ -212,6 +212,10 @@ High-signal clusters found during the first pass:
   registration flow. `jump_table/shared.rs` owns C# stack-coercion helpers,
   execution-context guards, semantics-error conversion, and StackValue result
   projection shared by opcode-family modules.
+- `neo-vm/src/execution_engine/mod.rs` keeps the VM state facade and module map.
+  `execution_engine/host.rs` owns the unsafe raw-host-pointer bridge used for
+  allocation-free interop callbacks, including the documented safety invariants
+  and callback wrappers.
 - `neo-payloads/src/transaction_attribute/mod.rs` keeps the attribute enum,
   constructors, and generic attribute helpers, while `transaction_attribute/wire.rs`
   owns type-byte dispatch plus `Serializable`, `fees.rs` owns policy-backed
