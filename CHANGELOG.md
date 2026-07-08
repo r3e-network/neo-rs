@@ -12,6 +12,7 @@
 - **ExtensiblePayload hardening.** Deserialization rejects a payload whose witness script hash does not match `Sender`, preserving the C# v3.10.1 invalid-payload guard.
 - **NEO committee rewards.** Post-Gorgon voter reward refreshes read live candidate votes instead of stale cached committee votes, matching the v3.10.1 `NeoToken.PostPersist` fix.
 - **Notary deposit accounting.** Notary-sponsored transactions reserve mempool fees against the payer's Notary deposit and block persistence faults on missing or overdrawn deposits, matching the v3.10.1 overdraw fix.
+- **NeoVM ReferenceCounter cycles.** `CLEARITEMS` now clears compounds before releasing captured sub-items, and compound reference removal no-ops when the compound is already detached, matching NeoVM v3.10.1 cycle/underflow behavior.
 
 ## [0.10.0] - 2026-07-03
 

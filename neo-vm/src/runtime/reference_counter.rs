@@ -1,5 +1,5 @@
-//! Reference counting for the Neo VM — the C# v3.10.0 recursive
-//! stack-reference model (`Neo.VM.ReferenceCounter`, neo-vm v3.10.0).
+//! Reference counting for the Neo VM — the C# v3.10.1 recursive
+//! stack-reference model (`Neo.VM.ReferenceCounter`, neo-vm v3.10.1).
 //!
 //! The total count moves ONLY through [`ReferenceCounter::add_stack_reference`]
 //! and [`ReferenceCounter::remove_stack_reference`], which recurse into a
@@ -11,9 +11,10 @@
 //! [`ReferenceCounter::count`] exceeding `MaxStackSize` is a protocol fault
 //! (`ExecutionEngine.PostExecuteInstruction`).
 //!
-//! The `== count` (add) and `== 0` (remove) recursion guards are what make this
-//! terminate on shared sub-trees and cycles without a Tarjan pass — the count
-//! produced is byte-for-byte the C# v3.10.0 quantity.
+//! The `== count` (add), `IsStackReferenced` (remove), and `== 0` (remove
+//! recursion) guards are what make this terminate on shared sub-trees and
+//! cycles without a Tarjan pass — the count produced is byte-for-byte the C#
+//! v3.10.1 quantity.
 //!
 //! # Thread Safety
 //!
@@ -28,7 +29,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicIsize, Ordering};
 
 /// Identity of a tracked compound. Only Array/Struct/Map participate; `Buffer`
-/// is not a `CompoundType` in v3.10.0 and is never tracked here.
+/// is not a `CompoundType` in v3.10.1 and is never tracked here.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum CompoundId {
     /// An [`crate::stack_item::array::Array`] identified by its stable id.
@@ -148,34 +149,37 @@ impl ReferenceCounter {
         }
     }
 
-    /// C# `RemoveStackReference(item)`: lowers the total by one and, for a
-    /// compound, lowers its `StackReferences`; when that reaches zero each
-    /// sub-item loses one stack reference recursively.
+    /// C# `RemoveStackReference(item)`: primitives always lower the total by
+    /// one; compounds lower the total only when `IsStackReferenced` is true.
+    /// When a compound's `StackReferences` reaches zero each sub-item loses one
+    /// stack reference recursively.
     pub fn remove_stack_reference(&self, item: &StackItem) {
-        self.state.references_count.fetch_sub(1, Ordering::Relaxed);
+        let Some(id) = CompoundId::from_item(item) else {
+            self.state.references_count.fetch_sub(1, Ordering::Relaxed);
+            return;
+        };
 
-        if let Some(id) = CompoundId::from_item(item) {
-            let recurse = {
-                let mut refs = self.state.stack_references.lock();
-                match refs.get_mut(&id) {
-                    Some(entry) => {
-                        *entry -= 1;
-                        // C#: `if (StackReferences == 0)`. Removing the entry at
-                        // zero is equivalent to a stored zero (absent == 0).
-                        if *entry == 0 {
-                            refs.remove(&id);
-                            true
-                        } else {
-                            false
-                        }
+        let recurse = {
+            let mut refs = self.state.stack_references.lock();
+            match refs.get_mut(&id) {
+                Some(entry) if *entry != 0 => {
+                    self.state.references_count.fetch_sub(1, Ordering::Relaxed);
+                    *entry -= 1;
+                    // C#: `if (StackReferences == 0)`. Removing the entry at
+                    // zero is equivalent to a stored zero (absent == 0).
+                    if *entry == 0 {
+                        refs.remove(&id);
+                        true
+                    } else {
+                        false
                     }
-                    None => false,
                 }
-            };
-            if recurse {
-                for sub_item in compound_sub_items(item) {
-                    self.remove_stack_reference(&sub_item);
-                }
+                _ => false,
+            }
+        };
+        if recurse {
+            for sub_item in compound_sub_items(item) {
+                self.remove_stack_reference(&sub_item);
             }
         }
     }

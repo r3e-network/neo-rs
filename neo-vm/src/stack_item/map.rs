@@ -46,7 +46,7 @@ impl Map {
             }
         }
 
-        // C# v3.10.0: no reference counting on construction (see Array::new).
+        // C# v3.10.1: no reference counting on construction (see Array::new).
         let map = Self {
             inner: Arc::new(Mutex::new(MapInner {
                 items,
@@ -123,47 +123,55 @@ impl Map {
 
     /// Sets the value for the specified key.
     pub fn set(&self, key: StackItem, mut value: StackItem) -> VmResult<()> {
-        let mut inner = self.inner.lock();
-        Self::ensure_mutable(&inner)?;
         self.validate_key(&key)?;
-
-        // C# SETITEM (map): gated on IsStackReferenced — a new key gains a
-        // reference, a replaced value loses its old reference, and the new value
-        // always gains one.
-        let id = inner.id;
-        let rc_opt = inner.reference_counter.clone();
+        let (rc_opt, referenced, old_value) = {
+            let inner = self.inner.lock();
+            Self::ensure_mutable(&inner)?;
+            let rc_opt = inner.reference_counter.clone();
+            let referenced = rc_opt
+                .as_ref()
+                .is_some_and(|rc| rc.is_stack_referenced_id(CompoundId::Map(inner.id)));
+            (rc_opt, referenced, inner.items.get(&key).cloned())
+        };
         if let Some(rc) = &rc_opt {
             value.attach_reference_counter(rc)?;
             Self::validate_compound_reference(rc, &value)?;
-            if rc.is_stack_referenced_id(CompoundId::Map(id)) {
-                match inner.items.get(&key) {
+        }
+        {
+            let mut inner = self.inner.lock();
+            Self::ensure_mutable(&inner)?;
+            inner.items.insert(key.clone(), value.clone());
+        }
+        if let Some(rc) = &rc_opt {
+            if referenced {
+                match old_value {
                     None => rc.add_stack_reference(&key, 1),
-                    Some(old_value) => rc.remove_stack_reference(old_value),
+                    Some(old_value) => rc.remove_stack_reference(&old_value),
                 }
                 rc.add_stack_reference(&value, 1);
             }
         }
-
-        inner.items.insert(key, value);
         Ok(())
     }
 
     /// Removes the value for the specified key.
     pub fn remove(&self, key: &StackItem) -> VmResult<StackItem> {
-        let mut inner = self.inner.lock();
-        Self::ensure_mutable(&inner)?;
         self.validate_key(key)?;
-
-        let value = inner
-            .items
-            .remove(key)
-            .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {key:?}")))?;
-
-        // C# REMOVE (map): `if (old != null && map.IsStackReferenced) {
-        // RemoveStackReference(key); RemoveStackReference(old); }`
-        let id = inner.id;
-        if let Some(rc) = &inner.reference_counter {
-            if rc.is_stack_referenced_id(CompoundId::Map(id)) {
+        let (value, rc_opt, referenced) = {
+            let mut inner = self.inner.lock();
+            Self::ensure_mutable(&inner)?;
+            let value = inner
+                .items
+                .remove(key)
+                .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {key:?}")))?;
+            let rc_opt = inner.reference_counter.clone();
+            let referenced = rc_opt
+                .as_ref()
+                .is_some_and(|rc| rc.is_stack_referenced_id(CompoundId::Map(inner.id)));
+            (value, rc_opt, referenced)
+        };
+        if let Some(rc) = &rc_opt {
+            if referenced {
                 rc.remove_stack_reference(key);
                 rc.remove_stack_reference(&value);
             }
@@ -192,20 +200,34 @@ impl Map {
 
     /// Removes all items from the map.
     pub fn clear(&self) -> VmResult<()> {
-        let mut inner = self.inner.lock();
-        Self::ensure_mutable(&inner)?;
-        // C# CLEARITEMS: when stack-referenced, release every sub-item
-        // (Map.SubItems = Keys.Concat(Values)).
-        let id = inner.id;
-        if let Some(rc) = inner.reference_counter.clone() {
-            if rc.is_stack_referenced_id(CompoundId::Map(id)) {
-                for (key, value) in inner.items.iter() {
-                    rc.remove_stack_reference(key);
-                    rc.remove_stack_reference(value);
-                }
+        let (rc, sub_items) = {
+            let mut inner = self.inner.lock();
+            Self::ensure_mutable(&inner)?;
+            // C# v3.10.1 CLEARITEMS snapshots `Map.SubItems`
+            // (Keys.Concat(Values)), clears first, then releases the snapshot.
+            let id = inner.id;
+            let rc = inner.reference_counter.clone();
+            let sub_items = if rc
+                .as_ref()
+                .is_some_and(|rc| rc.is_stack_referenced_id(CompoundId::Map(id)))
+            {
+                inner
+                    .items
+                    .keys()
+                    .cloned()
+                    .chain(inner.items.values().cloned())
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            inner.items.clear();
+            (rc, sub_items)
+        };
+        if let Some(rc) = rc {
+            for item in sub_items {
+                rc.remove_stack_reference(&item);
             }
         }
-        inner.items.clear();
         Ok(())
     }
 
@@ -298,7 +320,7 @@ impl Map {
 
     /// Ensures the map and its children share the provided reference counter.
     pub(crate) fn attach_reference_counter(&self, rc: &ReferenceCounter) -> VmResult<()> {
-        {
+        let values = {
             let mut inner = self.inner.lock();
             if let Some(existing) = &inner.reference_counter {
                 if existing.ptr_eq(rc) {
@@ -309,11 +331,13 @@ impl Map {
                 ));
             }
 
-            for (_, value) in inner.items.iter_mut() {
-                value.attach_reference_counter(rc)?;
-            }
-
+            let values = inner.items.values().cloned().collect::<Vec<_>>();
             inner.reference_counter = Some(rc.clone());
+            values
+        };
+
+        for mut value in values {
+            value.attach_reference_counter(rc)?;
         }
 
         // No reference counting on attach (see Array::attach_reference_counter).
