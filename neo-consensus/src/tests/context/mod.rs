@@ -13,7 +13,10 @@
 //! - Test modules and fixtures: grouped coverage for the surrounding domain.
 
 use super::*;
+use crate::ChangeViewReason;
 use crate::ConsensusError;
+use neo_crypto::ECPoint;
+use neo_primitives::{UInt160, UInt256};
 
 fn create_test_validators(count: usize) -> Vec<ValidatorInfo> {
     (0..count)
