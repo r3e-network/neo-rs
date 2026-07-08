@@ -49,7 +49,7 @@ async fn csharp_native_contract_hashes_match() {
     let role = UInt160::parse("0x49cf4e5378ffcd4dec034fd98a174c5491e395e2").unwrap();
     let oracle = UInt160::parse("0xfe924b7cfe89ddd271abaf7210a80a7e11178758").unwrap();
     let notary = UInt160::parse("0xc1e14f19c3e60d0b9244d06dd7ba9b113135ec3b").unwrap();
-    // Treasury is part of the Neo v3.10.0 standard native set; pin it beside
+    // Treasury is part of the Neo v3.10.1 standard native set; pin it beside
     // the other canonical native hashes so the compatibility test cannot drift
     // back to the older v3.9.x catalog assumptions.
     let treasury = UInt160::parse("0x156326f25b1b5d839a4d326aeaa75383c9563ac1").unwrap();
