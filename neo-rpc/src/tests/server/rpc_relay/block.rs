@@ -19,3 +19,21 @@ async fn relay_block_preflight_rejects_bad_merkle_root_as_invalid() {
     assert_eq!(result.block_index, Some(1));
     assert_eq!(result.result, VerifyResult::Invalid);
 }
+
+#[test]
+fn relay_block_tip_read_uses_ledger_provider_boundary() {
+    let source = include_str!("../../../server/rpc_relay/block.rs");
+    let relay_start = source
+        .find("pub(in crate::server) fn relay_block")
+        .expect("relay_block exists");
+    let relay = &source[relay_start..];
+
+    assert!(
+        relay.contains("StorageLedgerProviderFactory"),
+        "RPC block relay tip reads must route through the ledger provider factory"
+    );
+    assert!(
+        !relay.contains("LedgerContract::new()"),
+        "RPC block relay must not construct native LedgerContract directly"
+    );
+}

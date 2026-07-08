@@ -5,6 +5,9 @@ use neo_payloads::VerifiableExt;
 use neo_payloads::extensible_payload::ExtensiblePayload;
 use tracing::debug;
 
+use crate::ledger_provider::{
+    ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory,
+};
 use crate::service::{BlockchainService, MempoolLike};
 
 impl<S, M> BlockchainService<S, M>
@@ -54,9 +57,9 @@ where
             Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>,
         >,
     ) -> CoreResult<()> {
-        let ledger = neo_native_contracts::LedgerContract::new();
-        let height = ledger
-            .current_index(snapshot)
+        let provider = StorageLedgerProviderFactory.provider(snapshot);
+        let height = provider
+            .current_index()
             .map_err(|e| CoreError::other(e.to_string()))?;
         if height < payload.valid_block_start || height >= payload.valid_block_end {
             return Err(CoreError::other(format!(

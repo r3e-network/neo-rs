@@ -1,5 +1,8 @@
 use neo_payloads::header::Header;
 
+use crate::ledger_provider::{
+    BlockProvider, ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory,
+};
 use crate::service::{BlockchainService, MempoolLike};
 
 impl<S, M> BlockchainService<S, M>
@@ -22,19 +25,16 @@ where
         let snapshot = self.system.store_snapshot();
         let settings = self.system.settings();
         let native_contract_provider = self.system.native_contract_provider();
-        let ledger = neo_native_contracts::LedgerContract::new();
 
         // C# verification anchor: HeaderCache.Last, else the ledger tip block.
         let mut prev: Option<Header> = self.header_cache.last();
         if prev.is_none()
             && let Some(snap) = &snapshot
-            && let Ok(tip_hash) = ledger.current_hash(snap)
         {
-            prev = ledger
-                .get_trimmed_block(snap, &tip_hash)
-                .ok()
-                .flatten()
-                .map(|trimmed| trimmed.header);
+            let provider = StorageLedgerProviderFactory.provider(snap.as_ref());
+            if let Ok(tip_hash) = provider.current_hash() {
+                prev = provider.header_by_hash(&tip_hash).ok().flatten();
+            }
         }
 
         let mut header_height = prev

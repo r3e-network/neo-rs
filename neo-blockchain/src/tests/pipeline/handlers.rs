@@ -213,6 +213,14 @@ fn extensible_verification_uses_system_native_provider() {
         verifier.contains("verify_witness_with_native_provider"),
         "extensible payload verification must use the explicit-provider witness helper"
     );
+    assert!(
+        verifier.contains("StorageLedgerProviderFactory"),
+        "extensible payload height reads must route through the ledger provider factory"
+    );
+    assert!(
+        !verifier.contains("LedgerContract::new()"),
+        "extensible payload verification must not construct native LedgerContract directly"
+    );
 }
 
 #[test]
@@ -230,6 +238,14 @@ fn header_inventory_verification_uses_system_native_provider() {
     assert!(
         handler.contains("verify_witness_with_native_provider"),
         "header inventory verification must use the explicit-provider witness helper"
+    );
+    assert!(
+        handler.contains("StorageLedgerProviderFactory"),
+        "header inventory anchor reads must route through the ledger provider factory"
+    );
+    assert!(
+        !handler.contains("LedgerContract::new()"),
+        "header inventory handling must not construct native LedgerContract directly"
     );
 }
 
