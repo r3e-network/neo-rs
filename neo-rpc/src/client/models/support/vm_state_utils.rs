@@ -4,17 +4,22 @@ use neo_serialization::json::{JObject, JToken};
 use neo_vm_rs::VmState;
 
 pub fn vm_state_to_string(state: VmState) -> String {
-    state
-        .final_name()
-        .expect("RPC VM state must be final")
-        .to_string()
+    match state {
+        VmState::None => "NONE",
+        VmState::Halt => "HALT",
+        VmState::Fault => "FAULT",
+        VmState::Break => "BREAK",
+    }
+    .to_string()
 }
 
 pub fn vm_state_from_str(value: &str) -> Option<VmState> {
     let normalized = value.trim().to_ascii_uppercase();
     match normalized.as_str() {
+        "NONE" => Some(VmState::None),
         "HALT" => Some(VmState::Halt),
         "FAULT" => Some(VmState::Fault),
+        "BREAK" => Some(VmState::Break),
         _ => None,
     }
 }

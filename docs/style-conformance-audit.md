@@ -727,6 +727,9 @@ status/header mutation instead of fallible builders guarded by `expect`.
 `neo-rpc/src/server/rpc_server/metrics.rs` now wraps Prometheus counters in a
 total `RpcCounter` facade; invalid metric metadata is logged and becomes a
 no-op instead of falling through to a second constructor guarded by `expect`.
+`neo-rpc/src/client/models/support/vm_state_utils.rs` now maps all four
+canonical VM states explicitly (`NONE`, `HALT`, `FAULT`, `BREAK`) instead of
+asserting that every RPC model state is final.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.

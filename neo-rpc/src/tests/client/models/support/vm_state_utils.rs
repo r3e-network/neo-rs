@@ -2,8 +2,10 @@ use super::*;
 
 #[test]
 fn parses_final_vm_state_case_insensitive() {
+    assert_eq!(vm_state_from_str(" none "), Some(VmState::None));
     assert_eq!(vm_state_from_str("halt"), Some(VmState::Halt));
     assert_eq!(vm_state_from_str("FAULT"), Some(VmState::Fault));
+    assert_eq!(vm_state_from_str("break"), Some(VmState::Break));
     assert!(vm_state_from_str("running").is_none());
     assert!(vm_state_from_str("paused").is_none());
     assert!(vm_state_from_str("unknown").is_none());
@@ -11,7 +13,7 @@ fn parses_final_vm_state_case_insensitive() {
 
 #[test]
 fn vm_state_to_string_roundtrip() {
-    for state in [VmState::Halt, VmState::Fault] {
+    for state in [VmState::None, VmState::Halt, VmState::Fault, VmState::Break] {
         let text = vm_state_to_string(state);
         assert_eq!(vm_state_from_str(&text), Some(state));
     }
