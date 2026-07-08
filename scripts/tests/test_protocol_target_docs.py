@@ -9,7 +9,7 @@ class ProtocolTargetDocsTests(unittest.TestCase):
     def test_release_guide_names_current_neo_n3_target(self):
         text = (REPO_ROOT / "docs" / "RELEASE.md").read_text(encoding="utf-8")
 
-        self.assertIn("currently v3.10.0", text)
+        self.assertIn("currently v3.10.1", text)
         self.assertNotIn("currently v3.9.1", text)
 
     def test_csharp_compatibility_tests_do_not_treat_treasury_as_noncanonical(self):
@@ -29,7 +29,7 @@ class ProtocolTargetDocsTests(unittest.TestCase):
         for path in paths:
             with self.subTest(path=path.relative_to(REPO_ROOT)):
                 text = path.read_text(encoding="utf-8")
-                self.assertIn("v3.10.0", text)
+                self.assertIn("v3.10.1", text)
                 self.assertNotIn("v3.9.1", text)
                 self.assertNotIn("v391-checkpoints", text)
 
@@ -46,8 +46,8 @@ class ProtocolTargetDocsTests(unittest.TestCase):
 
         self.assertTrue(canonical.exists())
         canonical_text = canonical.read_text(encoding="utf-8")
-        self.assertIn("Neo v3.10.0", canonical_text)
-        self.assertIn("Neo:3.10.0", canonical_text)
+        self.assertIn("Neo v3.10.1", canonical_text)
+        self.assertIn("Neo:3.10.1", canonical_text)
         self.assertIn("compat-v310", canonical_text)
         self.assertNotIn("Neo v3.9.1", canonical_text)
         self.assertNotIn("Neo:3.9.1", canonical_text)
@@ -87,15 +87,15 @@ class ProtocolTargetDocsTests(unittest.TestCase):
             REPO_ROOT / "openspec" / "specs" / "protocol-compliance-audit" / "spec.md"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("Neo N3 v3.10.0", text)
+        self.assertIn("Neo N3 v3.10.1", text)
         self.assertNotIn("Neo N3 v3.9.1", text)
 
     def test_rpc_relay_height_preclassification_comment_names_current_reference(self):
         text = (
-            REPO_ROOT / "neo-rpc" / "src" / "server" / "rpc_relay" / "mod.rs"
+            REPO_ROOT / "neo-rpc" / "src" / "server" / "rpc_relay" / "block.rs"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("height pre-classification (v3.10.0)", text)
+        self.assertIn("height pre-classification (v3.10.1)", text)
         self.assertNotIn("height pre-classification (v3.9.1)", text)
 
     def test_consistency_workflow_names_current_neo_n3_target(self):
@@ -113,7 +113,7 @@ class ProtocolTargetDocsTests(unittest.TestCase):
         )
 
         text = canonical.read_text(encoding="utf-8")
-        self.assertIn("Neo v3.10.0 Consistency", text)
+        self.assertIn("Neo v3.10.1 Consistency", text)
         self.assertIn("validate-v310-consistency.sh", text)
         # The artifact upload path must match the directory the validator writes
         # to (reports/compat-v310); a stale compat-v391 path silently drops them.

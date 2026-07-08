@@ -1,4 +1,4 @@
-name: Neo v3.10.0 Consistency
+name: Neo v3.10.1 Consistency
 on:
   push:
     branches:
@@ -74,7 +74,7 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
     - name: Cache cargo
       uses: Swatinem/rust-cache@v2
-    - name: Run Neo v3.10.0 consistency validation
+    - name: Run Neo v3.10.1 consistency validation
       env:
         TARGET_NETWORK: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.network
           || 'all' }}

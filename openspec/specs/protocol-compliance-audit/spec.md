@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Protocol version compliance
-The system SHALL implement all Neo N3 v3.10.0 protocol features with byte-for-byte compatibility to the C# reference implementation.
+The system SHALL implement all Neo N3 v3.10.1 protocol features with byte-for-byte compatibility to the C# reference implementation.
 
 #### Scenario: Block processing matches C# implementation
 - **WHEN** processing a block from mainnet
@@ -12,7 +12,7 @@ The system SHALL implement all Neo N3 v3.10.0 protocol features with byte-for-by
 - **THEN** validation result SHALL match C# node for all edge cases
 
 ### Requirement: Consensus mechanism compliance
-The system SHALL implement dBFT 2.0 consensus exactly as specified in Neo N3 v3.10.0.
+The system SHALL implement dBFT 2.0 consensus exactly as specified in Neo N3 v3.10.1.
 
 #### Scenario: Consensus message handling
 - **WHEN** receiving consensus messages

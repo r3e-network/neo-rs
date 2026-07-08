@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Verify transaction fee calculation matches Neo C# v3.10.0.
+Verify transaction fee calculation matches Neo C# v3.10.1.
 """
 
 # Constants from C# implementation

@@ -22,7 +22,7 @@ pub(in crate::server) fn relay_block(
     let index = block.header.index();
     let system = server.system();
 
-    // C# `Blockchain.OnNewBlock` height pre-classification (v3.10.0):
+    // C# `Blockchain.OnNewBlock` height pre-classification (v3.10.1):
     // a block at or below the persisted height already exists, and a
     // block more than one past the best known header cannot be
     // verified yet. (C# additionally stashes the too-far-ahead block

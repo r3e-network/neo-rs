@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Compatibility wrapper for older runbooks. The canonical protocol gate is the
-# Neo v3.10.0 validator, followed by strict MainNet parity checks.
+# Neo v3.10.1 validator, followed by strict MainNet parity checks.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

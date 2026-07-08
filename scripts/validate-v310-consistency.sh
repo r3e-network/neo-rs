@@ -5,7 +5,7 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/validate-v310-consistency.sh [--network <all|mainnet|testnet>] [--skip-baseline] [--profile <dev|release>]
 
-Runs Neo v3.10.0 consistency checks for neo-rs by:
+Runs Neo v3.10.1 consistency checks for neo-rs by:
 1) building neo-node,
 2) starting local neo-node on the requested network(s),
 3) checking getversion protocol parity against C# and NeoGo endpoints,
@@ -520,7 +520,7 @@ report_path = Path(sys.argv[1])
 local_rpc = sys.argv[2]
 csharp_rpc = sys.argv[3]
 network_dir = Path(sys.argv[4])
-# Optional NeoGo endpoint — a second independent v3.10.0 reference. Used as a
+# Optional NeoGo endpoint — a second independent Neo 3.10 reference. Used as a
 # fallback for the live policy read when the C# seed is unreachable from the
 # CI runner (RemoteDisconnected / connect-refused are common against the
 # Cloudflare-fronted neo.org seeds).
@@ -630,7 +630,7 @@ try:
 except (RuntimeError, urllib.error.URLError, TimeoutError) as csharp_err:
     print(f"reconciler: C# reference {csharp_rpc} unavailable ({csharp_err}); trying NeoGo {neogo_rpc or '(none)'}", file=sys.stderr)
     # C# seed unreachable from this runner — fall back to the NeoGo reference
-    # (an independent v3.10.0 implementation; its policy values are equally
+    # (an independent Neo 3.10 implementation; its policy values are equally
     # authoritative for the reconciliation check). If NeoGo is also down,
     # we cannot reconcile and must fail honestly.
     if not neogo_rpc:
@@ -844,7 +844,7 @@ run_network_validation() {
   mkdir -p "$network_dir"
 
   local csharp_rpc neogo_rpc
-  csharp_rpc="$(select_rpc "$network" "Neo v3.10.0" "Neo:3.10.0" "$expected_network" "$expected_msperblock" "$csharp_candidates")"
+  csharp_rpc="$(select_rpc "$network" "Neo v3.10.1" "Neo:3.10.1" "$expected_network" "$expected_msperblock" "$csharp_candidates")"
   neogo_rpc="$(select_rpc "$network" "NeoGo" "NEO-GO" "$expected_network" "$expected_msperblock" "$neogo_candidates")"
 
   echo "[$network] selected C#:   $csharp_rpc"
@@ -858,7 +858,7 @@ run_network_validation() {
   # reference-unreachable marker so the lane is not red on infra outages.
   # A partial selection (one of C#/NeoGo reachable) still runs the full check.
   if [[ -z "$csharp_rpc" && -z "$neogo_rpc" ]]; then
-    echo "[$network] REFERENCE-UNREACHABLE: no live C# or NeoGo v3.10.0 endpoint was reachable from this runner (transient seed-network outage). Consistency could not be evaluated; exiting neutral. This is an infrastructure condition, NOT a parity failure — re-run when seeds are reachable." >&2
+    echo "[$network] REFERENCE-UNREACHABLE: no live C# or NeoGo v3.10.1 endpoint was reachable from this runner (transient seed-network outage). Consistency could not be evaluated; exiting neutral. This is an infrastructure condition, NOT a parity failure — re-run when seeds are reachable." >&2
     return 0
   fi
 

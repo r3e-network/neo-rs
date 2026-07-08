@@ -103,7 +103,7 @@ def has_matching_transfer(applog: dict, spec: dict) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Check local Neo v3.10.0 replay against mainnet compatibility checkpoints."
+        description="Check local Neo v3.10.1 replay against mainnet compatibility checkpoints."
     )
     parser.add_argument("--local-rpc", required=True)
     parser.add_argument(
