@@ -11,12 +11,12 @@
 //!
 //! - `bench-client`: bench-client entrypoint API.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use clap::{Parser, ValueEnum};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 #[derive(Parser, Debug, Clone)]
 #[command(about = "JSON-RPC load generator for Neo N3 nodes (neo-rs / neo-cli / neo-go)")]
@@ -66,13 +66,12 @@ enum Scenario {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), reqwest::Error> {
     let args = Args::parse();
     let client = reqwest::Client::builder()
         .pool_max_idle_per_host(args.concurrency * 2)
         .timeout(Duration::from_secs(30))
-        .build()
-        .expect("client");
+        .build()?;
 
     println!(
         "neo-bench: {} | {:?} | {} workers | {}s (+{}s warmup) | {}",
@@ -104,7 +103,13 @@ async fn main() {
                 let res = client.post(&args.url).json(&body).send().await;
                 let elapsed = started.elapsed().as_micros() as u64;
                 let success = match res {
-                    Ok(r) => r.status().is_success() && r.json::<Value>().await.map(|v| v.get("error").map(Value::is_null).unwrap_or(true)).unwrap_or(false),
+                    Ok(r) => {
+                        r.status().is_success()
+                            && r.json::<Value>()
+                                .await
+                                .map(|v| v.get("error").map(Value::is_null).unwrap_or(true))
+                                .unwrap_or(false)
+                    }
                     Err(_) => false,
                 };
                 if counting.load(Ordering::Relaxed) {
@@ -173,6 +178,7 @@ async fn main() {
         });
         println!("{out}");
     }
+    Ok(())
 }
 
 fn next_rand(rng: &mut u64) -> u64 {

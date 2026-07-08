@@ -762,7 +762,10 @@ setup propagates ledger lookup and serialization failures through `CoreResult`,
 while test modules keep any intentional setup assertions at the call site. The
 production unwrap/expect scan no longer reports `neo-test-fixtures`; the
 remaining buckets are `neo-node`, `neo-crypto`, `neo-vm`, `neo-execution`,
-`neo-gui`, and `benchmarks`.
+and `neo-gui`.
+`benchmarks/bench-client` now returns `Result` from its Tokio entrypoint so
+HTTP client construction failures become normal process errors instead of a
+panic-shaped benchmark startup path.
 
 Recommended next patches, in order:
 
