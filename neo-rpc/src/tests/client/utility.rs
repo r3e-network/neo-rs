@@ -11,6 +11,47 @@ use neo_primitives::Witness as _;
 use neo_serialization::json::JArray;
 
 #[test]
+fn production_client_native_hashes_use_static_helpers() {
+    let sources = [
+        (
+            "wallet API",
+            include_str!("../../client/apis/wallet_api.rs"),
+        ),
+        (
+            "policy API",
+            include_str!("../../client/apis/policy_api.rs"),
+        ),
+        (
+            "transaction manager",
+            include_str!("../../client/transactions/transaction_manager.rs"),
+        ),
+    ];
+
+    for (name, source) in sources {
+        assert!(
+            !source.contains("NeoToken::new().hash()"),
+            "{name} should use the RPC client native-hash helper for NEO"
+        );
+        assert!(
+            !source.contains("GasToken::new().hash()"),
+            "{name} should use the RPC client native-hash helper for GAS"
+        );
+        assert!(
+            !source.contains("PolicyContract::new().hash()"),
+            "{name} should use the RPC client native-hash helper for Policy"
+        );
+    }
+
+    let helper_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/client/native_hashes.rs");
+    let helper = std::fs::read_to_string(&helper_path)
+        .unwrap_or_else(|err| panic!("read {}: {err}", helper_path.display()));
+    assert!(helper.contains("NeoToken::script_hash()"));
+    assert!(helper.contains("GasToken::script_hash()"));
+    assert!(helper.contains("PolicyContract::script_hash()"));
+}
+
+#[test]
 fn to_script_hash_accepts_address() {
     let hash = UInt160::zero();
     let address = hash.to_address();

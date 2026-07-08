@@ -3,6 +3,7 @@ use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
 use base64::{Engine as _, engine::general_purpose};
 use mockito::{Matcher, Server};
 use neo_error::{CoreError, CoreResult};
+use neo_native_contracts::PolicyContract;
 use neo_serialization::json::{JArray, JObject, JToken};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;

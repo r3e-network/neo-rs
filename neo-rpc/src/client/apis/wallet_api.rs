@@ -1,8 +1,8 @@
 use super::models::RpcTransaction;
+use crate::client::native_hashes::{gas_hash, neo_hash};
 use crate::{Nep17Api, RpcClient, RpcClientError, RpcUtility};
 use neo_crypto::ECPoint;
 use neo_execution::Contract;
-use neo_native_contracts::{GasToken, NeoToken};
 use neo_payloads::Transaction;
 use neo_primitives::BigDecimal;
 use neo_primitives::UInt160;
@@ -416,14 +416,6 @@ impl WalletApi {
             unclaimed_gas,
         })
     }
-}
-
-fn neo_hash() -> UInt160 {
-    NeoToken::new().hash()
-}
-
-fn gas_hash() -> UInt160 {
-    GasToken::new().hash()
 }
 
 fn gas_factor() -> u64 {

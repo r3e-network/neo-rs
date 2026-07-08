@@ -1,5 +1,5 @@
+use crate::client::native_hashes::policy_hash;
 use crate::{ContractClient, RpcClient, RpcClientError, RpcUtility};
-use neo_native_contracts::PolicyContract;
 use neo_primitives::UInt160;
 use num_traits::cast::ToPrimitive;
 use std::sync::Arc;
@@ -20,7 +20,7 @@ impl PolicyApi {
     pub fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self {
             contract_client: ContractClient::new(rpc_client),
-            script_hash: PolicyContract::new().hash(),
+            script_hash: policy_hash(),
         }
     }
 

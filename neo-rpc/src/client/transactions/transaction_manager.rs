@@ -1,7 +1,7 @@
+use crate::client::native_hashes::gas_hash;
 use crate::{Nep17Api, RpcClient, RpcClientError, TransactionManagerFactory};
 use neo_crypto::ECPoint;
 use neo_execution::{Contract, ContractParametersContext};
-use neo_native_contracts::GasToken;
 use neo_payloads::{
     Signer, Transaction, TransactionAttribute, VerifiableExt, Witness, get_sign_data_vec,
 };
@@ -186,7 +186,7 @@ impl TransactionManager {
             .sender()
             .ok_or_else(|| "Sender not specified in transaction".to_string())?;
         let gas_balance = Nep17Api::new(self._rpc_client.clone())
-            .balance_of(&GasToken::new().hash(), &sender)
+            .balance_of(&gas_hash(), &sender)
             .await?;
         let required_fee = BigInt::from(self.tx.system_fee() + self.tx.network_fee());
         if gas_balance < required_fee {

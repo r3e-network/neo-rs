@@ -32,6 +32,7 @@ mod contract_script;
 #[path = "errors/error.rs"]
 mod error;
 pub mod models;
+mod native_hashes;
 #[path = "apis/nep17_api.rs"]
 mod nep17_api;
 #[path = "apis/policy_api.rs"]
