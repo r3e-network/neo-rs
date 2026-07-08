@@ -9,10 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use neo_blockchain::{
-    BlockProvider, BlockchainHandle, ChainTipProvider, LedgerProviderFactory, RuntimeEvent,
-    StorageLedgerProviderFactory,
-};
+use neo_blockchain::{BlockchainHandle, RuntimeEvent};
 use neo_config::ProtocolSettings;
 use neo_consensus::messages::ConsensusPayload;
 use neo_consensus::{ConsensusEvent, ConsensusService, ValidatorInfo};
@@ -30,7 +27,8 @@ use tracing::{error, info, warn};
 
 use super::DBFT_MAX_BLOCK_SYSTEM_FEE;
 use super::native_provider::{
-    ConsensusNativeProvider, ConsensusNativeProviderFactory, NativeConsensusProviderFactory,
+    ConsensusLedgerTip, ConsensusNativeProvider, ConsensusNativeProviderFactory,
+    NativeConsensusProviderFactory,
 };
 use super::payload::consensus_to_extensible;
 use super::proposal::{
@@ -45,16 +43,14 @@ const BLOCK_VERSION: u32 = 0;
 /// Reads the current ledger tip from `snapshot` →
 /// `(next_block_index, prev_hash, prev_timestamp)`.
 fn ledger_tip(snapshot: &DataCache) -> (u32, UInt256, u64) {
-    let ledger = StorageLedgerProviderFactory.provider(snapshot);
-    let height = ledger.current_index().unwrap_or(0);
-    let prev_hash = ledger.current_hash().unwrap_or_default();
-    let prev_timestamp = ledger
-        .header_by_hash(&prev_hash)
-        .ok()
-        .flatten()
-        .map(|header| header.timestamp())
-        .unwrap_or(0);
-    (height + 1, prev_hash, prev_timestamp)
+    let ConsensusLedgerTip {
+        next_block_index,
+        prev_hash,
+        prev_timestamp,
+    } = NativeConsensusProviderFactory
+        .provider()
+        .ledger_tip(snapshot);
+    (next_block_index, prev_hash, prev_timestamp)
 }
 
 fn round_validator_context(

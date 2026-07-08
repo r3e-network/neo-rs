@@ -121,12 +121,12 @@ fn consensus_ledger_reads_use_provider_boundaries() {
 
     for (name, source) in sources {
         assert!(
-            source.contains("StorageLedgerProviderFactory"),
-            "{name} must read ledger records through the provider factory"
+            !source.contains("StorageLedgerProviderFactory"),
+            "{name} must keep raw ledger-provider construction behind the consensus provider seam"
         );
         assert!(
             source.contains("NativeConsensusProviderFactory"),
-            "{name} must read NEO/Policy native state through the consensus provider factory"
+            "{name} must read Ledger/NEO/Policy native state through the consensus provider factory"
         );
         assert!(
             !source.contains("LedgerContract::new()"),
@@ -146,6 +146,18 @@ fn consensus_ledger_reads_use_provider_boundaries() {
     assert!(provider.contains("trait ConsensusNativeProvider"));
     assert!(provider.contains("trait ConsensusNativeProviderFactory"));
     assert!(provider.contains("struct NativeConsensusProviderFactory"));
+    assert!(
+        provider.contains("StorageLedgerProviderFactory"),
+        "consensus native provider should own the raw ledger provider boundary"
+    );
+    assert!(
+        provider.contains("fn contains_transaction"),
+        "consensus native provider should expose on-chain transaction checks"
+    );
+    assert!(
+        provider.contains("fn contains_conflict_hash"),
+        "consensus native provider should expose traceable conflict checks"
+    );
 }
 
 #[test]
