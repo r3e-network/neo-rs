@@ -408,6 +408,10 @@ construction, and transfer/cancel orchestration. `rpc_server_wallet/signing.rs`
 owns C# `Wallet.Sign` parity, witness completion, network-fee adjustment, and
 relay result projection. `rpc_server_wallet/lifecycle.rs` owns open/close,
 address creation/listing, and WIF import/export orchestration.
+`neo-wallets/src/bip32/extended_key.rs` owns BIP-32 key derivation. Child-key
+HMAC output splitting now uses explicit fixed-array copies instead of
+panic-shaped slice conversion, with a regression test pinning direct derivation
+to path-based derivation.
 `rpc_server_wallet/support.rs` owns shared wallet runtime helpers used across
 lifecycle, transfer, signing, and fee paths, including wallet lookup, wallet
 future bridging, address-version script-hash parsing, and signature-contract

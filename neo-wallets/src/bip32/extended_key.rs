@@ -98,15 +98,17 @@ impl ExtendedKey {
         data[33..].copy_from_slice(&index.to_be_bytes());
 
         let i = Bip32Crypto::hmac_sha512(&self.chain_code, &data).map_err(bip32_error_message)?;
-        let il: &[u8; 32] = i[..32]
-            .try_into()
-            .expect("HMAC-SHA512 left half is 32 bytes");
+        let mut left_half = [0u8; 32];
         let mut chain_code = [0u8; 32];
+        left_half.copy_from_slice(&i[..32]);
         chain_code.copy_from_slice(&i[32..]);
 
-        let private_key =
-            Bip32Crypto::add_private_keys_mod_order(il, &self.private_key, self.public_key.curve())
-                .map_err(bip32_error_message)?;
+        let private_key = Bip32Crypto::add_private_keys_mod_order(
+            &left_half,
+            &self.private_key,
+            self.public_key.curve(),
+        )
+        .map_err(bip32_error_message)?;
         let public_key = ECC::generate_public_key(&private_key, self.public_key.curve())
             .map_err(|e| CoreError::other(e.to_string()))?;
 
@@ -124,3 +126,7 @@ fn bip32_error_message(error: CryptoError) -> CoreError {
         error => error.to_string(),
     })
 }
+
+#[cfg(test)]
+#[path = "../tests/bip32/extended_key.rs"]
+mod tests;
