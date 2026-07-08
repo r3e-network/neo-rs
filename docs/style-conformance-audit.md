@@ -666,6 +666,11 @@ calls, preserving checkpoint bytes while keeping corrupted store data typed.
 `neo-runtime/src/service/service_registry.rs` now handles erased-service
 downcast mismatches by returning `None`; the TypeId invariant remains internal,
 but a registry mismatch no longer aborts an RPC or node service lookup path.
+`neo-primitives/src/payload/serializable_payload.rs` now materializes the
+SHA-256 payload digest into a fixed `[u8; 32]` before constructing `UInt256`.
+This removes the production `expect()` path while preserving Neo N3's
+single-SHA payload hash semantics; the style audit now reports three
+`neo-primitives` production unwrap/expect sites.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.

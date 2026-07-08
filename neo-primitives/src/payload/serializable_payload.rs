@@ -28,16 +28,12 @@ pub trait SerializablePayload: Send + Sync {
     ///
     /// Default implementation: `SHA256(hash_data())`. Neo N3 payload hashing is a
     /// single SHA-256 over the unsigned serialization (not Bitcoin's double hash).
-    ///
-    /// # Panics
-    ///
-    /// This method panics if `SHA-256` does not produce exactly 32 bytes, which
-    /// would indicate a fundamental platform issue. Using `unwrap_or_default()`
-    /// would silently produce `UInt256::zero()` and could mask hash collisions.
     fn hash(&self) -> UInt256 {
         use sha2::{Digest, Sha256};
-        UInt256::from_bytes(&Sha256::digest(self.hash_data()))
-            .expect("SHA-256 must produce exactly 32 bytes")
+        let digest = Sha256::digest(self.hash_data());
+        let mut hash = [0u8; UInt256::LENGTH];
+        hash.copy_from_slice(&digest);
+        UInt256::from(hash)
     }
 
     /// Returns the number of witnesses attached to this payload.
