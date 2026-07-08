@@ -26,6 +26,8 @@
 //!   observability heartbeat startup.
 //! - `logging`: Logging, tracing, and operator diagnostics setup.
 //! - `observability`: Metrics and observability endpoint wiring.
+//! - `preflight`: Startup config/storage preflight checks and early-exit
+//!   outcomes.
 //! - `remote_ledger`: RPC-backed ledger source used when the node runs without
 //!   a local ledger.
 //! - `rpc_runtime`: RPC server runtime wiring and shutdown handling.
@@ -62,6 +64,7 @@ mod ledger_source;
 mod live_services;
 mod logging;
 mod observability;
+mod preflight;
 mod remote_ledger;
 mod rpc_payload;
 mod rpc_runtime;
@@ -77,18 +80,23 @@ mod telemetry;
 
 #[cfg(test)]
 use cli::import_tip_reaches_stop_height;
-use cli::{LedgerMode, StoragePreflightMode, storage_preflight_mode, validate_cli_mode};
+use cli::{LedgerMode, validate_cli_mode};
+#[cfg(test)]
+use cli::{StoragePreflightMode, storage_preflight_mode};
 use composition::{RunningNode, build_node};
 #[cfg(test)]
 use config::default_p2p_port;
 #[cfg(test)]
+use config::validate_storage;
+#[cfg(test)]
 use config::{NodeConfig, open_store, validate_config};
-use config::{load_config, validate_config_for_ledger_mode, validate_storage};
+use config::{load_config, validate_config_for_ledger_mode};
 #[cfg(test)]
 use context::DaemonContext;
 #[cfg(test)]
 use inventory_relay::{FAST_SYNC_BURST_CAPACITY, flush_inventory_block_batch};
 use live_services::start_live_services;
+use preflight::{StartupPreflight, run_startup_preflight};
 #[cfg(test)]
 use rpc_runtime::start_rpc_server;
 use shutdown::wait_for_shutdown_signal;
@@ -116,38 +124,9 @@ pub async fn run() -> anyhow::Result<()> {
     );
     validate_config_for_ledger_mode(&config, settings.network, ledger_mode)?;
 
-    let check_config = cli.check_config || cli.check_all;
-    let storage_preflight = storage_preflight_mode(&cli, ledger_mode);
-    if check_config && storage_preflight == StoragePreflightMode::None {
-        info!(target: "neo", config = %cli.config.display(), "configuration preflight passed");
-        println!("configuration OK: {}", cli.config.display());
-        return Ok(());
-    }
-    match storage_preflight {
-        StoragePreflightMode::None => {}
-        StoragePreflightMode::ValidateLocal => {
-            validate_storage(&config, cli.storage_path.as_deref(), settings.network)?;
-            info!(target: "neo", config = %cli.config.display(), "storage preflight passed");
-            println!("storage OK: {}", cli.config.display());
-            return Ok(());
-        }
-        StoragePreflightMode::SkipRemoteLedger => {
-            info!(
-                target: "neo::remote_ledger",
-                config = %cli.config.display(),
-                "storage preflight skipped; remote-ledger mode does not open a local canonical ledger"
-            );
-            println!(
-                "storage skipped for remote ledger: {}",
-                cli.config.display()
-            );
-            return Ok(());
-        }
-    }
-
-    if check_config {
-        info!(target: "neo", config = %cli.config.display(), "configuration preflight passed");
-        println!("configuration OK: {}", cli.config.display());
+    if run_startup_preflight(&cli, &config, settings.network, ledger_mode)?
+        == StartupPreflight::Exit
+    {
         return Ok(());
     }
 
