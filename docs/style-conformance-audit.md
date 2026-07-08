@@ -170,7 +170,11 @@ High-signal clusters found during the first pass:
 - `neo-execution`, `neo-vm`, and `neo-native-contracts` contain legitimate C#
   parity and interop boundaries, but production `expect` sites and broad
   `dyn Any` escape hatches should be reviewed one by one and either converted
-  to typed errors/contexts or documented as impossible invariants.
+  to typed errors/contexts or documented as impossible invariants. Within
+  `neo-execution/src/application_engine`, the root keeps the public
+  `ApplicationEngine` facade and module map while `application_engine/host_state.rs`
+  owns the private VM host wrapper, host syscall metadata, queued native-call
+  record, and CoreError-to-VM-fault projection.
 - `neo-execution/src/lib.rs` still re-exports internal implementation modules
   broadly. Keep crate-root exports to deliberate facade/domain types after
   downstream imports are mapped.

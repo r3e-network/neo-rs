@@ -15,6 +15,7 @@
 //! - `drop`: VM drop-stack opcode handlers.
 //! - `external_vm`: external VM execution bridge.
 //! - `fees_events_native`: fee, event, and native-contract syscall handlers.
+//! - `host_state`: host-side VM wrapper, syscall metadata, and queued native calls.
 //! - `interop_host`: ApplicationEngine interop host.
 //! - `load_execute_storage`: load, execute, and storage syscall grouping.
 //! - `state`: domain state records for the surrounding workflow.
@@ -91,61 +92,6 @@ pub const CHECK_SIG_PRICE: i64 = 1 << 15;
 pub const FEE_FACTOR: i64 = 10000;
 
 type InteropHandler = fn(&mut ApplicationEngine, &mut ExecutionEngine) -> VmResult<()>;
-type StdResult<T> = CoreResult<T>;
-
-#[derive(Clone, Copy)]
-struct HostInteropHandler {
-    price: i64,
-    required_call_flags: CallFlags,
-    handler: InteropHandler,
-}
-
-fn map_core_error_to_vm_error(error: CoreError) -> VmError {
-    match error {
-        CoreError::InsufficientGas {
-            required,
-            available,
-        } => VmError::gas_exhausted(required, available),
-        other => VmError::invalid_operation_msg(other.to_string()),
-    }
-}
-
-struct VmEngineHost {
-    engine: ExecutionEngine,
-}
-
-impl VmEngineHost {
-    fn new(engine: ExecutionEngine) -> Self {
-        Self { engine }
-    }
-
-    fn engine(&self) -> &ExecutionEngine {
-        &self.engine
-    }
-
-    fn engine_mut(&mut self) -> &mut ExecutionEngine {
-        &mut self.engine
-    }
-
-    fn current_context(&self) -> Option<&ExecutionContext> {
-        self.engine.current_context()
-    }
-}
-
-/// Represents a contract call queued by a native contract.
-///
-/// Native contracts sometimes need to invoke a user contract (e.g., NEP-17
-/// `onNEP17Payment`) but cannot safely switch the current VM context while the
-/// native syscall is still executing. Instead, we queue the call and let the
-/// `System.Contract.CallNative` handler load it after the native method has
-/// returned its value.
-#[derive(Clone, Debug)]
-struct PendingNativeCall {
-    calling_script_hash: UInt160,
-    contract_hash: UInt160,
-    method: String,
-    args: Vec<StackItem>,
-}
 
 /// Neo N3 application engine that hosts VM execution, syscalls, and native contracts.
 pub struct ApplicationEngine {
@@ -204,8 +150,13 @@ mod contracts;
 mod drop;
 mod external_vm;
 mod fees_events_native;
+mod host_state;
 mod interop_host;
 mod load_execute_storage;
 mod state;
 mod storage_low_level;
 mod witness_and_misc;
+
+use host_state::{
+    HostInteropHandler, PendingNativeCall, StdResult, VmEngineHost, map_core_error_to_vm_error,
+};
