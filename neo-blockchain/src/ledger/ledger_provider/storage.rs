@@ -13,35 +13,40 @@ use super::{
 /// Storage-backed provider over Neo ledger native-contract records.
 pub struct StorageLedgerProvider<'a> {
     snapshot: &'a DataCache,
+    ledger: LedgerContract,
 }
 
 impl<'a> StorageLedgerProvider<'a> {
     /// Creates a provider over `snapshot`.
     pub const fn new(snapshot: &'a DataCache) -> Self {
-        Self { snapshot }
+        Self {
+            snapshot,
+            ledger: LedgerContract::new(),
+        }
     }
 }
 
 impl BlockProvider for StorageLedgerProvider<'_> {
     fn block_hash_by_index(&self, index: u32) -> CoreResult<Option<UInt256>> {
-        LedgerContract::new().get_block_hash(self.snapshot, index)
+        self.ledger.get_block_hash(self.snapshot, index)
     }
 
     fn header_by_hash(&self, hash: &UInt256) -> CoreResult<Option<Header>> {
-        Ok(LedgerContract::new()
+        Ok(self
+            .ledger
             .get_trimmed_block(self.snapshot, hash)?
             .map(|trimmed| trimmed.header))
     }
 
     fn block_by_hash(&self, hash: &UInt256) -> CoreResult<Option<Block>> {
-        let ledger = LedgerContract::new();
-        let Some(trimmed) = ledger.get_trimmed_block(self.snapshot, hash)? else {
+        let Some(trimmed) = self.ledger.get_trimmed_block(self.snapshot, hash)? else {
             return Ok(None);
         };
 
         let mut transactions = Vec::with_capacity(trimmed.hashes.len());
         for tx_hash in &trimmed.hashes {
-            let transaction = ledger
+            let transaction = self
+                .ledger
                 .get_transaction_state(self.snapshot, tx_hash)?
                 .and_then(|state| state.transaction)
                 .ok_or_else(|| {
@@ -58,17 +63,18 @@ impl BlockProvider for StorageLedgerProvider<'_> {
 
 impl ChainTipProvider for StorageLedgerProvider<'_> {
     fn current_hash(&self) -> CoreResult<UInt256> {
-        LedgerContract::new().current_hash(self.snapshot)
+        self.ledger.current_hash(self.snapshot)
     }
 
     fn current_index(&self) -> CoreResult<u32> {
-        LedgerContract::new().current_index(self.snapshot)
+        self.ledger.current_index(self.snapshot)
     }
 }
 
 impl TxProvider for StorageLedgerProvider<'_> {
     fn transaction_by_hash(&self, hash: &UInt256) -> CoreResult<Option<Transaction>> {
-        Ok(LedgerContract::new()
+        Ok(self
+            .ledger
             .get_transaction_state(self.snapshot, hash)?
             .and_then(|state| state.transaction))
     }
@@ -76,7 +82,7 @@ impl TxProvider for StorageLedgerProvider<'_> {
 
 impl TransactionStateProvider for StorageLedgerProvider<'_> {
     fn transaction_state_by_hash(&self, hash: &UInt256) -> CoreResult<Option<TransactionState>> {
-        LedgerContract::new().get_transaction_state(self.snapshot, hash)
+        self.ledger.get_transaction_state(self.snapshot, hash)
     }
 
     fn contains_conflict_hash(
@@ -85,12 +91,8 @@ impl TransactionStateProvider for StorageLedgerProvider<'_> {
         signers: &[UInt160],
         max_traceable_blocks: u32,
     ) -> CoreResult<bool> {
-        LedgerContract::new().contains_conflict_hash(
-            self.snapshot,
-            hash,
-            signers,
-            max_traceable_blocks,
-        )
+        self.ledger
+            .contains_conflict_hash(self.snapshot, hash, signers, max_traceable_blocks)
     }
 }
 
