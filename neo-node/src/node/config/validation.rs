@@ -5,6 +5,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use tracing::info;
 
+use super::super::cli::LedgerMode;
 use super::*;
 
 #[cfg(test)]
@@ -15,7 +16,7 @@ pub(in crate::node) fn validate_config(config: &NodeConfig, network: u32) -> any
 pub(in crate::node) fn validate_config_for_ledger_mode(
     config: &NodeConfig,
     network: u32,
-    ledger_mode: super::super::LedgerMode<'_>,
+    ledger_mode: LedgerMode<'_>,
 ) -> anyhow::Result<()> {
     validate_config_with_local_replay_services(
         config,

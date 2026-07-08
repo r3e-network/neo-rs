@@ -16,6 +16,8 @@
 //!   preflight policy.
 //! - `config`: HSM provider configuration and signing profile records.
 //! - `context`: Runtime context records carried through the local workflow.
+//! - `daemon`: Top-level parse, preflight, composition, import, live-service,
+//!   and shutdown orchestration.
 //! - `fast_sync`: Built-in fast-sync package discovery, download, verification,
 //!   and import flow.
 //! - `indexer_runtime`: Indexer runtime wiring used by the node daemon.
@@ -46,19 +48,21 @@
 //! - `telemetry`: Telemetry startup and reporting helpers.
 //! - `tests`: Module-local tests and regression coverage.
 
+#[cfg(test)]
 use clap::Parser;
 #[cfg(test)]
 use neo_config::ProtocolSettings;
 #[cfg(test)]
 use std::path::Path;
+#[cfg(test)]
 use std::sync::Arc;
-use tracing::info;
 
 mod chain_acc;
 mod cli;
 mod composition;
 mod config;
 mod context;
+mod daemon;
 mod fast_sync;
 mod indexer_runtime;
 mod inventory_relay;
@@ -82,128 +86,38 @@ mod tasks;
 mod telemetry;
 
 #[cfg(test)]
+use cli::NodeCli;
+#[cfg(test)]
 use cli::import_tip_reaches_stop_height;
+#[cfg(test)]
 use cli::{LedgerMode, validate_cli_mode};
 #[cfg(test)]
 use cli::{StoragePreflightMode, storage_preflight_mode};
-use composition::{RunningNode, build_node};
+#[cfg(test)]
+use composition::build_node;
 #[cfg(test)]
 use config::default_p2p_port;
 #[cfg(test)]
 use config::validate_storage;
 #[cfg(test)]
 use config::{NodeConfig, open_store, validate_config};
+#[cfg(test)]
 use config::{load_config, validate_config_for_ledger_mode};
 #[cfg(test)]
 use context::DaemonContext;
 #[cfg(test)]
 use inventory_relay::{FAST_SYNC_BURST_CAPACITY, flush_inventory_block_batch};
-use live_services::start_live_services;
-use preflight::{StartupPreflight, run_startup_preflight};
 #[cfg(test)]
 use rpc_runtime::start_rpc_server;
-use shutdown_flow::run_daemon_shutdown;
 #[cfg(test)]
 use startup_cleanup::abort_fast_sync_store_mode;
 #[cfg(test)]
 use startup_cleanup::{flush_state_service_for_shutdown, restore_durable_store_mode};
-use startup_import::{StartupImportContext, StartupImportOutcome, run_startup_imports};
-
-pub use cli::NodeCli;
 
 /// Entry point: parse CLI, load config, build the node, start P2P +
 /// RPC, and wait for `Ctrl-C`.
 pub async fn run() -> anyhow::Result<()> {
-    let cli = NodeCli::parse();
-    validate_cli_mode(&cli)?;
-    let ledger_mode = LedgerMode::from_cli(&cli);
-    let (settings, config) = load_config(&cli.config, cli.network_magic)?;
-    let _logging_guards = logging::init_tracing(&config.logging)?;
-    let settings = Arc::new(settings);
-    info!(
-        target: "neo",
-        network = format_args!("0x{:08X}", settings.network),
-        config = %cli.config.display(),
-        "loaded protocol settings"
-    );
-    validate_config_for_ledger_mode(&config, settings.network, ledger_mode)?;
-
-    if run_startup_preflight(&cli, &config, settings.network, ledger_mode)?
-        == StartupPreflight::Exit
-    {
-        return Ok(());
-    }
-
-    let observability =
-        observability::ObservabilityRuntime::from_config(&config.observability, settings.network)?;
-    if let Some(observability) = &observability {
-        observability.install_panic_hook();
-    }
-
-    let running_node = match build_node(
-        Arc::clone(&settings),
-        &config,
-        cli.storage_path.as_deref(),
-        cli.stop_at_height,
-        ledger_mode,
-        cli.import_chain.is_some() || cli.fast_sync,
-        observability.clone(),
-    )
-    .await
-    {
-        Ok(running_node) => running_node,
-        Err(err) => {
-            let err = err.context("failed to construct neo-system Node");
-            if let Some(observability) = &observability {
-                observability.report_startup_error(&err);
-            }
-            return Err(err);
-        }
-    };
-    let RunningNode {
-        node,
-        network,
-        mut handles,
-        shutdown,
-        durable_service_stores,
-    } = running_node;
-    info!(target: "neo", "neo-system Node built; blockchain service running");
-
-    let startup_import = run_startup_imports(StartupImportContext {
-        cli: &cli,
-        node: &node,
-        config: &config,
-        network: settings.network,
-        durable_service_stores: &durable_service_stores,
-        handles: &mut handles,
-        observability: observability.as_ref(),
-    })
-    .await?;
-    if startup_import == StartupImportOutcome::StopHeightReached {
-        return Ok(());
-    }
-
-    let _live_service_guards = start_live_services(
-        &node,
-        &network,
-        &mut handles,
-        &shutdown,
-        &config,
-        settings.network,
-        ledger_mode,
-        observability.as_ref(),
-    )
-    .await?;
-
-    run_daemon_shutdown(
-        &node,
-        cli.stop_at_height,
-        shutdown,
-        handles,
-        &durable_service_stores,
-        observability.as_ref(),
-    )
-    .await
+    daemon::run().await
 }
 
 #[cfg(test)]

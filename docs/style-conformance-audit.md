@@ -125,13 +125,13 @@ High-signal clusters found during the first pass:
   are very large workflow modules. They should be split into domain files such
   as `format`, `reader`, `import`, `report`, `package`, `manifest`, and
   `workflow` while keeping behavior locked by tests.
-- `neo-node/src/node/mod.rs` still mixes CLI validation and node construction.
-  It needs a facade-oriented startup workflow, but only after focused
-  regression tests protect the modes. Startup preflight has been moved out:
-  `node/preflight.rs` owns config/storage preflight checks, remote-ledger
-  preflight skips, operator messages, and the explicit continue/exit outcome.
-  Startup import orchestration has also been moved out:
-  `node/startup_import.rs` owns chain.acc and fast-sync import sequencing,
+- `neo-node/src/node/mod.rs` is now the daemon module map and public `run()`
+  facade. `node/daemon.rs` owns the top-level parse, config load, preflight,
+  node composition, startup-import, live-service, and shutdown sequence. Startup
+  preflight lives in `node/preflight.rs`, which owns config/storage preflight
+  checks, remote-ledger preflight skips, operator messages, and the explicit
+  continue/exit outcome. Startup import orchestration lives in
+  `node/startup_import.rs`, which owns chain.acc and fast-sync import sequencing,
   stop-height handling, durable-mode restore, task abortion, and observability
   error reporting while the lower `chain_acc` and `fast_sync` modules retain
   package/import mechanics. Live service startup has also been moved out:
