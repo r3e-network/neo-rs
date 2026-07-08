@@ -1,7 +1,7 @@
 use base64::Engine as _;
 use neo_crypto::Secp256r1Crypto;
 use neo_error::{CoreError, CoreResult};
-use neo_io::BinaryWriter;
+use neo_io::var_int::VarInt;
 use neo_primitives::hex_util;
 use neo_wallets::KeyPair;
 use rand::RngCore;
@@ -51,17 +51,14 @@ impl NeoFsBearerSigner {
     pub(crate) fn salt_message_wallet_connect(data: &[u8], salt: &[u8; 16]) -> Vec<u8> {
         let salt_hex = hex_util::encode_hex(salt);
         let salted_len = salt_hex.len() + data.len();
-        let mut writer = BinaryWriter::new();
-        writer
-            .write_bytes(&[0x01, 0x00, 0x01, 0xf0])
-            .expect("write prefix");
-        writer
-            .write_var_uint(salted_len as u64)
-            .expect("write length");
-        writer.write_bytes(salt_hex.as_bytes()).expect("write salt");
-        writer.write_bytes(data).expect("write data");
-        writer.write_bytes(&[0x00, 0x00]).expect("write suffix");
-        writer.into_bytes()
+        let mut message =
+            Vec::with_capacity(4 + VarInt::encoded_len(salted_len as u64) + salted_len + 2);
+        message.extend_from_slice(&[0x01, 0x00, 0x01, 0xf0]);
+        VarInt::write_var_int(salted_len as u64, &mut message);
+        message.extend_from_slice(salt_hex.as_bytes());
+        message.extend_from_slice(data);
+        message.extend_from_slice(&[0x00, 0x00]);
+        message
     }
 }
 
