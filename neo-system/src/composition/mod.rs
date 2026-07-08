@@ -13,16 +13,18 @@
 //! - `node`: Daemon composition, CLI modes, and long-running node startup.
 //! - `sync_download_import`: Download-stream to sync-import bridge.
 //! - `sync_import_pipeline`: Node-local sync import queue/checkpoint wiring.
+//! - `tx_admission_provider`: Ledger/native read seams for transaction
+//!   admission routing.
 //! - `wallet_provider`: wallet provider adapter.
 //!
 //! `ServiceRegistry` is re-exported from `neo-runtime` — see
 //! [`neo_runtime::ServiceRegistry`].
 
 pub mod builder;
-mod native_provider;
 pub mod node;
 pub mod sync_download_import;
 pub mod sync_import_pipeline;
+mod tx_admission_provider;
 pub mod wallet_provider;
 
 pub use builder::NodeBuilder;

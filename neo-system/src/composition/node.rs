@@ -23,10 +23,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use async_trait::async_trait;
-use neo_blockchain::{
-    BlockchainHandle, HeaderCache, LedgerProviderFactory, StorageLedgerProviderFactory,
-    TransactionStateProvider, TxProvider,
-};
+use neo_blockchain::{BlockchainHandle, HeaderCache};
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
@@ -37,8 +34,10 @@ use neo_storage::DataCache;
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_cache::StoreCache;
 
-use super::native_provider::{
-    NativeTxAdmissionProviderFactory, TxAdmissionNativeProvider, TxAdmissionNativeProviderFactory,
+use super::tx_admission_provider::{
+    NativeTxAdmissionLedgerProviderFactory, NativeTxAdmissionProviderFactory,
+    TxAdmissionLedgerProvider, TxAdmissionLedgerProviderFactory, TxAdmissionNativeProvider,
+    TxAdmissionNativeProviderFactory,
 };
 use crate::error::NodeResult;
 use crate::sync_import_pipeline::SyncImportPipeline;
@@ -328,7 +327,7 @@ impl TxRouterHandle {
         let hash = tx
             .try_hash()
             .map_err(|_| CoreError::other(format!("{:?}", VerifyResult::Invalid)))?;
-        let ledger = StorageLedgerProviderFactory.provider(snapshot);
+        let ledger = NativeTxAdmissionLedgerProviderFactory.provider(snapshot);
         // Fail closed on a storage error: a transient lookup failure must NOT be
         // treated as "not present" (which would admit and relay a possibly-
         // duplicate transaction). Propagate the error so admission is blocked.

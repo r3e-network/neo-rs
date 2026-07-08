@@ -15,15 +15,19 @@ fn builder_returns_node_builder() {
 #[test]
 fn tx_admission_uses_ledger_provider_boundary() {
     let source = include_str!("../../composition/node.rs");
-    let provider = include_str!("../../composition/native_provider.rs");
+    let provider = include_str!("../../composition/tx_admission_provider.rs");
     let start = source
         .find("pub fn try_enqueue_preverify")
         .expect("try_enqueue_preverify exists");
     let body = &source[start..];
 
     assert!(
-        body.contains("StorageLedgerProviderFactory"),
-        "composition-root tx admission must read ledger records through the provider factory"
+        body.contains("NativeTxAdmissionLedgerProviderFactory"),
+        "composition-root tx admission must read ledger records through the tx-admission ledger provider factory"
+    );
+    assert!(
+        !body.contains("StorageLedgerProviderFactory"),
+        "composition-root tx admission must not construct storage ledger providers directly"
     );
     assert!(
         body.contains("NativeTxAdmissionProviderFactory"),
@@ -36,6 +40,13 @@ fn tx_admission_uses_ledger_provider_boundary() {
     assert!(
         !body.contains("PolicyContract::new()"),
         "composition-root tx admission must not construct native PolicyContract directly"
+    );
+    assert!(provider.contains("trait TxAdmissionLedgerProvider"));
+    assert!(provider.contains("trait TxAdmissionLedgerProviderFactory"));
+    assert!(provider.contains("struct NativeTxAdmissionLedgerProviderFactory"));
+    assert!(
+        provider.contains("StorageLedgerProviderFactory"),
+        "the tx-admission ledger provider should own raw storage-ledger provider construction"
     );
     assert!(provider.contains("trait TxAdmissionNativeProvider"));
     assert!(provider.contains("trait TxAdmissionNativeProviderFactory"));
