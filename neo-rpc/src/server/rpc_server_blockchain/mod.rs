@@ -11,6 +11,7 @@
 //! ## Contents
 //!
 //! - `blocks`: Block, header, height, and chain-tip RPC handlers.
+//! - `ledger_provider`: Ledger read capabilities for blockchain RPC handlers.
 //! - `request_helpers`: RPC request parsing helpers.
 //! - `responses`: RPC response construction helpers.
 //! - `mempool`: Mempool RPC handlers.
@@ -22,6 +23,7 @@
 use crate::server::rpc_server::RpcHandler;
 
 mod blocks;
+mod ledger_provider;
 mod mempool;
 mod native;
 mod request_helpers;

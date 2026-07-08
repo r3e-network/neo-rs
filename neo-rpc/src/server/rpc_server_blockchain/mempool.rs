@@ -6,12 +6,14 @@
 //! ledger height.
 
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
-use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use serde_json::Value;
 
 use super::RpcServerBlockchain;
+use super::ledger_provider::{
+    BlockchainLedgerProvider, BlockchainLedgerProviderFactory,
+    NativeBlockchainLedgerProviderFactory,
+};
 use super::request_helpers::RawMemPoolRequest;
 use super::responses::{raw_mempool_hashes_to_json, raw_mempool_with_unverified_to_json};
 
@@ -35,10 +37,9 @@ impl RpcServerBlockchain {
         let (verified, unverified) = (pool.verified_snapshot(), pool.unverified_snapshot());
 
         let store = server.system().store_cache();
-        let height = StorageLedgerProviderFactory
-            .provider(store.data_cache())
-            .current_index()
-            .map_err(internal_error)?;
+        let height = NativeBlockchainLedgerProviderFactory
+            .provider()
+            .current_height(store.data_cache())?;
         Ok(raw_mempool_with_unverified_to_json(
             height,
             &verified,
