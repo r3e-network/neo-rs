@@ -248,6 +248,40 @@ fn extensible_verification_uses_system_native_provider() {
 }
 
 #[test]
+fn transaction_admission_uses_policy_provider_factory() {
+    let source = include_str!("../../handlers/transactions.rs");
+    let conflict_start = source
+        .find("fn persisted_conflict_exists")
+        .expect("transaction conflict helper exists");
+    let conflict_end = source[conflict_start..]
+        .find("pub(crate) fn reverify_mempool_after_persist")
+        .map(|offset| conflict_start + offset)
+        .expect("mempool reverify helper follows conflict helper");
+    let conflict_helper = &source[conflict_start..conflict_end];
+
+    assert!(
+        conflict_helper.contains("TransactionNativeProvider"),
+        "persisted conflict checks should depend on a native read capability"
+    );
+    assert!(
+        conflict_helper.contains("NativeTransactionProviderFactory"),
+        "persisted conflict checks should create native read providers through a factory"
+    );
+    assert!(
+        !conflict_helper.contains("PolicyContract::new()"),
+        "transaction admission must not construct PolicyContract directly in the handler"
+    );
+
+    let provider_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src/handlers/transaction_provider.rs");
+    let provider = std::fs::read_to_string(&provider_path)
+        .unwrap_or_else(|error| panic!("{}: {error}", provider_path.display()));
+    assert!(provider.contains("trait TransactionNativeProvider"));
+    assert!(provider.contains("trait TransactionNativeProviderFactory"));
+    assert!(provider.contains("policy: PolicyContract"));
+}
+
+#[test]
 fn header_inventory_verification_uses_system_native_provider() {
     let source = include_str!("../../handlers/headers.rs");
     let handler_start = source

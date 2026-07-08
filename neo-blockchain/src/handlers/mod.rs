@@ -14,5 +14,6 @@ mod import;
 mod initialize;
 mod persist_completed;
 mod reverify;
+mod transaction_provider;
 mod transactions;
 mod verification;

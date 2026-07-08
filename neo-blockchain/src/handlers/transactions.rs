@@ -10,6 +10,10 @@ use crate::ledger_provider::{
 };
 use crate::service::{BlockchainService, MempoolLike};
 
+use super::transaction_provider::{
+    NativeTransactionProviderFactory, TransactionNativeProvider, TransactionNativeProviderFactory,
+};
+
 /// C# `Blockchain.MaxTxToReverifyPerIdle`.
 const MAX_TX_TO_REVERIFY_PER_IDLE: usize = 10;
 impl<S, M> BlockchainService<S, M>
@@ -44,20 +48,36 @@ where
             return false;
         };
         let settings = self.system.settings();
-        let max_traceable_blocks = match neo_native_contracts::PolicyContract::new()
-            .get_max_traceable_blocks_snapshot(snapshot.as_ref(), settings.as_ref())
-        {
-            Ok(value) => value,
-            Err(error) => {
-                warn!(
-                    target: "neo",
-                    error = %error,
-                    "failed to read MaxTraceableBlocks before mempool admission"
-                );
-                return false;
-            }
-        };
-        let provider = StorageLedgerProviderFactory.provider(snapshot.as_ref());
+        let transaction_native_provider = NativeTransactionProviderFactory.provider();
+        Self::persisted_conflict_exists_with_provider(
+            snapshot.as_ref(),
+            settings.as_ref(),
+            hash,
+            signers,
+            &transaction_native_provider,
+        )
+    }
+
+    fn persisted_conflict_exists_with_provider(
+        snapshot: &neo_storage::DataCache,
+        settings: &neo_config::ProtocolSettings,
+        hash: &neo_primitives::UInt256,
+        signers: &[neo_primitives::UInt160],
+        transaction_native_provider: &impl TransactionNativeProvider,
+    ) -> bool {
+        let max_traceable_blocks =
+            match transaction_native_provider.max_traceable_blocks(snapshot, settings) {
+                Ok(value) => value,
+                Err(error) => {
+                    warn!(
+                        target: "neo",
+                        error = %error,
+                        "failed to read MaxTraceableBlocks before mempool admission"
+                    );
+                    return false;
+                }
+            };
+        let provider = StorageLedgerProviderFactory.provider(snapshot);
         match provider.contains_conflict_hash(hash, signers, max_traceable_blocks) {
             Ok(exists) => exists,
             Err(error) => {
