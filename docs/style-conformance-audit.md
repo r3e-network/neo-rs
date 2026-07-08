@@ -165,8 +165,9 @@ High-signal clusters found during the first pass:
   map. `sync_metrics/render.rs` owns the operator-facing Prometheus summary
   flow, `sync_metrics/families.rs` owns bounded-label metric-family renderers,
   and `sync_metrics/writer.rs` owns the small text-format label writers.
-- `neo-node/src/node/context/mod.rs` keeps `DaemonContext` construction,
-  node/service handles, and the `SystemContext` trait surface.
+- `neo-node/src/node/context/mod.rs` keeps `DaemonContext` construction and
+  node/service handles. `context/system_context.rs` owns the
+  `SystemContext` trait implementation and store-commit policy, while
   `context/plugins.rs` owns catch-up-aware StateService, indexer,
   ApplicationLogs, and TokensTracker hook dispatch.
 - `neo-rpc` has the largest raw JSON surface. Many `Value` uses are correct at
