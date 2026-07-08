@@ -32,7 +32,7 @@ mod tests {
     fn lock_recovers_poisoned_mutex() {
         let value = Mutex::new(1_u8);
         let _ = catch_unwind(AssertUnwindSafe(|| {
-            let _guard = value.lock().expect("initial lock");
+            let _guard = lock(&value, "test setup");
             panic!("poison mutex");
         }));
 

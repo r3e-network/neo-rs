@@ -18,15 +18,15 @@ pub struct RpcClient {
 
 impl RpcClient {
     /// Create a client for the given `http://host:port` endpoint.
-    pub fn new(url: impl Into<String>) -> Self {
+    pub fn new(url: impl Into<String>) -> Result<Self> {
         let http = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(10))
             .build()
-            .expect("reqwest client");
-        Self {
+            .context("build reqwest client")?;
+        Ok(Self {
             url: url.into(),
             http,
-        }
+        })
     }
 
     /// Invoke a JSON-RPC method, returning the `result` value.

@@ -761,11 +761,15 @@ so provider-factory assertions no longer look like production panic surfaces.
 setup propagates ledger lookup and serialization failures through `CoreResult`,
 while test modules keep any intentional setup assertions at the call site. The
 production unwrap/expect scan no longer reports `neo-test-fixtures`; the
-remaining buckets are `neo-node`, `neo-crypto`, `neo-vm`, `neo-execution`,
-and `neo-gui`.
+remaining buckets are `neo-node`, `neo-crypto`, `neo-vm`, and
+`neo-execution`.
 `benchmarks/bench-client` now returns `Result` from its Tokio entrypoint so
 HTTP client construction failures become normal process errors instead of a
 panic-shaped benchmark startup path.
+`neo-gui` now uses a fallible RPC-client constructor and threads construction
+errors through the existing GUI error-display paths. The mutex-poison recovery
+test also uses the shared lock helper to create the poisoned state, leaving the
+GUI production scan free of `unwrap`/`expect` sites.
 
 Recommended next patches, in order:
 

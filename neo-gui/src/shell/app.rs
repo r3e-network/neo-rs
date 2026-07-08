@@ -139,7 +139,7 @@ impl NeoGuiApp {
         let method = method.to_string();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let text = match RpcClient::new(url).call(&method, params) {
+            let text = match RpcClient::new(url).and_then(|client| client.call(&method, params)) {
                 Ok(v) => serde_json::to_string_pretty(&v).unwrap_or_else(|e| e.to_string()),
                 Err(e) => format!("error: {e}"),
             };
@@ -167,7 +167,7 @@ impl NeoGuiApp {
         std::thread::spawn(move || {
             let params =
                 serde_json::from_str(&params_raw).unwrap_or(serde_json::Value::Array(vec![]));
-            let text = match RpcClient::new(url).call(&method, params) {
+            let text = match RpcClient::new(url).and_then(|client| client.call(&method, params)) {
                 Ok(v) => serde_json::to_string_pretty(&v).unwrap_or_else(|e| e.to_string()),
                 Err(e) => format!("error: {e}"),
             };
@@ -327,10 +327,12 @@ fn spawn_poller(ctx: Context, cfg: Arc<Mutex<PollerCfg>>, state: SharedState) {
             };
 
             if enabled && !url.is_empty() {
-                let client = RpcClient::new(&url);
-                match client.status() {
-                    Ok(status) => {
-                        let peers = client.peers().ok();
+                match RpcClient::new(&url).and_then(|client| {
+                    let status = client.status()?;
+                    let peers = client.peers().ok();
+                    Ok((status, peers))
+                }) {
+                    Ok((status, peers)) => {
                         let bps = status.block_count.saturating_sub(last_height) as f32;
                         last_height = status.block_count;
                         let mut s = lock(&state, "NodeState");
