@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
+use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use neo_execution::application_engine::ApplicationEngine;
 use neo_manifest::CallFlags;
-use neo_native_contracts::{LedgerContract, NeoToken};
+use neo_native_contracts::NeoToken;
 use neo_primitives::{BigDecimal, TriggerType, UInt160};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::{OpCode, VmState as VMState};
@@ -41,9 +42,9 @@ impl RpcServerWallet {
         NoParamsRequest::parse(params, "getwalletunclaimedgas")?;
         let wallet = Self::require_wallet(server)?;
         let store = server.system().store_cache();
-        let ledger = LedgerContract::new();
-        let height = ledger
-            .current_index(store.data_cache())
+        let height = StorageLedgerProviderFactory
+            .provider(store.data_cache())
+            .current_index()
             .map_err(|err| {
                 RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
             })?

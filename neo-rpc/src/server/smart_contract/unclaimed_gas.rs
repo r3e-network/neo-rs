@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use neo_native_contracts::{NeoToken, ledger_contract::LedgerContract};
+use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
+use neo_native_contracts::NeoToken;
 use neo_wallets::wallet_helper::WalletAddress as address_helper;
 use serde_json::Value;
 
@@ -21,9 +22,9 @@ pub(super) fn get_unclaimed_gas(
     let request = GetUnclaimedGasRequest::parse(params, version)?;
 
     let store = server.system().store_cache();
-    let ledger = LedgerContract::new();
-    let height = ledger
-        .current_index(store.data_cache())
+    let height = StorageLedgerProviderFactory
+        .provider(store.data_cache())
+        .current_index()
         .map_err(|err| internal_error(err.to_string()))?
         .saturating_add(1);
     let neo_hash = NeoToken::script_hash();

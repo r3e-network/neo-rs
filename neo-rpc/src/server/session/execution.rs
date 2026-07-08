@@ -5,11 +5,11 @@
 //! executed `ApplicationEngine`. Keeping that workflow here leaves the session
 //! root focused on retained state and iterator lifecycle methods.
 
+use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_manifest::CallFlags;
-use neo_native_contracts::ledger_contract::LedgerContract;
 use neo_native_contracts::policy_contract::PolicyContract;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
@@ -68,8 +68,9 @@ impl Session {
             let mut tx = Transaction::new();
             tx.set_version(0);
             tx.set_nonce(random());
-            let valid_until = LedgerContract::new()
-                .current_index(store_cache.data_cache())
+            let valid_until = StorageLedgerProviderFactory
+                .provider(store_cache.data_cache())
+                .current_index()
                 .unwrap_or(0)
                 .saturating_add(max_valid_until_block_increment);
             tx.set_valid_until_block(valid_until);

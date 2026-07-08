@@ -8,7 +8,7 @@
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
-use neo_native_contracts::LedgerContract;
+use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use serde_json::Value;
 
 use super::RpcServerBlockchain;
@@ -35,9 +35,9 @@ impl RpcServerBlockchain {
         let (verified, unverified) = (pool.verified_snapshot(), pool.unverified_snapshot());
 
         let store = server.system().store_cache();
-        let ledger = LedgerContract::new();
-        let height = ledger
-            .current_index(store.data_cache())
+        let height = StorageLedgerProviderFactory
+            .provider(store.data_cache())
+            .current_index()
             .map_err(internal_error)?;
         Ok(raw_mempool_with_unverified_to_json(
             height,

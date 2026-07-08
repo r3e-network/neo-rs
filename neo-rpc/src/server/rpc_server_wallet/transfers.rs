@@ -1,5 +1,7 @@
+use neo_blockchain::{
+    LedgerProviderFactory, StorageLedgerProviderFactory, TransactionStateProvider,
+};
 use neo_execution::Nep17MetadataReaderImpl;
-use neo_native_contracts::LedgerContract;
 use neo_payloads::conflicts::Conflicts;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction_attribute::TransactionAttribute;
@@ -104,10 +106,10 @@ impl RpcServerWallet {
             CancelTransactionRequest::parse(params, server.system().settings().address_version)?;
         let wallet = Self::require_wallet(server)?;
         let store = server.system().store_cache();
-        let ledger = LedgerContract::new();
         let snapshot = store.data_cache();
-        if ledger
-            .get_transaction_state(snapshot, &request.txid)
+        if StorageLedgerProviderFactory
+            .provider(snapshot)
+            .transaction_state_by_hash(&request.txid)
             .map_err(|err| internal_error(err.to_string()))?
             .is_some()
         {

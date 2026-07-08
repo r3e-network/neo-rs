@@ -12,7 +12,8 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
-use neo_native_contracts::{LedgerContract, contract_management::ContractManagement};
+use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
+use neo_native_contracts::contract_management::ContractManagement;
 use num_traits::ToPrimitive;
 use serde_json::Value;
 
@@ -37,9 +38,9 @@ impl RpcServerBlockchain {
         let system = server.system();
         let store = system.store_cache();
         let settings = system.settings();
-        let ledger = LedgerContract::new();
-        let block_height = ledger
-            .current_index(store.data_cache())
+        let block_height = StorageLedgerProviderFactory
+            .provider(store.data_cache())
+            .current_index()
             .map_err(internal_error)?;
 
         let registry = native_queries::NativeQueries::native_registry();

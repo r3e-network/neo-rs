@@ -1,6 +1,8 @@
 //! C#-compatible dummy persisting block construction for stateless invokes.
 
-use neo_native_contracts::ledger_contract::LedgerContract;
+use neo_blockchain::{
+    BlockProvider, ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory,
+};
 use neo_native_contracts::policy_contract::PolicyContract;
 use neo_payloads::witness::Witness;
 use neo_payloads::{Block, Header};
@@ -29,9 +31,9 @@ pub(super) fn create_dummy_block(
     snapshot: &neo_storage::persistence::DataCache,
     settings: &neo_config::ProtocolSettings,
 ) -> Option<Block> {
-    let ledger = LedgerContract::new();
-    let current_hash = ledger.current_hash(snapshot).ok()?;
-    let current_block = ledger.get_trimmed_block(snapshot, &current_hash).ok()??;
+    let provider = StorageLedgerProviderFactory.provider(snapshot);
+    let current_hash = provider.current_hash().ok()?;
+    let current_header = provider.header_by_hash(&current_hash).ok()??;
 
     let milliseconds_per_block = PolicyContract::new()
         .get_milliseconds_per_block_snapshot(snapshot, settings)
@@ -42,13 +44,12 @@ pub(super) fn create_dummy_block(
     header.set_prev_hash(current_hash);
     header.set_merkle_root(neo_primitives::UInt256::default());
     header.set_timestamp(
-        current_block
-            .header
+        current_header
             .timestamp()
             .saturating_add(u64::from(milliseconds_per_block)),
     );
-    header.set_index(current_block.header.index().saturating_add(1));
-    header.set_next_consensus(*current_block.header.next_consensus());
+    header.set_index(current_header.index().saturating_add(1));
+    header.set_next_consensus(*current_header.next_consensus());
     header.witness = Witness::empty();
 
     Some(Block::from_parts(header, Vec::new()))

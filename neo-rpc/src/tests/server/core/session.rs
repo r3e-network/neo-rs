@@ -57,16 +57,6 @@ fn server_context_engine_paths_use_explicit_native_provider() {
             !source.contains("ApplicationEngine::new("),
             "{name} should not read the ambient native-provider bridge"
         );
-        if name == "wallet compat network fee" {
-            assert!(
-                source.contains("StorageLedgerProviderFactory"),
-                "{name} should read ledger tips through the provider factory"
-            );
-            assert!(
-                !source.contains("LedgerContract::new()"),
-                "{name} should not construct native LedgerContract directly"
-            );
-        }
     }
 
     let provider_threading_sources = [(
@@ -82,9 +72,58 @@ fn server_context_engine_paths_use_explicit_native_provider() {
             !source.contains("ApplicationEngine::new("),
             "{name} should not construct engines through the ambient provider bridge"
         );
+    }
+}
+
+#[test]
+fn rpc_server_ledger_reads_use_provider_boundaries() {
+    let sources = [
+        (
+            "blockchain mempool",
+            include_str!("../../../server/rpc_server_blockchain/mempool.rs"),
+        ),
+        (
+            "blockchain native contracts",
+            include_str!("../../../server/rpc_server_blockchain/native.rs"),
+        ),
+        (
+            "session dummy block",
+            include_str!("../../../server/session/dummy_block.rs"),
+        ),
+        (
+            "session execution",
+            include_str!("../../../server/session/execution.rs"),
+        ),
+        (
+            "wallet balance",
+            include_str!("../../../server/rpc_server_wallet/balance.rs"),
+        ),
+        (
+            "wallet transfers",
+            include_str!("../../../server/rpc_server_wallet/transfers.rs"),
+        ),
+        (
+            "smart-contract unclaimed gas",
+            include_str!("../../../server/smart_contract/unclaimed_gas.rs"),
+        ),
+        (
+            "smart-contract wallet invocation",
+            include_str!("../../../server/smart_contract/invocation_wallet.rs"),
+        ),
+        (
+            "wallet compat network fee",
+            include_str!("../../../server/wallet_compat/network_fee.rs"),
+        ),
+        (
+            "wallet compat transaction builder",
+            include_str!("../../../server/wallet_compat/transaction_builder.rs"),
+        ),
+    ];
+
+    for (name, source) in sources {
         assert!(
             source.contains("StorageLedgerProviderFactory"),
-            "{name} should read ledger tips through the provider factory"
+            "{name} should read ledger records through the provider factory"
         );
         assert!(
             !source.contains("LedgerContract::new()"),

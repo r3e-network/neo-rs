@@ -8,6 +8,7 @@
 use std::sync::Arc;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
@@ -88,7 +89,6 @@ fn build_and_sign_transaction(
     tx.set_signers(signers.to_vec());
     tx.set_attributes(Vec::<TransactionAttribute>::new());
 
-    let ledger = neo_native_contracts::LedgerContract::new();
     // C# `Wallet.MakeTransaction`:
     //   ValidUntilBlock = Ledger.CurrentIndex(snapshot)
     //                     + snapshot.GetMaxValidUntilBlockIncrement(ProtocolSettings)
@@ -99,8 +99,9 @@ fn build_and_sign_transaction(
     let max_valid_until_block_increment = neo_native_contracts::PolicyContract::new()
         .get_max_valid_until_block_increment_snapshot(snapshot.data_cache(), &protocol_settings)
         .unwrap_or_else(|_| system.max_valid_until_block_increment());
-    let valid_until = ledger
-        .current_index(snapshot.data_cache())
+    let valid_until = StorageLedgerProviderFactory
+        .provider(snapshot.data_cache())
+        .current_index()
         .map_err(|err| CoreError::other(err.to_string()))?
         .saturating_add(max_valid_until_block_increment);
     tx.set_valid_until_block(valid_until);
