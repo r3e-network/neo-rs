@@ -24,6 +24,7 @@
 //! ## Example
 //!
 //! ```rust
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use neo_primitives::BigDecimal;
 //! use num_bigint::BigInt;
 //!
@@ -32,8 +33,10 @@
 //! assert_eq!(amount.to_string(), "1");
 //!
 //! // Parse from string
-//! let parsed = BigDecimal::parse("123.456", 8).unwrap();
+//! let parsed = BigDecimal::parse("123.456", 8)?;
 //! assert_eq!(parsed.to_string(), "123.456");
+//! # Ok(())
+//! # }
 //! ```
 
 use crate::error::{PrimitiveError, PrimitiveResult};

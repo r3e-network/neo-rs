@@ -65,8 +65,11 @@ pub fn encode_hex(bytes: &[u8]) -> String {
 /// # Example
 /// ```
 /// # use neo_primitives::hex_util;
-/// assert_eq!(hex_util::decode_hex("deadbeef").unwrap(), vec![0xDE, 0xAD, 0xBE, 0xEF]);
-/// assert_eq!(hex_util::decode_hex("0xDEADBEEF").unwrap(), vec![0xDE, 0xAD, 0xBE, 0xEF]);
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// assert_eq!(hex_util::decode_hex("deadbeef")?, vec![0xDE, 0xAD, 0xBE, 0xEF]);
+/// assert_eq!(hex_util::decode_hex("0xDEADBEEF")?, vec![0xDE, 0xAD, 0xBE, 0xEF]);
+/// # Ok(())
+/// # }
 /// ```
 pub fn decode_hex(s: &str) -> PrimitiveResult<Vec<u8>> {
     let s = strip_hex_prefix(s);

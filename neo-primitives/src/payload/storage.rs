@@ -7,13 +7,16 @@
 //! # Example
 //!
 //! ```rust
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use neo_primitives::StorageValue;
 //!
 //! // Vec<u8> implements StorageValue by default
 //! let value = vec![0x01, 0x02, 0x03];
 //! let bytes = value.to_storage_bytes();
-//! let restored = Vec::<u8>::from_storage_bytes(&bytes).unwrap();
+//! let restored = Vec::<u8>::from_storage_bytes(&bytes)?;
 //! assert_eq!(value, restored);
+//! # Ok(())
+//! # }
 //! ```
 
 use thiserror::Error;
