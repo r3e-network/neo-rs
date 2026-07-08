@@ -79,3 +79,45 @@ fn local_ledger_block_source_reports_miss_for_unknown_records() {
     assert!(source.block_index_by_hash(&missing).is_none());
     assert!(!source.contains_transaction(&missing));
 }
+
+#[test]
+fn operational_ledger_tip_reads_stay_behind_local_provider_boundary() {
+    let sources = [
+        (
+            "node composition",
+            include_str!("../../../node/composition.rs"),
+        ),
+        (
+            "config validation",
+            include_str!("../../../node/config/validation.rs"),
+        ),
+        (
+            "chain.acc driver",
+            include_str!("../../../node/chain_acc/driver.rs"),
+        ),
+        (
+            "daemon system context",
+            include_str!("../../../node/context/system_context.rs"),
+        ),
+    ];
+
+    for (name, source) in sources {
+        assert!(
+            !source.contains("StorageLedgerProviderFactory"),
+            "{name} must use the node local-ledger provider boundary for durable tip reads"
+        );
+    }
+
+    let provider_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/node/ledger_source/tip.rs");
+    let provider = std::fs::read_to_string(&provider_path)
+        .unwrap_or_else(|err| panic!("read {}: {err}", provider_path.display()));
+    assert!(
+        provider.contains("StorageLedgerProviderFactory"),
+        "the local-ledger provider boundary owns raw storage-ledger provider construction"
+    );
+    assert!(
+        provider.contains("StoreCache::new_from_store"),
+        "durable store tip reads should be centralized behind the same store-cache snapshot path"
+    );
+}

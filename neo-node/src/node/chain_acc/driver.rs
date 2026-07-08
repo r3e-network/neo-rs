@@ -10,10 +10,11 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use neo_blockchain::handle::BlockchainHandle;
-use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use neo_payloads::block::Block;
 use neo_storage::persistence::store::Store;
 use tracing::info;
+
+use crate::node::ledger_source::local_ledger_tip;
 
 use super::batch::{
     ChainAccImportComposition, PendingChainAccBatch, import_chain_acc_batch, take_import_batch,
@@ -30,10 +31,7 @@ use super::range::{
     validate_chain_acc_block_height, validate_chain_acc_count, validate_chain_acc_first_prev_hash,
     validate_chain_acc_internal_prev_hash,
 };
-use super::{
-    ChainAccExpectedRange, ChainAccImportReport, IMPORT_BATCH_SIZE, ImportHotMetrics,
-    LocalLedgerTip,
-};
+use super::{ChainAccExpectedRange, ChainAccImportReport, IMPORT_BATCH_SIZE, ImportHotMetrics};
 
 /// Import blocks from a `chain.acc` file and stop once `stop_at_height` is imported.
 pub async fn import_chain_acc_until_height(
@@ -56,24 +54,6 @@ pub async fn import_chain_acc_until_height(
         storage,
     )
     .await
-}
-
-pub(in crate::node) fn local_ledger_tip(
-    store: Option<&Arc<dyn Store>>,
-) -> anyhow::Result<Option<LocalLedgerTip>> {
-    let Some(store) = store else {
-        return Ok(None);
-    };
-    let cache = neo_storage::persistence::StoreCache::new_from_store(Arc::clone(store), true);
-    let factory = StorageLedgerProviderFactory;
-    let provider = factory.provider(cache.data_cache());
-    let Ok(height) = provider.current_index() else {
-        return Ok(None);
-    };
-    let hash = provider.current_hash().map_err(|err| {
-        anyhow::anyhow!("reading local ledger tip hash before chain.acc import: {err}")
-    })?;
-    Ok(Some(LocalLedgerTip { height, hash }))
 }
 
 pub(in crate::node) async fn import_chain_acc_report_with_expected_range(

@@ -3,10 +3,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context;
-use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use tracing::info;
 
 use super::super::cli::LedgerMode;
+use super::super::ledger_source::store_ledger_index;
 use super::*;
 
 #[cfg(test)]
@@ -470,14 +470,7 @@ pub(in crate::node) fn validate_storage(
 }
 
 fn durable_ledger_index(store: &Arc<dyn neo_storage::persistence::store::Store>) -> Option<u32> {
-    use neo_storage::persistence::StoreCache;
-
-    let store_cache = StoreCache::new_from_store(Arc::clone(store), false);
-    let factory = StorageLedgerProviderFactory;
-    factory
-        .provider(store_cache.data_cache())
-        .current_index()
-        .ok()
+    store_ledger_index(store, false)
 }
 
 pub(in crate::node) fn validate_state_service_storage(

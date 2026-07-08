@@ -23,7 +23,9 @@ use super::inventory_relay::{
     FAST_SYNC_BLOCK_BATCH_FLUSH_MS, FAST_SYNC_BLOCK_BATCH_SIZE, FAST_SYNC_BURST_CAPACITY,
     flush_inventory_block_batch, handle_inbound_inventory_item,
 };
-use super::ledger_source::{LedgerBlockSource, RpcLedgerBlockSource};
+use super::ledger_source::{
+    LedgerBlockSource, RpcLedgerBlockSource, snapshot_ledger_index, store_ledger_index,
+};
 use super::observability;
 use super::remote_ledger::RemoteLedgerStatus;
 use super::services::{self, OperationalServices};
@@ -52,10 +54,7 @@ pub(in crate::node) async fn build_node(
     observability: Option<observability::ObservabilityRuntime>,
 ) -> anyhow::Result<RunningNode> {
     use neo_blockchain::service::BlockchainService;
-    use neo_blockchain::{
-        ChainTipProvider, HeaderCache, LedgerContext, LedgerProviderFactory,
-        StorageLedgerProviderFactory,
-    };
+    use neo_blockchain::{HeaderCache, LedgerContext};
     use neo_storage::persistence::StoreCache;
 
     // ----- storage backend -----
@@ -73,11 +72,7 @@ pub(in crate::node) async fn build_node(
     // Enable backend-specific fast-sync optimizations during initial catch-up
     // for higher write throughput. The node re-enables durable mode once it
     // approaches the live tip.
-    let durable_tip_index = {
-        let probe = StoreCache::new_from_store(Arc::clone(&store), false);
-        let factory = StorageLedgerProviderFactory;
-        factory.provider(probe.data_cache()).current_index().ok()
-    };
+    let durable_tip_index = store_ledger_index(&store, false);
     let service_storage_provider = service_store_provider(config)?;
     validate_state_service_storage(
         config,
@@ -113,10 +108,7 @@ pub(in crate::node) async fn build_node(
     // store handle directly rather than a frozen startup snapshot.
     // The durable tip at startup, read before the snapshot is moved into the
     // service contexts; used to seed the advertised height / sync cursor.
-    let durable_tip = {
-        let factory = StorageLedgerProviderFactory;
-        factory.provider(&snapshot).current_index().unwrap_or(0)
-    };
+    let durable_tip = snapshot_ledger_index(&snapshot).unwrap_or(0);
 
     let mempool = Arc::new(neo_mempool::MemoryPool::new_with_native_contract_provider(
         &settings,

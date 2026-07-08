@@ -6,11 +6,7 @@
 
 use super::metrics::{RocksDbBatchImportMetrics, StateServiceMptImportMetrics};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::node) struct LocalLedgerTip {
-    pub(in crate::node) height: u32,
-    pub(in crate::node) hash: neo_primitives::UInt256,
-}
+use crate::node::ledger_source::LocalLedgerTip;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(in crate::node) struct ChainAccImportReport {
