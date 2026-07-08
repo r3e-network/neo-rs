@@ -484,8 +484,10 @@ normalization plus native-root filtering. The root `rpc_tls/mod.rs` is now only
 facade exports and the module map.
 `rpc_server/registry.rs` owns handler registration, handler-map reads, and
 transport method projection. The root `rpc_server/mod.rs` now stays focused on
-structural server state, while `rpc_server/wallet.rs` owns the active-wallet
-handle, wallet accessors, and wallet-change callbacks, and
+structural server state, while `rpc_server/state.rs` owns construction,
+settings, upstream-ledger, WebSocket, and auth-state accessors.
+`rpc_server/wallet.rs` owns the active-wallet handle, wallet accessors, and
+wallet-change callbacks, and
 `rpc_server/sessions.rs` owns invoke-session storage, expiration, mutation,
 and termination helpers.
 `jsonrpsee_adapter/auth.rs` owns the transport-auth extension marker and Basic
