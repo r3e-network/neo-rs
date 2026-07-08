@@ -2,6 +2,10 @@
 
 use std::sync::Arc;
 
+use neo_blockchain::{
+    BlockProvider, LedgerProviderFactory, StorageLedgerProviderFactory, TxProvider,
+};
+
 /// Read-only ledger view that serves peers' block requests
 /// ([`neo_network::BlockSource`]) by reconstructing a full block from the
 /// persistent store: `index -> hash -> TrimmedBlock -> transactions`
@@ -29,59 +33,43 @@ impl LedgerBlockSource {
         }
     }
 
-    /// Reconstructs the full block stored under `hash`: header plus the
-    /// transactions referenced by its `TrimmedBlock`.
-    fn full_block(
-        &self,
-        ledger: &neo_native_contracts::LedgerContract,
-        hash: &neo_primitives::UInt256,
-    ) -> Option<neo_payloads::Block> {
-        let trimmed = ledger.get_trimmed_block(&self.snapshot, hash).ok()??;
-        let mut transactions = Vec::with_capacity(trimmed.hashes.len());
-        for tx_hash in &trimmed.hashes {
-            let state = ledger
-                .get_transaction_state(&self.snapshot, tx_hash)
-                .ok()??;
-            transactions.push(state.transaction?);
-        }
-        Some(neo_payloads::Block::from_parts(
-            trimmed.header,
-            transactions,
-        ))
+    /// Creates the canonical durable ledger provider for this snapshot.
+    fn persisted_provider(&self) -> impl neo_blockchain::LedgerProvider + '_ {
+        StorageLedgerProviderFactory.provider(self.snapshot.as_ref())
     }
 }
 
 impl neo_network::BlockSource for LedgerBlockSource {
     fn block_by_index(&self, index: u32) -> Option<neo_payloads::Block> {
-        let ledger = neo_native_contracts::LedgerContract::new();
-        let hash = ledger.get_block_hash(&self.snapshot, index).ok()??;
-        self.full_block(&ledger, &hash)
+        self.persisted_provider()
+            .block_by_index(index)
+            .ok()
+            .flatten()
     }
 
     fn header_by_index(&self, index: u32) -> Option<neo_payloads::Header> {
-        let ledger = neo_native_contracts::LedgerContract::new();
-        let hash = ledger.get_block_hash(&self.snapshot, index).ok()??;
-        let trimmed = ledger.get_trimmed_block(&self.snapshot, &hash).ok()??;
-        Some(trimmed.header)
+        self.persisted_provider()
+            .header_by_index(index)
+            .ok()
+            .flatten()
     }
 
     fn block_hash_by_index(&self, index: u32) -> Option<neo_primitives::UInt256> {
-        neo_native_contracts::LedgerContract::new()
-            .get_block_hash(&self.snapshot, index)
+        self.persisted_provider()
+            .block_hash_by_index(index)
             .ok()
             .flatten()
     }
 
     fn block_by_hash(&self, hash: &neo_primitives::UInt256) -> Option<neo_payloads::Block> {
-        self.full_block(&neo_native_contracts::LedgerContract::new(), hash)
+        self.persisted_provider().block_by_hash(hash).ok().flatten()
     }
 
     fn block_index_by_hash(&self, hash: &neo_primitives::UInt256) -> Option<u32> {
-        neo_native_contracts::LedgerContract::new()
-            .get_trimmed_block(&self.snapshot, hash)
+        self.persisted_provider()
+            .block_index_by_hash(hash)
             .ok()
             .flatten()
-            .map(|trimmed| trimmed.header.index())
     }
 
     fn transaction_by_hash(
@@ -93,10 +81,7 @@ impl neo_network::BlockSource for LedgerBlockSource {
         if let Some(item) = self.mempool.get(hash) {
             return Some((*item.transaction).clone());
         }
-        neo_native_contracts::LedgerContract::new()
-            .get_transaction_state(&self.snapshot, hash)
-            .ok()?
-            .and_then(|state| state.transaction)
+        self.persisted_provider().transaction_by_hash(hash).ok()?
     }
 
     fn extensible_by_hash(
@@ -108,11 +93,10 @@ impl neo_network::BlockSource for LedgerBlockSource {
 
     fn contains_transaction(&self, hash: &neo_primitives::UInt256) -> bool {
         self.mempool.contains(hash)
-            || neo_native_contracts::LedgerContract::new()
-                .get_transaction_state(&self.snapshot, hash)
-                .ok()
-                .flatten()
-                .is_some()
+            || self
+                .persisted_provider()
+                .contains_transaction(hash)
+                .unwrap_or(false)
     }
 
     fn mempool_transaction_hashes(&self) -> Vec<neo_primitives::UInt256> {
@@ -123,3 +107,7 @@ impl neo_network::BlockSource for LedgerBlockSource {
             .collect()
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/node/ledger_source/local.rs"]
+mod tests;
