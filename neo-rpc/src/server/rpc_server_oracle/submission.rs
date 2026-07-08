@@ -59,7 +59,7 @@ pub(super) fn map_oracle_error(err: OracleServiceError) -> RpcException {
             RpcException::from(RpcError::invalid_signature().with_data(msg))
         }
         OracleServiceError::InvalidOraclePublicKey => invalid_params("Invalid oracle public key"),
-        OracleServiceError::Processing(msg) => {
+        OracleServiceError::HttpClientInitialization(msg) | OracleServiceError::Processing(msg) => {
             RpcException::from(RpcError::internal_server_error().with_data(msg))
         }
         OracleServiceError::UrlBlocked => invalid_params("URL blocked by security policy"),

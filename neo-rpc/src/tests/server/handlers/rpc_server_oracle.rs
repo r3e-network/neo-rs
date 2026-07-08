@@ -83,3 +83,11 @@ fn map_oracle_error_includes_not_designated_message() {
     assert_eq!(rpc.code(), RpcError::oracle_not_designated_node().code());
     assert_eq!(rpc.data(), Some("not oracle"));
 }
+
+#[test]
+fn map_oracle_error_reports_initialization_failures_as_internal_errors() {
+    let err = OracleServiceError::HttpClientInitialization("bad user-agent".to_string());
+    let rpc = map_oracle_error(err);
+    assert_eq!(rpc.code(), RpcError::internal_server_error().code());
+    assert_eq!(rpc.data(), Some("bad user-agent"));
+}
