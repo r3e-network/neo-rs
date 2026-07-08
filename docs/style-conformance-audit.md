@@ -187,6 +187,11 @@ High-signal clusters found during the first pass:
   NEP helpers live in `nep`, shared storage-byte projection lives in
   `storage_encoding`, and native method metadata/invocation mechanics stay in
   the individual contract folders.
+- `neo-native-contracts/src/neo_token/storage/mod.rs` keeps the NEO storage
+  module map and re-exports. `storage/economics.rs` owns register-price,
+  GAS-per-block, voter-count, voter-reward, and unclaimed-GAS calculation
+  storage helpers; account, candidate, committee, key, point, and view codecs
+  stay in their named storage modules.
 - `neo-consensus/src/context/mod.rs` keeps the public `ConsensusContext` state
   shape and module map, while `context/construction.rs` owns fresh-round field
   defaults and `context/policy.rs` owns dBFT default policy constants and
