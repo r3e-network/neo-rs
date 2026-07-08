@@ -353,7 +353,7 @@ impl<'a> LazyMptChangeSink<'a> {
         }
     }
 
-    fn ensure_trie(&mut self) -> &mut Trie<MptWriteBatch> {
+    fn ensure_trie(&mut self) -> MptResult<&mut Trie<MptWriteBatch>> {
         if self.trie.is_none() {
             let batch = Arc::new(MptWriteBatch::new(
                 Arc::clone(&self.store.kv.read()),
@@ -367,7 +367,9 @@ impl<'a> LazyMptChangeSink<'a> {
             ));
             self.batch = Some(batch);
         }
-        self.trie.as_mut().expect("lazy MPT trie initialized")
+        self.trie.as_mut().ok_or_else(|| {
+            MptError::invalid("state-service lazy MPT sink failed to initialize trie")
+        })
     }
 
     /// Inserts or updates a key, opening the write trie on first use.
@@ -377,7 +379,7 @@ impl<'a> LazyMptChangeSink<'a> {
         value: &[u8],
         path_scratch: &mut Vec<u8>,
     ) -> MptResult<()> {
-        self.ensure_trie()
+        self.ensure_trie()?
             .put_with_scratch(key, value, path_scratch)
     }
 
@@ -387,7 +389,7 @@ impl<'a> LazyMptChangeSink<'a> {
         key: &[u8],
         path_scratch: &mut Vec<u8>,
     ) -> MptResult<bool> {
-        self.ensure_trie().delete_with_scratch(key, path_scratch)
+        self.ensure_trie()?.delete_with_scratch(key, path_scratch)
     }
 }
 
@@ -646,7 +648,11 @@ impl MptStore {
             Self::ensure_empty_root_record(&mut overlay, new_root)?;
             return self.publish_overlay(block_index, new_root, overlay);
         };
-        let batch = sink.batch.take().expect("lazy MPT trie has a write batch");
+        let Some(batch) = sink.batch.take() else {
+            return Err(MptError::invalid(
+                "state-service lazy MPT sink opened a trie without a write batch",
+            ));
+        };
 
         let stage_start = Instant::now();
         let new_root = trie.root().try_hash()?;
@@ -775,12 +781,13 @@ impl MptStore {
         drop(trie);
         drop(batch);
 
-        self.publish_overlay_with_samples(
-            blocks.last().expect("non-empty batch").block_index,
-            *roots.last().expect("non-empty roots"),
-            overlay,
-            blocks.len(),
-        )?;
+        let last_block_index = Self::last_block_index(blocks, "state-service MPT batch publish")?;
+        let Some(last_root) = roots.last().copied() else {
+            return Err(MptError::invalid(
+                "state-service MPT batch produced no roots for a non-empty block batch",
+            ));
+        };
+        self.publish_overlay_with_samples(last_block_index, last_root, overlay, blocks.len())?;
         Ok(roots)
     }
 
@@ -789,9 +796,11 @@ impl MptStore {
         root_before: Option<UInt256>,
         blocks: &[MptBlockChanges<'_>],
     ) -> MptResult<()> {
-        let first = blocks
-            .first()
-            .expect("batch validation is only called for non-empty batches");
+        let Some(first) = blocks.first() else {
+            return Err(MptError::invalid(
+                "state-service MPT batch validation requires at least one block",
+            ));
+        };
         match (self.current_local_root(), root_before) {
             (None, None) if first.block_index == 0 => {}
             (None, None) => {
@@ -832,6 +841,13 @@ impl MptStore {
             }
         }
         Ok(())
+    }
+
+    fn last_block_index(blocks: &[MptBlockChanges<'_>], context: &'static str) -> MptResult<u32> {
+        blocks
+            .last()
+            .map(|block| block.block_index)
+            .ok_or_else(|| MptError::invalid(format!("{context} requires at least one block")))
     }
 
     fn publish_overlay(
@@ -888,10 +904,7 @@ impl MptStore {
         blocks: &[MptBlockChanges<'_>],
         root_hash: UInt256,
     ) -> MptResult<UInt256> {
-        let last_index = blocks
-            .last()
-            .expect("empty-root batch is only called for non-empty batches")
-            .block_index;
+        let last_index = Self::last_block_index(blocks, "state-service empty-root batch")?;
         let samples = blocks.len().max(1) as u64;
 
         let stage_start = Instant::now();
@@ -964,10 +977,8 @@ impl MptStore {
         match self.backing.as_ref() {
             None => Ok(OverlayCounts::default()),
             Some(backing) => {
-                let current_index = blocks
-                    .last()
-                    .expect("empty-root backing commit requires non-empty blocks")
-                    .block_index;
+                let current_index =
+                    Self::last_block_index(blocks, "state-service empty-root backing commit")?;
                 let current_index_value = current_index.to_le_bytes();
                 let mut counts = OverlayCounts::default();
                 let mut visit = |sink: &mut dyn FnMut(&[u8], Option<&[u8]>)| {

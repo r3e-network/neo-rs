@@ -296,6 +296,10 @@ High-signal clusters found during the first pass:
   known-empty continuation test also documents the current provider behavior:
   raw-overlay-capable stores commit local-root records without opening trie or
   backing snapshots, matching the batched empty-block fast path.
+  `storage/mpt_store.rs` now returns typed `MptError::InvalidOperation` values
+  for lazy-trie and non-empty-batch invariants instead of using production
+  `expect()`; the remaining state-service production `expect()` is limited to
+  async worker spawn setup in `service/commit_handlers.rs`.
 - `neo-gui` is outside the workspace, but GUI mutex poison handling is now
   centralized in `neo-gui/src/sync.rs`; shell, runtime, and screen modules use
   that helper instead of choosing per-call `unwrap` / `expect` / silent-ignore
