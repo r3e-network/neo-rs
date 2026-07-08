@@ -51,3 +51,38 @@ fn state_root_verification_exposes_explicit_native_provider_path() {
         "state-root verification must use the explicit-provider witness helper"
     );
 }
+
+#[test]
+fn state_root_validator_reads_use_provider_factory_seam() {
+    let source = include_str!("../state_root_verify.rs");
+    assert!(
+        source.contains("trait StateRootNativeProvider"),
+        "state-root verification should define a narrow native-read capability"
+    );
+    assert!(
+        source.contains("trait StateRootNativeProviderFactory"),
+        "state-root verification should create native readers through a factory"
+    );
+
+    let impl_start = source
+        .find("VerifiableExt for VerifiableStateRoot")
+        .expect("state-root VerifiableExt impl exists");
+    let impl_source = &source[impl_start..];
+    assert!(
+        !impl_source.contains("RoleManagement::new()"),
+        "state-root VerifiableExt must not construct native RoleManagement directly"
+    );
+    assert!(
+        impl_source.contains(".state_validators("),
+        "state-root VerifiableExt should read validators through the provider seam"
+    );
+
+    let verifier_start = source
+        .find("pub fn verify_state_root_with_native_provider")
+        .expect("provider-aware state-root verifier exists");
+    let verifier = &source[verifier_start..];
+    assert!(
+        verifier.contains("NativeStateRootProviderFactory.provider()"),
+        "state-root verifier should create the production native-read provider through the factory"
+    );
+}

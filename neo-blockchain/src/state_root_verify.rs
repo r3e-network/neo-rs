@@ -31,12 +31,74 @@ use std::sync::Arc;
 /// Max GAS for state-root witness verification (C# `StateRoot.Verify`: 2 GAS).
 const STATE_ROOT_VERIFY_GAS: i64 = 2_0000_0000;
 
+/// Native-contract capabilities required to resolve state-root verifiers.
+trait StateRootNativeProvider: Send + Sync {
+    /// Returns StateValidator designated nodes effective at `index`.
+    fn state_validators(&self, snapshot: &DataCache, index: u32) -> Vec<neo_crypto::ECPoint>;
+}
+
+/// Factory for state-root native-contract providers.
+trait StateRootNativeProviderFactory {
+    /// Provider returned by this factory.
+    type Provider: StateRootNativeProvider;
+
+    /// Creates a provider instance.
+    fn provider(&self) -> Self::Provider;
+}
+
+/// Production state-root verifier provider backed by RoleManagement.
+#[derive(Clone, Copy, Debug, Default)]
+struct NativeStateRootProvider {
+    roles: RoleManagement,
+}
+
+impl NativeStateRootProvider {
+    /// Creates a provider backed by canonical native-contract handles.
+    const fn new() -> Self {
+        Self {
+            roles: RoleManagement::new(),
+        }
+    }
+}
+
+impl StateRootNativeProvider for NativeStateRootProvider {
+    fn state_validators(&self, snapshot: &DataCache, index: u32) -> Vec<neo_crypto::ECPoint> {
+        self.roles
+            .get_designated_by_role_at(snapshot, Role::StateValidator, index)
+            .unwrap_or_default()
+    }
+}
+
+/// Factory for production state-root native-contract read providers.
+#[derive(Clone, Copy, Debug, Default)]
+struct NativeStateRootProviderFactory;
+
+impl StateRootNativeProviderFactory for NativeStateRootProviderFactory {
+    type Provider = NativeStateRootProvider;
+
+    fn provider(&self) -> Self::Provider {
+        NativeStateRootProvider::new()
+    }
+}
+
 /// Owned wrapper making a [`StateRoot`] verifiable through the engine machinery.
 /// It is owned rather than borrowing the root because `neo_primitives::Verifiable`
 /// requires `Any + 'static`; `StateRoot` is small and clones cheaply.
-struct VerifiableStateRoot(StateRoot);
+struct VerifiableStateRoot<P> {
+    root: StateRoot,
+    native: P,
+}
 
-impl Verifiable for VerifiableStateRoot {
+impl<P> VerifiableStateRoot<P> {
+    fn new(root: StateRoot, native: P) -> Self {
+        Self { root, native }
+    }
+}
+
+impl<P> Verifiable for VerifiableStateRoot<P>
+where
+    P: StateRootNativeProvider + 'static,
+{
     fn verify(&self) -> bool {
         // State-independent validity: nothing beyond the witness check, which is
         // state-dependent and handled by verify_witnesses.
@@ -44,11 +106,11 @@ impl Verifiable for VerifiableStateRoot {
     }
 
     fn hash(&self) -> PrimitiveResult<UInt256> {
-        Ok(UInt256::from(Crypto::sha256(&self.0.unsigned_bytes())))
+        Ok(UInt256::from(Crypto::sha256(&self.root.unsigned_bytes())))
     }
 
     fn hash_data(&self) -> Vec<u8> {
-        self.0.unsigned_bytes()
+        self.root.unsigned_bytes()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -56,20 +118,21 @@ impl Verifiable for VerifiableStateRoot {
     }
 }
 
-impl VerifiableExt for VerifiableStateRoot {
+impl<P> VerifiableExt for VerifiableStateRoot<P>
+where
+    P: StateRootNativeProvider + 'static,
+{
     fn script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
         // C# GetScriptHashesForVerifying: the BFT address of the StateValidators
         // designated at this root's index. No designation -> no verifiable hash.
-        let validators = RoleManagement::new()
-            .get_designated_by_role_at(snapshot, Role::StateValidator, self.0.index())
-            .unwrap_or_default();
+        let validators = self.native.state_validators(snapshot, self.root.index());
         RedeemScript::bft_address(&validators)
             .map(|hash| vec![hash])
             .unwrap_or_default()
     }
 
     fn witnesses(&self) -> Vec<&Witness> {
-        self.0.witness().map(|w| vec![w]).unwrap_or_default()
+        self.root.witness().map(|w| vec![w]).unwrap_or_default()
     }
 }
 
@@ -87,8 +150,10 @@ pub fn verify_state_root_with_native_provider(
     if state_root.witness().is_none() {
         return false;
     }
+    let native = NativeStateRootProviderFactory.provider();
+    let verifiable = VerifiableStateRoot::new(state_root.clone(), native);
     Helper::verify_witnesses_with_native_provider(
-        &VerifiableStateRoot(state_root.clone()),
+        &verifiable,
         settings,
         snapshot,
         STATE_ROOT_VERIFY_GAS,
