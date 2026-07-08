@@ -26,6 +26,25 @@ flowchart LR
 
 > Parity is verified by in-tree tests (wire round-trips, a real MainNet block-1000 fixture that decodes and hashes to its known C# hash, native-contract hash/manifest pinning tests). Full live-network state-root replay against a running C# node is not part of the in-tree test suite.
 
+## v3.10.1 Release Delta Audit
+
+The v3.10.1 compatibility target is based on the official `neo-project/neo`
+`v3.10.1` tag. The release includes version metadata plus a small set of
+protocol and hardening changes. The current tree maps those changes to the
+following Rust surfaces:
+
+| Upstream change | neo-rs coverage |
+|---|---|
+| `VersionPrefix` / release metadata | README, changelog, and protocol docs identify Neo v3.10.1 as the active C# parity target. |
+| `HF_Huyao` hardfork enum | `neo-primitives::Hardfork::HfHuyao`, `neo-config::HardforkManager`, and config tests define Huyao while leaving it unscheduled in built-in MainNet/TestNet presets. |
+| `ApplicationEngine.AddFee(gas, applyFactor)` factorization | `neo-execution` fee paths validate negative fees before whitelist bypass and keep datoshi-vs-picoGAS conversions explicit. |
+| `StdLib.Itoa` invariant-culture formatting | `neo-native-contracts::StdLib` uses deterministic base-10/base-16 integer formatting with regression tests independent of host locale. |
+| NeoVM v3.10.1 reference-counter cycle fixes | `neo-vm` matches the recursive C# `ReferenceCounter` model, including `CLEARITEMS` cycle/underflow behavior. |
+| Post-Gorgon committee vote reward fix | `neo-native-contracts::NeoToken` reads live candidate votes for refresh-time voter rewards, including the empty-block fast-forward path. |
+| Notary deposit overdraw fix | `neo-mempool` reserves Notary-sponsored fees against the secondary signer's deposit and `neo-native-contracts::Notary` faults on missing or overdrawn deposits during persist. |
+| Extensible payload hardening | `neo-payloads::ExtensiblePayload` rejects witnesses whose script hash does not match `Sender`; invalid payloads fail before cache/relay insertion. |
+| Empty `StorageKey` display hardening | `neo-storage::StorageKey` formats empty keys as `StorageKey{Id=...}` and non-empty keys as `StorageKey{Id=...,Key=...}`. |
+
 ## Native Contracts
 
 The node implements the standard Neo N3 native contracts. Each has a fixed, negative contract ID and a deterministic script hash derived the same way as in C#. IDs and names below are taken directly from the source (`neo-native-contracts/src`).

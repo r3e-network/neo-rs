@@ -66,7 +66,7 @@ impl BlockValidator {
 
     /// Validates transaction count against an effective protocol limit.
     ///
-    /// Neo's built-in default is 512, but MainNet/TestNet v3.10.0 configurations
+    /// Neo's built-in default is 512, but MainNet/TestNet v3.10.1 configurations
     /// override `ProtocolSettings.MaxTransactionsPerBlock`. Consensus-facing
     /// callers should pass the effective setting instead of the library default.
     pub fn validate_transaction_count_raw_with_limit(

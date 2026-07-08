@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use zeroize::Zeroizing;
 
-/// Neo N3 v3.10.0 `ProtocolSettings.Default.MaxTransactionsPerBlock`.
+/// Neo N3 v3.10.1 `ProtocolSettings.Default.MaxTransactionsPerBlock`.
 pub(super) const DEFAULT_MAX_TRANSACTIONS_PER_BLOCK: u32 = 512;
 
 /// The main consensus service implementing dBFT 2.0

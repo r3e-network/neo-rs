@@ -2,7 +2,7 @@
 
 The neo-rs workspace has 32 crates that evolved organically through a major refactor (kill-neo-core, reth-style service architecture). The refactoring prioritized protocol correctness and architecture, leaving style consistency as a follow-up. This change addresses that follow-up.
 
-**Current State**: Protocol-complete for Neo N3 v3.10.0. 1,110+ passing lib tests. Zero production `todo!()`/`unimplemented!()`. Code style is inconsistent across crates.
+**Current State**: Protocol-complete for Neo N3 v3.10.1. 1,110+ passing lib tests. Zero production `todo!()`/`unimplemented!()`. Code style is inconsistent across crates.
 
 **Constraints**: Must not break any existing tests. Must not change protocol behavior. Must maintain the 4-layer architecture (Foundation → Protocol → Service → Application).
 

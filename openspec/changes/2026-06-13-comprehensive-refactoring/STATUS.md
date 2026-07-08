@@ -359,6 +359,13 @@ consensus item (parity plan A–G + P1) survived the refactor intact** with its
 pinning tests. The pass also fixed one regression and corrected three
 over-stated claims above:
 
+## v3.10.1 target update (2026-07-08)
+
+The active compatibility target is now Neo N3 v3.10.1. The protocol-affecting
+release deltas are recorded in `docs/protocol-compatibility.md` under
+`v3.10.1 Release Delta Audit`; the structural refactoring goals in this
+OpenSpec change remain unchanged.
+
 ### CRITICAL — RPC server startup deadlock (introduced by the warp→jsonrpsee swap) ✅ FIXED
 `RpcServer::start_rpc_server` is invoked as `server.write().start_rpc_server(...)`,
 i.e. while holding the outer `parking_lot::RwLock<RpcServer>` **write** lock. It

@@ -2,7 +2,7 @@
 
 ## Why
 
-The neo-rs codebase is **protocol-complete** for Neo N3 v3.10.0 (all 11 native contracts, 7 hardforks, 109 VM opcodes, 18+ P2P message commands, all 5 transaction attributes, 6 dBFT message types, NEP-2/6/32/39 wallets, StateService plugin). However, deep review of all 32 workspace members revealed **3 categories of structural debt** that must be resolved to make this a professional blockchain node:
+The neo-rs codebase is **protocol-complete** for Neo N3 v3.10.1 (all 11 native contracts, 8 hardforks, 109 VM opcodes, 18+ P2P message commands, all 5 transaction attributes, 6 dBFT message types, NEP-2/6/32/39 wallets, StateService plugin). However, deep review of all 32 workspace members revealed **3 categories of structural debt** that must be resolved to make this a professional blockchain node:
 
 ### 1. Dead code & no-consumers crates (the worst form of inconsistency)
 - **`neo-telemetry`** (1,980 LoC, 10 files): **ZERO production consumers**. `neo-blockchain`, `neo-node`, and `tests` declare it as a Cargo dependency but no `.rs` file in the workspace imports `neo_telemetry::*`. The `init_node_logging`/`init_for_node` functions are never called.

@@ -2,7 +2,7 @@
 
 ## Why
 
-The neo-rs codebase is protocol-complete for Neo N3 v3.10.0 (all 11 native contracts, all hardforks, all P2P messages, dBFT consensus, NEP-17, serialization parity). However, the codebase has accumulated style inconsistencies across its 32 workspace members that make it look like different projects stitched together. This change brings uniformity and reduces unnecessary crate count.
+The neo-rs codebase is protocol-complete for Neo N3 v3.10.1 (all 11 native contracts, all hardforks, all P2P messages, dBFT consensus, NEP-17, serialization parity). However, the codebase has accumulated style inconsistencies across its 32 workspace members that make it look like different projects stitched together. This change brings uniformity and reduces unnecessary crate count.
 
 **Current problems:**
 - 15 of 30 crates have no lint directives at all; 2 crates actively suppress warnings; 1 crate has contradictory `warn`/`allow` for `missing_docs`
