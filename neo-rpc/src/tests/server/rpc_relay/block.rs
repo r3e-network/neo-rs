@@ -21,19 +21,32 @@ async fn relay_block_preflight_rejects_bad_merkle_root_as_invalid() {
 }
 
 #[test]
-fn relay_block_tip_read_uses_ledger_provider_boundary() {
-    let source = include_str!("../../../server/rpc_relay/block.rs");
-    let relay_start = source
+fn relay_block_tip_read_uses_relay_provider_boundary() {
+    let block = include_str!("../../../server/rpc_relay/block.rs");
+    let relay_start = block
         .find("pub(in crate::server) fn relay_block")
         .expect("relay_block exists");
-    let relay = &source[relay_start..];
+    let relay = &block[relay_start..];
 
     assert!(
-        relay.contains("StorageLedgerProviderFactory"),
-        "RPC block relay tip reads must route through the ledger provider factory"
+        relay.contains("NativeRelayLedgerProviderFactory"),
+        "RPC block relay tip reads must route through the local relay provider factory"
+    );
+    assert!(
+        !relay.contains("StorageLedgerProviderFactory"),
+        "RPC block relay should not construct raw ledger providers directly"
     );
     assert!(
         !relay.contains("LedgerContract::new()"),
         "RPC block relay must not construct native LedgerContract directly"
+    );
+
+    let provider = include_str!("../../../server/rpc_relay/ledger_provider.rs");
+    assert!(provider.contains("trait RelayLedgerProvider"));
+    assert!(provider.contains("trait RelayLedgerProviderFactory"));
+    assert!(provider.contains("struct NativeRelayLedgerProviderFactory"));
+    assert!(
+        provider.contains("StorageLedgerProviderFactory"),
+        "relay ledger provider should own the raw ledger provider boundary"
     );
 }

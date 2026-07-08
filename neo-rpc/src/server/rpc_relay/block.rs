@@ -2,11 +2,12 @@
 
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
+use crate::server::rpc_relay::ledger_provider::{
+    NativeRelayLedgerProviderFactory, RelayLedgerProvider, RelayLedgerProviderFactory,
+};
 use crate::server::rpc_relay::runtime::block_on_service;
 use crate::server::rpc_server::RpcServer;
-use neo_blockchain::{
-    ChainTipProvider, LedgerProviderFactory, RelayResult, StorageLedgerProviderFactory,
-};
+use neo_blockchain::RelayResult;
 use neo_payloads::{Block, InventoryType, VerifyResult};
 use neo_runtime::{BlockImport, BlockImportOutcome, BlockOrigin};
 
@@ -32,10 +33,9 @@ pub(in crate::server) fn relay_block(
     // cache has no RPC-visible effect, so the adapter only reports the
     // verdict.)
     let store = system.store_cache();
-    let provider = StorageLedgerProviderFactory.provider(store.data_cache());
-    let current_height = provider
-        .current_index()
-        .map_err(|err| internal_error(err.to_string()))?;
+    let current_height = NativeRelayLedgerProviderFactory
+        .provider()
+        .current_height(store.data_cache())?;
     let header_height = system
         .header_cache()
         .last()

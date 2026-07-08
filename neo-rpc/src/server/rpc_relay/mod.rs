@@ -11,11 +11,13 @@
 //! ## Contents
 //!
 //! - `block`: block relay preflight and import orchestration.
+//! - `ledger_provider`: Ledger read seam for relay preflight.
 //! - `result`: C#-compatible relay-result projection into JSON-RPC responses.
 //! - `runtime`: synchronous bridge for async service calls.
 //! - `transaction`: transaction relay through mempool admission.
 
 mod block;
+mod ledger_provider;
 mod result;
 mod runtime;
 mod transaction;
