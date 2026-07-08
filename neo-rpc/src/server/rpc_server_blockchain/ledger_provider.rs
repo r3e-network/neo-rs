@@ -7,13 +7,25 @@
 
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
-use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
+use neo_blockchain::{
+    ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory, TransactionStateProvider,
+};
+use neo_payloads::TransactionState;
+use neo_primitives::UInt256;
 use neo_storage::persistence::DataCache;
 
 /// Ledger capabilities required by blockchain RPC handlers.
 pub(super) trait BlockchainLedgerProvider {
     /// Returns the current persisted ledger height.
     fn current_height(&self, snapshot: &DataCache) -> Result<u32, RpcException>;
+
+    /// Returns the persisted transaction-state record for `hash`, including
+    /// conflict stubs.
+    fn transaction_state_by_hash(
+        &self,
+        snapshot: &DataCache,
+        hash: &UInt256,
+    ) -> Result<Option<TransactionState>, RpcException>;
 }
 
 /// Factory for blockchain RPC ledger providers.
@@ -42,6 +54,17 @@ impl BlockchainLedgerProvider for NativeBlockchainLedgerProvider {
         StorageLedgerProviderFactory
             .provider(snapshot)
             .current_index()
+            .map_err(|err| internal_error(err.to_string()))
+    }
+
+    fn transaction_state_by_hash(
+        &self,
+        snapshot: &DataCache,
+        hash: &UInt256,
+    ) -> Result<Option<TransactionState>, RpcException> {
+        StorageLedgerProviderFactory
+            .provider(snapshot)
+            .transaction_state_by_hash(hash)
             .map_err(|err| internal_error(err.to_string()))
     }
 }

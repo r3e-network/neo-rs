@@ -143,10 +143,22 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
         "getnativecontracts should not construct the storage ledger provider directly"
     );
 
+    let blockchain_transactions =
+        include_str!("../../../server/rpc_server_blockchain/transactions.rs");
+    assert!(
+        blockchain_transactions.contains("NativeBlockchainLedgerProviderFactory"),
+        "transaction RPC handlers should read transaction state through the blockchain ledger provider factory"
+    );
+    assert!(
+        !blockchain_transactions.contains("StorageLedgerProviderFactory"),
+        "transaction RPC handlers should not construct the storage ledger provider directly"
+    );
+
     let blockchain_provider =
         include_str!("../../../server/rpc_server_blockchain/ledger_provider.rs");
     assert!(blockchain_provider.contains("trait BlockchainLedgerProvider"));
     assert!(blockchain_provider.contains("trait BlockchainLedgerProviderFactory"));
+    assert!(blockchain_provider.contains("fn transaction_state_by_hash"));
     assert!(blockchain_provider.contains("struct NativeBlockchainLedgerProviderFactory"));
     assert!(blockchain_provider.contains("StorageLedgerProviderFactory"));
 }

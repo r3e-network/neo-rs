@@ -7,14 +7,15 @@
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{internal_error, serialize_to_base64};
+use crate::server::rpc_helpers::serialize_to_base64;
 use crate::server::rpc_server::RpcServer;
-use neo_blockchain::{
-    LedgerProviderFactory, StorageLedgerProviderFactory, TransactionStateProvider,
-};
 use serde_json::Value;
 
 use super::RpcServerBlockchain;
+use super::ledger_provider::{
+    BlockchainLedgerProvider, BlockchainLedgerProviderFactory,
+    NativeBlockchainLedgerProviderFactory,
+};
 use super::request_helpers::{RawTransactionRequest, TransactionHeightRequest};
 use super::responses::{
     base64_payload_to_json, transaction_height_to_json, transaction_to_verbose_json,
@@ -44,10 +45,9 @@ impl RpcServerBlockchain {
         }
 
         let store = system.store_cache();
-        let state = StorageLedgerProviderFactory
-            .provider(store.data_cache())
-            .transaction_state_by_hash(&request.hash)
-            .map_err(internal_error)?;
+        let state = NativeBlockchainLedgerProviderFactory
+            .provider()
+            .transaction_state_by_hash(store.data_cache(), &request.hash)?;
 
         // Convert Arc<Transaction> to Transaction for uniform handling.
         let transaction = tx_from_pool
@@ -73,10 +73,9 @@ impl RpcServerBlockchain {
         }
         let request = TransactionHeightRequest::parse(params)?;
         let store = server.system().store_cache();
-        let state = StorageLedgerProviderFactory
-            .provider(store.data_cache())
-            .transaction_state_by_hash(&request.hash)
-            .map_err(internal_error)?
+        let state = NativeBlockchainLedgerProviderFactory
+            .provider()
+            .transaction_state_by_hash(store.data_cache(), &request.hash)?
             .ok_or_else(|| RpcException::from(RpcError::unknown_transaction()))?;
         Ok(transaction_height_to_json(state.block_index()))
     }
