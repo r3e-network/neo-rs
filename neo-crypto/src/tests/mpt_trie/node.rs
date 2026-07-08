@@ -209,7 +209,7 @@ fn test_empty_leaf() {
 }
 
 #[test]
-fn deserialize_rejects_nesting_deeper_than_max_key_length_like_csharp_v3100() {
+fn deserialize_rejects_nesting_deeper_than_max_key_length_like_csharp_v3101() {
     let entry = malicious_nested_extension_entry(MAX_KEY_LENGTH + 1);
     let mut reader = MemoryReader::new(&entry);
     assert!(

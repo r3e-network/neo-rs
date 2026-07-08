@@ -99,7 +99,7 @@ fn signer_to_json_keeps_empty_scope_arrays_like_csharp() {
 }
 
 #[test]
-fn signer_from_json_scope_is_case_sensitive_and_comma_separated_like_csharp_v3100() {
+fn signer_from_json_scope_is_case_sensitive_and_comma_separated_like_csharp_v3101() {
     let account = UInt160::from_bytes(&[0x55; UINT160_SIZE]).unwrap();
     let valid = serde_json::json!({
         "account": account.to_string(),
@@ -189,7 +189,7 @@ fn signer_deserialize_rejects_too_many_rules() {
 }
 
 #[test]
-fn signer_deserialize_accepts_uncompressed_allowed_group_like_csharp_v3100() {
+fn signer_deserialize_accepts_uncompressed_allowed_group_like_csharp_v3101() {
     let compressed =
         hex_util::decode_hex("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
             .unwrap();

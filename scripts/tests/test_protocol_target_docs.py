@@ -109,6 +109,36 @@ class ProtocolTargetDocsTests(unittest.TestCase):
             with self.subTest(marker=marker):
                 self.assertIn(marker, text)
 
+    def test_active_regression_test_names_use_current_neo_n3_target(self):
+        stale_markers = []
+        search_roots = [
+            REPO_ROOT / "neo-crypto" / "src" / "tests",
+            REPO_ROOT / "neo-payloads" / "src" / "tests",
+            REPO_ROOT / "scripts" / "tests",
+        ]
+
+        for root in search_roots:
+            for path in root.rglob("*"):
+                if path.suffix not in {".py", ".rs"}:
+                    continue
+                for line_number, line in enumerate(
+                    path.read_text(encoding="utf-8").splitlines(), 1
+                ):
+                    stripped = line.strip()
+                    if (
+                        (stripped.startswith("fn ") or stripped.startswith("def test_"))
+                        and "v3100" in stripped
+                    ):
+                        stale_markers.append(
+                            f"{path.relative_to(REPO_ROOT)}:{line_number}: {stripped}"
+                        )
+
+        self.assertEqual(
+            [],
+            stale_markers,
+            "active regression test names should use v3101 for the current Neo N3 target",
+        )
+
     def test_rpc_relay_height_preclassification_comment_names_current_reference(self):
         text = (
             REPO_ROOT / "neo-rpc" / "src" / "server" / "rpc_relay" / "block.rs"

@@ -104,7 +104,7 @@ fn boolean_condition_json_matches_csharp_structure() {
 }
 
 #[test]
-fn witness_rule_json_action_is_case_sensitive_like_csharp_v3100() {
+fn witness_rule_json_action_is_case_sensitive_like_csharp_v3101() {
     let json = serde_json::json!({
         "action": "allow",
         "condition": {
@@ -263,7 +263,7 @@ fn witness_condition_interoperable_to_stack_value_matches_inherent() {
 }
 
 #[test]
-fn witness_rule_from_stack_value_is_unsupported_like_csharp_v3100() {
+fn witness_rule_from_stack_value_is_unsupported_like_csharp_v3101() {
     let mut rule = WitnessRule::new(
         WitnessRuleAction::Allow,
         WitnessCondition::Boolean { value: true },
