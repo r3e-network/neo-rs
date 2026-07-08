@@ -204,6 +204,10 @@ fn extensible_verification_uses_system_native_provider() {
         handler.contains("self.system.native_contract_provider()"),
         "extensible payload verification must use the provider exposed by SystemContext"
     );
+    assert!(
+        handler.contains("NativeExtensibleProviderFactory"),
+        "extensible payload verification must create native read providers through the factory"
+    );
 
     let verifier_start = source
         .find("fn verify_extensible(")
@@ -214,6 +218,10 @@ fn extensible_verification_uses_system_native_provider() {
         "extensible payload verification must use the explicit-provider witness helper"
     );
     assert!(
+        verifier.contains("ExtensibleNativeProvider"),
+        "extensible payload whitelist reads must depend on a native read capability"
+    );
+    assert!(
         verifier.contains("StorageLedgerProviderFactory"),
         "extensible payload height reads must route through the ledger provider factory"
     );
@@ -221,6 +229,20 @@ fn extensible_verification_uses_system_native_provider() {
         !verifier.contains("LedgerContract::new()"),
         "extensible payload verification must not construct native LedgerContract directly"
     );
+    assert!(
+        !verifier.contains("NeoToken::new()"),
+        "extensible payload verification must not construct native NEO directly"
+    );
+    assert!(
+        !verifier.contains("RoleManagement::new()"),
+        "extensible payload verification must not construct native RoleManagement directly"
+    );
+
+    let provider = include_str!("../../handlers/extensible_provider.rs");
+    assert!(provider.contains("trait ExtensibleNativeProvider"));
+    assert!(provider.contains("trait ExtensibleNativeProviderFactory"));
+    assert!(provider.contains("neo: NeoToken"));
+    assert!(provider.contains("roles: RoleManagement"));
 }
 
 #[test]

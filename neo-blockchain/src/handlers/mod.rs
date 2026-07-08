@@ -8,6 +8,7 @@
 mod block_inventory;
 mod empty_fast_forward;
 mod extensible;
+mod extensible_provider;
 mod headers;
 mod import;
 mod initialize;

@@ -10,6 +10,10 @@ use crate::ledger_provider::{
 };
 use crate::service::{BlockchainService, MempoolLike};
 
+use super::extensible_provider::{
+    ExtensibleNativeProvider, ExtensibleNativeProviderFactory, NativeExtensibleProviderFactory,
+};
+
 impl<S, M> BlockchainService<S, M>
 where
     S: crate::service_context::SystemContext,
@@ -28,11 +32,13 @@ where
         let hash = payload.hash();
         if let Some(snapshot) = self.system.store_snapshot() {
             let settings = self.system.settings();
+            let extensible_native_provider = NativeExtensibleProviderFactory.provider();
             Self::verify_extensible(
                 &payload,
                 settings.as_ref(),
                 &snapshot,
                 self.system.native_contract_provider(),
+                &extensible_native_provider,
             )
             .map_err(|error| CoreError::other(format!("extensible payload rejected: {error}")))?;
         }
@@ -56,6 +62,7 @@ where
         native_contract_provider: Option<
             Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>,
         >,
+        extensible_native_provider: &impl ExtensibleNativeProvider,
     ) -> CoreResult<()> {
         let provider = StorageLedgerProviderFactory.provider(snapshot);
         let height = provider
@@ -70,17 +77,11 @@ where
 
         let mut whitelist: std::collections::HashSet<neo_primitives::UInt160> =
             std::collections::HashSet::new();
-        if let Ok(Some(committee)) = neo_execution::NativeContract::committee_address(
-            &neo_native_contracts::NeoToken::new(),
-            snapshot,
-        ) {
+        if let Ok(Some(committee)) = extensible_native_provider.committee_address(snapshot) {
             whitelist.insert(committee);
         }
-        let validators = neo_native_contracts::NeoToken::new()
-            .next_block_validators(
-                snapshot,
-                usize::try_from(settings.validators_count).unwrap_or(0),
-            )
+        let validators = extensible_native_provider
+            .next_block_validators(snapshot, settings)
             .map_err(|e| CoreError::other(e.to_string()))?;
         if !validators.is_empty() {
             whitelist.insert(
@@ -95,8 +96,8 @@ where
                 ));
             }
         }
-        let state_validators = neo_native_contracts::RoleManagement::new()
-            .get_designated_by_role_at(snapshot, neo_native_contracts::Role::StateValidator, height)
+        let state_validators = extensible_native_provider
+            .state_validators(snapshot, height)
             .unwrap_or_default();
         if !state_validators.is_empty() {
             whitelist.insert(
