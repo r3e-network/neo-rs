@@ -1,9 +1,11 @@
 //! `PrepareRequest` message - sent by the primary to propose a block.
 
 use crate::{ConsensusMessageType, ConsensusResult};
-use neo_io::{BinaryWriter, MemoryReader, Serializable};
+use neo_io::{MemoryReader, Serializable};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
+
+use super::wire::{append_uint256_array, uint256_array_encoded_len};
 
 /// `PrepareRequest` message sent by the primary (speaker) to propose a new block.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,23 +67,15 @@ impl PrepareRequestMessage {
     pub fn serialize(&self) -> Vec<u8> {
         // Matches C# DBFTPlugin PrepareRequest.Serialize (after the common message header):
         // `Version:u32, PrevHash:UInt256, Timestamp:u64, Nonce:u64, TransactionHashes: UInt256[] (varint count)`.
-        let mut writer = BinaryWriter::new();
-        writer
-            .write_u32(self.version)
-            .expect("infallible: in-memory write");
-        writer
-            .write_serializable(&self.prev_hash)
-            .expect("infallible: in-memory write");
-        writer
-            .write_u64(self.timestamp)
-            .expect("infallible: in-memory write");
-        writer
-            .write_u64(self.nonce)
-            .expect("infallible: in-memory write");
-        writer
-            .write_serializable_vec(&self.transaction_hashes)
-            .expect("infallible: in-memory write");
-        writer.into_bytes()
+        let mut bytes = Vec::with_capacity(
+            4 + 32 + 8 + 8 + uint256_array_encoded_len(&self.transaction_hashes),
+        );
+        bytes.extend_from_slice(&self.version.to_le_bytes());
+        bytes.extend_from_slice(&self.prev_hash.as_bytes());
+        bytes.extend_from_slice(&self.timestamp.to_le_bytes());
+        bytes.extend_from_slice(&self.nonce.to_le_bytes());
+        append_uint256_array(&mut bytes, &self.transaction_hashes);
+        bytes
     }
 
     /// Deserializes the message body (excluding the common header) from bytes.

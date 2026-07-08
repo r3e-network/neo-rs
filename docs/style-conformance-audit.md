@@ -202,7 +202,9 @@ High-signal clusters found during the first pass:
 - `neo-consensus/src/messages/mod.rs` keeps the dBFT message module map and
   re-exports. `messages/payload.rs` owns the shared `ExtensiblePayload.Data`
   DBFT envelope and common message-byte helper, while each message module owns
-  its body codec and validation rules.
+  its body codec and validation rules. `messages/wire.rs` owns shared body
+  wire helpers such as Neo `UInt256[]` var-int encoding so signed dBFT message
+  bodies do not use panic-only in-memory writer calls.
 - `neo-indexer/src/indexer/mod.rs` keeps the mutable projection struct and
   constructor, `indexer/commands.rs` owns public block/notification indexing
   commands, `indexer/apply.rs` owns prepared-record application into the

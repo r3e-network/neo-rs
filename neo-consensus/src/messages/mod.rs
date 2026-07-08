@@ -24,6 +24,7 @@ mod payload;
 mod prepare_request;
 mod prepare_response;
 mod recovery;
+mod wire;
 
 pub use change_view::ChangeViewMessage;
 pub use commit::CommitMessage;

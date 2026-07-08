@@ -1,10 +1,12 @@
 //! `ChangeView` message - request to change the current view.
 
 use crate::{ChangeViewReason, ConsensusMessageType, ConsensusResult};
+use neo_io::MemoryReader;
 use neo_io::serializable::helper::SerializeHelper;
-use neo_io::{BinaryWriter, MemoryReader};
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
+
+use super::wire::{append_uint256_array, uint256_array_encoded_len};
 
 /// `ChangeView` message sent when a validator wants to change the view.
 ///
@@ -96,19 +98,18 @@ impl ChangeViewMessage {
     /// `writer.Write(RejectedHashes)` exactly.
     #[must_use]
     pub fn serialize(&self) -> Vec<u8> {
-        let mut writer = BinaryWriter::new();
-        writer
-            .write_u64(self.timestamp)
-            .expect("infallible: in-memory write");
-        writer
-            .write_u8(self.reason.to_byte())
-            .expect("infallible: in-memory write");
+        let rejected_hashes_len = if Self::reason_carries_rejected_hashes(self.reason) {
+            uint256_array_encoded_len(&self.rejected_hashes)
+        } else {
+            0
+        };
+        let mut bytes = Vec::with_capacity(8 + 1 + rejected_hashes_len);
+        bytes.extend_from_slice(&self.timestamp.to_le_bytes());
+        bytes.push(self.reason.to_byte());
         if Self::reason_carries_rejected_hashes(self.reason) {
-            writer
-                .write_serializable_vec(&self.rejected_hashes)
-                .expect("infallible: in-memory write");
+            append_uint256_array(&mut bytes, &self.rejected_hashes);
         }
-        writer.into_bytes()
+        bytes
     }
 
     /// Deserializes a `ChangeView` message body (header fields passed in),
