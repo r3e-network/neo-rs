@@ -685,6 +685,9 @@ from production code.
 the fixed `[u8; 20]` returned by `Crypto::hash160`, matching the fixed-width
 constructor rule and removing the remaining fallible Hash160 conversion shape
 from account-creation helpers.
+`neo-execution/src/application_engine/storage_low_level.rs` now turns a missing
+execution-context script hash into a typed invalid-operation error instead of
+asserting the invariant with `expect()` while loading a context.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.

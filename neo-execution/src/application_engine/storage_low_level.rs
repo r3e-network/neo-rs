@@ -212,10 +212,10 @@ impl ApplicationEngine {
                 if state.script_hash.is_none() {
                     state.script_hash = Some(script_hash);
                 }
-                (
-                    state.call_flags,
-                    state.script_hash.expect("script hash set"),
-                )
+                let invocation_counter_hash = state.script_hash.ok_or_else(|| {
+                    CoreError::invalid_operation("Execution context script hash was not set")
+                })?;
+                (state.call_flags, invocation_counter_hash)
             };
             (context, call_flags, invocation_counter_hash)
         };
