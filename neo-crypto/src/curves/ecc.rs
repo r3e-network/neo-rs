@@ -548,43 +548,51 @@ impl Ord for ECPoint {
 
         match self.curve {
             ECCurve::Secp256r1 => {
-                let left = Self::parse_p256_point(&self.data)
-                    .expect("validated secp256r1 points must remain parseable");
-                let right = Self::parse_p256_point(&other.data)
-                    .expect("validated secp256r1 points must remain parseable");
+                let (Ok(left), Ok(right)) = (
+                    Self::parse_p256_point(&self.data),
+                    Self::parse_p256_point(&other.data),
+                ) else {
+                    return self.data.cmp(&other.data);
+                };
 
                 let left = left.to_encoded_point(false);
                 let right = right.to_encoded_point(false);
 
-                let left_x = left.x().expect("uncompressed point must have X");
-                let right_x = right.x().expect("uncompressed point must have X");
+                let (Some(left_x), Some(right_x)) = (left.x(), right.x()) else {
+                    return self.data.cmp(&other.data);
+                };
                 match left_x.cmp(right_x) {
                     Ordering::Equal => {}
                     non_equal => return non_equal,
                 }
 
-                let left_y = left.y().expect("uncompressed point must have Y");
-                let right_y = right.y().expect("uncompressed point must have Y");
+                let (Some(left_y), Some(right_y)) = (left.y(), right.y()) else {
+                    return self.data.cmp(&other.data);
+                };
                 left_y.cmp(right_y)
             }
             ECCurve::Secp256k1 => {
-                let left = Self::parse_k256_point(&self.data)
-                    .expect("validated secp256k1 points must remain parseable");
-                let right = Self::parse_k256_point(&other.data)
-                    .expect("validated secp256k1 points must remain parseable");
+                let (Ok(left), Ok(right)) = (
+                    Self::parse_k256_point(&self.data),
+                    Self::parse_k256_point(&other.data),
+                ) else {
+                    return self.data.cmp(&other.data);
+                };
 
                 let left = left.to_encoded_point(false);
                 let right = right.to_encoded_point(false);
 
-                let left_x = left.x().expect("uncompressed point must have X");
-                let right_x = right.x().expect("uncompressed point must have X");
+                let (Some(left_x), Some(right_x)) = (left.x(), right.x()) else {
+                    return self.data.cmp(&other.data);
+                };
                 match left_x.cmp(right_x) {
                     Ordering::Equal => {}
                     non_equal => return non_equal,
                 }
 
-                let left_y = left.y().expect("uncompressed point must have Y");
-                let right_y = right.y().expect("uncompressed point must have Y");
+                let (Some(left_y), Some(right_y)) = (left.y(), right.y()) else {
+                    return self.data.cmp(&other.data);
+                };
                 left_y.cmp(right_y)
             }
             // Ed25519 isn't used by Neo N3 consensus/committee keys, but keep a deterministic order.

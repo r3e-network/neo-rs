@@ -778,6 +778,11 @@ callers use the existing `try_multi_sig_redeem_script` path. The remaining
 source-adjacent `native_contract_cache` and `native_contract_provider` test
 modules now live under `src/tests/native`, so the style audit no longer reports
 `neo-execution` in the production unwrap/expect section.
+`neo-crypto` no-salt `blake2b` hashing now uses the direct hasher path,
+in-memory Murmur helpers log and return deterministic zero values on impossible
+reader failures, and EC point ordering falls back to compressed-byte ordering if
+a validated point ever fails to reparse. The remaining `neo-crypto`
+unwrap/expect files are source-adjacent Merkle-tree and Bloom-filter tests.
 
 Recommended next patches, in order:
 

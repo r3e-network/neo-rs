@@ -194,7 +194,9 @@ impl Crypto {
     /// 64-byte `BLAKE2b` hash
     #[must_use]
     pub fn blake2b(data: &[u8]) -> [u8; 64] {
-        Self::blake2b_512(data, None).expect("blake2b_512 without salt cannot fail")
+        let mut hasher = Blake2b512::new();
+        Digest::update(&mut hasher, data);
+        hasher.finalize().into()
     }
 
     /// Computes BLAKE2b-512 hash of the input data with an optional 16-byte salt.
