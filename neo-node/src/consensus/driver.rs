@@ -19,7 +19,6 @@ use neo_consensus::{ConsensusEvent, ConsensusService, ValidatorInfo};
 use neo_crypto::ECPoint;
 use neo_io::Serializable;
 use neo_mempool::MemoryPool;
-use neo_native_contracts::{NeoToken, PolicyContract};
 use neo_network::NetworkHandle;
 use neo_payloads::Transaction;
 use neo_primitives::time::now_millis;
@@ -30,6 +29,9 @@ use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
 use super::DBFT_MAX_BLOCK_SYSTEM_FEE;
+use super::native_provider::{
+    ConsensusNativeProvider, ConsensusNativeProviderFactory, NativeConsensusProviderFactory,
+};
 use super::payload::consensus_to_extensible;
 use super::proposal::{
     cache_available_proposal_transactions, prepare_request_passes_ledger_guards,
@@ -60,12 +62,21 @@ fn round_validator_context(
     settings: &ProtocolSettings,
     block_index: u32,
 ) -> anyhow::Result<(Vec<ValidatorInfo>, UInt160)> {
+    let native = NativeConsensusProviderFactory.provider();
+    round_validator_context_with_provider(&native, snapshot, settings, block_index)
+}
+
+fn round_validator_context_with_provider(
+    native: &impl ConsensusNativeProvider,
+    snapshot: &DataCache,
+    settings: &ProtocolSettings,
+    block_index: u32,
+) -> anyhow::Result<(Vec<ValidatorInfo>, UInt160)> {
     let validators_count = usize::try_from(settings.validators_count).unwrap_or(0);
-    let validators = validator_infos_from_keys(
-        NeoToken::new().next_block_validators(snapshot, validators_count)?,
-    );
+    let validators =
+        validator_infos_from_keys(native.next_block_validators(snapshot, validators_count)?);
     let next_consensus =
-        NeoToken::new().next_consensus_address_for_block(snapshot, settings, block_index)?;
+        native.next_consensus_address_for_block(snapshot, settings, block_index)?;
     Ok((validators, next_consensus))
 }
 
@@ -143,8 +154,8 @@ impl ConsensusDriver {
         // `ProtocolSettings` default, so this replaces the frozen construction-time
         // value on every round. Without this, a committee `setMillisecondsPerBlock`
         // would desync Rust validators' block timers from the C# committee.
-        let ms_per_block =
-            PolicyContract::new().get_milliseconds_per_block_snapshot(snapshot, &self.settings)?;
+        let native = NativeConsensusProviderFactory.provider();
+        let ms_per_block = native.milliseconds_per_block(snapshot, &self.settings)?;
         self.service
             .set_expected_block_time(u64::from(ms_per_block));
 

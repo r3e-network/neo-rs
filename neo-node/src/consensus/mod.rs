@@ -19,6 +19,7 @@
 
 mod driver;
 mod hsm;
+mod native_provider;
 mod payload;
 mod proposal;
 mod setup;

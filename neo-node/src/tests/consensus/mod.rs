@@ -125,10 +125,27 @@ fn consensus_ledger_reads_use_provider_boundaries() {
             "{name} must read ledger records through the provider factory"
         );
         assert!(
+            source.contains("NativeConsensusProviderFactory"),
+            "{name} must read NEO/Policy native state through the consensus provider factory"
+        );
+        assert!(
             !source.contains("LedgerContract::new()"),
             "{name} must not construct native LedgerContract directly"
         );
+        assert!(
+            !source.contains("NeoToken::new()"),
+            "{name} must not construct native NeoToken directly"
+        );
+        assert!(
+            !source.contains("PolicyContract::new()"),
+            "{name} must not construct native PolicyContract directly"
+        );
     }
+
+    let provider = include_str!("../../consensus/native_provider.rs");
+    assert!(provider.contains("trait ConsensusNativeProvider"));
+    assert!(provider.contains("trait ConsensusNativeProviderFactory"));
+    assert!(provider.contains("struct NativeConsensusProviderFactory"));
 }
 
 #[test]

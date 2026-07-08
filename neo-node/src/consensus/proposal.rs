@@ -11,7 +11,6 @@ use neo_crypto::ECPoint;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::{Serializable, serializable::helper::SerializeHelper};
 use neo_mempool::{MemoryPool, PoolItem, verify_transaction_with_native_provider};
-use neo_native_contracts::PolicyContract;
 use neo_payloads::{Transaction, TransactionAttribute, Witness};
 use neo_primitives::{UInt160, UInt256, VerifyResult};
 use neo_storage::persistence::DataCache;
@@ -20,6 +19,9 @@ use num_bigint::BigInt;
 use tracing::warn;
 
 use super::DBFT_MAX_BLOCK_SYSTEM_FEE;
+use super::native_provider::{
+    ConsensusNativeProvider, ConsensusNativeProviderFactory, NativeConsensusProviderFactory,
+};
 
 /// Resolves the full transactions for `hashes`, in block order, from the
 /// proposal cache then the live mempool. Returns `None` if any is missing.
@@ -400,9 +402,8 @@ pub(super) fn prepare_request_passes_ledger_guards(
         }
     }
 
-    let max_traceable_blocks = match PolicyContract::new()
-        .get_max_traceable_blocks_snapshot(snapshot, settings)
-    {
+    let native = NativeConsensusProviderFactory.provider();
+    let max_traceable_blocks = match native.max_traceable_blocks(snapshot, settings) {
         Ok(value) => value,
         Err(error) => {
             warn!(target: "neo", %error, "failed to read MaxTraceableBlocks for PrepareRequest guard");
