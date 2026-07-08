@@ -163,6 +163,25 @@ fn rpc_session_policy_reads_use_native_provider_factory() {
     }
 }
 
+#[test]
+fn smart_contract_wallet_policy_reads_use_native_provider_factory() {
+    let provider = include_str!("../../../server/smart_contract/native_provider.rs");
+    assert!(provider.contains("trait SmartContractNativeProvider"));
+    assert!(provider.contains("trait SmartContractNativeProviderFactory"));
+    assert!(provider.contains("struct NativeSmartContractProviderFactory"));
+    assert!(provider.contains("PolicyContract::new()"));
+
+    let invocation_wallet = include_str!("../../../server/smart_contract/invocation_wallet.rs");
+    assert!(
+        invocation_wallet.contains("NativeSmartContractProviderFactory"),
+        "wallet invoke tx materialization should read Policy values through the smart-contract native provider factory"
+    );
+    assert!(
+        !invocation_wallet.contains("PolicyContract::new()"),
+        "wallet invoke tx materialization should not construct PolicyContract directly"
+    );
+}
+
 /// Genesis-block timestamp seeded by the RPC test harness
 /// (`seed_genesis_state` / `genesis_header`).
 const GENESIS_TIMESTAMP: u64 = 1_468_595_301_000;

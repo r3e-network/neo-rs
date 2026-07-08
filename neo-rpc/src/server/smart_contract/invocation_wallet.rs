@@ -24,6 +24,11 @@ use serde_json::{Map, Number as JsonNumber, Value, json};
 use crate::server::rpc_server::RpcServer;
 use crate::server::wallet_compat;
 
+use super::native_provider::{
+    NativeSmartContractProviderFactory, SmartContractNativeProvider,
+    SmartContractNativeProviderFactory,
+};
+
 const TRANSACTION_TYPE_NAME: &str = "Neo.Network.P2P.Payloads.Transaction";
 
 enum WalletInvocationOutcome {
@@ -96,8 +101,9 @@ fn build_and_sign_transaction(
     // Policy storage value from HF_Echidna onward (falling back to the setting
     // when the key is not yet initialized). The static
     // `system.max_valid_until_block_increment()` is only correct pre-Echidna.
-    let max_valid_until_block_increment = neo_native_contracts::PolicyContract::new()
-        .get_max_valid_until_block_increment_snapshot(snapshot.data_cache(), &protocol_settings)
+    let max_valid_until_block_increment = NativeSmartContractProviderFactory
+        .provider()
+        .max_valid_until_block_increment(snapshot.data_cache(), &protocol_settings)
         .unwrap_or_else(|_| system.max_valid_until_block_increment());
     let valid_until = StorageLedgerProviderFactory
         .provider(snapshot.data_cache())

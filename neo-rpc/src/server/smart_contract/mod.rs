@@ -17,6 +17,7 @@
 //! - `invocation_wallet`: wallet transaction signing for successful invokes.
 //! - `iterators`: Iterator adapters exposed to contract execution and storage
 //!   search.
+//! - `native_provider`: Native-contract read seam used by invocation helpers.
 //! - `request`: Typed request parsing for smart-contract handlers.
 //! - `response`: VM-state, stack-item, and notification JSON projection.
 //! - `script`: Dynamic-call script construction and parameter stack conversion.
@@ -29,6 +30,7 @@ mod helpers;
 mod invocation;
 mod invocation_wallet;
 mod iterators;
+mod native_provider;
 mod request;
 mod response;
 mod script;
