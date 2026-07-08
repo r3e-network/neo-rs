@@ -692,6 +692,10 @@ asserting the invariant with `expect()` while loading a context.
 fixed-length signatures through a typed slice-to-array branch, preserving
 pre/post-Gorgon signature behavior without a production `expect()` in crypto
 interop.
+`neo-rpc/src/client/rpc_client/client.rs` now derives C# RPC method names with
+direct suffix handling instead of compiling a static regex with `unwrap()`.
+`regex` remains available only to RPC tests that need matcher escaping, not as
+a client runtime dependency.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.

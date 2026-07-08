@@ -33,9 +33,8 @@ mod wallet;
 #[path = "../../tests/client/rpc_client.rs"]
 mod tests;
 
-use regex::Regex;
 use reqwest::{Client, Url};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use neo_config::ProtocolSettings;
@@ -43,7 +42,6 @@ use neo_config::ProtocolSettings;
 pub use builder::RpcClientBuilder;
 pub use hooks::{RpcClientHooks, RpcRequestOutcome};
 
-static RPC_NAME_REGEX: OnceLock<Regex> = OnceLock::new();
 const MAX_JSON_NESTING: usize = 128;
 const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 

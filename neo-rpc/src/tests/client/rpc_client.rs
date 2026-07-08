@@ -75,6 +75,18 @@ fn load_rpc_cases(name: &str) -> Option<Vec<JObject>> {
     Some(matches)
 }
 
+#[test]
+fn get_rpc_name_strips_csharp_suffixes() {
+    for (method, expected) in [
+        ("GetBlockAsync", "getblock"),
+        ("GetRawTransactionHexAsync", "getrawtransaction"),
+        ("GetRawMemPoolBothAsync", "getrawmempool"),
+        ("GetVersion", "getversion"),
+    ] {
+        assert_eq!(RpcClient::get_rpc_name(method), expected);
+    }
+}
+
 enum ContractStateRequest {
     Hash(String),
     Id(i32),

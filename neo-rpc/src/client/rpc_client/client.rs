@@ -2,7 +2,6 @@ use super::super::ClientRpcError;
 use super::super::models::{RpcPlugin, RpcRequest, RpcResponse};
 use crate::RpcClientError;
 use neo_config::ProtocolSettings;
-use regex::Regex;
 use reqwest::{Client, Url};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -10,7 +9,7 @@ use std::time::{Duration, Instant};
 use super::builder::RpcClientBuilder;
 use super::helpers::parse_plugins;
 use super::hooks::RpcRequestOutcome;
-use super::{MAX_JSON_NESTING, RPC_NAME_REGEX, RpcClient, RpcClientHooks};
+use super::{MAX_JSON_NESTING, RpcClient, RpcClientHooks};
 use neo_serialization::json::JToken;
 
 impl RpcClient {
@@ -211,9 +210,12 @@ impl RpcClient {
     /// Gets the RPC method name from a function name
     /// Matches C# `GetRpcName`
     pub fn get_rpc_name(method_name: &str) -> String {
-        let regex = RPC_NAME_REGEX.get_or_init(|| Regex::new(r"(.*?)(Hex|Both)?(Async)?").unwrap());
-
-        regex.replace(method_name, "$1").to_lowercase()
+        let without_async = method_name.strip_suffix("Async").unwrap_or(method_name);
+        without_async
+            .strip_suffix("Hex")
+            .or_else(|| without_async.strip_suffix("Both"))
+            .unwrap_or(without_async)
+            .to_lowercase()
     }
 
     /// Returns a list of plugins loaded by the node (matches `listplugins`).

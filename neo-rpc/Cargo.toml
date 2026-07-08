@@ -122,7 +122,6 @@ bytes = { workspace = true, optional = true }
 num-bigint = { workspace = true, optional = true }
 num-traits = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
-regex = { version = "1.10", optional = true }
 
 # Cryptography (server feature)
 rand = { workspace = true, optional = true }
@@ -134,6 +133,7 @@ subtle = { workspace = true, optional = true }
 mockito = { workspace = true }
 neo-system = { workspace = true }
 neo-test-fixtures = { workspace = true }
+regex = "1.10"
 
 [features]
 default = []
@@ -206,7 +206,6 @@ client = [
     "dep:hex",
     "dep:num-bigint",
     "dep:num-traits",
-    "dep:regex",
     "dep:rand",
     "dep:zeroize",
 ]
