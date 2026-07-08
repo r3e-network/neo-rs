@@ -276,8 +276,9 @@ High-signal clusters found during the first pass:
   service startup. NeoFS wallet-connect signing now builds its byte envelope
   directly with the shared Neo var-int codec instead of panic-only in-memory
   writer calls, and response-signature queue invariants now report
-  `OracleServiceError`. Remaining oracle-service production `expect` sites are
-  isolated to the NeoFS gRPC verification path and should be classified next.
+  `OracleServiceError`. The NeoFS gRPC verification recursion now carries the
+  already-validated origin header instead of re-reading it with `expect`, so the
+  oracle-service production panic scan is clear.
 - Existing git hygiene rules exclude local ledgers, RocksDB state,
   checkpoints, logs, and build outputs. A scan did not find obvious tracked
   chain.acc/RocksDB artifacts, but runtime-data checks should stay in CI.

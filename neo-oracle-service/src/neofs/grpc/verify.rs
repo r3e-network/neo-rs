@@ -47,13 +47,13 @@ fn verify_neofs_matryoshka<B: Message>(
         return false;
     }
 
-    if verify.origin.is_none() {
+    let Some(origin_verify) = verify.origin.as_ref() else {
         let body_sig = match verify.body_signature.as_ref() {
             Some(sig) => sig,
             None => return false,
         };
         return verify_neofs_signature_bytes(body_sig, &body.encode_to_vec());
-    }
+    };
 
     if verify.body_signature.is_some() {
         return false;
@@ -61,7 +61,7 @@ fn verify_neofs_matryoshka<B: Message>(
     let Some(origin_meta) = meta.origin.as_ref() else {
         return false;
     };
-    verify_neofs_matryoshka(body, origin_meta, verify.origin.as_ref().expect("origin"))
+    verify_neofs_matryoshka(body, origin_meta, origin_verify)
 }
 
 pub(super) fn verify_neofs_signature_bytes(
