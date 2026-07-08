@@ -775,8 +775,9 @@ panic-free static-metadata helpers that log malformed native table invariants
 instead of aborting while preserving the valid descriptor bytes. The unused
 infallible `Helper::multi_sig_redeem_script` compatibility wrapper was removed;
 callers use the existing `try_multi_sig_redeem_script` path. The remaining
-`neo-execution` unwrap/expect files are source-adjacent `#[cfg(test)]` modules
-that should be moved under `src/tests` or rewritten in a follow-up.
+source-adjacent `native_contract_cache` and `native_contract_provider` test
+modules now live under `src/tests/native`, so the style audit no longer reports
+`neo-execution` in the production unwrap/expect section.
 
 Recommended next patches, in order:
 
