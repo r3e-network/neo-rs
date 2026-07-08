@@ -756,6 +756,13 @@ returns and avoids `panic=abort` process exits on read-error paths.
 `neo-storage/src/persistence/traits/store_factory.rs` now follows the crate's
 external-test layout by pointing at `src/tests/persistence/store_factory.rs`,
 so provider-factory assertions no longer look like production panic surfaces.
+`neo-test-fixtures` now exposes fallible `try_make_ledger_block`,
+`try_store_block`, and `try_store_block_with_vmstate` helpers. Shared fixture
+setup propagates ledger lookup and serialization failures through `CoreResult`,
+while test modules keep any intentional setup assertions at the call site. The
+production unwrap/expect scan no longer reports `neo-test-fixtures`; the
+remaining buckets are `neo-node`, `neo-crypto`, `neo-vm`, `neo-execution`,
+`neo-gui`, and `benchmarks`.
 
 Recommended next patches, in order:
 

@@ -1321,7 +1321,7 @@ Validation is split into:
    err.to_string() } } }` blocks across 7 crates. The existing
    `impl_error_from!` macro only supported tuple-variant constructors.
 
-5. **Test fixtures** — `make_transaction`, `make_ledger_block`, `store_block`
+5. **Test fixtures** — `make_transaction`, `try_make_ledger_block`, `try_store_block`
    duplicated between two `neo-rpc` test files (~120 lines each, with slightly
    different defaults).
 
@@ -1353,10 +1353,12 @@ Validation is split into:
    `Self::` instead of `<$error_type>::` which triggered E0658 (experimental
    qualified path syntax) for path-typed `$error_type`.
 
-5. **`neo-test-fixtures` crate** — new dev-only workspace member providing
+5. **`neo-test-fixtures` crate** — dev-only workspace member providing
    `TestTransactionBuilder` (fluent builder with sensible defaults), plus
-   `make_ledger_block()` and `store_block()` / `store_block_with_vmstate()`.
-   Two `neo-rpc` test files migrated. The crate is classified as Layer 7
+   fallible `try_make_ledger_block()` and `try_store_block()` /
+   `try_store_block_with_vmstate()` helpers. Test files keep any intentional
+   fixture assertions at their call sites, while the shared crate propagates
+   storage and serialization failures. The crate is classified as Layer 7
    (Application) in layer boundary tests since it's test infrastructure, not
    production code.
 

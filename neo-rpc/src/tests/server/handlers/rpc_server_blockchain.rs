@@ -97,11 +97,13 @@ fn make_ledger_block(
     index: u32,
     transactions: Vec<Transaction>,
 ) -> LedgerBlock {
-    neo_test_fixtures::make_ledger_block(store, index, transactions)
+    neo_test_fixtures::try_make_ledger_block(store, index, transactions)
+        .expect("make ledger block fixture")
 }
 
 fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerBlock) {
-    neo_test_fixtures::store_block_with_vmstate(store, block, VMState::NONE);
+    neo_test_fixtures::try_store_block_with_vmstate(store, block, VMState::NONE)
+        .expect("store ledger block fixture");
 }
 
 fn store_contract_state(

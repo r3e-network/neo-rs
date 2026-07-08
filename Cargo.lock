@@ -2868,6 +2868,7 @@ name = "neo-test-fixtures"
 version = "0.10.0"
 dependencies = [
  "neo-crypto",
+ "neo-error",
  "neo-io",
  "neo-native-contracts",
  "neo-payloads",

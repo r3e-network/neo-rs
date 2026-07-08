@@ -6,7 +6,7 @@ use neo_io::{MemoryReader, Serializable};
 use neo_payloads::transaction::Transaction;
 use neo_primitives::{UInt160, WitnessScope};
 use neo_rpc::server::{RpcHandler, RpcServer, RpcServerBlockchain, RpcServerConfig};
-use neo_test_fixtures::{TestTransactionBuilder, make_ledger_block, store_block};
+use neo_test_fixtures::{TestTransactionBuilder, try_make_ledger_block, try_store_block};
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -51,10 +51,11 @@ async fn get_raw_transaction_verbose_omits_vmstate() {
             WitnessScope::CALLED_BY_ENTRY,
         )
         .build();
-    let block = make_ledger_block(&system.store_cache(), 1, vec![tx.clone()]);
+    let block = try_make_ledger_block(&system.store_cache(), 1, vec![tx.clone()])
+        .expect("make ledger block fixture");
     let block_hash = block.hash();
     let mut store = system.store_cache();
-    store_block(&mut store, &block);
+    try_store_block(&mut store, &block).expect("store ledger block fixture");
 
     let params = [Value::String(tx.hash().to_string()), Value::Bool(true)];
     let result = (handler.callback())(&server, &params).expect("get raw tx verbose");

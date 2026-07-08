@@ -11,12 +11,13 @@
 //!
 //! - [`TestTransactionBuilder`]: fluent builder for Neo transactions with
 //!   sensible defaults (nonce, script, signer, witness).
-//! - [`make_ledger_block`]: constructs a `Block` at the given index, looking
+//! - [`try_make_ledger_block`]: constructs a `Block` at the given index, looking
 //!   up the previous hash via `LedgerContract`.
-//! - [`store_block`] / [`store_block_with_vmstate`]: writes block, transaction,
-//!   and hash-index entries into a `StoreCache`, matching the on-disk format
-//!   the `LedgerContract` reader expects.
+//! - [`try_store_block`] / [`try_store_block_with_vmstate`]: writes block,
+//!   transaction, and hash-index entries into a `StoreCache`, matching the
+//!   on-disk format the `LedgerContract` reader expects.
 
+use neo_error::CoreResult;
 use neo_io::SerializableExtensions;
 use neo_native_contracts::LedgerContract;
 use neo_payloads::TrimmedBlock;
@@ -62,7 +63,7 @@ mod prefix {
 /// let tx = TestTransactionBuilder::new()
 ///     .nonce(42)
 ///     .network_fee(1_0000_0000)
-///     .signer(UInt160::from_bytes(&[7u8; 20]).unwrap(), WitnessScope::GLOBAL)
+///     .signer(UInt160::from([7u8; 20]), WitnessScope::GLOBAL)
 ///     .build();
 /// ```
 pub struct TestTransactionBuilder {
@@ -162,14 +163,17 @@ impl TestTransactionBuilder {
 ///
 /// The block header uses deterministic test values: version `0`, timestamp `0`,
 /// and `UInt160::zero()` as `next_consensus`, with a single empty witness.
-pub fn make_ledger_block(store: &StoreCache, index: u32, transactions: Vec<Transaction>) -> Block {
+pub fn try_make_ledger_block(
+    store: &StoreCache,
+    index: u32,
+    transactions: Vec<Transaction>,
+) -> CoreResult<Block> {
     let ledger = LedgerContract::new();
     let prev_hash = if index == 0 {
         UInt256::zero()
     } else {
         ledger
-            .get_block_hash(store.data_cache(), index - 1)
-            .expect("previous hash lookup")
+            .get_block_hash(store.data_cache(), index - 1)?
             .unwrap_or_else(UInt256::zero)
     };
 
@@ -192,16 +196,16 @@ pub fn make_ledger_block(store: &StoreCache, index: u32, transactions: Vec<Trans
         vec![Witness::empty()],
     );
 
-    Block::from_parts(header, transactions)
+    Ok(Block::from_parts(header, transactions))
 }
 
 /// Writes a block and its transactions into a [`StoreCache`], matching the
 /// on-disk format the [`LedgerContract`] reader expects.
 ///
 /// Uses [`VmState::HALT`] for the persisted transaction state. Use
-/// [`store_block_with_vmstate`] to override the VM state.
-pub fn store_block(store: &mut StoreCache, block: &Block) {
-    store_block_with_vmstate(store, block, VmState::HALT);
+/// [`try_store_block_with_vmstate`] to override the VM state.
+pub fn try_store_block(store: &mut StoreCache, block: &Block) -> CoreResult<()> {
+    try_store_block_with_vmstate(store, block, VmState::HALT)
 }
 
 /// Writes a block and its transactions into a [`StoreCache`] with a custom
@@ -214,7 +218,11 @@ pub fn store_block(store: &mut StoreCache, block: &Block) {
 /// - `Prefix_CurrentBlock` (hash + index pointer),
 ///
 /// then calls `store.commit()`.
-pub fn store_block_with_vmstate(store: &mut StoreCache, block: &Block, vmstate: VmState) {
+pub fn try_store_block_with_vmstate(
+    store: &mut StoreCache,
+    block: &Block,
+    vmstate: VmState,
+) -> CoreResult<()> {
     let hash = block.hash();
     let index = block.index();
 
@@ -226,8 +234,8 @@ pub fn store_block_with_vmstate(store: &mut StoreCache, block: &Block, vmstate: 
     store.add(hash_key, StorageItem::from_bytes(hash.to_bytes().to_vec()));
 
     // Prefix_Block: hash → TrimmedBlock.
-    let trimmed = TrimmedBlock::from_block(block).expect("trim block");
-    let trimmed_bytes = trimmed.to_array().expect("serialize trimmed block");
+    let trimmed = TrimmedBlock::from_block(block)?;
+    let trimmed_bytes = trimmed.to_array()?;
     let mut block_key_bytes = Vec::with_capacity(1 + 32);
     block_key_bytes.push(prefix::BLOCK);
     block_key_bytes.extend_from_slice(&hash.to_bytes());
@@ -236,9 +244,8 @@ pub fn store_block_with_vmstate(store: &mut StoreCache, block: &Block, vmstate: 
 
     // Prefix_Transaction: tx hash → TransactionState record.
     for tx in &block.transactions {
-        let record = LedgerContract::new()
-            .serialize_persisted_transaction_state(index, vmstate, tx)
-            .expect("serialize transaction state");
+        let record =
+            LedgerContract::new().serialize_persisted_transaction_state(index, vmstate, tx)?;
 
         let mut tx_key_bytes = Vec::with_capacity(1 + 32);
         tx_key_bytes.push(prefix::TRANSACTION);
@@ -248,10 +255,9 @@ pub fn store_block_with_vmstate(store: &mut StoreCache, block: &Block, vmstate: 
     }
 
     // Prefix_CurrentBlock: HashIndexState pointer.
-    let current_bytes = LedgerContract::new()
-        .serialize_hash_index_state(&hash, index)
-        .expect("serialize hash index state");
+    let current_bytes = LedgerContract::new().serialize_hash_index_state(&hash, index)?;
     let current_key = StorageKey::new(LedgerContract::ID, vec![prefix::CURRENT_BLOCK]);
     store.add(current_key, StorageItem::from_bytes(current_bytes));
     store.commit();
+    Ok(())
 }
