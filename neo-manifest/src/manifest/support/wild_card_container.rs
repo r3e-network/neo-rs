@@ -153,9 +153,29 @@ impl WildCardContainer<String> {
     }
 
     /// Converts the container to a VM stack item.
+    pub fn try_to_stack_item(&self) -> CoreResult<StackItem> {
+        StackItem::try_from(self.to_stack_value()).map_err(|error| {
+            CoreError::invalid_data(format!(
+                "wildcard container StackValue projection failed: {error}"
+            ))
+        })
+    }
+
+    /// Converts the container to a VM stack item.
+    ///
+    /// Prefer [`Self::try_to_stack_item`] in code that can propagate errors.
     pub fn to_stack_item(&self) -> StackItem {
-        StackItem::try_from(self.to_stack_value())
-            .expect("wildcard container StackValue projection must be StackItem-compatible")
+        match self.try_to_stack_item() {
+            Ok(item) => item,
+            Err(error) => {
+                tracing::warn!(
+                    target: "neo.manifest",
+                    %error,
+                    "wildcard container StackValue projection failed"
+                );
+                StackItem::Null
+            }
+        }
     }
 }
 

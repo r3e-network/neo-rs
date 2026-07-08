@@ -50,6 +50,7 @@ fn string_stack_item_projection_matches_stack_value_projection() {
     let container = WildCardContainer::create(vec!["deploy".to_string(), "update".into()]);
     let expected = StackItem::try_from(container.to_stack_value()).unwrap();
 
+    assert_eq!(container.try_to_stack_item().unwrap(), expected);
     assert_eq!(container.to_stack_item(), expected);
 }
 

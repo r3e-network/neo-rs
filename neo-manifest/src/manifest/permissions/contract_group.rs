@@ -158,14 +158,6 @@ impl ContractGroup {
             ))
         })?)
     }
-
-    /// Builds a contract group from a VM stack item (panics on error).
-    ///
-    /// Prefer `try_from_stack_item_value` for fallible construction.
-    #[inline]
-    pub fn from_stack_item_value(stack_item: &StackItem) -> Self {
-        Self::try_from_stack_item_value(stack_item).expect("Invalid ContractGroup stack item")
-    }
 }
 
 impl Serialize for ContractGroup {

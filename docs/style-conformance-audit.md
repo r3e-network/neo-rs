@@ -119,8 +119,9 @@ High-signal clusters found during the first pass:
 - `neo-manifest/src/nef/nef_file.rs` now uses shared fallible NEF wire-writing
   helpers for checksum and byte serialization. The compatibility wrappers
   remain for existing callers, but the protocol writer no longer uses
-  production `expect()` calls; the manifest unwrap/expect audit count is down
-  to the stack-projection adapter files.
+  production `expect()` calls. The stack-projection adapters now expose or use
+  typed fallible conversions as well, so the style audit no longer reports
+  `neo-manifest` in the production unwrap/expect section.
 - `neo-config/src/settings/protocol.rs` is now a typed settings facade. Built-in
   network presets live in `settings/protocol/presets.rs`, file/stream loading
   lives in `settings/protocol/load.rs`, JSON/raw config parsing lives in
