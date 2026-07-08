@@ -1,6 +1,3 @@
-use neo_blockchain::{
-    LedgerProviderFactory, StorageLedgerProviderFactory, TransactionStateProvider,
-};
 use neo_execution::Nep17MetadataReaderImpl;
 use neo_payloads::conflicts::Conflicts;
 use neo_payloads::signer::Signer;
@@ -16,13 +13,16 @@ use std::sync::Arc;
 
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
-use crate::server::rpc_helpers::{internal_error, invalid_params};
+use crate::server::rpc_helpers::invalid_params;
 use crate::server::rpc_server::RpcServer;
 use crate::server::wallet_compat;
 
 use super::RpcServerWallet;
 use super::errors::{
     invalid_operation_transfer_error, send_from_transfer_error, wallet_compat_failure,
+};
+use super::ledger_provider::{
+    NativeWalletLedgerProviderFactory, WalletLedgerProvider, WalletLedgerProviderFactory,
 };
 use super::request::{
     CancelTransactionRequest, SendManyOutputRequest, SendManyRequest, TransferRequest,
@@ -107,10 +107,9 @@ impl RpcServerWallet {
         let wallet = Self::require_wallet(server)?;
         let store = server.system().store_cache();
         let snapshot = store.data_cache();
-        if StorageLedgerProviderFactory
-            .provider(snapshot)
-            .transaction_state_by_hash(&request.txid)
-            .map_err(|err| internal_error(err.to_string()))?
+        if NativeWalletLedgerProviderFactory
+            .provider()
+            .transaction_state_by_hash(snapshot, &request.txid)?
             .is_some()
         {
             return Err(RpcException::from(

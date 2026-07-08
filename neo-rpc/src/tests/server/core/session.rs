@@ -77,16 +77,10 @@ fn server_context_engine_paths_use_explicit_native_provider() {
 
 #[test]
 fn rpc_server_ledger_reads_use_provider_boundaries() {
-    let sources = [
-        (
-            "session dummy block",
-            include_str!("../../../server/session/dummy_block.rs"),
-        ),
-        (
-            "wallet transfers",
-            include_str!("../../../server/rpc_server_wallet/transfers.rs"),
-        ),
-    ];
+    let sources = [(
+        "session dummy block",
+        include_str!("../../../server/session/dummy_block.rs"),
+    )];
 
     for (name, source) in sources {
         assert!(
@@ -195,6 +189,26 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
     assert!(
         blockchain_provider.contains("StorageLedgerProviderFactory"),
         "blockchain transaction-state reads still belong to the local provider adapter"
+    );
+
+    let wallet_transfers = include_str!("../../../server/rpc_server_wallet/transfers.rs");
+    assert!(
+        wallet_transfers.contains("NativeWalletLedgerProviderFactory"),
+        "wallet transfers should read transaction state through the wallet ledger provider factory"
+    );
+    assert!(
+        !wallet_transfers.contains("StorageLedgerProviderFactory"),
+        "wallet transfers should not construct storage ledger providers directly"
+    );
+
+    let wallet_provider = include_str!("../../../server/rpc_server_wallet/ledger_provider.rs");
+    assert!(wallet_provider.contains("trait WalletLedgerProvider"));
+    assert!(wallet_provider.contains("trait WalletLedgerProviderFactory"));
+    assert!(wallet_provider.contains("fn transaction_state_by_hash"));
+    assert!(wallet_provider.contains("struct NativeWalletLedgerProviderFactory"));
+    assert!(
+        wallet_provider.contains("StorageLedgerProviderFactory"),
+        "wallet transaction-state reads still belong to the local provider adapter"
     );
 }
 
