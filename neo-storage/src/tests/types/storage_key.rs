@@ -200,16 +200,26 @@ fn test_storage_key_get_hash_code() {
 fn test_storage_key_display_empty() {
     let key = StorageKey::new(-1, vec![]);
     let display = format!("{}", key);
-    assert!(display.contains("Id = -1"));
-    assert!(display.contains("Key = {}"));
+    assert_eq!(display, "StorageKey{Id=-1}");
 }
 
 #[test]
 fn test_storage_key_display_with_prefix() {
     let key = StorageKey::new(-1, vec![0x14, 0xAA, 0xBB]);
     let display = format!("{}", key);
-    assert!(display.contains("Id = -1"));
-    assert!(display.contains("Prefix = 0x14"));
+    assert_eq!(display, "StorageKey{Id=-1,Key=14aabb}");
+}
+
+#[test]
+fn storage_key_display_matches_csharp_v3101_to_string() {
+    assert_eq!(
+        StorageKey::new(0, vec![0x12]).to_string(),
+        "StorageKey{Id=0,Key=12}"
+    );
+    assert_eq!(
+        StorageKey::new(0, Vec::new()).to_string(),
+        "StorageKey{Id=0}"
+    );
 }
 
 #[test]

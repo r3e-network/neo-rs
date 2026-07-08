@@ -259,19 +259,14 @@ impl From<&[u8]> for StorageKey {
 impl fmt::Display for StorageKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.key.is_empty() {
-            write!(f, "Id = {}, Key = {{}}", self.id)
+            write!(f, "StorageKey{{Id={}}}", self.id)
         } else {
-            write!(
-                f,
-                "Id = {}, Prefix = 0x{:02x}, Key = {{ {} }}",
-                self.id,
-                self.key[0],
-                self.key[1..]
-                    .iter()
-                    .map(|b| format!("0x{b:02x}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
+            let mut key_hex = String::with_capacity(self.key.len() * 2);
+            for byte in &self.key {
+                use std::fmt::Write as _;
+                write!(&mut key_hex, "{byte:02x}")?;
+            }
+            write!(f, "StorageKey{{Id={},Key={}}}", self.id, key_hex)
         }
     }
 }

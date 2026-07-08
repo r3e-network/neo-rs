@@ -84,7 +84,9 @@ impl ApplicationEngine {
         if new_data_size > 0 && context.id >= 0 {
             let fee_units = new_data_size as u64;
             let storage_price = self.get_storage_price() as u64;
-            let fee_delta = fee_units.saturating_mul(storage_price);
+            let fee_delta = fee_units
+                .checked_mul(storage_price)
+                .ok_or_else(|| CoreError::invalid_operation("Storage fee overflow"))?;
             let trace_fees = crate::interop::application_engine_storage::storage_trace_enabled(
                 self,
                 "NEO_TRACE_STORAGE_FEES",

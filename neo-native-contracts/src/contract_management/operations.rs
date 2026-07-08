@@ -114,7 +114,10 @@ impl ContractManagement {
             .ok_or_else(|| CoreError::invalid_operation("deploy storage fee overflow"))?;
         let minimum_fee = self.read_minimum_deployment_fee(&snapshot)?;
         let fee = storage_component.max(minimum_fee);
-        engine.charge_execution_fee(u64::try_from(fee).unwrap_or(0))?;
+        let fee = u64::try_from(fee).map_err(|_| {
+            CoreError::invalid_operation("ContractManagement::deploy fee must be non-negative")
+        })?;
+        engine.charge_execution_fee(fee)?;
 
         let nef = Self::parse_nef_checked(nef_bytes, "deploy")?;
         let manifest = Self::parse_manifest_checked(manifest_bytes, "deploy")?;
@@ -213,7 +216,10 @@ impl ContractManagement {
         let fee = i64::from(engine.storage_price())
             .checked_mul(payload_len)
             .ok_or_else(|| CoreError::invalid_operation("update storage fee overflow"))?;
-        engine.charge_execution_fee(u64::try_from(fee).unwrap_or(0))?;
+        let fee = u64::try_from(fee).map_err(|_| {
+            CoreError::invalid_operation("ContractManagement::update fee must be non-negative")
+        })?;
+        engine.charge_execution_fee(fee)?;
 
         // C#: GetAndChange(Prefix_Contract ++ engine.CallingScriptHash) -> the
         // calling contract's record must exist.

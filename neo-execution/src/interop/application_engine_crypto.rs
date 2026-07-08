@@ -42,8 +42,15 @@ impl ApplicationEngine {
             return Err(CoreError::other("Invalid public key count"));
         }
 
-        // Matches C# ApplicationEngine.CheckMultisig: AddFee(CheckSigPrice * n * ExecFeeFactor)
-        self.add_cpu_fee(CHECK_SIG_PRICE.saturating_mul(n as i64))?;
+        // Matches C# ApplicationEngine.CheckMultisig:
+        // AddFee(CheckSigPrice * n * ExecFeeFactor). v3.10.1 centralizes
+        // factorization so overflow must not silently undercharge.
+        let fee_units = CHECK_SIG_PRICE
+            .checked_mul(
+                i64::try_from(n).map_err(|_| CoreError::other("Invalid public key count"))?,
+            )
+            .ok_or_else(|| CoreError::other("CheckMultisig fee overflow"))?;
+        self.add_cpu_fee(fee_units)?;
 
         // Pop signatures second
         let signatures = self.pop_sig_elements()?;

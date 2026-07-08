@@ -7,6 +7,11 @@
 
 ### Fixed (Neo N3 v3.10.1 consensus / protocol parity)
 - **ApplicationEngine fee validation.** Negative `AddFee` inputs now fault before the whitelist fee bypass, matching C# v3.10.1 ordering and preventing a whitelisted call context from silently ignoring an invalid negative fee.
+- **ApplicationEngine fee factorization.** Storage, multisig, and native-contract fee conversions now fail closed instead of saturating or converting negative policy values to zero before charging, matching the v3.10.1 `AddFee(gas, applyFactor)` hardening.
+- **StorageKey formatting.** `StorageKey` display output now matches C# v3.10.1 `ToString()` for both empty and non-empty keys (`StorageKey{Id=...}` / `StorageKey{Id=...,Key=...}`).
+- **ExtensiblePayload hardening.** Deserialization rejects a payload whose witness script hash does not match `Sender`, preserving the C# v3.10.1 invalid-payload guard.
+- **NEO committee rewards.** Post-Gorgon voter reward refreshes read live candidate votes instead of stale cached committee votes, matching the v3.10.1 `NeoToken.PostPersist` fix.
+- **Notary deposit accounting.** Notary-sponsored transactions reserve mempool fees against the payer's Notary deposit and block persistence faults on missing or overdrawn deposits, matching the v3.10.1 overdraw fix.
 
 ## [0.10.0] - 2026-07-03
 

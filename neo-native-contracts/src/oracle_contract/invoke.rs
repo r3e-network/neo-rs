@@ -119,13 +119,19 @@ impl OracleContract {
         // AddFee(gasForResponse, applyFactor: true), then mint response GAS
         // to the oracle account.
         let price = self.read_price(&snapshot)?;
+        let price = u64::try_from(price).map_err(|_| {
+            CoreError::invalid_operation("OracleContract::request price fee must be non-negative")
+        })?;
+        engine.charge_execution_fee(price).map_err(|e| {
+            CoreError::invalid_operation(format!("OracleContract::request: price fee: {e}"))
+        })?;
+        let gas_for_response_fee = u64::try_from(gas_for_response).map_err(|_| {
+            CoreError::invalid_operation(
+                "OracleContract::request response fee must be non-negative",
+            )
+        })?;
         engine
-            .charge_execution_fee(u64::try_from(price).unwrap_or(0))
-            .map_err(|e| {
-                CoreError::invalid_operation(format!("OracleContract::request: price fee: {e}"))
-            })?;
-        engine
-            .charge_execution_fee(u64::try_from(gas_for_response).unwrap_or(0))
+            .charge_execution_fee(gas_for_response_fee)
             .map_err(|e| {
                 CoreError::invalid_operation(format!("OracleContract::request: response fee: {e}"))
             })?;
