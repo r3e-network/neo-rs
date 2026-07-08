@@ -205,6 +205,10 @@ High-signal clusters found during the first pass:
   its body codec and validation rules. `messages/wire.rs` owns shared body
   wire helpers such as Neo `UInt256[]` var-int encoding so signed dBFT message
   bodies do not use panic-only in-memory writer calls.
+- `neo-consensus/src/service/helpers/block.rs` owns consensus block field
+  derivation. Header hash construction now assembles the unsigned header bytes
+  directly from fixed-width little-endian fields, keeping protocol field order
+  visible without panic-shaped in-memory writer calls.
 - `neo-indexer/src/indexer/mod.rs` keeps the mutable projection struct and
   constructor, `indexer/commands.rs` owns public block/notification indexing
   commands, `indexer/apply.rs` owns prepared-record application into the

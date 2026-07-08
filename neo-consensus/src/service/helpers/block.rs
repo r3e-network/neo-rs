@@ -66,35 +66,26 @@ impl ConsensusBlockFields {
         primary_index: u8,
         next_consensus: UInt160,
     ) -> UInt256 {
-        use neo_io::BinaryWriter;
+        const HEADER_UNSIGNED_LEN: usize = std::mem::size_of::<u32>()
+            + UInt256::LENGTH
+            + UInt256::LENGTH
+            + std::mem::size_of::<u64>()
+            + std::mem::size_of::<u64>()
+            + std::mem::size_of::<u32>()
+            + std::mem::size_of::<u8>()
+            + UInt160::LENGTH;
 
-        let mut writer = BinaryWriter::new();
-        writer
-            .write_u32(version)
-            .expect("infallible: in-memory write");
-        writer
-            .write_serializable(&prev_hash)
-            .expect("infallible: in-memory write");
-        writer
-            .write_serializable(&merkle_root)
-            .expect("infallible: in-memory write");
-        writer
-            .write_u64(timestamp)
-            .expect("infallible: in-memory write");
-        writer
-            .write_u64(nonce)
-            .expect("infallible: in-memory write");
-        writer
-            .write_u32(index)
-            .expect("infallible: in-memory write");
-        writer
-            .write_u8(primary_index)
-            .expect("infallible: in-memory write");
-        writer
-            .write_serializable(&next_consensus)
-            .expect("infallible: in-memory write");
+        let mut unsigned = Vec::with_capacity(HEADER_UNSIGNED_LEN);
+        unsigned.extend_from_slice(&version.to_le_bytes());
+        unsigned.extend_from_slice(&prev_hash.as_bytes());
+        unsigned.extend_from_slice(&merkle_root.as_bytes());
+        unsigned.extend_from_slice(&timestamp.to_le_bytes());
+        unsigned.extend_from_slice(&nonce.to_le_bytes());
+        unsigned.extend_from_slice(&index.to_le_bytes());
+        unsigned.push(primary_index);
+        unsigned.extend_from_slice(&next_consensus.as_bytes());
 
         // Matches C# `Verifiable.CalculateHash()` (single SHA-256 over unsigned bytes).
-        UInt256::from(neo_crypto::Crypto::sha256(&writer.into_bytes()))
+        UInt256::from(neo_crypto::Crypto::sha256(&unsigned))
     }
 }
