@@ -34,16 +34,16 @@ impl OracleResponse {
     pub fn get_fixed_script() -> Vec<u8> {
         // C# OracleResponse.FixedScript:
         // `new ScriptBuilder().EmitDynamicCall(NativeContract.Oracle.Hash, "finish")`.
-        let oracle_hash = UInt160::parse("0xfe924b7cfe89ddd271abaf7210a80a7e11178758")
-            .expect("Oracle native contract hash is valid");
+        let oracle_hash = UInt160::from_array([
+            0x58, 0x87, 0x17, 0x11, 0x7e, 0x0a, 0xa8, 0x10, 0x72, 0xaf, 0xab, 0x71, 0xd2, 0xdd,
+            0x89, 0xfe, 0x7c, 0x4b, 0x92, 0xfe,
+        ]);
         let mut builder = ScriptBuilder::new();
         builder.emit_opcode(OpCode::NEWARRAY0);
         builder.emit_push_int(i64::from(CallFlags::ALL.bits()));
         builder.emit_push(b"finish");
         builder.emit_push(&oracle_hash.to_array());
-        builder
-            .emit_syscall("System.Contract.Call")
-            .expect("System.Contract.Call");
+        builder.emit_syscall_hash(neo_vm_rs::interop_hash("System.Contract.Call"));
         builder.to_array()
     }
 

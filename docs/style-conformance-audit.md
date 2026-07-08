@@ -703,6 +703,9 @@ existing zero-hash sentinel without caching it instead of panicking.
 `neo-payloads` header and block infallible hash adapters now share the same
 fail-closed compatibility path instead of asserting serialization invariants
 with production `expect()` calls; `try_hash` remains the validation API.
+`neo-payloads/src/transaction_attribute/oracle_response.rs` now constructs the
+oracle fixed script from fixed native-hash bytes and a precomputed syscall hash
+instead of runtime parsing/emission paths guarded by production `expect()`.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.
