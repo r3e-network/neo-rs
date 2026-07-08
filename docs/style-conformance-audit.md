@@ -631,6 +631,12 @@ this production-rationale rule.
 `neo-hsm/src/settings/config.rs` owns operator-facing HSM provider settings.
 AWS CloudHSM environment loading now returns typed `HsmError::Init` values for
 missing `NEO_HSM_CU_PASSWORD` instead of panicking before consensus startup.
+`neo-config/src/settings/protocol/presets.rs` now exposes fallible
+`try_mainnet` / `try_testnet` constructors for embedded committee diagnostics.
+The existing infallible preset constructors stay API-compatible and are guarded
+by tests that assert the built-in committee literals parse to 21 public keys.
+`neo-node/src/node/config.rs` uses those fallible constructors while deriving
+daemon protocol settings so malformed embedded presets become startup errors.
 
 Recommended next patches, in order:
 

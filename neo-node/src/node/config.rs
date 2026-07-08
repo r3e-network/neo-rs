@@ -450,13 +450,19 @@ pub(super) fn load_config(
     };
 
     let mut settings = match config.network.network_type.as_deref() {
-        Some(t) if t.eq_ignore_ascii_case("testnet") => ProtocolSettings::testnet(),
-        Some(t) if t.eq_ignore_ascii_case("mainnet") => ProtocolSettings::mainnet(),
+        Some(t) if t.eq_ignore_ascii_case("testnet") => {
+            ProtocolSettings::try_testnet().context("loading built-in TestNet protocol settings")?
+        }
+        Some(t) if t.eq_ignore_ascii_case("mainnet") => {
+            ProtocolSettings::try_mainnet().context("loading built-in MainNet protocol settings")?
+        }
         Some(other) => {
             warn!(target: "neo", network_type = other, "unknown network_type; using default (MainNet) settings");
-            ProtocolSettings::default()
+            ProtocolSettings::try_mainnet()
+                .context("loading default built-in MainNet protocol settings")?
         }
-        None => ProtocolSettings::default(),
+        None => ProtocolSettings::try_mainnet()
+            .context("loading default built-in MainNet protocol settings")?,
     };
     if let Some(magic) = magic_override.or(config.network.network_magic) {
         settings.network = magic;

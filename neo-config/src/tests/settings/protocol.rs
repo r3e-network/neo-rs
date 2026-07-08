@@ -169,6 +169,15 @@ fn load_testnet_json_matches_neo_node_v3100_protocol_configuration() {
 }
 
 #[test]
+fn embedded_protocol_committees_parse_without_fallback() {
+    let mainnet = ProtocolSettings::try_mainnet().unwrap();
+    let testnet = ProtocolSettings::try_testnet().unwrap();
+
+    assert_eq!(mainnet.standby_committee.len(), 21);
+    assert_eq!(testnet.standby_committee.len(), 21);
+}
+
+#[test]
 fn mainnet_preset_matches_neo_n3_v3100_protocol_limits() {
     let settings = ProtocolSettings::mainnet();
 
