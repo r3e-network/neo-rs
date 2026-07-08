@@ -13,6 +13,7 @@
 //! - Test modules and fixtures: grouped coverage for the surrounding domain.
 
 use super::*;
+use crate::ConsensusMessageType;
 use neo_primitives::UInt256;
 
 #[tokio::test]

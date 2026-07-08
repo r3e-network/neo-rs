@@ -197,6 +197,10 @@ High-signal clusters found during the first pass:
   shape and module map, while `context/construction.rs` owns fresh-round field
   defaults and `context/policy.rs` owns dBFT default policy constants and
   bounded-cache limits.
+- `neo-consensus/src/messages/mod.rs` keeps the dBFT message module map and
+  re-exports. `messages/payload.rs` owns the shared `ExtensiblePayload.Data`
+  DBFT envelope and common message-byte helper, while each message module owns
+  its body codec and validation rules.
 - `neo-indexer/src/indexer/mod.rs` keeps the mutable projection struct and
   constructor, `indexer/commands.rs` owns public block/notification indexing
   commands, `indexer/apply.rs` owns prepared-record application into the
