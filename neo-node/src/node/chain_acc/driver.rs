@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use neo_blockchain::handle::BlockchainHandle;
+use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use neo_payloads::block::Block;
 use neo_storage::persistence::store::Store;
 use tracing::info;
@@ -64,11 +65,12 @@ pub(in crate::node) fn local_ledger_tip(
         return Ok(None);
     };
     let cache = neo_storage::persistence::StoreCache::new_from_store(Arc::clone(store), true);
-    let ledger = neo_native_contracts::LedgerContract::new();
-    let Ok(height) = ledger.current_index(cache.data_cache()) else {
+    let factory = StorageLedgerProviderFactory;
+    let provider = factory.provider(cache.data_cache());
+    let Ok(height) = provider.current_index() else {
         return Ok(None);
     };
-    let hash = ledger.current_hash(cache.data_cache()).map_err(|err| {
+    let hash = provider.current_hash().map_err(|err| {
         anyhow::anyhow!("reading local ledger tip hash before chain.acc import: {err}")
     })?;
     Ok(Some(LocalLedgerTip { height, hash }))
