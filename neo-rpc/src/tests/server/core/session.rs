@@ -201,6 +201,25 @@ fn wallet_compat_policy_reads_use_native_provider_factory() {
     );
 }
 
+#[test]
+fn rpc_wallet_policy_reads_use_native_provider_factory() {
+    let provider = include_str!("../../../server/rpc_server_wallet/native_provider.rs");
+    assert!(provider.contains("trait WalletNativeProvider"));
+    assert!(provider.contains("trait WalletNativeProviderFactory"));
+    assert!(provider.contains("struct NativeWalletProviderFactory"));
+    assert!(provider.contains("PolicyContract::new()"));
+
+    let signing = include_str!("../../../server/rpc_server_wallet/signing.rs");
+    assert!(
+        signing.contains("NativeWalletProviderFactory"),
+        "wallet signing should read Policy values through the wallet native provider factory"
+    );
+    assert!(
+        !signing.contains("PolicyContract::new()"),
+        "wallet signing should not construct PolicyContract directly"
+    );
+}
+
 /// Genesis-block timestamp seeded by the RPC test harness
 /// (`seed_genesis_state` / `genesis_header`).
 const GENESIS_TIMESTAMP: u64 = 1_468_595_301_000;

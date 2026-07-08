@@ -9,7 +9,6 @@ use neo_execution::contract::Contract;
 use neo_execution::contract_parameters_context::ContractParametersContext;
 use neo_execution::helper::Helper as ContractHelper;
 use neo_io::Serializable;
-use neo_native_contracts::PolicyContract;
 use neo_payloads::transaction::Transaction;
 use neo_primitives::UInt160;
 use neo_storage::persistence::DataCache;
@@ -25,6 +24,9 @@ use crate::server::rpc_server::RpcServer;
 use crate::server::wallet_compat;
 
 use super::RpcServerWallet;
+use super::native_provider::{
+    NativeWalletProviderFactory, WalletNativeProvider, WalletNativeProviderFactory,
+};
 use super::support::signature_contract_pubkey;
 
 pub(super) fn sign_and_relay(
@@ -182,9 +184,9 @@ pub(super) fn sign_and_relay(
 
     // Adjust network fee if necessary (parity with C# min fee calculation).
     if tx.size() > 1024 {
-        let policy = PolicyContract::new();
-        let fee_per_byte = policy
-            .get_fee_per_byte_snapshot(snapshot_arc.as_ref())
+        let fee_per_byte = NativeWalletProviderFactory
+            .provider()
+            .fee_per_byte(snapshot_arc.as_ref())
             .map(i64::from)
             .unwrap_or_else(|_| {
                 i64::from(neo_native_contracts::policy_contract::DEFAULT_FEE_PER_BYTE)

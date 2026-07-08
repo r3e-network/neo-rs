@@ -13,6 +13,7 @@
 //! - `balance`: wallet balance RPC handlers.
 //! - `errors`: Wallet-domain error projection into RPC exceptions.
 //! - `lifecycle`: wallet open/close, key import/export, and address listing handlers.
+//! - `native_provider`: Native-contract read seam used by wallet handlers.
 //! - `network_fee`: transaction network-fee estimation handler.
 //! - `request`: Typed JSON-RPC request parsing helpers.
 //! - `response`: Wallet RPC response construction helpers.
@@ -26,6 +27,7 @@ use crate::server::rpc_server::RpcHandler;
 mod balance;
 mod errors;
 mod lifecycle;
+mod native_provider;
 mod network_fee;
 mod request;
 mod response;
