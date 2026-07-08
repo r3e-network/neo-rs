@@ -628,6 +628,9 @@ comments classify each exception as protocol parity, generated NeoFS glue, HSM
 or BLST FFI shape, VM unsafe hot-path invariants, explicit composition arity,
 or client/RPC compatibility facade behavior. Test-only allows remain outside
 this production-rationale rule.
+`neo-hsm/src/settings/config.rs` owns operator-facing HSM provider settings.
+AWS CloudHSM environment loading now returns typed `HsmError::Init` values for
+missing `NEO_HSM_CU_PASSWORD` instead of panicking before consensus startup.
 
 Recommended next patches, in order:
 

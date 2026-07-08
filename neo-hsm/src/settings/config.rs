@@ -7,6 +7,8 @@
 use std::path::PathBuf;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
+use crate::errors::{HsmError, HsmResult};
+
 /// Selects the HSM provider (and thus the `.so` path defaults, login model,
 /// key-id scheme, and signature-format post-processing).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -170,12 +172,31 @@ pub struct HsmConfig {
 impl HsmConfig {
     /// Build a config from environment for AWS CloudHSM.
     ///
-    /// Reads `NEO_HSM_CU_PASSWORD` from the environment.  Panics if the
-    /// variable is absent — fail-fast before consensus starts.
-    #[must_use]
-    pub fn from_env_aws(cu_user: impl Into<String>, key_label: impl Into<String>) -> Self {
-        let cu_password = std::env::var("NEO_HSM_CU_PASSWORD")
-            .expect("NEO_HSM_CU_PASSWORD must be set for AWS CloudHSM");
+    /// Reads `NEO_HSM_CU_PASSWORD` from the environment and returns an
+    /// initialization error when it is absent.
+    pub fn from_env_aws(
+        cu_user: impl Into<String>,
+        key_label: impl Into<String>,
+    ) -> HsmResult<Self> {
+        Self::from_env_aws_with(cu_user, key_label, |name| std::env::var(name))
+    }
+
+    fn from_env_aws_with(
+        cu_user: impl Into<String>,
+        key_label: impl Into<String>,
+        read_env: impl FnOnce(&str) -> Result<String, std::env::VarError>,
+    ) -> HsmResult<Self> {
+        let cu_password = read_env("NEO_HSM_CU_PASSWORD").map_err(|_| {
+            HsmError::Init("NEO_HSM_CU_PASSWORD must be set for AWS CloudHSM".to_string())
+        })?;
+        Ok(Self::aws_cloudhsm(cu_user, key_label, cu_password))
+    }
+
+    fn aws_cloudhsm(
+        cu_user: impl Into<String>,
+        key_label: impl Into<String>,
+        cu_password: impl Into<String>,
+    ) -> Self {
         let prof = profile(HsmProvider::Aws);
         Self {
             provider: HsmProvider::Aws,
@@ -184,7 +205,44 @@ impl HsmConfig {
             token_label: None,
             key_label: key_label.into(),
             key_id: None,
-            user_pin: format!("{}:{}", cu_user.into(), cu_password),
+            user_pin: format!("{}:{}", cu_user.into(), cu_password.into()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn aws_env_config_builds_cloudhsm_pin_and_defaults() {
+        let cfg = HsmConfig::from_env_aws_with("crypto_user", "validator-key", |_| {
+            Ok("secret".to_string())
+        });
+        assert!(cfg.is_ok(), "aws hsm config failed: {cfg:?}");
+        let Ok(cfg) = cfg else {
+            return;
+        };
+
+        assert_eq!(cfg.provider, HsmProvider::Aws);
+        assert_eq!(
+            cfg.library_path,
+            PathBuf::from(profile(HsmProvider::Aws).default_library)
+        );
+        assert_eq!(cfg.slot, None);
+        assert_eq!(cfg.token_label, None);
+        assert_eq!(cfg.key_label, "validator-key");
+        assert_eq!(cfg.key_id, None);
+        assert_eq!(cfg.user_pin, "crypto_user:secret");
+    }
+
+    #[test]
+    fn aws_env_config_returns_init_error_when_pin_env_is_missing() {
+        let err = HsmConfig::from_env_aws_with("crypto_user", "validator-key", |_| {
+            Err(std::env::VarError::NotPresent)
+        })
+        .expect_err("missing pin env must be an init error");
+
+        assert!(matches!(err, HsmError::Init(message) if message.contains("NEO_HSM_CU_PASSWORD")));
     }
 }
