@@ -646,6 +646,9 @@ but a registry mismatch no longer aborts an RPC or node service lookup path.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.
+`neo-native-contracts/src/registry/hashes.rs` stores canonical native contract
+hashes as fixed little-endian byte arrays, avoiding runtime hex parsing and
+`expect` in native contract registry initialization.
 
 Recommended next patches, in order:
 

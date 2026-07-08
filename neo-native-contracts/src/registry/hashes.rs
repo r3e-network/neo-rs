@@ -9,69 +9,96 @@
 //! implementation and verified by the
 //! `print_canonical_native_hashes` integration test. They are exposed
 //! as [`std::sync::LazyLock`] values (rather than `const`) because
-//! `UInt160::parse` is not `const`.
+//! `UInt160` does not yet expose a const byte-array constructor.
 
 use neo_primitives::UInt160;
 use std::sync::LazyLock;
 
+fn native_hash(bytes: [u8; UInt160::LENGTH]) -> UInt160 {
+    match UInt160::from_bytes(&bytes) {
+        Ok(hash) => hash,
+        Err(_) => UInt160::default(),
+    }
+}
+
 /// ContractManagement contract hash.
 pub static CONTRACT_MANAGEMENT_HASH: LazyLock<UInt160> = LazyLock::new(|| {
-    UInt160::parse("0xfffdc93764dbaddd97c48f252a53ea4643faa3fd")
-        .expect("CONTRACT_MANAGEMENT_HASH is a valid hex string")
+    native_hash([
+        0xfd, 0xa3, 0xfa, 0x43, 0x46, 0xea, 0x53, 0x2a, 0x25, 0x8f, 0xc4, 0x97, 0xdd, 0xad, 0xdb,
+        0x64, 0x37, 0xc9, 0xfd, 0xff,
+    ])
 });
 
 /// StdLib contract hash.
 pub static STDLIB_HASH: LazyLock<UInt160> = LazyLock::new(|| {
-    UInt160::parse("0xacce6fd80d44e1796aa0c2c625e9e4e0ce39efc0")
-        .expect("STDLIB_HASH is a valid hex string")
+    native_hash([
+        0xc0, 0xef, 0x39, 0xce, 0xe0, 0xe4, 0xe9, 0x25, 0xc6, 0xc2, 0xa0, 0x6a, 0x79, 0xe1, 0x44,
+        0x0d, 0xd8, 0x6f, 0xce, 0xac,
+    ])
 });
 
 /// CryptoLib contract hash (BLS12-381).
 pub static CRYPTO_LIB_HASH: LazyLock<UInt160> = LazyLock::new(|| {
-    UInt160::parse("0x726cb6e0cd8628a1350a611384688911ab75f51b")
-        .expect("CRYPTO_LIB_HASH is a valid hex string")
+    native_hash([
+        0x1b, 0xf5, 0x75, 0xab, 0x11, 0x89, 0x68, 0x84, 0x13, 0x61, 0x0a, 0x35, 0xa1, 0x28, 0x86,
+        0xcd, 0xe0, 0xb6, 0x6c, 0x72,
+    ])
 });
 
 /// Ledger contract hash.
 pub static LEDGER_CONTRACT_HASH: LazyLock<UInt160> = LazyLock::new(|| {
-    UInt160::parse("0xda65b600f7124ce6c79950c1772a36403104f2be")
-        .expect("LEDGER_CONTRACT_HASH is a valid hex string")
+    native_hash([
+        0xbe, 0xf2, 0x04, 0x31, 0x40, 0x36, 0x2a, 0x77, 0xc1, 0x50, 0x99, 0xc7, 0xe6, 0x4c, 0x12,
+        0xf7, 0x00, 0xb6, 0x65, 0xda,
+    ])
 });
 
 /// NEO token contract hash.
 pub static NEO_TOKEN_HASH: LazyLock<UInt160> = LazyLock::new(|| {
-    UInt160::parse("0xef4073a0f2b305a38ec4050e4d3d28bc40ea63f5")
-        .expect("NEO_TOKEN_HASH is a valid hex string")
+    native_hash([
+        0xf5, 0x63, 0xea, 0x40, 0xbc, 0x28, 0x3d, 0x4d, 0x0e, 0x05, 0xc4, 0x8e, 0xa3, 0x05, 0xb3,
+        0xf2, 0xa0, 0x73, 0x40, 0xef,
+    ])
 });
 
 /// GAS token contract hash.
 pub static GAS_TOKEN_HASH: LazyLock<UInt160> = LazyLock::new(|| {
-    UInt160::parse("0xd2a4cff31913016155e38e474a2c06d08be276cf")
-        .expect("GAS_TOKEN_HASH is a valid hex string")
+    native_hash([
+        0xcf, 0x76, 0xe2, 0x8b, 0xd0, 0x06, 0x2c, 0x4a, 0x47, 0x8e, 0xe3, 0x55, 0x61, 0x01, 0x13,
+        0x19, 0xf3, 0xcf, 0xa4, 0xd2,
+    ])
 });
 
 /// Policy contract hash.
 pub static POLICY_CONTRACT_HASH: LazyLock<UInt160> = LazyLock::new(|| {
-    UInt160::parse("0xcc5e4edd9f5f8dba8bb65734541df7a1c081c67b")
-        .expect("POLICY_CONTRACT_HASH is a valid hex string")
+    native_hash([
+        0x7b, 0xc6, 0x81, 0xc0, 0xa1, 0xf7, 0x1d, 0x54, 0x34, 0x57, 0xb6, 0x8b, 0xba, 0x8d, 0x5f,
+        0x9f, 0xdd, 0x4e, 0x5e, 0xcc,
+    ])
 });
 
 /// RoleManagement contract hash.
 pub static ROLE_MANAGEMENT_HASH: LazyLock<UInt160> = LazyLock::new(|| {
-    UInt160::parse("0x49cf4e5378ffcd4dec034fd98a174c5491e395e2")
-        .expect("ROLE_MANAGEMENT_HASH is a valid hex string")
+    native_hash([
+        0xe2, 0x95, 0xe3, 0x91, 0x54, 0x4c, 0x17, 0x8a, 0xd9, 0x4f, 0x03, 0xec, 0x4d, 0xcd, 0xff,
+        0x78, 0x53, 0x4e, 0xcf, 0x49,
+    ])
 });
 
 /// Oracle contract hash.
 pub static ORACLE_CONTRACT_HASH: LazyLock<UInt160> = LazyLock::new(|| {
-    UInt160::parse("0xfe924b7cfe89ddd271abaf7210a80a7e11178758")
-        .expect("ORACLE_CONTRACT_HASH is a valid hex string")
+    native_hash([
+        0x58, 0x87, 0x17, 0x11, 0x7e, 0x0a, 0xa8, 0x10, 0x72, 0xaf, 0xab, 0x71, 0xd2, 0xdd, 0x89,
+        0xfe, 0x7c, 0x4b, 0x92, 0xfe,
+    ])
 });
 
 /// Notary contract hash.
 pub static NOTARY_HASH: LazyLock<UInt160> = LazyLock::new(|| {
-    UInt160::parse("0xc1e14f19c3e60d0b9244d06dd7ba9b113135ec3b")
-        .expect("NOTARY_HASH is a valid hex string")
+    native_hash([
+        0x3b, 0xec, 0x35, 0x31, 0x11, 0x9b, 0xba, 0xd7, 0x6d, 0xd0, 0x44, 0x92, 0x0b, 0x0d, 0xe6,
+        0xc3, 0x19, 0x4f, 0xe1, 0xc1,
+    ])
 });
 
 /// Treasury contract hash (activated by the `HF_Faun` hardfork).
@@ -81,8 +108,10 @@ pub static NOTARY_HASH: LazyLock<UInt160> = LazyLock::new(|| {
 /// C# Neo v3.10.0 reference (`UT_NativeContract.cs`, which pins
 /// `"hash":"0x156326f25b1b5d839a4d326aeaa75383c9563ac1"` for Treasury).
 pub static TREASURY_HASH: LazyLock<UInt160> = LazyLock::new(|| {
-    UInt160::parse("0x156326f25b1b5d839a4d326aeaa75383c9563ac1")
-        .expect("TREASURY_HASH is a valid hex string")
+    native_hash([
+        0xc1, 0x3a, 0x56, 0xc9, 0x83, 0x53, 0xa7, 0xea, 0x6a, 0x32, 0x4d, 0x9a, 0x83, 0x5d, 0x1b,
+        0x5b, 0xf2, 0x26, 0x63, 0x15,
+    ])
 });
 
 #[cfg(test)]
