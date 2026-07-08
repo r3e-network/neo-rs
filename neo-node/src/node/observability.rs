@@ -29,7 +29,10 @@ use super::config::{
 mod config_validation;
 mod endpoints;
 mod health;
+mod ledger_provider;
 mod payloads;
+
+pub(in crate::node) use self::ledger_provider::observability_ledger_height;
 
 #[cfg(test)]
 #[path = "../tests/node/observability.rs"]

@@ -1,12 +1,12 @@
 //! Node readiness and optional service health snapshots for observability hooks.
 
-use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use serde_json::{Value, json};
 
 use super::super::remote_ledger::RemoteLedgerStatus;
+use super::observability_ledger_height;
 
 pub(super) fn node_health_payload(node: &neo_system::Node) -> Value {
-    let ledger_height = ledger_height(node);
+    let ledger_height = observability_ledger_height(node);
     let remote_ledger = node.get_service::<RemoteLedgerStatus>();
     let ledger_source = if remote_ledger.is_some() {
         "remote_rpc"
@@ -43,15 +43,6 @@ pub(super) fn node_health_payload(node: &neo_system::Node) -> Value {
             },
         },
     })
-}
-
-fn ledger_height(node: &neo_system::Node) -> Option<u32> {
-    if let Some(remote_ledger) = node.get_service::<RemoteLedgerStatus>() {
-        return remote_ledger.advertised_height;
-    }
-    let cache = node.store_cache();
-    let factory = StorageLedgerProviderFactory;
-    factory.provider(cache.data_cache()).current_index().ok()
 }
 
 fn indexer_health_payload(node: &neo_system::Node, ledger_height: Option<u32>) -> (Value, bool) {

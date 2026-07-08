@@ -5,6 +5,20 @@ use super::support::{
 };
 
 #[test]
+fn node_health_payload_uses_observability_ledger_provider() {
+    let source = include_str!("../../../../node/observability/health.rs");
+
+    assert!(
+        source.contains("observability_ledger_height"),
+        "health payloads should share observability ledger-height resolution"
+    );
+    assert!(
+        !source.contains("StorageLedgerProviderFactory"),
+        "health payloads should not construct storage ledger providers directly"
+    );
+}
+
+#[test]
 fn node_health_payload_reports_disabled_optional_services() {
     let node = test_node();
 

@@ -5,10 +5,10 @@ use std::time::Instant;
 
 use anyhow::Context;
 use hyper::{Body, Response};
-use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use prometheus::{Encoder, Gauge, IntGauge, IntGaugeVec, Opts, Registry, TextEncoder};
 use tracing::warn;
 
+use super::super::observability::observability_ledger_height;
 use super::super::remote_ledger::RemoteLedgerStatus;
 use super::readiness::{ReadinessSnapshot, indexer_readiness, readiness_response};
 
@@ -355,12 +355,7 @@ impl MetricsExporter {
     }
 
     fn ledger_height(&self) -> Option<u32> {
-        if let Some(remote_ledger) = self.remote_ledger_status() {
-            return remote_ledger.advertised_height;
-        }
-        let cache = self.node.store_cache();
-        let factory = StorageLedgerProviderFactory;
-        factory.provider(cache.data_cache()).current_index().ok()
+        observability_ledger_height(&self.node)
     }
 
     fn remote_ledger_status(&self) -> Option<Arc<RemoteLedgerStatus>> {

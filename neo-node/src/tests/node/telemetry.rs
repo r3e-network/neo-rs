@@ -128,6 +128,20 @@ fn indexed_service_at(height: u32) -> Arc<neo_indexer::IndexerService> {
 }
 
 #[test]
+fn metrics_exporter_uses_observability_ledger_provider() {
+    let source = include_str!("../../node/telemetry/exporter.rs");
+
+    assert!(
+        source.contains("observability_ledger_height"),
+        "metrics exporter should share observability ledger-height resolution"
+    );
+    assert!(
+        !source.contains("StorageLedgerProviderFactory"),
+        "metrics exporter should not construct storage ledger providers directly"
+    );
+}
+
+#[test]
 fn renders_mdbx_environment_metrics() {
     const MAP_SIZE: isize = 128 * 1024 * 1024;
     let (node, _tmp) = mdbx_test_node(MAP_SIZE);
