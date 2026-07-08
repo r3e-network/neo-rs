@@ -218,10 +218,12 @@ High-signal clusters found during the first pass:
   serialization, `script_builder/control.rs` owns control-flow/syscall
   emission, and `redeem_script.rs` remains responsible for verification script
   construction.
-- `neo-vm/src/jump_table/mod.rs` keeps the opcode dispatch table and
-  registration flow. `jump_table/shared.rs` owns C# stack-coercion helpers,
-  execution-context guards, semantics-error conversion, and StackValue result
-  projection shared by opcode-family modules.
+- `neo-vm/src/jump_table/mod.rs` keeps the opcode-family module map and facade
+  exports. `jump_table/table.rs` owns the fixed handler array, unsafe hot-path
+  table access, and invalid-opcode dispatch, `jump_table/variants.rs` owns
+  default and hardfork-specific table construction, and `jump_table/shared.rs`
+  owns C# stack-coercion helpers, execution-context guards, semantics-error
+  conversion, and StackValue result projection shared by opcode-family modules.
 - `neo-vm/src/execution_engine/mod.rs` keeps the VM state facade and module map.
   `execution_engine/host.rs` owns the unsafe raw-host-pointer bridge used for
   allocation-free interop callbacks, including the documented safety invariants
