@@ -76,27 +76,43 @@ impl NefFile {
     /// `Hash256(nef_bytes_without_checksum)[..4]` interpreted as
     /// little-endian u32.
     pub fn compute_checksum(nef: &Self) -> u32 {
+        match Self::try_compute_checksum(nef) {
+            Ok(checksum) => checksum,
+            Err(err) => {
+                tracing::warn!(
+                    target: "neo.manifest",
+                    error = %err,
+                    "failed to compute NEF checksum"
+                );
+                0
+            }
+        }
+    }
+
+    /// Computes the NEF checksum using a fallible wire writer.
+    pub fn try_compute_checksum(nef: &Self) -> IoResult<u32> {
         let mut writer = BinaryWriter::new();
+        Self::write_without_checksum(nef, &mut writer)?;
 
-        // Serialize all fields except checksum in NEF3 format.
-        writer.write_u32(Self::MAGIC).expect("writer");
+        let bytes = writer.into_bytes();
+        let hash = Crypto::hash256(&bytes);
+        Ok(u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]]))
+    }
 
+    fn write_without_checksum(nef: &Self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u32(Self::MAGIC)?;
         let compiler_bytes = nef.compiler.as_bytes();
         let mut fixed = [0u8; Self::COMPILER_LENGTH];
         let len = compiler_bytes.len().min(Self::COMPILER_LENGTH);
         fixed[..len].copy_from_slice(&compiler_bytes[..len]);
-        writer.write_bytes(&fixed).expect("writer");
+        writer.write_bytes(&fixed)?;
 
-        writer.write_var_string(&nef.source).expect("writer");
-
-        writer.write_u8(0).expect("writer"); // reserved
-        writer.write_serializable_vec(&nef.tokens).expect("writer");
-        writer.write_u16(0).expect("writer"); // reserved
-        writer.write_var_bytes(&nef.script).expect("writer");
-
-        let bytes = writer.into_bytes();
-        let hash = Crypto::hash256(&bytes);
-        u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]])
+        writer.write_var_string(&nef.source)?;
+        writer.write_u8(0)?; // reserved
+        writer.write_serializable_vec(&nef.tokens)?;
+        writer.write_u16(0)?; // reserved
+        writer.write_var_bytes(&nef.script)?;
+        Ok(())
     }
 
     /// Recomputes and updates the checksum in-place.
@@ -104,26 +120,34 @@ impl NefFile {
         self.checksum = Self::compute_checksum(self);
     }
 
+    /// Recomputes and updates the checksum in-place using the fallible writer.
+    pub fn try_update_checksum(&mut self) -> IoResult<()> {
+        self.checksum = Self::try_compute_checksum(self)?;
+        Ok(())
+    }
+
     /// Converts the NEF file to bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
+        match self.try_to_bytes() {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                tracing::warn!(
+                    target: "neo.manifest",
+                    error = %err,
+                    "failed to serialize NEF file"
+                );
+                Vec::new()
+            }
+        }
+    }
+
+    /// Converts the NEF file to bytes using the fallible wire writer.
+    pub fn try_to_bytes(&self) -> IoResult<Vec<u8>> {
         let mut writer = BinaryWriter::new();
-        writer.write_u32(Self::MAGIC).expect("writer");
+        Self::write_without_checksum(self, &mut writer)?;
+        writer.write_u32(self.checksum)?;
 
-        // Compiler as fixed-length string
-        let compiler_bytes = self.compiler.as_bytes();
-        let mut fixed = [0u8; Self::COMPILER_LENGTH];
-        let len = compiler_bytes.len().min(Self::COMPILER_LENGTH);
-        fixed[..len].copy_from_slice(&compiler_bytes[..len]);
-        writer.write_bytes(&fixed).expect("writer");
-
-        writer.write_var_string(&self.source).expect("writer");
-        writer.write_u8(0).expect("writer");
-        writer.write_serializable_vec(&self.tokens).expect("writer");
-        writer.write_u16(0).expect("writer");
-        writer.write_var_bytes(&self.script).expect("writer");
-        writer.write_u32(self.checksum).expect("writer");
-
-        writer.into_bytes()
+        Ok(writer.into_bytes())
     }
 
     /// Parses a NEF file from bytes.
@@ -205,18 +229,7 @@ impl Serializable for NefFile {
                 max_item_size
             )));
         }
-        writer.write_u32(Self::MAGIC)?;
-        let compiler_bytes = self.compiler.as_bytes();
-        let mut fixed = [0u8; Self::COMPILER_LENGTH];
-        let len = compiler_bytes.len().min(Self::COMPILER_LENGTH);
-        fixed[..len].copy_from_slice(&compiler_bytes[..len]);
-        writer.write_bytes(&fixed)?;
-
-        writer.write_var_string(&self.source)?;
-        writer.write_u8(0)?; // reserved
-        writer.write_serializable_vec(&self.tokens)?;
-        writer.write_u16(0)?; // reserved
-        writer.write_var_bytes(&self.script)?;
+        Self::write_without_checksum(self, writer)?;
         writer.write_u32(self.checksum)?;
         Ok(())
     }
@@ -263,7 +276,7 @@ impl Serializable for NefFile {
         };
 
         // Validate the on-wire checksum (matches C# NEF verifier).
-        let expected = Self::compute_checksum(&nef);
+        let expected = Self::try_compute_checksum(&nef)?;
         if expected != nef.checksum {
             return Err(IoError::invalid_data(format!(
                 "Bad checksum: {:#x}, expected {:#x}",

@@ -1,4 +1,5 @@
 use super::*;
+use neo_io::SerializableExtensions;
 
 #[test]
 fn magic_constant_matches_neo_spec() {
@@ -10,6 +11,15 @@ fn magic_constant_matches_neo_spec() {
 fn new_computes_checksum() {
     let nef = NefFile::new("neo-core-v0.0.0".to_string(), vec![0x40]); // RET
     assert_ne!(nef.checksum, 0);
+}
+
+#[test]
+fn try_compute_checksum_matches_compatibility_checksum() {
+    let nef = NefFile::new("neo-core-v0.0.0".to_string(), vec![0x40]); // RET
+    assert_eq!(
+        NefFile::try_compute_checksum(&nef).expect("checksum"),
+        NefFile::compute_checksum(&nef)
+    );
 }
 
 #[test]
@@ -35,6 +45,16 @@ fn size_includes_all_fields() {
     // + the actual bytes
     let size = nef.size();
     assert!(size > 4 + 64 + 1 + 1 + 1 + 2 + 2 + 4);
+}
+
+#[test]
+fn try_to_bytes_matches_existing_bytes_and_serializable_wire() {
+    let nef = NefFile::new("neo-core-v0.0.0".to_string(), vec![0x40]); // RET
+    assert_eq!(nef.try_to_bytes().expect("fallible bytes"), nef.to_bytes());
+    assert_eq!(
+        nef.try_to_bytes().expect("fallible bytes"),
+        nef.to_array().expect("serializable bytes")
+    );
 }
 
 #[test]

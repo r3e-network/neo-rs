@@ -116,6 +116,11 @@ High-signal clusters found during the first pass:
 - `neo-manifest` protocol types still depend on VM/runtime projection details
   (`neo_vm::Interoperable`, `neo_vm_rs::StackValue`). Core manifest models
   should keep stack adapters out of top-level domain flow.
+- `neo-manifest/src/nef/nef_file.rs` now uses shared fallible NEF wire-writing
+  helpers for checksum and byte serialization. The compatibility wrappers
+  remain for existing callers, but the protocol writer no longer uses
+  production `expect()` calls; the manifest unwrap/expect audit count is down
+  to the stack-projection adapter files.
 - `neo-config/src/settings/protocol.rs` is now a typed settings facade. Built-in
   network presets live in `settings/protocol/presets.rs`, file/stream loading
   lives in `settings/protocol/load.rs`, JSON/raw config parsing lives in
