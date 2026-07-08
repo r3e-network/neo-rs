@@ -31,4 +31,5 @@ pub(super) use orchestration::run_fast_sync_report;
 pub(super) use report::write_fast_sync_report_sidecar;
 
 #[cfg(test)]
+#[path = "../../tests/node/fast_sync/mod.rs"]
 mod tests;

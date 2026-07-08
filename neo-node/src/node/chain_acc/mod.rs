@@ -21,9 +21,11 @@ mod batch;
 mod driver;
 mod format;
 #[cfg(test)]
+#[path = "../../tests/node/chain_acc/format_tests.rs"]
 mod format_tests;
 mod metrics;
 #[cfg(test)]
+#[path = "../../tests/node/chain_acc/metrics_tests.rs"]
 mod metrics_tests;
 mod range;
 mod report;
@@ -49,4 +51,5 @@ pub(super) struct ChainAccExpectedRange {
 }
 
 #[cfg(test)]
+#[path = "../../tests/node/chain_acc/mod.rs"]
 mod tests;

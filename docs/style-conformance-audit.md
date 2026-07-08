@@ -799,6 +799,12 @@ length checks instead of slice-conversion `expect()` calls. After this pass,
 the remaining `neo-node` production scan bucket is source-adjacent tests and
 inline binary tests that should be moved under `src/tests` or converted to
 `Result`-returning tests.
+`neo-node` source-adjacent tests for chain.acc, fast-sync, remote-ledger, the
+fast-sync package helpers, and `neo-db-probe` now live under `src/tests` with
+`#[path]` module stubs from the production modules. This keeps private-module
+coverage and existing assertions intact while letting the production
+unwrap/expect scan reflect runtime code only. The current production
+unwrap/expect scan reports no matches.
 
 Recommended next patches, in order:
 

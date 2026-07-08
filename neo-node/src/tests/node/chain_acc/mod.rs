@@ -1299,7 +1299,7 @@ fn empty_only_chain_acc_batches_flush_at_outer_import_boundary() {
 
 #[test]
 fn chain_acc_batch_import_uses_tracked_composition_without_rescanning_blocks() {
-    let source = include_str!("batch.rs");
+    let source = include_str!("../../../node/chain_acc/batch.rs");
     let batch_import = source
         .split("async fn import_chain_acc_batch")
         .nth(1)
@@ -1317,7 +1317,7 @@ fn chain_acc_batch_import_uses_tracked_composition_without_rescanning_blocks() {
 
 #[test]
 fn pending_chain_acc_batch_derives_transaction_presence_from_composition() {
-    let source = include_str!("batch.rs");
+    let source = include_str!("../../../node/chain_acc/batch.rs");
     let pending_batch = source
         .split("struct PendingChainAccBatch")
         .nth(1)
@@ -1332,7 +1332,7 @@ fn pending_chain_acc_batch_derives_transaction_presence_from_composition() {
 
 #[test]
 fn chain_acc_batch_import_uses_tracked_tip_without_rehashing_last_block() {
-    let source = include_str!("batch.rs");
+    let source = include_str!("../../../node/chain_acc/batch.rs");
     let batch_import = source
         .split("async fn import_chain_acc_batch")
         .nth(1)
