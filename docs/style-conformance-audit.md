@@ -718,6 +718,9 @@ propagates that result instead of unwrapping the invariant.
 `neo-payloads/src/p2p_payloads/handshake/version_payload.rs` now keeps its
 C# wire-layout regression in the external test tree, leaving the production
 source module free of test-only unwrap/expect sites.
+`neo-payloads/src/ledger/transaction_state.rs` now exposes only
+`try_to_stack_value` for inherent projection; native ledger storage and tests
+use the typed path instead of a production `expect`.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.

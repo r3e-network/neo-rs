@@ -68,8 +68,8 @@ impl LedgerContract {
     /// Serialises a conflict-stub record into the C# wire format:
     /// `Struct[Integer(BlockIndex)]` with a null transaction.
     pub fn serialize_conflict_stub(&self, block_index: u32) -> CoreResult<Vec<u8>> {
-        let item =
-            neo_payloads::TransactionState::new(block_index, None, VMState::NONE).to_stack_value();
+        let item = neo_payloads::TransactionState::new(block_index, None, VMState::NONE)
+            .try_to_stack_value()?;
         BinarySerializer::serialize_stack_value_default(&item)
             .map_err(|e| CoreError::serialization(format!("TransactionState stub: {e}")))
     }

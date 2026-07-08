@@ -74,12 +74,6 @@ impl TransactionState {
         ))]))
     }
 
-    /// Converts to a neo-vm-rs stack value.
-    pub fn to_stack_value(&self) -> StackValue {
-        self.try_to_stack_value()
-            .expect("TransactionState stack projection should serialize valid transactions")
-    }
-
     /// Updates this transaction state from a neo-vm-rs stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         let StackValue::Struct(items) = stack_value else {

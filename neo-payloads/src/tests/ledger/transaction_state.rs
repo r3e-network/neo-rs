@@ -39,11 +39,12 @@ fn sample_transaction(nonce: u32, network_fee: i64) -> Transaction {
 }
 
 fn stack_bytes(state: &TransactionState) -> Vec<u8> {
-    BinarySerializer::serialize_stack_value(
-        &state.to_stack_value(),
-        &ExecutionEngineLimits::default(),
-    )
-    .expect("serialize stack item")
+    BinarySerializer::serialize_stack_value(&stack_value(state), &ExecutionEngineLimits::default())
+        .expect("serialize stack item")
+}
+
+fn stack_value(state: &TransactionState) -> StackValue {
+    state.try_to_stack_value().unwrap()
 }
 
 fn decode_stack_value(bytes: &[u8]) -> StackValue {
@@ -54,7 +55,7 @@ fn decode_stack_value(bytes: &[u8]) -> StackValue {
 fn transaction_state_projects_conflict_stub_to_neo_vm_rs_stack_value() {
     let state = TransactionState::new(7, None, VMState::NONE);
 
-    let left = state.to_stack_value();
+    let left = stack_value(&state);
     let right = StackValue::Struct(vec![StackValue::Integer(7)]);
     assert!(
         stack_value_struct_eq(&left, &right),
@@ -84,7 +85,7 @@ fn transaction_state_reads_from_neo_vm_rs_stack_value() {
 #[test]
 fn conflict_stub_roundtrip() {
     let state = TransactionState::new(7, None, VMState::NONE);
-    let value = state.to_stack_value();
+    let value = stack_value(&state);
 
     let mut parsed = TransactionState::new(0, None, VMState::HALT);
     parsed.from_stack_value(value).unwrap();
@@ -100,7 +101,7 @@ fn full_roundtrip_preserves_transaction_and_state() {
     tx.set_script(vec![0x01, 0x02, 0x03]);
 
     let state = TransactionState::new(42, Some(tx.clone()), VMState::HALT);
-    let value = state.to_stack_value();
+    let value = stack_value(&state);
 
     let mut parsed = TransactionState::new(0, None, VMState::NONE);
     parsed.from_stack_value(value).unwrap();
@@ -129,7 +130,7 @@ fn binary_roundtrip_matches_csharp_transaction_state() {
 #[test]
 fn interoperable_projection_matches_stack_value_projection() {
     let state = TransactionState::new(12, Some(sample_transaction(7, 100)), VMState::HALT);
-    let expected = state.to_stack_value();
+    let expected = stack_value(&state);
 
     let interop = Interoperable::to_stack_value(&state).unwrap();
     assert!(
@@ -214,7 +215,7 @@ fn transaction_state_clone_is_independent() {
 fn transaction_state_from_stack_value_updates_fields() {
     let origin = TransactionState::new(1, Some(sample_transaction(1, 100)), VMState::NONE);
     let mut replica = TransactionState::new(0, None, VMState::HALT);
-    replica.from_stack_value(origin.to_stack_value()).unwrap();
+    replica.from_stack_value(stack_value(&origin)).unwrap();
 
     assert_eq!(stack_bytes(&replica), stack_bytes(&origin));
     assert_eq!(
@@ -223,9 +224,7 @@ fn transaction_state_from_stack_value_updates_fields() {
     );
 
     let new_origin = TransactionState::new(2, Some(sample_transaction(99, 200)), VMState::NONE);
-    replica
-        .from_stack_value(new_origin.to_stack_value())
-        .unwrap();
+    replica.from_stack_value(stack_value(&new_origin)).unwrap();
 
     assert_eq!(stack_bytes(&replica), stack_bytes(&new_origin));
     assert_eq!(replica.block_index, 2);
