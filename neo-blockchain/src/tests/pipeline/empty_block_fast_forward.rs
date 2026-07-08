@@ -376,6 +376,37 @@ fn stage_empty_block_fast_forward_reuses_last_hash_from_ledger_loop() {
 }
 
 #[test]
+fn stage_empty_block_fast_forward_uses_native_provider_factory() {
+    let source = include_str!("../../pipeline/empty_block_fast_forward/stage.rs");
+    let stage = source
+        .split("pub fn stage_empty_block_fast_forward")
+        .nth(1)
+        .and_then(|tail| tail.split("Ok(StagedEmptyBlockFastForward").next())
+        .expect("stage_empty_block_fast_forward source");
+
+    assert!(
+        source.contains("EmptyBlockFastForwardNativeProvider"),
+        "stage should depend on a native fast-forward capability"
+    );
+    assert!(
+        stage.contains("NativeEmptyBlockFastForwardProviderFactory"),
+        "stage should create native fast-forward providers through a factory"
+    );
+    assert!(
+        !stage.contains("NeoToken::new()"),
+        "stage must not construct NeoToken directly"
+    );
+
+    let provider_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src/pipeline/empty_block_fast_forward/provider.rs");
+    let provider = std::fs::read_to_string(&provider_path)
+        .unwrap_or_else(|error| panic!("{}: {error}", provider_path.display()));
+    assert!(provider.contains("trait EmptyBlockFastForwardNativeProvider"));
+    assert!(provider.contains("trait EmptyBlockFastForwardNativeProviderFactory"));
+    assert!(provider.contains("neo: NeoToken"));
+}
+
+#[test]
 fn fast_forward_empty_blocks_matches_normal_persist_store_dump_between_refreshes() {
     let resources = standard_resources();
     let settings = ProtocolSettings::default();

@@ -10,6 +10,10 @@ use crate::native_persist::{NativePersistOptions, NativePersistResources};
 use crate::service_context::BlockPersistContext;
 
 use super::planner::{EmptyBlockFastForwardRequest, plan_empty_block_fast_forward};
+use super::provider::{
+    EmptyBlockFastForwardNativeProvider, EmptyBlockFastForwardNativeProviderFactory,
+    NativeEmptyBlockFastForwardProviderFactory,
+};
 use super::types::EmptyBlockFastForwardPlan;
 
 /// Empty-block fast-forward writes staged in an isolated child cache.
@@ -87,7 +91,8 @@ where
         &last_hash,
         last_index,
     )?;
-    neo_native_contracts::NeoToken::new().fast_forward_empty_block_rewards(
+    let empty_block_native_provider = NativeEmptyBlockFastForwardProviderFactory.provider();
+    empty_block_native_provider.fast_forward_empty_block_rewards(
         &block_cache,
         settings,
         plan.start,

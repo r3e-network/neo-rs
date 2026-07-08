@@ -8,6 +8,7 @@
 //! active native contract explicitly opts in.
 
 mod planner;
+mod provider;
 mod stage;
 mod types;
 
