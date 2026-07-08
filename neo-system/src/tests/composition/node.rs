@@ -15,6 +15,7 @@ fn builder_returns_node_builder() {
 #[test]
 fn tx_admission_uses_ledger_provider_boundary() {
     let source = include_str!("../../composition/node.rs");
+    let provider = include_str!("../../composition/native_provider.rs");
     let start = source
         .find("pub fn try_enqueue_preverify")
         .expect("try_enqueue_preverify exists");
@@ -25,9 +26,20 @@ fn tx_admission_uses_ledger_provider_boundary() {
         "composition-root tx admission must read ledger records through the provider factory"
     );
     assert!(
+        body.contains("NativeTxAdmissionProviderFactory"),
+        "composition-root tx admission must read native policy through the provider factory"
+    );
+    assert!(
         !body.contains("LedgerContract::new()"),
         "composition-root tx admission must not construct native LedgerContract directly"
     );
+    assert!(
+        !body.contains("PolicyContract::new()"),
+        "composition-root tx admission must not construct native PolicyContract directly"
+    );
+    assert!(provider.contains("trait TxAdmissionNativeProvider"));
+    assert!(provider.contains("trait TxAdmissionNativeProviderFactory"));
+    assert!(provider.contains("struct NativeTxAdmissionProviderFactory"));
 }
 
 #[tokio::test]

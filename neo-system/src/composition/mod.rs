@@ -19,6 +19,7 @@
 //! [`neo_runtime::ServiceRegistry`].
 
 pub mod builder;
+mod native_provider;
 pub mod node;
 pub mod sync_download_import;
 pub mod sync_import_pipeline;

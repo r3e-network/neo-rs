@@ -30,7 +30,6 @@ use neo_blockchain::{
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
-use neo_native_contracts::PolicyContract;
 use neo_network::NetworkHandle;
 use neo_payloads::{Transaction, VerifyResult};
 use neo_runtime::{ConfigProvider, StoreProvider, TxAdmission};
@@ -38,11 +37,13 @@ use neo_storage::DataCache;
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_cache::StoreCache;
 
-use neo_error::{CoreError, CoreResult};
-
+use super::native_provider::{
+    NativeTxAdmissionProviderFactory, TxAdmissionNativeProvider, TxAdmissionNativeProviderFactory,
+};
 use crate::error::NodeResult;
 use crate::sync_import_pipeline::SyncImportPipeline;
 use crate::wallet_provider::WalletProvider;
+use neo_error::{CoreError, CoreResult};
 use neo_runtime::ServiceRegistry;
 
 /// The composed Neo node runtime.
@@ -340,8 +341,9 @@ impl TxRouterHandle {
                 VerifyResult::AlreadyExists
             )));
         }
-        let max_traceable_blocks = PolicyContract::new()
-            .get_max_traceable_blocks_snapshot(snapshot, self.settings.as_ref())
+        let native = NativeTxAdmissionProviderFactory.provider();
+        let max_traceable_blocks = native
+            .max_traceable_blocks(snapshot, self.settings.as_ref())
             .map_err(|error| CoreError::other(format!("MaxTraceableBlocks: {error}")))?;
         let signers: Vec<_> = tx.signers().iter().map(|s| s.account).collect();
         if ledger
