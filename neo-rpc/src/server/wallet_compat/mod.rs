@@ -12,6 +12,7 @@
 //!
 //! - `accounts`: wallet account compatibility helpers.
 //! - `errors`: wallet compatibility error vocabulary.
+//! - `native_provider`: Native-contract read seam used by wallet helpers.
 //! - `network_fee`: network-fee estimation helpers.
 //! - `probes`: wallet compatibility probe helpers.
 //! - `signing`: wallet signing compatibility helpers.
@@ -19,6 +20,7 @@
 
 mod accounts;
 mod errors;
+mod native_provider;
 mod network_fee;
 mod probes;
 mod signing;

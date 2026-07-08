@@ -10,7 +10,7 @@ use neo_execution::helper::Helper as ContractHelper;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::serializable::helper::SerializeHelper;
 use neo_manifest::CallFlags;
-use neo_native_contracts::{ContractManagement, PolicyContract};
+use neo_native_contracts::ContractManagement;
 use neo_payloads::HEADER_SIZE;
 use neo_payloads::transaction::Transaction;
 use neo_primitives::{ContractParameterType, TriggerType, UInt160, Verifiable, Witness as _};
@@ -20,6 +20,10 @@ use neo_vm_rs::{OpCode, VmState as VMState};
 use num_bigint::BigInt;
 use num_traits::Zero;
 
+use super::native_provider::{
+    NativeWalletCompatProviderFactory, WalletCompatNativeProvider,
+    WalletCompatNativeProviderFactory,
+};
 use super::{WalletCompatError, WalletCompatResult, core_err};
 
 /// C# `Helper.CalculateNetworkFee(tx, snapshot, settings, accountScript,
@@ -49,14 +53,14 @@ where
         + SerializeHelper::get_var_size_bytes(tx.script())
         + SerializeHelper::get_var_size_usize(hashes.len());
 
-    let policy = PolicyContract::new();
+    let policy = NativeWalletCompatProviderFactory.provider();
     let current_index = StorageLedgerProviderFactory
         .provider(snapshot)
         .current_index()
         .map_err(core_err)?;
     let exec_fee_factor = i64::from(
         policy
-            .get_exec_fee_factor_snapshot(snapshot, settings, current_index.saturating_add(1))
+            .exec_fee_factor(snapshot, settings, current_index.saturating_add(1))
             .map_err(core_err)?,
     );
 
@@ -113,11 +117,7 @@ where
         }
     }
 
-    let fee_per_byte = i64::from(
-        policy
-            .get_fee_per_byte_snapshot(snapshot)
-            .map_err(core_err)?,
-    );
+    let fee_per_byte = i64::from(policy.fee_per_byte(snapshot).map_err(core_err)?);
     network_fee += size as i64 * fee_per_byte;
 
     for attribute in tx.attributes() {

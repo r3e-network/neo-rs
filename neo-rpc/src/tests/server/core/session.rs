@@ -182,6 +182,25 @@ fn smart_contract_wallet_policy_reads_use_native_provider_factory() {
     );
 }
 
+#[test]
+fn wallet_compat_policy_reads_use_native_provider_factory() {
+    let provider = include_str!("../../../server/wallet_compat/native_provider.rs");
+    assert!(provider.contains("trait WalletCompatNativeProvider"));
+    assert!(provider.contains("trait WalletCompatNativeProviderFactory"));
+    assert!(provider.contains("struct NativeWalletCompatProviderFactory"));
+    assert!(provider.contains("PolicyContract::new()"));
+
+    let network_fee = include_str!("../../../server/wallet_compat/network_fee.rs");
+    assert!(
+        network_fee.contains("NativeWalletCompatProviderFactory"),
+        "wallet network-fee calculation should read Policy values through the wallet-compat native provider factory"
+    );
+    assert!(
+        !network_fee.contains("PolicyContract::new()"),
+        "wallet network-fee calculation should not construct PolicyContract directly"
+    );
+}
+
 /// Genesis-block timestamp seeded by the RPC test harness
 /// (`seed_genesis_state` / `genesis_header`).
 const GENESIS_TIMESTAMP: u64 = 1_468_595_301_000;
