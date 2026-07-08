@@ -3,9 +3,9 @@
 use std::env;
 use std::path::PathBuf;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     if env::var("CARGO_FEATURE_NEOFS_GRPC").is_err() {
-        return;
+        return Ok(());
     }
 
     if env::var("PROTOC").is_err() {
@@ -19,8 +19,7 @@ fn main() {
 
     tonic_build::configure()
         .build_server(false)
-        .compile(&[object_proto], &[proto_root])
-        .expect("failed to compile neofs protos");
+        .compile(&[object_proto], &[proto_root])?;
 
     println!("cargo:rerun-if-changed=proto/neofs/object/service.proto");
     println!("cargo:rerun-if-changed=proto/neofs/object/types.proto");
@@ -28,6 +27,7 @@ fn main() {
     println!("cargo:rerun-if-changed=proto/neofs/session/types.proto");
     println!("cargo:rerun-if-changed=proto/neofs/acl/types.proto");
     println!("cargo:rerun-if-changed=proto/neofs/status/types.proto");
+    Ok(())
 }
 
 fn set_env_var<K: AsRef<std::ffi::OsStr>, V: AsRef<std::ffi::OsStr>>(key: K, value: V) {

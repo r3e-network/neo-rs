@@ -737,6 +737,9 @@ test-only unwrap/expect sites.
 `neo-primitives` doctests for storage values, `BigDecimal`, and straight hex
 decoding now use `Result`-returning examples with `?` instead of documenting
 fallible APIs through `unwrap`.
+`neo-oracle-service/build.rs` and
+`neo-system/examples/migrate_from_neosystem.rs` now propagate build/example
+errors through `Result` entrypoints instead of asserting with `expect`.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.

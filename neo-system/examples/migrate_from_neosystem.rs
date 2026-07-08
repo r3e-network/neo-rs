@@ -48,8 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_storage(storage)
         .with_blockchain(blockchain_handle)
         .with_network(network_handle)
-        .build()
-        .expect("required services set");
+        .build()?;
 
     // 3. Drive the node lifecycle. `Node::run` blocks until the
     //    cancellation token is fired.
