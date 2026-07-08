@@ -32,6 +32,7 @@ mod proto;
 mod tests;
 
 use super::OracleServiceSettings;
+use crate::service::OracleServiceError;
 use http::normalize_neofs_endpoint;
 use neo_payloads::OracleResponseCode;
 use neo_wallets::KeyPair;
@@ -78,13 +79,18 @@ pub(crate) struct OracleNeoFsProtocol {
 }
 
 impl OracleNeoFsProtocol {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new() -> Result<Self, OracleServiceError> {
         let version = env!("CARGO_PKG_VERSION");
-        let client = reqwest::Client::builder()
-            .user_agent(format!("NeoOracleService/{}", version))
+        Self::from_builder(
+            reqwest::Client::builder().user_agent(format!("NeoOracleService/{}", version)),
+        )
+    }
+
+    fn from_builder(builder: reqwest::ClientBuilder) -> Result<Self, OracleServiceError> {
+        let client = builder
             .build()
-            .expect("failed to build neofs http client");
-        Self { client }
+            .map_err(|err| OracleServiceError::HttpClientInitialization(err.to_string()))?;
+        Ok(Self { client })
     }
 
     pub(crate) async fn process(

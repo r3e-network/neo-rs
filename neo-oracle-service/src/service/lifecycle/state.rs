@@ -44,7 +44,7 @@ impl OracleService {
             #[cfg(feature = "oracle")]
             https: OracleHttpsProtocol::new()?,
             #[cfg(feature = "oracle")]
-            neofs: OracleNeoFsProtocol::new(),
+            neofs: OracleNeoFsProtocol::new()?,
         })
     }
 

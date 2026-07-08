@@ -1,3 +1,5 @@
+#[path = "http/client.rs"]
+mod client;
 #[path = "http/endpoint.rs"]
 mod endpoint;
 #[path = "http/headers.rs"]
