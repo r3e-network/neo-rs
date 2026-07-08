@@ -53,6 +53,42 @@ pub(crate) fn current_index(snapshot: &DataCache) -> CoreResult<u32> {
         .current_index()
 }
 
+/// Returns the current persisted ledger hash through the canonical storage
+/// ledger provider.
+pub(crate) fn current_hash(snapshot: &DataCache) -> CoreResult<UInt256> {
+    StorageLedgerProviderFactory
+        .provider(snapshot)
+        .current_hash()
+}
+
+/// Returns the current persisted block count through the canonical storage
+/// ledger provider.
+pub(crate) fn block_count(snapshot: &DataCache) -> CoreResult<u32> {
+    StorageLedgerProviderFactory
+        .provider(snapshot)
+        .block_count()
+}
+
+/// Returns the canonical block hash for `index` through the shared storage
+/// ledger boundary.
+pub(crate) fn block_hash_by_index(snapshot: &DataCache, index: u32) -> CoreResult<Option<UInt256>> {
+    StorageLedgerProviderFactory
+        .provider(snapshot)
+        .block_hash_by_index(index)
+}
+
+/// Returns the current height plus the canonical next block hash for the block
+/// or header at `index`.
+pub(crate) fn current_index_and_next_hash(
+    snapshot: &DataCache,
+    index: u32,
+) -> CoreResult<(u32, Option<UInt256>)> {
+    let provider = StorageLedgerProviderFactory.provider(snapshot);
+    let current_index = provider.current_index()?;
+    let next_hash = provider.block_hash_by_index(index.saturating_add(1))?;
+    Ok((current_index, next_hash))
+}
+
 /// Loads the full block for `identifier`, reconstructing the
 /// transaction list from the per-transaction ledger records (C#
 /// `LedgerContract.GetBlock`). Returns `Ok(None)` when the block is not

@@ -6,6 +6,36 @@ use std::net::TcpListener;
 use std::sync::Arc;
 use std::thread;
 
+#[test]
+fn block_handlers_use_shared_ledger_query_boundary() {
+    let handlers = include_str!("../../../server/rpc_server_blockchain/blocks.rs");
+
+    assert!(
+        handlers.contains("ledger_queries::current_hash"),
+        "getbestblockhash should route current-hash reads through shared ledger queries"
+    );
+    assert!(
+        handlers.contains("ledger_queries::block_count"),
+        "getblockcount should route block-count reads through shared ledger queries"
+    );
+    assert!(
+        handlers.contains("ledger_queries::current_index_and_next_hash"),
+        "verbose block/header responses should route tip + next-hash reads through shared ledger queries"
+    );
+    assert!(
+        handlers.contains("ledger_queries::get_full_block"),
+        "block payload reconstruction should stay on the shared ledger-query boundary"
+    );
+    assert!(
+        !handlers.contains("StorageLedgerProviderFactory"),
+        "block RPC handlers should not construct raw storage ledger providers directly"
+    );
+    assert!(
+        !handlers.contains("LedgerContract::new()"),
+        "block RPC handlers should not construct native LedgerContract directly"
+    );
+}
+
 fn serve_rpc_once(expected_method: &'static str, result: Value) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind test RPC");
     let url = format!("http://{}", listener.local_addr().expect("addr"));

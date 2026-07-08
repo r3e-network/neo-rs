@@ -1,8 +1,5 @@
 //! Block, header, height, and chain-tip RPC handlers.
 
-use neo_blockchain::{
-    BlockProvider, ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory,
-};
 use serde_json::Value;
 
 use super::RpcServerBlockchain;
@@ -30,10 +27,7 @@ impl RpcServerBlockchain {
                 .map_err(RpcException::from);
         }
         let store = server.system().store_cache();
-        let hash = StorageLedgerProviderFactory
-            .provider(store.data_cache())
-            .current_hash()
-            .map_err(internal_error)?;
+        let hash = ledger_queries::current_hash(store.data_cache()).map_err(internal_error)?;
         Ok(hash_to_json(&hash))
     }
 
@@ -48,10 +42,7 @@ impl RpcServerBlockchain {
                 .map_err(RpcException::from);
         }
         let store = server.system().store_cache();
-        let count = StorageLedgerProviderFactory
-            .provider(store.data_cache())
-            .block_count()
-            .map_err(internal_error)?;
+        let count = ledger_queries::block_count(store.data_cache()).map_err(internal_error)?;
         Ok(count_to_json(count))
     }
 
@@ -72,10 +63,7 @@ impl RpcServerBlockchain {
         let base_height = if let Some(index) = cache_height {
             index
         } else {
-            StorageLedgerProviderFactory
-                .provider(store.data_cache())
-                .current_index()
-                .map_err(internal_error)?
+            ledger_queries::current_index(store.data_cache()).map_err(internal_error)?
         };
         Ok(count_to_json(base_height.saturating_add(1)))
     }
@@ -91,15 +79,12 @@ impl RpcServerBlockchain {
         }
         let request = BlockHeightRequest::parse(params, "getblockhash")?;
         let store = server.system().store_cache();
-        let factory = StorageLedgerProviderFactory;
-        let provider = factory.provider(store.data_cache());
-        let current = provider.current_index().map_err(internal_error)?;
+        let current = ledger_queries::current_index(store.data_cache()).map_err(internal_error)?;
         if request.height > current {
             return Err(RpcException::from(RpcError::unknown_height()));
         }
 
-        let hash = provider
-            .block_hash_by_index(request.height)
+        let hash = ledger_queries::block_hash_by_index(store.data_cache(), request.height)
             .map_err(internal_error)?
             .ok_or_else(|| RpcException::from(RpcError::unknown_block()))?;
         Ok(hash_to_json(&hash))
@@ -113,12 +98,11 @@ impl RpcServerBlockchain {
         let store = server.system().store_cache();
         let block = Self::fetch_payload_block(&store, &request.identifier)?;
         if request.verbose {
-            let factory = StorageLedgerProviderFactory;
-            let provider = factory.provider(store.data_cache());
-            let current_index = provider.current_index().map_err(internal_error)?;
-            let next_hash = provider
-                .block_hash_by_index(block.header.index().saturating_add(1))
-                .map_err(internal_error)?;
+            let (current_index, next_hash) = ledger_queries::current_index_and_next_hash(
+                store.data_cache(),
+                block.header.index(),
+            )
+            .map_err(internal_error)?;
             return Ok(block_to_json(server, &block, current_index, next_hash));
         }
 
@@ -139,12 +123,9 @@ impl RpcServerBlockchain {
         let block = Self::fetch_payload_block(&store, &request.identifier)?;
         let header = &block.header;
         if request.verbose {
-            let factory = StorageLedgerProviderFactory;
-            let provider = factory.provider(store.data_cache());
-            let current_index = provider.current_index().map_err(internal_error)?;
-            let next_hash = provider
-                .block_hash_by_index(header.index().saturating_add(1))
-                .map_err(internal_error)?;
+            let (current_index, next_hash) =
+                ledger_queries::current_index_and_next_hash(store.data_cache(), header.index())
+                    .map_err(internal_error)?;
             return Ok(header_to_json(server, header, current_index, next_hash));
         }
 
@@ -162,10 +143,7 @@ impl RpcServerBlockchain {
         }
         let request = BlockHeightRequest::parse(params, "getblocksysfee")?;
         let store = server.system().store_cache();
-        let current = StorageLedgerProviderFactory
-            .provider(store.data_cache())
-            .current_index()
-            .map_err(internal_error)?;
+        let current = ledger_queries::current_index(store.data_cache()).map_err(internal_error)?;
         if request.height > current {
             return Err(RpcException::from(RpcError::unknown_height()));
         }
