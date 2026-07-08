@@ -5,6 +5,9 @@ use tracing::{debug, warn};
 use crate::PreverifyCompleted;
 use crate::command::AddTransactionReply;
 use crate::fill_memory_pool::FillMemoryPool;
+use crate::ledger_provider::{
+    LedgerProviderFactory, StorageLedgerProviderFactory, TransactionStateProvider, TxProvider,
+};
 use crate::service::{BlockchainService, MempoolLike};
 
 /// C# `Blockchain.MaxTxToReverifyPerIdle`.
@@ -18,9 +21,8 @@ where
         let Some(snapshot) = self.system.store_snapshot() else {
             return false;
         };
-        match neo_native_contracts::LedgerContract::new()
-            .contains_transaction(snapshot.as_ref(), hash)
-        {
+        let provider = StorageLedgerProviderFactory.provider(snapshot.as_ref());
+        match TxProvider::contains_transaction(&provider, hash) {
             Ok(exists) => exists,
             Err(error) => {
                 warn!(
@@ -55,12 +57,8 @@ where
                 return false;
             }
         };
-        match neo_native_contracts::LedgerContract::new().contains_conflict_hash(
-            snapshot.as_ref(),
-            hash,
-            signers,
-            max_traceable_blocks,
-        ) {
+        let provider = StorageLedgerProviderFactory.provider(snapshot.as_ref());
+        match provider.contains_conflict_hash(hash, signers, max_traceable_blocks) {
             Ok(exists) => exists,
             Err(error) => {
                 warn!(

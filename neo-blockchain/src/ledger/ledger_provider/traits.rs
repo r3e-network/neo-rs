@@ -6,13 +6,13 @@
 
 use neo_error::CoreResult;
 use neo_payloads::{Block, Header, Transaction, TransactionState};
-use neo_primitives::UInt256;
+use neo_primitives::{UInt160, UInt256};
 use neo_storage::DataCache;
 
 /// Combined read capability for ledger providers.
-pub trait LedgerProvider: BlockProvider + TxProvider {}
+pub trait LedgerProvider: BlockProvider + TxProvider + TransactionStateProvider {}
 
-impl<P> LedgerProvider for P where P: BlockProvider + TxProvider {}
+impl<P> LedgerProvider for P where P: BlockProvider + TxProvider + TransactionStateProvider {}
 
 /// Read-only access to the canonical current block pointer.
 pub trait ChainTipProvider {
@@ -135,6 +135,20 @@ pub trait TransactionStateProvider {
     /// Returns the persisted transaction-state record for `hash`, including
     /// conflict stubs.
     fn transaction_state_by_hash(&self, hash: &UInt256) -> CoreResult<Option<TransactionState>>;
+
+    /// Returns whether the ledger contains a traceable conflict record for
+    /// `hash` intersecting at least one signer.
+    ///
+    /// Neo records conflicts as one bare stub under the conflicting hash and
+    /// one per-signer stub under `hash + signer`. Public transaction lookups
+    /// must hide those stubs, but transaction admission needs this exact
+    /// C# `LedgerContract.ContainsConflictHash` shape.
+    fn contains_conflict_hash(
+        &self,
+        hash: &UInt256,
+        signers: &[UInt160],
+        max_traceable_blocks: u32,
+    ) -> CoreResult<bool>;
 }
 
 impl<P> TransactionStateProvider for &P
@@ -143,5 +157,14 @@ where
 {
     fn transaction_state_by_hash(&self, hash: &UInt256) -> CoreResult<Option<TransactionState>> {
         (**self).transaction_state_by_hash(hash)
+    }
+
+    fn contains_conflict_hash(
+        &self,
+        hash: &UInt256,
+        signers: &[UInt160],
+        max_traceable_blocks: u32,
+    ) -> CoreResult<bool> {
+        (**self).contains_conflict_hash(hash, signers, max_traceable_blocks)
     }
 }

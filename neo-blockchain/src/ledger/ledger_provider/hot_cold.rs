@@ -6,7 +6,7 @@
 
 use neo_error::CoreResult;
 use neo_payloads::{Block, Header, Transaction, TransactionState};
-use neo_primitives::UInt256;
+use neo_primitives::{UInt160, UInt256};
 use neo_storage::DataCache;
 
 use super::{
@@ -92,6 +92,22 @@ where
             Some(state) => Ok(Some(state)),
             None => self.cold.transaction_state_by_hash(hash),
         }
+    }
+
+    fn contains_conflict_hash(
+        &self,
+        hash: &UInt256,
+        signers: &[UInt160],
+        max_traceable_blocks: u32,
+    ) -> CoreResult<bool> {
+        if self
+            .hot
+            .contains_conflict_hash(hash, signers, max_traceable_blocks)?
+        {
+            return Ok(true);
+        }
+        self.cold
+            .contains_conflict_hash(hash, signers, max_traceable_blocks)
     }
 }
 

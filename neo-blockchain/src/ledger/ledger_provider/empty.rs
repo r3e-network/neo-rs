@@ -6,7 +6,7 @@
 
 use neo_error::CoreResult;
 use neo_payloads::{Block, Header, Transaction, TransactionState};
-use neo_primitives::UInt256;
+use neo_primitives::{UInt160, UInt256};
 use neo_storage::DataCache;
 
 use super::{BlockProvider, LedgerProviderFactory, TransactionStateProvider, TxProvider};
@@ -38,6 +38,15 @@ impl TxProvider for EmptyLedgerProvider {
 impl TransactionStateProvider for EmptyLedgerProvider {
     fn transaction_state_by_hash(&self, _hash: &UInt256) -> CoreResult<Option<TransactionState>> {
         Ok(None)
+    }
+
+    fn contains_conflict_hash(
+        &self,
+        _hash: &UInt256,
+        _signers: &[UInt160],
+        _max_traceable_blocks: u32,
+    ) -> CoreResult<bool> {
+        Ok(false)
     }
 }
 

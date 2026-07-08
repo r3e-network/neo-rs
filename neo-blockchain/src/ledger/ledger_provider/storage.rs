@@ -3,7 +3,7 @@
 use neo_error::{CoreError, CoreResult};
 use neo_native_contracts::LedgerContract;
 use neo_payloads::{Block, Header, Transaction, TransactionState};
-use neo_primitives::UInt256;
+use neo_primitives::{UInt160, UInt256};
 use neo_storage::DataCache;
 
 use super::{
@@ -77,6 +77,20 @@ impl TxProvider for StorageLedgerProvider<'_> {
 impl TransactionStateProvider for StorageLedgerProvider<'_> {
     fn transaction_state_by_hash(&self, hash: &UInt256) -> CoreResult<Option<TransactionState>> {
         LedgerContract::new().get_transaction_state(self.snapshot, hash)
+    }
+
+    fn contains_conflict_hash(
+        &self,
+        hash: &UInt256,
+        signers: &[UInt160],
+        max_traceable_blocks: u32,
+    ) -> CoreResult<bool> {
+        LedgerContract::new().contains_conflict_hash(
+            self.snapshot,
+            hash,
+            signers,
+            max_traceable_blocks,
+        )
     }
 }
 

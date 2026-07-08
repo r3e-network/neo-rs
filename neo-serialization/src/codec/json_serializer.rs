@@ -87,10 +87,7 @@ impl JsonSerializer {
     /// Use this anywhere a manifest, native ABI member, or other persisted JSON
     /// payload must match C# Neo v3.x.
     pub fn encode_value_csharp_compatible(value: &JsonValue) -> Vec<u8> {
-        match Self::try_encode_value_csharp_compatible(value) {
-            Ok(bytes) => bytes,
-            Err(_) => Vec::new(),
-        }
+        Self::try_encode_value_csharp_compatible(value).unwrap_or_default()
     }
 
     /// Fallible variant of [`Self::encode_value_csharp_compatible`] for callers

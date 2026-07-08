@@ -257,6 +257,15 @@ impl TransactionStateProvider for ColdLedgerProvider {
     ) -> CoreResult<Option<neo_payloads::TransactionState>> {
         Ok(self.states.get(hash).cloned())
     }
+
+    fn contains_conflict_hash(
+        &self,
+        _hash: &UInt256,
+        _signers: &[UInt160],
+        _max_traceable_blocks: u32,
+    ) -> CoreResult<bool> {
+        Ok(false)
+    }
 }
 
 #[test]
