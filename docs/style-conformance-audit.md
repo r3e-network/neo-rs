@@ -781,8 +781,9 @@ modules now live under `src/tests/native`, so the style audit no longer reports
 `neo-crypto` no-salt `blake2b` hashing now uses the direct hasher path,
 in-memory Murmur helpers log and return deterministic zero values on impossible
 reader failures, and EC point ordering falls back to compressed-byte ordering if
-a validated point ever fails to reparse. The remaining `neo-crypto`
-unwrap/expect files are source-adjacent Merkle-tree and Bloom-filter tests.
+a validated point ever fails to reparse. The remaining source-adjacent
+Merkle-tree and Bloom-filter tests now live under `src/tests`, so the style
+audit no longer reports `neo-crypto` in the production unwrap/expect section.
 
 Recommended next patches, in order:
 
