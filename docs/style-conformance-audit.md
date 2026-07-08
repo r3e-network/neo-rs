@@ -669,13 +669,18 @@ but a registry mismatch no longer aborts an RPC or node service lookup path.
 `neo-primitives/src/payload/serializable_payload.rs` now materializes the
 SHA-256 payload digest into a fixed `[u8; 32]` before constructing `UInt256`.
 This removes the production `expect()` path while preserving Neo N3's
-single-SHA payload hash semantics; the style audit now reports three
-`neo-primitives` production unwrap/expect sites.
+single-SHA payload hash semantics.
 Generated fixed-width uint types now expose `from_array` for callers that
 already hold `[u8; N]`, keeping array construction infallible while preserving
 typed errors for variable-length slice decoding. `UInt160::from_script` and
 native registry hash construction use that path instead of fallback-to-zero
 conversion.
+`BigDecimal` stores its scale as `u32` internally, so multiplying two values
+created from valid `u8` token decimals no longer routes through a production
+`expect()` on decimal overflow. The direct `neo-primitives` production scan now
+leaves only doc-comment unwrap examples in that crate; the aggregate audit
+bucket still reports those examples until the scanner distinguishes doctests
+from production code.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.

@@ -99,6 +99,18 @@ fn test_big_decimal_to_big_integer() {
     let result = amount.to_big_integer(4);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_big_decimal_mul_preserves_large_combined_scale() {
+    let left = BigDecimal::new(BigInt::from(2), 200);
+    let right = BigDecimal::new(BigInt::from(3), 100);
+
+    let product = left * right;
+
+    assert_eq!(product.value(), &BigInt::from(6));
+    assert_eq!(product.decimals(), 300);
+}
+
 #[test]
 fn test_big_decimal_comparison() {
     let bd1 = BigDecimal::new(BigInt::from(12345), 2);

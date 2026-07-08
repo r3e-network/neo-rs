@@ -53,7 +53,7 @@ pub struct BigDecimal {
     value: BigInt,
 
     /// The number of decimal places.
-    decimals: u8,
+    decimals: u32,
 }
 
 impl Hash for BigDecimal {
@@ -80,6 +80,10 @@ impl BigDecimal {
     ///
     /// A new BigDecimal instance.
     pub fn new(value: BigInt, decimals: u8) -> Self {
+        Self::from_scaled(value, u32::from(decimals))
+    }
+
+    fn from_scaled(value: BigInt, decimals: u32) -> Self {
         Self { value, decimals }
     }
 
@@ -97,7 +101,7 @@ impl BigDecimal {
     /// # Returns
     ///
     /// The number of decimal places.
-    pub fn decimals(&self) -> u8 {
+    pub fn decimals(&self) -> u32 {
         self.decimals
     }
 
@@ -126,17 +130,21 @@ impl BigDecimal {
     ///
     /// A Result containing either a new BigDecimal with the new number of decimal places or an error.
     pub fn change_decimals(&self, decimals: u8) -> PrimitiveResult<Self> {
+        self.change_decimals_to(u32::from(decimals))
+    }
+
+    fn change_decimals_to(&self, decimals: u32) -> PrimitiveResult<Self> {
         if self.decimals == decimals {
             return Ok(self.clone());
         }
 
         let value = if self.decimals < decimals {
             // Increase precision
-            let factor = BigInt::from(10).pow(decimals - self.decimals);
+            let factor = pow10(decimals - self.decimals);
             self.value.clone() * factor
         } else {
             // Decrease precision
-            let factor = BigInt::from(10).pow(self.decimals - decimals);
+            let factor = pow10(self.decimals - decimals);
             let (quotient, remainder) = self.value.clone().div_rem(&factor);
 
             // Ensure no loss of precision
@@ -161,7 +169,7 @@ impl BigDecimal {
     /// Returns the normalized canonical representation `(value, decimals)` where
     /// trailing zeros are removed. This is the form used for hashing, ensuring
     /// `Hash` is consistent with `Eq`.
-    fn normalized_value(&self) -> (BigInt, u8) {
+    fn normalized_value(&self) -> (BigInt, u32) {
         let mut value = self.value.clone();
         let mut decimals = self.decimals;
         if decimals > 0 {
@@ -233,12 +241,19 @@ impl BigDecimal {
             }
         }
 
-        let adjusted_decimals = decimal_places as i32 - e;
+        let adjusted_decimals =
+            i64::try_from(decimal_places).map_err(|_| PrimitiveError::InvalidFormat {
+                message: "Too many decimal places".to_string(),
+            })? - i64::from(e);
         if adjusted_decimals < 0 {
             return Err(PrimitiveError::InvalidFormat {
                 message: "Negative decimals not supported".to_string(),
             });
         }
+        let adjusted_decimals =
+            u32::try_from(adjusted_decimals).map_err(|_| PrimitiveError::InvalidFormat {
+                message: "Too many decimal places".to_string(),
+            })?;
 
         // Parse the integer part
         let value = BigInt::from_str(&s).map_err(|_| PrimitiveError::InvalidFormat {
@@ -246,8 +261,8 @@ impl BigDecimal {
         })?;
 
         // Adjust to the requested number of decimals
-        let mut result = Self::new(value, adjusted_decimals as u8);
-        if adjusted_decimals as u8 != decimals {
+        let mut result = Self::from_scaled(value, adjusted_decimals);
+        if adjusted_decimals != u32::from(decimals) {
             result = result.change_decimals(decimals)?;
         }
 
@@ -271,11 +286,11 @@ impl Ord for BigDecimal {
     fn cmp(&self, other: &Self) -> Ordering {
         let (left, right) = match self.decimals.cmp(&other.decimals) {
             Ordering::Less => {
-                let factor = BigInt::from(10).pow(other.decimals - self.decimals);
+                let factor = pow10(other.decimals - self.decimals);
                 (self.value.clone() * factor, other.value.clone())
             }
             Ordering::Greater => {
-                let factor = BigInt::from(10).pow(self.decimals - other.decimals);
+                let factor = pow10(self.decimals - other.decimals);
                 (self.value.clone(), other.value.clone() * factor)
             }
             Ordering::Equal => (self.value.clone(), other.value.clone()),
@@ -291,7 +306,7 @@ impl fmt::Display for BigDecimal {
             return write!(f, "{}", self.value);
         }
 
-        let divisor = BigInt::from(10).pow(self.decimals);
+        let divisor = pow10(self.decimals);
         let (quotient, mut remainder) = self.value.clone().div_rem(&divisor);
 
         // Handle negative remainders
@@ -334,8 +349,8 @@ impl Add for BigDecimal {
     fn add(self, other: Self) -> Self::Output {
         // Normalize to the same number of decimals
         let max_decimals = self.decimals.max(other.decimals);
-        let self_normalized = self.change_decimals(max_decimals).unwrap_or(self);
-        let other_normalized = other.change_decimals(max_decimals).unwrap_or(other);
+        let self_normalized = self.change_decimals_to(max_decimals).unwrap_or(self);
+        let other_normalized = other.change_decimals_to(max_decimals).unwrap_or(other);
 
         // Add the values
         Self {
@@ -349,15 +364,9 @@ impl Mul for BigDecimal {
     type Output = Self;
 
     fn mul(self, other: Self) -> Self::Output {
-        // Multiply the values and add the decimals. `checked_add` turns an
-        // (unreachable via protocol token decimals) u8 overflow into a clear
-        // panic instead of a silent wrap in release builds.
         Self {
             value: self.value * other.value,
-            decimals: self
-                .decimals
-                .checked_add(other.decimals)
-                .expect("BigDecimal decimals overflow (sum exceeds u8::MAX)"),
+            decimals: self.decimals + other.decimals,
         }
     }
 }
@@ -383,8 +392,8 @@ impl Sub for BigDecimal {
 
     fn sub(self, other: Self) -> Self::Output {
         let max_decimals = self.decimals.max(other.decimals);
-        let self_normalized = self.change_decimals(max_decimals).unwrap_or(self);
-        let other_normalized = other.change_decimals(max_decimals).unwrap_or(other);
+        let self_normalized = self.change_decimals_to(max_decimals).unwrap_or(self);
+        let other_normalized = other.change_decimals_to(max_decimals).unwrap_or(other);
 
         Self {
             value: self_normalized.value - other_normalized.value,
@@ -398,8 +407,8 @@ impl Div for BigDecimal {
 
     fn div(self, other: Self) -> Self::Output {
         let max_decimals = self.decimals.max(other.decimals);
-        let self_normalized = self.change_decimals(max_decimals).unwrap_or(self);
-        let other_normalized = other.change_decimals(max_decimals).unwrap_or(other);
+        let self_normalized = self.change_decimals_to(max_decimals).unwrap_or(self);
+        let other_normalized = other.change_decimals_to(max_decimals).unwrap_or(other);
 
         if other_normalized.value.is_zero() {
             // Division by zero: return zero (matches Neo C# behavior for BigDecimal)
@@ -422,6 +431,10 @@ impl Neg for BigDecimal {
             decimals: self.decimals,
         }
     }
+}
+
+fn pow10(exponent: u32) -> BigInt {
+    BigInt::from(10).pow(exponent)
 }
 
 #[cfg(test)]
