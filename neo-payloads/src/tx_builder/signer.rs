@@ -1,5 +1,6 @@
 use crate::{Signer, WitnessRule, WitnessRuleAction};
 use neo_crypto::ECPoint;
+use neo_error::CoreResult;
 use neo_primitives::{UInt160, WitnessScope};
 
 use super::WitnessRuleBuilder;
@@ -72,14 +73,18 @@ impl SignerBuilder {
     }
 
     /// Adds a witness rule with the specified action.
-    pub fn add_witness_rule<F>(&mut self, action: WitnessRuleAction, config: F) -> &mut Self
+    pub fn add_witness_rule<F>(
+        &mut self,
+        action: WitnessRuleAction,
+        config: F,
+    ) -> CoreResult<&mut Self>
     where
         F: FnOnce(&mut WitnessRuleBuilder),
     {
         let mut builder = WitnessRuleBuilder::new(action);
         config(&mut builder);
-        self.rules.push(builder.build());
-        self
+        self.rules.push(builder.build()?);
+        Ok(self)
     }
 
     /// Builds and returns the configured Signer.

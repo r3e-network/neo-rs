@@ -712,6 +712,9 @@ panicked on conversion errors was removed.
 `neo-payloads/src/ledger/merkle_block_payload.rs` now keeps only
 `try_create`; the unused `create` wrapper that converted transaction hash
 serialization errors into a panic was removed.
+`neo-payloads/src/tx_builder/witness_condition.rs` now reports missing witness
+rule conditions as a typed builder error, and `SignerBuilder::add_witness_rule`
+propagates that result instead of unwrapping the invariant.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.

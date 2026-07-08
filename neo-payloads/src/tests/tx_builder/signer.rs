@@ -40,3 +40,31 @@ fn allowed_contracts_are_collected_in_order() {
     let s = b.build();
     assert_eq!(s.allowed_contracts, vec![c1, c2]);
 }
+
+#[test]
+fn witness_rule_builder_requires_condition() {
+    let error = WitnessRuleBuilder::new(WitnessRuleAction::Allow)
+        .build()
+        .unwrap_err();
+
+    assert!(
+        error.to_string().contains("Witness rule condition"),
+        "{error}"
+    );
+}
+
+#[test]
+fn configured_witness_rule_is_collected() {
+    let mut b = SignerBuilder::new();
+    b.add_witness_rule(WitnessRuleAction::Allow, |rule| {
+        rule.add_condition(|condition| {
+            condition.called_by_entry();
+        });
+    })
+    .unwrap();
+
+    let s = b.build();
+    assert_eq!(s.rules.len(), 1);
+    assert_eq!(s.rules[0].action, WitnessRuleAction::Allow);
+    assert_eq!(s.rules[0].condition, crate::WitnessCondition::CalledByEntry);
+}

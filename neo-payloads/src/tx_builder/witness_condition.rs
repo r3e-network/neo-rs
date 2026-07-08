@@ -1,5 +1,6 @@
 use crate::{WitnessCondition, WitnessRule, WitnessRuleAction};
 use neo_crypto::ECPoint;
+use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
 
 macro_rules! impl_witness_condition_builder_methods {
@@ -130,13 +131,12 @@ impl WitnessRuleBuilder {
     }
 
     /// Builds and returns the configured witness rule.
-    pub fn build(&self) -> WitnessRule {
-        WitnessRule::new(
-            self.action,
-            self.condition
-                .clone()
-                .expect("Witness rule condition must be set"),
-        )
+    pub fn build(&self) -> CoreResult<WitnessRule> {
+        let condition = self
+            .condition
+            .clone()
+            .ok_or_else(|| CoreError::invalid_operation("Witness rule condition must be set"))?;
+        Ok(WitnessRule::new(self.action, condition))
     }
 }
 
