@@ -1,16 +1,17 @@
 //! C# `TransactionAttribute.Verify` dispatch for the admission path.
 
-use neo_native_contracts::{NeoToken, Notary, OracleContract, RoleManagement};
 use neo_payloads::{OracleResponse, Transaction, TransactionAttribute};
 use neo_storage::DataCache;
 use neo_vm::script_builder::RedeemScript;
 
+use super::super::native_provider::AdmissionNativeProvider;
 use super::AdmissionLedgerProvider;
 use super::sender;
 
 /// C# `TransactionAttribute.Verify` dispatch.
-pub(super) fn verify_attribute<L>(
+pub(super) fn verify_attribute<L, N>(
     ledger: &L,
+    native: &N,
     snapshot: &DataCache,
     tx: &Transaction,
     attribute: &TransactionAttribute,
@@ -18,18 +19,15 @@ pub(super) fn verify_attribute<L>(
 ) -> bool
 where
     L: AdmissionLedgerProvider + ?Sized,
+    N: AdmissionNativeProvider + ?Sized,
 {
     match attribute {
         // C# HighPriorityAttribute.Verify: a signer must be the committee
         // multisig address.
-        TransactionAttribute::HighPriority => {
-            let committee =
-                neo_execution::NativeContract::committee_address(&NeoToken::new(), snapshot);
-            match committee {
-                Ok(Some(committee)) => tx.signers().iter().any(|s| s.account == committee),
-                _ => false,
-            }
-        }
+        TransactionAttribute::HighPriority => match native.committee_address(snapshot) {
+            Ok(Some(committee)) => tx.signers().iter().any(|s| s.account == committee),
+            _ => false,
+        },
         // C# NotValidBefore.Verify: `CurrentIndex >= Height`.
         TransactionAttribute::NotValidBefore(attr) => height >= attr.height,
         // C# v3.10.0 Conflicts.Verify: reject if the transaction carries
@@ -65,17 +63,13 @@ where
             if tx.script() != fixed_script.as_slice() {
                 return false;
             }
-            let Ok(Some(request)) = OracleContract::new().get_request(snapshot, attr.id) else {
+            let Ok(Some(request)) = native.oracle_request(snapshot, attr.id) else {
                 return false;
             };
             if !oracle_response_gas_matches(tx, request.gas_for_response) {
                 return false;
             }
-            let Ok(oracles) = RoleManagement::new().get_designated_by_role_at(
-                snapshot,
-                neo_native_contracts::Role::Oracle,
-                height + 1,
-            ) else {
+            let Ok(oracles) = native.designated_oracles(snapshot, height + 1) else {
                 return false;
             };
             let Some(oracle_account) = RedeemScript::bft_address(&oracles) else {
@@ -86,7 +80,7 @@ where
         // C# NotaryAssisted.Verify: the Notary hash must sign; when it is
         // the sender there must be exactly two signers (payer second).
         TransactionAttribute::NotaryAssisted(_) => {
-            let notary = Notary::script_hash();
+            let notary = native.notary_hash();
             if sender(tx) == Some(notary) {
                 return tx.signers().len() == 2;
             }

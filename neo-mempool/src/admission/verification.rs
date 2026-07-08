@@ -14,16 +14,15 @@
 //! the combination, which is what [`verify_transaction`] produces for the
 //! single-threaded admission path here.
 //!
-//! Policy/Gas/Ledger state is read through provider-style seams or the
-//! canonical `neo-native-contracts` readers where they exist. The Ledger reads
-//! are centralized behind [`AdmissionLedgerProvider`] so the admission path
-//! depends on capabilities, not concrete Ledger construction at every call
-//! site. Each direct storage constant remains pinned to its C# definition.
+//! Policy/GAS/Notary/Oracle/Role/Ledger state is read through provider-style
+//! seams so the admission path depends on capabilities, not concrete native
+//! contract construction at every call site. Each direct storage constant
+//! remains pinned to its C# definition.
 
 use neo_config::{Hardfork, ProtocolSettings};
 use neo_execution::helper::Helper;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::{GasToken, Notary, PolicyContract, StandardNativeProvider};
+use neo_native_contracts::StandardNativeProvider;
 use neo_payloads::{MAX_TRANSACTION_SIZE, Transaction, TransactionAttribute};
 use neo_primitives::{UInt160, VerifyResult};
 // `invocation_script`/`verification_script` on `Witness` are trait methods.
@@ -37,29 +36,9 @@ use num_bigint::BigInt;
 use std::sync::Arc;
 
 use super::ledger_provider::{AdmissionLedgerProvider, NativeAdmissionLedgerProvider};
-
-/// Stateless reader of `PolicyContract` storage and the derived protocol
-/// limits the mempool needs during transaction admission.
-pub struct PolicyReader;
-
-impl PolicyReader {
-    /// C# `PolicyContract.IsBlocked` — key existence under
-    /// `Prefix_BlockedAccount + account`.
-    fn policy_is_blocked(snapshot: &DataCache, account: &UInt160) -> bool {
-        PolicyContract::is_blocked_snapshot(snapshot, account)
-    }
-
-    /// C# `NeoSystemExtensions.GetMaxValidUntilBlockIncrement(snapshot,
-    /// settings)`: before HF_Echidna the protocol setting, after it the
-    /// Policy storage value (falling back to the setting when the key has
-    /// not been initialized yet).
-    fn max_valid_until_block_increment(
-        snapshot: &DataCache,
-        settings: &ProtocolSettings,
-    ) -> neo_error::CoreResult<u32> {
-        PolicyContract::new().get_max_valid_until_block_increment_snapshot(snapshot, settings)
-    }
-}
+use super::native_provider::{
+    AdmissionNativeProvider, AdmissionNativeProviderFactory, NativeAdmissionProviderFactory,
+};
 
 /// C# `NativeContract.GAS.BalanceOf(snapshot, account)`: the first field of the
 /// interoperable NEP-17 `AccountState` struct stored under
@@ -68,20 +47,25 @@ impl PolicyReader {
 /// Delegates to the single canonical decode in `neo-native-contracts` so the
 /// mempool fee check cannot drift from the contract's own balance reader.
 pub fn gas_balance_of(snapshot: &DataCache, account: &UInt160) -> BigInt {
-    GasToken::balance_of(snapshot, account).unwrap_or_else(|_| BigInt::from(0))
+    let native = NativeAdmissionProviderFactory.provider();
+    native.gas_balance(snapshot, account)
 }
 
 /// C# v3.10.1 `MemoryPool.GetPayer` balance side: Notary-sponsored
 /// transactions (`Sender == Notary.Hash` and a second signer exists) spend the
 /// second signer's Notary deposit. Ordinary transactions spend the sender's GAS
 /// balance.
-fn fee_payer_balance(snapshot: &DataCache, tx: &Transaction) -> Option<BigInt> {
+fn fee_payer_balance(
+    snapshot: &DataCache,
+    tx: &Transaction,
+    native_provider: &impl AdmissionNativeProvider,
+) -> Option<BigInt> {
     let sender = sender(tx)?;
-    if sender == Notary::script_hash() && tx.signers().len() >= 2 {
+    if sender == native_provider.notary_hash() && tx.signers().len() >= 2 {
         let payer = tx.signers()[1].account;
-        Some(Notary::balance_of(snapshot, &payer).unwrap_or_else(|_| BigInt::from(0)))
+        Some(native_provider.notary_balance(snapshot, &payer))
     } else {
-        Some(gas_balance_of(snapshot, &sender))
+        Some(native_provider.gas_balance(snapshot, &sender))
     }
 }
 
@@ -307,6 +291,7 @@ pub fn verify_state_dependent_with_native_provider(
     native_contract_provider: Arc<dyn NativeContractProvider>,
 ) -> VerifyResult {
     let ledger_provider = NativeAdmissionLedgerProvider::new();
+    let admission_native_provider = NativeAdmissionProviderFactory.provider();
     verify_state_dependent_with_providers(
         tx,
         snapshot,
@@ -315,6 +300,7 @@ pub fn verify_state_dependent_with_native_provider(
         oracle_duplicate,
         native_contract_provider,
         &ledger_provider,
+        &admission_native_provider,
     )
 }
 
@@ -326,6 +312,7 @@ fn verify_state_dependent_with_providers(
     oracle_duplicate: bool,
     native_contract_provider: Arc<dyn NativeContractProvider>,
     ledger_provider: &impl AdmissionLedgerProvider,
+    admission_native_provider: &impl AdmissionNativeProvider,
 ) -> VerifyResult {
     use neo_io::Serializable;
 
@@ -338,7 +325,8 @@ fn verify_state_dependent_with_providers(
     // one more than `MaxValidUntilBlockIncrement` ahead of the tip is
     // `NotYetValid`. The accept range (`height < VUB <= height + increment`) is
     // unchanged; only the rejection classification differs.
-    let Ok(max_increment) = PolicyReader::max_valid_until_block_increment(snapshot, settings)
+    let Ok(max_increment) =
+        admission_native_provider.max_valid_until_block_increment(snapshot, settings)
     else {
         return VerifyResult::UnableToVerify;
     };
@@ -352,7 +340,7 @@ fn verify_state_dependent_with_providers(
     // Blocked accounts.
     let hashes: Vec<UInt160> = tx.signers().iter().map(|s| s.account).collect();
     for hash in &hashes {
-        if PolicyReader::policy_is_blocked(snapshot, hash) {
+        if admission_native_provider.policy_is_blocked(snapshot, hash) {
             return VerifyResult::PolicyFail;
         }
     }
@@ -360,7 +348,7 @@ fn verify_state_dependent_with_providers(
     // Sender GAS balance (C# TransactionVerificationContext.CheckTransaction;
     // `pooled_sender_fee` already carries the pooled-conflict fee rebate
     // applied by `MemoryPool::try_add`'s CheckConflicts).
-    let Some(balance) = fee_payer_balance(snapshot, tx) else {
+    let Some(balance) = fee_payer_balance(snapshot, tx, admission_native_provider) else {
         return VerifyResult::Invalid;
     };
     let expected_fee =
@@ -380,7 +368,14 @@ fn verify_state_dependent_with_providers(
         {
             return VerifyResult::InvalidAttribute;
         }
-        if !verify_attribute(ledger_provider, snapshot, tx, attribute, height) {
+        if !verify_attribute(
+            ledger_provider,
+            admission_native_provider,
+            snapshot,
+            tx,
+            attribute,
+            height,
+        ) {
             return VerifyResult::InvalidAttribute;
         }
         attributes_fee =
@@ -388,8 +383,10 @@ fn verify_state_dependent_with_providers(
     }
 
     // Net fee left for witness verification.
-    let policy = PolicyContract::new();
-    let Ok(fee_per_byte) = policy.get_fee_per_byte_snapshot(snapshot).map(i64::from) else {
+    let Ok(fee_per_byte) = admission_native_provider
+        .fee_per_byte(snapshot)
+        .map(i64::from)
+    else {
         return VerifyResult::UnableToVerify;
     };
     let mut net_fee = tx.network_fee() - (tx.size() as i64) * fee_per_byte - attributes_fee;
@@ -400,8 +397,8 @@ fn verify_state_dependent_with_providers(
         net_fee = Helper::MAX_VERIFICATION_GAS;
     }
 
-    let Ok(exec_fee_factor) = policy
-        .get_exec_fee_factor_snapshot(snapshot, settings, height)
+    let Ok(exec_fee_factor) = admission_native_provider
+        .exec_fee_factor(snapshot, settings, height)
         .map(i64::from)
     else {
         return VerifyResult::UnableToVerify;

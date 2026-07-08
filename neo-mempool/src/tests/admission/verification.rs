@@ -1,5 +1,5 @@
 use super::*;
-use neo_native_contracts::LedgerContract;
+use neo_native_contracts::{GasToken, LedgerContract, PolicyContract};
 use neo_payloads::{Signer, Witness};
 use neo_primitives::{UInt256, WitnessScope};
 use neo_serialization::BinarySerializer;
@@ -52,6 +52,18 @@ fn seed_policy_fee_settings(snapshot: &DataCache, exec_fee_factor: i64) {
         StorageKey::new(PolicyContract::ID, vec![18]),
         StorageItem::from_bytes(BigInt::from(exec_fee_factor).to_signed_bytes_le()),
     );
+}
+
+fn native_provider_impl() -> &'static str {
+    let provider = include_str!("../../admission/native_provider.rs");
+    let start = provider
+        .find("impl AdmissionNativeProvider for NativeAdmissionProvider")
+        .expect("provider impl exists");
+    let end = provider[start..]
+        .find("/// Factory for production admission native-contract read providers.")
+        .map(|offset| start + offset)
+        .expect("factory follows provider impl");
+    &provider[start..end]
 }
 
 fn standard_shape_transaction(account: UInt160) -> Transaction {
@@ -155,13 +167,15 @@ fn notary_sponsored_fee_check_uses_payer_deposit_not_notary_gas() {
 
 #[test]
 fn policy_blocked_reader_uses_native_contract_projection() {
-    let source = include_str!("../../admission/verification.rs");
-    let start = source.find("fn policy_is_blocked").expect("reader exists");
-    let end = source[start..]
+    let provider = native_provider_impl();
+    let start = provider
+        .find("fn policy_is_blocked")
+        .expect("reader exists");
+    let end = provider[start..]
         .find("fn max_valid_until_block_increment")
         .map(|offset| start + offset)
         .expect("next reader exists");
-    let reader = &source[start..end];
+    let reader = &provider[start..end];
 
     assert!(reader.contains("PolicyContract::is_blocked_snapshot"));
     assert!(!reader.contains("POLICY_PREFIX_BLOCKED_ACCOUNT"));
@@ -170,15 +184,15 @@ fn policy_blocked_reader_uses_native_contract_projection() {
 
 #[test]
 fn max_valid_until_block_increment_uses_native_policy_reader() {
-    let source = include_str!("../../admission/verification.rs");
-    let start = source
+    let provider = native_provider_impl();
+    let start = provider
         .find("fn max_valid_until_block_increment")
         .expect("reader exists");
-    let end = source[start..]
-        .find("/// C# `NativeContract.GAS.BalanceOf")
+    let end = provider[start..]
+        .find("fn fee_per_byte")
         .map(|offset| start + offset)
         .expect("test module follows the helper");
-    let reader = &source[start..end];
+    let reader = &provider[start..end];
 
     assert!(reader.contains("get_max_valid_until_block_increment_snapshot"));
     assert!(!reader.contains("StorageKey::new(POLICY_CONTRACT_ID"));
@@ -233,4 +247,26 @@ fn ledger_reads_use_admission_provider_boundary() {
     assert!(!attributes.contains("LedgerContract::new()"));
     assert!(provider.contains("struct NativeAdmissionLedgerProvider"));
     assert!(provider.contains("ledger: LedgerContract"));
+}
+
+#[test]
+fn native_reads_use_admission_provider_boundary() {
+    let verifier = include_str!("../../admission/verification.rs");
+    let attributes = include_str!("../../verification/attributes.rs");
+    let provider = include_str!("../../admission/native_provider.rs");
+
+    assert!(verifier.contains("AdmissionNativeProvider"));
+    assert!(verifier.contains("NativeAdmissionProviderFactory"));
+    assert!(attributes.contains("AdmissionNativeProvider"));
+    assert!(!verifier.contains("PolicyContract::new()"));
+    assert!(!attributes.contains("NeoToken::new()"));
+    assert!(!attributes.contains("OracleContract::new()"));
+    assert!(!attributes.contains("RoleManagement::new()"));
+
+    assert!(provider.contains("trait AdmissionNativeProvider"));
+    assert!(provider.contains("trait AdmissionNativeProviderFactory"));
+    assert!(provider.contains("neo: NeoToken"));
+    assert!(provider.contains("oracle: OracleContract"));
+    assert!(provider.contains("policy: PolicyContract"));
+    assert!(provider.contains("roles: RoleManagement"));
 }
