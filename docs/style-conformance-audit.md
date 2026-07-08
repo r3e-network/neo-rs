@@ -228,6 +228,12 @@ High-signal clusters found during the first pass:
   `execution_engine/host.rs` owns the unsafe raw-host-pointer bridge used for
   allocation-free interop callbacks, including the documented safety invariants
   and callback wrappers.
+- `neo-payloads/src/transaction/mod.rs` keeps the public transaction record,
+  constants, and module map. `transaction/core.rs` owns constructors, getters,
+  setters, cached hash/size helpers, and fee math; `serialization.rs` owns Neo
+  wire codecs; `traits.rs` owns stack, inventory, payload, default, and hash
+  trait adapters; and `verification.rs` owns witness-verification and
+  `Verifiable` container adapters.
 - `neo-payloads/src/transaction_attribute/mod.rs` keeps the attribute enum,
   constructors, and generic attribute helpers, while `transaction_attribute/wire.rs`
   owns type-byte dispatch plus `Serializable`, `fees.rs` owns policy-backed
