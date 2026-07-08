@@ -57,16 +57,7 @@ impl StorageItem {
     /// raw bytes are empty but a cache is present.
     #[must_use]
     pub fn to_value(&self) -> Vec<u8> {
-        if !self.value.is_empty() || self.cache.is_none() {
-            return self.value.clone();
-        }
-        // SAFETY: the guard above ensures cache is Some when value is empty and cache is not None.
-        // Using expect() instead of unwrap() provides a clear error message if the invariant is
-        // violated due to a logic bug, rather than silently panicking with no context.
-        self.cache
-            .as_ref()
-            .expect("StorageItem invariant violated: value is empty but cache is None")
-            .to_bytes()
+        self.value_bytes().into_owned()
     }
 
     /// Returns a reference to the raw stored bytes (may be empty even when a

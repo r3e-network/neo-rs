@@ -653,6 +653,9 @@ hashes as fixed little-endian byte arrays, avoiding runtime hex parsing and
 errors and return `None` consistently in all build modes instead of panicking
 under debug assertions. This keeps storage API behavior aligned with `Option`
 returns and avoids `panic=abort` process exits on read-error paths.
+`neo-storage/src/types/storage_item.rs` routes `to_value()` through the existing
+`value_bytes()` materialization path, removing a duplicated cache invariant
+`expect` while keeping raw-byte and cache-backed value semantics unchanged.
 
 Recommended next patches, in order:
 
