@@ -58,7 +58,7 @@ impl LedgerContext {
     /// Construct a context that retains `capacity` recent block bodies and
     /// headers in memory (minimum 1).
     pub fn with_capacity(capacity: usize) -> Self {
-        let cap = NonZeroUsize::new(capacity.max(1)).expect("capacity.max(1) is non-zero");
+        let cap = NonZeroUsize::new(capacity).unwrap_or_else(|| NonZeroUsize::MIN);
         Self {
             best_height: AtomicU32::new(0),
             best_header: AtomicU32::new(0),

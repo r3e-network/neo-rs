@@ -172,6 +172,10 @@ High-signal clusters found during the first pass:
   `SystemContext` trait implementation and store-commit policy, while
   `context/plugins.rs` owns catch-up-aware StateService, indexer,
   ApplicationLogs, and TokensTracker hook dispatch.
+- `neo-blockchain/src/ledger/ledger_context.rs` owns the hot in-memory ledger
+  cache. Its block/header LRU capacity now clamps zero to one with explicit
+  `NonZeroUsize` handling, matching the cache contract without a production
+  `expect`.
 - `neo-rpc` has the largest raw JSON surface. Many `Value` uses are correct at
   the transport edge, but handler internals should move repeated request and
   response shapes into typed parameter/result modules.
