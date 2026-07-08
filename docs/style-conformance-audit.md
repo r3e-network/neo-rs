@@ -200,8 +200,9 @@ High-signal clusters found during the first pass:
 - `neo-vm/src/script_builder/mod.rs` is being decomposed into focused VM script
   construction modules. `script_builder/error.rs` owns the typed builder error,
   `script_builder/invocation.rs` owns single-signature invocation script
-  helpers, and `redeem_script.rs` remains responsible for verification script
-  construction.
+  helpers, `script_builder/push.rs` owns value-to-push-instruction
+  serialization, and `redeem_script.rs` remains responsible for verification
+  script construction.
 - `neo-payloads/src/transaction_attribute/mod.rs` keeps the attribute enum,
   constructors, and generic attribute helpers, while `transaction_attribute/wire.rs`
   owns type-byte dispatch plus `Serializable`, `fees.rs` owns policy-backed
