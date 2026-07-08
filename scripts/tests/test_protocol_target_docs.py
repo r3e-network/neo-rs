@@ -90,6 +90,25 @@ class ProtocolTargetDocsTests(unittest.TestCase):
         self.assertIn("Neo N3 v3.10.1", text)
         self.assertNotIn("Neo N3 v3.9.1", text)
 
+    def test_protocol_compatibility_audits_full_v3101_release_delta(self):
+        text = (REPO_ROOT / "docs" / "protocol-compatibility.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("v3.10.0...v3.10.1", text)
+        for marker in [
+            "HF_Huyao",
+            "ApplicationEngine.AddFee",
+            "StdLib.Itoa",
+            "ReferenceCounter",
+            "committee voter-reward",
+            "Notary-sponsored",
+            "ExtensiblePayload",
+            "StorageKey.ToString",
+        ]:
+            with self.subTest(marker=marker):
+                self.assertIn(marker, text)
+
     def test_rpc_relay_height_preclassification_comment_names_current_reference(self):
         text = (
             REPO_ROOT / "neo-rpc" / "src" / "server" / "rpc_relay" / "block.rs"
