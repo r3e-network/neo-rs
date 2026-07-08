@@ -730,6 +730,10 @@ no-op instead of falling through to a second constructor guarded by `expect`.
 `neo-rpc/src/client/models/support/vm_state_utils.rs` now maps all four
 canonical VM states explicitly (`NONE`, `HALT`, `FAULT`, `BREAK`) instead of
 asserting that every RPC model state is final.
+`neo-rpc/src/server/rpc_tls/config.rs` and
+`neo-rpc/src/server/rpc_relay/block.rs` now keep their regression tests in the
+external server test tree, leaving the production source modules free of
+test-only unwrap/expect sites.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.
