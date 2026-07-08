@@ -46,9 +46,30 @@ async fn extensible_inventory_verifies_range_whitelist_and_witness() {
         .expect_err("out-of-range extensible must be rejected");
     assert!(err.to_string().contains("valid range"), "{err}");
 
-    // Non-whitelisted sender -> rejected before witness execution.
-    let mut foreign = payload.clone();
-    foreign.sender = neo_primitives::UInt160::from_bytes(&[0x42; 20]).unwrap();
+    // Non-whitelisted sender with a structurally valid witness -> rejected
+    // before witness execution.
+    let foreign_private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+    let foreign_public_key = neo_crypto::Secp256r1Crypto::derive_public_key(&foreign_private_key)
+        .expect("foreign public key");
+    let foreign_verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(
+            &foreign_public_key,
+        );
+    let mut foreign = ExtensiblePayload::new();
+    foreign.category = payload.category.clone();
+    foreign.valid_block_start = payload.valid_block_start;
+    foreign.valid_block_end = payload.valid_block_end;
+    foreign.sender = neo_primitives::UInt160::from_script(&foreign_verification);
+    foreign.data = payload.data.clone();
+    let mut foreign_sign_data = Vec::with_capacity(36);
+    foreign_sign_data.extend_from_slice(&network.to_le_bytes());
+    foreign_sign_data.extend_from_slice(&foreign.hash().to_bytes());
+    let foreign_signature =
+        neo_crypto::Secp256r1Crypto::sign(&foreign_sign_data, &foreign_private_key).expect("sign");
+    let mut foreign_invocation = vec![0x0C, 64];
+    foreign_invocation.extend_from_slice(&foreign_signature);
+    foreign.witness =
+        neo_payloads::Witness::new_with_scripts(foreign_invocation, foreign_verification);
     let err = service
         .handle_extensible_inventory(foreign, false)
         .await
@@ -60,6 +81,58 @@ async fn extensible_inventory_verifies_range_whitelist_and_witness() {
         .handle_extensible_inventory(payload, false)
         .await
         .expect("validly signed whitelisted extensible is accepted");
+}
+
+#[tokio::test]
+async fn extensible_inventory_rejects_witness_script_hash_mismatch() {
+    let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+    let public_key =
+        neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+    let point = neo_crypto::ECPoint::from_bytes(&public_key).expect("point");
+    let mut settings = neo_config::ProtocolSettings::default();
+    settings.standby_committee = vec![point];
+    settings.validators_count = 1;
+    let network = settings.network;
+
+    let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
+    service.initialize().await;
+
+    let whitelisted_verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&public_key);
+    let sender = neo_primitives::UInt160::from_script(&whitelisted_verification);
+
+    let foreign_private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+    let foreign_public_key = neo_crypto::Secp256r1Crypto::derive_public_key(&foreign_private_key)
+        .expect("foreign public key");
+    let foreign_verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(
+            &foreign_public_key,
+        );
+
+    let mut payload = ExtensiblePayload::new();
+    payload.category = "dBFT".to_string();
+    payload.valid_block_start = 0;
+    payload.valid_block_end = 10;
+    payload.sender = sender;
+    payload.data = vec![0x01, 0x02, 0x03];
+
+    let mut sign_data = Vec::with_capacity(36);
+    sign_data.extend_from_slice(&network.to_le_bytes());
+    sign_data.extend_from_slice(&payload.hash().to_bytes());
+    let signature =
+        neo_crypto::Secp256r1Crypto::sign(&sign_data, &foreign_private_key).expect("sign");
+    let mut invocation = vec![0x0C, 64];
+    invocation.extend_from_slice(&signature);
+    payload.witness = neo_payloads::Witness::new_with_scripts(invocation, foreign_verification);
+
+    let err = service
+        .handle_extensible_inventory(payload, false)
+        .await
+        .expect_err("mismatched extensible witness must be rejected");
+    assert!(
+        err.to_string().contains("does not match sender"),
+        "C# v3.10.1 rejects ExtensiblePayload before cache/relay when Witness.ScriptHash != Sender: {err}"
+    );
 }
 
 /// C# `Blockchain.OnNewHeaders`: a header signed by the network validator

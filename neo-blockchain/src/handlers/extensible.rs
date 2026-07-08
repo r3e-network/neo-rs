@@ -74,6 +74,13 @@ where
                 payload.valid_block_start, payload.valid_block_end
             )));
         }
+        let witness_hash = payload.witness.script_hash();
+        if witness_hash != payload.sender {
+            return Err(CoreError::other(format!(
+                "Witness script hash {witness_hash} does not match sender {}",
+                payload.sender
+            )));
+        }
 
         let mut whitelist: std::collections::HashSet<neo_primitives::UInt160> =
             std::collections::HashSet::new();
