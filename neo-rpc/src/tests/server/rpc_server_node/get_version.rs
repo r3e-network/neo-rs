@@ -85,8 +85,12 @@ fn get_version_dynamic_policy_reads_use_node_native_provider_boundary() {
     assert!(provider.contains("trait NodeNativeProviderFactory"));
     assert!(provider.contains("struct NativeNodeProviderFactory"));
     assert!(
-        provider.contains("StorageLedgerProviderFactory"),
-        "node native provider should own getversion's ledger height read boundary"
+        provider.contains("ledger_queries::current_index"),
+        "node native provider should read getversion's current height through the shared ledger-query boundary"
+    );
+    assert!(
+        !provider.contains("StorageLedgerProviderFactory"),
+        "node native provider should not construct the storage ledger provider directly for current-height reads"
     );
     assert!(
         provider.contains("PolicyContract::ID"),

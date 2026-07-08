@@ -5,7 +5,6 @@
 //! keeps the raw storage reads behind a local provider seam and leaves the
 //! handler focused on response assembly.
 
-use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use neo_config::ProtocolSettings;
 use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_primitives::hardfork::Hardfork;
@@ -14,6 +13,7 @@ use neo_storage::persistence::DataCache;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
+use crate::server::ledger_queries;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 
@@ -89,8 +89,9 @@ impl NativeNodeProvider {
         if snapshot.get(&pointer_key).is_none() {
             return Ok(None);
         }
-        let provider = StorageLedgerProviderFactory.provider(snapshot);
-        provider.current_index().map(Some).map_err(internal_error)
+        ledger_queries::current_index(snapshot)
+            .map(Some)
+            .map_err(internal_error)
     }
 
     /// Reads one post-Echidna Policy storage value as C# `(uint)(BigInteger)
