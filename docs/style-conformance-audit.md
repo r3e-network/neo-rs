@@ -204,6 +204,10 @@ High-signal clusters found during the first pass:
   serialization, `script_builder/control.rs` owns control-flow/syscall
   emission, and `redeem_script.rs` remains responsible for verification script
   construction.
+- `neo-vm/src/jump_table/mod.rs` keeps the opcode dispatch table and
+  registration flow. `jump_table/shared.rs` owns C# stack-coercion helpers,
+  execution-context guards, semantics-error conversion, and StackValue result
+  projection shared by opcode-family modules.
 - `neo-payloads/src/transaction_attribute/mod.rs` keeps the attribute enum,
   constructors, and generic attribute helpers, while `transaction_attribute/wire.rs`
   owns type-byte dispatch plus `Serializable`, `fees.rs` owns policy-backed
