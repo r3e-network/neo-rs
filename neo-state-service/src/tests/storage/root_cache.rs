@@ -27,3 +27,16 @@ fn cache_evicts_when_full() {
     assert!(cache.get(&UInt256::from([2u8; 32])).is_some());
     assert!(cache.get(&UInt256::from([3u8; 32])).is_some());
 }
+
+#[test]
+fn zero_capacity_clamps_to_one() {
+    let cache = StateRootCache::with_capacity(0);
+    assert_eq!(cache.capacity(), 1);
+
+    cache.insert(sample_root(1));
+    cache.insert(sample_root(2));
+
+    assert_eq!(cache.len(), 1);
+    assert!(cache.get(&UInt256::from([1u8; 32])).is_none());
+    assert!(cache.get(&UInt256::from([2u8; 32])).is_some());
+}

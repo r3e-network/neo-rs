@@ -85,10 +85,19 @@ impl StateRootCache {
 
     /// Constructs a new cache with the given capacity.
     pub fn with_capacity(capacity: usize) -> Self {
+        let capacity = Self::normalize_capacity(capacity);
         Self {
-            inner: Mutex::new(LruCache::new(NonZeroUsize::new(capacity.max(1)).unwrap())),
-            capacity: NonZeroUsize::new(capacity.max(1)).unwrap(),
+            inner: Mutex::new(LruCache::new(capacity)),
+            capacity,
             stats: Arc::new(StateRootCacheStats::default()),
+        }
+    }
+
+    #[inline]
+    fn normalize_capacity(capacity: usize) -> NonZeroUsize {
+        match NonZeroUsize::new(capacity) {
+            Some(capacity) => capacity,
+            None => NonZeroUsize::MIN,
         }
     }
 

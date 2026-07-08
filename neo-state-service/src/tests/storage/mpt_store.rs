@@ -1216,8 +1216,8 @@ fn known_empty_change_set_bypasses_trie_read_snapshot() {
     assert_eq!(root2, root1);
     assert_eq!(
         snapshots.load(Ordering::Relaxed),
-        1,
-        "known-empty continuation blocks should only snapshot backing for local-root commit"
+        0,
+        "known-empty continuation blocks should commit local-root records through raw overlay without opening trie/backing snapshots"
     );
 }
 

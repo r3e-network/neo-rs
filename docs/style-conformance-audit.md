@@ -291,6 +291,11 @@ High-signal clusters found during the first pass:
   `Verifier<C = Arc<dyn StateRootCalculator>>` and
   `StateStore::with_mpt_store(..., Arc<dyn Store>)`. Prefer concrete
   constructors as the primary surface and name erased constructors explicitly.
+  `storage/root_cache.rs` now normalizes zero capacity through a panic-free
+  `NonZeroUsize` helper while preserving the one-entry minimum. The MPT
+  known-empty continuation test also documents the current provider behavior:
+  raw-overlay-capable stores commit local-root records without opening trie or
+  backing snapshots, matching the batched empty-block fast path.
 - `neo-gui` is outside the workspace, but GUI mutex poison handling is now
   centralized in `neo-gui/src/sync.rs`; shell, runtime, and screen modules use
   that helper instead of choosing per-call `unwrap` / `expect` / silent-ignore
