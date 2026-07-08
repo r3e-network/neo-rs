@@ -11,6 +11,24 @@ use neo_storage::persistence::providers::memory_store_provider::MemoryStoreProvi
 use super::super::RpcServerIndexer;
 use super::support::{block, find_handler};
 
+#[test]
+fn indexer_status_ledger_height_uses_ledger_provider_boundary() {
+    let source = include_str!("../../../server/rpc_server_indexer/status.rs");
+    let height_start = source
+        .find("fn ledger_height")
+        .expect("ledger_height exists");
+    let height_reader = &source[height_start..];
+
+    assert!(
+        height_reader.contains("StorageLedgerProviderFactory"),
+        "indexer status ledger height reads must route through the ledger provider factory"
+    );
+    assert!(
+        !height_reader.contains("LedgerContract::new()"),
+        "indexer status must not construct native LedgerContract directly"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn indexer_status_does_not_sync_when_indexer_is_ahead_of_ledger() {
     let system = crate::server::test_support::test_system(ProtocolSettings::default());

@@ -51,6 +51,24 @@ fn serve_getversion_once(protocol: Value) -> String {
     url
 }
 
+#[test]
+fn get_version_dynamic_policy_reads_use_ledger_provider_boundary() {
+    let source = include_str!("../../../server/rpc_server_node/version.rs");
+    let dynamic_start = source
+        .find("fn dynamic_policy_value")
+        .expect("dynamic_policy_value exists");
+    let dynamic = &source[dynamic_start..];
+
+    assert!(
+        dynamic.contains("StorageLedgerProviderFactory"),
+        "getversion dynamic policy height reads must route through the ledger provider factory"
+    );
+    assert!(
+        !dynamic.contains("LedgerContract::new()"),
+        "getversion dynamic policy reads must not construct native LedgerContract directly"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn get_version_contains_expected_fields() {
     let system = crate::server::test_support::test_system(ProtocolSettings::default());

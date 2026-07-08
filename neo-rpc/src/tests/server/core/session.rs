@@ -57,6 +57,16 @@ fn server_context_engine_paths_use_explicit_native_provider() {
             !source.contains("ApplicationEngine::new("),
             "{name} should not read the ambient native-provider bridge"
         );
+        if name == "wallet compat network fee" {
+            assert!(
+                source.contains("StorageLedgerProviderFactory"),
+                "{name} should read ledger tips through the provider factory"
+            );
+            assert!(
+                !source.contains("LedgerContract::new()"),
+                "{name} should not construct native LedgerContract directly"
+            );
+        }
     }
 
     let provider_threading_sources = [(
@@ -71,6 +81,14 @@ fn server_context_engine_paths_use_explicit_native_provider() {
         assert!(
             !source.contains("ApplicationEngine::new("),
             "{name} should not construct engines through the ambient provider bridge"
+        );
+        assert!(
+            source.contains("StorageLedgerProviderFactory"),
+            "{name} should read ledger tips through the provider factory"
+        );
+        assert!(
+            !source.contains("LedgerContract::new()"),
+            "{name} should not construct native LedgerContract directly"
         );
     }
 }

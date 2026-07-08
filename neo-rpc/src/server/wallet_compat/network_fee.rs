@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use neo_config::ProtocolSettings;
 use neo_execution::ApplicationEngine;
 use neo_execution::contract_state::ContractState;
@@ -9,7 +10,7 @@ use neo_execution::helper::Helper as ContractHelper;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::serializable::helper::SerializeHelper;
 use neo_manifest::CallFlags;
-use neo_native_contracts::{ContractManagement, LedgerContract, PolicyContract};
+use neo_native_contracts::{ContractManagement, PolicyContract};
 use neo_payloads::HEADER_SIZE;
 use neo_payloads::transaction::Transaction;
 use neo_primitives::{ContractParameterType, TriggerType, UInt160, Verifiable, Witness as _};
@@ -49,8 +50,9 @@ where
         + SerializeHelper::get_var_size_usize(hashes.len());
 
     let policy = PolicyContract::new();
-    let current_index = LedgerContract::new()
-        .current_index(snapshot)
+    let current_index = StorageLedgerProviderFactory
+        .provider(snapshot)
+        .current_index()
         .map_err(core_err)?;
     let exec_fee_factor = i64::from(
         policy

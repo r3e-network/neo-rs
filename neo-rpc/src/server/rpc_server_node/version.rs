@@ -1,5 +1,6 @@
 //! Dynamic `getversion` policy lookup.
 
+use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use neo_config::ProtocolSettings;
 use neo_native_contracts::{LedgerContract, PolicyContract};
 use neo_primitives::hardfork::Hardfork;
@@ -68,9 +69,8 @@ fn dynamic_policy_value(
     if snapshot.get(&pointer_key).is_none() {
         return Ok(fallback);
     }
-    let index = LedgerContract::new()
-        .current_index(snapshot)
-        .map_err(internal_error)?;
+    let provider = StorageLedgerProviderFactory.provider(snapshot);
+    let index = provider.current_index().map_err(internal_error)?;
     if !settings.is_hardfork_enabled(Hardfork::HfEchidna, index) {
         return Ok(fallback);
     }
