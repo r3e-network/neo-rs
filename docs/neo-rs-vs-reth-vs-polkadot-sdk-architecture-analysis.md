@@ -12,7 +12,10 @@
 
 Single `Store` trait with `DataCache` + `StoreCache` overlay. MDBX is the
 production default, RocksDB remains supported, and in-memory providers cover
-tests/ephemeral nodes. Raw key/value bytes remain C# compatible through
+tests/ephemeral nodes. The ledger read boundary has a hot native-record
+provider, a hot/cold router, and an explicit `EmptyLedgerProvider` for nodes
+without an installed cold archive, so composition roots can keep one provider
+shape before static files land. Raw key/value bytes remain C# compatible through
 `StorageKey` / `StorageItem`, and `StorageKey` / `KeyBuilder` over those raw
 bytes is the live encoding on every storage access path.
 `neo_storage::persistence::Table`, `TableCodec`, and `TableReader` add a typed
@@ -33,7 +36,7 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync + A
 | Tiering | Hot DB today; hot/cold provider factory exists, while static-file archive writing/format is still unwired | Hot (MDBX) / Cold (RocksDB) / Static (NippyJar) | Single DB (parity-db or RocksDB) |
 | Overlay | `DataCache` with `Arc<RwLock<HashMap>>` | MDBX transaction | `OverlayedChanges` |
 | Pruning | Manual via `MaxTraceableBlocks` | Per-segment config (4 profiles) | `PruningMode` enum |
-| Static files | Static-file archive writer/format remains future work; provider routing can already compose a cold implementation | NippyJar columnar (mandatory, mmap) | None |
+| Static files | Static-file archive writer/format remains future work; provider routing can already compose either a cold implementation or the explicit clean-miss `EmptyLedgerProvider` | NippyJar columnar (mandatory, mmap) | None |
 
 ### Reth innovations
 
@@ -65,7 +68,7 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync + A
 |----------|--------|---------|
 | P0 | Hot/Cold/Static tiering | 30%+ disk savings, tiered hardware |
 | P1 | Compact derive macro for Neo types | 15-25% storage savings, fewer bytes |
-| Partially wired | Hot/cold ledger provider factory | Provider routing is implemented; append-only static-file archive writing and recovery are still future work |
+| Partially wired | Hot/cold ledger provider factory | Provider routing plus explicit empty-cold provider are implemented; append-only static-file archive writing and recovery are still future work |
 | P3 | `OverlayedChanges`-style transactional overlay | Cleaner per-tx isolation |
 
 ---

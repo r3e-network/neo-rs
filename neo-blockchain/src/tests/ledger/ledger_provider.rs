@@ -88,6 +88,78 @@ fn storage_ledger_provider_factory_creates_snapshot_provider() {
     );
 }
 
+#[test]
+fn empty_ledger_provider_reports_clean_misses() {
+    let cache = DataCache::new(false);
+    let provider = EmptyLedgerProviderFactory.provider(&cache);
+    let hash = UInt256::from_bytes(&[0xAB; 32]).expect("hash");
+
+    assert_eq!(
+        provider
+            .block_hash_by_index(42)
+            .expect("empty index lookup"),
+        None
+    );
+    assert!(
+        provider
+            .header_by_hash(&hash)
+            .expect("empty header lookup")
+            .is_none()
+    );
+    assert!(
+        provider
+            .block_by_hash(&hash)
+            .expect("empty block lookup")
+            .is_none()
+    );
+    assert!(
+        provider
+            .transaction_by_hash(&hash)
+            .expect("empty tx lookup")
+            .is_none()
+    );
+    assert!(
+        !provider
+            .contains_transaction(&hash)
+            .expect("empty contains lookup")
+    );
+}
+
+#[test]
+fn hot_cold_factory_accepts_empty_cold_provider_without_hiding_hot_records() {
+    let hot = DataCache::new(false);
+    let mut header = Header::new();
+    header.set_index(13);
+    let block = Block::from_parts(header, vec![]);
+    let block_hash = block.header.try_hash().expect("block hash");
+    crate::ledger_records::LedgerRecords::write_on_persist_records(&hot, &block, &block_hash)
+        .expect("hot on-persist records");
+    crate::ledger_records::LedgerRecords::write_post_persist_record(&hot, &block_hash, 13)
+        .expect("hot post-persist record");
+
+    let factory = HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
+    let provider = factory.provider(&hot);
+    let missing = UInt256::from_bytes(&[0xCD; 32]).expect("missing hash");
+
+    assert_eq!(
+        provider.block_hash_by_index(13).expect("hot hash"),
+        Some(block_hash)
+    );
+    assert_eq!(
+        provider
+            .block_by_index(13)
+            .expect("hot block")
+            .map(|b| b.hash()),
+        Some(block.hash())
+    );
+    assert!(
+        provider
+            .block_by_hash(&missing)
+            .expect("clean cold miss")
+            .is_none()
+    );
+}
+
 #[derive(Clone, Debug, Default)]
 struct ColdLedgerProvider {
     hashes: HashMap<u32, UInt256>,

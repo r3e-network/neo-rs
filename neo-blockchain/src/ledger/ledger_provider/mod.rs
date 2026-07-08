@@ -10,15 +10,18 @@
 //!
 //! ## Contents
 //!
+//! - `empty`: Clean-miss provider/factory for nodes without a cold archive.
 //! - `traits`: Read capability traits and typed provider factory contract.
 //! - `storage`: Hot provider over native Ledger records in a `DataCache`.
 //! - `hot_cold`: Read router that falls back to a cold provider only when hot
 //!   native Ledger records miss.
 
+mod empty;
 mod hot_cold;
 mod storage;
 mod traits;
 
+pub use empty::{EmptyLedgerProvider, EmptyLedgerProviderFactory};
 pub use hot_cold::{HotColdLedgerProvider, HotColdLedgerProviderFactory};
 pub use storage::{StorageLedgerProvider, StorageLedgerProviderFactory};
 pub use traits::{BlockProvider, LedgerProvider, LedgerProviderFactory, TxProvider};
