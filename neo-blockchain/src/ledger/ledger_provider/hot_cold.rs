@@ -10,7 +10,8 @@ use neo_primitives::UInt256;
 use neo_storage::DataCache;
 
 use super::{
-    BlockProvider, LedgerProvider, LedgerProviderFactory, StorageLedgerProvider, TxProvider,
+    BlockProvider, ChainTipProvider, LedgerProvider, LedgerProviderFactory, StorageLedgerProvider,
+    TxProvider,
 };
 
 /// Provider that reads hot native Ledger records first and falls back to cold
@@ -78,6 +79,19 @@ where
             Some(transaction) => Ok(Some(transaction)),
             None => self.cold.transaction_by_hash(hash),
         }
+    }
+}
+
+impl<Hot, Cold> ChainTipProvider for HotColdLedgerProvider<Hot, Cold>
+where
+    Hot: ChainTipProvider,
+{
+    fn current_hash(&self) -> CoreResult<UInt256> {
+        self.hot.current_hash()
+    }
+
+    fn current_index(&self) -> CoreResult<u32> {
+        self.hot.current_index()
     }
 }
 

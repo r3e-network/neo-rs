@@ -9,10 +9,12 @@ use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use neo_blockchain::{
+    BlockProvider, ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory,
+};
 use neo_execution::contract_state::ContractState;
 use neo_io::Serializable;
 use neo_mempool::PoolItem;
-use neo_native_contracts::LedgerContract;
 use neo_payloads::{Header, TransactionState, block::Block, transaction::Transaction};
 use neo_primitives::{UInt256, hex_util};
 use num_bigint::BigInt;
@@ -212,11 +214,10 @@ fn append_ledger_transaction_context(
 ) -> Result<(), RpcException> {
     let system = server.system();
     let store = system.store_cache();
-    let ledger = LedgerContract::new();
+    let factory = StorageLedgerProviderFactory;
+    let provider = factory.provider(store.data_cache());
     let block_index = state.block_index();
-    let current_index = ledger
-        .current_index(store.data_cache())
-        .map_err(internal_error)?;
+    let current_index = provider.current_index().map_err(internal_error)?;
     let confirmations = current_index.saturating_sub(block_index).saturating_add(1);
     obj.insert("confirmations".to_string(), json!(confirmations));
 
@@ -224,8 +225,8 @@ fn append_ledger_transaction_context(
     // blocktime to Transaction.ToJson (RpcServer.Blockchain.cs:373-381);
     // it does NOT add a vmstate field (that belongs to getapplicationlog).
     // Emitting it here surprises strict clients / response-diff tooling.
-    if let Some(block_hash) = ledger
-        .get_block_hash(store.data_cache(), block_index)
+    if let Some(block_hash) = provider
+        .block_hash_by_index(block_index)
         .map_err(internal_error)?
     {
         obj.insert(
@@ -233,11 +234,11 @@ fn append_ledger_transaction_context(
             Value::String(block_hash.to_string()),
         );
 
-        if let Some(block) = ledger
-            .get_trimmed_block(store.data_cache(), &block_hash)
+        if let Some(header) = provider
+            .header_by_hash(&block_hash)
             .map_err(internal_error)?
         {
-            obj.insert("blocktime".to_string(), json!(block.header.timestamp()));
+            obj.insert("blocktime".to_string(), json!(header.timestamp()));
         }
     }
 

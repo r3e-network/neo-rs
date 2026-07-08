@@ -14,6 +14,33 @@ pub trait LedgerProvider: BlockProvider + TxProvider {}
 
 impl<P> LedgerProvider for P where P: BlockProvider + TxProvider {}
 
+/// Read-only access to the canonical current block pointer.
+pub trait ChainTipProvider {
+    /// Returns the current block hash.
+    fn current_hash(&self) -> CoreResult<UInt256>;
+
+    /// Returns the current block index.
+    fn current_index(&self) -> CoreResult<u32>;
+
+    /// Returns the current block count.
+    fn block_count(&self) -> CoreResult<u32> {
+        Ok(self.current_index()?.saturating_add(1))
+    }
+}
+
+impl<P> ChainTipProvider for &P
+where
+    P: ChainTipProvider + ?Sized,
+{
+    fn current_hash(&self) -> CoreResult<UInt256> {
+        (**self).current_hash()
+    }
+
+    fn current_index(&self) -> CoreResult<u32> {
+        (**self).current_index()
+    }
+}
+
 /// Factory for immutable ledger providers over a specific snapshot.
 ///
 /// The associated provider type keeps this boundary monomorphized for hot

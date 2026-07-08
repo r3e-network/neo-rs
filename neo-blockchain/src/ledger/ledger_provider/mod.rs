@@ -24,7 +24,9 @@ mod traits;
 pub use empty::{EmptyLedgerProvider, EmptyLedgerProviderFactory};
 pub use hot_cold::{HotColdLedgerProvider, HotColdLedgerProviderFactory};
 pub use storage::{StorageLedgerProvider, StorageLedgerProviderFactory};
-pub use traits::{BlockProvider, LedgerProvider, LedgerProviderFactory, TxProvider};
+pub use traits::{
+    BlockProvider, ChainTipProvider, LedgerProvider, LedgerProviderFactory, TxProvider,
+};
 
 #[cfg(test)]
 #[path = "../../tests/ledger/ledger_provider.rs"]

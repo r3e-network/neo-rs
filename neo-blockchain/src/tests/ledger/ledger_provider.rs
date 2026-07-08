@@ -45,6 +45,18 @@ fn storage_ledger_provider_reconstructs_block_and_transaction_from_ledger_record
         BlockProvider::block_hash_by_index(&provider, 7).expect("block hash"),
         Some(block_hash)
     );
+    assert_eq!(
+        ChainTipProvider::current_hash(&provider).expect("current hash"),
+        block_hash
+    );
+    assert_eq!(
+        ChainTipProvider::current_index(&provider).expect("current index"),
+        7
+    );
+    assert_eq!(
+        ChainTipProvider::block_count(&provider).expect("block count"),
+        8
+    );
     let full_block = BlockProvider::block_by_index(&provider, 7)
         .expect("load block")
         .expect("block present");
@@ -145,6 +157,11 @@ fn hot_cold_factory_accepts_empty_cold_provider_without_hiding_hot_records() {
         provider.block_hash_by_index(13).expect("hot hash"),
         Some(block_hash)
     );
+    assert_eq!(
+        provider.current_hash().expect("hot current hash"),
+        block_hash
+    );
+    assert_eq!(provider.current_index().expect("hot current index"), 13);
     assert_eq!(
         provider
             .block_by_index(13)

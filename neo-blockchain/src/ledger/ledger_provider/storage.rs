@@ -6,7 +6,7 @@ use neo_payloads::{Block, Header, Transaction};
 use neo_primitives::UInt256;
 use neo_storage::DataCache;
 
-use super::{BlockProvider, LedgerProviderFactory, TxProvider};
+use super::{BlockProvider, ChainTipProvider, LedgerProviderFactory, TxProvider};
 
 /// Storage-backed provider over Neo ledger native-contract records.
 pub struct StorageLedgerProvider<'a> {
@@ -51,6 +51,16 @@ impl BlockProvider for StorageLedgerProvider<'_> {
         }
 
         Ok(Some(Block::from_parts(trimmed.header, transactions)))
+    }
+}
+
+impl ChainTipProvider for StorageLedgerProvider<'_> {
+    fn current_hash(&self) -> CoreResult<UInt256> {
+        LedgerContract::new().current_hash(self.snapshot)
+    }
+
+    fn current_index(&self) -> CoreResult<u32> {
+        LedgerContract::new().current_index(self.snapshot)
     }
 }
 
