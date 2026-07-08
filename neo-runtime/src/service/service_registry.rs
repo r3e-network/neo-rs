@@ -53,20 +53,15 @@ impl ServiceRegistry {
         self.inner
             .write()
             .insert(TypeId::of::<T>(), service)
-            .map(|previous| {
-                previous
-                    .downcast::<T>()
-                    .expect("registry key is TypeId::of::<T>, so the value downcasts to T")
-            })
+            .and_then(|previous| previous.downcast::<T>().ok())
     }
 
     /// Looks up the registered instance of type `T`, if any.
     pub fn get<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
-        self.inner.read().get(&TypeId::of::<T>()).map(|service| {
-            Arc::clone(service)
-                .downcast::<T>()
-                .expect("registry key is TypeId::of::<T>, so the value downcasts to T")
-        })
+        self.inner
+            .read()
+            .get(&TypeId::of::<T>())
+            .and_then(|service| Arc::clone(service).downcast::<T>().ok())
     }
 
     /// Returns whether an instance of type `T` is registered.
@@ -96,7 +91,7 @@ mod tests {
         registry.register(service);
         let retrieved = registry.get::<String>();
         assert!(retrieved.is_some());
-        assert_eq!(&**retrieved.unwrap(), "hello");
+        assert_eq!(retrieved.as_deref().map(String::as_str), Some("hello"));
     }
 
     #[test]
@@ -105,8 +100,11 @@ mod tests {
         registry.register::<String>(Arc::new("first".to_string()));
         let previous = registry.register::<String>(Arc::new("second".to_string()));
         assert!(previous.is_some());
-        assert_eq!(&**previous.unwrap(), "first");
-        assert_eq!(&**registry.get::<String>().unwrap(), "second");
+        assert_eq!(previous.as_deref().map(String::as_str), Some("first"));
+        assert_eq!(
+            registry.get::<String>().as_deref().map(String::as_str),
+            Some("second")
+        );
     }
 
     #[test]
@@ -121,6 +119,6 @@ mod tests {
         let registry = ServiceRegistry::new();
         let clone = registry.clone();
         registry.register::<u32>(Arc::new(42));
-        assert_eq!(*clone.get::<u32>().unwrap(), 42);
+        assert_eq!(clone.get::<u32>().as_deref().copied(), Some(42));
     }
 }

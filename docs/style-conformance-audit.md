@@ -640,6 +640,9 @@ daemon protocol settings so malformed embedded presets become startup errors.
 `neo-runtime/src/service/sync_pipeline.rs` decodes staged-sync checkpoint
 payloads through checked fixed-width readers instead of slice-length `expect`
 calls, preserving checkpoint bytes while keeping corrupted store data typed.
+`neo-runtime/src/service/service_registry.rs` now handles erased-service
+downcast mismatches by returning `None`; the TypeId invariant remains internal,
+but a registry mismatch no longer aborts an RPC or node service lookup path.
 
 Recommended next patches, in order:
 
