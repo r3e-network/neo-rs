@@ -7,15 +7,14 @@ use neo_primitives::hardfork::Hardfork;
 use neo_primitives::hex_util;
 use serde_json::{Value, json};
 
+use super::native_provider::VersionPolicyValues;
+
 pub(super) fn version_to_json(
     node: &LocalNodeInfo,
     protocol: &ProtocolSettings,
     rpc_settings: &RpcServerConfig,
-    dynamic_policy_values: (u32, u32, u32),
+    dynamic_policy_values: VersionPolicyValues,
 ) -> Value {
-    let (time_per_block_ms, max_traceable_blocks, max_valid_until_block_increment) =
-        dynamic_policy_values;
-
     json!({
         "tcpport": node.port(),
         "nonce": node.nonce,
@@ -28,9 +27,9 @@ pub(super) fn version_to_json(
             "addressversion": protocol.address_version,
             "network": protocol.network,
             "validatorscount": protocol.validators_count,
-            "msperblock": time_per_block_ms,
-            "maxtraceableblocks": max_traceable_blocks,
-            "maxvaliduntilblockincrement": max_valid_until_block_increment,
+            "msperblock": dynamic_policy_values.milliseconds_per_block,
+            "maxtraceableblocks": dynamic_policy_values.max_traceable_blocks,
+            "maxvaliduntilblockincrement": dynamic_policy_values.max_valid_until_block_increment,
             "maxtransactionsperblock": protocol.max_transactions_per_block,
             "memorypoolmaxtransactions": protocol.memory_pool_max_transactions,
             "initialgasdistribution": protocol.initial_gas_distribution,

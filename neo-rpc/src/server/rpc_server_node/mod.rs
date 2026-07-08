@@ -10,6 +10,7 @@
 //!
 //! ## Contents
 //!
+//! - `native_provider`: Native Ledger/Policy read seam for node endpoints.
 //! - `relay`: Transaction and block relay endpoint handlers.
 //! - `request`: Typed JSON-RPC request parsing helpers.
 //! - `response`: C#-compatible node status and version response construction.
@@ -19,6 +20,7 @@
 
 use crate::server::rpc_server::RpcHandler;
 
+mod native_provider;
 mod relay;
 mod request;
 mod response;

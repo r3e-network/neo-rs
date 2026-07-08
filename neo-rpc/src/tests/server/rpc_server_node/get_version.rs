@@ -2,6 +2,11 @@ use super::*;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 
+const LEDGER_PREFIX_CURRENT_BLOCK: u8 = 12;
+const POLICY_PREFIX_MILLISECONDS_PER_BLOCK: u8 = 21;
+const POLICY_PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT: u8 = 22;
+const POLICY_PREFIX_MAX_TRACEABLE_BLOCKS: u8 = 23;
+
 fn serve_getversion_once(protocol: Value) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind test RPC");
     let url = format!("http://{}", listener.local_addr().expect("addr"));
@@ -52,20 +57,40 @@ fn serve_getversion_once(protocol: Value) -> String {
 }
 
 #[test]
-fn get_version_dynamic_policy_reads_use_ledger_provider_boundary() {
-    let source = include_str!("../../../server/rpc_server_node/version.rs");
-    let dynamic_start = source
-        .find("fn dynamic_policy_value")
-        .expect("dynamic_policy_value exists");
-    let dynamic = &source[dynamic_start..];
-
+fn get_version_dynamic_policy_reads_use_node_native_provider_boundary() {
+    let version = include_str!("../../../server/rpc_server_node/version.rs");
     assert!(
-        dynamic.contains("StorageLedgerProviderFactory"),
-        "getversion dynamic policy height reads must route through the ledger provider factory"
+        version.contains("NativeNodeProviderFactory"),
+        "getversion should obtain dynamic Policy values through the node native provider factory"
     );
     assert!(
-        !dynamic.contains("LedgerContract::new()"),
-        "getversion dynamic policy reads must not construct native LedgerContract directly"
+        !version.contains("StorageLedgerProviderFactory"),
+        "getversion response assembly should not perform raw ledger storage reads directly"
+    );
+    assert!(
+        !version.contains("StorageKey::new("),
+        "getversion response assembly should not hand-roll native storage keys directly"
+    );
+    assert!(
+        !version.contains("LedgerContract::"),
+        "getversion response assembly should not depend on concrete LedgerContract storage"
+    );
+    assert!(
+        !version.contains("PolicyContract::"),
+        "getversion response assembly should not depend on concrete PolicyContract storage"
+    );
+
+    let provider = include_str!("../../../server/rpc_server_node/native_provider.rs");
+    assert!(provider.contains("trait NodeNativeProvider"));
+    assert!(provider.contains("trait NodeNativeProviderFactory"));
+    assert!(provider.contains("struct NativeNodeProviderFactory"));
+    assert!(
+        provider.contains("StorageLedgerProviderFactory"),
+        "node native provider should own getversion's ledger height read boundary"
+    );
+    assert!(
+        provider.contains("PolicyContract::ID"),
+        "node native provider should own getversion's Policy storage key boundary"
     );
 }
 
