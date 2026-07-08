@@ -500,10 +500,12 @@ pub(super) fn push_top_committee_candidate(
     if limit == 0 {
         return;
     }
-    if top.len() == limit
-        && !committee_candidate_order(&candidate, top.last().expect("top is full")).is_lt()
-    {
-        return;
+    if top.len() == limit {
+        if let Some(worst) = top.last() {
+            if !committee_candidate_order(&candidate, worst).is_lt() {
+                return;
+            }
+        }
     }
 
     let insert_at = top
