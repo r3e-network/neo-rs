@@ -83,16 +83,8 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
             include_str!("../../../server/session/dummy_block.rs"),
         ),
         (
-            "session execution",
-            include_str!("../../../server/session/execution.rs"),
-        ),
-        (
             "wallet transfers",
             include_str!("../../../server/rpc_server_wallet/transfers.rs"),
-        ),
-        (
-            "smart-contract wallet invocation",
-            include_str!("../../../server/smart_contract/invocation_wallet.rs"),
         ),
     ];
 
@@ -123,6 +115,14 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
         (
             "wallet compat transaction builder",
             include_str!("../../../server/wallet_compat/transaction_builder.rs"),
+        ),
+        (
+            "session execution",
+            include_str!("../../../server/session/execution.rs"),
+        ),
+        (
+            "smart-contract wallet invocation",
+            include_str!("../../../server/smart_contract/invocation_wallet.rs"),
         ),
     ];
 

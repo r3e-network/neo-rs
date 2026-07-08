@@ -8,7 +8,6 @@
 use std::sync::Arc;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
@@ -21,6 +20,7 @@ use num_bigint::BigInt;
 use rand::random;
 use serde_json::{Map, Number as JsonNumber, Value, json};
 
+use crate::server::ledger_queries;
 use crate::server::rpc_server::RpcServer;
 use crate::server::wallet_compat;
 
@@ -105,9 +105,7 @@ fn build_and_sign_transaction(
         .provider()
         .max_valid_until_block_increment(snapshot.data_cache(), &protocol_settings)
         .unwrap_or_else(|_| system.max_valid_until_block_increment());
-    let valid_until = StorageLedgerProviderFactory
-        .provider(snapshot.data_cache())
-        .current_index()
+    let valid_until = ledger_queries::current_index(snapshot.data_cache())
         .map_err(|err| CoreError::other(err.to_string()))?
         .saturating_add(max_valid_until_block_increment);
     tx.set_valid_until_block(valid_until);
