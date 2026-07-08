@@ -233,6 +233,10 @@ High-signal clusters found during the first pass:
   behavior.
 - `neo-oracle-service` has the densest lint-allow count and several
   generated/NeoFS adapter modules. Allows should be narrowed or annotated.
+  `neo-oracle-service/src/service/mod.rs` now keeps the public service facade,
+  status/error types, and runtime field layout while `service/cache.rs` owns
+  request deduplication, finished-request expiry, URL admission checks, and
+  monitoring counters.
 - Existing git hygiene rules exclude local ledgers, RocksDB state,
   checkpoints, logs, and build outputs. A scan did not find obvious tracked
   chain.acc/RocksDB artifacts, but runtime-data checks should stay in CI.
