@@ -817,3 +817,38 @@ fn expected_base_block_size_includes_commit_signature_invocation() {
         "fixed base ({base}) must exceed the empty-invocation base ({buggy})"
     );
 }
+
+#[test]
+fn invalid_validator_set_sizes_as_rejected_proposal() {
+    let settings = ProtocolSettings::default();
+    let (seed_validators, _keys) = consensus_test_validators(1);
+    let seed = &seed_validators[0];
+    let validators: Vec<ValidatorInfo> = (0..1025)
+        .map(|index| ValidatorInfo {
+            index: index as u8,
+            public_key: seed.public_key.clone(),
+            script_hash: seed.script_hash,
+        })
+        .collect();
+
+    assert_eq!(
+        expected_dbft_block_size_without_transactions(0, &validators),
+        usize::MAX,
+        "invalid validator sets must fail closed instead of shrinking witness size"
+    );
+
+    let tx = signed_zero_fee_tx(&settings, 0x7A);
+    let mut cache: HashMap<UInt256, Arc<Transaction>> = HashMap::new();
+
+    let selected = select_primary_proposal_transactions(
+        vec![PoolItem::new(tx)],
+        1,
+        &mut cache,
+        &validators,
+        &settings,
+        &[],
+    );
+
+    assert!(selected.is_empty());
+    assert!(cache.is_empty());
+}

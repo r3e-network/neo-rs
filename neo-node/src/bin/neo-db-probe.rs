@@ -1216,7 +1216,8 @@ fn decode_mpt_current_local_root_index(bytes: &[u8]) -> Result<u32> {
         "current local root index has {} bytes, expected 4",
         bytes.len()
     );
-    let arr: [u8; 4] = bytes.try_into().expect("length checked");
+    let mut arr = [0u8; 4];
+    arr.copy_from_slice(bytes);
     Ok(u32::from_le_bytes(arr))
 }
 
@@ -1229,7 +1230,9 @@ fn decode_mpt_state_root_record(bytes: &[u8]) -> Result<Value> {
         STATE_ROOT_UNSIGNED_LEN
     );
     let version = bytes[0];
-    let index = u32::from_le_bytes(bytes[1..5].try_into().expect("slice length checked"));
+    let mut index_bytes = [0u8; 4];
+    index_bytes.copy_from_slice(&bytes[1..5]);
+    let index = u32::from_le_bytes(index_bytes);
     let root_hash = UInt256::from_bytes(&bytes[5..STATE_ROOT_UNSIGNED_LEN])
         .map_err(|err| anyhow!("invalid state-root hash bytes: {err}"))?;
     Ok(json!({

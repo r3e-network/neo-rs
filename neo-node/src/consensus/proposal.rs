@@ -85,17 +85,27 @@ fn dbft_bft_threshold(n: usize) -> usize {
     RedeemScript::bft_threshold(n)
 }
 
-fn dbft_multisig_verification_script(validators: &[ValidatorInfo]) -> Vec<u8> {
+fn dbft_multisig_verification_script(validators: &[ValidatorInfo]) -> Option<Vec<u8>> {
     if validators.is_empty() {
-        return Vec::new();
+        return Some(Vec::new());
     }
 
     let keys: Vec<ECPoint> = validators
         .iter()
         .map(|validator| validator.public_key.clone())
         .collect();
-    RedeemScript::multi_sig_redeem_script_from_points(dbft_bft_threshold(keys.len()), &keys)
-        .expect("valid dBFT validator set")
+    match RedeemScript::multi_sig_redeem_script_from_points(dbft_bft_threshold(keys.len()), &keys) {
+        Ok(script) => Some(script),
+        Err(error) => {
+            warn!(
+                target: "neo",
+                validator_count = validators.len(),
+                %error,
+                "invalid dBFT validator set while sizing proposal witness"
+            );
+            None
+        }
+    }
 }
 
 /// C# `ConsensusContext._witnessSize` InvocationScript: `M = N - (N-1)/3` pushes
@@ -122,9 +132,12 @@ pub(super) fn expected_dbft_block_size_without_transactions(
     expected_transactions: usize,
     validators: &[ValidatorInfo],
 ) -> usize {
+    let Some(verification_script) = dbft_multisig_verification_script(validators) else {
+        return usize::MAX;
+    };
     let witness = Witness::new_with_scripts(
         dbft_expected_witness_invocation(validators),
-        dbft_multisig_verification_script(validators),
+        verification_script,
     );
     4 + 32
         + 32

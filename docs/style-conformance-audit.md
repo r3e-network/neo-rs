@@ -791,6 +791,14 @@ and legacy byte-returning wrappers log invalid inputs and fail closed rather
 than panicking. The source-adjacent contract tests now live under `src/tests`,
 so the style audit no longer reports `neo-vm` in the production unwrap/expect
 section. The current production unwrap/expect bucket is `neo-node` only.
+`neo-node` consensus proposal sizing now treats invalid dBFT validator sets as
+fail-closed policy rejection by returning a pessimistic base size instead of
+asserting the multi-sig witness invariant. The diagnostic `neo-db-probe` binary
+also decodes fixed-width MPT/state-root fields with explicit array copies after
+length checks instead of slice-conversion `expect()` calls. After this pass,
+the remaining `neo-node` production scan bucket is source-adjacent tests and
+inline binary tests that should be moved under `src/tests` or converted to
+`Result`-returning tests.
 
 Recommended next patches, in order:
 
