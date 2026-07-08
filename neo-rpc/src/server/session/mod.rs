@@ -13,11 +13,13 @@
 //! - `dummy_block`: C#-compatible dummy persisting block construction.
 //! - `execution`: Session construction and initial script execution.
 //! - `iterators`: RPC session iterator retention and disposal helpers.
+//! - `native_provider`: Native-contract read seam used by session construction.
 //! - `tests`: Module-local tests and regression coverage.
 
 mod dummy_block;
 mod execution;
 mod iterators;
+mod native_provider;
 
 use parking_lot::{Mutex, MutexGuard};
 use std::collections::HashMap;

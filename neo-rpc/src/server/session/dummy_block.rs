@@ -3,9 +3,12 @@
 use neo_blockchain::{
     BlockProvider, ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory,
 };
-use neo_native_contracts::policy_contract::PolicyContract;
 use neo_payloads::witness::Witness;
 use neo_payloads::{Block, Header};
+
+use super::native_provider::{
+    NativeSessionProviderFactory, SessionNativeProvider, SessionNativeProviderFactory,
+};
 
 /// Builds the dummy persisting block for a stateless RPC invoke, mirroring C#
 /// `ApplicationEngine.CreateDummyBlock(IReadOnlyStore snapshot, ProtocolSettings
@@ -35,8 +38,9 @@ pub(super) fn create_dummy_block(
     let current_hash = provider.current_hash().ok()?;
     let current_header = provider.header_by_hash(&current_hash).ok()??;
 
-    let milliseconds_per_block = PolicyContract::new()
-        .get_milliseconds_per_block_snapshot(snapshot, settings)
+    let milliseconds_per_block = NativeSessionProviderFactory
+        .provider()
+        .milliseconds_per_block(snapshot, settings)
         .unwrap_or(settings.milliseconds_per_block);
 
     let mut header = Header::new();

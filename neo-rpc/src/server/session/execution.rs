@@ -10,7 +10,6 @@ use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_manifest::CallFlags;
-use neo_native_contracts::policy_contract::PolicyContract;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
@@ -27,6 +26,9 @@ use crate::server::diagnostic::Diagnostic;
 
 use super::Session;
 use super::dummy_block::create_dummy_block;
+use super::native_provider::{
+    NativeSessionProviderFactory, SessionNativeProvider, SessionNativeProviderFactory,
+};
 
 impl Session {
     /// Create and execute a new invocation session.
@@ -57,11 +59,9 @@ impl Session {
         // setting when the key is not yet initialized). The static
         // `ConfigProvider::max_valid_until_block_increment()` is only correct
         // pre-Echidna, so read the Policy-aware value from the snapshot.
-        let max_valid_until_block_increment = PolicyContract::new()
-            .get_max_valid_until_block_increment_snapshot(
-                store_cache.data_cache(),
-                settings.as_ref(),
-            )
+        let max_valid_until_block_increment = NativeSessionProviderFactory
+            .provider()
+            .max_valid_until_block_increment(store_cache.data_cache(), settings.as_ref())
             .unwrap_or_else(|_| config_provider.max_valid_until_block_increment());
 
         let tx_container = signers.as_ref().map(|signer_list| {

@@ -132,6 +132,37 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
     }
 }
 
+#[test]
+fn rpc_session_policy_reads_use_native_provider_factory() {
+    let provider = include_str!("../../../server/session/native_provider.rs");
+    assert!(provider.contains("trait SessionNativeProvider"));
+    assert!(provider.contains("trait SessionNativeProviderFactory"));
+    assert!(provider.contains("struct NativeSessionProviderFactory"));
+    assert!(provider.contains("PolicyContract::new()"));
+
+    let session_sources = [
+        (
+            "session dummy block",
+            include_str!("../../../server/session/dummy_block.rs"),
+        ),
+        (
+            "session execution",
+            include_str!("../../../server/session/execution.rs"),
+        ),
+    ];
+
+    for (name, source) in session_sources {
+        assert!(
+            source.contains("NativeSessionProviderFactory"),
+            "{name} should obtain Policy values through the session native provider factory"
+        );
+        assert!(
+            !source.contains("PolicyContract::new()"),
+            "{name} should not construct PolicyContract directly"
+        );
+    }
+}
+
 /// Genesis-block timestamp seeded by the RPC test harness
 /// (`seed_genesis_state` / `genesis_header`).
 const GENESIS_TIMESTAMP: u64 = 1_468_595_301_000;
