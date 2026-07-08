@@ -123,12 +123,16 @@ struct MeteredNativeContract {
 
 impl MeteredNativeContract {
     fn new(storage_fee: i64) -> Self {
+        Self::with_fees(0, storage_fee)
+    }
+
+    fn with_fees(cpu_fee: i64, storage_fee: i64) -> Self {
         Self {
             hash: UInt160::from_bytes(&[0xA5; 20]).expect("metered native hash"),
             methods: vec![
                 crate::NativeMethod::new(
                     "metered",
-                    0,
+                    cpu_fee,
                     false,
                     CallFlags::ALL.bits(),
                     Vec::new(),
@@ -550,6 +554,40 @@ fn native_method_storage_fee_is_charged_in_datoshi() {
         engine.fee_consumed(),
         50 * 100_000,
         "C# NativeContract.Invoke charges StoragePrice * StorageFee through AddFee, in datoshi"
+    );
+}
+
+#[test]
+fn native_method_fee_overflow_does_not_partially_charge_cpu_fee() {
+    let _provider_guard = lock_provider();
+    let native = Arc::new(MeteredNativeContract::with_fees(1, i64::MAX));
+    let native_hash = native.hash();
+    NativeContractLookup::install_provider(Arc::new(SingleNativeProvider { native }));
+
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        None,
+        NativeContractLookup::native_contract_provider(),
+    )
+    .expect("engine");
+
+    let err = engine
+        .call_native_contract(native_hash, "metered", &[])
+        .expect_err("native method fee overflow must fault");
+
+    assert!(
+        err.to_string().contains("Native method fee overflow"),
+        "{err}"
+    );
+    assert_eq!(
+        engine.fee_consumed_pico(),
+        0,
+        "C# v3.10.1 computes the combined native fee before AddFee, so an overflow must not leave a CPU-fee side effect"
     );
 }
 

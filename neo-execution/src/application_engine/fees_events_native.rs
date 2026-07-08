@@ -129,6 +129,33 @@ impl ApplicationEngine {
         )
     }
 
+    fn add_native_method_fee(&mut self, cpu_fee: i64, storage_fee: i64) -> CoreResult<()> {
+        if cpu_fee < 0 || storage_fee < 0 {
+            return Err(CoreError::invalid_operation(
+                "Negative native method fee is not allowed",
+            ));
+        }
+
+        // C# v3.10.1 `NativeContract.Invoke` computes:
+        // (CpuFee * ExecFeePicoFactor) + (StorageFee * StoragePrice * FeeFactor)
+        // and then calls `AddFee(total, applyFactor: false)` once. Keep the same
+        // shape so arithmetic faults happen before `FeeConsumed` is mutated.
+        let cpu_pico = cpu_fee
+            .checked_mul(i64::from(self.exec_fee_factor))
+            .ok_or_else(|| CoreError::invalid_operation("Native method fee overflow"))?;
+        let storage_datoshi = storage_fee
+            .checked_mul(i64::from(self.storage_price))
+            .ok_or_else(|| CoreError::invalid_operation("Native method fee overflow"))?;
+        let storage_pico = storage_datoshi
+            .checked_mul(FEE_FACTOR)
+            .ok_or_else(|| CoreError::invalid_operation("Native method fee overflow"))?;
+        let total = cpu_pico
+            .checked_add(storage_pico)
+            .ok_or_else(|| CoreError::invalid_operation("Native method fee overflow"))?;
+
+        self.add_fee_pico(total)
+    }
+
     /// Emits a notification event.
     pub fn notify(&mut self, event_name: String, state: Vec<u8>) -> CoreResult<()> {
         if let (Some(container), Some(contract_hash)) =
@@ -285,46 +312,21 @@ impl ApplicationEngine {
 
         if !is_whitelisted {
             // Charge native contract fees upfront (matches C# NativeContract.Invoke).
-            if method_meta.cpu_fee != 0 {
-                let fee_before = self.fee_consumed;
-                self.add_cpu_fee(method_meta.cpu_fee)?;
-                if native_fee_trace_enabled(self) {
-                    eprintln!(
-                        "trace native.fee: tx={} contract={} method={} component=cpu fee_units={} exec_fee_factor={} fee_before_pico={} fee_after_pico={}",
-                        native_fee_trace_tx(self),
-                        contract_hash,
-                        method,
-                        method_meta.cpu_fee,
-                        self.exec_fee_factor,
-                        fee_before,
-                        self.fee_consumed,
-                    );
-                }
-            }
-            if method_meta.storage_fee != 0 {
-                // C# NativeContract.Invoke: AddFee(StoragePrice * StorageFee).
-                // ApplicationEngine.AddFee accepts GAS datoshi and converts to
-                // pico internally, so native metadata storage fees must follow
-                // the same datoshis path as dynamic Storage.Put byte fees.
-                let storage_fee_datoshi = method_meta
-                    .storage_fee
-                    .checked_mul(i64::from(self.storage_price))
-                    .ok_or_else(|| CoreError::invalid_operation("Native storage fee overflow"))?;
-                let fee_before = self.fee_consumed;
-                self.add_fee_datoshi(storage_fee_datoshi)?;
-                if native_fee_trace_enabled(self) {
-                    eprintln!(
-                        "trace native.fee: tx={} contract={} method={} component=storage storage_fee_units={} storage_price={} fee_delta={} fee_before_pico={} fee_after_pico={}",
-                        native_fee_trace_tx(self),
-                        contract_hash,
-                        method,
-                        method_meta.storage_fee,
-                        self.storage_price,
-                        storage_fee_datoshi,
-                        fee_before,
-                        self.fee_consumed,
-                    );
-                }
+            let fee_before = self.fee_consumed;
+            self.add_native_method_fee(method_meta.cpu_fee, method_meta.storage_fee)?;
+            if native_fee_trace_enabled(self) {
+                eprintln!(
+                    "trace native.fee: tx={} contract={} method={} component=combined cpu_fee_units={} storage_fee_units={} exec_fee_factor={} storage_price={} fee_before_pico={} fee_after_pico={}",
+                    native_fee_trace_tx(self),
+                    contract_hash,
+                    method,
+                    method_meta.cpu_fee,
+                    method_meta.storage_fee,
+                    self.exec_fee_factor,
+                    self.storage_price,
+                    fee_before,
+                    self.fee_consumed,
+                );
             }
         }
 
