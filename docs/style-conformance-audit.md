@@ -208,7 +208,10 @@ High-signal clusters found during the first pass:
 - `neo-consensus/src/service/helpers/block.rs` owns consensus block field
   derivation. Header hash construction now assembles the unsigned header bytes
   directly from fixed-width little-endian fields, keeping protocol field order
-  visible without panic-shaped in-memory writer calls.
+  visible without panic-shaped in-memory writer calls. Block witness multi-sig
+  construction delegates valid validator sets to `neo-vm`'s shared
+  `RedeemScript` builder, with a non-panicking fallback that preserves the
+  helper's legacy byte-returning API for invalid inputs.
 - `neo-indexer/src/indexer/mod.rs` keeps the mutable projection struct and
   constructor, `indexer/commands.rs` owns public block/notification indexing
   commands, `indexer/apply.rs` owns prepared-record application into the

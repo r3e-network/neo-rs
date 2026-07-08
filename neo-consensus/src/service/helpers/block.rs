@@ -22,10 +22,17 @@ impl ConsensusBlockFields {
     pub(in crate::service) fn multisig_verification_script(
         keys: &[neo_crypto::ECPoint],
     ) -> Vec<u8> {
-        use neo_vm::script_builder::ScriptBuilder;
+        use neo_vm::script_builder::RedeemScript;
 
-        let n = keys.len();
-        let m = ConsensusBlockFields::bft_threshold(n);
+        let m = ConsensusBlockFields::bft_threshold(keys.len());
+        match RedeemScript::multi_sig_redeem_script_from_points(m, keys) {
+            Ok(script) => script,
+            Err(_) => ConsensusBlockFields::unchecked_multisig_verification_script(m, keys),
+        }
+    }
+
+    fn unchecked_multisig_verification_script(m: usize, keys: &[neo_crypto::ECPoint]) -> Vec<u8> {
+        use neo_vm::script_builder::ScriptBuilder;
 
         let mut sorted = keys.to_vec();
         sorted.sort();
@@ -35,10 +42,10 @@ impl ConsensusBlockFields {
         for key in &sorted {
             builder.emit_push(key.as_bytes());
         }
-        builder.emit_push_int(n as i64);
-        builder
-            .emit_syscall("System.Crypto.CheckMultisig")
-            .expect("infallible: in-memory emit");
+        builder.emit_push_int(keys.len() as i64);
+        if builder.emit_syscall("System.Crypto.CheckMultisig").is_err() {
+            return Vec::new();
+        }
         builder.to_array()
     }
 

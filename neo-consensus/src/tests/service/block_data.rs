@@ -8,6 +8,21 @@ fn test_pubkey(byte: u8) -> ECPoint {
     ECPoint::from_bytes(&public).expect("decode point")
 }
 
+#[test]
+fn multisig_verification_script_matches_redeem_script_for_unsorted_keys() {
+    let keys = vec![test_pubkey(3), test_pubkey(1), test_pubkey(2)];
+    let expected = neo_vm::script_builder::RedeemScript::multi_sig_redeem_script_from_points(
+        ConsensusBlockFields::bft_threshold(keys.len()),
+        &keys,
+    )
+    .expect("valid test validator set");
+
+    assert_eq!(
+        ConsensusBlockFields::multisig_verification_script(&keys),
+        expected
+    );
+}
+
 /// A single-validator (1-of-1) commit assembles into a block whose header
 /// carries the correct Merkle root, `NextConsensus` (= the 1-of-1 multi-sig
 /// script hash), and a witness pairing that multi-sig with the pushed
