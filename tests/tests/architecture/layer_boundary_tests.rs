@@ -796,11 +796,10 @@ async fn test_crypto_hash_functions() {
 async fn test_storage_key_builder() {
     use neo_storage::KeyBuilder;
 
-    // Verify storage key building works
-    // KeyBuilder::new(id, prefix, max_length)
-    let mut builder = KeyBuilder::new(1, 0x01, 64);
-    builder.add_byte(0x02);
-    builder.add_byte(0x03);
+    // Verify storage key building works through the typed-error API.
+    let mut builder = KeyBuilder::try_new(1, 0x01, 64).expect("valid key builder");
+    builder.try_add_byte(0x02).expect("first byte fits");
+    builder.try_add_byte(0x03).expect("second byte fits");
     let key = builder.to_bytes();
 
     assert!(!key.is_empty());

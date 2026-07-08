@@ -276,6 +276,12 @@ High-signal clusters found during the first pass:
 - `neo-storage` exposes broad `dyn Store` / `dyn StoreSnapshot` boundaries.
   This is valid for backend selection, but hot loops should keep borrowed
   visitor APIs or concrete paths where possible.
+- `neo-storage/src/core/key_builder.rs` now exposes fallible construction and
+  mutation as the public path for storage-key assembly. The panicking
+  convenience wrappers were removed because storage keys carry consensus byte
+  layout, and overflow or invalid capacity must propagate as typed errors under
+  `panic = "abort"`. The style audit no longer reports `neo-storage` in the
+  production unwrap/expect section.
 - `neo-mempool/src/pool/memory_pool.rs` keeps the public pool facade,
   admission workflow, block-persist callbacks, and event ordering, while
   `pool/state.rs` owns the private queue indexes, verification-context

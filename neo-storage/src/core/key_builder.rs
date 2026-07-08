@@ -69,18 +69,11 @@ impl KeyBuilder {
         Ok(Self::with_payload_capacity(id, prefix, max_length))
     }
 
-    /// Initializes a new instance (panics on invalid input).
-    #[inline]
-    #[must_use]
-    pub fn new(id: i32, prefix: u8, max_length: usize) -> Self {
-        Self::try_new(id, prefix, max_length).expect("max_length must be greater than zero")
-    }
-
     /// Creates with default max length.
     #[inline]
     #[must_use]
     pub fn new_with_default(id: i32, prefix: u8) -> Self {
-        Self::new(id, prefix, Self::DEFAULT_MAX_LENGTH)
+        Self::with_payload_capacity(id, prefix, Self::DEFAULT_MAX_LENGTH)
     }
 
     #[inline]
@@ -103,12 +96,6 @@ impl KeyBuilder {
         Ok(self)
     }
 
-    /// Adds a byte to the key (panics on overflow).
-    #[inline]
-    pub fn add_byte(&mut self, key: u8) -> &mut Self {
-        self.try_add_byte(key).expect("Input data too large")
-    }
-
     /// Adds bytes to the key.
     pub fn try_add(&mut self, key: &[u8]) -> Result<&mut Self, KeyBuilderError> {
         self.check_length(key.len())?;
@@ -117,34 +104,28 @@ impl KeyBuilder {
         Ok(self)
     }
 
-    /// Adds bytes to the key (panics on overflow).
-    #[inline]
-    pub fn add(&mut self, key: &[u8]) -> &mut Self {
-        self.try_add(key).expect("Input data too large")
-    }
-
     /// Adds a `UInt160` to the key.
     #[inline]
-    pub fn add_uint160(&mut self, key: &UInt160) -> &mut Self {
-        self.add(&key.to_bytes())
+    pub fn try_add_uint160(&mut self, key: &UInt160) -> Result<&mut Self, KeyBuilderError> {
+        self.try_add(&key.to_bytes())
     }
 
     /// Adds a `UInt256` to the key.
     #[inline]
-    pub fn add_uint256(&mut self, key: &UInt256) -> &mut Self {
-        self.add(&key.to_bytes())
+    pub fn try_add_uint256(&mut self, key: &UInt256) -> Result<&mut Self, KeyBuilderError> {
+        self.try_add(&key.to_bytes())
     }
 
     /// Adds an i32 in big-endian format.
     #[inline]
-    pub fn add_i32_be(&mut self, value: i32) -> &mut Self {
-        self.add(&value.to_be_bytes())
+    pub fn try_add_i32_be(&mut self, value: i32) -> Result<&mut Self, KeyBuilderError> {
+        self.try_add(&value.to_be_bytes())
     }
 
     /// Adds a u32 in big-endian format.
     #[inline]
-    pub fn add_u32_be(&mut self, value: u32) -> &mut Self {
-        self.add(&value.to_be_bytes())
+    pub fn try_add_u32_be(&mut self, value: u32) -> Result<&mut Self, KeyBuilderError> {
+        self.try_add(&value.to_be_bytes())
     }
 
     /// Adds a `BigInteger` to the key.
@@ -158,13 +139,6 @@ impl KeyBuilder {
             return Err(KeyBuilderError::NegativeBigInteger);
         }
         self.try_add(&bytes)
-    }
-
-    /// Adds a `BigInteger` to the key (panics on error).
-    #[inline]
-    pub fn add_big_endian(&mut self, key: &BigInt) -> &mut Self {
-        self.try_add_big_endian(key)
-            .expect("Cannot add negative BigInteger to key")
     }
 
     /// Converts to `StorageKey`.

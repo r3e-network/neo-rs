@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn test_key_builder_new() {
-    let builder = KeyBuilder::new(1, 0x01, 64);
+    let builder = KeyBuilder::try_new(1, 0x01, 64).unwrap();
     assert_eq!(builder.len(), KeyBuilder::PREFIX_LENGTH);
 }
 
@@ -15,14 +15,14 @@ fn test_key_builder_try_new_zero_max_length() {
 #[test]
 fn test_key_builder_add_byte() {
     let mut builder = KeyBuilder::new_with_default(1, 0x01);
-    builder.add_byte(0x42);
+    builder.try_add_byte(0x42).unwrap();
     assert_eq!(builder.len(), KeyBuilder::PREFIX_LENGTH + 1);
 }
 
 #[test]
 fn test_key_builder_add_bytes() {
     let mut builder = KeyBuilder::new_with_default(1, 0x01);
-    builder.add(&[0x01, 0x02, 0x03]);
+    builder.try_add(&[0x01, 0x02, 0x03]).unwrap();
     assert_eq!(builder.len(), KeyBuilder::PREFIX_LENGTH + 3);
 }
 
@@ -35,8 +35,8 @@ fn test_key_builder_try_add_exceeds_max_length() {
 
 #[test]
 fn test_key_builder_to_bytes() {
-    let mut builder = KeyBuilder::new(42, 0xAB, 64);
-    builder.add_byte(0xFF);
+    let mut builder = KeyBuilder::try_new(42, 0xAB, 64).unwrap();
+    builder.try_add_byte(0xFF).unwrap();
     let bytes = builder.to_bytes();
     // id (4 bytes LE) + prefix (1 byte) + added byte
     assert_eq!(bytes.len(), 6);
@@ -49,7 +49,7 @@ fn test_key_builder_to_bytes() {
 fn test_key_builder_add_uint160() {
     let mut builder = KeyBuilder::new_with_default(1, 0x01);
     let hash = UInt160::zero();
-    builder.add_uint160(&hash);
+    builder.try_add_uint160(&hash).unwrap();
     assert_eq!(builder.len(), KeyBuilder::PREFIX_LENGTH + 20);
 }
 
@@ -57,7 +57,7 @@ fn test_key_builder_add_uint160() {
 fn test_key_builder_add_uint256() {
     let mut builder = KeyBuilder::new_with_default(1, 0x01);
     let hash = UInt256::zero();
-    builder.add_uint256(&hash);
+    builder.try_add_uint256(&hash).unwrap();
     assert_eq!(builder.len(), KeyBuilder::PREFIX_LENGTH + 32);
 }
 
@@ -67,7 +67,7 @@ fn test_key_builder_is_empty() {
     assert!(builder.is_empty());
 
     let mut builder2 = KeyBuilder::new_with_default(1, 0x01);
-    builder2.add_byte(0x00);
+    builder2.try_add_byte(0x00).unwrap();
     assert!(!builder2.is_empty());
 }
 
@@ -87,30 +87,36 @@ fn test_key_builder_error_display() {
 }
 
 #[test]
-#[should_panic(expected = "max_length must be greater than zero")]
-fn test_key_builder_new_panics_on_zero() {
-    let _ = KeyBuilder::new(1, 0x01, 0);
+fn test_key_builder_new_rejects_zero_max_length() {
+    assert!(matches!(
+        KeyBuilder::try_new(1, 0x01, 0),
+        Err(KeyBuilderError::InvalidMaxLength)
+    ));
 }
 
 #[test]
-#[should_panic(expected = "Input data too large")]
-fn test_key_builder_add_panics_on_overflow() {
-    let mut builder = KeyBuilder::new(1, 0x01, 5);
-    builder.add(&[0u8; 10]);
+fn test_key_builder_add_rejects_overflow() {
+    let mut builder = KeyBuilder::try_new(1, 0x01, 5).unwrap();
+    assert!(matches!(
+        builder.try_add(&[0u8; 10]),
+        Err(KeyBuilderError::DataTooLarge { .. })
+    ));
 }
 
 #[test]
-#[should_panic(expected = "Input data too large")]
-fn test_key_builder_add_byte_panics_on_overflow() {
-    let mut builder = KeyBuilder::new(1, 0x01, 1);
-    builder.add_byte(0x01);
-    builder.add_byte(0x02); // Should panic
+fn test_key_builder_add_byte_rejects_overflow() {
+    let mut builder = KeyBuilder::try_new(1, 0x01, 1).unwrap();
+    builder.try_add_byte(0x01).unwrap();
+    assert!(matches!(
+        builder.try_add_byte(0x02),
+        Err(KeyBuilderError::DataTooLarge { .. })
+    ));
 }
 
 #[test]
 fn test_key_builder_add_i32_be() {
     let mut builder = KeyBuilder::new_with_default(1, 0x01);
-    builder.add_i32_be(0x12345678);
+    builder.try_add_i32_be(0x12345678).unwrap();
     let bytes = builder.to_bytes();
     // Check that the i32 is in big-endian format
     assert_eq!(&bytes[5..9], &0x12345678i32.to_be_bytes());
@@ -119,7 +125,7 @@ fn test_key_builder_add_i32_be() {
 #[test]
 fn test_key_builder_add_u32_be() {
     let mut builder = KeyBuilder::new_with_default(1, 0x01);
-    builder.add_u32_be(0xABCDEF00);
+    builder.try_add_u32_be(0xABCDEF00).unwrap();
     let bytes = builder.to_bytes();
     // Check that the u32 is in big-endian format
     assert_eq!(&bytes[5..9], &0xABCDEF00u32.to_be_bytes());
@@ -128,7 +134,13 @@ fn test_key_builder_add_u32_be() {
 #[test]
 fn test_key_builder_chaining() {
     let mut builder = KeyBuilder::new_with_default(1, 0x01);
-    builder.add_byte(0x02).add_byte(0x03).add(&[0x04, 0x05]);
+    builder
+        .try_add_byte(0x02)
+        .unwrap()
+        .try_add_byte(0x03)
+        .unwrap()
+        .try_add(&[0x04, 0x05])
+        .unwrap();
     assert_eq!(builder.len(), KeyBuilder::PREFIX_LENGTH + 4);
 }
 
@@ -165,7 +177,7 @@ fn test_key_builder_empty_key() {
 
 #[test]
 fn test_key_builder_negative_id() {
-    let builder = KeyBuilder::new(-100, 0xFF, 10);
+    let builder = KeyBuilder::try_new(-100, 0xFF, 10).unwrap();
     let bytes = builder.to_bytes();
     assert_eq!(&bytes[..4], &(-100i32).to_le_bytes());
     assert_eq!(bytes[4], 0xFF);
@@ -173,7 +185,7 @@ fn test_key_builder_negative_id() {
 
 #[test]
 fn test_key_builder_zero_id() {
-    let builder = KeyBuilder::new(0, 0x00, 10);
+    let builder = KeyBuilder::try_new(0, 0x00, 10).unwrap();
     let bytes = builder.to_bytes();
     assert_eq!(&bytes[..4], &0i32.to_le_bytes());
     assert_eq!(bytes[4], 0x00);
@@ -181,22 +193,22 @@ fn test_key_builder_zero_id() {
 
 #[test]
 fn test_key_builder_max_id() {
-    let builder = KeyBuilder::new(i32::MAX, 0xFF, 10);
+    let builder = KeyBuilder::try_new(i32::MAX, 0xFF, 10).unwrap();
     let bytes = builder.to_bytes();
     assert_eq!(&bytes[..4], &i32::MAX.to_le_bytes());
 }
 
 #[test]
 fn test_key_builder_min_id() {
-    let builder = KeyBuilder::new(i32::MIN, 0x00, 10);
+    let builder = KeyBuilder::try_new(i32::MIN, 0x00, 10).unwrap();
     let bytes = builder.to_bytes();
     assert_eq!(&bytes[..4], &i32::MIN.to_le_bytes());
 }
 
 #[test]
 fn test_key_builder_to_storage_key() {
-    let mut builder = KeyBuilder::new(42, 0xAB, 10);
-    builder.add_byte(0xCD);
+    let mut builder = KeyBuilder::try_new(42, 0xAB, 10).unwrap();
+    builder.try_add_byte(0xCD).unwrap();
     let storage_key = builder.to_storage_key();
 
     // StorageKey::from_bytes correctly parses the byte array:
