@@ -700,6 +700,9 @@ a client runtime dependency.
 `SerializablePayload::hash` implementation through `Transaction::hash`, so
 oversized or otherwise unserializable transactions fail closed with the
 existing zero-hash sentinel without caching it instead of panicking.
+`neo-payloads` header and block infallible hash adapters now share the same
+fail-closed compatibility path instead of asserting serialization invariants
+with production `expect()` calls; `try_hash` remains the validation API.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.

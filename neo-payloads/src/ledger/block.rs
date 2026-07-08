@@ -181,8 +181,7 @@ impl neo_primitives::BlockLike for Block {
     type Transaction = Transaction;
 
     fn hash(&self) -> UInt256 {
-        self.try_hash()
-            .expect("Block serialization failed - this indicates a bug")
+        Block::hash(self)
     }
 
     fn index(&self) -> u32 {
