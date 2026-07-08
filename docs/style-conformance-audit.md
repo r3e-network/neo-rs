@@ -760,9 +760,7 @@ so provider-factory assertions no longer look like production panic surfaces.
 `try_store_block`, and `try_store_block_with_vmstate` helpers. Shared fixture
 setup propagates ledger lookup and serialization failures through `CoreResult`,
 while test modules keep any intentional setup assertions at the call site. The
-production unwrap/expect scan no longer reports `neo-test-fixtures`; the
-remaining buckets are `neo-node`, `neo-crypto`, `neo-vm`, and
-`neo-execution`.
+production unwrap/expect scan no longer reports `neo-test-fixtures`.
 `benchmarks/bench-client` now returns `Result` from its Tokio entrypoint so
 HTTP client construction failures become normal process errors instead of a
 panic-shaped benchmark startup path.
@@ -784,6 +782,15 @@ reader failures, and EC point ordering falls back to compressed-byte ordering if
 a validated point ever fails to reparse. The remaining source-adjacent
 Merkle-tree and Bloom-filter tests now live under `src/tests`, so the style
 audit no longer reports `neo-crypto` in the production unwrap/expect section.
+`neo-vm` exception and syscall control flow now return typed VM errors for
+missing context/try-stack/interop-service invariants instead of aborting the
+runtime. Jump-table indexing uses a stable unsupported-opcode handler for
+missing slots while the production `execute` path continues to return
+`VmResult`. Multi-sig contract construction now exposes a fallible constructor,
+and legacy byte-returning wrappers log invalid inputs and fail closed rather
+than panicking. The source-adjacent contract tests now live under `src/tests`,
+so the style audit no longer reports `neo-vm` in the production unwrap/expect
+section. The current production unwrap/expect bucket is `neo-node` only.
 
 Recommended next patches, in order:
 

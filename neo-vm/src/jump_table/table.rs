@@ -11,6 +11,18 @@ use neo_vm_rs::{Instruction, OpCode};
 /// A handler for a VM instruction.
 pub type InstructionHandler = fn(&mut ExecutionEngine, &Instruction) -> VmResult<()>;
 
+fn unsupported_opcode_handler(
+    _engine: &mut ExecutionEngine,
+    instruction: &Instruction,
+) -> VmResult<()> {
+    Err(VmError::unsupported_operation(format!(
+        "Unsupported opcode: {:?}",
+        instruction.opcode()
+    )))
+}
+
+static UNSUPPORTED_OPCODE_HANDLER: InstructionHandler = unsupported_opcode_handler;
+
 /// Represents a jump table for the VM.
 #[derive(Clone)]
 pub struct JumpTable {
@@ -119,10 +131,9 @@ impl JumpTable {
 impl std::ops::Index<OpCode> for JumpTable {
     type Output = InstructionHandler;
 
-    /// # Panics
-    ///
-    /// Panics if no handler is registered for `opcode`. Production code should
-    /// use [`JumpTable::execute`] instead, which returns a `VmResult`.
+    /// Returns a default unsupported-opcode handler if no handler is
+    /// registered for `opcode`. Production code should use
+    /// [`JumpTable::execute`] instead, which avoids the indexing indirection.
     // Rationale: the `Index` trait cannot return `VmResult`; unsafe indexing is
     // confined to the fixed opcode table and production dispatch uses `execute`.
     #[allow(unsafe_code)]
@@ -131,13 +142,11 @@ impl std::ops::Index<OpCode> for JumpTable {
         let idx = usize::from(opcode.byte());
         debug_assert!(idx < self.handlers.len());
         // SAFETY: OpCode::byte() returns a u8 (0..=255) and handlers has 256 entries.
-        // The Option::expect is acceptable here because Index must return a reference
-        // and cannot return Result; the execute() method is the safe alternative.
         unsafe {
-            self.handlers
-                .get_unchecked(idx)
-                .as_ref()
-                .expect("No handler registered for opcode; use JumpTable::execute() in production")
+            match self.handlers.get_unchecked(idx).as_ref() {
+                Some(handler) => handler,
+                None => &UNSUPPORTED_OPCODE_HANDLER,
+            }
         }
     }
 }
@@ -152,23 +161,9 @@ impl std::ops::IndexMut<OpCode> for JumpTable {
         debug_assert!(idx < self.handlers.len());
         // SAFETY: OpCode::byte() returns a u8 (0..=255) and handlers has 256 entries.
         unsafe {
-            if self.handlers.get_unchecked(idx).is_none() {
-                *self.handlers.get_unchecked_mut(idx) = Some(
-                    |_engine: &mut ExecutionEngine, instruction: &Instruction| -> VmResult<()> {
-                        Err(VmError::unsupported_operation(format!(
-                            "Unsupported opcode: {:?}",
-                            instruction.opcode()
-                        )))
-                    },
-                );
-            }
-
-            // SAFETY: The branch above guarantees the slot is now Some, so
-            // this unwrap is infallible.
             self.handlers
                 .get_unchecked_mut(idx)
-                .as_mut()
-                .expect("slot was just initialised to Some")
+                .get_or_insert(UNSUPPORTED_OPCODE_HANDLER)
         }
     }
 }

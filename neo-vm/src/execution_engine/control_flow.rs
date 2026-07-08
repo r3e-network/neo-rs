@@ -81,16 +81,11 @@ impl ExecutionEngine {
 
     /// Handles system calls. Delegates to the configured interop service when available.
     pub fn on_syscall(&mut self, descriptor: u32) -> VmResult<()> {
-        if self.interop_service.is_none() {
+        let Some(mut service) = self.interop_service.take() else {
             return Err(VmError::invalid_operation_msg(format!(
                 "Syscall {descriptor} not supported"
             )));
-        }
-
-        let mut service = self
-            .interop_service
-            .take()
-            .expect("interop service should exist");
+        };
         let result = service.invoke_by_hash(self, descriptor);
         self.interop_service = Some(service);
         result

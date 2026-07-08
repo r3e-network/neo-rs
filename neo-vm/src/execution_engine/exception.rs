@@ -68,7 +68,7 @@ impl ExecutionEngine {
         let current_try_snapshot = context
             .try_stack_last()
             .cloned()
-            .expect("try stack should not be empty");
+            .ok_or_else(|| VmError::invalid_operation_msg("No try context"))?;
 
         let base_ip = i32::try_from(context.instruction_pointer()).map_err(|_| {
             VmError::invalid_operation_msg("Instruction pointer exceeds 32-bit range")
@@ -85,7 +85,7 @@ impl ExecutionEngine {
         if current_try_snapshot.has_finally() {
             let try_entry = context
                 .try_stack_last_mut()
-                .expect("try stack should not be empty");
+                .ok_or_else(|| VmError::invalid_operation_msg("No try context"))?;
             try_entry.set_state(ExceptionHandlingState::Finally);
 
             let end_pointer = base_ip
@@ -127,7 +127,7 @@ impl ExecutionEngine {
 
             let current_try_snapshot = context
                 .try_stack_last()
-                .expect("try stack should not be empty");
+                .ok_or_else(|| VmError::invalid_operation_msg("No try stack"))?;
 
             if current_try_snapshot.state() != ExceptionHandlingState::Finally {
                 return Err(VmError::invalid_operation_msg(
@@ -175,12 +175,11 @@ impl ExecutionEngine {
                 break;
             }
 
-            if !self
-                .invocation_stack
-                .last()
-                .expect("context should exist")
-                .has_try_context()
-            {
+            let Some(context) = self.invocation_stack.last() else {
+                break;
+            };
+
+            if !context.has_try_context() {
                 if let Some(mut ctx) = self.invocation_stack.pop() {
                     self.unload_context(&mut ctx)?;
                 }
@@ -189,7 +188,9 @@ impl ExecutionEngine {
 
             loop {
                 let (state, has_finally, catch_pointer, finally_pointer) = {
-                    let context = self.invocation_stack.last().expect("context should exist");
+                    let Some(context) = self.invocation_stack.last() else {
+                        break;
+                    };
 
                     if let Some(try_context) = context.try_stack_last() {
                         (
@@ -217,10 +218,10 @@ impl ExecutionEngine {
                         let context = self
                             .invocation_stack
                             .last_mut()
-                            .expect("context should exist");
+                            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
                         let try_context = context
                             .try_stack_last_mut()
-                            .expect("try context should exist");
+                            .ok_or_else(|| VmError::invalid_operation_msg("No try context"))?;
                         try_context.set_state(ExceptionHandlingState::Catch);
                         if let Some(exception) = self.uncaught_exception.clone() {
                             context.push(exception)?;
@@ -238,10 +239,10 @@ impl ExecutionEngine {
                     let context = self
                         .invocation_stack
                         .last_mut()
-                        .expect("context should exist");
+                        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
                     let try_context = context
                         .try_stack_last_mut()
-                        .expect("try context should exist");
+                        .ok_or_else(|| VmError::invalid_operation_msg("No try context"))?;
                     try_context.set_state(ExceptionHandlingState::Finally);
                     let finally_position = usize::try_from(finally_pointer)
                         .map_err(|_| VmError::InvalidJump(finally_pointer))?;

@@ -68,9 +68,30 @@ impl Contract {
 
     /// Creates a multi-sig verification contract.
     pub fn create_multi_sig_contract(m: usize, public_keys: &[ECPoint]) -> Self {
-        let script = Self::create_multi_sig_redeem_script(m, public_keys);
-        let parameter_list = vec![ContractParameterType::Signature; m];
-        Self::create(parameter_list, script)
+        match Self::try_create_multi_sig_contract(m, public_keys) {
+            Ok(contract) => contract,
+            Err(error) => {
+                tracing::error!(target: "neo_vm", %error, "multi-sig contract construction failed");
+                Self::create(Vec::new(), Vec::new())
+            }
+        }
+    }
+
+    /// Tries to create a multi-sig verification contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns `CoreError` if the redeem script cannot be constructed from
+    /// the supplied threshold and public keys.
+    pub fn try_create_multi_sig_contract(
+        m: usize,
+        public_keys: &[ECPoint],
+    ) -> Result<Self, CoreError> {
+        let script = Self::try_create_multi_sig_redeem_script(m, public_keys)?;
+        Ok(Self::create(
+            vec![ContractParameterType::Signature; m],
+            script,
+        ))
     }
 
     /// Tries to create the multi-sig redeem script bytes.
@@ -92,15 +113,20 @@ impl Contract {
         .map_err(Into::into)
     }
 
-    /// Creates the multi-sig redeem script bytes (panics on invalid input).
+    /// Creates the multi-sig redeem script bytes.
     ///
     /// Prefer `try_create_multi_sig_redeem_script` for fallible construction.
+    /// This compatibility wrapper logs invalid input and returns an empty
+    /// script rather than panicking.
     #[inline]
     pub fn create_multi_sig_redeem_script(m: usize, public_keys: &[ECPoint]) -> Vec<u8> {
-        Self::try_create_multi_sig_redeem_script(m, public_keys).expect(
-            "multi-sig redeem script construction failed: \
-             m must be in [1, 1024] and m <= public_keys.len()",
-        )
+        match Self::try_create_multi_sig_redeem_script(m, public_keys) {
+            Ok(script) => script,
+            Err(error) => {
+                tracing::error!(target: "neo_vm", %error, "multi-sig redeem script construction failed");
+                Vec::new()
+            }
+        }
     }
 
     /// Creates a standard single-signature verification contract.
@@ -135,38 +161,5 @@ impl Contract {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn get_address_uses_provided_address_version() {
-        let script_hash = UInt160::from_bytes(&[0x31; UInt160::LENGTH]).unwrap();
-        let contract = Contract::create_with_hash(script_hash, Vec::new());
-
-        let version = neo_primitives::constants::ADDRESS_VERSION;
-        assert_eq!(contract.get_address(version), script_hash.to_address());
-    }
-
-    #[test]
-    fn create_contract_caches_script_hash() {
-        let script = vec![0x52]; // PUSH2
-        let contract = Contract::create(vec![ContractParameterType::Signature], script.clone());
-        let hash1 = contract.script_hash();
-        let hash2 = contract.script_hash();
-        assert_eq!(
-            hash1, hash2,
-            "script_hash should be cached and deterministic"
-        );
-    }
-
-    #[test]
-    fn create_with_hash_pre_populates_cache() {
-        let script_hash = UInt160::from_bytes(&[0x42; UInt160::LENGTH]).unwrap();
-        let contract = Contract::create_with_hash(script_hash, Vec::new());
-        assert_eq!(
-            contract.script_hash(),
-            script_hash,
-            "pre-supplied hash should be returned"
-        );
-    }
-}
+#[path = "tests/contract.rs"]
+mod tests;
