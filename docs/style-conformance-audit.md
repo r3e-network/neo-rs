@@ -125,8 +125,8 @@ High-signal clusters found during the first pass:
   are very large workflow modules. They should be split into domain files such
   as `format`, `reader`, `import`, `report`, `package`, `manifest`, and
   `workflow` while keeping behavior locked by tests.
-- `neo-node/src/node/mod.rs` still mixes CLI validation, node construction, and
-  shutdown. It needs a facade-oriented startup workflow, but only after focused
+- `neo-node/src/node/mod.rs` still mixes CLI validation and node construction.
+  It needs a facade-oriented startup workflow, but only after focused
   regression tests protect the modes. Startup preflight has been moved out:
   `node/preflight.rs` owns config/storage preflight checks, remote-ledger
   preflight skips, operator messages, and the explicit continue/exit outcome.
@@ -137,6 +137,9 @@ High-signal clusters found during the first pass:
   package/import mechanics. Live service startup has also been moved out:
   `node/live_services.rs` owns telemetry metrics, P2P listener startup, seed
   dialing, RPC startup/keepalive, and observability heartbeat task spawning.
+  Shutdown coordination now lives in `node/shutdown_flow.rs`, which owns signal
+  outcome handling, observability reporting for signal failures, task
+  cancellation/abort grace, state-service flush, and durable-store restoration.
 - `neo-node/src/node/logging/mod.rs` is now a facade for logging setup:
   `logging/filter.rs` owns `RUST_LOG` / TOML directive selection,
   `logging/format.rs` owns operator-facing format parsing, and

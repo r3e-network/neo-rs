@@ -84,12 +84,12 @@ fn node_runtime_sources_report_seed_connection_failures_to_observability() {
 
 #[test]
 fn node_runtime_sources_report_shutdown_signal_failures_to_observability() {
-    let node_source = include_str!("../../../node/mod.rs");
+    let shutdown_flow_source = include_str!("../../../node/shutdown_flow.rs");
     let shutdown_source = include_str!("../../../node/shutdown.rs");
-    let shutdown_signal_branch = node_source
+    let shutdown_signal_branch = shutdown_flow_source
         .split("shutdown-signal handler failed")
         .nth(1)
-        .expect("node source should contain shutdown-signal failure branch");
+        .expect("shutdown flow should contain shutdown-signal failure branch");
 
     assert!(
         shutdown_signal_branch.contains("report_runtime_error")

@@ -34,6 +34,8 @@
 //! - `seeds`: Seed-node selection and network bootstrap helpers.
 //! - `services`: Auxiliary service startup and handles used by the daemon.
 //! - `shutdown`: OS, stop-height, and essential-task shutdown waiting.
+//! - `shutdown_flow`: Daemon shutdown cancellation, task abort, and durable
+//!   store finalization.
 //! - `startup_cleanup`: Startup import rollback, durable-mode restore, and
 //!   shutdown flush helpers.
 //! - `sync_downloader`: Coordinator-backed P2P block download startup.
@@ -50,7 +52,7 @@ use neo_config::ProtocolSettings;
 #[cfg(test)]
 use std::path::Path;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::info;
 
 mod chain_acc;
 mod cli;
@@ -71,6 +73,7 @@ mod rpc_runtime;
 mod seeds;
 mod services;
 mod shutdown;
+mod shutdown_flow;
 mod startup_cleanup;
 mod startup_import;
 mod sync_downloader;
@@ -99,9 +102,10 @@ use live_services::start_live_services;
 use preflight::{StartupPreflight, run_startup_preflight};
 #[cfg(test)]
 use rpc_runtime::start_rpc_server;
-use shutdown::wait_for_shutdown_signal;
+use shutdown_flow::run_daemon_shutdown;
 #[cfg(test)]
 use startup_cleanup::abort_fast_sync_store_mode;
+#[cfg(test)]
 use startup_cleanup::{flush_state_service_for_shutdown, restore_durable_store_mode};
 use startup_import::{StartupImportContext, StartupImportOutcome, run_startup_imports};
 
@@ -191,40 +195,15 @@ pub async fn run() -> anyhow::Result<()> {
     )
     .await?;
 
-    // Wait for a shutdown signal, handling SIGTERM as well as Ctrl-C (SIGINT)
-    // so `kill`/`pkill`, Docker, and systemd all stop the node gracefully. The
-    // validation stop-height path uses the same shutdown route after observing a
-    // committed block event, so the persistent store is dropped cleanly.
-    let shutdown_signalled =
-        wait_for_shutdown_signal(node.blockchain(), cli.stop_at_height, shutdown.clone()).await;
-
-    match shutdown_signalled {
-        Ok(signal_name) => {
-            info!(target: "neo", signal = signal_name, "shutdown signal received; shutting down")
-        }
-        Err(err) => {
-            warn!(target: "neo", error = %err, "shutdown-signal handler failed; falling back to pending forever");
-            if let Some(observability) = &observability {
-                observability.report_runtime_error("shutdown_signal", &err);
-            }
-            std::future::pending::<()>().await;
-        }
-    }
-
-    // Signal cancellation to all spawned tasks, then wait a short grace period
-    // for them to observe the token and clean up before aborting. This prevents
-    // the state service MPT workers from being killed mid-write and avoids
-    // leaving durable store files in an inconsistent state.
-    shutdown.cancel();
-    // Give tasks up to 2 seconds to observe cancellation and unwind cleanly.
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-
-    for handle in handles {
-        handle.abort();
-    }
-    flush_state_service_for_shutdown(&node)?;
-    restore_durable_store_mode(node.storage().as_ref(), &durable_service_stores)?;
-    Ok(())
+    run_daemon_shutdown(
+        &node,
+        cli.stop_at_height,
+        shutdown,
+        handles,
+        &durable_service_stores,
+        observability.as_ref(),
+    )
+    .await
 }
 
 #[cfg(test)]
