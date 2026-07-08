@@ -12,7 +12,9 @@
 //!
 //! - `ledger_queries`: ledger query helpers shared by RPC endpoints.
 
-use neo_blockchain::ledger_provider::{BlockProvider, StorageLedgerProvider};
+use neo_blockchain::ledger_provider::{
+    BlockProvider, LedgerProviderFactory, StorageLedgerProviderFactory,
+};
 use neo_error::CoreResult;
 use neo_payloads::Block;
 use neo_primitives::UInt256;
@@ -23,17 +25,17 @@ use crate::server::model::block_hash_or_index::BlockHashOrIndex;
 /// Resolves a block identifier (height or hash) to the block hash, or
 /// `None` when an index has no persisted hash entry.
 ///
-/// Routes the index case through [`StorageLedgerProvider::block_hash_by_index`],
-/// which is a direct `LedgerContract::get_block_hash` forward — behaviourally
-/// identical to the previous inline call.
+/// Routes the index case through [`StorageLedgerProviderFactory`], whose
+/// provider directly forwards to `LedgerContract::get_block_hash` —
+/// behaviourally identical to the previous inline call.
 pub(crate) fn resolve_block_hash(
     snapshot: &DataCache,
     identifier: &BlockHashOrIndex,
 ) -> CoreResult<Option<UInt256>> {
     match identifier {
-        BlockHashOrIndex::Index(index) => {
-            StorageLedgerProvider::new(snapshot).block_hash_by_index(*index)
-        }
+        BlockHashOrIndex::Index(index) => StorageLedgerProviderFactory
+            .provider(snapshot)
+            .block_hash_by_index(*index),
         BlockHashOrIndex::Hash(hash) => Ok(Some(*hash)),
     }
 }
@@ -44,11 +46,12 @@ pub(crate) fn resolve_block_hash(
 /// persisted.
 ///
 /// The hash resolution and the trimmed-block + per-transaction reconstruction
-/// are both delegated to [`StorageLedgerProvider`], the crate's sole ledger
-/// read path. `block_by_hash` performs the same reconstruction (same trimmed
-/// header, same transaction order, and the same `CoreError::invalid_data`
-/// message when a referenced transaction has no ledger record), so the result
-/// is byte-identical to the former hand-rolled loop.
+/// are both delegated through [`StorageLedgerProviderFactory`], the canonical
+/// hot ledger read factory. Its provider performs the same reconstruction
+/// (same trimmed header, same transaction order, and the same
+/// `CoreError::invalid_data` message when a referenced transaction has no
+/// ledger record), so the result is byte-identical to the former hand-rolled
+/// loop.
 pub(crate) fn get_full_block(
     snapshot: &DataCache,
     identifier: &BlockHashOrIndex,
@@ -56,5 +59,7 @@ pub(crate) fn get_full_block(
     let Some(hash) = resolve_block_hash(snapshot, identifier)? else {
         return Ok(None);
     };
-    StorageLedgerProvider::new(snapshot).block_by_hash(&hash)
+    StorageLedgerProviderFactory
+        .provider(snapshot)
+        .block_by_hash(&hash)
 }
