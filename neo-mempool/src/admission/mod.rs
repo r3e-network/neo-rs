@@ -10,11 +10,13 @@
 //!
 //! ## Contents
 //!
+//! - `ledger_provider`: ledger read capabilities used by admission.
 //! - `transaction_router`: mempool transaction router.
 //! - `transaction_verification_context`: transaction verification context types
 //!   and helpers.
 //! - `verification`: validation verdicts and verification coverage.
 
+mod ledger_provider;
 pub mod transaction_router;
 pub mod transaction_verification_context;
 pub mod verification;

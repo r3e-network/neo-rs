@@ -14,17 +14,15 @@
 //! the combination, which is what [`verify_transaction`] produces for the
 //! single-threaded admission path here.
 //!
-//! Policy/Gas/Ledger state is read through the `neo-native-contracts`
-//! readers where they exist (`LedgerContract`, `OracleContract`,
-//! `RoleManagement`, `PolicyContract`, `NeoToken::committee_address`) and
-//! through the documented storage layouts where they do not (Policy blocked
-//! accounts, GAS balances) — each such constant is pinned to
-//! its C# `PolicyContract` definition.
+//! Policy/Gas/Ledger state is read through provider-style seams or the
+//! canonical `neo-native-contracts` readers where they exist. The Ledger reads
+//! are centralized behind [`AdmissionLedgerProvider`] so the admission path
+//! depends on capabilities, not concrete Ledger construction at every call
+//! site. Each direct storage constant remains pinned to its C# definition.
 
 use neo_config::{Hardfork, ProtocolSettings};
 use neo_execution::helper::Helper;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::ledger_contract::LedgerContract;
 use neo_native_contracts::{GasToken, Notary, PolicyContract, StandardNativeProvider};
 use neo_payloads::{MAX_TRANSACTION_SIZE, Transaction, TransactionAttribute};
 use neo_primitives::{UInt160, VerifyResult};
@@ -37,6 +35,8 @@ mod attributes;
 use attributes::verify_attribute;
 use num_bigint::BigInt;
 use std::sync::Arc;
+
+use super::ledger_provider::{AdmissionLedgerProvider, NativeAdmissionLedgerProvider};
 
 /// Stateless reader of `PolicyContract` storage and the derived protocol
 /// limits the mempool needs during transaction admission.
@@ -306,10 +306,30 @@ pub fn verify_state_dependent_with_native_provider(
     oracle_duplicate: bool,
     native_contract_provider: Arc<dyn NativeContractProvider>,
 ) -> VerifyResult {
+    let ledger_provider = NativeAdmissionLedgerProvider::new();
+    verify_state_dependent_with_providers(
+        tx,
+        snapshot,
+        settings,
+        pooled_sender_fee,
+        oracle_duplicate,
+        native_contract_provider,
+        &ledger_provider,
+    )
+}
+
+fn verify_state_dependent_with_providers(
+    tx: &Transaction,
+    snapshot: &DataCache,
+    settings: &ProtocolSettings,
+    pooled_sender_fee: &BigInt,
+    oracle_duplicate: bool,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
+    ledger_provider: &impl AdmissionLedgerProvider,
+) -> VerifyResult {
     use neo_io::Serializable;
 
-    let ledger = LedgerContract::new();
-    let Ok(height) = ledger.current_index(snapshot) else {
+    let Ok(height) = ledger_provider.current_index(snapshot) else {
         return VerifyResult::UnableToVerify;
     };
 
@@ -360,7 +380,7 @@ pub fn verify_state_dependent_with_native_provider(
         {
             return VerifyResult::InvalidAttribute;
         }
-        if !verify_attribute(snapshot, tx, attribute, height) {
+        if !verify_attribute(ledger_provider, snapshot, tx, attribute, height) {
             return VerifyResult::InvalidAttribute;
         }
         attributes_fee =

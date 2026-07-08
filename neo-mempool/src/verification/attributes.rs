@@ -1,20 +1,24 @@
 //! C# `TransactionAttribute.Verify` dispatch for the admission path.
 
-use neo_native_contracts::ledger_contract::LedgerContract;
 use neo_native_contracts::{NeoToken, Notary, OracleContract, RoleManagement};
 use neo_payloads::{OracleResponse, Transaction, TransactionAttribute};
 use neo_storage::DataCache;
 use neo_vm::script_builder::RedeemScript;
 
+use super::AdmissionLedgerProvider;
 use super::sender;
 
 /// C# `TransactionAttribute.Verify` dispatch.
-pub(super) fn verify_attribute(
+pub(super) fn verify_attribute<L>(
+    ledger: &L,
     snapshot: &DataCache,
     tx: &Transaction,
     attribute: &TransactionAttribute,
     height: u32,
-) -> bool {
+) -> bool
+where
+    L: AdmissionLedgerProvider + ?Sized,
+{
     match attribute {
         // C# HighPriorityAttribute.Verify: a signer must be the committee
         // multisig address.
@@ -44,7 +48,7 @@ pub(super) fn verify_attribute(
             if has_duplicate {
                 return false;
             }
-            !LedgerContract::new()
+            !ledger
                 .contains_transaction(snapshot, &attr.hash)
                 .unwrap_or(true)
         }

@@ -1,4 +1,5 @@
 use super::*;
+use neo_native_contracts::LedgerContract;
 use neo_payloads::{Signer, Witness};
 use neo_primitives::{UInt256, WitnessScope};
 use neo_serialization::BinarySerializer;
@@ -217,4 +218,19 @@ fn non_standard_witness_verification_uses_explicit_native_provider() {
     assert!(verifier.contains("Helper::verify_witness_with_native_provider"));
     assert!(verifier.contains("Arc::clone(&native_contract_provider)"));
     assert!(!verifier.contains("Helper::verify_witness("));
+}
+
+#[test]
+fn ledger_reads_use_admission_provider_boundary() {
+    let verifier = include_str!("../../admission/verification.rs");
+    let attributes = include_str!("../../verification/attributes.rs");
+    let provider = include_str!("../../admission/ledger_provider.rs");
+
+    assert!(verifier.contains("AdmissionLedgerProvider"));
+    assert!(verifier.contains("NativeAdmissionLedgerProvider::new()"));
+    assert!(attributes.contains("AdmissionLedgerProvider"));
+    assert!(!verifier.contains("LedgerContract::new()"));
+    assert!(!attributes.contains("LedgerContract::new()"));
+    assert!(provider.contains("struct NativeAdmissionLedgerProvider"));
+    assert!(provider.contains("ledger: LedgerContract"));
 }
