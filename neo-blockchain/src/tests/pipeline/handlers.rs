@@ -5,9 +5,11 @@ use crate::fill_memory_pool::FillMemoryPool;
 use crate::handle::BlockchainHandle;
 use crate::header_cache::HeaderCache;
 use crate::ledger_context::LedgerContext;
+use crate::relay_result::RelayResult;
 use crate::service::MempoolLike;
 use crate::service_context::SystemContext;
 use neo_payloads::Block;
+use neo_payloads::InventoryType;
 use neo_payloads::Transaction;
 use neo_payloads::header::Header;
 use neo_primitives::UInt256;
@@ -861,6 +863,50 @@ async fn persist_completed_updates_hot_caches_and_broadcasts_import() {
             height: 1,
             timestamp: 1_700_000_001_000,
         }
+    );
+}
+
+#[tokio::test]
+async fn relay_result_broadcasts_non_extensible_failures() {
+    let (service, handle) = fixture();
+    let mut events = handle.subscribe();
+
+    let result = RelayResult {
+        hash: UInt256::from_bytes(&[0x41; 32]).expect("hash"),
+        inventory_type: InventoryType::Transaction,
+        block_index: None,
+        result: VerifyResult::Invalid,
+    };
+    service.handle_relay_result(result).await;
+
+    assert_eq!(
+        events.try_recv().expect("relay result event"),
+        crate::RuntimeEvent::RelayResult {
+            hash: UInt256::from_bytes(&[0x41; 32]).expect("hash"),
+            inventory_type: InventoryType::Transaction,
+            block_index: None,
+            result: VerifyResult::Invalid,
+        },
+        "ordinary failed relay results remain observable"
+    );
+}
+
+#[tokio::test]
+async fn relay_result_suppresses_failed_extensible_payloads() {
+    let (service, handle) = fixture();
+    let mut events = handle.subscribe();
+
+    let result = RelayResult {
+        hash: UInt256::from_bytes(&[0x42; 32]).expect("hash"),
+        inventory_type: InventoryType::Extensible,
+        block_index: None,
+        result: VerifyResult::Invalid,
+    };
+    service.handle_relay_result(result).await;
+
+    assert!(
+        events.try_recv().is_err(),
+        "C# v3.10.1 does not publish failed ExtensiblePayload relay results"
     );
 }
 

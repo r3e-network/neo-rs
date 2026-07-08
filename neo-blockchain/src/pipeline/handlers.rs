@@ -11,6 +11,8 @@
 
 use crate::relay_result::RelayResult;
 use crate::service::{BlockchainService, MempoolLike};
+use neo_payloads::InventoryType;
+use neo_primitives::VerifyResult;
 
 #[path = "../handlers/mod.rs"]
 mod service_handlers;
@@ -21,7 +23,22 @@ where
     M: MempoolLike,
 {
     /// Handle a [`BlockchainCommand::RelayResult`] notification.
-    pub(crate) async fn handle_relay_result(&self, _result: RelayResult) {}
+    pub(crate) async fn handle_relay_result(&self, result: RelayResult) {
+        if result.inventory_type == InventoryType::Extensible
+            && result.result != VerifyResult::Succeed
+        {
+            // C# Neo v3.10.1: invalid ExtensiblePayload relay results are
+            // returned to the sender but are not published to the event stream.
+            return;
+        }
+
+        let _ = self.event_tx.send(crate::RuntimeEvent::RelayResult {
+            hash: result.hash,
+            inventory_type: result.inventory_type,
+            block_index: result.block_index,
+            result: result.result,
+        });
+    }
 }
 
 // =============================================================================

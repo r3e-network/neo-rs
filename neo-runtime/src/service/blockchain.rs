@@ -1,10 +1,11 @@
 //! Blockchain event broadcast type.
 //!
-//! [`BlockchainEvent`] is the canonical state-transition notification the
-//! blockchain service broadcasts to every subscriber (consensus driver, RPC
-//! subscriptions, network relay). It lives in `neo-runtime` — the shared
-//! service-contract layer — so subsystems can react to chain progress without
-//! depending on the concrete `neo-blockchain` service implementation.
+//! [`BlockchainEvent`] is the canonical notification type the blockchain
+//! service broadcasts to every subscriber (consensus driver, RPC subscriptions,
+//! network relay). It covers canonical-chain progress and relay outcomes. It
+//! lives in `neo-runtime` — the shared service-contract layer — so subsystems
+//! can react without depending on the concrete `neo-blockchain` service
+//! implementation.
 //!
 //! The concrete command channel and handle live in `neo-blockchain`
 //! (`BlockchainCommand` / `BlockchainHandle`): that crate owns the command
@@ -12,7 +13,8 @@
 //! exposes only the event type plus the default channel capacities shared by
 //! both the command and broadcast channels.
 
-use neo_primitives::UInt256;
+use neo_payloads::InventoryType;
+use neo_primitives::{UInt256, VerifyResult};
 
 /// Default capacity of the blockchain event broadcast channel. Sized to absorb
 /// several 1000-block fast-sync request windows without lagging the producer,
@@ -50,6 +52,23 @@ pub enum BlockchainEvent {
         hash: UInt256,
         /// New tip height.
         height: u32,
+    },
+    /// A relay attempt completed.
+    ///
+    /// This mirrors the C# `RelayResult` event surface while keeping the
+    /// runtime crate independent of `neo-blockchain`'s concrete command
+    /// records. C# v3.10.1 deliberately suppresses failed
+    /// `ExtensiblePayload` relay results before publication; the blockchain
+    /// service enforces that gate before emitting this event.
+    RelayResult {
+        /// Hash of the relayed inventory.
+        hash: UInt256,
+        /// Inventory kind being relayed.
+        inventory_type: InventoryType,
+        /// Optional block index context for block relay outcomes.
+        block_index: Option<u32>,
+        /// Verification/admission result.
+        result: VerifyResult,
     },
     /// The command loop has been shut down and no further events will
     /// be emitted.

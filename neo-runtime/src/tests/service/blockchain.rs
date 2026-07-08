@@ -25,6 +25,35 @@ fn blockchain_event_equality_is_field_wise() {
 }
 
 #[test]
+fn relay_result_event_is_field_wise() {
+    let event = BlockchainEvent::RelayResult {
+        hash: UInt256::from([7u8; 32]),
+        inventory_type: neo_payloads::InventoryType::Transaction,
+        block_index: Some(11),
+        result: neo_primitives::VerifyResult::Invalid,
+    };
+
+    assert_eq!(
+        event,
+        BlockchainEvent::RelayResult {
+            hash: UInt256::from([7u8; 32]),
+            inventory_type: neo_payloads::InventoryType::Transaction,
+            block_index: Some(11),
+            result: neo_primitives::VerifyResult::Invalid,
+        }
+    );
+    assert_ne!(
+        event,
+        BlockchainEvent::RelayResult {
+            hash: UInt256::from([7u8; 32]),
+            inventory_type: neo_payloads::InventoryType::Extensible,
+            block_index: Some(11),
+            result: neo_primitives::VerifyResult::Invalid,
+        }
+    );
+}
+
+#[test]
 fn default_channels_absorb_fast_sync_bursts() {
     const TARGET_BPS_WINDOW: usize = 1000;
     const MIN_PEER_WINDOWS: usize = 4;

@@ -42,7 +42,7 @@ following Rust surfaces:
 | NeoVM v3.10.1 reference-counter cycle fixes | `neo-vm` matches the recursive C# `ReferenceCounter` model, including `CLEARITEMS` cycle/underflow behavior. |
 | Post-Gorgon committee vote reward fix | `neo-native-contracts::NeoToken` reads live candidate votes for refresh-time voter rewards, including the empty-block fast-forward path. |
 | Notary deposit overdraw fix | `neo-mempool` reserves Notary-sponsored fees against the secondary signer's deposit and `neo-native-contracts::Notary` faults on missing or overdrawn deposits during persist. |
-| Extensible payload hardening | `neo-payloads::ExtensiblePayload` rejects witnesses whose script hash does not match `Sender`; invalid payloads fail before cache/relay insertion. |
+| Extensible payload hardening | `neo-payloads::ExtensiblePayload` rejects witnesses whose script hash does not match `Sender`; invalid payloads fail before cache/relay insertion, and `neo-blockchain` suppresses failed extensible relay results from the runtime event stream. |
 | Empty `StorageKey` display hardening | `neo-storage::StorageKey` formats empty keys as `StorageKey{Id=...}` and non-empty keys as `StorageKey{Id=...,Key=...}`. |
 
 ## Native Contracts
