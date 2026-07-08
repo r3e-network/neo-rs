@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context;
+use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use tracing::info;
 
 use super::super::cli::LedgerMode;
@@ -472,8 +473,10 @@ fn durable_ledger_index(store: &Arc<dyn neo_storage::persistence::store::Store>)
     use neo_storage::persistence::StoreCache;
 
     let store_cache = StoreCache::new_from_store(Arc::clone(store), false);
-    neo_native_contracts::LedgerContract::new()
-        .current_index(store_cache.data_cache())
+    let factory = StorageLedgerProviderFactory;
+    factory
+        .provider(store_cache.data_cache())
+        .current_index()
         .ok()
 }
 

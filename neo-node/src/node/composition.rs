@@ -52,7 +52,10 @@ pub(in crate::node) async fn build_node(
     observability: Option<observability::ObservabilityRuntime>,
 ) -> anyhow::Result<RunningNode> {
     use neo_blockchain::service::BlockchainService;
-    use neo_blockchain::{HeaderCache, LedgerContext};
+    use neo_blockchain::{
+        ChainTipProvider, HeaderCache, LedgerContext, LedgerProviderFactory,
+        StorageLedgerProviderFactory,
+    };
     use neo_storage::persistence::StoreCache;
 
     // ----- storage backend -----
@@ -72,9 +75,8 @@ pub(in crate::node) async fn build_node(
     // approaches the live tip.
     let durable_tip_index = {
         let probe = StoreCache::new_from_store(Arc::clone(&store), false);
-        neo_native_contracts::LedgerContract::new()
-            .current_index(probe.data_cache())
-            .ok()
+        let factory = StorageLedgerProviderFactory;
+        factory.provider(probe.data_cache()).current_index().ok()
     };
     let service_storage_provider = service_store_provider(config)?;
     validate_state_service_storage(
@@ -111,9 +113,10 @@ pub(in crate::node) async fn build_node(
     // store handle directly rather than a frozen startup snapshot.
     // The durable tip at startup, read before the snapshot is moved into the
     // service contexts; used to seed the advertised height / sync cursor.
-    let durable_tip = neo_native_contracts::LedgerContract::new()
-        .current_index(&snapshot)
-        .unwrap_or(0);
+    let durable_tip = {
+        let factory = StorageLedgerProviderFactory;
+        factory.provider(&snapshot).current_index().unwrap_or(0)
+    };
 
     let mempool = Arc::new(neo_mempool::MemoryPool::new_with_native_contract_provider(
         &settings,

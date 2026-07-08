@@ -8,6 +8,7 @@
 use std::sync::Arc;
 
 use neo_blockchain::service_context::{BlockPersistContext, SystemContext};
+use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Block};
@@ -21,8 +22,10 @@ impl SystemContext for DaemonContext {
     }
 
     fn current_height(&self) -> u32 {
-        neo_native_contracts::LedgerContract::new()
-            .current_index(&self.snapshot)
+        let factory = StorageLedgerProviderFactory;
+        factory
+            .provider(&self.snapshot)
+            .current_index()
             .unwrap_or(0)
     }
 

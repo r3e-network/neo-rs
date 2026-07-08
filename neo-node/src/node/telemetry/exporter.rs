@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use anyhow::Context;
 use hyper::{Body, Response};
+use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use prometheus::{Encoder, Gauge, IntGauge, IntGaugeVec, Opts, Registry, TextEncoder};
 use tracing::warn;
 
@@ -358,9 +359,8 @@ impl MetricsExporter {
             return remote_ledger.advertised_height;
         }
         let cache = self.node.store_cache();
-        neo_native_contracts::LedgerContract::new()
-            .current_index(cache.data_cache())
-            .ok()
+        let factory = StorageLedgerProviderFactory;
+        factory.provider(cache.data_cache()).current_index().ok()
     }
 
     fn remote_ledger_status(&self) -> Option<Arc<RemoteLedgerStatus>> {
