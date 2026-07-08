@@ -656,6 +656,9 @@ returns and avoids `panic=abort` process exits on read-error paths.
 `neo-storage/src/types/storage_item.rs` routes `to_value()` through the existing
 `value_bytes()` materialization path, removing a duplicated cache invariant
 `expect` while keeping raw-byte and cache-backed value semantics unchanged.
+`neo-storage/src/persistence/traits/store_factory.rs` now follows the crate's
+external-test layout by pointing at `src/tests/persistence/store_factory.rs`,
+so provider-factory assertions no longer look like production panic surfaces.
 
 Recommended next patches, in order:
 
