@@ -272,6 +272,80 @@ async fn backup_timeout_with_missing_transactions_uses_tx_not_found_reason() {
 }
 
 #[tokio::test]
+async fn inbound_tx_rejection_change_view_updates_invalid_transaction_reports() {
+    let network = 0x4E454F;
+    let (tx, _rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    let rejected = UInt256::from([0xA1; 32]);
+
+    for validator_index in 1..=2 {
+        let msg = ChangeViewMessage::new(
+            0,
+            0,
+            validator_index,
+            2_000 + validator_index as u64,
+            ChangeViewReason::TxInvalid,
+            vec![rejected],
+        );
+        let mut payload = ConsensusPayload::new(
+            network,
+            0,
+            validator_index,
+            0,
+            ConsensusMessageType::ChangeView,
+            msg.serialize(),
+        );
+        sign_payload(&service, &mut payload, &keys[validator_index as usize]);
+
+        service.process_message(payload).await.unwrap();
+    }
+
+    assert_eq!(service.context().invalid_tx_hashes_over_f(), vec![rejected]);
+}
+
+#[tokio::test]
+async fn outbound_tx_rejection_change_view_carries_over_f_hashes() {
+    let network = 0x4E454F;
+    let (tx, mut rx) = mpsc::channel(100);
+    let (validators, keys) = create_validators_with_keys(4);
+    let mut service = ConsensusService::new(network, validators, Some(0), keys[0].to_vec(), tx);
+
+    service.start(0, 1_000, UInt256::zero(), 0).unwrap();
+    let rejected = UInt256::from([0xB2; 32]);
+    service.context.record_invalid_transactions(1, &[rejected]);
+    service.context.record_invalid_transactions(2, &[rejected]);
+
+    service
+        .request_change_view(ChangeViewReason::TxRejectedByPolicy, 2_000)
+        .await
+        .unwrap();
+
+    let mut change_view = None;
+    while let Ok(event) = rx.try_recv() {
+        if let ConsensusEvent::BroadcastMessage(payload) = event {
+            if payload.message_type == ConsensusMessageType::ChangeView {
+                change_view = Some(payload);
+                break;
+            }
+        }
+    }
+
+    let payload = change_view.expect("change view payload");
+    let msg = ChangeViewMessage::deserialize(
+        &payload.data,
+        payload.block_index,
+        payload.view_number,
+        payload.validator_index,
+    )
+    .expect("change view deserialize");
+    assert_eq!(msg.reason, ChangeViewReason::TxRejectedByPolicy);
+    assert_eq!(msg.rejected_hashes, vec![rejected]);
+}
+
+#[tokio::test]
 async fn view_change_rotates_primary_by_view() {
     let network = 0x4E454F;
     let (tx, _rx) = mpsc::channel(100);

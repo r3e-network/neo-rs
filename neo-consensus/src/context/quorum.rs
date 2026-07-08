@@ -50,11 +50,14 @@ impl ConsensusContext {
     #[must_use]
     pub fn invalid_tx_hashes_over_f(&self) -> Vec<UInt256> {
         let f = self.f();
-        self.invalid_transactions
+        let mut hashes: Vec<_> = self
+            .invalid_transactions
             .iter()
             .filter(|(_, reporters)| reporters.len() > f)
             .map(|(hash, _)| *hash)
-            .collect()
+            .collect();
+        hashes.sort_by(|a, b| a.as_bytes().cmp(&b.as_bytes()));
+        hashes
     }
 
     /// Returns the primary (speaker) index for the current view.

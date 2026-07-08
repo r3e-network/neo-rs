@@ -3,7 +3,15 @@ use super::super::helpers::current_timestamp;
 use super::super::{ConsensusEvent, ConsensusService};
 use crate::messages::{ChangeViewMessage, ConsensusPayload, RecoveryRequestMessage};
 use crate::{ChangeViewReason, ConsensusMessageType, ConsensusResult};
+use neo_primitives::UInt256;
 use tracing::{debug, info, warn};
+
+fn reason_carries_rejected_hashes(reason: ChangeViewReason) -> bool {
+    matches!(
+        reason,
+        ChangeViewReason::TxRejectedByPolicy | ChangeViewReason::TxInvalid
+    )
+}
 
 impl ConsensusService {
     /// Handles `ChangeView` message
@@ -48,11 +56,12 @@ impl ConsensusService {
         let timestamp = change_view_msg.timestamp;
         let reason = change_view_msg.reason;
 
-        // C# `DBFTPlugin` ChangeView carries a `RejectedHashes` UInt256[] for the
-        // TxRejectedByPolicy/TxInvalid reasons (see messages/change_view.rs). The
-        // parsed hashes are available in `change_view_msg.rejected_hashes`.
-        // TODO(dBFT): feed those into context.record_invalid_transactions so the
-        // primary can skip over-F-rejected txs (context.invalid_tx_hashes_over_f).
+        if reason_carries_rejected_hashes(reason) && !change_view_msg.rejected_hashes.is_empty() {
+            self.context.record_invalid_transactions(
+                payload.validator_index,
+                &change_view_msg.rejected_hashes,
+            );
+        }
 
         debug!(
             block_index = self.context.block_index,
@@ -144,18 +153,17 @@ impl ConsensusService {
         self.context
             .add_change_view(self.my_index()?, new_view, reason, timestamp)?;
 
-        // Broadcast ChangeView message
-        // TODO(dBFT): populate rejected hashes from context.invalid_transactions
-        // when reason is TxRejectedByPolicy/TxInvalid. An empty array is
-        // wire-valid and C#-parseable; the WIRE FORMAT is the P0, population is a
-        // follow-up.
+        // Broadcast ChangeView message. C# includes `RejectedHashes` for
+        // TxRejectedByPolicy/TxInvalid reasons so peers can feed the same
+        // `InvalidTransactions` evidence into their next-primary skip set.
+        let rejected_hashes = self.rejected_hashes_for_change_view(reason);
         let msg = ChangeViewMessage::new(
             self.context.block_index,
             self.context.view_number,
             self.my_index()?,
             timestamp,
             reason,
-            Vec::new(),
+            rejected_hashes,
         );
 
         let payload = self
@@ -175,6 +183,14 @@ impl ConsensusService {
         }
 
         Ok(())
+    }
+
+    fn rejected_hashes_for_change_view(&self, reason: ChangeViewReason) -> Vec<UInt256> {
+        if reason_carries_rejected_hashes(reason) {
+            self.context.invalid_tx_hashes_over_f()
+        } else {
+            Vec::new()
+        }
     }
 
     /// Requests recovery from other nodes

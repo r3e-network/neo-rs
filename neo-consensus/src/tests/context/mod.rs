@@ -785,6 +785,7 @@ async fn invalid_transactions_skip_set_uses_f_threshold_and_clears_per_block() {
     let mut ctx = ConsensusContext::new(10, create_test_validators(4), Some(0), None);
     assert_eq!(ctx.f(), 1);
     let tx = message_hash(0xAB);
+    let lower_tx = message_hash(0x01);
 
     // One reporter: not over F.
     ctx.record_invalid_transactions(0, &[tx]);
@@ -797,6 +798,12 @@ async fn invalid_transactions_skip_set_uses_f_threshold_and_clears_per_block() {
     // A second distinct validator => 2 > F=1 => skipped.
     ctx.record_invalid_transactions(1, &[tx]);
     assert_eq!(ctx.invalid_tx_hashes_over_f(), vec![tx]);
+
+    // The skip set is byte-sorted so locally signed ChangeView payloads are
+    // deterministic for the same accumulated evidence.
+    ctx.record_invalid_transactions(1, &[lower_tx]);
+    ctx.record_invalid_transactions(2, &[lower_tx]);
+    assert_eq!(ctx.invalid_tx_hashes_over_f(), vec![lower_tx, tx]);
 
     // Accumulated reports clear on a new block (they persist across views).
     ctx.reset_for_new_block(11, 1_000);
