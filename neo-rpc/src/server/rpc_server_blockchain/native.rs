@@ -12,12 +12,15 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
-use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use neo_native_contracts::contract_management::ContractManagement;
 use num_traits::ToPrimitive;
 use serde_json::Value;
 
 use super::RpcServerBlockchain;
+use super::ledger_provider::{
+    BlockchainLedgerProvider, BlockchainLedgerProviderFactory,
+    NativeBlockchainLedgerProviderFactory,
+};
 use super::request_helpers::NoParamsRequest;
 use super::responses::{
     candidate_to_json, candidates_to_json, committee_to_json, native_contracts_to_json,
@@ -38,10 +41,9 @@ impl RpcServerBlockchain {
         let system = server.system();
         let store = system.store_cache();
         let settings = system.settings();
-        let block_height = StorageLedgerProviderFactory
-            .provider(store.data_cache())
-            .current_index()
-            .map_err(internal_error)?;
+        let block_height = NativeBlockchainLedgerProviderFactory
+            .provider()
+            .current_height(store.data_cache())?;
 
         let registry = native_queries::NativeQueries::native_registry();
         let mut contract_states = Vec::new();

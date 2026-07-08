@@ -79,10 +79,6 @@ fn server_context_engine_paths_use_explicit_native_provider() {
 fn rpc_server_ledger_reads_use_provider_boundaries() {
     let sources = [
         (
-            "blockchain native contracts",
-            include_str!("../../../server/rpc_server_blockchain/native.rs"),
-        ),
-        (
             "session dummy block",
             include_str!("../../../server/session/dummy_block.rs"),
         ),
@@ -135,6 +131,16 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
     assert!(
         !blockchain_mempool.contains("StorageLedgerProviderFactory"),
         "getrawmempool should not construct the storage ledger provider directly"
+    );
+
+    let blockchain_native = include_str!("../../../server/rpc_server_blockchain/native.rs");
+    assert!(
+        blockchain_native.contains("NativeBlockchainLedgerProviderFactory"),
+        "getnativecontracts should read height through the blockchain ledger provider factory"
+    );
+    assert!(
+        !blockchain_native.contains("StorageLedgerProviderFactory"),
+        "getnativecontracts should not construct the storage ledger provider directly"
     );
 
     let blockchain_provider =
