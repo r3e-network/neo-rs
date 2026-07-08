@@ -67,7 +67,9 @@ impl OracleService {
                 timestamp: SystemTime::now(),
             });
         }
-        let task = queue.get_mut(&request_id).expect("oracle task inserted");
+        let task = queue.get_mut(&request_id).ok_or_else(|| {
+            OracleServiceError::Processing("oracle task missing from pending queue".to_string())
+        })?;
 
         // Check if task has been pending for too long
         if let Ok(elapsed) = SystemTime::now().duration_since(task.timestamp) {
@@ -110,8 +112,12 @@ impl OracleService {
             return Ok(());
         }
 
-        let tx = task.tx.as_ref().expect("oracle tx available");
-        let backup_tx = task.backup_tx.as_ref().expect("oracle backup tx available");
+        let tx = task.tx.as_ref().ok_or_else(|| {
+            OracleServiceError::Processing("oracle response transaction missing".to_string())
+        })?;
+        let backup_tx = task.backup_tx.as_ref().ok_or_else(|| {
+            OracleServiceError::Processing("oracle backup transaction missing".to_string())
+        })?;
 
         let tx_data = get_sign_data_vec(tx, self.config.settings().network)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;

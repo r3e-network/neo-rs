@@ -273,8 +273,11 @@ High-signal clusters found during the first pass:
   `service/cache.rs` owns request deduplication, finished-request expiry, URL
   admission checks, and monitoring counters. HTTPS and NeoFS HTTP client
   construction now return typed initialization errors instead of panicking during
-  service startup; remaining production `expect` sites in NeoFS signing should
-  be classified next.
+  service startup. NeoFS wallet-connect signing now builds its byte envelope
+  directly with the shared Neo var-int codec instead of panic-only in-memory
+  writer calls, and response-signature queue invariants now report
+  `OracleServiceError`. Remaining oracle-service production `expect` sites are
+  isolated to the NeoFS gRPC verification path and should be classified next.
 - Existing git hygiene rules exclude local ledgers, RocksDB state,
   checkpoints, logs, and build outputs. A scan did not find obvious tracked
   chain.acc/RocksDB artifacts, but runtime-data checks should stay in CI.

@@ -12,11 +12,14 @@
 //!
 //! - `dedup`: oracle request deduplication coverage.
 //! - `filter_json`: oracle JSON filtering coverage.
+//! - `queue`: oracle response-signature queue coverage.
 //! - `response_tx`: oracle response transaction coverage.
 
 #[path = "dedup.rs"]
 mod dedup;
 #[path = "filter_json.rs"]
 mod filter_json;
+#[path = "queue.rs"]
+mod queue;
 #[path = "response_tx.rs"]
 mod response_tx;
