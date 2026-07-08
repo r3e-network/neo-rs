@@ -12,6 +12,7 @@
 //!
 //! - `cache`: request deduplication and expiring finished-request cache state.
 //! - `handlers`: service message handlers.
+//! - `ledger_provider`: ledger read capabilities used by oracle processing.
 //! - `lifecycle`: Service startup, shutdown, and background processing
 //!   lifecycle helpers.
 //! - `processing`: oracle request filtering and processing helpers.
@@ -24,6 +25,7 @@
 mod cache;
 mod error;
 mod handlers;
+mod ledger_provider;
 mod lifecycle;
 mod processing;
 mod status;

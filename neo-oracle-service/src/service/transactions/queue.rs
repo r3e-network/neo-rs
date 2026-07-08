@@ -1,8 +1,9 @@
-use super::super::utils::{ledger_height, verify_oracle_signature};
+use super::super::ledger_provider::{NativeOracleLedgerProvider, OracleLedgerProvider};
+use super::super::utils::{ledger_height, ledger_height_with_provider, verify_oracle_signature};
 use super::super::{OracleService, OracleServiceError, OracleTask};
 use neo_crypto::ECPoint;
 use neo_execution::Contract;
-use neo_native_contracts::{LedgerContract, OracleContract, Role, RoleManagement};
+use neo_native_contracts::{OracleContract, Role, RoleManagement};
 use neo_payloads::Transaction;
 use neo_payloads::VerifiableExt;
 use neo_payloads::helper::get_sign_data_vec;
@@ -32,6 +33,8 @@ impl OracleService {
         backup_tx: Option<Transaction>,
         backup_sign: Option<Vec<u8>>,
     ) -> Result<(), OracleServiceError> {
+        let ledger = NativeOracleLedgerProvider::new();
+
         // Validate queue size to prevent memory exhaustion
         {
             let queue = self.pending_queue.lock();
@@ -48,9 +51,8 @@ impl OracleService {
                 .get_request(snapshot, request_id)
                 .map_err(|err| OracleServiceError::Processing(err.to_string()))?
                 .ok_or(OracleServiceError::RequestNotFound)?;
-            let ledger = LedgerContract::new();
             let _state = ledger
-                .get_transaction_state(snapshot, &request.original_tx_id)
+                .transaction_state(snapshot, &request.original_tx_id)
                 .map_err(|err| OracleServiceError::Processing(err.to_string()))?
                 .ok_or(OracleServiceError::RequestTransactionNotFound)?;
 
@@ -82,7 +84,7 @@ impl OracleService {
 
         if let Some(tx) = response_tx {
             // Validate transaction before storing
-            if tx.valid_until_block() <= ledger_height(snapshot) {
+            if tx.valid_until_block() <= ledger_height_with_provider(snapshot, &ledger) {
                 return Err(OracleServiceError::Processing(
                     "Transaction has expired".to_string(),
                 ));

@@ -1,7 +1,7 @@
+use super::ledger_provider::{NativeOracleLedgerProvider, OracleLedgerProvider};
 use super::{FILTER_MAX_NEST, OracleServiceError};
 use neo_crypto::ECPoint;
 use neo_execution::Contract;
-use neo_native_contracts::LedgerContract;
 use neo_payloads::Transaction;
 use neo_payloads::helper::get_sign_data_vec;
 use neo_serialization::json::JToken;
@@ -42,10 +42,15 @@ pub(super) fn filter_json(
 }
 
 pub(super) fn ledger_height(snapshot: &DataCache) -> u32 {
-    LedgerContract::new()
-        .current_index(snapshot)
-        .unwrap_or(0)
-        .saturating_add(1)
+    let ledger = NativeOracleLedgerProvider::new();
+    ledger_height_with_provider(snapshot, &ledger)
+}
+
+pub(super) fn ledger_height_with_provider(
+    snapshot: &DataCache,
+    ledger: &impl OracleLedgerProvider,
+) -> u32 {
+    ledger.next_block_height(snapshot)
 }
 
 pub(super) fn wallet_has_oracle_account(wallet: &dyn Wallet, oracles: &[ECPoint]) -> bool {

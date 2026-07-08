@@ -1,3 +1,4 @@
+use super::super::ledger_provider::{NativeOracleLedgerProvider, OracleLedgerProvider};
 use super::super::{OracleService, OracleServiceError};
 use neo_config::ProtocolSettings;
 use neo_crypto::ECPoint;
@@ -6,7 +7,7 @@ use neo_execution::Contract;
 use neo_execution::TriggerType;
 use neo_io::serializable::helper::SerializeHelper;
 use neo_manifest::CallFlags;
-use neo_native_contracts::{ContractManagement, LedgerContract, OracleContract, PolicyContract};
+use neo_native_contracts::{ContractManagement, OracleContract, PolicyContract};
 use neo_payloads::VerifiableExt;
 use neo_payloads::{
     HEADER_SIZE, OracleResponse, OracleResponseCode, Signer, Transaction, TransactionAttribute,
@@ -28,9 +29,9 @@ impl OracleService {
         settings: &ProtocolSettings,
         use_current_height: bool,
     ) -> Result<Transaction, OracleServiceError> {
-        let ledger = LedgerContract::new();
+        let ledger = NativeOracleLedgerProvider::new();
         let state = ledger
-            .get_transaction_state(snapshot, &request.original_tx_id)
+            .transaction_state(snapshot, &request.original_tx_id)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?
             .ok_or(OracleServiceError::RequestTransactionNotFound)?;
 

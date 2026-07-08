@@ -157,3 +157,20 @@ fn create_response_tx_uses_explicit_native_provider() {
         "oracle response verification must not fall back to ambient provider lookup"
     );
 }
+
+#[test]
+fn oracle_service_ledger_reads_use_provider_boundary() {
+    let queue = include_str!("../../service/transactions/queue.rs");
+    let response = include_str!("../../service/transactions/response.rs");
+    let utils = include_str!("../../service/utils.rs");
+    let provider = include_str!("../../service/ledger_provider.rs");
+
+    assert!(queue.contains("NativeOracleLedgerProvider::new()"));
+    assert!(response.contains("NativeOracleLedgerProvider::new()"));
+    assert!(utils.contains("ledger_height_with_provider"));
+    assert!(!queue.contains("LedgerContract::new()"));
+    assert!(!response.contains("LedgerContract::new()"));
+    assert!(!utils.contains("LedgerContract::new()"));
+    assert!(provider.contains("trait OracleLedgerProvider"));
+    assert!(provider.contains("ledger: LedgerContract"));
+}
