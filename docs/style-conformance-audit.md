@@ -121,6 +121,9 @@ High-signal clusters found during the first pass:
   lives in `settings/protocol/load.rs`, JSON/raw config parsing lives in
   `settings/protocol/parse.rs`, and hardfork sequence rules live in
   `settings/protocol/validation.rs`.
+- `neo-network/src/remote_node/session.rs` owns per-peer P2P protocol state.
+  Explicit block-range fetch completion now treats missing pending state as a
+  logged session invariant breach instead of panicking the remote-node task.
 - `neo-node/src/node/chain_acc/mod.rs` and `neo-node/src/node/fast_sync/mod.rs`
   are very large workflow modules. They should be split into domain files such
   as `format`, `reader`, `import`, `report`, `package`, `manifest`, and

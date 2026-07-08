@@ -432,13 +432,22 @@ impl PeerSession {
         fetch.next_index = fetch.next_index.saturating_add(1);
         fetch.blocks.push(block);
         if fetch.blocks.len() == fetch.request.count as usize {
-            let fetch = self
-                .pending_block_fetch
-                .take()
-                .expect("pending fetch exists");
-            let batch =
-                BlockDownloadBatch::new(Some(self.peer_id), fetch.request.start, fetch.blocks);
-            let _ = fetch.reply.send(Ok(batch));
+            match self.pending_block_fetch.take() {
+                Some(fetch) => {
+                    let batch = BlockDownloadBatch::new(
+                        Some(self.peer_id),
+                        fetch.request.start,
+                        fetch.blocks,
+                    );
+                    let _ = fetch.reply.send(Ok(batch));
+                }
+                None => {
+                    warn!(
+                        peer = %self.peer_id,
+                        "completed block fetch without pending fetch state"
+                    );
+                }
+            }
         }
         None
     }
