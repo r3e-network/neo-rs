@@ -4,7 +4,7 @@
 //! behind this local provider seam leaves the handler focused on response
 //! assembly and keeps raw ledger provider construction in one place.
 
-use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
+use crate::server::ledger_queries;
 use neo_storage::persistence::DataCache;
 
 /// Ledger capabilities required by indexer RPC handlers.
@@ -37,10 +37,7 @@ impl NativeIndexerLedgerProvider {
 
 impl IndexerLedgerProvider for NativeIndexerLedgerProvider {
     fn ledger_height(&self, snapshot: &DataCache) -> Option<u32> {
-        StorageLedgerProviderFactory
-            .provider(snapshot)
-            .current_index()
-            .ok()
+        ledger_queries::current_index(snapshot).ok()
     }
 }
 

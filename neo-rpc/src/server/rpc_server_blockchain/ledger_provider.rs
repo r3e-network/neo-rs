@@ -5,10 +5,11 @@
 //! provider behind a local capability trait so each handler depends only on the
 //! ledger reads it actually needs.
 
+use crate::server::ledger_queries;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use neo_blockchain::{
-    ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory, TransactionStateProvider,
+    LedgerProviderFactory, StorageLedgerProviderFactory, TransactionStateProvider,
 };
 use neo_payloads::TransactionState;
 use neo_primitives::UInt256;
@@ -51,10 +52,7 @@ impl NativeBlockchainLedgerProvider {
 
 impl BlockchainLedgerProvider for NativeBlockchainLedgerProvider {
     fn current_height(&self, snapshot: &DataCache) -> Result<u32, RpcException> {
-        StorageLedgerProviderFactory
-            .provider(snapshot)
-            .current_index()
-            .map_err(|err| internal_error(err.to_string()))
+        ledger_queries::current_index(snapshot).map_err(|err| internal_error(err.to_string()))
     }
 
     fn transaction_state_by_hash(

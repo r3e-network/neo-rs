@@ -160,7 +160,14 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
     assert!(blockchain_provider.contains("trait BlockchainLedgerProviderFactory"));
     assert!(blockchain_provider.contains("fn transaction_state_by_hash"));
     assert!(blockchain_provider.contains("struct NativeBlockchainLedgerProviderFactory"));
-    assert!(blockchain_provider.contains("StorageLedgerProviderFactory"));
+    assert!(
+        blockchain_provider.contains("ledger_queries::current_index"),
+        "blockchain current-height reads should use the shared ledger-query boundary"
+    );
+    assert!(
+        blockchain_provider.contains("StorageLedgerProviderFactory"),
+        "blockchain transaction-state reads still belong to the local provider adapter"
+    );
 }
 
 #[test]

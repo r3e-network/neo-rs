@@ -46,7 +46,11 @@ fn relay_block_tip_read_uses_relay_provider_boundary() {
     assert!(provider.contains("trait RelayLedgerProviderFactory"));
     assert!(provider.contains("struct NativeRelayLedgerProviderFactory"));
     assert!(
-        provider.contains("StorageLedgerProviderFactory"),
-        "relay ledger provider should own the raw ledger provider boundary"
+        provider.contains("ledger_queries::current_index"),
+        "relay ledger provider should use the shared ledger-query boundary"
+    );
+    assert!(
+        !provider.contains("StorageLedgerProviderFactory"),
+        "relay ledger provider should not duplicate raw ledger provider construction"
     );
 }

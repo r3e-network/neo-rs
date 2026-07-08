@@ -13,7 +13,7 @@
 //! - `ledger_queries`: ledger query helpers shared by RPC endpoints.
 
 use neo_blockchain::ledger_provider::{
-    BlockProvider, LedgerProviderFactory, StorageLedgerProviderFactory,
+    BlockProvider, ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory,
 };
 use neo_error::CoreResult;
 use neo_payloads::Block;
@@ -38,6 +38,19 @@ pub(crate) fn resolve_block_hash(
             .block_hash_by_index(*index),
         BlockHashOrIndex::Hash(hash) => Ok(Some(*hash)),
     }
+}
+
+/// Returns the current persisted ledger height through the canonical storage
+/// ledger provider.
+///
+/// Endpoint-local provider traits should call this helper instead of
+/// constructing [`StorageLedgerProviderFactory`] directly. That keeps each RPC
+/// handler on a narrow capability trait while keeping the raw storage-provider
+/// boundary in one shared module.
+pub(crate) fn current_index(snapshot: &DataCache) -> CoreResult<u32> {
+    StorageLedgerProviderFactory
+        .provider(snapshot)
+        .current_index()
 }
 
 /// Loads the full block for `identifier`, reconstructing the

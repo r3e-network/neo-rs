@@ -37,8 +37,12 @@ fn indexer_status_ledger_height_uses_indexer_provider_boundary() {
     assert!(provider.contains("trait IndexerLedgerProviderFactory"));
     assert!(provider.contains("struct NativeIndexerLedgerProviderFactory"));
     assert!(
-        provider.contains("StorageLedgerProviderFactory"),
-        "indexer ledger provider should own the raw ledger provider boundary"
+        provider.contains("ledger_queries::current_index"),
+        "indexer ledger provider should use the shared ledger-query boundary"
+    );
+    assert!(
+        !provider.contains("StorageLedgerProviderFactory"),
+        "indexer ledger provider should not duplicate raw ledger provider construction"
     );
 }
 

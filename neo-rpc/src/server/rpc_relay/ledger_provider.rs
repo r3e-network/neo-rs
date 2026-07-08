@@ -4,7 +4,7 @@
 //! read behind this local provider seam leaves relay orchestration focused on
 //! C#-compatible block classification and blockchain-service submission.
 
-use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
+use crate::server::ledger_queries;
 use neo_storage::persistence::DataCache;
 
 use crate::server::rpc_exception::RpcException;
@@ -39,10 +39,7 @@ impl NativeRelayLedgerProvider {
 
 impl RelayLedgerProvider for NativeRelayLedgerProvider {
     fn current_height(&self, snapshot: &DataCache) -> Result<u32, RpcException> {
-        StorageLedgerProviderFactory
-            .provider(snapshot)
-            .current_index()
-            .map_err(|err| internal_error(err.to_string()))
+        ledger_queries::current_index(snapshot).map_err(|err| internal_error(err.to_string()))
     }
 }
 
