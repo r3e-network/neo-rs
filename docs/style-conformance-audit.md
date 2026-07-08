@@ -183,9 +183,14 @@ High-signal clusters found during the first pass:
 - `neo-execution/src/lib.rs` still re-exports internal implementation modules
   broadly. Keep crate-root exports to deliberate facade/domain types after
   downstream imports are mapped.
-- `neo-native-contracts/src/lib.rs` contains NEP-17 stack-item construction,
-  payment decoding, storage-byte helpers, and method builders. Move these into
-  owned domain modules so the root remains a map.
+- `neo-native-contracts/src/lib.rs` is now a crate facade and module map.
+  NEP helpers live in `nep`, shared storage-byte projection lives in
+  `storage_encoding`, and native method metadata/invocation mechanics stay in
+  the individual contract folders.
+- `neo-consensus/src/context/mod.rs` keeps the public `ConsensusContext` state
+  shape and module map, while `context/construction.rs` owns fresh-round field
+  defaults and `context/policy.rs` owns dBFT default policy constants and
+  bounded-cache limits.
 - `neo-indexer/src/indexer/mod.rs` keeps the mutable projection struct and
   constructor, `indexer/commands.rs` owns public block/notification indexing
   commands, `indexer/apply.rs` owns prepared-record application into the
