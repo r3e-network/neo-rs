@@ -41,7 +41,8 @@ use proposal::{
 #[cfg(test)]
 pub use setup::build_consensus_validators;
 
-/// C# DBFTPlugin `DbftSettings.MaxBlockSystemFee` default for Neo v3.10.0.
+/// C# DBFTPlugin `DbftSettings.MaxBlockSystemFee` default. This value is
+/// unchanged in the Neo v3.10.1 reference node.
 const DBFT_MAX_BLOCK_SYSTEM_FEE: i64 = 150_000_000_000;
 
 #[cfg(test)]

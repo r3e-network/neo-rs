@@ -61,7 +61,7 @@ fn fungible_token_transfer_fees_match_csharp_attribute() {
     }
 }
 
-/// C# v3.10.0 `PolicyContract.RecoverFund` is
+/// C# v3.10.1 `PolicyContract.RecoverFund` is
 /// `[ContractMethod(Hardfork.HF_Faun, CpuFee = 1 << 15,
 /// RequiredCallFlags = CallFlags.All)]` (`PolicyContract.cs:630`).
 /// The `AllowCall` bit is consensus-observable because native method metadata
@@ -79,7 +79,7 @@ fn policy_recover_fund_call_flags_match_csharp_attribute() {
     assert_eq!(recover_fund.required_call_flags, CallFlags::ALL.bits());
 }
 
-/// C# v3.10.0 keeps `getAttributeFee` and `setAttributeFee` as pre/post
+/// C# v3.10.1 keeps `getAttributeFee` and `setAttributeFee` as pre/post
 /// Echidna descriptor pairs: V0 is `DeprecatedIn HF_Echidna`, V1 is
 /// `ActiveIn HF_Echidna`. The ABI is unchanged, but the native method metadata
 /// is hardfork-gated and feeds the native method cache.
@@ -130,10 +130,10 @@ fn policy_attribute_fee_method_gates_match_csharp_v3_10() {
     );
 }
 
-/// Vendored C# v3.10.0 `CryptoLib.cs` has three `verifyWithECDsa`
+/// Vendored C# v3.10.1 `CryptoLib.cs` has three `verifyWithECDsa`
 /// registrations (genesis V0, Cockatrice V1, Gorgon V2) and two
 /// `verifyWithEd25519` registrations (Echidna V0, Gorgon V1). Gorgon is not
-/// scheduled on v3.10.0 MainNet/TestNet, but it is still part of the protocol
+/// scheduled on v3.10.1 MainNet/TestNet, but it is still part of the protocol
 /// descriptor table for configurations that enable it.
 #[test]
 fn crypto_lib_signature_method_gates_match_csharp_v3_10() {

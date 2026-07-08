@@ -123,6 +123,10 @@ async fn wait_until_indexer_runtime_ready(
             Ok(RuntimeEvent::Reverted { height, .. }) => {
                 local_height = u64::from(height.saturating_sub(1));
             }
+            Ok(RuntimeEvent::RelayResult { .. }) => {
+                // Relay outcomes do not advance or rewind the canonical chain;
+                // keep waiting for import/tip events that affect activation.
+            }
             Ok(RuntimeEvent::Shutdown) => {
                 info!(
                     target: "neo::indexer",
@@ -218,6 +222,10 @@ pub(crate) async fn run_live_indexer(
                     );
                 }
                 backfill_indexer(&blockchain, &indexer, application_logs.as_deref()).await;
+            }
+            Ok(RuntimeEvent::RelayResult { .. }) => {
+                // The indexer follows canonical-chain state only. RelayResult
+                // is consumed by RPC/subscription surfaces, not block indexing.
             }
             Ok(RuntimeEvent::Shutdown) => break,
             Err(RecvError::Lagged(skipped)) => {

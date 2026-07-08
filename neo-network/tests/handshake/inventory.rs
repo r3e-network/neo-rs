@@ -100,9 +100,9 @@ async fn node_pulls_unknown_inv_with_getdata() {
     handle.shutdown().await.expect("shutdown");
 }
 
-/// Neo N3 v3.10.0 treats extensible payload hashes as fetchable inventory:
-/// an `Inv(Extensible)` announcement is pulled with `GetData`, just like
-/// blocks and transactions.
+/// Neo N3 v3.10.1 still treats extensible payload hashes as fetchable
+/// inventory: an `Inv(Extensible)` announcement is pulled with `GetData`, just
+/// like blocks and transactions.
 #[tokio::test]
 async fn node_pulls_unknown_extensible_inv_with_getdata() {
     let (handle, mut fake) = local_node_with_block_source(0xfa4e_000b).await;

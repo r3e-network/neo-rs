@@ -139,7 +139,7 @@ fn notary_manifest_pins_csharp_metadata() {
         ]
     );
 
-    // Notary declares no [ContractEvent] in C# v3.10.0.
+    // Notary declares no [ContractEvent] in C# v3.10.1.
     assert_eq!(manifest_events(&contract, &settings, ALL_ACTIVE), vec![]);
 }
 
@@ -162,7 +162,7 @@ fn ledger_contract_manifest_pins_csharp_metadata() {
         ]
     );
 
-    // LedgerContract declares no [ContractEvent] in C# v3.10.0.
+    // LedgerContract declares no [ContractEvent] in C# v3.10.1.
     assert_eq!(manifest_events(&contract, &settings, ALL_ACTIVE), vec![]);
 }
 
@@ -205,7 +205,7 @@ fn std_lib_manifest_pins_csharp_metadata() {
         ]
     );
 
-    // StdLib declares no [ContractEvent] in C# v3.10.0.
+    // StdLib declares no [ContractEvent] in C# v3.10.1.
     assert_eq!(manifest_events(&contract, &settings, ALL_ACTIVE), vec![]);
 }
 
@@ -313,7 +313,7 @@ fn crypto_lib_manifest_pins_csharp_metadata() {
         manifest_methods(&contract, &settings, ALL_ACTIVE)
     );
 
-    // CryptoLib declares no [ContractEvent] in C# v3.10.0.
+    // CryptoLib declares no [ContractEvent] in C# v3.10.1.
     assert_eq!(manifest_events(&contract, &settings, ALL_ACTIVE), vec![]);
 }
 
@@ -333,6 +333,6 @@ fn treasury_manifest_pins_csharp_metadata() {
         ]
     );
 
-    // Treasury declares no [ContractEvent] in C# v3.10.0.
+    // Treasury declares no [ContractEvent] in C# v3.10.1.
     assert_eq!(manifest_events(&contract, &settings, ALL_ACTIVE), vec![]);
 }
