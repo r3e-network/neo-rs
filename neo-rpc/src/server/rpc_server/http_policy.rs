@@ -210,32 +210,42 @@ pub(super) fn auth_credentials_from_settings(
 }
 
 fn unauthorized_response() -> jsonrpsee::server::HttpResponse {
-    jsonrpsee::server::HttpResponse::builder()
-        .status(401)
-        .header("content-type", "text/plain; charset=utf-8")
-        .header("www-authenticate", "Basic realm=\"neo-rpc\"")
-        .body(jsonrpsee::server::HttpBody::from(
-            "Authentication required\n",
-        ))
-        .expect("static RPC auth response is valid")
+    static_response(
+        401,
+        jsonrpsee::server::HttpBody::from("Authentication required\n"),
+        &[
+            ("content-type", "text/plain; charset=utf-8"),
+            ("www-authenticate", "Basic realm=\"neo-rpc\""),
+        ],
+    )
 }
 
 fn preflight_response(cors_headers: Option<RpcCorsHeaders>) -> jsonrpsee::server::HttpResponse {
     let mut response = if cors_headers.is_some() {
-        jsonrpsee::server::HttpResponse::builder()
-            .status(204)
-            .body(jsonrpsee::server::HttpBody::empty())
-            .expect("static RPC CORS preflight response is valid")
+        static_response(204, jsonrpsee::server::HttpBody::empty(), &[])
     } else {
-        jsonrpsee::server::HttpResponse::builder()
-            .status(403)
-            .header("content-type", "text/plain; charset=utf-8")
-            .body(jsonrpsee::server::HttpBody::from(
-                "CORS origin is not allowed\n",
-            ))
-            .expect("static RPC CORS rejection response is valid")
+        static_response(
+            403,
+            jsonrpsee::server::HttpBody::from("CORS origin is not allowed\n"),
+            &[("content-type", "text/plain; charset=utf-8")],
+        )
     };
     apply_cors_headers(&mut response, cors_headers.as_ref());
+    response
+}
+
+fn static_response(
+    status: u16,
+    body: jsonrpsee::server::HttpBody,
+    headers: &[(&'static str, &'static str)],
+) -> jsonrpsee::server::HttpResponse {
+    let mut response = jsonrpsee::server::HttpResponse::new(body);
+    if let Ok(status) = status.try_into() {
+        *response.status_mut() = status;
+    }
+    for (name, value) in headers {
+        insert_response_header(&mut response, name, value);
+    }
     response
 }
 
@@ -257,3 +267,7 @@ fn insert_response_header(
         response.headers_mut().insert(name, value);
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/server/rpc_server/http_policy.rs"]
+mod tests;

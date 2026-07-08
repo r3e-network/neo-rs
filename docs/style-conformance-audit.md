@@ -721,6 +721,9 @@ source module free of test-only unwrap/expect sites.
 `neo-payloads/src/ledger/transaction_state.rs` now exposes only
 `try_to_stack_value` for inherent projection; native ledger storage and tests
 use the typed path instead of a production `expect`.
+`neo-rpc/src/server/rpc_server/http_policy.rs` now builds static auth/CORS
+responses with direct `HttpResponse::new` construction and explicit
+status/header mutation instead of fallible builders guarded by `expect`.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.
