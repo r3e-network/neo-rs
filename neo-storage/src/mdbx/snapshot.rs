@@ -74,12 +74,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MdbxSnapshot {
             Ok(value) => value,
             Err(err) => {
                 error!(target: "neo", error = %err, "MDBX snapshot get failed - this is a critical error that may cause incorrect state");
-                #[cfg(debug_assertions)]
-                panic!(
-                    "MDBX snapshot storage read failed: {err}. This indicates a disk I/O error, corruption, or configuration problem that must be fixed before the node can operate correctly."
-                );
-                #[cfg(not(debug_assertions))]
-                return None;
+                None
             }
         }
     }
@@ -105,12 +100,7 @@ impl RawReadOnlyStore for MdbxSnapshot {
             Ok(value) => value,
             Err(err) => {
                 error!(target: "neo", error = %err, "MDBX snapshot get failed - this is a critical error that may cause incorrect state");
-                #[cfg(debug_assertions)]
-                panic!(
-                    "MDBX snapshot storage read failed: {err}. This indicates a disk I/O error, corruption, or configuration problem that must be fixed before the node can operate correctly."
-                );
-                #[cfg(not(debug_assertions))]
-                return None;
+                None
             }
         }
     }

@@ -649,6 +649,10 @@ instead of asserting the full-list invariant through `expect`.
 `neo-native-contracts/src/registry/hashes.rs` stores canonical native contract
 hashes as fixed little-endian byte arrays, avoiding runtime hex parsing and
 `expect` in native contract registry initialization.
+`neo-storage` RocksDB/MDBX store and snapshot read paths now log backend read
+errors and return `None` consistently in all build modes instead of panicking
+under debug assertions. This keeps storage API behavior aligned with `Option`
+returns and avoids `panic=abort` process exits on read-error paths.
 
 Recommended next patches, in order:
 

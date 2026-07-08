@@ -268,12 +268,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MdbxStore {
             Ok(value) => value,
             Err(err) => {
                 error!(target: "neo", error = %err, "MDBX get failed - this is a critical error that may cause incorrect state");
-                #[cfg(debug_assertions)]
-                panic!(
-                    "MDBX storage read failed: {err}. This indicates a disk I/O error, corruption, or configuration problem that must be fixed before the node can operate correctly."
-                );
-                #[cfg(not(debug_assertions))]
-                return None;
+                None
             }
         }
     }

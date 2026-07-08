@@ -250,12 +250,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
             Ok(value) => value,
             Err(err) => {
                 error!(target: "neo", error = %err, "RocksDB get failed - this is a critical error that may cause incorrect state");
-                #[cfg(debug_assertions)]
-                panic!(
-                    "RocksDB storage read failed: {err}. This indicates a disk I/O error, corruption, or configuration problem that must be fixed before the node can operate correctly."
-                );
-                #[cfg(not(debug_assertions))]
-                return None;
+                None
             }
         }
     }
@@ -330,12 +325,7 @@ impl RawReadOnlyStore for RocksDbStore {
             Ok(value) => value,
             Err(err) => {
                 error!(target: "neo", error = %err, "RocksDB get failed - this is a critical error that may cause incorrect state");
-                #[cfg(debug_assertions)]
-                panic!(
-                    "RocksDB storage read failed: {err}. This indicates a disk I/O error, corruption, or configuration problem that must be fixed before the node can operate correctly."
-                );
-                #[cfg(not(debug_assertions))]
-                return None;
+                None
             }
         }
     }
@@ -351,12 +341,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
             Ok(value) => value.map(StorageItem::from_bytes),
             Err(err) => {
                 error!(target: "neo", error = %err, "RocksDB get failed - this is a critical error that may cause incorrect state");
-                #[cfg(debug_assertions)]
-                panic!(
-                    "RocksDB storage read failed: {err}. This indicates a disk I/O error, corruption, or configuration problem that must be fixed before the node can operate correctly."
-                );
-                #[cfg(not(debug_assertions))]
-                return None;
+                None
             }
         }
     }
@@ -685,12 +670,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
             Ok(value) => value,
             Err(err) => {
                 error!(target: "neo", error = %err, "RocksDB snapshot get failed - this is a critical error that may cause incorrect state");
-                #[cfg(debug_assertions)]
-                panic!(
-                    "RocksDB snapshot storage read failed: {err}. This indicates a disk I/O error, corruption, or configuration problem that must be fixed before the node can operate correctly."
-                );
-                #[cfg(not(debug_assertions))]
-                return None;
+                None
             }
         }
     }
@@ -753,12 +733,7 @@ impl RawReadOnlyStore for RocksDbSnapshot {
             Ok(value) => value,
             Err(err) => {
                 error!(target: "neo", error = %err, "RocksDB snapshot get failed - this is a critical error that may cause incorrect state");
-                #[cfg(debug_assertions)]
-                panic!(
-                    "RocksDB snapshot storage read failed: {err}. This indicates a disk I/O error, corruption, or configuration problem that must be fixed before the node can operate correctly."
-                );
-                #[cfg(not(debug_assertions))]
-                return None;
+                None
             }
         }
     }
