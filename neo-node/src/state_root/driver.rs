@@ -16,7 +16,6 @@ use neo_config::ProtocolSettings;
 use neo_crypto::{ECPoint, Secp256r1Crypto};
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::{MemoryReader, Serializable, SerializableExtensions};
-use neo_native_contracts::{Role, RoleManagement};
 use neo_network::NetworkHandle;
 use neo_payloads::ExtensiblePayload;
 use neo_primitives::time::now_millis;
@@ -30,6 +29,9 @@ use super::StateRootSetup;
 use super::codec::{
     STATE_ROOT_VALID_BLOCK_END_THRESHOLD, VOTE_VALID_BLOCK_END_THRESHOLD, build_extensible,
     decode_message,
+};
+use super::native_provider::{
+    NativeStateRootProviderFactory, StateRootNativeProvider, StateRootNativeProviderFactory,
 };
 
 /// Initial delay before a validator first broadcasts its vote for a round
@@ -56,7 +58,7 @@ pub(super) struct StateRootDriver {
     blockchain: BlockchainHandle,
     network: NetworkHandle,
     settings: Arc<ProtocolSettings>,
-    /// Chain store: `RoleManagement` designations are read from a fresh snapshot.
+    /// Chain store: StateValidator designations are read from a fresh snapshot.
     store: Arc<dyn Store>,
     /// Native contract provider captured at node startup for witness verification.
     native_contract_provider: Arc<dyn NativeContractProvider>,
@@ -69,7 +71,7 @@ pub(super) struct StateRootDriver {
 
 impl StateRootDriver {
     /// A fresh read snapshot of the current persisted chain state, for
-    /// `RoleManagement` designation lookups (C# reads `NeoSystem.StoreView`).
+    /// StateValidator designation lookups (C# reads `NeoSystem.StoreView`).
     fn fresh_chain_snapshot(&self) -> Arc<DataCache> {
         Arc::new(
             StoreCache::new_from_store(Arc::clone(&self.store), false)
@@ -81,9 +83,8 @@ impl StateRootDriver {
     /// The StateValidators designated at `index`, in designation order (the
     /// order vote `validator_index` and multisig aggregation both index into).
     fn verifiers_at(&self, snapshot: &DataCache, index: u32) -> Vec<ECPoint> {
-        RoleManagement::new()
-            .get_designated_by_role_at(snapshot, Role::StateValidator, index)
-            .unwrap_or_default()
+        let native = NativeStateRootProviderFactory.provider();
+        verifiers_at_with_provider(&native, snapshot, index)
     }
 
     /// The locally-computed (unsigned) state root for `index`, if available.
@@ -379,6 +380,14 @@ impl StateRootDriver {
         }
         info!(target: "neo::state_root", "state root driver loop exited");
     }
+}
+
+fn verifiers_at_with_provider(
+    native: &impl StateRootNativeProvider,
+    snapshot: &DataCache,
+    index: u32,
+) -> Vec<ECPoint> {
+    native.state_validators(snapshot, index)
 }
 
 /// Builds the StateService driver future. Consumes the caller-owned

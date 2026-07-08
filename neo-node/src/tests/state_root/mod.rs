@@ -118,6 +118,7 @@ fn sender_rotates_backward_with_each_retry() {
 #[test]
 fn driver_verifies_signed_roots_with_explicit_native_provider() {
     let source = include_str!("../../state_root/driver.rs");
+    let provider = include_str!("../../state_root/native_provider.rs");
     assert!(
         source.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
         "StateRootDriver must own the native provider captured at node startup"
@@ -130,4 +131,15 @@ fn driver_verifies_signed_roots_with_explicit_native_provider() {
         source.contains("Some(Arc::clone(&self.native_contract_provider))"),
         "StateRootDriver must pass its captured provider into state-root verification"
     );
+    assert!(
+        source.contains("NativeStateRootProviderFactory"),
+        "StateRootDriver must read StateValidator designations through the provider factory"
+    );
+    assert!(
+        !source.contains("RoleManagement::new()"),
+        "StateRootDriver must not construct RoleManagement directly"
+    );
+    assert!(provider.contains("trait StateRootNativeProvider"));
+    assert!(provider.contains("trait StateRootNativeProviderFactory"));
+    assert!(provider.contains("struct NativeStateRootProviderFactory"));
 }
