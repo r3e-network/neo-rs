@@ -161,10 +161,10 @@ High-signal clusters found during the first pass:
   indexer, ApplicationLogs, and TokensTracker construction, while
   `services/store.rs` owns service-store opening, storage config inheritance,
   and fast-sync backend mode.
-- `neo-node/src/node/sync_metrics/mod.rs` now keeps the operator-facing
-  Prometheus summary flow. `sync_metrics/families.rs` owns bounded-label metric
-  family renderers, and `sync_metrics/writer.rs` owns the small text-format
-  label writers.
+- `neo-node/src/node/sync_metrics/mod.rs` is now the metrics facade and module
+  map. `sync_metrics/render.rs` owns the operator-facing Prometheus summary
+  flow, `sync_metrics/families.rs` owns bounded-label metric-family renderers,
+  and `sync_metrics/writer.rs` owns the small text-format label writers.
 - `neo-node/src/node/context/mod.rs` keeps `DaemonContext` construction,
   node/service handles, and the `SystemContext` trait surface.
   `context/plugins.rs` owns catch-up-aware StateService, indexer,
