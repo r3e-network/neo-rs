@@ -34,9 +34,11 @@ impl StdLib {
         }
     }
 
-    /// C# `StdLib.Itoa(value[, base])`: base 10 -> `BigInteger.ToString()`
-    /// (decimal), base 16 -> `BigInteger.ToString("x")` (lowercase
-    /// two's-complement hex). Any other base throws `ArgumentOutOfRangeException`.
+    /// C# `StdLib.Itoa(value[, base])`: base 10 ->
+    /// `BigInteger.ToString(CultureInfo.InvariantCulture)`, base 16 ->
+    /// `BigInteger.ToString("x", CultureInfo.InvariantCulture)` (lowercase
+    /// two's-complement hex). Rust formatting is culture-invariant. Any other
+    /// base throws `ArgumentOutOfRangeException`.
     pub(super) fn itoa_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
         let value = BigInt::from_signed_bytes_le(Self::arg_bytes(args, "itoa")?);
         let text = match Self::optional_base(args, 1, "itoa")? {

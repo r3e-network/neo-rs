@@ -28,6 +28,31 @@ fn mint_gas(snapshot: &DataCache, account: &UInt160, datoshi: i64) {
     );
 }
 
+fn seed_notary_deposit(snapshot: &DataCache, account: &UInt160, amount: i64, till: u32) {
+    let item = StackItem::from_struct(vec![
+        StackItem::from_int(BigInt::from(amount)),
+        StackItem::from_int(BigInt::from(till)),
+    ]);
+    let bytes = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).unwrap();
+    let mut key = vec![1u8];
+    key.extend_from_slice(&account.to_bytes());
+    snapshot.add(
+        StorageKey::new(neo_native_contracts::Notary::ID, key),
+        StorageItem::from_bytes(bytes),
+    );
+}
+
+fn seed_policy_fee_settings(snapshot: &DataCache, exec_fee_factor: i64) {
+    snapshot.add(
+        StorageKey::new(PolicyContract::ID, vec![10]),
+        StorageItem::from_bytes(BigInt::from(1_000).to_signed_bytes_le()),
+    );
+    snapshot.add(
+        StorageKey::new(PolicyContract::ID, vec![18]),
+        StorageItem::from_bytes(BigInt::from(exec_fee_factor).to_signed_bytes_le()),
+    );
+}
+
 fn standard_shape_transaction(account: UInt160) -> Transaction {
     let public_key = [2u8; 33];
     let verification =
@@ -43,6 +68,23 @@ fn standard_shape_transaction(account: UInt160) -> Transaction {
     tx.set_script(vec![OpCode::PUSH1.byte()]);
     tx.set_signers(vec![Signer::new(account, WitnessScope::NONE)]);
     tx.set_witnesses(vec![Witness::new_with_scripts(invocation, verification)]);
+    tx
+}
+
+fn notary_sponsored_shape_transaction(payer: UInt160) -> Transaction {
+    let mut tx = Transaction::new();
+    tx.set_nonce(2);
+    tx.set_system_fee(100);
+    tx.set_network_fee(3_000_000);
+    tx.set_valid_until_block(1);
+    tx.set_script(vec![OpCode::PUSH1.byte()]);
+    tx.set_signers(vec![
+        Signer::new(
+            neo_native_contracts::Notary::script_hash(),
+            WitnessScope::NONE,
+        ),
+        Signer::new(payer, WitnessScope::NONE),
+    ]);
     tx
 }
 
@@ -83,6 +125,30 @@ fn missing_core_policy_fee_settings_fail_closed() {
         ),
         VerifyResult::UnableToVerify,
         "C# Policy.GetFeePerByte/GetExecFeeFactor index initialized storage; missing keys must not fall back to defaults and admit a transaction"
+    );
+}
+
+#[test]
+fn notary_sponsored_fee_check_uses_payer_deposit_not_notary_gas() {
+    let snapshot = DataCache::new(false);
+    seed_current_ledger(&snapshot, 0);
+    seed_policy_fee_settings(&snapshot, 30);
+    let payer = UInt160::from([0x42; 20]);
+    seed_notary_deposit(&snapshot, &payer, 4_000_000, 100);
+    let tx = notary_sponsored_shape_transaction(payer);
+
+    let result = verify_state_dependent(
+        &tx,
+        &snapshot,
+        &ProtocolSettings::default(),
+        &BigInt::from(0),
+        false,
+    );
+
+    assert_ne!(
+        result,
+        VerifyResult::InsufficientFunds,
+        "Neo v3.10.1 TransactionVerificationContext checks Notary-sponsored fees against Signers[1]'s deposit, not Notary's GAS balance"
     );
 }
 

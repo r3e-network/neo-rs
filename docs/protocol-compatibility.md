@@ -1,8 +1,8 @@
 # Protocol Compatibility
 
-This node is a from-scratch Rust reimplementation of the Neo N3 protocol. It targets **byte-for-byte parity** with the official C# reference node (Neo v3.10.0). This document describes what that means, which native contracts and hardforks are implemented, and which protocol features are supported.
+This node is a from-scratch Rust reimplementation of the Neo N3 protocol. It targets **byte-for-byte parity** with the official C# reference node (Neo v3.10.1). This document describes what that means, which native contracts and hardforks are implemented, and which protocol features are supported.
 
-## Neo N3 v3.10.0 Parity
+## Neo N3 v3.10.1 Parity
 
 "Byte-for-byte parity" means the node produces the exact same on-wire and on-disk bytes as the C# node for the structures that determine consensus:
 
@@ -12,7 +12,7 @@ This node is a from-scratch Rust reimplementation of the Neo N3 protocol. It tar
 
 ```mermaid
 flowchart LR
-    A[C# Neo node v3.10.0] -- same wire bytes --> N[neo-rs node]
+    A[C# Neo node v3.10.1] -- same wire bytes --> N[neo-rs node]
     N -- same state root per block --> A
     subgraph "Parity surfaces"
       W[Blocks / Tx / P2P messages]
@@ -48,7 +48,7 @@ All eleven contracts are registered in the canonical catalog in C# ID order. Som
 
 ## Hardforks
 
-Neo N3 ships protocol upgrades as named hardforks (named after mythological creatures, in alphabetical order) that activate at configured block heights. The node defines the full enum and gates behavior accordingly. Activation heights for MainNet and TestNet match the C# v3.10.0 configuration; `HF_Gorgon` is defined in the enum but is not scheduled in the v3.10.0 MainNet/TestNet configs.
+Neo N3 ships protocol upgrades as named hardforks (named after mythological creatures, in alphabetical order) that activate at configured block heights. The node defines the full enum and gates behavior accordingly. Activation heights for MainNet and TestNet match the C# v3.10.1 configuration; `HF_Gorgon` and `HF_Huyao` are defined in the enum but are not scheduled in the v3.10.1 MainNet/TestNet configs.
 
 | Hardfork | Index | What it changes (as gated in this node) |
 |---|---:|---|
@@ -58,11 +58,12 @@ Neo N3 ships protocol upgrades as named hardforks (named after mythological crea
 | HF_Domovoi | 3 | Adjusts executing-contract resolution in contract calls |
 | HF_Echidna | 4 | Broad upgrade: additional `CryptoLib`/`StdLib`/`NeoToken`/`PolicyContract` methods, Notary-related policy changes |
 | HF_Faun | 5 | `PolicyContract` extensions (whitelist fee contracts, fund recovery, value-scaling changes) |
-| HF_Gorgon | 6 | VM jump-table changes and `CryptoLib` method deprecation/replacement; defined but unscheduled in v3.10.0 configs |
+| HF_Gorgon | 6 | VM jump-table changes and `CryptoLib` method deprecation/replacement; defined but unscheduled in v3.10.1 configs |
+| HF_Huyao | 7 | Neo v3.10.1 protocol refinements; defined but unscheduled in built-in MainNet/TestNet configs |
 
 ```mermaid
 flowchart LR
-    A[Aspidochelone] --> B[Basilisk] --> C[Cockatrice] --> D[Domovoi] --> E[Echidna] --> F[Faun] --> G[Gorgon]
+    A[Aspidochelone] --> B[Basilisk] --> C[Cockatrice] --> D[Domovoi] --> E[Echidna] --> F[Faun] --> G[Gorgon] --> H[Huyao]
 ```
 
 Activation heights (from the node's hardfork manager):
@@ -76,6 +77,7 @@ Activation heights (from the node's hardfork manager):
 | HF_Echidna | 7,300,000 | 5,870,000 |
 | HF_Faun | 8,800,000 | 12,960,000 |
 | HF_Gorgon | not scheduled | not scheduled |
+| HF_Huyao | not scheduled | not scheduled |
 
 A hardfork is enabled at a given block when the block index is greater than or equal to its configured height; an unconfigured hardfork is treated as disabled. Because consensus-affecting code (including the VM jump table) is hardfork-gated, blocks before a hardfork replay with the pre-hardfork rules and blocks after it replay with the post-hardfork rules.
 

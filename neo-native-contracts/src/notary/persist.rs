@@ -75,11 +75,20 @@ impl Notary {
         {
             let snapshot = engine.snapshot_cache();
             for (payer, fees) in &debits {
-                if let Some((amount, till)) = self.read_deposit(&snapshot, payer)? {
-                    let new_amount = amount - BigInt::from(*fees);
-                    if new_amount.sign() == num_bigint::Sign::NoSign {
+                let (amount, till) = self.read_deposit(&snapshot, payer)?.ok_or_else(|| {
+                    CoreError::invalid_operation(format!("Deposit not found for {payer}"))
+                })?;
+                let new_amount = amount - BigInt::from(*fees);
+                match new_amount.sign() {
+                    num_bigint::Sign::Minus => {
+                        return Err(CoreError::invalid_operation(format!(
+                            "Insufficient deposit for {payer}: need {fees}, overdraw is {new_amount}"
+                        )));
+                    }
+                    num_bigint::Sign::NoSign => {
                         self.delete_deposit(&snapshot, payer);
-                    } else {
+                    }
+                    num_bigint::Sign::Plus => {
                         self.write_deposit(&snapshot, payer, &new_amount, till)?;
                     }
                 }

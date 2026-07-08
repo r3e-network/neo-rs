@@ -3,7 +3,7 @@
 ## What is neo-rs
 
 neo-rs is a full Neo N3 blockchain node implemented from scratch in Rust. It is a
-re-implementation of the official C# reference node (Neo v3.10.0): it speaks the
+re-implementation of the official C# reference node (Neo v3.10.1): it speaks the
 same P2P protocol, runs the same dBFT 2.0 consensus, executes the same NeoVM
 bytecode and native contracts, and produces the same state roots. Byte-for-byte
 protocol parity with the C# node is a hard design constraint — a block accepted

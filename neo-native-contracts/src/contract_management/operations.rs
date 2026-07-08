@@ -103,9 +103,9 @@ impl ContractManagement {
         }
         let data = self.optional_data_arg(engine, args, "deploy")?;
 
-        // C#: AddFee(max(StoragePrice * (nef + manifest), GetMinimumDeploymentFee)
-        // * FeeFactor) — the FeeFactor multiplication is the datoshi -> picoGAS
-        // conversion that `charge_execution_fee` (datoshi in) performs internally.
+        // C# v3.10.1: AddFee(max(StoragePrice * (nef + manifest),
+        // GetMinimumDeploymentFee), applyFactor: true). `charge_execution_fee`
+        // takes datoshi and applies the execution fee factor internally.
         let snapshot = engine.snapshot_cache();
         let payload_len = i64::try_from(nef_bytes.len() + manifest_bytes.len())
             .map_err(|_| CoreError::invalid_operation("deploy payload length overflow"))?;
@@ -205,8 +205,8 @@ impl ContractManagement {
         };
         let data = self.optional_data_arg(engine, args, "update")?;
 
-        // C#: AddFee(StoragePrice * FeeFactor * (nef?.len + manifest?.len)) — no
-        // minimum-deployment-fee floor for updates.
+        // C# v3.10.1: AddFee(StoragePrice * (nef?.len + manifest?.len),
+        // applyFactor: true) — no minimum-deployment-fee floor for updates.
         let payload_len =
             i64::try_from(nef_bytes.map_or(0, |b| b.len()) + manifest_bytes.map_or(0, |b| b.len()))
                 .map_err(|_| CoreError::invalid_operation("update payload length overflow"))?;

@@ -243,7 +243,7 @@ impl NeoToken {
                 return Ok(vec![0]);
             }
         }
-        // engine.AddFee(GetRegisterPrice * FeeFactor).
+        // C# v3.10.1: engine.AddFee(GetRegisterPrice, applyFactor: true).
         let price = self.register_price(&engine.snapshot_cache())?;
         engine
             .charge_execution_fee(u64::try_from(price).unwrap_or(0))

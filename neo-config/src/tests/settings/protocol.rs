@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn csharp_default_matches_neo_v3100_protocol_settings_default() {
+fn csharp_default_matches_neo_v3101_protocol_settings_default() {
     let settings = ProtocolSettings::csharp_default();
 
     assert_eq!(settings.network, 0);
@@ -51,7 +51,7 @@ fn load_missing_protocol_fields_uses_csharp_default_not_mainnet() {
 }
 
 #[test]
-fn load_mainnet_json_matches_neo_node_v3100_protocol_configuration() {
+fn load_mainnet_json_matches_neo_node_v3101_protocol_configuration() {
     let json = br#"{
         "ProtocolConfiguration": {
             "Network": 860833102,
@@ -110,7 +110,7 @@ fn load_mainnet_json_matches_neo_node_v3100_protocol_configuration() {
 }
 
 #[test]
-fn load_testnet_json_matches_neo_node_v3100_protocol_configuration() {
+fn load_testnet_json_matches_neo_node_v3101_protocol_configuration() {
     let json = br#"{
         "ProtocolConfiguration": {
             "Network": 894710606,
@@ -178,21 +178,23 @@ fn embedded_protocol_committees_parse_without_fallback() {
 }
 
 #[test]
-fn mainnet_preset_matches_neo_n3_v3100_protocol_limits() {
+fn mainnet_preset_matches_neo_n3_v3101_protocol_limits() {
     let settings = ProtocolSettings::mainnet();
 
     assert_eq!(settings.network, constants::MAINNET_MAGIC);
     assert_eq!(settings.max_transactions_per_block, 200);
     assert_eq!(settings.hardforks.get(&Hardfork::HfFaun), Some(&8_800_000));
     assert!(!settings.hardforks.contains_key(&Hardfork::HfGorgon));
+    assert!(!settings.hardforks.contains_key(&Hardfork::HfHuyao));
 }
 
 #[test]
-fn testnet_preset_matches_neo_n3_v3100_protocol_limits() {
+fn testnet_preset_matches_neo_n3_v3101_protocol_limits() {
     let settings = ProtocolSettings::testnet();
 
     assert_eq!(settings.network, constants::TESTNET_MAGIC);
     assert_eq!(settings.max_transactions_per_block, 5_000);
     assert_eq!(settings.hardforks.get(&Hardfork::HfFaun), Some(&12_960_000));
     assert!(!settings.hardforks.contains_key(&Hardfork::HfGorgon));
+    assert!(!settings.hardforks.contains_key(&Hardfork::HfHuyao));
 }

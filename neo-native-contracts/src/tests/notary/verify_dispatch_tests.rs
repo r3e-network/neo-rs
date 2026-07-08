@@ -417,3 +417,85 @@ fn on_persist_debits_payer_deposit_and_mints_notary_reward() {
     ));
     assert_eq!(gas_balance(&snapshot, &notary_addr), BigInt::from(2 * FEE));
 }
+
+#[test]
+fn on_persist_faults_when_notary_paid_payer_deposit_is_missing() {
+    let private_key = Secp256r1Crypto::generate_private_key();
+    let pubkey = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
+    let snapshot = seeded_snapshot(&[pubkey]);
+    snapshot.add(
+        crate::PolicyContract::attribute_fee_key(
+            TransactionAttributeType::NotaryAssisted.to_byte(),
+        ),
+        StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(1000_0000))),
+    );
+
+    let payer = UInt160::from_bytes(&[0x17; 20]).unwrap();
+    let mut tx = notary_assisted_tx(vec![
+        Signer::new(Notary::script_hash(), WitnessScope::NONE),
+        Signer::new(payer, WitnessScope::NONE),
+    ]);
+    tx.set_system_fee(1_0000_0000);
+    tx.set_network_fee(5000_0000);
+    let mut header = Header::new();
+    header.set_index(1);
+    let block = Block::from_parts(header, vec![tx]);
+
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
+        TriggerType::OnPersist,
+        None,
+        Arc::clone(&snapshot),
+        Some(block),
+        echidna_settings(),
+        0,
+        None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+    )
+    .expect("engine builds");
+
+    let err = NativeContract::on_persist(&Notary, &mut engine).expect_err("missing deposit faults");
+    assert!(err.to_string().contains("Deposit not found"));
+}
+
+#[test]
+fn on_persist_faults_when_notary_paid_payer_deposit_is_overdrawn() {
+    let private_key = Secp256r1Crypto::generate_private_key();
+    let pubkey = Secp256r1Crypto::derive_public_key(&private_key).unwrap();
+    let snapshot = seeded_snapshot(&[pubkey]);
+    snapshot.add(
+        crate::PolicyContract::attribute_fee_key(
+            TransactionAttributeType::NotaryAssisted.to_byte(),
+        ),
+        StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(1000_0000))),
+    );
+
+    let payer = UInt160::from_bytes(&[0x18; 20]).unwrap();
+    Notary::new()
+        .write_deposit(&snapshot, &payer, &BigInt::from(1), 1000)
+        .unwrap();
+    let mut tx = notary_assisted_tx(vec![
+        Signer::new(Notary::script_hash(), WitnessScope::NONE),
+        Signer::new(payer, WitnessScope::NONE),
+    ]);
+    tx.set_system_fee(1_0000_0000);
+    tx.set_network_fee(5000_0000);
+    let mut header = Header::new();
+    header.set_index(1);
+    let block = Block::from_parts(header, vec![tx]);
+
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
+        TriggerType::OnPersist,
+        None,
+        Arc::clone(&snapshot),
+        Some(block),
+        echidna_settings(),
+        0,
+        None,
+        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+    )
+    .expect("engine builds");
+
+    let err =
+        NativeContract::on_persist(&Notary, &mut engine).expect_err("overdrawn deposit faults");
+    assert!(err.to_string().contains("Insufficient deposit"));
+}

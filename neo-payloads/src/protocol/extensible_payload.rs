@@ -228,6 +228,13 @@ impl Serializable for ExtensiblePayload {
         }
 
         payload.witness = <Witness as Serializable>::deserialize(reader)?;
+        let witness_hash = payload.witness.script_hash();
+        if witness_hash != payload.sender {
+            return Err(IoError::invalid_data(format!(
+                "Witness script hash {witness_hash} does not match sender {}",
+                payload.sender
+            )));
+        }
         Ok(payload)
     }
 }

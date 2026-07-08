@@ -115,9 +115,9 @@ impl OracleContract {
             )));
         }
 
-        // engine.AddFee(GetPrice * FeeFactor) - the request price, in
-        // datoshi - then AddFee(gasForResponse * FeeFactor) and the
-        // response-GAS mint to the oracle account.
+        // C# v3.10.1: AddFee(GetPrice, applyFactor: true), then
+        // AddFee(gasForResponse, applyFactor: true), then mint response GAS
+        // to the oracle account.
         let price = self.read_price(&snapshot)?;
         engine
             .charge_execution_fee(u64::try_from(price).unwrap_or(0))

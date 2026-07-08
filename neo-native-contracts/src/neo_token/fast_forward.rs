@@ -7,6 +7,7 @@
 use super::{
     COMMITTEE_REWARD_RATIO, NeoToken, VOTE_FACTOR, VOTER_REWARD_RATIO, candidate_signature_account,
 };
+use neo_config::Hardfork;
 use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
@@ -73,6 +74,8 @@ impl NeoToken {
                 committee_accounts = committee_signature_accounts(&committee);
                 self.fast_forward_voter_reward_refreshes(
                     snapshot,
+                    settings,
+                    height,
                     usize::try_from(settings.validators_count).unwrap_or(0),
                     &committee,
                     &self.fast_forward_refresh_reward(snapshot, settings, committee_count, height),
@@ -125,14 +128,25 @@ impl NeoToken {
     fn fast_forward_voter_reward_refreshes(
         &self,
         snapshot: &DataCache,
+        settings: &neo_config::ProtocolSettings,
+        height: u32,
         validators_count: usize,
         committee: &[(ECPoint, BigInt)],
         refresh_reward: &BigInt,
     ) -> CoreResult<()> {
-        for (index, (member, votes)) in committee.iter().enumerate() {
-            if *votes > BigInt::from(0) {
+        // C# v3.10.1 `NeoToken.PostPersistAsync`: from HF_Gorgon onward,
+        // voter-reward refreshes use `GetCandidateVote(snapshot, pubkey)`
+        // instead of the votes cached in `Prefix_Committee`.
+        let gorgon_enabled = settings.is_hardfork_enabled(Hardfork::HfGorgon, height);
+        for (index, (member, cached_votes)) in committee.iter().enumerate() {
+            let votes = if gorgon_enabled {
+                self.candidate_vote(snapshot, member)?
+            } else {
+                cached_votes.clone()
+            };
+            if votes > BigInt::from(0) {
                 let factor = if index < validators_count { 2 } else { 1 };
-                let accumulated_delta = factor * refresh_reward / votes;
+                let accumulated_delta = factor * refresh_reward / &votes;
                 let key = Self::voter_reward_per_committee_key(member);
                 let accumulated =
                     self.voter_reward_per_committee(snapshot, member) + accumulated_delta;

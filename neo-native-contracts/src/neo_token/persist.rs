@@ -170,11 +170,19 @@ impl NeoToken {
             let voter_reward_of_each_committee =
                 &gas_per_block * VOTER_REWARD_RATIO * VOTE_FACTOR * m / m_plus_n / 100;
             let snapshot = engine.snapshot_cache();
-            for (index, (member, votes)) in committee.iter().enumerate() {
+            // C# v3.10.1: from HF_Gorgon onward, refresh-time voter rewards
+            // use `GetCandidateVote(snapshot, pubkey)` rather than the vote
+            // count stored in the committee cache.
+            for (index, (member, cached_votes)) in committee.iter().enumerate() {
+                let votes = if engine.is_hardfork_enabled(Hardfork::HfGorgon) {
+                    self.candidate_vote(&snapshot, member)?
+                } else {
+                    cached_votes.clone()
+                };
                 // Validator voters earn double.
                 let factor = if index < validators_count { 2 } else { 1 };
-                if *votes > BigInt::from(0) {
-                    let reward_per_neo = factor * &voter_reward_of_each_committee / votes;
+                if votes > BigInt::from(0) {
+                    let reward_per_neo = factor * &voter_reward_of_each_committee / &votes;
                     let key = Self::voter_reward_per_committee_key(member);
                     // C# `GetAndChange(key, () => new StorageItem(0)).Add(...)`.
                     let accumulated =

@@ -1,5 +1,6 @@
 use super::*;
 use neo_crypto::Crypto;
+use neo_io::{BinaryWriter, MemoryReader, Serializable};
 
 #[test]
 fn try_hash_matches_legacy_hash_for_valid_payload() {
@@ -80,4 +81,25 @@ fn iverifiable_extensible_hash_uses_try_hash() {
         neo_primitives::Verifiable::hash(&payload).unwrap(),
         expected
     );
+}
+
+#[test]
+fn deserialize_rejects_witness_script_hash_that_does_not_match_sender() {
+    let mut payload = ExtensiblePayload::new();
+    payload.category = "oracle".to_string();
+    payload.valid_block_start = 1;
+    payload.valid_block_end = 2;
+    payload.sender = UInt160::zero();
+    payload.data = vec![1, 2, 3];
+    payload.witness = Witness::new_with_scripts(Vec::new(), vec![0x51]);
+
+    let mut writer = BinaryWriter::new();
+    <ExtensiblePayload as Serializable>::serialize(&payload, &mut writer)
+        .expect("serialize payload");
+    let bytes = writer.into_bytes();
+    let mut reader = MemoryReader::new(&bytes);
+
+    let err = <ExtensiblePayload as Serializable>::deserialize(&mut reader)
+        .expect_err("mismatched witness faults");
+    assert!(err.to_string().contains("does not match sender"));
 }

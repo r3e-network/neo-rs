@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- **Neo N3 v3.10.1 compatibility target.** Added `HF_Huyao` to the canonical hardfork enum and updated the built-in protocol compatibility documentation. MainNet/TestNet presets continue to schedule hardforks through `HF_Faun`; `HF_Gorgon` and `HF_Huyao` are defined but unscheduled unless explicitly configured.
+
 ## [0.10.0] - 2026-07-03
 
 ### Added

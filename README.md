@@ -5,7 +5,7 @@
 # neo-rs
 
 A complete **Neo N3 blockchain node in Rust** — a from-scratch reimplementation of
-the C# reference node with byte-for-byte protocol parity (Neo N3 **v3.10.0**). It
+the C# reference node with byte-for-byte protocol parity (Neo N3 **v3.10.1**). It
 joins the real MainNet/TestNet, produces the same block hashes and state roots,
 runs the NeoVM and dBFT 2.0 consensus, and serves the standard JSON-RPC API.
 
@@ -38,7 +38,7 @@ parts (NeoVM, var-int wire format, MPT, dBFT) implemented from the specification
 | **State** | Merkle-Patricia Trie state root, proofs (`getproof`/`getstate`) |
 | **Native contracts** | NEO, GAS, Policy, Oracle, Notary, StdLib, CryptoLib, RoleManagement, ContractManagement, Ledger, Treasury |
 | **Standards** | NEP-17 (tokens), NEP-11 (NFTs), NEP-6 (wallets), NEP-2 keys |
-| **Hardforks** | Full Neo N3 hardfork schedule through v3.10.0 |
+| **Hardforks** | Full Neo N3 hardfork enum through v3.10.1, with MainNet/TestNet activation schedules |
 | **JSON-RPC** | ~55 methods (blockchain, state, invocation, governance, wallet, oracle) |
 | **Storage** | MDBX by default, RocksDB fallback, typed table codecs, hot/cold provider boundaries, or in-memory |
 | **Oracle** | HTTPS + NeoFS request fulfilment |
@@ -138,7 +138,7 @@ you can understand the whole node without reading source.
 | [Dataflow](./docs/dataflow.md) | How blocks, transactions, consensus, and state move through the node |
 | [Configuration](./docs/configuration.md) | Every TOML section and key, with defaults |
 | [RPC API](./docs/rpc-api.md) | All JSON-RPC methods, grouped, with examples |
-| [Protocol & compatibility](./docs/protocol-compatibility.md) | Neo N3 v3.10.0 parity, native contracts, hardforks |
+| [Protocol & compatibility](./docs/protocol-compatibility.md) | Neo N3 v3.10.1 parity, native contracts, hardforks |
 | [Operations](./docs/operations.md) | Deploy, monitor, secure, back up, and upgrade |
 | [Coding/design guidance](./docs/coding-design-architecture-guidance.md) | High-level domain-flow style, fluent APIs, abstraction layers, module organization |
 | [Architecture design (ADR)](./design.md) | Full ADR log, reth/polkadot comparison, 4-phase evolution roadmap |

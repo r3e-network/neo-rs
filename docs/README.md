@@ -2,7 +2,7 @@
 
 `neo-rs` is a full Neo N3 blockchain node implemented from scratch in Rust, with
 byte-for-byte protocol parity to the official C# reference node (tracked through
-Neo v3.10.0). The runnable program is a single daemon, `neo-node`: it syncs the
+Neo v3.10.1). The runnable program is a single daemon, `neo-node`: it syncs the
 chain over a custom TCP P2P protocol, executes NeoVM bytecode and native
 contracts, maintains the MPT state root, and optionally serves a JSON-RPC API.
 
@@ -25,7 +25,7 @@ every page to what you will learn from it.
 | [rpc-api.md](./rpc-api.md) | The JSON-RPC 2.0 surface (~55 methods) grouped by domain — blockchain, smart-contract invocation, state and MPT proofs, node/network, wallet, plugins — with parameters, request/response shape, and curl examples. |
 | [architecture.md](./architecture.md) | The 7-layer workspace design (Foundation → Infrastructure → Protocol → Domain service → Node service → Composition → Plugin/RPC boundary → Application), a crate reference table for all 26 production crates (+ neo-test-fixtures dev crate), and the key design decisions (two-tier VM, supervised async services, block-import queue, typed storage tables, provider factories, pipeline abstraction, MPT layering, C# parity). |
 | [dataflow.md](./dataflow.md) | How data and control move at runtime: startup/composition, block ingestion, transaction lifecycle, a dBFT consensus round, RPC request handling, state/storage overlays, typed table reads, and hot/cold provider routing — each with a diagram. |
-| [protocol-compatibility.md](./protocol-compatibility.md) | What "byte-for-byte C# parity" means, the 11 native contracts, the 7 hardforks with MainNet/TestNet activation heights, supported subsystems (consensus, VM, NEP standards, P2P), and the cryptography stack. |
+| [protocol-compatibility.md](./protocol-compatibility.md) | What "byte-for-byte C# parity" means, the 11 native contracts, the 8 hardforks with MainNet/TestNet activation heights, supported subsystems (consensus, VM, NEP standards, P2P), and the cryptography stack. |
 | [coding-design-architecture-guidance.md](./coding-design-architecture-guidance.md) | Coding/design rules for high-level domain flows, fluent workflow APIs, layer-by-layer abstraction, module organization, and when to use generics versus `dyn Trait`. |
 | [style-conformance-audit.md](./style-conformance-audit.md) | Repeatable crate-by-crate audit checklist and remediation plan for enforcing the coding/design/architecture guidance. |
 | [../design.md](../design.md) | The full Architecture Decision Record (ADR) log, reth/polkadot pattern comparison, and the 4-phase evolution roadmap. The authoritative source for architectural decisions and future plans. |

@@ -370,7 +370,7 @@ fn atoi(value: &str, base: Option<i64>) -> CoreResult<BigInt> {
 
 #[test]
 fn itoa_base10_matches_csharp() {
-    // C# Itoa(value) == value.ToString().
+    // C# v3.10.1 Itoa(value) == value.ToString(InvariantCulture).
     assert_eq!(itoa(0, None).unwrap(), "0");
     assert_eq!(itoa(123, None).unwrap(), "123");
     assert_eq!(itoa(-123, None).unwrap(), "-123");
@@ -379,7 +379,8 @@ fn itoa_base10_matches_csharp() {
 
 #[test]
 fn itoa_base16_matches_dotnet_twos_complement() {
-    // C# Itoa(value, 16) == value.ToString("x"): lowercase, sign-disambiguated.
+    // C# v3.10.1 Itoa(value, 16) == value.ToString("x", InvariantCulture):
+    // lowercase, sign-disambiguated.
     assert_eq!(itoa(0, Some(16)).unwrap(), "0");
     assert_eq!(itoa(1, Some(16)).unwrap(), "1");
     assert_eq!(itoa(10, Some(16)).unwrap(), "0a"); // top nibble >= 8 -> leading 0

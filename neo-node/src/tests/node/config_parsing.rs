@@ -424,9 +424,9 @@ max_connections = -2
 }
 
 /// The operator-facing presets checked into this repository should carry
-/// Neo N3 v3.10.0 mainnet/testnet transaction limits explicitly.
+/// Neo N3 v3.10.1 mainnet/testnet transaction limits explicitly.
 #[test]
-fn shipped_mainnet_and_testnet_configs_match_v3100_transaction_limits() {
+fn shipped_mainnet_and_testnet_configs_match_v3101_transaction_limits() {
     let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("neo-node has a workspace parent");
@@ -451,18 +451,18 @@ fn shipped_mainnet_and_testnet_configs_match_v3100_transaction_limits() {
         assert_eq!(
             config.blockchain.max_transactions_per_block,
             Some(expected),
-            "{} must pin v3.10.0 MaxTransactionsPerBlock",
+            "{} must pin v3.10.1 MaxTransactionsPerBlock",
             relative
         );
     }
 }
 
-/// The public-network presets should mirror the Neo v3.10.0
+/// The public-network presets should mirror the Neo v3.10.1
 /// `ApplicationConfiguration.P2P` channel defaults: compression enabled,
 /// 10 desired peers, 40 max peers, 3 peers per address, and 1000 known
 /// hashes. Local/private configs may intentionally override these.
 #[test]
-fn shipped_public_configs_match_v3100_p2p_channel_defaults() {
+fn shipped_public_configs_match_v3101_p2p_channel_defaults() {
     let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("neo-node has a workspace parent");

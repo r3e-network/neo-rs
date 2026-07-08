@@ -11,8 +11,36 @@ use num_bigint::BigInt;
 use crate::pool_index::PoolIndex;
 use crate::pool_item::PoolItem;
 use crate::transaction_verification_context::TransactionVerificationContext;
+use neo_native_contracts::Notary;
 use neo_payloads::Transaction;
 use neo_primitives::{UInt160, UInt256};
+
+/// C# v3.10.1 `MemoryPool.GetPayer` / `TransactionVerificationContext` payer
+/// tuple. Ordinary transactions reserve fees against `(Sender, None)`;
+/// Notary-sponsored transactions whose first signer is the Notary native
+/// contract reserve fees against `(Notary, Signers[1])`, which maps to the
+/// payer's Notary deposit instead of the Notary account's GAS balance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) struct FeePayer {
+    pub(super) primary: UInt160,
+    pub(super) secondary: Option<UInt160>,
+}
+
+impl FeePayer {
+    pub(super) fn from_transaction(tx: &Transaction) -> Option<Self> {
+        let primary = tx.signers().first()?.account;
+        let secondary = if primary == Notary::script_hash() && tx.signers().len() >= 2 {
+            Some(tx.signers()[1].account)
+        } else {
+            None
+        };
+        Some(Self { primary, secondary })
+    }
+
+    pub(super) fn conflict_author(self) -> UInt160 {
+        self.secondary.unwrap_or(self.primary)
+    }
+}
 
 /// Inner, mutable state of the memory pool. Split out so the outer
 /// `MemoryPool` can hand out read-only references while still
@@ -23,9 +51,10 @@ pub(super) struct MemoryPoolInner {
     pub(super) conflicts: HashMap<UInt256, HashSet<UInt256>>,
     pub(super) verification_context: TransactionVerificationContext,
     /// C# `TransactionVerificationContext._senderFee`: the summed
-    /// system+network fees of pooled transactions per sender, charged
-    /// against the sender's GAS balance for every new admission.
-    pub(super) sender_fees: HashMap<UInt160, BigInt>,
+    /// system+network fees of pooled transactions per payer tuple. Ordinary
+    /// tuples charge the primary account's GAS balance; Notary-sponsored tuples
+    /// charge the secondary account's Notary deposit.
+    pub(super) sender_fees: HashMap<FeePayer, BigInt>,
     /// C# `TransactionVerificationContext._oracleResponses`: pooled
     /// `OracleResponse` ids, rejecting duplicate responses.
     pub(super) oracle_responses: HashMap<u64, UInt256>,
@@ -50,9 +79,9 @@ impl MemoryPoolInner {
         if let Some(oracle) = oracle_response_id(tx) {
             self.oracle_responses.insert(oracle, tx.hash());
         }
-        if let Some(sender) = tx.signers().first().map(|s| s.account) {
+        if let Some(payer) = FeePayer::from_transaction(tx) {
             let fee = BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee());
-            *self.sender_fees.entry(sender).or_default() += fee;
+            *self.sender_fees.entry(payer).or_default() += fee;
         }
     }
 
@@ -61,12 +90,12 @@ impl MemoryPoolInner {
         if let Some(oracle) = oracle_response_id(tx) {
             self.oracle_responses.remove(&oracle);
         }
-        if let Some(sender) = tx.signers().first().map(|s| s.account) {
+        if let Some(payer) = FeePayer::from_transaction(tx) {
             let fee = BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee());
-            if let Some(total) = self.sender_fees.get_mut(&sender) {
+            if let Some(total) = self.sender_fees.get_mut(&payer) {
                 *total -= fee;
                 if *total <= BigInt::from(0) {
-                    self.sender_fees.remove(&sender);
+                    self.sender_fees.remove(&payer);
                 }
             }
         }
@@ -79,7 +108,7 @@ impl MemoryPoolInner {
     /// pooled transactions out-fee `tx` (sum of their network fees >= `tx`'s).
     pub(super) fn check_conflicts(&self, tx: &Transaction) -> Option<Vec<PoolItem>> {
         let tx_hash = tx.hash();
-        let tx_sender = tx.signers().first().map(|s| s.account);
+        let tx_author = FeePayer::from_transaction(tx).map(FeePayer::conflict_author);
         let tx_accounts: HashSet<UInt160> = tx.signers().iter().map(|s| s.account).collect();
         let mut list: Vec<PoolItem> = Vec::new();
         let mut conflicts_fee_sum: i64 = 0;
@@ -88,12 +117,12 @@ impl MemoryPoolInner {
         if let Some(conflicting) = self.conflicts.get(&tx_hash) {
             for hash in conflicting {
                 if let Some(pooled) = self.verified.get(hash) {
-                    if tx_sender.is_some_and(|s| {
+                    if tx_author.is_some_and(|author| {
                         pooled
                             .transaction
                             .signers()
                             .iter()
-                            .any(|sig| sig.account == s)
+                            .any(|sig| sig.account == author)
                     }) {
                         conflicts_fee_sum =
                             conflicts_fee_sum.saturating_add(pooled.transaction.network_fee());
@@ -185,17 +214,14 @@ pub(super) fn conflict_target_hashes(tx: &Transaction) -> Vec<UInt256> {
 
 /// C# `TransactionVerificationContext.CheckTransaction` conflict rebate: the
 /// summed system+network fees of the conflicts that will be evicted and whose
-/// Sender (`Signers[0].Account`) equals `tx_sender`. Those fees no longer count
-/// against the sender's pooled-fee allowance. Conflicts with a different first
-/// signer (or none) are not rebated, mirroring C#'s
-/// `conflictingTxs.Where(c => c.Sender.Equals(tx.Sender))`.
-pub(super) fn conflict_rebate(conflicts: &[PoolItem], tx_sender: Option<UInt160>) -> BigInt {
+/// v3.10.1 payer tuple equals `tx_payer`. Those fees no longer count against
+/// the payer's pooled-fee allowance. Conflicts with a different payer tuple (or
+/// none) are not rebated, mirroring C#'s `MemoryPool.GetPayer` comparison.
+pub(super) fn conflict_rebate(conflicts: &[PoolItem], tx_payer: Option<FeePayer>) -> BigInt {
     conflicts
         .iter()
         .filter(|c| {
-            tx_sender.is_some_and(|sender| {
-                c.transaction.signers().first().map(|s| s.account) == Some(sender)
-            })
+            tx_payer.is_some_and(|payer| FeePayer::from_transaction(&c.transaction) == Some(payer))
         })
         .map(|c| {
             BigInt::from(c.transaction.system_fee()) + BigInt::from(c.transaction.network_fee())

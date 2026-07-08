@@ -20,7 +20,8 @@
 //! | `HfDomovoi` | Fourth hardfork - consensus improvements |
 //! | `HfEchidna` | Fifth hardfork - VM upgrades |
 //! | `HfFaun` | Sixth hardfork - additional features |
-//! | `HfGorgon` | Seventh hardfork - latest protocol |
+//! | `HfGorgon` | Seventh hardfork - VM and native-contract refinements |
+//! | `HfHuyao` | Eighth hardfork - Neo v3.10.1 protocol refinements |
 //!
 //! ## Usage
 //!
@@ -48,7 +49,7 @@ pub struct HardforkManager {
 
 impl HardforkManager {
     /// Returns every known hardfork in declaration order.
-    pub const fn all() -> [Hardfork; 7] {
+    pub const fn all() -> [Hardfork; 8] {
         Hardfork::all()
     }
 
@@ -71,9 +72,8 @@ impl HardforkManager {
         hardforks.insert(Hardfork::HfDomovoi, 5570000);
         hardforks.insert(Hardfork::HfEchidna, 7300000);
         hardforks.insert(Hardfork::HfFaun, 8800000);
-        // HfGorgon is defined in the Hardfork enum but is not scheduled in
-        // Neo v3.10.0 MainNet config.
-        // See: neo-node v3.10.0 src/Neo.CLI/config.mainnet.json
+        // HfGorgon and HfHuyao are defined in the Hardfork enum but are not
+        // scheduled in Neo v3.10.1 MainNet config.
         Self { hardforks }
     }
 
@@ -86,9 +86,8 @@ impl HardforkManager {
         hardforks.insert(Hardfork::HfDomovoi, 4144000);
         hardforks.insert(Hardfork::HfEchidna, 5870000);
         hardforks.insert(Hardfork::HfFaun, 12960000);
-        // HfGorgon is defined in the Hardfork enum but is not scheduled in
-        // Neo v3.10.0 TestNet config.
-        // See: neo-node v3.10.0 src/Neo.CLI/config.testnet.json
+        // HfGorgon and HfHuyao are defined in the Hardfork enum but are not
+        // scheduled in Neo v3.10.1 TestNet config.
         Self { hardforks }
     }
 

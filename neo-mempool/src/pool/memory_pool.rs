@@ -28,7 +28,9 @@ use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use super::state::{MemoryPoolInner, conflict_rebate, conflict_target_hashes, oracle_response_id};
+use super::state::{
+    FeePayer, MemoryPoolInner, conflict_rebate, conflict_target_hashes, oracle_response_id,
+};
 
 #[cfg(test)]
 static BLOCK_PERSISTED_TX_SCAN_COUNT: std::sync::atomic::AtomicUsize =
@@ -170,7 +172,7 @@ impl MemoryPool {
     ///
     /// 1. removes every transaction that was mined in the block from the
     ///    verified/unverified queues (so it is no longer served to peers or
-    ///    re-proposed by the consensus driver) and decrements its sender-fee
+    ///    re-proposed by the consensus driver) and decrements its fee-payer
     ///    accounting in the verification context;
     /// 2. evicts verified pooled transactions that conflict with the persisted
     ///    ones, in both directions — a pooled tx whose hash is named by a
@@ -373,13 +375,11 @@ impl MemoryPool {
                     }
                 };
 
-                let pooled_sender_fee = tx
-                    .signers()
-                    .first()
-                    .and_then(|s| guard.sender_fees.get(&s.account).cloned())
+                let tx_payer = FeePayer::from_transaction(&tx);
+                let pooled_sender_fee = tx_payer
+                    .and_then(|payer| guard.sender_fees.get(&payer).cloned())
                     .unwrap_or_default();
-                let tx_sender = tx.signers().first().map(|s| s.account);
-                let rebate = conflict_rebate(&conflicts_to_remove, tx_sender);
+                let rebate = conflict_rebate(&conflicts_to_remove, tx_payer);
                 let effective_pooled_fee = &pooled_sender_fee - &rebate;
                 let oracle_duplicate = oracle_response_id(&tx)
                     .is_some_and(|id| guard.oracle_responses.contains_key(&id));
@@ -465,13 +465,13 @@ impl MemoryPool {
     /// combined behavior is identical for the single-threaded
     /// admission path), then admission into the **verified** queue
     /// with capacity eviction and verification-context bookkeeping
-    /// (sender fees, pooled oracle-response ids).
+    /// (fee-payer reservations, pooled oracle-response ids).
     ///
     /// Pooled-conflict handling matches C# `CheckConflicts`: a transaction is
     /// rejected (`HasConflicts`) when a conflicting pooled transaction out-fees
     /// it or names a conflictee it shares no signer with; otherwise the
     /// conflicting pooled transactions are evicted on admission, the
-    /// conflict-fee rebate is applied to the sender-fee balance check, and the
+    /// conflict-fee rebate is applied to the fee-payer balance check, and the
     /// transaction's own `Conflicts` attributes are tracked for future
     /// admissions. On-chain conflict records are checked separately via the
     /// `Conflicts` attribute verification.
@@ -488,9 +488,9 @@ impl MemoryPool {
         }
 
         // C# TryAdd holds the write lock across the containment check, the
-        // sender-fee-context read, verification, and admission, so two
+        // fee-payer-context read, verification, and admission, so two
         // concurrent submissions cannot both verify against the same pooled
-        // sender-fee state (MemoryPool.cs:353-369). Verification is serialized
+        // fee-payer state (MemoryPool.cs:353-369). Verification is serialized
         // under the lock exactly like C#'s `_txRwLock.EnterWriteLock()`.
         let (removed_transactions, new_tx_evicted) = {
             let mut guard = self.inner.write();
@@ -507,16 +507,15 @@ impl MemoryPool {
                 None => return VerifyResult::HasConflicts,
             };
 
-            let pooled_sender_fee = transaction
-                .signers()
-                .first()
-                .and_then(|s| guard.sender_fees.get(&s.account).cloned())
+            let tx_payer = FeePayer::from_transaction(&transaction);
+            let pooled_sender_fee = tx_payer
+                .and_then(|payer| guard.sender_fees.get(&payer).cloned())
                 .unwrap_or_default();
             // Conflict-fee rebate (C# VerifyStateDependent receives conflictsList):
-            // the conflicting txs with this sender will be evicted, so their fees
-            // no longer count against the sender's pooled-fee allowance.
-            let tx_sender = transaction.signers().first().map(|s| s.account);
-            let rebate = conflict_rebate(&conflicts_to_remove, tx_sender);
+            // the conflicting txs with this payer tuple will be evicted, so
+            // their fees no longer count against the payer's pooled-fee
+            // allowance.
+            let rebate = conflict_rebate(&conflicts_to_remove, tx_payer);
             let effective_pooled_fee = &pooled_sender_fee - &rebate;
             let oracle_duplicate = oracle_response_id(&transaction)
                 .is_some_and(|id| guard.oracle_responses.contains_key(&id));
@@ -638,13 +637,11 @@ impl MemoryPool {
                 None => return VerifyResult::HasConflicts,
             };
 
-            let pooled_sender_fee = transaction
-                .signers()
-                .first()
-                .and_then(|s| guard.sender_fees.get(&s.account).cloned())
+            let tx_payer = FeePayer::from_transaction(&transaction);
+            let pooled_sender_fee = tx_payer
+                .and_then(|payer| guard.sender_fees.get(&payer).cloned())
                 .unwrap_or_default();
-            let tx_sender = transaction.signers().first().map(|s| s.account);
-            let rebate = conflict_rebate(&conflicts_to_remove, tx_sender);
+            let rebate = conflict_rebate(&conflicts_to_remove, tx_payer);
             let effective_pooled_fee = &pooled_sender_fee - &rebate;
             let oracle_duplicate = oracle_response_id(&transaction)
                 .is_some_and(|id| guard.oracle_responses.contains_key(&id));

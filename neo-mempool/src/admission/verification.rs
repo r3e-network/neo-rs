@@ -25,7 +25,7 @@ use neo_config::{Hardfork, ProtocolSettings};
 use neo_execution::helper::Helper;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::ledger_contract::LedgerContract;
-use neo_native_contracts::{GasToken, PolicyContract, StandardNativeProvider};
+use neo_native_contracts::{GasToken, Notary, PolicyContract, StandardNativeProvider};
 use neo_payloads::{MAX_TRANSACTION_SIZE, Transaction, TransactionAttribute};
 use neo_primitives::{UInt160, VerifyResult};
 // `invocation_script`/`verification_script` on `Witness` are trait methods.
@@ -71,6 +71,20 @@ pub fn gas_balance_of(snapshot: &DataCache, account: &UInt160) -> BigInt {
     GasToken::balance_of(snapshot, account).unwrap_or_else(|_| BigInt::from(0))
 }
 
+/// C# v3.10.1 `MemoryPool.GetPayer` balance side: Notary-sponsored
+/// transactions (`Sender == Notary.Hash` and a second signer exists) spend the
+/// second signer's Notary deposit. Ordinary transactions spend the sender's GAS
+/// balance.
+fn fee_payer_balance(snapshot: &DataCache, tx: &Transaction) -> Option<BigInt> {
+    let sender = sender(tx)?;
+    if sender == Notary::script_hash() && tx.signers().len() >= 2 {
+        let payer = tx.signers()[1].account;
+        Some(Notary::balance_of(snapshot, &payer).unwrap_or_else(|_| BigInt::from(0)))
+    } else {
+        Some(gas_balance_of(snapshot, &sender))
+    }
+}
+
 /// C# `Transaction.Sender` — `Signers[0].Account`.
 fn sender(tx: &Transaction) -> Option<UInt160> {
     tx.signers().first().map(|s| s.account)
@@ -94,7 +108,8 @@ fn single_signature_invocation(invocation: &[u8]) -> Option<&[u8]> {
 /// The full C# `Transaction.Verify`: state-independent first, then
 /// state-dependent. `pooled_sender_fee` is the verification-context
 /// sender-fee total from the memory pool (C#
-/// `TransactionVerificationContext._senderFee`); `oracle_duplicate`
+/// v3.10.1 `TransactionVerificationContext._senderFee` payer-tuple total);
+/// `oracle_duplicate`
 /// reports whether the pool already holds a transaction with the same
 /// `OracleResponse` id (C# `_oracleResponses`).
 pub fn verify_transaction(
@@ -325,12 +340,12 @@ pub fn verify_state_dependent_with_native_provider(
     // Sender GAS balance (C# TransactionVerificationContext.CheckTransaction;
     // `pooled_sender_fee` already carries the pooled-conflict fee rebate
     // applied by `MemoryPool::try_add`'s CheckConflicts).
-    let Some(tx_sender) = sender(tx) else {
+    let Some(balance) = fee_payer_balance(snapshot, tx) else {
         return VerifyResult::Invalid;
     };
     let expected_fee =
         BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee()) + pooled_sender_fee;
-    if gas_balance_of(snapshot, &tx_sender) < expected_fee {
+    if balance < expected_fee {
         return VerifyResult::InsufficientFunds;
     }
     if oracle_duplicate {

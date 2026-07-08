@@ -94,6 +94,17 @@ impl Notary {
         Self::decode_deposit(bytes.as_ref()).map(Some)
     }
 
+    /// C# `Notary.BalanceOf(snapshot, account)`: returns the deposit `Amount`,
+    /// or zero when the account has no Notary deposit.
+    pub fn balance_of(snapshot: &DataCache, account: &UInt160) -> CoreResult<BigInt> {
+        let Some(item) = snapshot.get(&Self::deposit_key(account)) else {
+            return Ok(BigInt::from(0));
+        };
+        let bytes = item.value_bytes();
+        let (amount, _) = Self::decode_deposit(bytes.as_ref())?;
+        Ok(amount)
+    }
+
     /// Deletes the deposit entry for `account` (C# `RemoveDepositFor`).
     pub(in crate::notary) fn delete_deposit(&self, snapshot: &DataCache, account: &UInt160) {
         snapshot.delete(&Self::deposit_key(account));

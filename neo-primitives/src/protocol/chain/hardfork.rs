@@ -28,6 +28,8 @@ protocol_enum_repr! {
         HfFaun = 5 => "HF_Faun",
         /// Gorgon hardfork.
         HfGorgon = 6 => "HF_Gorgon",
+        /// Huyao hardfork.
+        HfHuyao = 7 => "HF_Huyao",
     }
 }
 
@@ -64,6 +66,7 @@ impl FromStr for Hardfork {
             "HF_ECHIDNA" | "ECHIDNA" => Ok(Self::HfEchidna),
             "HF_FAUN" | "FAUN" => Ok(Self::HfFaun),
             "HF_GORGON" | "GORGON" => Ok(Self::HfGorgon),
+            "HF_HUYAO" | "HUYAO" => Ok(Self::HfHuyao),
             _ => Err(HardforkParseError(value.to_string())),
         }
     }

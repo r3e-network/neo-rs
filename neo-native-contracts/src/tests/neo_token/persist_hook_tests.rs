@@ -303,6 +303,104 @@ fn post_persist_committee_and_voter_rewards_match_csharp_math() {
 }
 
 #[test]
+fn post_persist_hf_gorgon_uses_candidate_vote_for_voter_rewards() {
+    let all = ProtocolSettings::default().standby_committee;
+    let member = all[0].clone();
+    let mut hardforks = HashMap::new();
+    hardforks.insert(Hardfork::HfGorgon, 0u32);
+    let settings = ProtocolSettings {
+        standby_committee: vec![member.clone()],
+        validators_count: 1,
+        hardforks,
+        ..ProtocolSettings::default()
+    };
+    let cache = DataCache::new(false);
+    seed_committee_cache(&cache, &[(member.clone(), BigInt::from(1000))]);
+    NeoToken::new().put_gas_per_block(&cache, 0, &BigInt::from(DEFAULT_GAS_PER_BLOCK));
+    cache.add(
+        NeoToken::candidate_key(&member),
+        StorageItem::from_bytes(
+            NeoToken::encode_candidate_state(true, &BigInt::from(250)).unwrap(),
+        ),
+    );
+    let snapshot = Arc::new(cache);
+
+    let mut engine = engine_for(TriggerType::PostPersist, Arc::clone(&snapshot), 0, settings);
+    NeoToken.post_persist(&mut engine).expect("post_persist");
+
+    assert_eq!(
+        read_voter_reward(&snapshot, &member),
+        Some(BigInt::from(160_000_000_000_000i64)),
+        "HF_Gorgon must divide by GetCandidateVote(snapshot, pubkey), not stale committee-cache votes"
+    );
+}
+
+#[test]
+fn fast_forward_hf_gorgon_matches_normal_hooks_for_blocked_candidate_votes() {
+    let all = ProtocolSettings::default().standby_committee;
+    let member = all[0].clone();
+    let mut hardforks = HashMap::new();
+    hardforks.insert(Hardfork::HfGorgon, 0u32);
+    let settings = ProtocolSettings {
+        standby_committee: vec![member.clone()],
+        validators_count: 1,
+        hardforks,
+        ..ProtocolSettings::default()
+    };
+    let seed = |cache: &DataCache| {
+        seed_committee_cache(cache, &[(member.clone(), BigInt::from(250))]);
+        NeoToken::new().put_gas_per_block(cache, 0, &BigInt::from(DEFAULT_GAS_PER_BLOCK));
+        cache.add(
+            NeoToken::voters_count_key(),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(250))),
+        );
+        cache.add(
+            NeoToken::candidate_key(&member),
+            StorageItem::from_bytes(
+                NeoToken::encode_candidate_state(true, &BigInt::from(250)).unwrap(),
+            ),
+        );
+        cache.add(
+            crate::PolicyContract::blocked_account_key(&signature_address(&member)),
+            StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(0))),
+        );
+    };
+    let normal = Arc::new(DataCache::new(false));
+    let fast = Arc::new(DataCache::new(false));
+    seed(&normal);
+    seed(&fast);
+
+    let mut on_persist = engine_for(
+        TriggerType::OnPersist,
+        Arc::clone(&normal),
+        0,
+        settings.clone(),
+    );
+    NeoToken
+        .on_persist(&mut on_persist)
+        .expect("normal on_persist");
+    let mut post_persist = engine_for(
+        TriggerType::PostPersist,
+        Arc::clone(&normal),
+        0,
+        settings.clone(),
+    );
+    NeoToken
+        .post_persist(&mut post_persist)
+        .expect("normal post_persist");
+
+    NeoToken::new()
+        .fast_forward_empty_block_rewards(&fast, &settings, 0, 0)
+        .expect("fast-forward rewards");
+
+    assert_eq!(
+        visible_store_dump(&fast),
+        visible_store_dump(&normal),
+        "Gorgon fast-forward must use candidate votes for voter-reward refreshes"
+    );
+}
+
+#[test]
 fn post_persist_off_refresh_blocks_only_mints_the_rotating_reward() {
     // Block 1 (1 % 21 != 0): committee[1] earns 0.5 GAS; no voter-reward
     // accrual happens even for members with votes.

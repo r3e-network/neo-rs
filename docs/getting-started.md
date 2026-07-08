@@ -4,7 +4,7 @@ This guide walks you through building `neo-rs`, running a Neo N3 node on
 TestNet or MainNet, pointing it at a data directory, and verifying it over
 JSON-RPC. `neo-rs` is a from-scratch Rust implementation of the Neo N3 node with
 byte-for-byte protocol parity to the C# reference node (tracked through Neo
-v3.10.0).
+v3.10.1).
 
 The runnable program is a single daemon, `neo-node`. It syncs the chain over a
 custom TCP P2P protocol and optionally serves a JSON-RPC API. There is no

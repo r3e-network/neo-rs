@@ -734,7 +734,7 @@ fn sender_fee_accumulates_until_balance_exhausted() {
     assert_eq!(
         pool.try_add(second, &snapshot),
         VerifyResult::InsufficientFunds,
-        "pooled sender fees must count against the balance (C# senderFee)"
+        "pooled fee-payer reservations must count against the balance (C# senderFee)"
     );
 }
 
@@ -751,7 +751,7 @@ fn commit_block_removes_confirmed_and_releases_sender_fee() {
     assert_eq!(removed[0].1, TransactionRemovalReason::NoLongerValid);
     assert!(!pool.contains(&hash));
 
-    // The sender-fee reservation is released: a fresh tx fits again.
+    // The fee-payer reservation is released: a fresh tx fits again.
     let next = signed_tx(&settings, &private, &public, account, 13, 1, Vec::new());
     assert_eq!(pool.try_add(next, &snapshot), VerifyResult::Succeed);
 }
@@ -787,11 +787,11 @@ fn tx_with_signers_and_fees(nonce: u32, sys: i64, net: i64, accounts: &[UInt160]
 }
 
 /// C# `TransactionVerificationContext.CheckTransaction` rebates a conflict's
-/// fees only when `conflictTx.Sender == tx.Sender`, and `Sender` is
-/// `Signers[0].Account`. A conflict that merely lists the sender as a later
-/// (non-first) signer must NOT be rebated.
+/// fees only when the v3.10.1 payer tuple matches. For ordinary transactions
+/// the tuple is `(Signers[0], None)`. A conflict that merely lists the sender as
+/// a later signer must NOT be rebated.
 #[test]
-fn conflict_rebate_keys_on_first_signer_like_csharp() {
+fn conflict_rebate_keys_on_fee_payer_tuple_like_csharp() {
     let sender = UInt160::from_bytes(&[1u8; 20]).expect("sender");
     let other = UInt160::from_bytes(&[2u8; 20]).expect("other");
 
@@ -805,12 +805,66 @@ fn conflict_rebate_keys_on_first_signer_like_csharp() {
 
     let conflicts = vec![first_is_sender, later_is_sender, unrelated];
     assert_eq!(
-        conflict_rebate(&conflicts, Some(sender)),
+        conflict_rebate(
+            &conflicts,
+            Some(FeePayer {
+                primary: sender,
+                secondary: None,
+            })
+        ),
         num_bigint::BigInt::from(10),
     );
     // No sender -> no rebate.
     assert_eq!(
         conflict_rebate(&conflicts, None),
         num_bigint::BigInt::from(0),
+    );
+}
+
+#[test]
+fn conflict_rebate_keys_notary_sponsored_conflicts_by_secondary_payer() {
+    let notary = neo_native_contracts::Notary::script_hash();
+    let payer = UInt160::from_bytes(&[3u8; 20]).expect("payer");
+    let other = UInt160::from_bytes(&[4u8; 20]).expect("other");
+
+    let sponsored = PoolItem::new(tx_with_signers_and_fees(4, 7, 3, &[notary, payer]));
+    let different_payer = PoolItem::new(tx_with_signers_and_fees(5, 100, 100, &[notary, other]));
+
+    let conflicts = vec![sponsored, different_payer];
+    assert_eq!(
+        conflict_rebate(
+            &conflicts,
+            Some(FeePayer {
+                primary: notary,
+                secondary: Some(payer),
+            })
+        ),
+        num_bigint::BigInt::from(10),
+    );
+}
+
+#[test]
+fn verification_context_reserves_notary_sponsored_fees_by_secondary_payer() {
+    let notary = neo_native_contracts::Notary::script_hash();
+    let payer = UInt160::from_bytes(&[5u8; 20]).expect("payer");
+    let other = UInt160::from_bytes(&[6u8; 20]).expect("other");
+    let mut inner = MemoryPoolInner::with_capacity(8);
+
+    inner.context_add(&tx_with_signers_and_fees(6, 7, 3, &[notary, payer]));
+    inner.context_add(&tx_with_signers_and_fees(7, 100, 100, &[notary, other]));
+
+    assert_eq!(
+        inner.sender_fees.get(&FeePayer {
+            primary: notary,
+            secondary: Some(payer),
+        }),
+        Some(&num_bigint::BigInt::from(10)),
+    );
+    assert_eq!(
+        inner.sender_fees.get(&FeePayer {
+            primary: notary,
+            secondary: Some(other),
+        }),
+        Some(&num_bigint::BigInt::from(200)),
     );
 }
