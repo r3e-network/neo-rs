@@ -72,6 +72,17 @@ fn wrong_length_signature_faults_with_gorgon_configured_like_csharp_v3100() {
 }
 
 #[test]
+fn invalid_fixed_length_signature_returns_false() {
+    let engine = engine_with_gorgon(true);
+    let public_key = valid_public_key();
+
+    assert_eq!(
+        engine.verify_signature(b"message", &public_key, &[0u8; 64]),
+        Ok(false)
+    );
+}
+
+#[test]
 fn multisig_wrong_length_signature_keeps_pre_gorgon_false_result() {
     let mut engine = engine_with_gorgon(false);
     let public_key = valid_public_key();

@@ -688,6 +688,10 @@ from account-creation helpers.
 `neo-execution/src/application_engine/storage_low_level.rs` now turns a missing
 execution-context script hash into a typed invalid-operation error instead of
 asserting the invariant with `expect()` while loading a context.
+`neo-execution/src/interop/application_engine_crypto.rs` now converts
+fixed-length signatures through a typed slice-to-array branch, preserving
+pre/post-Gorgon signature behavior without a production `expect()` in crypto
+interop.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.

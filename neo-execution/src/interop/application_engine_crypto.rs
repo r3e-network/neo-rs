@@ -163,9 +163,8 @@ impl ApplicationEngine {
             }
             return Ok(false);
         }
-        let signature: &[u8; 64] = signature
-            .try_into()
-            .expect("signature length checked before conversion");
+        let signature = <&[u8; 64]>::try_from(signature)
+            .map_err(|_| CoreError::other("Invalid signature length"))?;
 
         if public_key.len() != 33 && public_key.len() != 65 {
             return Err(CoreError::other("Invalid public key length"));
