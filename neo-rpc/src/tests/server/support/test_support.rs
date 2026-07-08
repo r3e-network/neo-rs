@@ -73,7 +73,7 @@ impl SystemContext for FixtureContext {
 ///
 /// Beyond pool admission, the adapter performs the C#
 /// `NeoSystem.ContainsTransaction` pre-checks of
-/// `Blockchain.OnNewTransaction` (v3.10.0): a hash already in the
+/// `Blockchain.OnNewTransaction` (v3.10.1): a hash already in the
 /// memory pool reports `AlreadyInPool`, a hash already persisted in
 /// the ledger reports `AlreadyExists`. The blockchain service hands
 /// `MempoolLike::try_add` the same store-backed snapshot used for block
@@ -324,7 +324,7 @@ fn bft_address(validators: &[neo_crypto::ECPoint]) -> UInt160 {
 }
 
 /// C# `NeoSystem.CreateGenesisBlock(settings)` (verified against the
-/// in-tree v3.10.0 reference): version 0, zero previous/merkle hashes,
+/// in-tree v3.10.1 reference): version 0, zero previous/merkle hashes,
 /// the 2016-07-15T15:08:21Z timestamp, the Bitcoin-genesis nonce, and
 /// a `PUSH1` witness, with `NextConsensus` set to the BFT address of
 /// the standby validators.
@@ -400,7 +400,7 @@ fn seed_genesis_state(node: &Node) {
         StorageItem::from_bytes(signed_le(POLICY_DEFAULT_STORAGE_PRICE)),
     );
 
-    // --- NeoToken.Initialize (C# v3.10.0) ---
+    // --- NeoToken.Initialize (C# v3.10.1) ---
     // Committee cache: Array of Struct[pubkey, votes = 0] in standby
     // order (C# `CachedCommittee` of `StandbyCommittee.Select(p => (p, 0))`).
     let committee_items: Vec<StackItem> = settings

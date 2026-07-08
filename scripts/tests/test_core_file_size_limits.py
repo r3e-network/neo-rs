@@ -22,7 +22,7 @@ class CoreFileSizeLimitTests(unittest.TestCase):
                 REPO_ROOT / "neo-config" / "src" / "protocol.rs": 580,
                 REPO_ROOT / "neo-config" / "src" / "protocol" / "tests.rs": 220,
             },
-            "ProtocolSettings should keep Neo N3 v3.10.0 configuration runtime separate from pinned protocol regression tests",
+            "ProtocolSettings should keep Neo N3 v3.10.1 configuration runtime separate from pinned protocol regression tests",
         )
 
     def test_crypto_signature_keeps_curve_runtime_and_signature_regressions_split(self):

@@ -2,7 +2,7 @@
 
 > **Version**: 0.7.0  
 > **Last Updated**: 2026-01-28  
-> **Target Compatibility**: Neo N3 v3.10.0
+> **Target Compatibility**: Neo N3 v3.10.1
 
 Comprehensive deployment documentation for the Neo N3 Rust node implementation.
 

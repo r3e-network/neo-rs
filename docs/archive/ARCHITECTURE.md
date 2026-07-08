@@ -2,7 +2,7 @@
 
 > **Version**: 0.7.2  
 > **Last Updated**: 2026-06-08  
-> **Target Compatibility**: Neo N3 v3.9.2
+> **Target Compatibility**: Neo N3 v3.10.1
 
 This document describes the architecture of the neo-rs project, a professional Rust implementation of the Neo N3 blockchain node.
 

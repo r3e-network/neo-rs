@@ -1,4 +1,4 @@
-//! Neo v3.10.0 `Neo.Wallets.Helper.CalculateNetworkFee` parity path.
+//! Neo v3.10.1 `Neo.Wallets.Helper.CalculateNetworkFee` parity path.
 
 use std::sync::Arc;
 

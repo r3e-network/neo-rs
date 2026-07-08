@@ -1,4 +1,4 @@
-//! Neo v3.10.0 `Neo.Wallets.Wallet.MakeTransaction` parity paths.
+//! Neo v3.10.1 `Neo.Wallets.Wallet.MakeTransaction` parity paths.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

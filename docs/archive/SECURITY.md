@@ -2,7 +2,7 @@
 
 > **Version**: 0.7.0  
 > **Last Updated**: 2026-01-28  
-> **Target Compatibility**: Neo N3 v3.10.0
+> **Target Compatibility**: Neo N3 v3.10.1
 
 This document provides comprehensive security information for the neo-rs project, a professional Rust implementation of the Neo N3 blockchain node.
 

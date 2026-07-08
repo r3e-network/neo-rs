@@ -1,6 +1,6 @@
 # Code Review: Node Service Layer & Application Layer
 
-**Project**: neo-rs (Neo N3 v3.10.0)  
+**Project**: neo-rs (Neo N3 v3.10.1)
 **Date**: 2026-07-03  
 **Scope**: 8 crates — node service layer + application layer  
 **Review type**: READ-ONLY architecture, protocol, error handling, performance, security
