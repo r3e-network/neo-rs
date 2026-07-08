@@ -56,7 +56,7 @@ impl ConsensusContext {
             .filter(|(_, reporters)| reporters.len() > f)
             .map(|(hash, _)| *hash)
             .collect();
-        hashes.sort_by(|a, b| a.as_bytes().cmp(&b.as_bytes()));
+        hashes.sort_by_key(|hash| hash.as_bytes());
         hashes
     }
 

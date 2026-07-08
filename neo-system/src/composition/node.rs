@@ -23,11 +23,14 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use async_trait::async_trait;
-use neo_blockchain::{BlockchainHandle, HeaderCache};
+use neo_blockchain::{
+    BlockchainHandle, HeaderCache, LedgerProviderFactory, StorageLedgerProviderFactory,
+    TransactionStateProvider, TxProvider,
+};
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
-use neo_native_contracts::{LedgerContract, PolicyContract};
+use neo_native_contracts::PolicyContract;
 use neo_network::NetworkHandle;
 use neo_payloads::{Transaction, VerifyResult};
 use neo_runtime::{ConfigProvider, StoreProvider, TxAdmission};
@@ -324,12 +327,12 @@ impl TxRouterHandle {
         let hash = tx
             .try_hash()
             .map_err(|_| CoreError::other(format!("{:?}", VerifyResult::Invalid)))?;
-        let ledger = LedgerContract::new();
+        let ledger = StorageLedgerProviderFactory.provider(snapshot);
         // Fail closed on a storage error: a transient lookup failure must NOT be
         // treated as "not present" (which would admit and relay a possibly-
         // duplicate transaction). Propagate the error so admission is blocked.
         if ledger
-            .contains_transaction(snapshot, &hash)
+            .contains_transaction(&hash)
             .map_err(|error| CoreError::other(format!("ledger contains_transaction: {error}")))?
         {
             return Err(CoreError::other(format!(
@@ -342,7 +345,7 @@ impl TxRouterHandle {
             .map_err(|error| CoreError::other(format!("MaxTraceableBlocks: {error}")))?;
         let signers: Vec<_> = tx.signers().iter().map(|s| s.account).collect();
         if ledger
-            .contains_conflict_hash(snapshot, &hash, &signers, max_traceable_blocks)
+            .contains_conflict_hash(&hash, &signers, max_traceable_blocks)
             .map_err(|error| CoreError::other(format!("ledger contains_conflict_hash: {error}")))?
         {
             return Err(CoreError::other(format!(

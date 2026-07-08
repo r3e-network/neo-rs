@@ -12,6 +12,24 @@ fn builder_returns_node_builder() {
     let _: NodeBuilder = Node::builder();
 }
 
+#[test]
+fn tx_admission_uses_ledger_provider_boundary() {
+    let source = include_str!("../../composition/node.rs");
+    let start = source
+        .find("pub fn try_enqueue_preverify")
+        .expect("try_enqueue_preverify exists");
+    let body = &source[start..];
+
+    assert!(
+        body.contains("StorageLedgerProviderFactory"),
+        "composition-root tx admission must read ledger records through the provider factory"
+    );
+    assert!(
+        !body.contains("LedgerContract::new()"),
+        "composition-root tx admission must not construct native LedgerContract directly"
+    );
+}
+
 #[tokio::test]
 async fn cancellation_token_clone_is_independent() {
     let storage = memory_store();

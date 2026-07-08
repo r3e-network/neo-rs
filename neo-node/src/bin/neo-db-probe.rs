@@ -10,6 +10,9 @@ use std::{
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use clap::{Parser, ValueEnum};
+use neo_blockchain::{
+    BlockProvider, LedgerProviderFactory, StorageLedgerProviderFactory, TransactionStateProvider,
+};
 use neo_config::ProtocolSettings;
 use neo_execution::{ApplicationEngine, ContractState, Diagnostic, ExecutionContextState};
 use neo_io::Serializable;
@@ -833,34 +836,17 @@ fn replay_transaction(
     );
 
     let store_cache = open_store_cache(storage_provider, db_path)?;
-    let ledger = neo_native_contracts::LedgerContract::new();
     let snapshot = store_cache.data_cache();
+    let ledger = StorageLedgerProviderFactory.provider(snapshot);
     let tx_state = ledger
-        .get_transaction_state(snapshot, &tx_hash)?
+        .transaction_state_by_hash(&tx_hash)?
         .ok_or_else(|| anyhow!("transaction {tx_hash} was not found in Ledger storage"))?;
     let block_index = tx_state.block_index;
-    let block_hash = ledger
-        .get_block_hash(snapshot, block_index)?
-        .ok_or_else(|| anyhow!("block hash for height {block_index} was not found"))?;
-    let trimmed = ledger
-        .get_trimmed_block(snapshot, &block_hash)?
-        .ok_or_else(|| anyhow!("trimmed block {block_hash} was not found"))?;
-
-    let mut transactions = Vec::with_capacity(trimmed.hashes.len());
-    for hash in &trimmed.hashes {
-        let state = ledger
-            .get_transaction_state(snapshot, hash)?
-            .ok_or_else(|| anyhow!("transaction state {hash} referenced by block is missing"))?;
-        let transaction = state
-            .transaction
-            .ok_or_else(|| anyhow!("transaction state {hash} is a conflict stub"))?;
-        transactions.push(transaction);
-    }
-
-    let block = Arc::new(Block {
-        header: trimmed.header,
-        transactions,
-    });
+    let block = Arc::new(
+        ledger
+            .block_by_index(block_index)?
+            .ok_or_else(|| anyhow!("block for height {block_index} was not found"))?,
+    );
     let transaction = block
         .transactions
         .iter()

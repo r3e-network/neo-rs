@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use neo_blockchain::{
+    LedgerProviderFactory, StorageLedgerProviderFactory, TransactionStateProvider, TxProvider,
+};
 use neo_config::ProtocolSettings;
 use neo_consensus::messages::{ConsensusPayload, PrepareRequestMessage};
 use neo_consensus::{ChangeViewReason, ConsensusMessageType, ValidatorInfo};
@@ -8,7 +11,7 @@ use neo_crypto::ECPoint;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::{Serializable, serializable::helper::SerializeHelper};
 use neo_mempool::{MemoryPool, PoolItem, verify_transaction_with_native_provider};
-use neo_native_contracts::{LedgerContract, PolicyContract};
+use neo_native_contracts::PolicyContract;
 use neo_payloads::{Transaction, TransactionAttribute, Witness};
 use neo_primitives::{UInt160, UInt256, VerifyResult};
 use neo_storage::persistence::DataCache;
@@ -382,9 +385,9 @@ pub(super) fn prepare_request_passes_ledger_guards(
         Err(_) => return true,
     };
 
-    let ledger = LedgerContract::new();
+    let ledger = StorageLedgerProviderFactory.provider(snapshot);
     for hash in &request.transaction_hashes {
-        match ledger.contains_transaction(snapshot, hash) {
+        match ledger.contains_transaction(hash) {
             Ok(true) => {
                 warn!(target: "neo", %hash, "rejected PrepareRequest: transaction already exists on-chain");
                 return false;
@@ -417,7 +420,7 @@ pub(super) fn prepare_request_passes_ledger_guards(
             .iter()
             .map(|signer| signer.account)
             .collect();
-        match ledger.contains_conflict_hash(snapshot, hash, &signers, max_traceable_blocks) {
+        match ledger.contains_conflict_hash(hash, &signers, max_traceable_blocks) {
             Ok(true) => {
                 warn!(target: "neo", %hash, "rejected PrepareRequest: transaction has on-chain conflict");
                 return false;

@@ -107,6 +107,31 @@ fn validators_are_sorted_by_pubkey() {
 }
 
 #[test]
+fn consensus_ledger_reads_use_provider_boundaries() {
+    let sources = [
+        (
+            "consensus driver",
+            include_str!("../../consensus/driver.rs"),
+        ),
+        (
+            "consensus proposal",
+            include_str!("../../consensus/proposal.rs"),
+        ),
+    ];
+
+    for (name, source) in sources {
+        assert!(
+            source.contains("StorageLedgerProviderFactory"),
+            "{name} must read ledger records through the provider factory"
+        );
+        assert!(
+            !source.contains("LedgerContract::new()"),
+            "{name} must not construct native LedgerContract directly"
+        );
+    }
+}
+
+#[test]
 fn prepare_request_ledger_guard_rejects_already_persisted_transaction_hash() {
     neo_native_contracts::install();
     let settings = ProtocolSettings::default();
