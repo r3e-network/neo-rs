@@ -69,7 +69,7 @@ impl JsonSerializer {
     /// [`encode_value_csharp_compatible`]: Self::encode_value_csharp_compatible
     pub fn serialize_to_byte_array(item: &StackItem, max_size: u32) -> CoreResult<Vec<u8>> {
         let json = Self::serialize_to_json(item)?;
-        let payload = Self::encode_value_csharp_compatible(&json);
+        let payload = Self::try_encode_value_csharp_compatible(&json)?;
         if payload.len() > max_size as usize {
             return Err(CoreError::other("JSON output too large"));
         }
@@ -87,11 +87,17 @@ impl JsonSerializer {
     /// Use this anywhere a manifest, native ABI member, or other persisted JSON
     /// payload must match C# Neo v3.x.
     pub fn encode_value_csharp_compatible(value: &JsonValue) -> Vec<u8> {
-        // serde_json::Value serialization writes only to the in-memory buffer and
-        // cannot fail, so the (impossible) error is surfaced as a panic guarding
-        // the invariant rather than silently corrupting output.
+        match Self::try_encode_value_csharp_compatible(value) {
+            Ok(bytes) => bytes,
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// Fallible variant of [`Self::encode_value_csharp_compatible`] for callers
+    /// that already return a typed error.
+    pub fn try_encode_value_csharp_compatible(value: &JsonValue) -> CoreResult<Vec<u8>> {
         crate::json::escape::to_vec(value, false)
-            .expect("serde_json::Value serializes to an in-memory buffer infallibly")
+            .map_err(|err| CoreError::other(format!("JSON serialization failed: {err}")))
     }
 
     /// Serializes a stack item to a [`JsonValue`].

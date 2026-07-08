@@ -242,6 +242,10 @@ High-signal clusters found during the first pass:
 - `neo-io/src/serializable/mod.rs` keeps the codec facade and module map,
   `serializable/traits.rs` owns the `Serializable` and extension traits, and
   `serializable/macros.rs` owns the declarative `impl_serializable!` helper.
+- `neo-serialization/src/codec/json_serializer.rs` owns NeoVM stack-item JSON
+  projection. C#-compatible JSON escaping now has a fallible typed-error path
+  for `serialize_to_byte_array`, while the legacy byte-returning helper keeps a
+  non-panicking compatibility wrapper.
 - `neo-vm/src/script_builder/mod.rs` is being decomposed into focused VM script
   construction modules. `script_builder/error.rs` owns the typed builder error,
   `script_builder/invocation.rs` owns single-signature invocation script
