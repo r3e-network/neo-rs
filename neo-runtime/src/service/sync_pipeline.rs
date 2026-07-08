@@ -422,15 +422,44 @@ fn decode_checkpoint(
         )));
     }
 
-    let height = u32::from_be_bytes(bytes[cursor..cursor + 4].try_into().expect("slice length"));
-    cursor += 4;
-    let processed_blocks =
-        u64::from_be_bytes(bytes[cursor..cursor + 8].try_into().expect("slice length"));
-    cursor += 8;
-    let changed_bytes =
-        u64::from_be_bytes(bytes[cursor..cursor + 8].try_into().expect("slice length"));
+    let height = read_checkpoint_u32(bytes, &mut cursor)?;
+    let processed_blocks = read_checkpoint_u64(bytes, &mut cursor)?;
+    let changed_bytes = read_checkpoint_u64(bytes, &mut cursor)?;
 
     Ok(SyncStageCheckpoint::new(stage, height).with_counters(processed_blocks, changed_bytes))
+}
+
+fn read_checkpoint_u32(bytes: &[u8], cursor: &mut usize) -> ServiceResult<u32> {
+    let slice = take_checkpoint_bytes(bytes, cursor, 4)?;
+    let mut out = [0u8; 4];
+    out.copy_from_slice(slice);
+    Ok(u32::from_be_bytes(out))
+}
+
+fn read_checkpoint_u64(bytes: &[u8], cursor: &mut usize) -> ServiceResult<u64> {
+    let slice = take_checkpoint_bytes(bytes, cursor, 8)?;
+    let mut out = [0u8; 8];
+    out.copy_from_slice(slice);
+    Ok(u64::from_be_bytes(out))
+}
+
+fn take_checkpoint_bytes<'a>(
+    bytes: &'a [u8],
+    cursor: &mut usize,
+    len: usize,
+) -> ServiceResult<&'a [u8]> {
+    let start = *cursor;
+    let end = start.checked_add(len).ok_or_else(|| {
+        ServiceError::invalid_state("sync checkpoint cursor overflow while decoding payload")
+    })?;
+    let slice = bytes.get(start..end).ok_or_else(|| {
+        ServiceError::invalid_state(format!(
+            "truncated sync checkpoint payload: need {len} bytes at offset {start}, got {} bytes",
+            bytes.len()
+        ))
+    })?;
+    *cursor = end;
+    Ok(slice)
 }
 
 fn storage_error(context: &'static str, err: impl std::fmt::Display) -> ServiceError {

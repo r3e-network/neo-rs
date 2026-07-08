@@ -637,6 +637,9 @@ The existing infallible preset constructors stay API-compatible and are guarded
 by tests that assert the built-in committee literals parse to 21 public keys.
 `neo-node/src/node/config.rs` uses those fallible constructors while deriving
 daemon protocol settings so malformed embedded presets become startup errors.
+`neo-runtime/src/service/sync_pipeline.rs` decodes staged-sync checkpoint
+payloads through checked fixed-width readers instead of slice-length `expect`
+calls, preserving checkpoint bytes while keeping corrupted store data typed.
 
 Recommended next patches, in order:
 
