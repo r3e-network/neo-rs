@@ -11,6 +11,7 @@
 //! ## Contents
 //!
 //! - `blocks`: Block-index RPC endpoint handlers.
+//! - `ledger_provider`: Ledger read seam for indexer endpoint status.
 //! - `notifications`: Notification-index RPC endpoint handlers.
 //! - `params`: RPC endpoint parameter records.
 //! - `responses`: RPC response construction helpers.
@@ -22,6 +23,7 @@
 use crate::server::rpc_server::RpcHandler;
 
 mod blocks;
+mod ledger_provider;
 mod notifications;
 mod params;
 mod responses;

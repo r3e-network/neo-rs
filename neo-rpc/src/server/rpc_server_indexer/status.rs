@@ -1,8 +1,10 @@
-use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use neo_indexer::{IndexerError, IndexerService, IndexerStatus};
 use serde_json::Value;
 
 use super::RpcServerIndexer;
+use super::ledger_provider::{
+    IndexerLedgerProvider, IndexerLedgerProviderFactory, NativeIndexerLedgerProviderFactory,
+};
 use super::params::NoParamsRequest;
 use super::responses::ApplicationLogsStatus;
 use crate::application_logs::ApplicationLogsService;
@@ -35,10 +37,9 @@ impl RpcServerIndexer {
 
     fn ledger_height(server: &RpcServer) -> Option<u32> {
         let store = server.system().store_cache();
-        StorageLedgerProviderFactory
-            .provider(store.data_cache())
-            .current_index()
-            .ok()
+        NativeIndexerLedgerProviderFactory
+            .provider()
+            .ledger_height(store.data_cache())
     }
 
     fn application_logs_status(server: &RpcServer) -> ApplicationLogsStatus {

@@ -12,20 +12,33 @@ use super::super::RpcServerIndexer;
 use super::support::{block, find_handler};
 
 #[test]
-fn indexer_status_ledger_height_uses_ledger_provider_boundary() {
-    let source = include_str!("../../../server/rpc_server_indexer/status.rs");
-    let height_start = source
+fn indexer_status_ledger_height_uses_indexer_provider_boundary() {
+    let status = include_str!("../../../server/rpc_server_indexer/status.rs");
+    let height_start = status
         .find("fn ledger_height")
         .expect("ledger_height exists");
-    let height_reader = &source[height_start..];
+    let height_reader = &status[height_start..];
 
     assert!(
-        height_reader.contains("StorageLedgerProviderFactory"),
-        "indexer status ledger height reads must route through the ledger provider factory"
+        height_reader.contains("NativeIndexerLedgerProviderFactory"),
+        "indexer status ledger height reads must route through the local indexer provider factory"
+    );
+    assert!(
+        !height_reader.contains("StorageLedgerProviderFactory"),
+        "indexer status response assembly should not construct raw ledger providers directly"
     );
     assert!(
         !height_reader.contains("LedgerContract::new()"),
         "indexer status must not construct native LedgerContract directly"
+    );
+
+    let provider = include_str!("../../../server/rpc_server_indexer/ledger_provider.rs");
+    assert!(provider.contains("trait IndexerLedgerProvider"));
+    assert!(provider.contains("trait IndexerLedgerProviderFactory"));
+    assert!(provider.contains("struct NativeIndexerLedgerProviderFactory"));
+    assert!(
+        provider.contains("StorageLedgerProviderFactory"),
+        "indexer ledger provider should own the raw ledger provider boundary"
     );
 }
 
