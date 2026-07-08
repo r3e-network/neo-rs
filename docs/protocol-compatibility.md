@@ -37,7 +37,7 @@ maps the `v3.10.0...v3.10.1` delta to the following Rust surfaces:
 | Upstream change | neo-rs coverage |
 |---|---|
 | `VersionPrefix` / release metadata | README, changelog, and protocol docs identify Neo v3.10.1 as the active C# parity target. |
-| `HF_Huyao` hardfork enum | `neo-primitives::Hardfork::HfHuyao`, `neo-config::HardforkManager`, and config tests define Huyao while leaving it unscheduled in built-in MainNet/TestNet presets. |
+| `HF_Huyao` hardfork enum | `neo-primitives::Hardfork::HfHuyao`, `neo-config::HardforkManager`, and config tests define Huyao. The C#-compatible loader backfills an empty `Hardforks` object with every known hardfork at height 0; built-in MainNet/TestNet presets remain explicit schedules through `HF_Faun` unless a loaded network config schedules later forks. |
 | `ApplicationEngine.AddFee(gas, applyFactor)` factorization | `neo-execution` fee paths validate negative fees before whitelist bypass and keep datoshi-vs-picoGAS conversions explicit. |
 | `StdLib.Itoa` invariant-culture formatting | `neo-native-contracts::StdLib` uses deterministic base-10/base-16 integer formatting with regression tests independent of host locale. |
 | NeoVM v3.10.1 reference-counter cycle fixes | `neo-vm` matches the recursive C# `ReferenceCounter` model, including `CLEARITEMS` cycle/underflow behavior. |
@@ -68,7 +68,7 @@ All eleven contracts are registered in the canonical catalog in C# ID order. Som
 
 ## Hardforks
 
-Neo N3 ships protocol upgrades as named hardforks (named after mythological creatures, in alphabetical order) that activate at configured block heights. The node defines the full enum and gates behavior accordingly. Activation heights for MainNet and TestNet match the C# v3.10.1 configuration; `HF_Gorgon` and `HF_Huyao` are defined in the enum but are not scheduled in the v3.10.1 MainNet/TestNet configs.
+Neo N3 ships protocol upgrades as named hardforks (named after mythological creatures, in alphabetical order) that activate at configured block heights. The node defines the full enum and gates behavior accordingly. The C# v3.10.1 `ProtocolSettings` loader backfills omitted leading hardforks at height 0, so `Hardforks: {}` enables every known hardfork including `HF_Gorgon` and `HF_Huyao`. The built-in neo-rs MainNet/TestNet presets are explicit operational schedules and keep later forks disabled until a loaded network config schedules them.
 
 | Hardfork | Index | What it changes (as gated in this node) |
 |---|---:|---|
@@ -78,15 +78,15 @@ Neo N3 ships protocol upgrades as named hardforks (named after mythological crea
 | HF_Domovoi | 3 | Adjusts executing-contract resolution in contract calls |
 | HF_Echidna | 4 | Broad upgrade: additional `CryptoLib`/`StdLib`/`NeoToken`/`PolicyContract` methods, Notary-related policy changes |
 | HF_Faun | 5 | `PolicyContract` extensions (whitelist fee contracts, fund recovery, value-scaling changes) |
-| HF_Gorgon | 6 | VM jump-table changes and `CryptoLib` method deprecation/replacement; defined but unscheduled in v3.10.1 configs |
-| HF_Huyao | 7 | Neo v3.10.1 protocol refinements; defined but unscheduled in built-in MainNet/TestNet configs |
+| HF_Gorgon | 6 | VM jump-table changes and `CryptoLib` method deprecation/replacement; active when the loaded hardfork schedule enables it |
+| HF_Huyao | 7 | Neo v3.10.1 protocol refinements; active when the loaded hardfork schedule enables it |
 
 ```mermaid
 flowchart LR
     A[Aspidochelone] --> B[Basilisk] --> C[Cockatrice] --> D[Domovoi] --> E[Echidna] --> F[Faun] --> G[Gorgon] --> H[Huyao]
 ```
 
-Activation heights (from the node's hardfork manager):
+Activation heights for the built-in operational presets (from the node's hardfork manager):
 
 | Hardfork | MainNet height | TestNet height |
 |---|---:|---:|
@@ -96,10 +96,10 @@ Activation heights (from the node's hardfork manager):
 | HF_Domovoi | 5,570,000 | 4,144,000 |
 | HF_Echidna | 7,300,000 | 5,870,000 |
 | HF_Faun | 8,800,000 | 12,960,000 |
-| HF_Gorgon | not scheduled | not scheduled |
-| HF_Huyao | not scheduled | not scheduled |
+| HF_Gorgon | not scheduled by preset | not scheduled by preset |
+| HF_Huyao | not scheduled by preset | not scheduled by preset |
 
-A hardfork is enabled at a given block when the block index is greater than or equal to its configured height; an unconfigured hardfork is treated as disabled. Because consensus-affecting code (including the VM jump table) is hardfork-gated, blocks before a hardfork replay with the pre-hardfork rules and blocks after it replay with the post-hardfork rules.
+A hardfork is enabled at a given block when the block index is greater than or equal to its configured height; an unconfigured hardfork is treated as disabled. When a loaded config contains `Hardforks: {}`, the C# v3.10.1 compatibility rule inserts all known hardforks at height 0. Because consensus-affecting code (including the VM jump table) is hardfork-gated, blocks before a hardfork replay with the pre-hardfork rules and blocks after it replay with the post-hardfork rules.
 
 ## What's Supported
 

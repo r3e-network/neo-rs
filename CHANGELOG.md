@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Changed
-- **Neo N3 v3.10.1 compatibility target.** Added `HF_Huyao` to the canonical hardfork enum and updated the built-in protocol compatibility documentation. MainNet/TestNet presets continue to schedule hardforks through `HF_Faun`; `HF_Gorgon` and `HF_Huyao` are defined but unscheduled unless explicitly configured.
+- **Neo N3 v3.10.1 compatibility target.** Added `HF_Huyao` to the canonical hardfork enum and updated the protocol compatibility documentation. The C#-compatible config loader now has regression coverage for the v3.10.1 `Hardforks: {}` rule, which enables every known hardfork at height 0; built-in MainNet/TestNet presets remain explicit schedules through `HF_Faun` until a loaded network config schedules later forks.
 
 ### Fixed (Neo N3 v3.10.1 consensus / protocol parity)
 - **ApplicationEngine fee validation.** Negative `AddFee` inputs now fault before the whitelist fee bypass, matching C# v3.10.1 ordering and preventing a whitelisted call context from silently ignoring an invalid negative fee.

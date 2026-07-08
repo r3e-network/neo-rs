@@ -30,8 +30,9 @@ fn test_mainnet_hardforks() {
         manager.get_hardforks().get(&Hardfork::HfFaun),
         Some(&8_800_000)
     );
-    // HfGorgon and HfHuyao are defined in Neo v3.10.1 but not scheduled in
-    // MainNet config.
+    // Built-in MainNet scheduling is explicit through Faun. C# loader defaults
+    // (`Hardforks: {}`) enable every known hardfork at height 0; that behavior
+    // is covered by ProtocolSettings tests, not this operational preset.
     assert!(!manager.is_enabled(Hardfork::HfGorgon, u32::MAX));
     assert!(!manager.is_enabled(Hardfork::HfHuyao, u32::MAX));
 }
@@ -50,8 +51,9 @@ fn test_testnet_hardforks() {
         manager.get_hardforks().get(&Hardfork::HfFaun),
         Some(&12_960_000)
     );
-    // HfGorgon and HfHuyao are defined in Neo v3.10.1 but not scheduled in
-    // TestNet config.
+    // Built-in TestNet scheduling is explicit through Faun. C# loader defaults
+    // (`Hardforks: {}`) enable every known hardfork at height 0; that behavior
+    // is covered by ProtocolSettings tests, not this operational preset.
     assert!(!manager.is_enabled(Hardfork::HfGorgon, u32::MAX));
     assert!(!manager.is_enabled(Hardfork::HfHuyao, u32::MAX));
 }

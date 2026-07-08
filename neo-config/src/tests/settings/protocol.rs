@@ -51,6 +51,24 @@ fn load_missing_protocol_fields_uses_csharp_default_not_mainnet() {
 }
 
 #[test]
+fn load_empty_hardforks_object_matches_v3101_default_hardforks() {
+    let json = br#"{ "ProtocolConfiguration": { "Hardforks": {} } }"#;
+    let mut stream = &json[..];
+    let settings = ProtocolSettings::load_from_stream(&mut stream).unwrap();
+
+    assert_eq!(settings.hardforks.len(), HardforkManager::all().len());
+    for hardfork in HardforkManager::all() {
+        assert_eq!(
+            settings.hardforks.get(&hardfork),
+            Some(&0),
+            "{hardfork:?} should be enabled at genesis for an empty v3.10.1 Hardforks object"
+        );
+    }
+    assert!(settings.is_hardfork_enabled(Hardfork::HfGorgon, 0));
+    assert!(settings.is_hardfork_enabled(Hardfork::HfHuyao, 0));
+}
+
+#[test]
 fn load_mainnet_json_matches_neo_node_v3101_protocol_configuration() {
     let json = br#"{
         "ProtocolConfiguration": {
@@ -184,6 +202,10 @@ fn mainnet_preset_matches_neo_n3_v3101_protocol_limits() {
     assert_eq!(settings.network, constants::MAINNET_MAGIC);
     assert_eq!(settings.max_transactions_per_block, 200);
     assert_eq!(settings.hardforks.get(&Hardfork::HfFaun), Some(&8_800_000));
+    // The production preset follows the explicit MainNet schedule embedded in
+    // neo-rs. Unlike C# ProtocolSettings.Default / `Hardforks: {}`, omitted
+    // trailing hardforks are disabled until a loaded network config schedules
+    // them.
     assert!(!settings.hardforks.contains_key(&Hardfork::HfGorgon));
     assert!(!settings.hardforks.contains_key(&Hardfork::HfHuyao));
 }
@@ -195,6 +217,8 @@ fn testnet_preset_matches_neo_n3_v3101_protocol_limits() {
     assert_eq!(settings.network, constants::TESTNET_MAGIC);
     assert_eq!(settings.max_transactions_per_block, 5_000);
     assert_eq!(settings.hardforks.get(&Hardfork::HfFaun), Some(&12_960_000));
+    // See the MainNet test above: explicit network presets leave trailing
+    // hardforks unscheduled unless the loaded config declares them.
     assert!(!settings.hardforks.contains_key(&Hardfork::HfGorgon));
     assert!(!settings.hardforks.contains_key(&Hardfork::HfHuyao));
 }

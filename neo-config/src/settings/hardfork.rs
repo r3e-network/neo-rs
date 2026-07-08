@@ -72,8 +72,10 @@ impl HardforkManager {
         hardforks.insert(Hardfork::HfDomovoi, 5570000);
         hardforks.insert(Hardfork::HfEchidna, 7300000);
         hardforks.insert(Hardfork::HfFaun, 8800000);
-        // HfGorgon and HfHuyao are defined in the Hardfork enum but are not
-        // scheduled in Neo v3.10.1 MainNet config.
+        // The built-in MainNet preset is an explicit operational schedule
+        // through Faun. Loader defaults such as `Hardforks: {}` are handled by
+        // ProtocolSettings::ensure_omitted_hardforks and enable all known
+        // hardforks at height 0, matching C# v3.10.1.
         Self { hardforks }
     }
 
@@ -86,8 +88,10 @@ impl HardforkManager {
         hardforks.insert(Hardfork::HfDomovoi, 4144000);
         hardforks.insert(Hardfork::HfEchidna, 5870000);
         hardforks.insert(Hardfork::HfFaun, 12960000);
-        // HfGorgon and HfHuyao are defined in the Hardfork enum but are not
-        // scheduled in Neo v3.10.1 TestNet config.
+        // The built-in TestNet preset is an explicit operational schedule
+        // through Faun. Loader defaults such as `Hardforks: {}` are handled by
+        // ProtocolSettings::ensure_omitted_hardforks and enable all known
+        // hardforks at height 0, matching C# v3.10.1.
         Self { hardforks }
     }
 
