@@ -84,7 +84,7 @@ fn seed_blocked_request_time(cache: &DataCache, account: &UInt160, request_time_
     );
 }
 
-/// C# v3.10.0 marks `recoverFund` as `RequiredCallFlags = CallFlags.All`.
+/// C# v3.10.1 marks `recoverFund` as `RequiredCallFlags = CallFlags.All`.
 /// `States|AllowNotify` is enough for storage writes and Policy's own
 /// notification, but it must still fault before dispatch because the method's
 /// descriptor requires `AllowCall` for the nested NEP-17 calls.

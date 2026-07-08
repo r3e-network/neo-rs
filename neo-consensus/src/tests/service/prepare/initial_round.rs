@@ -156,7 +156,7 @@ async fn primary_prepare_request_timestamp_is_after_previous_header() {
     assert_eq!(
         msg.timestamp,
         previous_timestamp + 1,
-        "C# v3.10.0 clamps PrepareRequest timestamp to max(now, PrevHeader.Timestamp + 1)"
+        "C# v3.10.1 clamps PrepareRequest timestamp to max(now, PrevHeader.Timestamp + 1)"
     );
     assert_eq!(service.context().proposed_timestamp, msg.timestamp);
 }

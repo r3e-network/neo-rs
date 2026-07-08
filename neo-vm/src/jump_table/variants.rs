@@ -38,12 +38,12 @@ impl JumpTable {
     /// `ApplicationEngine.ComposeNotGorgonJumpTable` = the default table with
     /// `HASKEY`/`PICKITEM`/`SETITEM`/`REMOVE` reverted to their pre-neo-vm#543
     /// handlers. `ApplicationEngine.Create` selects this table when `HF_Echidna`
-    /// is active but `HF_Gorgon` is not — which is the v3.10.0 mainnet/testnet
+    /// is active but `HF_Gorgon` is not — which is the v3.10.1 mainnet/testnet
     /// case, since `HF_Gorgon` is unscheduled there.
     ///
     /// SHL/SHR are NOT overridden here: they carry no `HF_Gorgon` split, so the
     /// default handler applies. (Their behavior IS a flat Neo.VM 3.9.0→3.10.0
-    /// change — 3.10.0 always pops + integer-coerces the value even on a zero
+    /// change — v3.10.1 always pops + integer-coerces the value even on a zero
     /// shift — but that is a VM-version change, not a hardfork gate; see the
     /// `shift` handler in `numeric.rs`.)
     pub fn not_gorgon() -> Self {
@@ -59,7 +59,7 @@ impl JumpTable {
             .clone()
     }
 
-    /// The pre-`HF_Echidna` jump table. C# v3.10.0 overrides only SUBSTR with
+    /// The pre-`HF_Echidna` jump table. C# v3.10.1 overrides only SUBSTR with
     /// `ApplicationEngine.VulnerableSubStr`; the memory-unsafe distinction is
     /// not reproducible here and is consensus-equivalent for valid results and
     /// faulting cases, so this table intentionally keeps every handler at the

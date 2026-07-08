@@ -71,7 +71,7 @@ impl CryptoLib {
             ));
         }
         if gorgon {
-            // V2 (HF_Gorgon..), dormant on v3.10.0 mainnet/testnet. C#
+            // V2 (HF_Gorgon..), dormant on v3.10.1 mainnet/testnet. C#
             // `VerifyWithECDsaV2` calls `Crypto.VerifySignature` with no catch, so
             // a bad signature length or an invalid public key both FAULT.
             if signature.len() != 64 {
@@ -92,7 +92,7 @@ impl CryptoLib {
             .map_err(|e| CoreError::invalid_operation(format!("CryptoLib::verifyWithECDsa: {e}")));
         }
 
-        // V0/V1 (genesis..HF_Gorgon), the ACTIVE v3.10.0 path. C#
+        // V0/V1 (genesis..HF_Gorgon), the ACTIVE v3.10.1 path. C#
         // `VerifyWithECDsaV0/V1` wrap `Crypto.VerifySignatureV0(msg, sig, pubkey,
         // curve, hash)` in `catch(ArgumentException)`. That overload decodes the
         // key via `ECPoint.DecodePoint` FIRST (as the argument to the inner

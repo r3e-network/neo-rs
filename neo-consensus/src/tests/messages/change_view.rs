@@ -84,7 +84,7 @@ async fn test_change_view_deserialize_too_short() {
 
 #[tokio::test]
 async fn test_change_view_non_rejection_reasons_have_no_trailing_array() {
-    // C# `DBFTPlugin` ChangeView.Serialize (v3.10.0) writes ONLY Timestamp(8) +
+    // C# `DBFTPlugin` ChangeView.Serialize (v3.10.1) writes ONLY Timestamp(8) +
     // Reason(1) for every reason EXCEPT TxRejectedByPolicy/TxInvalid, which append
     // a RejectedHashes UInt256[]. Verify the non-rejection reasons stay at 9 bytes
     // so the signed body matches C# peers exactly.
@@ -127,7 +127,7 @@ async fn test_change_view_timeout_no_trailing_array() {
 
 /// Byte-exact round-trip for a `TxRejectedByPolicy` ChangeView carrying 2 hashes.
 ///
-/// Asserts the C# v3.10.0 wire layout: Timestamp(u64 LE) + Reason(0x03) +
+/// Asserts the C# v3.10.1 wire layout: Timestamp(u64 LE) + Reason(0x03) +
 /// var-int count(0x02) + 32 raw bytes per UInt256 (stored order), then
 /// deserializes and asserts full equality.
 #[tokio::test]
@@ -154,7 +154,7 @@ async fn test_change_view_rejected_hashes_byte_layout_roundtrip() {
     expected.extend_from_slice(&h0.to_bytes()); // 32 raw bytes (stored order)
     expected.extend_from_slice(&h1.to_bytes()); // 32 raw bytes (stored order)
 
-    assert_eq!(data, expected, "byte-exact C# v3.10.0 layout");
+    assert_eq!(data, expected, "byte-exact C# v3.10.1 layout");
     // 8 + 1 + 1 (var-int) + 32 + 32 = 74 bytes.
     assert_eq!(data.len(), 74);
     assert_eq!(msg.size(), 74, "size() must match serialized length");

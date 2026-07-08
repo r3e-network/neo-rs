@@ -33,7 +33,7 @@ protocol_enum! {
         Expired = 10,
         /// The transaction's `ValidUntilBlock` is too far in the future (more
         /// than `MaxValidUntilBlockIncrement` ahead of the current height).
-        /// C# v3.10.0 `VerifyResult.NotYetValid`.
+        /// C# v3.10.1 `VerifyResult.NotYetValid`.
         NotYetValid = 11,
         /// The sender has insufficient funds.
         InsufficientFunds = 12,

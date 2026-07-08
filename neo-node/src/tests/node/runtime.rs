@@ -1019,7 +1019,7 @@ async fn remote_ledger_node_advertises_upstream_height_when_available() {
     drop(running.network);
 }
 
-/// Reproduces the v3.10.0 consistency testnet failure
+/// Reproduces the v3.10.1 consistency testnet failure
 /// (`Policy_getExecFeeFactor`: Python 30 vs local node 0).
 ///
 /// The live RPC `invokefunction(Policy.getExecFeeFactor)` path builds its
@@ -1088,7 +1088,7 @@ fn genesis_policy_init_visible_through_fresh_store_cache_after_commit() {
         Some(BigInt::from(30i64).to_signed_bytes_le()),
         "Policy ExecFeeFactor=30 must be visible through a fresh store_cache \
          after genesis persist + commit_to_store (the live RPC read path). \
-         This is the v3.10.0 Policy_getExecFeeFactor parity requirement."
+         This is the v3.10.1 Policy_getExecFeeFactor parity requirement."
     );
 }
 

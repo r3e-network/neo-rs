@@ -73,15 +73,15 @@ fn not_on_integer_preserves_boolean_negation() {
     assert!(!pop(&mut engine).as_bool().unwrap(), "NOT(5) => false");
 }
 
-/// Neo.VM **3.10.0** `Shl`/`Shr` unconditionally pop the value operand and
+/// Neo.VM **3.10.1** `Shl`/`Shr` unconditionally pop the value operand and
 /// `GetInteger()` it (`BigInteger integer = engine.Pop().GetInteger()`), with no
 /// `if (shift == 0) return;` guard (that guard existed in 3.9.0 and was removed —
 /// verified by decompiling both `Neo.VM.dll` versions). So a zero shift STILL
 /// reads the value: a non-integer operand FAULTS, and an integer-coercible operand
 /// is re-pushed as an Integer. Not hardfork-gated.
 #[test]
-fn shl_zero_shift_reads_and_coerces_value_like_csharp_v3100() {
-    // A zero shift over a Buffer FAULTS in 3.10.0 (GetInteger on a Buffer), unlike
+fn shl_zero_shift_reads_and_coerces_value_like_csharp_v3101() {
+    // A zero shift over a Buffer FAULTS in v3.10.1 (GetInteger on a Buffer), unlike
     // 3.9.0 which returned before reading the value.
     let mut engine = engine_with_stack(vec![
         StackItem::from_buffer(vec![0x07]),
@@ -89,7 +89,7 @@ fn shl_zero_shift_reads_and_coerces_value_like_csharp_v3100() {
     ]);
     assert!(
         shl(&mut engine, &instruction(OpCode::SHL)).is_err(),
-        "SHL by 0 over a Buffer must FAULT in v3.10.0 (value is always GetInteger'd)"
+        "SHL by 0 over a Buffer must FAULT in v3.10.1 (value is always GetInteger'd)"
     );
 
     // A zero shift over an integer is the identity, re-pushed as an Integer.

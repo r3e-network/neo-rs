@@ -277,7 +277,7 @@ impl Notary {
                     "Notary::setMaxNotValidBeforeDelta requires a uint value",
                 )
             })?;
-        // C# v3.10.0 bound: value must be <= GetMaxValidUntilBlockIncrement/2
+        // C# v3.10.1 bound: value must be <= GetMaxValidUntilBlockIncrement/2
         // and >= engine.ProtocolSettings.ValidatorsCount (was the constant
         // ProtocolSettings.Default.ValidatorsCount = 0). On a network whose
         // ValidatorsCount > 0 this now rejects small deltas the old check

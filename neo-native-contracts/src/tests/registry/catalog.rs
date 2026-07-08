@@ -79,7 +79,7 @@ fn standard_contract_handles_are_const_constructible() {
 }
 
 #[test]
-fn standard_contract_activation_policy_matches_neo_n3_v3100() {
+fn standard_contract_activation_policy_matches_neo_n3_v3101() {
     let contracts = standard_native_contracts();
     let contract = |name: &str| {
         contracts
@@ -95,7 +95,7 @@ fn standard_contract_activation_policy_matches_neo_n3_v3100() {
             name => assert_eq!(
                 native.active_in(),
                 None,
-                "{name} should be genesis-active in Neo N3 v3.10.0"
+                "{name} should be genesis-active in Neo N3 v3.10.1"
             ),
         }
     }

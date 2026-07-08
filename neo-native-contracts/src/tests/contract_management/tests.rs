@@ -307,7 +307,7 @@ fn get_contract_by_id_round_trips_through_the_id_index() {
 }
 
 #[test]
-fn get_contract_by_id_ignores_legacy_little_endian_index_like_csharp_v3100() {
+fn get_contract_by_id_ignores_legacy_little_endian_index_like_csharp_v3101() {
     // C# v3.10 uses StorageKey.Create(id, prefix, int), which appends the
     // contract id in big-endian form. A little-endian compatibility key is
     // not a valid v3.10 lookup path.

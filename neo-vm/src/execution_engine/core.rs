@@ -107,7 +107,7 @@ impl ExecutionEngine {
     /// Overrides the maximum number of instructions this engine may execute.
     ///
     /// The upstream `ExecutionEngineLimits::DEFAULT` carries a
-    /// `max_instructions = 1_000_000` field, but C# Neo (v3.10.0) has **no**
+    /// `max_instructions = 1_000_000` field, but C# Neo (v3.10.1) has **no**
     /// instruction-count cap on the execution path — bounding is done purely by
     /// gas (`ApplicationEngine` fee consumption) plus a wall-clock timeout on the
     /// RPC invoke path. Enforcing a 1M-instruction fault here would diverge from

@@ -366,7 +366,7 @@ pub(super) static POLICY_CONTRACT_METHOD_BINDINGS: LazyLock<
                 "recoverFund",
                 1 << 15,
                 false,
-                // C# v3.10.0 `PolicyContract.RecoverFund` requires CallFlags.All;
+                // C# v3.10.1 `PolicyContract.RecoverFund` requires CallFlags.All;
                 // the AllowCall bit gates the nested NEP-17 balanceOf/transfer
                 // calls before Policy dispatches.
                 CallFlags::ALL.bits(),

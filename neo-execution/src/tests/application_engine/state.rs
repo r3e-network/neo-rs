@@ -76,7 +76,7 @@ fn negative_fee_faults_before_whitelist_like_csharp_v3101() {
 }
 
 #[test]
-fn gorgon_selects_default_jump_table_like_csharp_v3100() {
+fn gorgon_selects_default_jump_table_like_csharp_v3101() {
     // C# `ApplicationEngine.Create`: `HF_Gorgon` enabled -> `DefaultJumpTable`.
     let mut settings = ProtocolSettings::default();
     settings.hardforks.clear();
@@ -97,7 +97,7 @@ fn gorgon_selects_default_jump_table_like_csharp_v3100() {
 }
 
 #[test]
-fn echidna_without_gorgon_selects_not_gorgon_table_like_csharp_v3100() {
+fn echidna_without_gorgon_selects_not_gorgon_table_like_csharp_v3101() {
     // C# `ApplicationEngine.Create`: `HF_Echidna` enabled but `HF_Gorgon` not ->
     // `NotGorgonJumpTable` = default with HASKEY/PICKITEM/SETITEM/REMOVE reverted
     // to their pre-neo-vm#543 handlers. SHL/SHR are unchanged from the default.
@@ -445,14 +445,14 @@ fn engine_with_settings_at_block(
 }
 
 #[test]
-fn interop_registry_matches_csharp_v3100_before_faun() {
+fn interop_registry_matches_csharp_v3101_before_faun() {
     let engine = engine_with_settings_at_block(ProtocolSettings::default(), 0);
 
     assert_eq!(registered_services(&engine), expected_base_services());
 }
 
 #[test]
-fn interop_registry_matches_csharp_v3100_from_faun() {
+fn interop_registry_matches_csharp_v3101_from_faun() {
     let mut settings = ProtocolSettings::default();
     for hardfork in Hardfork::all() {
         settings.hardforks.insert(hardfork, 0);
@@ -463,7 +463,7 @@ fn interop_registry_matches_csharp_v3100_from_faun() {
     assert_eq!(registered_services(&engine), expected_faun_services());
 }
 
-/// Consensus-parity: C# Neo (v3.10.0) has **no** instruction-count cap on the
+/// Consensus-parity: C# Neo (v3.10.1) has **no** instruction-count cap on the
 /// execution path — bounding is done purely by gas. neo-rs previously enforced
 /// a 1,000,000-instruction cap (from the upstream `ExecutionEngineLimits`
 /// default) that would FAULT a long, cheap-instruction script that C# HALTs,
@@ -471,7 +471,7 @@ fn interop_registry_matches_csharp_v3100_from_faun() {
 /// tight loop that executes well over 1,000,000 cheap opcodes and asserts the
 /// engine HALTs (does not FAULT) when given sufficient gas.
 #[test]
-fn long_cheap_loop_halts_without_instruction_cap_like_csharp_v3100() {
+fn long_cheap_loop_halts_without_instruction_cap_like_csharp_v3101() {
     // Loop body (3 instructions per iteration): DEC, DUP, JMPIF back to DEC.
     // With a counter of 400_000 that is 3 * 400_000 = 1_200_000 loop
     // instructions, plus the initial push and the trailing DROP/RET — safely

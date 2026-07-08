@@ -10,7 +10,7 @@ use super::wire::{append_uint256_array, uint256_array_encoded_len};
 
 /// `ChangeView` message sent when a validator wants to change the view.
 ///
-/// Wire format matches C# `DBFTPlugin` `ChangeView` (v3.10.0,
+/// Wire format matches C# `DBFTPlugin` `ChangeView` (v3.10.1,
 /// `DBFTPlugin/Messages/ChangeView.cs`): after the common consensus-message
 /// header, the body is `Timestamp (u64 LE) + Reason (u8)`, followed —
 /// CONDITIONALLY — by `RejectedHashes` (a `UInt256[]`: var-int count then 32 raw
@@ -20,7 +20,7 @@ use super::wire::{append_uint256_array, uint256_array_encoded_len};
 /// The `RejectedHashes` array is the SIGNED body for those two reasons, so it
 /// MUST be reproduced byte-for-byte or signature verification diverges from C#
 /// peers in both directions. (A prior revision incorrectly dropped this field on
-/// the belief that "no C# dBFT version carries it" — v3.10.0 does.) The array
+/// the belief that "no C# dBFT version carries it" — v3.10.1 does.) The array
 /// uses the same var-int-count + raw-32-bytes-each encoding as
 /// `PrepareRequest.transaction_hashes`, capped at `ushort.MaxValue` (65535) to
 /// match `ReadSerializableArray<UInt256>(ushort.MaxValue)`.
@@ -89,7 +89,7 @@ impl ChangeViewMessage {
     }
 
     /// Serializes the message body to bytes, matching C# `DBFTPlugin`
-    /// `ChangeView.Serialize` (v3.10.0): `Timestamp (u64 LE) + Reason (u8)`,
+    /// `ChangeView.Serialize` (v3.10.1): `Timestamp (u64 LE) + Reason (u8)`,
     /// followed by `RejectedHashes` (a `UInt256[]`: var-int count then 32 raw
     /// bytes each) ONLY when `reason` is `TxRejectedByPolicy`/`TxInvalid`.
     ///
@@ -113,7 +113,7 @@ impl ChangeViewMessage {
     }
 
     /// Deserializes a `ChangeView` message body (header fields passed in),
-    /// matching C# `ChangeView.Deserialize` (v3.10.0): `Timestamp (u64 LE) +
+    /// matching C# `ChangeView.Deserialize` (v3.10.1): `Timestamp (u64 LE) +
     /// Reason (u8)`, followed by `RejectedHashes` (`UInt256[]`, capped at
     /// `ushort.MaxValue`) ONLY when `reason` is `TxRejectedByPolicy`/`TxInvalid`.
     /// For all other reasons `rejected_hashes` is empty.

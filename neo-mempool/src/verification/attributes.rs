@@ -30,7 +30,7 @@ where
         },
         // C# NotValidBefore.Verify: `CurrentIndex >= Height`.
         TransactionAttribute::NotValidBefore(attr) => height >= attr.height,
-        // C# v3.10.0 Conflicts.Verify: reject if the transaction carries
+        // C# v3.10.1 Conflicts.Verify: reject if the transaction carries
         // duplicate Conflicts attributes referencing the same hash, then require
         // the conflicting hash not be an on-chain transaction.
         TransactionAttribute::Conflicts(attr) => {

@@ -320,7 +320,7 @@ fn verify_state_dependent_with_providers(
         return VerifyResult::UnableToVerify;
     };
 
-    // Validity window. C# v3.10.0 `Transaction.VerifyStateDependent` splits the
+    // Validity window. C# v3.10.1 `Transaction.VerifyStateDependent` splits the
     // two failure modes: an already-passed `ValidUntilBlock` is `Expired`, while
     // one more than `MaxValidUntilBlockIncrement` ahead of the tip is
     // `NotYetValid`. The accept range (`height < VUB <= height + increment`) is

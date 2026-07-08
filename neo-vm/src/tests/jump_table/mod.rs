@@ -109,7 +109,7 @@ fn not_gorgon_table_overrides_pre_fork_opcodes() {
             assert!(same, "{opcode:?} should match the default table");
         }
     }
-    // C# v3.10.0 `ComposeNotEchidnaJumpTable` only changes SUBSTR. Rust does
+    // C# v3.10.1 `ComposeNotEchidnaJumpTable` only changes SUBSTR. Rust does
     // not reproduce the memory-unsafe SUBSTR distinction, so NotEchidna must
     // not inherit the unrelated pre-Gorgon overrides.
     let not_echidna = JumpTable::not_echidna();

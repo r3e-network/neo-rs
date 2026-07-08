@@ -17,7 +17,8 @@ impl ApplicationEngine {
     /// `Default` differ in how `HASKEY`/`PICKITEM`/`SETITEM`/`REMOVE` handle
     /// boundary conditions (the pre-/post-neo-vm#543 handlers). (`SHL`/`SHR` do
     /// NOT differ across these tables — their zero-shift behavior is a flat
-    /// Neo.VM 3.9.0→3.10.0 change handled in the `shift` handler, not a hardfork
+    /// Neo.VM 3.9.0→3.10.0 change (still present in v3.10.1) handled in the
+    /// `shift` handler, not a hardfork
     /// gate.)
     fn select_jump_table(
         protocol_settings: &ProtocolSettings,

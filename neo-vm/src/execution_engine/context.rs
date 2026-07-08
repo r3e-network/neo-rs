@@ -76,7 +76,7 @@ impl ExecutionEngine {
         // Unload the context
         self.unload_context(&mut context)?;
 
-        // C# v3.10.0 has no zero-referred GC sweep: the recursive stack-reference
+        // C# v3.10.1 has no zero-referred GC sweep: the recursive stack-reference
         // count is exact and self-maintaining as stack/slot references are
         // released during unload_context.
         Ok(context)

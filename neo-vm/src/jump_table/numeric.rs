@@ -185,7 +185,7 @@ fn shr(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     shift(engine, arithmetic::shr_value)
 }
 
-/// SHL/SHR. Neo.VM **3.10.0** `Shl`/`Shr` pop the shift, narrow it to `int`,
+/// SHL/SHR. Neo.VM **3.10.1** `Shl`/`Shr` pop the shift, narrow it to `int`,
 /// `AssertShift`, then UNCONDITIONALLY pop the value operand and `GetInteger()` it
 /// (`BigInteger integer = engine.Pop().GetInteger(); engine.Push(integer << num)`).
 /// So a zero shift still pops + integer-coerces the value: a non-integer operand
@@ -204,7 +204,7 @@ fn shift(
     limits
         .assert_shift(shift_i32)
         .map_err(VmError::invalid_operation_msg)?;
-    // C# 3.10.0 `BigInteger integer = Pop().GetInteger()` faults on a Buffer/Null
+    // C# 3.10.1 `BigInteger integer = Pop().GetInteger()` faults on a Buffer/Null
     // operand and integer-coerces a Boolean/ByteString/Integer; `Push(integer <<
     // num)` then re-pushes an Integer, even for a zero shift. Coerce to an Integer
     // operand first so the shift op yields an Integer (the semantics layer's own

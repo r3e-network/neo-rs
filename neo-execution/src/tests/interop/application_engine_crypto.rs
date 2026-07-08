@@ -60,7 +60,7 @@ fn wrong_length_signature_returns_false_before_gorgon() {
 }
 
 #[test]
-fn wrong_length_signature_faults_with_gorgon_configured_like_csharp_v3100() {
+fn wrong_length_signature_faults_with_gorgon_configured_like_csharp_v3101() {
     let engine = engine_with_gorgon(true);
     let public_key = valid_public_key();
 

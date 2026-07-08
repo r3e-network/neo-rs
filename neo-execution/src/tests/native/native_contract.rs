@@ -2,11 +2,11 @@ use super::*;
 use neo_error::CoreError;
 use std::collections::HashMap;
 
-/// Pins the vendored C# v3.10.0 `NativeContract.IsActive` predicate:
+/// Pins the vendored C# v3.10.1 `NativeContract.IsActive` predicate:
 /// a descriptor is active when its `ActiveIn` hardfork is absent or active
 /// and its `DeprecatedIn` hardfork is absent or not active.
 #[test]
-fn is_active_for_matches_v3100_and_form() {
+fn is_active_for_matches_v3101_and_form() {
     fn method(active: Option<Hardfork>, deprecated: Option<Hardfork>) -> NativeMethod {
         let mut m = NativeMethod::new("m", 0, true, 0, vec![], ContractParameterType::Void);
         if let Some(a) = active {

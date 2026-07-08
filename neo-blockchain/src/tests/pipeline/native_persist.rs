@@ -380,7 +380,7 @@ fn genesis_persist_seeds_native_state_and_mints() {
     // FeePerByte=1000, ExecFeeFactor=30, StoragePrice=100000 at block 0
     // (PolicyContract.cs:141-143). These MUST be committed by genesis persist,
     // otherwise getExecFeeFactor reads empty storage and returns 0 (the
-    // v3.10.0 consistency testnet failure: Policy_getExecFeeFactor).
+    // v3.10.1 consistency testnet failure: Policy_getExecFeeFactor).
     const POLICY_PREFIX_FEE_PER_BYTE: u8 = 10;
     const POLICY_PREFIX_EXEC_FEE_FACTOR: u8 = 18;
     const POLICY_PREFIX_STORAGE_PRICE: u8 = 19;
@@ -393,7 +393,7 @@ fn genesis_persist_seeds_native_state_and_mints() {
     assert_eq!(
         get(&snapshot, policy_id, vec![POLICY_PREFIX_EXEC_FEE_FACTOR]),
         Some(BigInt::from(30i64).to_signed_bytes_le()),
-        "Policy ExecFeeFactor must be initialized at genesis (v3.10.0 parity)"
+        "Policy ExecFeeFactor must be initialized at genesis (v3.10.1 parity)"
     );
     assert_eq!(
         get(&snapshot, policy_id, vec![POLICY_PREFIX_STORAGE_PRICE]),

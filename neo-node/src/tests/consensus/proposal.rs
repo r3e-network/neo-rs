@@ -260,7 +260,7 @@ fn primary_proposal_selection_stops_before_dbft_max_block_system_fee() {
     );
 }
 
-/// C# v3.10.0 `EnsureMaxBlockLimitation` skips a candidate whose
+/// C# v3.10.1 `EnsureMaxBlockLimitation` skips a candidate whose
 /// `InvalidTransactions` report count exceeds F (here passed in as the
 /// already-thresholded set) — the primary excludes it from the proposal.
 #[test]

@@ -113,7 +113,7 @@ fn native_contract_surface_is_consistent() {
         assert_eq!(method.return_type, ContractParameterType::Boolean);
         assert_eq!(method.parameters.len(), 3);
     }
-    // verifyWithECDsa is a triple registration (C# v3.10.0 V0/V1/V2): V0
+    // verifyWithECDsa is a triple registration (C# v3.10.1 V0/V1/V2): V0
     // runs from genesis until DeprecatedIn HF_Cockatrice with the fourth
     // parameter named `curve`; V1 is ActiveIn HF_Cockatrice and DeprecatedIn
     // HF_Gorgon; V2 is ActiveIn HF_Gorgon. Types are identical across versions.
@@ -380,7 +380,7 @@ fn verify_ecdsa_gorgon_faults_on_bad_format_like_csharp_v2() {
     let msg = b"message";
     let empty = b"";
 
-    // V1 (active v3.10.0): a malformed public key FAULTS. C# decodes the key
+    // V1 (active v3.10.1): a malformed public key FAULTS. C# decodes the key
     // (`ECPoint.DecodePoint`) before the signature-length check, and its
     // `FormatException` is NOT caught by `catch(ArgumentException)` — so an empty
     // key faults even though the signature length is also wrong.

@@ -210,7 +210,7 @@ fn post_faun_mempool_divides_stored_exec_fee_factor_like_csharp() {
 }
 
 #[test]
-fn duplicate_conflicts_attributes_with_same_hash_are_rejected_like_csharp_v3100() {
+fn duplicate_conflicts_attributes_with_same_hash_are_rejected_like_csharp_v3101() {
     let (settings, snapshot, private, public, account) = fixture(0x5B);
     let pool = MemoryPool::new(&settings);
     let absent = UInt256::from([0xA5; 32]);
@@ -230,7 +230,7 @@ fn duplicate_conflicts_attributes_with_same_hash_are_rejected_like_csharp_v3100(
     assert_eq!(
         pool.try_add(tx, &snapshot),
         VerifyResult::InvalidAttribute,
-        "C# v3.10.0 Conflicts.Verify rejects a transaction carrying duplicate Conflicts attributes for the same hash"
+        "C# v3.10.1 Conflicts.Verify rejects a transaction carrying duplicate Conflicts attributes for the same hash"
     );
 }
 
@@ -632,7 +632,7 @@ fn expired_transaction_reports_expired() {
 fn too_far_future_valid_until_block_reports_not_yet_valid_like_csharp() {
     let (settings, snapshot, private, public, account) = fixture(0x4f);
     let pool = MemoryPool::new(&settings);
-    // C# v3.10.0 Transaction.VerifyStateDependent returns NotYetValid (not
+    // C# v3.10.1 Transaction.VerifyStateDependent returns NotYetValid (not
     // Expired) when ValidUntilBlock > height + increment.
     let valid_until_block = settings.max_valid_until_block_increment + 1;
     let tx = signed_tx(

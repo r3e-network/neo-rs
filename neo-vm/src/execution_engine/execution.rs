@@ -224,7 +224,7 @@ impl ExecutionEngine {
     /// - Malicious scripts from exploiting the execution-to-check gap
     #[inline(always)]
     fn post_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
-        // C# v3.10.0 ExecutionEngine.PostExecuteInstruction → ReferenceCounter
+        // C# v3.10.1 ExecutionEngine.PostExecuteInstruction → ReferenceCounter
         // .PostExecuteInstruction: the recursive stack-reference count is exact
         // (no GC sweep), so faulting is a plain `Count > MaxStackSize` check.
         // C# faults only when STRICTLY greater than MaxStackSize; reaching

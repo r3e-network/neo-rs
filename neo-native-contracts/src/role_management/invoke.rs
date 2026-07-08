@@ -64,7 +64,7 @@ impl RoleManagement {
         // C# AssertCommittee.
         crate::committee::assert_committee(engine, "designateAsRole")?;
 
-        // C# v3.10.0 DesignateAsRole: reject a node list containing
+        // C# v3.10.1 DesignateAsRole: reject a node list containing
         // duplicate public keys (`nodes.Distinct().Count() != nodes.Length`).
         let mut deduplicated = nodes.clone();
         deduplicated.sort();

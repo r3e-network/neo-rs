@@ -75,7 +75,7 @@ pub(super) static CRYPTO_LIB_METHOD_BINDINGS: LazyLock<Vec<NativeMethodBinding<C
                 .with_parameter_names(["data", "seed"]),
                 CryptoLib::invoke_murmur32,
             ),
-            // verifyWithECDsa: C# v3.10.0 has three registrations under one name.
+            // verifyWithECDsa: C# v3.10.1 has three registrations under one name.
             // V2 = ActiveIn HF_Gorgon and calls `Crypto.VerifySignature`, whose
             // wrong-length/invalid-key format errors fault instead of returning false.
             NativeMethodBinding::new(
@@ -101,7 +101,7 @@ pub(super) static CRYPTO_LIB_METHOD_BINDINGS: LazyLock<Vec<NativeMethodBinding<C
                 ]),
                 CryptoLib::invoke_verify_with_ecdsa,
             ),
-            // verifyWithEd25519: C# v3.10.0 V1 is ActiveIn HF_Gorgon and faults
+            // verifyWithEd25519: C# v3.10.1 V1 is ActiveIn HF_Gorgon and faults
             // on wrong-length signature/pubkey; V0 is ActiveIn HF_Echidna and
             // DeprecatedIn HF_Gorgon, returning false for wrong lengths.
             NativeMethodBinding::new(

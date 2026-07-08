@@ -147,7 +147,7 @@ impl ApplicationEngine {
 
     /// Verifies a signature using secp256r1.
     ///
-    /// Mirrors C# v3.10.0 `CheckSig`: the public key is decoded before the
+    /// Mirrors C# v3.10.1 `CheckSig`: the public key is decoded before the
     /// signature length is judged. Before Gorgon, non-64-byte signatures return
     /// `false`; from Gorgon onward strict `VerifySignature` faults instead.
     fn verify_signature(

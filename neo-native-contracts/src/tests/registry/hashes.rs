@@ -4,7 +4,7 @@ use neo_primitives::UInt160;
 /// Verifies our consensus-critical contract-hash derivation reproduces every
 /// canonical Neo N3 native-contract hash.
 ///
-/// In C# Neo v3.10.0 each native contract sets
+/// In C# Neo v3.10.1 each native contract sets
 /// `Hash = Helper.GetContractHash(UInt160.Zero, 0, Name)`, where
 /// `Name => GetType().Name` (the class name). `GetContractHash` emits
 /// `ABORT, push(sender), push(nefCheckSum), push(name)` and takes the script

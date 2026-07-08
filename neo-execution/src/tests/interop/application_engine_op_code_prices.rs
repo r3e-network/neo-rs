@@ -2,7 +2,7 @@ use super::*;
 use neo_vm_rs::OpCode;
 
 #[test]
-fn opcode_price_table_matches_csharp_v3100_dictionary() {
+fn opcode_price_table_matches_csharp_v3101_dictionary() {
     let expected: &[(OpCode, i64)] = &[
         (OpCode::PUSHINT8, 1 << 0),
         (OpCode::PUSHINT16, 1 << 0),

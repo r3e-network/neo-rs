@@ -613,7 +613,7 @@ impl HardforkActivable for NativeEvent {
 
 /// Checks whether a hardfork-activable item is active.
 ///
-/// Mirrors vendored C# v3.10.0 `NativeContract.IsActive(...)`: a method/event
+/// Mirrors vendored C# v3.10.1 `NativeContract.IsActive(...)`: a method/event
 /// is active when its `ActiveIn` hardfork is absent or active, and its
 /// `DeprecatedIn` hardfork is absent or not active.
 pub fn is_active_for<T: HardforkActivable>(

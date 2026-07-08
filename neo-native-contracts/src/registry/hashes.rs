@@ -102,7 +102,7 @@ pub static NOTARY_HASH: LazyLock<UInt160> = LazyLock::new(|| {
 ///
 /// Computed identically to the other native contracts as
 /// `get_contract_hash(UInt160::ZERO, 0, "Treasury")`. Verified against the
-/// C# Neo v3.10.0 reference (`UT_NativeContract.cs`, which pins
+/// C# Neo v3.10.1 reference (`UT_NativeContract.cs`, which pins
 /// `"hash":"0x156326f25b1b5d839a4d326aeaa75383c9563ac1"` for Treasury).
 pub static TREASURY_HASH: LazyLock<UInt160> = LazyLock::new(|| {
     native_hash([

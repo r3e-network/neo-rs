@@ -19,7 +19,7 @@ impl ConsensusService {
 
     /// Starts consensus for a new block with the previous header timestamp.
     ///
-    /// The previous timestamp is required for C# Neo v3.10.0 parity:
+    /// The previous timestamp is required for C# Neo v3.10.1 parity:
     /// `MakePrepareRequest` clamps the proposal timestamp to at least
     /// `PrevHeader.Timestamp + 1`.
     pub fn start_with_previous_timestamp(

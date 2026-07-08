@@ -203,7 +203,7 @@ pub(super) fn select_primary_proposal_transactions(
     invalid_tx_hashes: &[UInt256],
 ) -> Vec<UInt256> {
     let candidates: Vec<PoolItem> = candidates.into_iter().take(max_count).collect();
-    // C# v3.10.0 `EnsureMaxBlockLimitation` skips a candidate that more than F
+    // C# v3.10.1 `EnsureMaxBlockLimitation` skips a candidate that more than F
     // validators reported invalid (`InvalidTransactions[hash].Count > F`); the
     // already-thresholded hashes are passed in by the consensus context.
     let skip: HashSet<&UInt256> = invalid_tx_hashes.iter().collect();
