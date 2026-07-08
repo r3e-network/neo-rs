@@ -347,7 +347,17 @@ impl StateRootDriver {
                         Ok(RuntimeEvent::Imported { height, .. }) => {
                             self.on_block_persisted(height).await;
                         }
-                        Ok(_) => {}
+                        Ok(RuntimeEvent::Reverted { .. })
+                        | Ok(RuntimeEvent::TipChanged { .. }) => {
+                            // StateService voting is opened only by a newly
+                            // persisted block. Tip/revert notifications are
+                            // canonical-chain bookkeeping for consumers that
+                            // maintain read indexes.
+                        }
+                        Ok(RuntimeEvent::RelayResult { .. }) => {
+                            // Relay outcomes do not create state roots.
+                        }
+                        Ok(RuntimeEvent::Shutdown) => break,
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     }

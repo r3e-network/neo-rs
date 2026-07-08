@@ -273,7 +273,17 @@ impl ConsensusDriver {
                                 Err(err) => info!(target: "neo", %err, "consensus next round not started"),
                             }
                         }
-                        Ok(_) => {}
+                        Ok(RuntimeEvent::Reverted { .. })
+                        | Ok(RuntimeEvent::TipChanged { .. }) => {
+                            // dBFT round startup is tied to a persisted block
+                            // import. Tip bookkeeping does not provide the
+                            // timestamp/hash context needed for a new round.
+                        }
+                        Ok(RuntimeEvent::RelayResult { .. }) => {
+                            // Relay outcomes are RPC/subscription feedback and
+                            // must not perturb consensus round state.
+                        }
+                        Ok(RuntimeEvent::Shutdown) => break,
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     }

@@ -54,7 +54,16 @@ async fn wait_for_stop_height(
             {
                 return Ok(format!("stop-at-height {target_height}"));
             }
-            Ok(_) => {}
+            Ok(neo_blockchain::RuntimeEvent::Imported { .. })
+            | Ok(neo_blockchain::RuntimeEvent::Reverted { .. })
+            | Ok(neo_blockchain::RuntimeEvent::TipChanged { .. })
+            | Ok(neo_blockchain::RuntimeEvent::RelayResult { .. }) => {}
+            Ok(neo_blockchain::RuntimeEvent::Shutdown) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "blockchain event stream shut down before stop height",
+                ));
+            }
             Err(RecvError::Lagged(_)) => continue,
             Err(RecvError::Closed) => {
                 return Err(std::io::Error::new(

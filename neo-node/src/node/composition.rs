@@ -475,10 +475,18 @@ pub(in crate::node) async fn build_node(
                 use tokio::sync::broadcast::error::RecvError;
                 loop {
                     match events.recv().await {
-                        Ok(RuntimeEvent::Imported { height, .. }) => {
+                        Ok(RuntimeEvent::Imported { height, .. })
+                        | Ok(RuntimeEvent::TipChanged { height, .. }) => {
                             let _ = network.set_block_height(height).await;
                         }
-                        Ok(_) => {}
+                        Ok(RuntimeEvent::Reverted { height, .. }) => {
+                            let _ = network.set_block_height(height.saturating_sub(1)).await;
+                        }
+                        Ok(RuntimeEvent::RelayResult { .. }) => {
+                            // Relay outcomes do not affect the durable chain
+                            // height advertised to peers.
+                        }
+                        Ok(RuntimeEvent::Shutdown) => break,
                         Err(RecvError::Lagged(_)) => continue,
                         Err(RecvError::Closed) => break,
                     }
