@@ -14,8 +14,7 @@ impl SerializablePayload for Transaction {
     }
 
     fn hash(&self) -> UInt256 {
-        self.try_hash()
-            .expect("Transaction serialization failed - this indicates a bug")
+        Transaction::hash(self)
     }
 
     fn witness_count(&self) -> usize {

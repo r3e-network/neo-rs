@@ -114,11 +114,15 @@ fn try_hash_rejects_oversized_script_without_caching_zero_hash() {
 }
 
 #[test]
-#[should_panic(expected = "Transaction serialization failed")]
 fn serializable_payload_hash_fails_closed_for_oversized_script() {
     let tx = transaction_with_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
-    // hash() now panics on invalid transactions to fail fast on bugs
-    let _trait_hash = <Transaction as neo_primitives::SerializablePayload>::hash(&tx);
+    let trait_hash = <Transaction as neo_primitives::SerializablePayload>::hash(&tx);
+
+    assert_eq!(trait_hash, UInt256::zero());
+    assert!(
+        !matches!(*tx._hash.lock(), Some(hash) if hash == UInt256::zero()),
+        "invalid transactions must not cache a synthetic zero hash"
+    );
 }
 
 #[test]

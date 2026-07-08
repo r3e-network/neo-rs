@@ -696,6 +696,10 @@ interop.
 direct suffix handling instead of compiling a static regex with `unwrap()`.
 `regex` remains available only to RPC tests that need matcher escaping, not as
 a client runtime dependency.
+`neo-payloads/src/transaction/traits.rs` now routes the infallible
+`SerializablePayload::hash` implementation through `Transaction::hash`, so
+oversized or otherwise unserializable transactions fail closed with the
+existing zero-hash sentinel without caching it instead of panicking.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.
