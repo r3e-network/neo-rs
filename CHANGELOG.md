@@ -5,6 +5,9 @@
 ### Changed
 - **Neo N3 v3.10.1 compatibility target.** Added `HF_Huyao` to the canonical hardfork enum and updated the built-in protocol compatibility documentation. MainNet/TestNet presets continue to schedule hardforks through `HF_Faun`; `HF_Gorgon` and `HF_Huyao` are defined but unscheduled unless explicitly configured.
 
+### Fixed (Neo N3 v3.10.1 consensus / protocol parity)
+- **ApplicationEngine fee validation.** Negative `AddFee` inputs now fault before the whitelist fee bypass, matching C# v3.10.1 ordering and preventing a whitelisted call context from silently ignoring an invalid negative fee.
+
 ## [0.10.0] - 2026-07-03
 
 ### Added

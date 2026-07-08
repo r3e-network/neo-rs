@@ -44,6 +44,38 @@ fn registered_services(engine: &ApplicationEngine) -> Vec<(String, i64, u8)> {
 }
 
 #[test]
+fn negative_fee_faults_before_whitelist_like_csharp_v3101() {
+    let snapshot = Arc::new(DataCache::new(false));
+    let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
+        TriggerType::Application,
+        None,
+        snapshot,
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        None,
+        None,
+    )
+    .expect("engine");
+
+    engine
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
+        .expect("load entry script");
+    engine
+        .current_execution_state()
+        .expect("current execution state")
+        .lock()
+        .whitelisted = true;
+
+    let error = engine
+        .add_fee_datoshi(-1)
+        .expect_err("negative AddFee must fault before whitelist bypass");
+
+    assert!(error.to_string().contains("Negative gas fee"));
+    assert_eq!(engine.fee_consumed_pico(), 0);
+}
+
+#[test]
 fn gorgon_selects_default_jump_table_like_csharp_v3100() {
     // C# `ApplicationEngine.Create`: `HF_Gorgon` enabled -> `DefaultJumpTable`.
     let mut settings = ProtocolSettings::default();

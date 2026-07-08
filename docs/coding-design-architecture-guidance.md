@@ -84,8 +84,8 @@ order is:
 4. Performance after measurement.
 
 Performance work must never weaken deterministic execution, replayability, or
-Neo N3 v3.10 protocol parity. A faster node that can diverge from mainnet state
-is a broken node.
+Neo N3 v3.10.1 protocol parity. A faster node that can diverge from mainnet
+state is a broken node.
 
 Practical node rules:
 

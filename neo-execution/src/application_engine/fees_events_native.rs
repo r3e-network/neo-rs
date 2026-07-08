@@ -68,16 +68,19 @@ impl ApplicationEngine {
 
     /// Adds picoGAS to `FeeConsumed` / `GasConsumed`.
     fn add_fee_pico(&mut self, pico_gas: i64) -> CoreResult<()> {
-        if let Ok(state_arc) = self.current_execution_state() {
-            if state_arc.lock().whitelisted {
-                return Ok(());
-            }
-        }
-
+        // C# v3.10.1 validates `AddFee` arguments before applying the
+        // whitelist bypass, so a negative fee must fault even inside a
+        // whitelisted call context.
         if pico_gas < 0 {
             return Err(CoreError::invalid_operation(
                 "Negative gas fee is not allowed".to_string(),
             ));
+        }
+
+        if let Ok(state_arc) = self.current_execution_state() {
+            if state_arc.lock().whitelisted {
+                return Ok(());
+            }
         }
 
         let total = self
