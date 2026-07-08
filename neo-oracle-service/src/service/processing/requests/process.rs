@@ -1,6 +1,9 @@
+use super::super::super::native_provider::{
+    NativeOracleServiceProviderFactory, OracleServiceNativeProvider,
+    OracleServiceNativeProviderFactory,
+};
 use super::super::super::utils::{filter_json, ledger_height, select_oracle_key, sign_transaction};
 use super::super::super::{OracleService, OracleServiceError};
-use neo_native_contracts::{OracleContract, Role, RoleManagement};
 use neo_payloads::{OracleResponse, OracleResponseCode};
 use neo_storage::persistence::DataCache;
 use tracing::{debug, warn};
@@ -20,8 +23,9 @@ impl OracleService {
         );
 
         let height = ledger_height(snapshot);
-        let oracle_nodes = RoleManagement::new()
-            .get_designated_by_role_at(snapshot, Role::Oracle, height)
+        let native = NativeOracleServiceProviderFactory.provider();
+        let oracle_nodes = native
+            .designated_oracles(snapshot, height)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
         if oracle_nodes.is_empty() {
             return Err(OracleServiceError::Processing(
@@ -35,8 +39,8 @@ impl OracleService {
             .clone()
             .and_then(|wallet| select_oracle_key(wallet.as_ref(), &oracle_nodes));
         let (mut code, data) = self.process_url(&request.url, oracle_key.as_ref()).await;
-        let response_pairs = OracleContract::new()
-            .get_requests_by_url(snapshot, &request.url)
+        let response_pairs = native
+            .oracle_requests_by_url(snapshot, &request.url)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
 
         let mut tasks = Vec::new();

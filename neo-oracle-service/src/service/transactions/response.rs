@@ -1,4 +1,8 @@
 use super::super::ledger_provider::{NativeOracleLedgerProvider, OracleLedgerProvider};
+use super::super::native_provider::{
+    NativeOracleServiceProviderFactory, OracleServiceNativeProvider,
+    OracleServiceNativeProviderFactory,
+};
 use super::super::{OracleService, OracleServiceError};
 use neo_config::ProtocolSettings;
 use neo_crypto::ECPoint;
@@ -7,7 +11,6 @@ use neo_execution::Contract;
 use neo_execution::TriggerType;
 use neo_io::serializable::helper::SerializeHelper;
 use neo_manifest::CallFlags;
-use neo_native_contracts::{ContractManagement, OracleContract, PolicyContract};
 use neo_payloads::VerifiableExt;
 use neo_payloads::{
     HEADER_SIZE, OracleResponse, OracleResponseCode, Signer, Transaction, TransactionAttribute,
@@ -30,6 +33,7 @@ impl OracleService {
         use_current_height: bool,
     ) -> Result<Transaction, OracleServiceError> {
         let ledger = NativeOracleLedgerProvider::new();
+        let native = NativeOracleServiceProviderFactory.provider();
         let state = ledger
             .transaction_state(snapshot, &request.original_tx_id)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?
@@ -45,20 +49,21 @@ impl OracleService {
         let oracle_sign_contract = Contract::create_multi_sig_contract(m, oracle_nodes);
 
         let height = ledger.current_index(snapshot).unwrap_or(0);
-        let max_vub = PolicyContract::new()
-            .get_max_valid_until_block_increment_snapshot(snapshot, settings)
+        let max_vub = native
+            .max_valid_until_block_increment(snapshot, settings)
             .unwrap_or(settings.max_valid_until_block_increment);
         let mut valid_until_block = state.block_index().saturating_add(max_vub);
         while use_current_height && valid_until_block <= height {
             valid_until_block = valid_until_block.saturating_add(max_vub);
         }
 
+        let oracle_hash = native.oracle_hash();
         let mut tx = Transaction::new();
         tx.set_version(0);
         tx.set_nonce(response.id as u32);
         tx.set_valid_until_block(valid_until_block);
         tx.set_signers(vec![
-            Signer::new(OracleContract::new().hash(), WitnessScope::NONE),
+            Signer::new(oracle_hash, WitnessScope::NONE),
             Signer::new(oracle_sign_contract.script_hash(), WitnessScope::NONE),
         ]);
         tx.set_attributes(vec![TransactionAttribute::OracleResponse(response.clone())]);
@@ -70,7 +75,7 @@ impl OracleService {
                 oracle_sign_contract.script_hash(),
                 Witness::new_with_scripts(Vec::new(), oracle_sign_contract.script.clone()),
             ),
-            (OracleContract::new().hash(), Witness::empty()),
+            (oracle_hash, Witness::empty()),
         ]
         .into_iter()
         .collect();
@@ -86,12 +91,12 @@ impl OracleService {
         }
         tx.set_witnesses(witnesses);
 
-        let oracle_contract =
-            ContractManagement::get_contract_from_snapshot(snapshot, &OracleContract::new().hash())
-                .map_err(|err| OracleServiceError::Processing(err.to_string()))?
-                .ok_or_else(|| {
-                    OracleServiceError::BuildFailed("oracle contract missing".to_string())
-                })?;
+        let oracle_contract = native
+            .oracle_contract_state(snapshot)
+            .map_err(|err| OracleServiceError::Processing(err.to_string()))?
+            .ok_or_else(|| {
+                OracleServiceError::BuildFailed("oracle contract missing".to_string())
+            })?;
 
         let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
             TriggerType::Verification,
@@ -131,8 +136,8 @@ impl OracleService {
         let comp1 = engine.fee_consumed();
         tx.set_network_fee(comp1);
 
-        let exec_fee_factor = PolicyContract::new()
-            .get_exec_fee_factor_snapshot(snapshot, settings, height)
+        let exec_fee_factor = native
+            .exec_fee_factor(snapshot, settings, height)
             .unwrap_or(neo_native_contracts::policy_contract::DEFAULT_EXEC_FEE_FACTOR)
             as i64;
         let multi_sig_cost =
@@ -152,8 +157,8 @@ impl OracleService {
             + SerializeHelper::get_var_size(oracle_sign_contract.script.len() as u64)
             + oracle_sign_contract.script.len();
 
-        let fee_per_byte: i64 = PolicyContract::new()
-            .get_fee_per_byte_snapshot(snapshot)
+        let fee_per_byte: i64 = native
+            .fee_per_byte(snapshot)
             .unwrap_or(neo_native_contracts::policy_contract::DEFAULT_FEE_PER_BYTE)
             as i64;
 

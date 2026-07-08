@@ -1,7 +1,10 @@
+use super::native_provider::{
+    NativeOracleServiceProviderFactory, OracleServiceNativeProvider,
+    OracleServiceNativeProviderFactory,
+};
 use super::utils::{ledger_height, wallet_has_oracle_account};
 use super::{OracleService, OracleStatus};
 use neo_config::ProtocolSettings;
-use neo_native_contracts::{Role, RoleManagement};
 use neo_storage::persistence::DataCache;
 use neo_wallets::Wallet;
 use std::sync::Arc;
@@ -34,8 +37,9 @@ impl neo_payloads::CommittingHandler for OracleService {
         }
 
         let height = ledger_height(snapshot);
-        let oracles = RoleManagement::new()
-            .get_designated_by_role_at(snapshot, Role::Oracle, height)
+        let native = NativeOracleServiceProviderFactory.provider();
+        let oracles = native
+            .designated_oracles(snapshot, height)
             .unwrap_or_default();
         if oracles.is_empty() {
             self.stop();

@@ -1,6 +1,9 @@
+use super::super::native_provider::{
+    NativeOracleServiceProviderFactory, OracleServiceNativeProvider,
+    OracleServiceNativeProviderFactory,
+};
 use super::super::utils::{ledger_height, wallet_has_oracle_account};
 use super::super::{OracleService, OracleStatus};
-use neo_native_contracts::{Role, RoleManagement};
 use neo_wallets::Wallet;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -15,11 +18,8 @@ impl OracleService {
 
         let snapshot = self.snapshot_cache();
         let height = ledger_height(&snapshot);
-        let oracles = match RoleManagement::new().get_designated_by_role_at(
-            &snapshot,
-            Role::Oracle,
-            height,
-        ) {
+        let native = NativeOracleServiceProviderFactory.provider();
+        let oracles = match native.designated_oracles(&snapshot, height) {
             Ok(oracles) => oracles,
             Err(err) => {
                 warn!(target: "neo::oracle", %err, "failed to load designated oracle list");

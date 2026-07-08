@@ -1,9 +1,12 @@
 use super::super::ledger_provider::{NativeOracleLedgerProvider, OracleLedgerProvider};
+use super::super::native_provider::{
+    NativeOracleServiceProviderFactory, OracleServiceNativeProvider,
+    OracleServiceNativeProviderFactory,
+};
 use super::super::utils::{ledger_height, ledger_height_with_provider, verify_oracle_signature};
 use super::super::{OracleService, OracleServiceError, OracleTask};
 use neo_crypto::ECPoint;
 use neo_execution::Contract;
-use neo_native_contracts::{OracleContract, Role, RoleManagement};
 use neo_payloads::Transaction;
 use neo_payloads::VerifiableExt;
 use neo_payloads::helper::get_sign_data_vec;
@@ -34,6 +37,7 @@ impl OracleService {
         backup_sign: Option<Vec<u8>>,
     ) -> Result<(), OracleServiceError> {
         let ledger = NativeOracleLedgerProvider::new();
+        let native = NativeOracleServiceProviderFactory.provider();
 
         // Validate queue size to prevent memory exhaustion
         {
@@ -47,8 +51,8 @@ impl OracleService {
 
         let mut queue = self.pending_queue.lock();
         if let std::collections::hash_map::Entry::Vacant(e) = queue.entry(request_id) {
-            let request = OracleContract::new()
-                .get_request(snapshot, request_id)
+            let request = native
+                .oracle_request(snapshot, request_id)
                 .map_err(|err| OracleServiceError::Processing(err.to_string()))?
                 .ok_or(OracleServiceError::RequestNotFound)?;
             let _state = ledger
@@ -161,11 +165,11 @@ impl OracleService {
             return false;
         }
 
-        let oracle_nodes =
-            match RoleManagement::new().get_designated_by_role_at(snapshot, Role::Oracle, height) {
-                Ok(nodes) => nodes,
-                Err(_) => return false,
-            };
+        let native = NativeOracleServiceProviderFactory.provider();
+        let oracle_nodes = match native.designated_oracles(snapshot, height) {
+            Ok(nodes) => nodes,
+            Err(_) => return false,
+        };
 
         if oracle_nodes.is_empty() {
             return false;

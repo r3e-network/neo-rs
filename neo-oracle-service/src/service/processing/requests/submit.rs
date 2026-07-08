@@ -1,7 +1,10 @@
+use super::super::super::native_provider::{
+    NativeOracleServiceProviderFactory, OracleServiceNativeProvider,
+    OracleServiceNativeProviderFactory,
+};
 use super::super::super::utils::{ledger_height, verify_oracle_signature};
 use super::super::super::{OracleService, OracleServiceError};
 use neo_crypto::ECPoint;
-use neo_native_contracts::{OracleContract, Role, RoleManagement};
 
 impl OracleService {
     /// Submit a signed oracle response for aggregation into the response transaction.
@@ -22,8 +25,9 @@ impl OracleService {
 
         let snapshot = self.snapshot_cache();
         let height = ledger_height(&snapshot);
-        let oracles = RoleManagement::new()
-            .get_designated_by_role_at(&snapshot, Role::Oracle, height)
+        let native = NativeOracleServiceProviderFactory.provider();
+        let oracles = native
+            .designated_oracles(&snapshot, height)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
 
         if !oracles.iter().any(|key| key == &oracle_pub) {
@@ -33,8 +37,8 @@ impl OracleService {
             )));
         }
 
-        let request = OracleContract::new()
-            .get_request(&snapshot, request_id)
+        let request = native
+            .oracle_request(&snapshot, request_id)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
         if request.is_none() {
             return Err(OracleServiceError::RequestNotFound);

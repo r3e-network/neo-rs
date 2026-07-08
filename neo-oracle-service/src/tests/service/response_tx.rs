@@ -174,3 +174,31 @@ fn oracle_service_ledger_reads_use_provider_boundary() {
     assert!(provider.contains("trait OracleLedgerProvider"));
     assert!(provider.contains("ledger: LedgerContract"));
 }
+
+#[test]
+fn oracle_service_native_reads_use_provider_boundary() {
+    let handlers = include_str!("../../service/handlers.rs");
+    let lifecycle = include_str!("../../service/lifecycle/run.rs");
+    let loops = include_str!("../../service/processing/loops.rs");
+    let cache = include_str!("../../service/processing/cache.rs");
+    let process = include_str!("../../service/processing/requests/process.rs");
+    let submit = include_str!("../../service/processing/requests/submit.rs");
+    let queue = include_str!("../../service/transactions/queue.rs");
+    let response = include_str!("../../service/transactions/response.rs");
+    let provider = include_str!("../../service/native_provider.rs");
+
+    for source in [
+        handlers, lifecycle, loops, cache, process, submit, queue, response,
+    ] {
+        assert!(source.contains("NativeOracleServiceProviderFactory"));
+        assert!(!source.contains("OracleContract::new()"));
+        assert!(!source.contains("RoleManagement::new()"));
+        assert!(!source.contains("PolicyContract::new()"));
+    }
+
+    assert!(provider.contains("trait OracleServiceNativeProvider"));
+    assert!(provider.contains("trait OracleServiceNativeProviderFactory"));
+    assert!(provider.contains("oracle: OracleContract"));
+    assert!(provider.contains("roles: RoleManagement"));
+    assert!(provider.contains("policy: PolicyContract"));
+}

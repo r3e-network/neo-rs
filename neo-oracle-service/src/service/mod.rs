@@ -15,6 +15,8 @@
 //! - `ledger_provider`: ledger read capabilities used by oracle processing.
 //! - `lifecycle`: Service startup, shutdown, and background processing
 //!   lifecycle helpers.
+//! - `native_provider`: native contract read capabilities used by oracle
+//!   processing.
 //! - `processing`: oracle request filtering and processing helpers.
 //! - `status`: service status records.
 //! - `task`: pending response-signature task records.
@@ -27,6 +29,7 @@ mod error;
 mod handlers;
 mod ledger_provider;
 mod lifecycle;
+mod native_provider;
 mod processing;
 mod status;
 mod task;
