@@ -681,6 +681,10 @@ created from valid `u8` token decimals no longer routes through a production
 leaves only doc-comment unwrap examples in that crate; the aggregate audit
 bucket still reports those examples until the scanner distinguishes doctests
 from production code.
+`neo-execution` account-hash helpers now build `UInt160` values directly from
+the fixed `[u8; 20]` returned by `Crypto::hash160`, matching the fixed-width
+constructor rule and removing the remaining fallible Hash160 conversion shape
+from account-creation helpers.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.

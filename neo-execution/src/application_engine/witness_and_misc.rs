@@ -628,8 +628,7 @@ impl ApplicationEngine {
         self.add_cpu_fee(fee)?;
 
         let script = Helper::signature_redeem_script(&public_key);
-        let hash = UInt160::from_bytes(&Crypto::hash160(&script))
-            .map_err(|e| CoreError::invalid_operation(format!("Invalid script hash: {}", e)))?;
+        let hash = UInt160::from_array(Crypto::hash160(&script));
 
         Ok(hash)
     }
@@ -669,8 +668,7 @@ impl ApplicationEngine {
             .map_err(|_| CoreError::invalid_operation("Invalid multisig threshold"))?;
         let script = Helper::try_multi_sig_redeem_script(m, &public_keys)
             .map_err(|err| CoreError::invalid_operation(err.to_string()))?;
-        let hash = UInt160::from_bytes(&Crypto::hash160(&script))
-            .map_err(|e| CoreError::invalid_operation(format!("Invalid script hash: {}", e)))?;
+        let hash = UInt160::from_array(Crypto::hash160(&script));
 
         Ok(hash)
     }

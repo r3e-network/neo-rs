@@ -195,8 +195,7 @@ impl ApplicationEngine {
         let point = ECPoint::decode(pubkey, ECCurve::secp256r1())
             .map_err(|e| CoreError::other(format!("Invalid public key: {e}")))?;
         let script = crate::helper::Helper::signature_redeem_script(&point.to_bytes());
-        let hash_bytes = Crypto::hash160(&script);
-        Ok(UInt160::from_bytes(&hash_bytes).expect("hash160 produces 20 bytes"))
+        Ok(UInt160::from_array(Crypto::hash160(&script)))
     }
 
     /// Helper to get current block time
