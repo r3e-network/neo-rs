@@ -671,6 +671,11 @@ SHA-256 payload digest into a fixed `[u8; 32]` before constructing `UInt256`.
 This removes the production `expect()` path while preserving Neo N3's
 single-SHA payload hash semantics; the style audit now reports three
 `neo-primitives` production unwrap/expect sites.
+Generated fixed-width uint types now expose `from_array` for callers that
+already hold `[u8; N]`, keeping array construction infallible while preserving
+typed errors for variable-length slice decoding. `UInt160::from_script` and
+native registry hash construction use that path instead of fallback-to-zero
+conversion.
 `neo-native-contracts/src/neo_token/storage/candidates.rs` keeps committee
 top-list pruning panic-free by checking the current worst candidate explicitly
 instead of asserting the full-list invariant through `expect`.

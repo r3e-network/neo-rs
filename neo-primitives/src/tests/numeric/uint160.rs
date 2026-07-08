@@ -20,6 +20,21 @@ fn test_uint160_from_bytes() {
 }
 
 #[test]
+fn test_uint160_from_array_matches_slice_decoder() {
+    let mut bytes = [0u8; ADDRESS_SIZE];
+    bytes[0] = 1;
+    bytes[8] = 2;
+    bytes[16] = 3;
+
+    let from_array = UInt160::from_array(bytes);
+    let from_trait = UInt160::from(bytes);
+    let from_slice = UInt160::from_bytes(&bytes).unwrap();
+
+    assert_eq!(from_array, from_slice);
+    assert_eq!(from_trait, from_slice);
+}
+
+#[test]
 fn test_uint160_to_array() {
     let mut uint = UInt160::new();
     uint.value1 = 1;

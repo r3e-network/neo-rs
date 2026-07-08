@@ -35,7 +35,9 @@ impl UInt160 {
         ripemd_hasher.update(sha256_hash);
         let hash160 = ripemd_hasher.finalize();
 
-        Self::from_bytes(&hash160).unwrap_or_default()
+        let mut bytes = [0u8; Self::LENGTH];
+        bytes.copy_from_slice(&hash160);
+        Self::from_array(bytes)
     }
 
     /// Converts this `UInt160` to a Neo address string.

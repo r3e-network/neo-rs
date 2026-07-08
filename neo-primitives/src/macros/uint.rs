@@ -1,7 +1,7 @@
 /// Generates a fixed-width unsigned integer type with common boilerplate.
 ///
 /// Generates: struct, new/zero/is_zero, byte conversions, Display/Debug/FromStr,
-/// Ord (big-endian), `From<[u8; N]>`, `TryFrom<&[u8]>`, and
+/// Ord (big-endian), infallible `from_array`, `From<[u8; N]>`, `TryFrom<&[u8]>`, and
 /// `TryFrom<String>`.
 /// Optional: AsRef (set `as_ref = true` when struct size == byte size, i.e. no padding).
 #[macro_export]
@@ -21,6 +21,8 @@ macro_rules! uint_type {
         $vis struct $name {
             $(pub(crate) $field: $fty,)+
         }
+
+        const _: () = assert!(0usize $(+ std::mem::size_of::<$fty>())+ == $size);
 
         $(#[$zero_meta])*
         $vis static $zero_name: $name = $name { $($field: 0),+ };
@@ -70,6 +72,25 @@ macro_rules! uint_type {
             }
 
             #[inline]
+            #[must_use]
+            /// Creates the value from little-endian fixed-width bytes.
+            pub fn from_array(data: [u8; $size]) -> Self {
+                let mut result = Self::new();
+                let mut offset = 0usize;
+                $(
+                    {
+                        const FIELD_SIZE: usize = std::mem::size_of::<$fty>();
+                        let mut buf = [0u8; FIELD_SIZE];
+                        buf.copy_from_slice(&data[offset..offset + FIELD_SIZE]);
+                        result.$field = <$fty>::from_le_bytes(buf);
+                        offset += FIELD_SIZE;
+                    }
+                )+
+                let _ = offset;
+                result
+            }
+
+            #[inline]
             /// Parses the value from its little-endian fixed-width bytes.
             pub fn from_bytes(value: &[u8]) -> $crate::PrimitiveResult<Self> {
                 if value.len() != $size {
@@ -77,19 +98,9 @@ macro_rules! uint_type {
                         message: format!("Invalid length: {}", value.len()),
                     });
                 }
-                let mut result = Self::new();
-                let mut offset = 0usize;
-                $(
-                    {
-                        const FIELD_SIZE: usize = std::mem::size_of::<$fty>();
-                        let mut buf = [0u8; FIELD_SIZE];
-                        buf.copy_from_slice(&value[offset..offset + FIELD_SIZE]);
-                        result.$field = <$fty>::from_le_bytes(buf);
-                        offset += FIELD_SIZE;
-                    }
-                )+
-                let _ = offset;
-                Ok(result)
+                let mut data = [0u8; $size];
+                data.copy_from_slice(value);
+                Ok(Self::from_array(data))
             }
 
             /// Parses the value from a byte span.
@@ -184,7 +195,7 @@ macro_rules! uint_type {
 
         impl From<[u8; $size]> for $name {
             fn from(data: [u8; $size]) -> Self {
-                Self::from_bytes(&data).unwrap_or_default()
+                Self::from_array(data)
             }
         }
 

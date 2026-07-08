@@ -15,10 +15,7 @@ use neo_primitives::UInt160;
 use std::sync::LazyLock;
 
 fn native_hash(bytes: [u8; UInt160::LENGTH]) -> UInt160 {
-    match UInt160::from_bytes(&bytes) {
-        Ok(hash) => hash,
-        Err(_) => UInt160::default(),
-    }
+    UInt160::from_array(bytes)
 }
 
 /// ContractManagement contract hash.
