@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use neo_execution::application_engine::ApplicationEngine;
 use neo_manifest::CallFlags;
 use neo_native_contracts::NeoToken;
@@ -15,7 +14,7 @@ use serde_json::Value;
 use super::RpcServerWallet;
 use super::request::{NoParamsRequest, WalletBalanceRequest};
 use super::response::{wallet_balance_to_json, wallet_unclaimed_gas_to_json};
-use crate::server::rpc_error::RpcError;
+use crate::server::ledger_queries;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_server::RpcServer;
@@ -42,12 +41,8 @@ impl RpcServerWallet {
         NoParamsRequest::parse(params, "getwalletunclaimedgas")?;
         let wallet = Self::require_wallet(server)?;
         let store = server.system().store_cache();
-        let height = StorageLedgerProviderFactory
-            .provider(store.data_cache())
-            .current_index()
-            .map_err(|err| {
-                RpcException::from(RpcError::internal_server_error().with_data(err.to_string()))
-            })?
+        let height = ledger_queries::current_index(store.data_cache())
+            .map_err(internal_error)?
             .saturating_add(1);
         let neo_hash = NeoToken::script_hash();
         let snapshot = Arc::new(store.data_cache().clone());

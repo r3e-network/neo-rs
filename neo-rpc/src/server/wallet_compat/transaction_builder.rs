@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::GasToken;
@@ -25,6 +24,7 @@ use super::probes::{
     CallArg, emit_dynamic_call, gas_balance_of, nep17_balance_of, run_test_invocation,
 };
 use super::{WalletCompatError, WalletCompatResult, core_err};
+use crate::server::ledger_queries;
 
 /// C# `Wallet.MakeTransaction(snapshot, script, sender, cosigners,
 /// attributes, maxGas)` — builds the transaction, test-executes the
@@ -83,10 +83,7 @@ fn make_transaction_with_balances<W>(
 where
     W: Wallet + ?Sized,
 {
-    let current_index = StorageLedgerProviderFactory
-        .provider(snapshot)
-        .current_index()
-        .map_err(core_err)?;
+    let current_index = ledger_queries::current_index(snapshot).map_err(core_err)?;
     let max_increment = settings.max_valid_until_block_increment;
 
     for (account, value) in balances_gas {

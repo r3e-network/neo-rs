@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use neo_blockchain::{ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory};
 use neo_config::ProtocolSettings;
 use neo_execution::ApplicationEngine;
 use neo_execution::contract_state::ContractState;
@@ -25,6 +24,7 @@ use super::native_provider::{
     WalletCompatNativeProviderFactory,
 };
 use super::{WalletCompatError, WalletCompatResult, core_err};
+use crate::server::ledger_queries;
 
 /// C# `Helper.CalculateNetworkFee(tx, snapshot, settings, accountScript,
 /// maxExecutionCost)`.
@@ -54,10 +54,7 @@ where
         + SerializeHelper::get_var_size_usize(hashes.len());
 
     let policy = NativeWalletCompatProviderFactory.provider();
-    let current_index = StorageLedgerProviderFactory
-        .provider(snapshot)
-        .current_index()
-        .map_err(core_err)?;
+    let current_index = ledger_queries::current_index(snapshot).map_err(core_err)?;
     let exec_fee_factor = i64::from(
         policy
             .exec_fee_factor(snapshot, settings, current_index.saturating_add(1))

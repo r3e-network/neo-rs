@@ -87,20 +87,34 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
             include_str!("../../../server/session/execution.rs"),
         ),
         (
-            "wallet balance",
-            include_str!("../../../server/rpc_server_wallet/balance.rs"),
-        ),
-        (
             "wallet transfers",
             include_str!("../../../server/rpc_server_wallet/transfers.rs"),
         ),
         (
-            "smart-contract unclaimed gas",
-            include_str!("../../../server/smart_contract/unclaimed_gas.rs"),
-        ),
-        (
             "smart-contract wallet invocation",
             include_str!("../../../server/smart_contract/invocation_wallet.rs"),
+        ),
+    ];
+
+    for (name, source) in sources {
+        assert!(
+            source.contains("StorageLedgerProviderFactory"),
+            "{name} should read ledger records through the provider factory"
+        );
+        assert!(
+            !source.contains("LedgerContract::new()"),
+            "{name} should not construct native LedgerContract directly"
+        );
+    }
+
+    let current_height_sources = [
+        (
+            "wallet balance",
+            include_str!("../../../server/rpc_server_wallet/balance.rs"),
+        ),
+        (
+            "smart-contract unclaimed gas",
+            include_str!("../../../server/smart_contract/unclaimed_gas.rs"),
         ),
         (
             "wallet compat network fee",
@@ -112,10 +126,14 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
         ),
     ];
 
-    for (name, source) in sources {
+    for (name, source) in current_height_sources {
         assert!(
-            source.contains("StorageLedgerProviderFactory"),
-            "{name} should read ledger records through the provider factory"
+            source.contains("ledger_queries::current_index"),
+            "{name} should route current-height reads through the shared ledger-query boundary"
+        );
+        assert!(
+            !source.contains("StorageLedgerProviderFactory"),
+            "{name} should not construct the storage ledger provider directly for current-height reads"
         );
         assert!(
             !source.contains("LedgerContract::new()"),
