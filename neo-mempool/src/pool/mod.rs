@@ -13,10 +13,12 @@
 //! - `memory_pool`: memory-pool state and mutation API.
 //! - `pool_index`: memory-pool priority indexes.
 //! - `pool_item`: memory-pool item records.
+//! - `state`: private queue/context state used by `memory_pool`.
 
 pub mod memory_pool;
 pub mod pool_index;
 pub mod pool_item;
+mod state;
 
 pub use memory_pool::{
     MemoryPool, NewTransactionCallback, SharedMemoryPool, TransactionAddedCallback,

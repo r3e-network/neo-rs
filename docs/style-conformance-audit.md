@@ -228,6 +228,11 @@ High-signal clusters found during the first pass:
 - `neo-storage` exposes broad `dyn Store` / `dyn StoreSnapshot` boundaries.
   This is valid for backend selection, but hot loops should keep borrowed
   visitor APIs or concrete paths where possible.
+- `neo-mempool/src/pool/memory_pool.rs` keeps the public pool facade,
+  admission workflow, block-persist callbacks, and event ordering, while
+  `pool/state.rs` owns the private queue indexes, verification-context
+  accounting, conflict helpers, oracle-response tracking, and C# parity rules
+  used while the pool lock is held.
 - `neo-state-service` has a few public erased compatibility surfaces such as
   `Verifier<C = Arc<dyn StateRootCalculator>>` and
   `StateStore::with_mpt_store(..., Arc<dyn Store>)`. Prefer concrete

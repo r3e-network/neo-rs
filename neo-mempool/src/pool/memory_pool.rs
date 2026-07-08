@@ -15,7 +15,6 @@
 //! for a higher-priority one.
 
 use crate::new_transaction_event_args::NewTransactionEventArgs;
-use crate::pool_index::PoolIndex;
 use crate::pool_item::PoolItem;
 use crate::transaction_removed_event_args::TransactionRemovedEventArgs;
 use crate::transaction_verification_context::TransactionVerificationContext;
@@ -25,10 +24,11 @@ use neo_native_contracts::StandardNativeProvider;
 use neo_payloads::Transaction;
 use neo_primitives::{TransactionRemovalReason, UInt160, UInt256, VerifyResult};
 use neo_storage::DataCache;
-use num_bigint::BigInt;
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+
+use super::state::{MemoryPoolInner, conflict_rebate, conflict_target_hashes, oracle_response_id};
 
 #[cfg(test)]
 static BLOCK_PERSISTED_TX_SCAN_COUNT: std::sync::atomic::AtomicUsize =
@@ -47,191 +47,6 @@ pub type TransactionRelayCallback = dyn Fn(&Transaction) + Send + Sync;
 /// Callback invoked for every freshly-admitted transaction; subscribers
 /// may veto the admission by setting `cancel = true` on the event args.
 pub type NewTransactionCallback = dyn Fn(&MemoryPool, &mut NewTransactionEventArgs) + Send + Sync;
-
-/// Inner, mutable state of the memory pool. Split out so the outer
-/// `MemoryPool` can hand out read-only references while still
-/// allowing the rest of the system to mutate the pool under a lock.
-struct MemoryPoolInner {
-    verified: PoolIndex,
-    unverified: PoolIndex,
-    conflicts: HashMap<UInt256, HashSet<UInt256>>,
-    verification_context: TransactionVerificationContext,
-    /// C# `TransactionVerificationContext._senderFee`: the summed
-    /// system+network fees of pooled transactions per sender, charged
-    /// against the sender's GAS balance for every new admission.
-    sender_fees: HashMap<UInt160, BigInt>,
-    /// C# `TransactionVerificationContext._oracleResponses`: pooled
-    /// `OracleResponse` ids, rejecting duplicate responses.
-    oracle_responses: HashMap<u64, UInt256>,
-    capacity: usize,
-}
-
-impl MemoryPoolInner {
-    /// C# `TransactionVerificationContext.AddTransaction`.
-    fn context_add(&mut self, tx: &Transaction) {
-        if let Some(oracle) = oracle_response_id(tx) {
-            self.oracle_responses.insert(oracle, tx.hash());
-        }
-        if let Some(sender) = tx.signers().first().map(|s| s.account) {
-            let fee = BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee());
-            *self.sender_fees.entry(sender).or_default() += fee;
-        }
-    }
-
-    /// C# `TransactionVerificationContext.RemoveTransaction`.
-    fn context_remove(&mut self, tx: &Transaction) {
-        if let Some(oracle) = oracle_response_id(tx) {
-            self.oracle_responses.remove(&oracle);
-        }
-        if let Some(sender) = tx.signers().first().map(|s| s.account) {
-            let fee = BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee());
-            if let Some(total) = self.sender_fees.get_mut(&sender) {
-                *total -= fee;
-                if *total <= BigInt::from(0) {
-                    self.sender_fees.remove(&sender);
-                }
-            }
-        }
-    }
-
-    /// C# `MemoryPool.CheckConflicts` (MemoryPool.cs:381): returns the pooled
-    /// transactions that conflict with `tx` and must be evicted if `tx` is
-    /// admitted, or `None` if `tx` does not fit — i.e. a transaction `tx`
-    /// declares as a conflict shares no signer with it, or the conflicting
-    /// pooled transactions out-fee `tx` (sum of their network fees ≥ `tx`'s).
-    fn check_conflicts(&self, tx: &Transaction) -> Option<Vec<PoolItem>> {
-        let tx_hash = tx.hash();
-        let tx_sender = tx.signers().first().map(|s| s.account);
-        let tx_accounts: HashSet<UInt160> = tx.signers().iter().map(|s| s.account).collect();
-        let mut list: Vec<PoolItem> = Vec::new();
-        let mut conflicts_fee_sum: i64 = 0;
-
-        // Step 1: pooled txs that declared `tx.hash` in their Conflicts attrs.
-        if let Some(conflicting) = self.conflicts.get(&tx_hash) {
-            for hash in conflicting {
-                if let Some(pooled) = self.verified.get(hash) {
-                    if tx_sender.is_some_and(|s| {
-                        pooled
-                            .transaction
-                            .signers()
-                            .iter()
-                            .any(|sig| sig.account == s)
-                    }) {
-                        conflicts_fee_sum =
-                            conflicts_fee_sum.saturating_add(pooled.transaction.network_fee());
-                    }
-                    list.push(pooled.clone());
-                }
-            }
-        }
-        // Step 2: pooled txs that `tx` declares in its own Conflicts attrs.
-        for hash in conflict_target_hashes(tx) {
-            if let Some(pooled) = self.verified.get(&hash) {
-                let pooled_accounts: HashSet<UInt160> = pooled
-                    .transaction
-                    .signers()
-                    .iter()
-                    .map(|s| s.account)
-                    .collect();
-                // Must share at least one signer to be a real conflict.
-                if tx_accounts.is_disjoint(&pooled_accounts) {
-                    return None;
-                }
-                conflicts_fee_sum =
-                    conflicts_fee_sum.saturating_add(pooled.transaction.network_fee());
-                list.push(pooled.clone());
-            }
-        }
-        // `tx` must out-fee the sum of conflicting txs' network fees.
-        if conflicts_fee_sum != 0 && conflicts_fee_sum >= tx.network_fee() {
-            return None;
-        }
-        Some(list)
-    }
-
-    /// C# `MemoryPool.GetLowestFeeTransaction` + one step of `RemoveOverCapacity`:
-    /// evict the single global lowest-fee pooled transaction, PREFERRING the
-    /// unverified queue on a tie (C# returns the unverified min when
-    /// `verifiedMin.CompareTo(unverifiedMin) >= 0`). Returns the evicted
-    /// transaction, or `None` if both queues are empty.
-    fn remove_lowest_fee(&mut self) -> Option<Transaction> {
-        // `items` is a BTreeSet ascending by PoolItem::compare_to, so
-        // `iter().next()` is the lowest-priority item of each queue.
-        let unverified_min = self.unverified.items.iter().next().cloned();
-        let verified_min = self.verified.items.iter().next().cloned();
-        let from_unverified = match (&verified_min, &unverified_min) {
-            (Some(v), Some(u)) => v.compare_to(u) != std::cmp::Ordering::Less,
-            (None, Some(_)) => true,
-            (Some(_), None) => false,
-            (None, None) => return None,
-        };
-        let item = if from_unverified {
-            unverified_min?
-        } else {
-            verified_min?
-        };
-        let hash = item.hash();
-        if from_unverified {
-            self.unverified.remove(&hash);
-        } else {
-            self.verified.remove(&hash);
-        }
-        let dropped = (*item.transaction).clone();
-        // C# RemoveOverCapacity gates the verification-context + conflict cleanup
-        // on `ReferenceEquals(sortedPool, _sortedTransactions)` — i.e. it runs only
-        // for a verified-queue eviction. Unverified items are never tracked in
-        // sender_fees / conflicts (those maps are cleared on block-persist and only
-        // repopulated for verified admissions), so this is a no-op for them; gating
-        // it mirrors C# exactly and documents the invariant.
-        if !from_unverified {
-            self.context_remove(&dropped);
-            self.conflicts.retain(|_, set| {
-                set.remove(&hash);
-                !set.is_empty()
-            });
-        }
-        Some(dropped)
-    }
-}
-
-/// The hashes a transaction declares as conflicting via its `Conflicts` attributes.
-fn conflict_target_hashes(tx: &Transaction) -> Vec<UInt256> {
-    tx.attributes()
-        .iter()
-        .filter_map(|attr| match attr {
-            neo_payloads::TransactionAttribute::Conflicts(c) => Some(c.hash),
-            _ => None,
-        })
-        .collect()
-}
-
-/// C# `TransactionVerificationContext.CheckTransaction` conflict rebate: the
-/// summed system+network fees of the conflicts that will be evicted and whose
-/// Sender (`Signers[0].Account`) equals `tx_sender`. Those fees no longer count
-/// against the sender's pooled-fee allowance. Conflicts with a different first
-/// signer (or none) are not rebated, mirroring C#'s
-/// `conflictingTxs.Where(c => c.Sender.Equals(tx.Sender))`.
-fn conflict_rebate(conflicts: &[PoolItem], tx_sender: Option<UInt160>) -> BigInt {
-    conflicts
-        .iter()
-        .filter(|c| {
-            tx_sender.is_some_and(|sender| {
-                c.transaction.signers().first().map(|s| s.account) == Some(sender)
-            })
-        })
-        .map(|c| {
-            BigInt::from(c.transaction.system_fee()) + BigInt::from(c.transaction.network_fee())
-        })
-        .sum()
-}
-
-/// Returns the `OracleResponse` attribute id of `tx`, if any.
-fn oracle_response_id(tx: &Transaction) -> Option<u64> {
-    tx.attributes().iter().find_map(|attr| match attr {
-        neo_payloads::TransactionAttribute::OracleResponse(resp) => Some(resp.id),
-        _ => None,
-    })
-}
 
 /// Neo transaction memory pool.
 pub struct MemoryPool {
@@ -285,15 +100,7 @@ impl MemoryPool {
             transaction_relay: None,
             settings: settings.clone(),
             native_contract_provider,
-            inner: RwLock::new(MemoryPoolInner {
-                verified: PoolIndex::with_capacity(capacity),
-                unverified: PoolIndex::with_capacity(capacity / 4),
-                conflicts: HashMap::with_capacity(capacity / 2),
-                verification_context: TransactionVerificationContext::new(),
-                sender_fees: HashMap::new(),
-                oracle_responses: HashMap::new(),
-                capacity,
-            }),
+            inner: RwLock::new(MemoryPoolInner::with_capacity(capacity)),
         }
     }
 
