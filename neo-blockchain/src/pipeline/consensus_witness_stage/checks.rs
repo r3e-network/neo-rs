@@ -3,9 +3,12 @@ use neo_payloads::Block;
 
 use crate::pipeline::stage_traits::{EngineError, EngineResult};
 
-use super::{CONSENSUS_WITNESS_MAX_GAS, NeoConsensusWitnessStage};
+use super::{CONSENSUS_WITNESS_MAX_GAS, ConsensusWitnessContext, NeoConsensusWitnessStage};
 
-impl NeoConsensusWitnessStage {
+impl<C> NeoConsensusWitnessStage<C>
+where
+    C: ConsensusWitnessContext,
+{
     /// Synchronous verification entry point used by legacy service helpers.
     pub fn verify_block(&self, block: &Block) -> EngineResult<()> {
         let parent = self

@@ -28,11 +28,17 @@ use super::stage_traits::{
 pub const CONSENSUS_WITNESS_MAX_GAS: i64 = 300_000_000;
 
 /// Concrete consensus-witness verification stage.
-pub struct NeoConsensusWitnessStage {
-    ctx: Arc<dyn ConsensusWitnessContext>,
+pub struct NeoConsensusWitnessStage<C = SnapshotConsensusWitnessContext>
+where
+    C: ConsensusWitnessContext,
+{
+    ctx: Arc<C>,
 }
 
-impl fmt::Debug for NeoConsensusWitnessStage {
+impl<C> fmt::Debug for NeoConsensusWitnessStage<C>
+where
+    C: ConsensusWitnessContext,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("NeoConsensusWitnessStage")
             .field("ctx", &self.ctx)
@@ -40,16 +46,22 @@ impl fmt::Debug for NeoConsensusWitnessStage {
     }
 }
 
-impl NeoConsensusWitnessStage {
+impl<C> NeoConsensusWitnessStage<C>
+where
+    C: ConsensusWitnessContext,
+{
     /// Creates a new consensus-witness stage.
     #[must_use]
-    pub fn new(ctx: Arc<dyn ConsensusWitnessContext>) -> Self {
+    pub fn new(ctx: Arc<C>) -> Self {
         Self { ctx }
     }
 }
 
 #[async_trait]
-impl ConsensusWitnessStage for NeoConsensusWitnessStage {
+impl<C> ConsensusWitnessStage for NeoConsensusWitnessStage<C>
+where
+    C: ConsensusWitnessContext,
+{
     async fn verify_consensus_witness(
         &self,
         _ctx: &StageContext,
@@ -60,7 +72,10 @@ impl ConsensusWitnessStage for NeoConsensusWitnessStage {
 }
 
 #[async_trait]
-impl PipelineStage for NeoConsensusWitnessStage {
+impl<C> PipelineStage for NeoConsensusWitnessStage<C>
+where
+    C: ConsensusWitnessContext,
+{
     fn id(&self) -> StageId {
         StageId::ConsensusWitness
     }

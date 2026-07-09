@@ -58,7 +58,9 @@ impl ConsensusWitnessContext for MockConsensusWitnessContext {
     }
 }
 
-fn stage(parent: Option<ParentHeaderContext>) -> NeoConsensusWitnessStage {
+fn stage(
+    parent: Option<ParentHeaderContext>,
+) -> NeoConsensusWitnessStage<MockConsensusWitnessContext> {
     NeoConsensusWitnessStage::new(Arc::new(MockConsensusWitnessContext::new(parent)))
 }
 
@@ -87,6 +89,24 @@ fn block(index: u32, parent_hash: UInt256, timestamp: u64, witness: Witness) -> 
 fn consensus_witness_stage_id_is_consensus_witness() {
     let stage = stage(None);
     assert_eq!(PipelineStage::id(&stage), StageId::ConsensusWitness);
+}
+
+#[test]
+fn consensus_witness_stage_owns_concrete_context_type() {
+    let source = include_str!("../../pipeline/consensus_witness_stage.rs");
+
+    assert!(
+        source.contains("pub struct NeoConsensusWitnessStage<C = SnapshotConsensusWitnessContext>"),
+        "consensus-witness stage should preserve the concrete context type"
+    );
+    assert!(
+        source.contains("ctx: Arc<C>"),
+        "consensus-witness stage should own Arc<C>, not Arc<dyn ConsensusWitnessContext>"
+    );
+    assert!(
+        !source.contains("ctx: Arc<dyn ConsensusWitnessContext>"),
+        "owned homogeneous stage context should not be erased to dyn"
+    );
 }
 
 #[tokio::test]
