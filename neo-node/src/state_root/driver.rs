@@ -50,7 +50,7 @@ struct ActiveRound {
 
 /// Single-task driver: owns the vote collector and per-round state, routes
 /// inbound `StateService` payloads, and persists finalized signed roots.
-pub(super) struct StateRootDriver {
+pub(super) struct StateRootDriver<P> {
     setup: StateRootSetup,
     blockchain: BlockchainHandle,
     network: NetworkHandle,
@@ -58,7 +58,7 @@ pub(super) struct StateRootDriver {
     /// Chain store: StateValidator designations are read from a fresh snapshot.
     store: Arc<dyn Store>,
     /// Native contract provider captured at node startup for witness verification.
-    native_contract_provider: Arc<dyn NativeContractProvider>,
+    native_contract_provider: Arc<P>,
     /// Local computed roots + persisted signed roots.
     state_store: Arc<StateStore>,
     inbound_rx: mpsc::Receiver<ExtensiblePayload>,
@@ -66,7 +66,10 @@ pub(super) struct StateRootDriver {
     active: HashMap<u32, ActiveRound>,
 }
 
-impl StateRootDriver {
+impl<P> StateRootDriver<P>
+where
+    P: NativeContractProvider + 'static,
+{
     /// A fresh read snapshot of the current persisted chain state, for
     /// StateValidator designation lookups (C# reads `NeoSystem.StoreView`).
     fn fresh_chain_snapshot(&self) -> Arc<DataCache> {
@@ -389,16 +392,19 @@ impl StateRootDriver {
 // Rationale: the state-root driver is the node composition seam and must
 // receive every provider/handle explicitly instead of capturing globals.
 #[allow(clippy::too_many_arguments)]
-pub fn state_root_driver_task(
+pub fn state_root_driver_task<P>(
     setup: StateRootSetup,
     blockchain: BlockchainHandle,
     network: NetworkHandle,
     settings: Arc<ProtocolSettings>,
     store: Arc<dyn Store>,
-    native_contract_provider: Arc<dyn NativeContractProvider>,
+    native_contract_provider: Arc<P>,
     state_store: Arc<StateStore>,
     inbound_rx: mpsc::Receiver<ExtensiblePayload>,
-) -> impl std::future::Future<Output = ()> + Send + 'static {
+) -> impl std::future::Future<Output = ()> + Send + 'static
+where
+    P: NativeContractProvider + 'static,
+{
     let driver = StateRootDriver {
         setup,
         blockchain,

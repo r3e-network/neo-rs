@@ -108,19 +108,24 @@ fn a_non_state_service_extensible_is_not_decoded() {
 #[test]
 fn sender_rotates_backward_with_each_retry() {
     // N = 7, root_index = 10: sender = (10 - retries) mod 7.
-    assert_eq!(StateRootDriver::sender_index(10, 0, 7), 3);
-    assert_eq!(StateRootDriver::sender_index(10, 1, 7), 2);
-    assert_eq!(StateRootDriver::sender_index(10, 4, 7), 6); // (10-4)=6
+    type TestDriver = StateRootDriver<neo_native_contracts::StandardNativeProvider>;
+    assert_eq!(TestDriver::sender_index(10, 0, 7), 3);
+    assert_eq!(TestDriver::sender_index(10, 1, 7), 2);
+    assert_eq!(TestDriver::sender_index(10, 4, 7), 6); // (10-4)=6
     // Wraps past zero without panicking.
-    assert_eq!(StateRootDriver::sender_index(2, 5, 7), 4); // (2-5)=-3 -> 4
+    assert_eq!(TestDriver::sender_index(2, 5, 7), 4); // (2-5)=-3 -> 4
 }
 
 #[test]
 fn driver_verifies_signed_roots_with_explicit_native_provider() {
     let source = include_str!("../../state_root/driver.rs");
     assert!(
-        source.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
-        "StateRootDriver must own the native provider captured at node startup"
+        source.contains("pub(super) struct StateRootDriver<P>"),
+        "StateRootDriver must stay generic over the native provider captured at node startup"
+    );
+    assert!(
+        source.contains("native_contract_provider: Arc<P>"),
+        "StateRootDriver must own the concrete provider type instead of erasing it behind dyn"
     );
     assert!(
         source.contains("verify_state_root_with_native_provider"),

@@ -40,23 +40,29 @@ trait StateRootNativeProvider: Send + Sync {
 /// Adapter from the node-composed native-contract provider to the state-root
 /// verifier's narrow RoleManagement read capability.
 #[derive(Clone)]
-struct StateRootNativeProviderAdapter {
-    native_contract_provider: Arc<dyn NativeContractProvider>,
+struct StateRootNativeProviderAdapter<P> {
+    native_contract_provider: Arc<P>,
 }
 
-impl StateRootNativeProviderAdapter {
-    fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
+impl<P> StateRootNativeProviderAdapter<P>
+where
+    P: NativeContractProvider,
+{
+    fn new(native_contract_provider: Arc<P>) -> Self {
         Self {
             native_contract_provider,
         }
     }
 
-    fn provider(&self) -> Arc<dyn NativeContractProvider> {
-        Arc::clone(&self.native_contract_provider)
+    fn provider(&self) -> &P {
+        &self.native_contract_provider
     }
 }
 
-impl std::fmt::Debug for StateRootNativeProviderAdapter {
+impl<P> std::fmt::Debug for StateRootNativeProviderAdapter<P>
+where
+    P: NativeContractProvider,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StateRootNativeProviderAdapter")
             .field("native_contract_provider", &"NativeContractProvider")
@@ -64,7 +70,10 @@ impl std::fmt::Debug for StateRootNativeProviderAdapter {
     }
 }
 
-impl StateRootNativeProvider for StateRootNativeProviderAdapter {
+impl<P> StateRootNativeProvider for StateRootNativeProviderAdapter<P>
+where
+    P: NativeContractProvider,
+{
     fn state_validators(&self, snapshot: &DataCache, index: u32) -> Vec<neo_crypto::ECPoint> {
         self.provider()
             .get_native_contract_by_name("RoleManagement")
@@ -89,11 +98,14 @@ impl StateRootNativeProvider for StateRootNativeProviderAdapter {
 /// C# `RoleManagement.GetDesignatedByRole(StateValidator, index)` view. Keeping
 /// this lookup here lets node drivers use the same provider seam without
 /// constructing native contract handles locally.
-pub fn state_root_verifiers_with_native_provider(
+pub fn state_root_verifiers_with_native_provider<P>(
     snapshot: &DataCache,
     index: u32,
-    native_contract_provider: Arc<dyn NativeContractProvider>,
-) -> Vec<neo_crypto::ECPoint> {
+    native_contract_provider: Arc<P>,
+) -> Vec<neo_crypto::ECPoint>
+where
+    P: NativeContractProvider,
+{
     StateRootNativeProviderAdapter::new(native_contract_provider).state_validators(snapshot, index)
 }
 
@@ -157,23 +169,27 @@ where
 /// Callers that already own composition or persistence resources should prefer
 /// this entry point so state-root witness verification stays bound to the same
 /// native-contract set as the surrounding node service.
-pub fn verify_state_root_with_native_provider(
+pub fn verify_state_root_with_native_provider<P>(
     state_root: &StateRoot,
     settings: &ProtocolSettings,
     snapshot: &DataCache,
-    native_contract_provider: Arc<dyn NativeContractProvider>,
-) -> bool {
+    native_contract_provider: Arc<P>,
+) -> bool
+where
+    P: NativeContractProvider + 'static,
+{
     if state_root.witness().is_none() {
         return false;
     }
-    let native = StateRootNativeProviderAdapter::new(Arc::clone(&native_contract_provider));
+    let native = StateRootNativeProviderAdapter::new(native_contract_provider.clone());
     let verifiable = VerifiableStateRoot::new(state_root.clone(), native);
+    let provider: Arc<dyn NativeContractProvider> = native_contract_provider.clone();
     Helper::verify_witnesses_with_native_provider(
         &verifiable,
         settings,
         snapshot,
         STATE_ROOT_VERIFY_GAS,
-        Some(native_contract_provider),
+        Some(provider),
     )
 }
 
