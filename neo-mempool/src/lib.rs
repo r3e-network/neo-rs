@@ -22,9 +22,8 @@ mod pool;
 
 pub use admission::{
     PreverifyCompleted, TransactionRouter, TransactionVerificationContext, transaction_router,
-    transaction_verification_context, verification, verify_state_dependent,
-    verify_state_dependent_with_native_provider, verify_state_independent, verify_transaction,
-    verify_transaction_dependent_only, verify_transaction_dependent_only_with_native_provider,
+    transaction_verification_context, verification, verify_state_dependent_with_native_provider,
+    verify_state_independent, verify_transaction_dependent_only_with_native_provider,
     verify_transaction_with_native_provider,
 };
 pub use events::{

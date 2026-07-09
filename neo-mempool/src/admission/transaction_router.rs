@@ -13,7 +13,7 @@
 //! when the mempool admission path re-runs transaction verification:
 //! if the cached result is available (and `Succeed`), the mempool
 //! skips the redundant `verify_state_independent()` and only performs
-//! `verify_state_dependent()`. C# achieves the same via
+//! the provider-aware state-dependent verifier. C# achieves the same via
 //! `Transaction.VerificationResult` caching in
 //! `Blockchain.AskForTransaction()`.
 

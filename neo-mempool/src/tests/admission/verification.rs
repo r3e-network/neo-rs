@@ -1,4 +1,5 @@
 use super::*;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::{GasToken, LedgerContract, PolicyContract};
 use neo_payloads::{Signer, Witness};
 use neo_primitives::{UInt256, WitnessScope};
@@ -6,6 +7,11 @@ use neo_serialization::BinarySerializer;
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::StackItem;
 use neo_vm_rs::{ExecutionEngineLimits, OpCode};
+use std::sync::Arc;
+
+fn standard_native_provider() -> Arc<dyn NativeContractProvider> {
+    Arc::new(neo_native_contracts::StandardNativeProvider::new())
+}
 
 fn seed_current_ledger(snapshot: &DataCache, index: u32) {
     let hash = UInt256::from_bytes(&[0u8; 32]).expect("zero hash");
@@ -125,12 +131,13 @@ fn missing_core_policy_fee_settings_fail_closed() {
     let tx = standard_shape_transaction(account);
 
     assert_eq!(
-        verify_state_dependent(
+        verify_state_dependent_with_native_provider(
             &tx,
             &snapshot,
             &ProtocolSettings::default(),
             &BigInt::from(0),
             false,
+            standard_native_provider(),
         ),
         VerifyResult::UnableToVerify,
         "C# Policy.GetFeePerByte/GetExecFeeFactor index initialized storage; missing keys must not fall back to defaults and admit a transaction"
@@ -146,12 +153,13 @@ fn notary_sponsored_fee_check_uses_payer_deposit_not_notary_gas() {
     seed_notary_deposit(&snapshot, &payer, 4_000_000, 100);
     let tx = notary_sponsored_shape_transaction(payer);
 
-    let result = verify_state_dependent(
+    let result = verify_state_dependent_with_native_provider(
         &tx,
         &snapshot,
         &ProtocolSettings::default(),
         &BigInt::from(0),
         false,
+        standard_native_provider(),
     );
 
     assert_ne!(
@@ -254,6 +262,10 @@ fn native_reads_use_admission_provider_boundary() {
     assert!(verifier.contains("AdmissionNativeProvider"));
     assert!(
         verifier.contains("NativeAdmissionProvider::new(Arc::clone(&native_contract_provider))")
+    );
+    assert!(
+        !verifier.contains("StandardNativeProvider"),
+        "admission verification should require an explicit NativeContractProvider instead of constructing the default provider internally"
     );
     assert!(attributes.contains("AdmissionNativeProvider"));
     assert!(!verifier.contains("PolicyContract::new()"));

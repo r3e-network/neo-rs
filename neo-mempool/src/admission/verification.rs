@@ -1,9 +1,9 @@
 //! Transaction verification for mempool admission.
 //!
 //! Ports C# `Transaction.Verify` (`neo_csharp/src/Neo/Network/P2P/Payloads/
-//! Transaction.cs:308`): [`verify_state_independent`] (Transaction.cs:371 —
+//! Transaction.cs:308`): [`verify_state_independent`] (Transaction.cs:371 -
 //! size, strict script parse, standard single-sig / multisig fast-path
-//! signature checks) followed by [`verify_state_dependent`]
+//! signature checks) followed by [`verify_state_dependent_with_native_provider`]
 //! (Transaction.cs:323 — expiry window, blocked-account policy, sender GAS
 //! balance, per-attribute verification + fees, fee-per-byte coverage, and
 //! engine-based witness verification for non-standard witnesses).
@@ -11,8 +11,8 @@
 //! In C# the state-independent half runs in `TransactionRouter` (the
 //! parallel preverifier) and the state-dependent half inside
 //! `MemoryPool.TryAdd`; the observable behavior of relayed transactions is
-//! the combination, which is what [`verify_transaction`] produces for the
-//! single-threaded admission path here.
+//! the combination, which is what [`verify_transaction_with_native_provider`]
+//! produces for the single-threaded admission path here.
 //!
 //! Policy/GAS/Notary/Oracle/Role/Ledger state is read through provider-style
 //! seams so the admission path depends on capabilities, not concrete native
@@ -22,7 +22,6 @@
 use neo_config::{Hardfork, ProtocolSettings};
 use neo_execution::helper::Helper;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::StandardNativeProvider;
 use neo_payloads::{MAX_TRANSACTION_SIZE, Transaction, TransactionAttribute};
 use neo_primitives::{UInt160, VerifyResult};
 // `invocation_script`/`verification_script` on `Witness` are trait methods.
@@ -38,19 +37,6 @@ use std::sync::Arc;
 
 use super::ledger_provider::{AdmissionLedgerProvider, NativeAdmissionLedgerProvider};
 use super::native_provider::{AdmissionNativeProvider, NativeAdmissionProvider};
-
-/// C# `NativeContract.GAS.BalanceOf(snapshot, account)`: the first field of the
-/// interoperable NEP-17 `AccountState` struct stored under
-/// `Prefix_Account + account`; an absent or undecodable record is zero.
-///
-/// Delegates to the single canonical decode in `neo-native-contracts` so the
-/// mempool fee check cannot drift from the contract's own balance reader.
-pub fn gas_balance_of(snapshot: &DataCache, account: &UInt160) -> BigInt {
-    let native = NativeAdmissionProvider::new(Arc::new(StandardNativeProvider::new()));
-    native
-        .gas_balance(snapshot, account)
-        .unwrap_or_else(|_| BigInt::from(0))
-}
 
 /// C# v3.10.1 `MemoryPool.GetPayer` balance side: Notary-sponsored
 /// transactions (`Sender == Notary.Hash` and a second signer exists) spend the
@@ -92,30 +78,6 @@ fn single_signature_invocation(invocation: &[u8]) -> Option<&[u8]> {
     neo_vm::script_builder::signature_from_invocation(invocation)
 }
 
-/// The full C# `Transaction.Verify`: state-independent first, then
-/// state-dependent. `pooled_sender_fee` is the verification-context
-/// sender-fee total from the memory pool (C#
-/// v3.10.1 `TransactionVerificationContext._senderFee` payer-tuple total);
-/// `oracle_duplicate`
-/// reports whether the pool already holds a transaction with the same
-/// `OracleResponse` id (C# `_oracleResponses`).
-pub fn verify_transaction(
-    tx: &Transaction,
-    snapshot: &DataCache,
-    settings: &ProtocolSettings,
-    pooled_sender_fee: &BigInt,
-    oracle_duplicate: bool,
-) -> VerifyResult {
-    verify_transaction_with_native_provider(
-        tx,
-        snapshot,
-        settings,
-        pooled_sender_fee,
-        oracle_duplicate,
-        Arc::new(StandardNativeProvider::new()),
-    )
-}
-
 /// The full C# `Transaction.Verify` using an explicit native-contract provider.
 pub fn verify_transaction_with_native_provider(
     tx: &Transaction,
@@ -139,32 +101,13 @@ pub fn verify_transaction_with_native_provider(
     )
 }
 
-/// Runs only [`verify_state_dependent`], skipping
+/// Runs only [`verify_state_dependent_with_native_provider`], skipping
 /// [`verify_state_independent`]. Used when the state-independent
 /// result is already cached (e.g. from `TransactionRouter::preverify`
 /// → `PreverifyCompleted::cached_state_independent`), avoiding
-/// redundant ECDSA signature verification. C# achieves the same
-/// by caching `Transaction.VerificationResult` which `MemoryPool.
-/// TryAdd` reads before performing state-dependent checks only.
-pub fn verify_transaction_dependent_only(
-    tx: &Transaction,
-    snapshot: &DataCache,
-    settings: &ProtocolSettings,
-    pooled_sender_fee: &BigInt,
-    oracle_duplicate: bool,
-) -> VerifyResult {
-    verify_transaction_dependent_only_with_native_provider(
-        tx,
-        snapshot,
-        settings,
-        pooled_sender_fee,
-        oracle_duplicate,
-        Arc::new(StandardNativeProvider::new()),
-    )
-}
-
-/// Runs only [`verify_state_dependent_with_native_provider`], skipping
-/// [`verify_state_independent`], using an explicit native-contract provider.
+/// redundant ECDSA signature verification. C# achieves the same by caching
+/// `Transaction.VerificationResult` which `MemoryPool.TryAdd` reads before
+/// performing state-dependent checks only.
 pub fn verify_transaction_dependent_only_with_native_provider(
     tx: &Transaction,
     snapshot: &DataCache,
@@ -263,24 +206,6 @@ pub fn verify_state_independent(tx: &Transaction, settings: &ProtocolSettings) -
         }
     }
     VerifyResult::Succeed
-}
-
-/// C# `Transaction.VerifyStateDependent` (Transaction.cs:323).
-pub fn verify_state_dependent(
-    tx: &Transaction,
-    snapshot: &DataCache,
-    settings: &ProtocolSettings,
-    pooled_sender_fee: &BigInt,
-    oracle_duplicate: bool,
-) -> VerifyResult {
-    verify_state_dependent_with_native_provider(
-        tx,
-        snapshot,
-        settings,
-        pooled_sender_fee,
-        oracle_duplicate,
-        Arc::new(StandardNativeProvider::new()),
-    )
 }
 
 /// C# `Transaction.VerifyStateDependent` (Transaction.cs:323) using an explicit

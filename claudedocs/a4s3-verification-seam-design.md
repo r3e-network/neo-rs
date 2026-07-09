@@ -97,11 +97,12 @@ Do NOT make `verify_witness` a `Verifiable` trait method — that re-introduces 
 1. **Create a neo-core `verification/` module** (free functions). KEEP `verify_state_independent`
    (now engine-free) + `get_script_hashes_for_verifying` ON the types (they only need neo-crypto +
    neo-script-builder, both below neo-p2p). Relocate ONLY the engine/native parts —
-   `verify` (entry), `verify_state_dependent`/`_at_height`, `verify_standard_witness`,
+   `verify` (entry), `verify_state_dependent_with_native_provider`/`_at_height`, `verify_standard_witness`,
    `verify_witness`/`verify_witness_against_hash` — out of `impl Transaction`/`impl Header` into
-   `fn verify_transaction*(tx: &Transaction, snapshot, settings, …)` / `fn verify_header*(…)`.
+   `fn verify_transaction_with_native_provider(tx: &Transaction, snapshot, settings, provider, …)` /
+   `fn verify_header*(…)`.
    Keep behavior byte/semantics-identical. Update the ~16 external callers
-   (`tx.verify(...)` → `verify_transaction(&tx, ...)`).
+   (`tx.verify(...)` → `verify_transaction_with_native_provider(&tx, ...)`).
 2. **Relocate the attribute `verify()` impls** similarly (oracle_response, not_valid_before,
    conflicts, high_priority, extensible_payload, transaction_attribute fee) into the verification module.
 3. At this point the payload types are **pure data + serialization** (no engine/native refs) — they
