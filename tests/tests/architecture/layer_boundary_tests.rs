@@ -744,6 +744,38 @@ async fn test_neo_v3101_release_delta_has_source_guards() {
             "neo-native-contracts/src/std_lib/numeric.rs",
             &["CultureInfo.InvariantCulture", "dotnet_bigint_to_hex"][..],
         ),
+        (
+            "neo-vm/src/runtime/reference_counter.rs",
+            &[
+                "C# `RemoveStackReference(item)`",
+                "compounds lower the total only when `IsStackReferenced` is true",
+                "self.remove_stack_reference(&sub_item)",
+            ][..],
+        ),
+        (
+            "neo-vm/src/stack_item/array.rs",
+            &[
+                "C# v3.10.1 CLEARITEMS snapshots sub-items",
+                "inner.items.clear();",
+                "rc.remove_stack_reference(&item)",
+            ][..],
+        ),
+        (
+            "neo-vm/src/stack_item/map.rs",
+            &[
+                "C# v3.10.1 CLEARITEMS snapshots `Map.SubItems`",
+                "inner.items.clear();",
+                "rc.remove_stack_reference(&item)",
+            ][..],
+        ),
+        (
+            "neo-vm/src/tests/runtime/reference_counter.rs",
+            &[
+                "removing_unreferenced_compound_does_not_underflow",
+                "clearing_self_referenced_array_releases_all_references",
+                "clearing_self_referenced_map_releases_all_references",
+            ][..],
+        ),
     ];
 
     let mut missing = Vec::new();
