@@ -10,9 +10,7 @@ use crate::ledger_provider::{
 };
 use crate::service::{BlockchainService, MempoolLike};
 
-use super::transaction_provider::{
-    NativeTransactionProviderFactory, TransactionNativeProvider, TransactionNativeProviderFactory,
-};
+use super::transaction_provider::{NativeTransactionProvider, TransactionNativeProvider};
 
 /// C# `Blockchain.MaxTxToReverifyPerIdle`.
 const MAX_TX_TO_REVERIFY_PER_IDLE: usize = 10;
@@ -48,7 +46,14 @@ where
             return false;
         };
         let settings = self.system.settings();
-        let transaction_native_provider = NativeTransactionProviderFactory.provider();
+        let Some(native_contract_provider) = self.system.native_contract_provider() else {
+            warn!(
+                target: "neo",
+                "skipping persisted ledger conflict check because SystemContext has no native provider"
+            );
+            return false;
+        };
+        let transaction_native_provider = NativeTransactionProvider::new(native_contract_provider);
         Self::persisted_conflict_exists_with_provider(
             snapshot.as_ref(),
             settings.as_ref(),

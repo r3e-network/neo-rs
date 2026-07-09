@@ -269,7 +269,7 @@ fn extensible_verification_uses_system_native_provider() {
 }
 
 #[test]
-fn transaction_admission_uses_policy_provider_factory() {
+fn transaction_admission_uses_system_native_provider() {
     let source = include_str!("../../handlers/transactions.rs");
     let conflict_start = source
         .find("fn persisted_conflict_exists")
@@ -285,8 +285,16 @@ fn transaction_admission_uses_policy_provider_factory() {
         "persisted conflict checks should depend on a native read capability"
     );
     assert!(
-        conflict_helper.contains("NativeTransactionProviderFactory"),
-        "persisted conflict checks should create native read providers through a factory"
+        conflict_helper.contains("self.system.native_contract_provider()"),
+        "persisted conflict checks should use the provider exposed by SystemContext"
+    );
+    assert!(
+        !conflict_helper.contains("NativeTransactionProviderFactory"),
+        "persisted conflict checks must not create a second production native provider factory"
+    );
+    assert!(
+        conflict_helper.contains("NativeTransactionProvider::new(native_contract_provider)"),
+        "persisted conflict checks should adapt the explicit native provider"
     );
     assert!(
         !conflict_helper.contains("PolicyContract::new()"),
@@ -298,8 +306,18 @@ fn transaction_admission_uses_policy_provider_factory() {
     let provider = std::fs::read_to_string(&provider_path)
         .unwrap_or_else(|error| panic!("{}: {error}", provider_path.display()));
     assert!(provider.contains("trait TransactionNativeProvider"));
-    assert!(provider.contains("trait TransactionNativeProviderFactory"));
-    assert!(provider.contains("policy: PolicyContract"));
+    assert!(
+        !provider.contains("trait TransactionNativeProviderFactory"),
+        "transaction admission should adapt the node-composed NativeContractProvider instead of owning a private factory"
+    );
+    assert!(
+        !provider.contains("PolicyContract::new()"),
+        "transaction admission provider must resolve PolicyContract through the explicit native provider"
+    );
+    assert!(
+        provider.contains("get_native_contract_by_name(\"PolicyContract\")"),
+        "transaction admission provider should read PolicyContract from the explicit NativeContractProvider"
+    );
 }
 
 #[test]
