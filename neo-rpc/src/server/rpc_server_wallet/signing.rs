@@ -24,9 +24,7 @@ use crate::server::rpc_server::RpcServer;
 use crate::server::wallet_compat;
 
 use super::RpcServerWallet;
-use super::native_provider::{
-    NativeWalletProviderFactory, WalletNativeProvider, WalletNativeProviderFactory,
-};
+use super::native_provider::{NativeWalletProvider, WalletNativeProvider};
 use super::support::signature_contract_pubkey;
 
 pub(super) fn sign_and_relay(
@@ -184,8 +182,7 @@ pub(super) fn sign_and_relay(
 
     // Adjust network fee if necessary (parity with C# min fee calculation).
     if tx.size() > 1024 {
-        let fee_per_byte = NativeWalletProviderFactory
-            .provider()
+        let fee_per_byte = NativeWalletProvider::new(server.system().native_contract_provider())
             .fee_per_byte(snapshot_arc.as_ref())
             .map(i64::from)
             .unwrap_or_else(|_| {

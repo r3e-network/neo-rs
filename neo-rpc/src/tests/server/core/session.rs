@@ -366,21 +366,43 @@ fn wallet_compat_policy_reads_use_composed_native_provider() {
 }
 
 #[test]
-fn rpc_wallet_policy_reads_use_native_provider_factory() {
+fn rpc_wallet_policy_reads_use_composed_native_provider() {
     let provider = include_str!("../../../server/rpc_server_wallet/native_provider.rs");
     assert!(provider.contains("trait WalletNativeProvider"));
-    assert!(provider.contains("trait WalletNativeProviderFactory"));
-    assert!(provider.contains("struct NativeWalletProviderFactory"));
-    assert!(provider.contains("PolicyContract::new()"));
+    assert!(provider.contains("struct NativeWalletProvider"));
+    assert!(
+        provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
+        "wallet native provider should adapt the composition-root provider"
+    );
+    assert!(
+        provider.contains("get_native_contract_by_name(\"PolicyContract\")"),
+        "wallet native provider should resolve Policy through NativeContractProvider"
+    );
+    assert!(
+        provider.contains("with_contract::<PolicyContract"),
+        "wallet native provider should downcast through the shared native provider adapter"
+    );
+    assert!(
+        !provider.contains("PolicyContract::new()"),
+        "wallet native provider should not construct a standalone PolicyContract"
+    );
+    assert!(
+        !provider.contains("WalletNativeProviderFactory"),
+        "wallet native provider should be created from the composed provider, not a local factory"
+    );
 
     let signing = include_str!("../../../server/rpc_server_wallet/signing.rs");
     assert!(
-        signing.contains("NativeWalletProviderFactory"),
-        "wallet signing should read Policy values through the wallet native provider factory"
+        signing.contains("NativeWalletProvider::new(server.system().native_contract_provider())"),
+        "wallet signing should adapt the composed native provider"
     );
     assert!(
         !signing.contains("PolicyContract::new()"),
         "wallet signing should not construct PolicyContract directly"
+    );
+    assert!(
+        !signing.contains("NativeWalletProviderFactory"),
+        "wallet signing should not create a standalone wallet native provider factory"
     );
 }
 
