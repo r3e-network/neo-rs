@@ -221,17 +221,60 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
 }
 
 #[test]
+fn rpc_policy_native_providers_share_adapter_helper() {
+    let server_module = include_str!("../../../server/mod.rs");
+    assert!(
+        server_module.contains("mod native_provider;"),
+        "RPC server should expose one private native-provider adapter helper"
+    );
+
+    let provider_sources = [
+        (
+            "session",
+            include_str!("../../../server/session/native_provider.rs"),
+        ),
+        (
+            "smart-contract",
+            include_str!("../../../server/smart_contract/native_provider.rs"),
+        ),
+        (
+            "wallet-compat",
+            include_str!("../../../server/wallet_compat/native_provider.rs"),
+        ),
+        (
+            "wallet",
+            include_str!("../../../server/rpc_server_wallet/native_provider.rs"),
+        ),
+        (
+            "node",
+            include_str!("../../../server/rpc_server_node/native_provider.rs"),
+        ),
+    ];
+
+    for (name, source) in provider_sources {
+        assert!(
+            source.contains("NativeProviderAdapter"),
+            "{name} Policy provider should use the shared native-provider adapter"
+        );
+        assert!(
+            !source.contains("get_native_contract_by_name(\"PolicyContract\")"),
+            "{name} Policy provider should not duplicate native-contract lookup"
+        );
+        assert!(
+            !source.contains("downcast_ref::<"),
+            "{name} Policy provider should not duplicate native-contract downcasting"
+        );
+    }
+}
+
+#[test]
 fn rpc_session_policy_reads_use_composed_native_provider() {
     let provider = include_str!("../../../server/session/native_provider.rs");
     assert!(provider.contains("trait SessionNativeProvider"));
     assert!(provider.contains("struct NativeSessionProvider"));
     assert!(
-        provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
-        "session native provider should adapt the composition-root provider"
-    );
-    assert!(
-        provider.contains("get_native_contract_by_name(\"PolicyContract\")"),
-        "session native provider should resolve Policy through NativeContractProvider"
+        provider.contains("adapter: NativeProviderAdapter"),
+        "session native provider should adapt the composition-root provider through the shared adapter"
     );
     assert!(
         provider.contains("with_contract::<PolicyContract"),
@@ -287,12 +330,8 @@ fn smart_contract_wallet_policy_reads_use_composed_native_provider() {
     assert!(provider.contains("trait SmartContractNativeProvider"));
     assert!(provider.contains("struct NativeSmartContractProvider"));
     assert!(
-        provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
-        "smart-contract native provider should adapt the composition-root provider"
-    );
-    assert!(
-        provider.contains("get_native_contract_by_name(\"PolicyContract\")"),
-        "smart-contract native provider should resolve Policy through NativeContractProvider"
+        provider.contains("adapter: NativeProviderAdapter"),
+        "smart-contract native provider should adapt the composition-root provider through the shared adapter"
     );
     assert!(
         provider.contains("with_contract::<PolicyContract"),
@@ -329,12 +368,8 @@ fn wallet_compat_policy_reads_use_composed_native_provider() {
     assert!(provider.contains("trait WalletCompatNativeProvider"));
     assert!(provider.contains("struct NativeWalletCompatProvider"));
     assert!(
-        provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
-        "wallet-compat native provider should adapt the composition-root provider"
-    );
-    assert!(
-        provider.contains("get_native_contract_by_name(\"PolicyContract\")"),
-        "wallet-compat native provider should resolve Policy through NativeContractProvider"
+        provider.contains("adapter: NativeProviderAdapter"),
+        "wallet-compat native provider should adapt the composition-root provider through the shared adapter"
     );
     assert!(
         provider.contains("with_contract::<PolicyContract"),
@@ -371,12 +406,8 @@ fn rpc_wallet_policy_reads_use_composed_native_provider() {
     assert!(provider.contains("trait WalletNativeProvider"));
     assert!(provider.contains("struct NativeWalletProvider"));
     assert!(
-        provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
-        "wallet native provider should adapt the composition-root provider"
-    );
-    assert!(
-        provider.contains("get_native_contract_by_name(\"PolicyContract\")"),
-        "wallet native provider should resolve Policy through NativeContractProvider"
+        provider.contains("adapter: NativeProviderAdapter"),
+        "wallet native provider should adapt the composition-root provider through the shared adapter"
     );
     assert!(
         provider.contains("with_contract::<PolicyContract"),

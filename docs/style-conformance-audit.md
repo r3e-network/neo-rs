@@ -341,7 +341,9 @@ High-signal clusters found during the first pass:
   materialization, and wallet-compat network-fee calculation follows it for
   execution-fee-factor and fee-per-byte reads. RPC wallet signing/finalization
   now follows it for oversized-transaction fee-per-byte adjustment, and RPC
-  node `getversion` now follows it for dynamic Policy protocol fields.
+  node `getversion` now follows it for dynamic Policy protocol fields. The RPC
+  Policy providers now share one adapter for native-registry lookup and
+  downcasting instead of repeating that code per endpoint group.
 - Existing git hygiene rules exclude local ledgers, RocksDB state,
   checkpoints, logs, and build outputs. A scan did not find obvious tracked
   chain.acc/RocksDB artifacts, but runtime-data checks should stay in CI.

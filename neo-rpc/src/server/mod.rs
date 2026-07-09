@@ -17,6 +17,8 @@
 //! - `ledger_queries`: Shared ledger query helpers used by RPC handlers.
 //! - `middleware`: RPC middleware for transport-level policy and observability.
 //! - `model`: RPC request parameter models and conversion helpers.
+//! - `native_provider`: Shared adapter from node-composed native-contract
+//!   providers to narrow RPC provider traits.
 //! - `native_queries`: Shared native-contract query helpers used by RPC
 //!   handlers.
 //! - `parameter_converter`: RPC parameter parsing and type conversion helpers.
@@ -56,6 +58,7 @@ pub(crate) mod jsonrpsee_adapter;
 mod ledger_queries;
 pub mod middleware;
 pub mod model;
+mod native_provider;
 mod native_queries;
 mod node_context;
 mod parameter_converter;

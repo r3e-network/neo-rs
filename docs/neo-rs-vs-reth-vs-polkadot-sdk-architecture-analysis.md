@@ -427,7 +427,9 @@ provider passed into their execution path for max-valid-until-block,
 milliseconds-per-block, execution-fee-factor, fee-per-byte, and dynamic
 `getversion` protocol values instead of constructing standalone
 `PolicyContract` handles or duplicating Policy storage keys through local
-native factories. Oracle service processing also adapts the `OracleService`-owned
+native factories. Those RPC Policy adapters share a crate-local adapter for
+registry lookup and downcasting, leaving each endpoint module with only its
+narrow capability trait. Oracle service processing also adapts the `OracleService`-owned
 `NativeContractProvider` for Oracle, ContractManagement, RoleManagement, and
 Policy reads instead of constructing private native handles or a service-local
 native factory.

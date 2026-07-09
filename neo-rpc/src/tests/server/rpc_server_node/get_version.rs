@@ -83,12 +83,8 @@ fn get_version_dynamic_policy_reads_use_node_native_provider_boundary() {
     let provider = include_str!("../../../server/rpc_server_node/native_provider.rs");
     assert!(provider.contains("trait NodeNativeProvider"));
     assert!(
-        provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
-        "node native provider should adapt the composition-root provider"
-    );
-    assert!(
-        provider.contains("get_native_contract_by_name(\"PolicyContract\")"),
-        "node native provider should resolve Policy through NativeContractProvider"
+        provider.contains("adapter: NativeProviderAdapter"),
+        "node native provider should adapt the composition-root provider through the shared adapter"
     );
     assert!(
         provider.contains("with_contract::<PolicyContract"),

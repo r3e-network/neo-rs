@@ -307,7 +307,10 @@ The detailed rules for this style live in
   smart-contract wallet invocation, wallet-compat network-fee calculation,
   oracle service processing, RPC wallet signing/finalization, and RPC node
   `getversion` policy projection adapt the composed provider for native reads
-  instead of constructing private native-contract handles.
+  instead of constructing private native-contract handles. RPC Policy provider
+  adapters share one crate-local native-provider adapter for registry lookup,
+  downcasting, and redacted debug output; feature modules keep only their narrow
+  capability traits.
   `Helper::verify_witness*_with_native_provider` and
   provider-aware script-hash resolution let node services verify witnesses
   against an explicit provider without reading the global slot. Batch block
