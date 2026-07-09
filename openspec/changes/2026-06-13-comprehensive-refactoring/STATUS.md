@@ -354,10 +354,11 @@ dedicated follow-up proposal.
 A verification pass over the (then still uncommitted) refactoring confirmed the
 workspace builds and all suites pass — `cargo test --workspace --lib` (exit 0),
 `-p neo-rpc --features server` (568/0), `-p neo-native-contracts` (227/0),
-`--workspace --all-targets` check (exit 0) — and that **every Neo v3.10.0
-consensus item (parity plan A–G + P1) survived the refactor intact** with its
-pinning tests. The pass also fixed one regression and corrected three
-over-stated claims above:
+`--workspace --all-targets` check (exit 0) — and that **the then-current
+Neo v3.10.0 consensus baseline (parity plan A–G + P1) survived the refactor
+intact** with its pinning tests. The active target has since moved to Neo N3
+v3.10.1; see the release-delta audit below. The pass also fixed one regression
+and corrected three over-stated claims above:
 
 ## v3.10.1 target update (2026-07-08)
 

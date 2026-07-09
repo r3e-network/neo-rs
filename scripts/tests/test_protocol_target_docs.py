@@ -95,8 +95,29 @@ class ProtocolTargetDocsTests(unittest.TestCase):
             encoding="utf-8"
         )
 
+        self.assertIn("d10e9ceecdabe3fcff719ee68ea5b76ba7e62c3d", text)
         self.assertIn("v3.10.0...v3.10.1", text)
-        for marker in [
+        for marker in {
+            "df402675",
+            "#4562",
+            "d10e9cee",
+            "#4575",
+            "9f4795ab",
+            "#4571",
+            "f5ae5e82",
+            "#4565",
+            "e66e4dfc",
+            "#4563",
+            "6b1c90c6",
+            "#4566",
+            "55c14029",
+            "#4569",
+            "abbc3a25",
+            "#4570",
+            "7f8454f4",
+            "#4572",
+            "7bb91ff5",
+            "#4574",
             "HF_Huyao",
             "ApplicationEngine.AddFee",
             "StdLib.Itoa",
@@ -105,7 +126,7 @@ class ProtocolTargetDocsTests(unittest.TestCase):
             "Notary-sponsored",
             "ExtensiblePayload",
             "StorageKey.ToString",
-        ]:
+        }:
             with self.subTest(marker=marker):
                 self.assertIn(marker, text)
 
