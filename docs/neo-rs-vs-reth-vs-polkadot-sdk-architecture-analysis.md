@@ -18,11 +18,13 @@ without an installed cold archive, so composition roots can keep one provider
 shape before static files land. Node-local peer block serving now uses that
 same hot/cold factory shape with `EmptyLedgerProvider` as the cold side, so
 installing static files later is a provider swap instead of a block-source
-rewrite. Observability ledger-height reads (health/readiness/metrics) share the
-same routed factory shape for local-ledger mode while remote-ledger mode reports
-the upstream RPC height. Composition-root transaction admission also uses the
-routed factory shape for persisted-transaction and conflict checks before it
-adapts the mempool-captured native-contract provider for Policy reads.
+rewrite. Operational persisted-tip reads (startup, config validation, chain.acc
+resume, and daemon context) share that routed factory shape. Observability
+ledger-height reads (health/readiness/metrics) use the same boundary for
+local-ledger mode while remote-ledger mode reports the upstream RPC height.
+Composition-root transaction admission also uses the routed factory shape for
+persisted-transaction and conflict checks before it adapts the mempool-captured
+native-contract provider for Policy reads.
 RPC session dummy-block reads plus blockchain and wallet transaction-state
 adapters use the same routed factory shape before projecting JSON-RPC responses;
 the shared RPC ledger-query helper now uses it for block, header, current-tip,

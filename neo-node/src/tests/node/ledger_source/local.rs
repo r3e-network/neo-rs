@@ -131,8 +131,16 @@ fn operational_ledger_tip_reads_stay_behind_local_provider_boundary() {
     let provider = std::fs::read_to_string(&provider_path)
         .unwrap_or_else(|err| panic!("read {}: {err}", provider_path.display()));
     assert!(
-        provider.contains("StorageLedgerProviderFactory"),
-        "the local-ledger provider boundary owns raw storage-ledger provider construction"
+        provider.contains("HotColdLedgerProviderFactory"),
+        "operational ledger-tip reads should use the hot/cold ledger provider factory shape"
+    );
+    assert!(
+        provider.contains("EmptyLedgerProvider"),
+        "operational ledger-tip reads should use the explicit empty cold provider until static files are installed"
+    );
+    assert!(
+        !provider.contains("StorageLedgerProviderFactory"),
+        "operational ledger-tip reads should not bypass the hot/cold provider boundary"
     );
     assert!(
         provider.contains("StoreCache::new_from_store"),
