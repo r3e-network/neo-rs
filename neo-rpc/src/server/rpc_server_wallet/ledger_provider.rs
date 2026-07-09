@@ -6,7 +6,8 @@
 //! depend only on the ledger records they actually need.
 
 use neo_blockchain::{
-    LedgerProviderFactory, StorageLedgerProviderFactory, TransactionStateProvider,
+    EmptyLedgerProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
+    TransactionStateProvider,
 };
 use neo_payloads::TransactionState;
 use neo_primitives::UInt256;
@@ -14,6 +15,9 @@ use neo_storage::persistence::DataCache;
 
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
+
+const WALLET_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
+    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
 
 /// Ledger capabilities required by wallet RPC handlers.
 pub(super) trait WalletLedgerProvider {
@@ -53,7 +57,7 @@ impl WalletLedgerProvider for NativeWalletLedgerProvider {
         snapshot: &DataCache,
         hash: &UInt256,
     ) -> Result<Option<TransactionState>, RpcException> {
-        StorageLedgerProviderFactory
+        WALLET_LEDGER_PROVIDER_FACTORY
             .provider(snapshot)
             .transaction_state_by_hash(hash)
             .map_err(|err| internal_error(err.to_string()))

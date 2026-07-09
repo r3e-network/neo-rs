@@ -185,8 +185,16 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
         "blockchain current-height reads should use the shared ledger-query boundary"
     );
     assert!(
-        blockchain_provider.contains("StorageLedgerProviderFactory"),
-        "blockchain transaction-state reads still belong to the local provider adapter"
+        blockchain_provider.contains("HotColdLedgerProviderFactory"),
+        "blockchain transaction-state reads should use the routed ledger provider factory"
+    );
+    assert!(
+        blockchain_provider.contains("EmptyLedgerProvider"),
+        "blockchain transaction-state reads should keep the no-cold-archive case explicit"
+    );
+    assert!(
+        !blockchain_provider.contains("StorageLedgerProviderFactory"),
+        "blockchain transaction-state reads should not bypass the hot/cold provider boundary"
     );
 
     let wallet_transfers = include_str!("../../../server/rpc_server_wallet/transfers.rs");
@@ -205,8 +213,16 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
     assert!(wallet_provider.contains("fn transaction_state_by_hash"));
     assert!(wallet_provider.contains("struct NativeWalletLedgerProviderFactory"));
     assert!(
-        wallet_provider.contains("StorageLedgerProviderFactory"),
-        "wallet transaction-state reads still belong to the local provider adapter"
+        wallet_provider.contains("HotColdLedgerProviderFactory"),
+        "wallet transaction-state reads should use the routed ledger provider factory"
+    );
+    assert!(
+        wallet_provider.contains("EmptyLedgerProvider"),
+        "wallet transaction-state reads should keep the no-cold-archive case explicit"
+    );
+    assert!(
+        !wallet_provider.contains("StorageLedgerProviderFactory"),
+        "wallet transaction-state reads should not bypass the hot/cold provider boundary"
     );
 
     let session_provider = include_str!("../../../server/session/ledger_provider.rs");
@@ -215,8 +231,16 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
     assert!(session_provider.contains("fn current_header"));
     assert!(session_provider.contains("struct NativeSessionLedgerProviderFactory"));
     assert!(
-        session_provider.contains("StorageLedgerProviderFactory"),
-        "session current-header reads still belong to the local provider adapter"
+        session_provider.contains("HotColdLedgerProviderFactory"),
+        "session current-header reads should use the routed ledger provider factory"
+    );
+    assert!(
+        session_provider.contains("EmptyLedgerProvider"),
+        "session current-header reads should keep the no-cold-archive case explicit"
+    );
+    assert!(
+        !session_provider.contains("StorageLedgerProviderFactory"),
+        "session current-header reads should not bypass the hot/cold provider boundary"
     );
 }
 

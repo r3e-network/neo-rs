@@ -6,12 +6,16 @@
 //! letting dummy-block construction adapt directly to storage providers.
 
 use neo_blockchain::{
-    BlockProvider, ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory,
+    BlockProvider, ChainTipProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory,
+    LedgerProviderFactory,
 };
 use neo_error::CoreResult;
 use neo_payloads::Header;
 use neo_primitives::UInt256;
 use neo_storage::persistence::DataCache;
+
+const SESSION_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
+    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
 
 /// Ledger capabilities required by RPC session construction.
 pub(super) trait SessionLedgerProvider {
@@ -42,7 +46,7 @@ impl NativeSessionLedgerProvider {
 
 impl SessionLedgerProvider for NativeSessionLedgerProvider {
     fn current_header(&self, snapshot: &DataCache) -> CoreResult<Option<(UInt256, Header)>> {
-        let provider = StorageLedgerProviderFactory.provider(snapshot);
+        let provider = SESSION_LEDGER_PROVIDER_FACTORY.provider(snapshot);
         let current_hash = provider.current_hash()?;
         Ok(provider
             .header_by_hash(&current_hash)?
