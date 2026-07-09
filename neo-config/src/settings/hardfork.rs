@@ -5,8 +5,9 @@
 
 //! Hardfork configuration and management for Neo N3.
 //!
-//! This module provides hardfork activation tracking and management, matching
-//! the C# Neo implementation's `ProtocolSettings.Hardforks` behavior.
+//! This module provides hardfork activation tracking and management. The
+//! `Hardfork` enum mirrors C# Neo v3.10.1, while [`ProtocolSettings`] owns the
+//! C# loader rule that backfills omitted leading hardforks at height zero.
 //!
 //! ## Hardforks
 //!
@@ -41,7 +42,12 @@ use std::collections::HashMap;
 // Re-export Hardfork from neo-primitives (single source of truth)
 pub use neo_primitives::{Hardfork, HardforkParseError};
 
-/// Hardfork manager for Neo blockchain (matches C# ProtocolSettings.Hardforks exactly).
+/// Hardfork manager for explicit Neo network schedules.
+///
+/// `HardforkManager::new()` starts empty. C# `ProtocolSettings.Default` is
+/// represented by [`ProtocolSettings::csharp_default`], which applies the
+/// v3.10.1 `EnsureOmmitedHardforks` rule and enables every known hardfork at
+/// height zero.
 #[derive(Debug)]
 pub struct HardforkManager {
     hardforks: HashMap<Hardfork, u32>,
@@ -53,7 +59,10 @@ impl HardforkManager {
         Hardfork::all()
     }
 
-    /// Creates a new HardforkManager with default hardfork heights (matches C# ProtocolSettings.Default exactly).
+    /// Creates an empty hardfork schedule.
+    ///
+    /// Use [`ProtocolSettings::csharp_default`] when the C# v3.10.1 default
+    /// `Hardforks` object is required.
     ///
     /// # Returns
     ///
@@ -95,7 +104,7 @@ impl HardforkManager {
         Self { hardforks }
     }
 
-    /// Registers a hardfork (matches C# ProtocolSettings hardfork registration exactly).
+    /// Registers a hardfork in this explicit schedule.
     ///
     /// # Arguments
     ///
@@ -105,7 +114,7 @@ impl HardforkManager {
         self.hardforks.insert(hardfork, block_height);
     }
 
-    /// Checks if a hardfork is active at the specified block height (matches C# ProtocolSettings.IsHardforkEnabled exactly).
+    /// Checks if a hardfork is active at the specified block height.
     ///
     /// # Arguments
     ///
@@ -122,7 +131,7 @@ impl HardforkManager {
         }
     }
 
-    /// Gets all configured hardforks (matches C# ProtocolSettings.Hardforks property exactly).
+    /// Gets all explicitly configured hardforks.
     pub fn get_hardforks(&self) -> &HashMap<Hardfork, u32> {
         &self.hardforks
     }

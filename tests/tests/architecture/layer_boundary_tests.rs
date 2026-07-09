@@ -702,6 +702,70 @@ async fn test_protocol_compatibility_doc_pins_v3101_release_audit() {
 }
 
 #[tokio::test]
+async fn test_neo_v3101_release_delta_has_source_guards() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let checked_markers = [
+        (
+            "neo-primitives/src/protocol/chain/hardfork.rs",
+            &["HfHuyao = 7 => \"HF_Huyao\""][..],
+        ),
+        (
+            "neo-config/src/settings/protocol/validation.rs",
+            &["ensure_omitted_hardforks", "HardforkManager::all()"][..],
+        ),
+        (
+            "neo-execution/src/application_engine/fees_events_native.rs",
+            &[
+                "C# v3.10.1 validates `AddFee` arguments before applying the",
+                "add_native_method_fee",
+                "checked_add(storage_pico)",
+            ][..],
+        ),
+        (
+            "neo-native-contracts/src/neo_token/persist.rs",
+            &[
+                "Hardfork::HfGorgon",
+                "self.candidate_vote(&snapshot, member)?",
+            ][..],
+        ),
+        (
+            "neo-native-contracts/src/notary/persist.rs",
+            &["Deposit not found", "Insufficient deposit"][..],
+        ),
+        (
+            "neo-payloads/src/protocol/extensible_payload.rs",
+            &["Witness script hash {witness_hash} does not match sender"][..],
+        ),
+        (
+            "neo-storage/src/types/storage_key.rs",
+            &["StorageKey{{Id={}}}", "StorageKey{{Id={},Key={}}}"][..],
+        ),
+        (
+            "neo-native-contracts/src/std_lib/numeric.rs",
+            &["CultureInfo.InvariantCulture", "dotnet_bigint_to_hex"][..],
+        ),
+    ];
+
+    let mut missing = Vec::new();
+    for (relative_path, markers) in checked_markers {
+        let path = workspace_root.join(relative_path);
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        for marker in markers {
+            if !source.contains(marker) {
+                missing.push(format!("{relative_path} missing `{marker}`"));
+            }
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "Neo v3.10.1 release-delta source guards are missing:\n{}",
+        missing.join("\n")
+    );
+}
+
+#[tokio::test]
 async fn test_no_circular_dependencies() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let crates = get_workspace_crates(workspace_root);
