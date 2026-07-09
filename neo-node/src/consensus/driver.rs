@@ -27,8 +27,7 @@ use tracing::{error, info, warn};
 
 use super::DBFT_MAX_BLOCK_SYSTEM_FEE;
 use super::native_provider::{
-    ConsensusLedgerTip, ConsensusNativeProvider, ConsensusNativeProviderFactory,
-    NativeConsensusProviderFactory,
+    ConsensusLedgerTip, ConsensusNativeProvider, NativeConsensusProvider,
 };
 use super::payload::consensus_to_extensible;
 use super::proposal::{
@@ -42,24 +41,22 @@ const BLOCK_VERSION: u32 = 0;
 
 /// Reads the current ledger tip from `snapshot` →
 /// `(next_block_index, prev_hash, prev_timestamp)`.
-fn ledger_tip(snapshot: &DataCache) -> (u32, UInt256, u64) {
+fn ledger_tip(native: &impl ConsensusNativeProvider, snapshot: &DataCache) -> (u32, UInt256, u64) {
     let ConsensusLedgerTip {
         next_block_index,
         prev_hash,
         prev_timestamp,
-    } = NativeConsensusProviderFactory
-        .provider()
-        .ledger_tip(snapshot);
+    } = native.ledger_tip(snapshot);
     (next_block_index, prev_hash, prev_timestamp)
 }
 
 fn round_validator_context(
+    native: &impl ConsensusNativeProvider,
     snapshot: &DataCache,
     settings: &ProtocolSettings,
     block_index: u32,
 ) -> anyhow::Result<(Vec<ValidatorInfo>, UInt160)> {
-    let native = NativeConsensusProviderFactory.provider();
-    round_validator_context_with_provider(&native, snapshot, settings, block_index)
+    round_validator_context_with_provider(native, snapshot, settings, block_index)
 }
 
 fn round_validator_context_with_provider(
@@ -135,8 +132,9 @@ impl ConsensusDriver {
         snapshot: &DataCache,
         block_index: u32,
     ) -> anyhow::Result<UInt160> {
+        let native = NativeConsensusProvider::new(self.mempool.native_contract_provider());
         let (validators, next_consensus) =
-            round_validator_context(snapshot, &self.settings, block_index)?;
+            round_validator_context(&native, snapshot, &self.settings, block_index)?;
         let my_index = resolve_public_key_index(&self.public_key, &validators);
         self.service.update_validators(validators.clone(), my_index);
         *self.validators.write() = validators;
@@ -150,7 +148,6 @@ impl ConsensusDriver {
         // `ProtocolSettings` default, so this replaces the frozen construction-time
         // value on every round. Without this, a committee `setMillisecondsPerBlock`
         // would desync Rust validators' block timers from the C# committee.
-        let native = NativeConsensusProviderFactory.provider();
         let ms_per_block = native.milliseconds_per_block(snapshot, &self.settings)?;
         self.service
             .set_expected_block_time(u64::from(ms_per_block));
@@ -170,7 +167,8 @@ impl ConsensusDriver {
         // Fresh snapshot for the first round (refreshed on each Imported below).
         let mut round_snapshot = self.fresh_round_snapshot();
         // C# `ConsensusContext.Reset`: first round is height+1 over the tip.
-        let (block_index, prev_hash, prev_timestamp) = ledger_tip(&round_snapshot);
+        let native = NativeConsensusProvider::new(self.mempool.native_contract_provider());
+        let (block_index, prev_hash, prev_timestamp) = ledger_tip(&native, &round_snapshot);
         let next_consensus = match self.configure_round(&round_snapshot, block_index) {
             Ok(next_consensus) => next_consensus,
             Err(err) => {

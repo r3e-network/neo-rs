@@ -16,9 +16,7 @@ use num_bigint::BigInt;
 use tracing::warn;
 
 use super::DBFT_MAX_BLOCK_SYSTEM_FEE;
-use super::native_provider::{
-    ConsensusNativeProvider, ConsensusNativeProviderFactory, NativeConsensusProviderFactory,
-};
+use super::native_provider::{ConsensusNativeProvider, NativeConsensusProvider};
 
 /// Resolves the full transactions for `hashes`, in block order, from the
 /// proposal cache then the live mempool. Returns `None` if any is missing.
@@ -384,7 +382,7 @@ pub(super) fn prepare_request_passes_ledger_guards(
         Err(_) => return true,
     };
 
-    let native = NativeConsensusProviderFactory.provider();
+    let native = NativeConsensusProvider::new(mempool.native_contract_provider());
     for hash in &request.transaction_hashes {
         match native.contains_transaction(snapshot, hash) {
             Ok(true) => {

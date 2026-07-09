@@ -125,8 +125,8 @@ fn consensus_ledger_reads_use_provider_boundaries() {
             "{name} must keep raw ledger-provider construction behind the consensus provider seam"
         );
         assert!(
-            source.contains("NativeConsensusProviderFactory"),
-            "{name} must read Ledger/NEO/Policy native state through the consensus provider factory"
+            !source.contains("NativeConsensusProviderFactory"),
+            "{name} must not create a second production native provider factory"
         );
         assert!(
             !source.contains("LedgerContract::new()"),
@@ -144,8 +144,30 @@ fn consensus_ledger_reads_use_provider_boundaries() {
 
     let provider = include_str!("../../consensus/native_provider.rs");
     assert!(provider.contains("trait ConsensusNativeProvider"));
-    assert!(provider.contains("trait ConsensusNativeProviderFactory"));
-    assert!(provider.contains("struct NativeConsensusProviderFactory"));
+    assert!(
+        !provider.contains("trait ConsensusNativeProviderFactory"),
+        "consensus provider should adapt the node-composed NativeContractProvider instead of owning a private factory"
+    );
+    assert!(
+        !provider.contains("struct NativeConsensusProviderFactory"),
+        "consensus provider should not own a second production native provider factory"
+    );
+    assert!(
+        !provider.contains("NeoToken::new()"),
+        "consensus provider must resolve NeoToken through the explicit native provider"
+    );
+    assert!(
+        !provider.contains("PolicyContract::new()"),
+        "consensus provider must resolve PolicyContract through the explicit native provider"
+    );
+    assert!(
+        provider.contains("get_native_contract_by_name(\"NeoToken\")"),
+        "consensus provider should read NeoToken from the explicit NativeContractProvider"
+    );
+    assert!(
+        provider.contains("get_native_contract_by_name(\"PolicyContract\")"),
+        "consensus provider should read PolicyContract from the explicit NativeContractProvider"
+    );
     assert!(
         provider.contains("StorageLedgerProviderFactory"),
         "consensus native provider should own the raw ledger provider boundary"

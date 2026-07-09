@@ -12,9 +12,12 @@ use neo_blockchain::{
 };
 use neo_config::ProtocolSettings;
 use neo_crypto::ECPoint;
+use neo_execution::NativeContract;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::{NeoToken, PolicyContract};
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::persistence::DataCache;
+use std::sync::Arc;
 
 /// Current persisted ledger context used to start a dBFT round.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,30 +78,44 @@ pub(super) trait ConsensusNativeProvider {
     ) -> anyhow::Result<bool>;
 }
 
-/// Factory for consensus native-contract providers.
-pub(super) trait ConsensusNativeProviderFactory {
-    /// Provider returned by this factory.
-    type Provider: ConsensusNativeProvider;
-
-    /// Creates a provider instance.
-    fn provider(&self) -> Self::Provider;
-}
-
-/// Production provider backed by canonical native-contract handles.
-#[derive(Clone, Copy, Debug, Default)]
+/// Adapter from the node-composed native-contract provider to the consensus
+/// orchestration read capability.
+#[derive(Clone)]
 pub(super) struct NativeConsensusProvider {
-    neo: NeoToken,
-    policy: PolicyContract,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
 }
 
 impl NativeConsensusProvider {
-    /// Creates a provider backed by canonical native-contract handles.
+    /// Creates an adapter over the composition-root native-contract provider.
     #[must_use]
-    pub(super) const fn new() -> Self {
+    pub(super) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
         Self {
-            neo: NeoToken::new(),
-            policy: PolicyContract::new(),
+            native_contract_provider,
         }
+    }
+
+    fn provider(&self) -> Arc<dyn NativeContractProvider> {
+        Arc::clone(&self.native_contract_provider)
+    }
+
+    fn neo_token(&self) -> anyhow::Result<Arc<dyn NativeContract>> {
+        self.provider()
+            .get_native_contract_by_name("NeoToken")
+            .ok_or_else(|| anyhow::anyhow!("native provider missing NeoToken"))
+    }
+
+    fn policy_contract(&self) -> anyhow::Result<Arc<dyn NativeContract>> {
+        self.provider()
+            .get_native_contract_by_name("PolicyContract")
+            .ok_or_else(|| anyhow::anyhow!("native provider missing PolicyContract"))
+    }
+}
+
+impl std::fmt::Debug for NativeConsensusProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NativeConsensusProvider")
+            .field("native_contract_provider", &"NativeContractProvider")
+            .finish()
     }
 }
 
@@ -125,7 +142,12 @@ impl ConsensusNativeProvider for NativeConsensusProvider {
         snapshot: &DataCache,
         validators_count: usize,
     ) -> anyhow::Result<Vec<ECPoint>> {
-        Ok(self.neo.next_block_validators(snapshot, validators_count)?)
+        Ok(self
+            .neo_token()?
+            .as_any()
+            .downcast_ref::<NeoToken>()
+            .ok_or_else(|| anyhow::anyhow!("native provider returned non-NeoToken"))?
+            .next_block_validators(snapshot, validators_count)?)
     }
 
     fn next_consensus_address_for_block(
@@ -135,7 +157,10 @@ impl ConsensusNativeProvider for NativeConsensusProvider {
         block_index: u32,
     ) -> anyhow::Result<UInt160> {
         Ok(self
-            .neo
+            .neo_token()?
+            .as_any()
+            .downcast_ref::<NeoToken>()
+            .ok_or_else(|| anyhow::anyhow!("native provider returned non-NeoToken"))?
             .next_consensus_address_for_block(snapshot, settings, block_index)?)
     }
 
@@ -145,7 +170,10 @@ impl ConsensusNativeProvider for NativeConsensusProvider {
         settings: &ProtocolSettings,
     ) -> anyhow::Result<u32> {
         Ok(self
-            .policy
+            .policy_contract()?
+            .as_any()
+            .downcast_ref::<PolicyContract>()
+            .ok_or_else(|| anyhow::anyhow!("native provider returned non-PolicyContract"))?
             .get_milliseconds_per_block_snapshot(snapshot, settings)?)
     }
 
@@ -155,7 +183,10 @@ impl ConsensusNativeProvider for NativeConsensusProvider {
         settings: &ProtocolSettings,
     ) -> anyhow::Result<u32> {
         Ok(self
-            .policy
+            .policy_contract()?
+            .as_any()
+            .downcast_ref::<PolicyContract>()
+            .ok_or_else(|| anyhow::anyhow!("native provider returned non-PolicyContract"))?
             .get_max_traceable_blocks_snapshot(snapshot, settings)?)
     }
 
@@ -173,17 +204,5 @@ impl ConsensusNativeProvider for NativeConsensusProvider {
     ) -> anyhow::Result<bool> {
         let ledger = StorageLedgerProviderFactory.provider(snapshot);
         Ok(ledger.contains_conflict_hash(hash, signers, max_traceable_blocks)?)
-    }
-}
-
-/// Factory for production consensus native-contract read providers.
-#[derive(Clone, Copy, Debug, Default)]
-pub(super) struct NativeConsensusProviderFactory;
-
-impl ConsensusNativeProviderFactory for NativeConsensusProviderFactory {
-    type Provider = NativeConsensusProvider;
-
-    fn provider(&self) -> Self::Provider {
-        NativeConsensusProvider::new()
     }
 }
