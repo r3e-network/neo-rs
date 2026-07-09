@@ -108,7 +108,7 @@ impl LocalIdentity {
     ///   `NativeContract.Ledger.CurrentIndex`), sourced from
     ///   [`LocalIdentity::block_height`] — `0` until the ledger pipeline
     ///   records progress via [`LocalIdentity::set_block_height`].
-    /// - `ArchivalNode` (C# always advertises it in v3.9.1).
+    /// - `ArchivalNode` (C# always advertises it in v3.10.1).
     /// - `DisableCompression` when compression is disabled.
     /// - `TcpServer { port }` when the listener is bound.
     pub fn capabilities(&self) -> Vec<NodeCapability> {

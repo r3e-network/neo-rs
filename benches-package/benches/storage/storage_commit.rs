@@ -65,6 +65,7 @@ fn open_mdbx(label: &str) -> (Arc<dyn Store>, BenchTempDir) {
     (store, tempdir)
 }
 
+#[derive(Debug)]
 struct SnapshotOnlyStore {
     inner: Arc<RocksDbStore>,
 }

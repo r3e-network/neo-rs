@@ -13,7 +13,7 @@
 //!
 //! These bytes are consensus-critical: they determine script hashes and
 //! therefore addresses, so the encoding must stay byte-identical to C# Neo
-//! v3.9.1 (including the ascending public-key sort in multi-sig scripts, which
+//! v3.10.1 (including the ascending public-key sort in multi-sig scripts, which
 //! matches C# `ECPoint.CompareTo`).
 
 use neo_crypto::{ECCurve, ECPoint};

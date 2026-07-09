@@ -13,7 +13,7 @@ use super::{CompoundIdentity, StackItem, compound_identity};
 /// This is the non-faulting comparison path. It mirrors each concrete type's
 /// `Equals(StackItem)` override in `neo_csharp_vm/src/Neo.VM/Types`:
 /// - `Integer`/`Boolean`: value equality within the same concrete type, else false
-///   (TYPE-STRICT — `Integer(1) != ByteString([1])`, verified against mainnet C# v3.9.1).
+///   (TYPE-STRICT — `Integer(1) != ByteString([1])`, verified against mainnet C# v3.10.1).
 /// - `ByteString`: byte equality within the same type (no budget here; the budgeted
 ///   variant is handled directly by [`StackItem::equals_with_limits`]).
 /// - `Pointer`: position + originating-script equality (`Pointer.cs:46-51`).
@@ -226,7 +226,7 @@ impl StackItem {
         // and only by value within that type. Cross-type comparison (e.g.
         // `Integer(1) == ByteString([0x01])`) returns FALSE in C#, even when
         // the byte representations match. Verified via mainnet RPC invokescript
-        // against C# v3.9.1.
+        // against C# v3.10.1.
         let result = match (self, other) {
             (Self::Null, Self::Null) => Ok(true),
             // Buffer uses reference equality (compound type in C# Neo VM).

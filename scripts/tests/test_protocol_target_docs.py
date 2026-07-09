@@ -160,6 +160,25 @@ class ProtocolTargetDocsTests(unittest.TestCase):
             "active regression test names should use v3101 for the current Neo N3 target",
         )
 
+    def test_active_rust_sources_do_not_claim_v391_reference_target(self):
+        stale_markers = []
+        for root in REPO_ROOT.glob("neo-*/src"):
+            for path in root.rglob("*.rs"):
+                for line_number, line in enumerate(
+                    path.read_text(encoding="utf-8").splitlines(), 1
+                ):
+                    if "v3.9.1" in line:
+                        stale_markers.append(
+                            f"{path.relative_to(REPO_ROOT)}:{line_number}: {line.strip()}"
+                        )
+
+        self.assertEqual(
+            [],
+            stale_markers,
+            "active Rust sources must name Neo v3.10.1, not v3.9.1, when "
+            "describing the current C# parity target",
+        )
+
     def test_rpc_relay_height_preclassification_comment_names_current_reference(self):
         text = (
             REPO_ROOT / "neo-rpc" / "src" / "server" / "rpc_relay" / "block.rs"

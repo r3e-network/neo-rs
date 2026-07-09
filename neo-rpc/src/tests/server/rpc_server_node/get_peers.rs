@@ -5,7 +5,7 @@ async fn get_peers_serves_empty_arrays_without_peers() {
     // With no peer lifecycle events folded, all three arrays are
     // empty. `unconnected` stays empty by design (the reth-style
     // network service keeps no unconnected address book) and `bad` is
-    // always empty, matching C# v3.9.1.
+    // always empty, matching C# v3.10.1.
     let system = crate::server::test_support::test_system(ProtocolSettings::default());
 
     let server = RpcServer::new(system.clone(), RpcServerConfig::default());

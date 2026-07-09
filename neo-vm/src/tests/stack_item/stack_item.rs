@@ -271,7 +271,7 @@ fn equal_opcode_uses_reference_semantics_for_maps() {
 
 #[test]
 fn equal_opcode_preserves_primitive_type_strictness() {
-    // Verified against mainnet C# v3.9.1: Integer(1) != ByteString([1]) under EQUAL.
+    // Verified against mainnet C# v3.10.1: Integer(1) != ByteString([1]) under EQUAL.
     let limits = ExecutionEngineLimits::default();
     let int_one = StackItem::from_int(1);
     let bytes_one = StackItem::from_byte_string(vec![1u8]);

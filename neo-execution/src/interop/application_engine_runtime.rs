@@ -179,7 +179,7 @@ impl ApplicationEngine {
             bytes
         };
 
-        // C# v3.9.1 ApplicationEngine.Runtime.cs:315-324:
+        // C# v3.10.1 ApplicationEngine.Runtime.cs:
         // HF_Aspidochelone enabled → price 1<<13 (new per-call counter, more work)
         // HF_Aspidochelone disabled → price 1<<4 (legacy single-shot path)
         let price: i64 = if aspid_enabled { 1 << 13 } else { 1 << 4 };

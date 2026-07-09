@@ -90,7 +90,7 @@ pub(super) fn peers_to_json(node: &LocalNodeInfo) -> Value {
     //   The reth-style network service keeps no unconnected address
     //   book (no `addr`-message peer discovery yet), so the list is
     //   served empty rather than invented.
-    // - `bad`: always an empty array in C# v3.9.1 (no bad-peer book).
+    // - `bad`: always an empty array in C# v3.10.1 (no bad-peer book).
     // - `connected`: C# serves `Remote.Address` + `ListenerTcpPort`
     //   per remote node. The handle-side tracker folds the service's
     //   `PeerConnected` events, which carry exactly that pair:
