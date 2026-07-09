@@ -31,6 +31,8 @@ Policy reads.
 Blockchain ingress validation also uses the routed factory shape for header
 anchor reads and extensible-payload height checks before applying witness and
 native-provider validation.
+Durable store fallback reads after in-memory block-cache eviction use the same
+routing for block-hash and full-block reconstruction.
 RPC session dummy-block reads plus blockchain and wallet transaction-state
 adapters use the same routed factory shape before projecting JSON-RPC responses;
 the shared RPC ledger-query helper now uses it for block, header, current-tip,

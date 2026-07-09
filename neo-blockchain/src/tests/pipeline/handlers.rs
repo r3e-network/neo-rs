@@ -170,6 +170,27 @@ fn verified_import_pipeline_uses_explicit_native_providers() {
 }
 
 #[test]
+fn store_fallback_reads_use_hot_cold_provider_boundary() {
+    let source = include_str!("../../service/service/store_reads.rs");
+    assert!(
+        source.contains("HotColdLedgerProviderFactory"),
+        "store fallback reads should use the hot/cold ledger provider factory"
+    );
+    assert!(
+        source.contains("EmptyLedgerProvider"),
+        "store fallback reads should keep the no-cold-archive case explicit"
+    );
+    assert!(
+        !source.contains("StorageLedgerProviderFactory"),
+        "store fallback reads should not bypass the hot/cold provider boundary"
+    );
+    assert!(
+        source.contains(".ok()") && source.contains(".flatten()"),
+        "store fallback reads should preserve existing error-to-miss semantics"
+    );
+}
+
+#[test]
 fn store_header_verification_uses_system_native_provider() {
     let source = include_str!("../../handlers/verification.rs");
     let verifier_start = source
