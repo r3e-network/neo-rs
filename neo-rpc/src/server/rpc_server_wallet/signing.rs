@@ -185,9 +185,7 @@ pub(super) fn sign_and_relay(
         let fee_per_byte = NativeWalletProvider::new(server.system().native_contract_provider())
             .fee_per_byte(snapshot_arc.as_ref())
             .map(i64::from)
-            .unwrap_or_else(|_| {
-                i64::from(neo_native_contracts::policy_contract::DEFAULT_FEE_PER_BYTE)
-            });
+            .map_err(internal_error)?;
         let cal_fee = tx.size() as i64 * fee_per_byte + 100_000;
         if tx.network_fee() < cal_fee {
             tx.set_network_fee(cal_fee);

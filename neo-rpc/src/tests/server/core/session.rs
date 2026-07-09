@@ -440,6 +440,14 @@ fn rpc_wallet_policy_reads_use_composed_native_provider() {
         "wallet signing should not construct PolicyContract directly"
     );
     assert!(
+        !signing.contains("DEFAULT_FEE_PER_BYTE"),
+        "wallet signing should not bypass the composed Policy provider with a raw default fallback"
+    );
+    assert!(
+        signing.contains(".map_err(internal_error)?"),
+        "wallet signing should fail closed when composed Policy provider reads fail"
+    );
+    assert!(
         !signing.contains("NativeWalletProviderFactory"),
         "wallet signing should not create a standalone wallet native provider factory"
     );
