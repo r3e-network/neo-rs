@@ -7,8 +7,8 @@
 //! contracts or ledger providers directly in the consensus flow.
 
 use neo_blockchain::{
-    BlockProvider, ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory,
-    TransactionStateProvider, TxProvider,
+    BlockProvider, ChainTipProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory,
+    LedgerProviderFactory, TransactionStateProvider, TxProvider,
 };
 use neo_config::ProtocolSettings;
 use neo_crypto::ECPoint;
@@ -18,6 +18,9 @@ use neo_native_contracts::{NeoToken, PolicyContract};
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::persistence::DataCache;
 use std::sync::Arc;
+
+const CONSENSUS_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
+    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
 
 /// Current persisted ledger context used to start a dBFT round.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -121,7 +124,7 @@ impl std::fmt::Debug for NativeConsensusProvider {
 
 impl ConsensusNativeProvider for NativeConsensusProvider {
     fn ledger_tip(&self, snapshot: &DataCache) -> ConsensusLedgerTip {
-        let ledger = StorageLedgerProviderFactory.provider(snapshot);
+        let ledger = CONSENSUS_LEDGER_PROVIDER_FACTORY.provider(snapshot);
         let height = ledger.current_index().unwrap_or(0);
         let prev_hash = ledger.current_hash().unwrap_or_default();
         let prev_timestamp = ledger
@@ -191,7 +194,7 @@ impl ConsensusNativeProvider for NativeConsensusProvider {
     }
 
     fn contains_transaction(&self, snapshot: &DataCache, hash: &UInt256) -> anyhow::Result<bool> {
-        let ledger = StorageLedgerProviderFactory.provider(snapshot);
+        let ledger = CONSENSUS_LEDGER_PROVIDER_FACTORY.provider(snapshot);
         Ok(ledger.contains_transaction(hash)?)
     }
 
@@ -202,7 +205,7 @@ impl ConsensusNativeProvider for NativeConsensusProvider {
         signers: &[UInt160],
         max_traceable_blocks: u32,
     ) -> anyhow::Result<bool> {
-        let ledger = StorageLedgerProviderFactory.provider(snapshot);
+        let ledger = CONSENSUS_LEDGER_PROVIDER_FACTORY.provider(snapshot);
         Ok(ledger.contains_conflict_hash(hash, signers, max_traceable_blocks)?)
     }
 }

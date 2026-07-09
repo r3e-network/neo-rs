@@ -169,8 +169,16 @@ fn consensus_ledger_reads_use_provider_boundaries() {
         "consensus provider should read PolicyContract from the explicit NativeContractProvider"
     );
     assert!(
-        provider.contains("StorageLedgerProviderFactory"),
-        "consensus native provider should own the raw ledger provider boundary"
+        provider.contains("HotColdLedgerProviderFactory"),
+        "consensus native provider should use the routed ledger provider factory"
+    );
+    assert!(
+        provider.contains("EmptyLedgerProvider"),
+        "consensus native provider should keep the no-cold-archive case explicit"
+    );
+    assert!(
+        !provider.contains("StorageLedgerProviderFactory"),
+        "consensus native provider should not bypass the hot/cold provider boundary"
     );
     assert!(
         provider.contains("fn contains_transaction"),
