@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use neo_error::{CoreError, CoreResult};
+use neo_native_contracts::NeoToken;
 use neo_primitives::UInt160;
 use neo_storage::persistence::DataCache;
 use num_bigint::BigInt;
@@ -14,6 +15,11 @@ use super::script::NativeArg;
 use crate::server::rpc_server::RpcServer;
 
 impl NativeQueries {
+    /// Returns the canonical NEO native-contract script hash.
+    pub(crate) fn neo_script_hash() -> UInt160 {
+        NeoToken::script_hash()
+    }
+
     /// `NEO.unclaimedGas(account, end)` — the amount of unclaimed GAS for
     /// `account` at the `end` block height.
     pub(crate) fn neo_unclaimed_gas(

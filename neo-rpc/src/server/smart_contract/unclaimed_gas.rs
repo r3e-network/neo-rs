@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use neo_native_contracts::NeoToken;
 use neo_wallets::wallet_helper::WalletAddress as address_helper;
 use serde_json::Value;
 
@@ -25,7 +24,7 @@ pub(super) fn get_unclaimed_gas(
     let height = ledger_queries::current_index(store.data_cache())
         .map_err(|err| internal_error(err.to_string()))?
         .saturating_add(1);
-    let neo_hash = NeoToken::script_hash();
+    let neo_hash = native_queries::NativeQueries::neo_script_hash();
     let snapshot = Arc::new(store.data_cache().clone());
     let unclaimed = native_queries::NativeQueries::neo_unclaimed_gas(
         server,

@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use neo_execution::application_engine::ApplicationEngine;
 use neo_manifest::CallFlags;
-use neo_native_contracts::NeoToken;
 use neo_primitives::{BigDecimal, TriggerType, UInt160};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::{OpCode, VmState as VMState};
@@ -15,6 +14,7 @@ use super::RpcServerWallet;
 use super::request::{NoParamsRequest, WalletBalanceRequest};
 use super::response::{wallet_balance_to_json, wallet_unclaimed_gas_to_json};
 use crate::server::ledger_queries;
+use crate::server::native_queries;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::{internal_error, invalid_params};
 use crate::server::rpc_server::RpcServer;
@@ -44,7 +44,7 @@ impl RpcServerWallet {
         let height = ledger_queries::current_index(store.data_cache())
             .map_err(internal_error)?
             .saturating_add(1);
-        let neo_hash = NeoToken::script_hash();
+        let neo_hash = native_queries::NativeQueries::neo_script_hash();
         let snapshot = Arc::new(store.data_cache().clone());
         let mut total = BigInt::zero();
         for account in wallet.accounts() {

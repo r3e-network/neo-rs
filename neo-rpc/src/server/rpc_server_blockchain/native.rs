@@ -81,7 +81,7 @@ impl RpcServerBlockchain {
         let system = server.system();
         let store = system.store_cache();
         let snapshot = Arc::new(store.data_cache().clone());
-        let neo_hash = neo_native_contracts::NeoToken::script_hash();
+        let neo_hash = native_queries::NativeQueries::neo_script_hash();
         let validators = native_queries::NativeQueries::neo_next_block_validators(
             server,
             Arc::clone(&snapshot),
@@ -120,7 +120,7 @@ impl RpcServerBlockchain {
         let system = server.system();
         let store = system.store_cache();
         let snapshot = Arc::new(store.data_cache().clone());
-        let neo_hash = neo_native_contracts::NeoToken::script_hash();
+        let neo_hash = native_queries::NativeQueries::neo_script_hash();
         let candidates =
             native_queries::NativeQueries::neo_candidates(server, Arc::clone(&snapshot), &neo_hash)
                 .map_err(|_| {
@@ -156,7 +156,7 @@ impl RpcServerBlockchain {
         }
         let store = server.system().store_cache();
         let snapshot = Arc::new(store.data_cache().clone());
-        let neo_hash = neo_native_contracts::NeoToken::script_hash();
+        let neo_hash = native_queries::NativeQueries::neo_script_hash();
         let committee = native_queries::NativeQueries::neo_committee(server, snapshot, &neo_hash)
             .map_err(|err| {
             let error = RpcError::internal_server_error()

@@ -527,6 +527,49 @@ fn rpc_deployed_contract_reads_use_shared_provider() {
     );
 }
 
+#[test]
+fn rpc_neo_hash_reads_use_native_query_facade() {
+    let native_query = include_str!("../../../server/native_queries/neo.rs");
+    assert!(
+        native_query.contains("fn neo_script_hash"),
+        "native_queries should expose the canonical NEO script hash"
+    );
+    assert!(
+        native_query.contains("NeoToken::script_hash()"),
+        "only the native query facade should touch the concrete NEO native type"
+    );
+
+    let checked_handlers = [
+        (
+            "blockchain native handlers",
+            include_str!("../../../server/rpc_server_blockchain/native.rs"),
+        ),
+        (
+            "wallet balance handlers",
+            include_str!("../../../server/rpc_server_wallet/balance.rs"),
+        ),
+        (
+            "smart-contract unclaimed gas",
+            include_str!("../../../server/smart_contract/unclaimed_gas.rs"),
+        ),
+    ];
+
+    for (name, source) in checked_handlers {
+        assert!(
+            source.contains("NativeQueries::neo_script_hash()"),
+            "{name} should obtain the NEO hash through the native query facade"
+        );
+        assert!(
+            !source.contains("NeoToken::script_hash()"),
+            "{name} should not reach into the concrete NEO native contract"
+        );
+        assert!(
+            !source.contains("use neo_native_contracts::NeoToken"),
+            "{name} should not import the concrete NEO native contract"
+        );
+    }
+}
+
 /// Genesis-block timestamp seeded by the RPC test harness
 /// (`seed_genesis_state` / `genesis_header`).
 const GENESIS_TIMESTAMP: u64 = 1_468_595_301_000;
