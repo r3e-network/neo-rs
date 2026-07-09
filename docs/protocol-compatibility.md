@@ -29,7 +29,8 @@ flowchart LR
 ## v3.10.1 Release Delta Audit
 
 The v3.10.1 compatibility target is based on the official `neo-project/neo`
-`v3.10.1` tag, published on 2026-07-07 and pointing at commit
+[`v3.10.1`](https://github.com/neo-project/neo/releases/tag/v3.10.1) release,
+published on 2026-07-07 and pointing at commit
 `d10e9ceecdabe3fcff719ee68ea5b76ba7e62c3d`. The audited upstream range is
 `v3.10.0...v3.10.1`:
 

@@ -316,7 +316,7 @@ Fresh evidence: `cargo test -p neo-native-contracts -- --nocapture` passed **221
 
 ## Recommendations (work needed to reach 100% protocol compliance)
 
-1. **Add full native-contract replay vectors**: run NEO/GAS/native-contract state transitions against known C# Neo v3.10.0 fixtures and assert resulting storage/state roots.
+1. **Add full native-contract replay vectors**: run NEO/GAS/native-contract state transitions against known C# Neo v3.10.1 fixtures and assert resulting storage/state roots.
 2. **Expand the C# block fixture suite** beyond the now-covered empty mainnet block 1,000: add a transaction-bearing block, assert transaction hashes / witnesses, and add the corresponding C# state-root proof where available.
 3. **Add a JSON-driven `RpcTestCases` harness** that consumes `neo_csharp/node/tests/Neo.Network.RPC.Tests/RpcTestCases.json` and asserts Rust responses match the C# responses.
 4. **Add a JSON-RPC node smoke test** that spawns `neo-node` in-process, hits `getblockcount`, and asserts a response with a temporary RocksDB path. The P2P restart/resume side now has a daemon-level smoke test.

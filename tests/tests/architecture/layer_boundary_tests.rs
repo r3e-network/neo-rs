@@ -663,6 +663,45 @@ async fn test_active_architecture_docs_do_not_reference_retired_crates() {
 }
 
 #[tokio::test]
+async fn test_protocol_compatibility_doc_pins_v3101_release_audit() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let doc_path = workspace_root
+        .join("docs")
+        .join("protocol-compatibility.md");
+    let doc = fs::read_to_string(&doc_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", doc_path.display()));
+
+    let required_markers = [
+        "https://github.com/neo-project/neo/releases/tag/v3.10.1",
+        "d10e9ceecdabe3fcff719ee68ea5b76ba7e62c3d",
+        "v3.10.0...v3.10.1",
+        "df402675",
+        "e66e4dfc",
+        "6b1c90c6",
+        "f5ae5e82",
+        "55c14029",
+        "7f8454f4",
+        "9f4795ab",
+        "abbc3a25",
+        "7bb91ff5",
+        "d10e9cee",
+        "HF_Huyao",
+        "ExtensiblePayload",
+        "StorageKey.ToString()",
+    ];
+
+    let missing = required_markers
+        .iter()
+        .filter(|marker| !doc.contains(**marker))
+        .copied()
+        .collect::<Vec<_>>();
+    assert!(
+        missing.is_empty(),
+        "protocol compatibility doc must pin the full Neo v3.10.1 release audit; missing: {missing:?}"
+    );
+}
+
+#[tokio::test]
 async fn test_no_circular_dependencies() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let crates = get_workspace_crates(workspace_root);

@@ -214,6 +214,6 @@ fn deserialize_rejects_nesting_deeper_than_max_key_length_like_csharp_v3101() {
     let mut reader = MemoryReader::new(&entry);
     assert!(
         Node::deserialize(&mut reader).is_err(),
-        "C# Neo.Cryptography.MPT 3.10.0 rejects MPT node nesting deeper than MaxKeyLength"
+        "C# Neo.Cryptography.MPT v3.10.1 rejects MPT node nesting deeper than MaxKeyLength"
     );
 }
