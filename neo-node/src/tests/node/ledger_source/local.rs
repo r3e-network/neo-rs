@@ -45,7 +45,10 @@ fn local_source_with_block(index: u32) -> (LedgerBlockSource, Block, UInt256) {
     let source = LedgerBlockSource::new(
         snapshot,
         Arc::new(neo_blockchain::LedgerContext::default()),
-        Arc::new(neo_mempool::MemoryPool::new(&settings)),
+        Arc::new(neo_mempool::MemoryPool::new_with_native_contract_provider(
+            &settings,
+            Arc::new(neo_native_contracts::StandardNativeProvider::new()),
+        )),
     );
     (source, block, block_hash)
 }

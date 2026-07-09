@@ -150,12 +150,15 @@ impl MempoolLike for NodeMempoolAdapter {
 pub(crate) fn test_system(settings: ProtocolSettings) -> Arc<crate::server::NodeContext> {
     let settings = Arc::new(settings);
     let storage: Arc<dyn Store> = Arc::new(MemoryStore::new());
-    let mempool = Arc::new(MemoryPool::new(&settings));
+    let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new())
+        as Arc<dyn NativeContractProvider>;
+    let mempool = Arc::new(MemoryPool::new_with_native_contract_provider(
+        &settings,
+        Arc::clone(&native_contract_provider),
+    ));
     let header_cache = Arc::new(HeaderCache::default());
     let store_cache = StoreCache::new_from_store(Arc::clone(&storage), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
-    let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new())
-        as Arc<dyn NativeContractProvider>;
 
     let system_ctx = Arc::new(FixtureContext {
         settings: Arc::clone(&settings),

@@ -18,6 +18,13 @@ fn test_node() -> Arc<neo_system::Node> {
     )
 }
 
+fn memory_pool(settings: &neo_config::ProtocolSettings) -> neo_mempool::MemoryPool {
+    neo_mempool::MemoryPool::new_with_native_contract_provider(
+        settings,
+        Arc::new(neo_native_contracts::StandardNativeProvider::new()),
+    )
+}
+
 fn rocksdb_test_node() -> (Arc<neo_system::Node>, tempfile::TempDir) {
     use neo_blockchain::HeaderCache;
     use neo_network::NetworkHandle;
@@ -44,7 +51,7 @@ fn rocksdb_test_node() -> (Arc<neo_system::Node>, tempfile::TempDir) {
         .with_storage(storage)
         .with_blockchain(blockchain)
         .with_network(network)
-        .with_mempool(Arc::new(neo_mempool::MemoryPool::new(&settings)))
+        .with_mempool(Arc::new(memory_pool(&settings)))
         .with_header_cache(Arc::new(HeaderCache::default()))
         .build()
         .expect("node");
@@ -75,7 +82,7 @@ fn mdbx_test_node(map_size: isize) -> (Arc<neo_system::Node>, tempfile::TempDir)
         .with_storage(storage)
         .with_blockchain(blockchain)
         .with_network(network)
-        .with_mempool(Arc::new(neo_mempool::MemoryPool::new(&settings)))
+        .with_mempool(Arc::new(memory_pool(&settings)))
         .with_header_cache(Arc::new(HeaderCache::default()))
         .build()
         .expect("node");

@@ -41,6 +41,13 @@ use tokio::sync::mpsc;
 #[path = "proposal.rs"]
 mod proposal;
 
+fn memory_pool(settings: &ProtocolSettings) -> MemoryPool {
+    MemoryPool::new_with_native_contract_provider(
+        settings,
+        Arc::new(neo_native_contracts::StandardNativeProvider::new()),
+    )
+}
+
 /// The dBFT extensible codec round-trips a consensus payload: encode a
 /// signed `ConsensusPayload` to an `ExtensiblePayload`, then decode it back
 /// to the same fields (the inbound path authenticates the sender).
@@ -195,7 +202,7 @@ fn prepare_request_ledger_guard_rejects_already_persisted_transaction_hash() {
     neo_native_contracts::install();
     let settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let tx = signed_zero_fee_tx(&settings, 0x40);
     seed_persisted_transaction(&snapshot, 7, &tx);
 
@@ -212,7 +219,7 @@ fn prepare_request_ledger_guard_rejects_available_transaction_with_onchain_confl
     neo_native_contracts::install();
     let settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     seed_current_block(&snapshot, 0);
     set_zero_policy_fee(&snapshot, 10);
     set_zero_policy_fee(&snapshot, 18);
@@ -240,7 +247,7 @@ fn prepare_request_ledger_guard_uses_dynamic_max_traceable_blocks() {
         .hardforks
         .insert(neo_config::Hardfork::HfEchidna, 0);
     let snapshot = DataCache::new(false);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     seed_current_block(&snapshot, 0);
     set_zero_policy_fee(&snapshot, 10);
     set_zero_policy_fee(&snapshot, 18);

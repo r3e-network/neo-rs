@@ -5,6 +5,32 @@ use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_serialization::BinarySerializer;
 use neo_vm::StackItem;
 use neo_vm_rs::{ExecutionEngineLimits, OpCode};
+use std::sync::Arc;
+
+fn memory_pool(settings: &ProtocolSettings) -> MemoryPool {
+    MemoryPool::new_with_native_contract_provider(
+        settings,
+        Arc::new(neo_native_contracts::StandardNativeProvider::new()),
+    )
+}
+
+#[test]
+fn memory_pool_requires_explicit_native_provider_constructor() {
+    let source = include_str!("../../pool/memory_pool.rs");
+
+    assert!(
+        source.contains("new_with_native_contract_provider"),
+        "mempool should keep the explicit native-provider constructor"
+    );
+    assert!(
+        !source.contains("pub fn new(settings: &ProtocolSettings)"),
+        "MemoryPool::new must not hide StandardNativeProvider construction"
+    );
+    assert!(
+        !source.contains("StandardNativeProvider"),
+        "MemoryPool should not construct a production native provider internally"
+    );
+}
 
 /// Deterministic secp256r1 keypair: (private key, SEC1 pubkey,
 /// signature-contract script hash).
@@ -151,7 +177,7 @@ fn fixture(seed: u8) -> (ProtocolSettings, DataCache, [u8; 32], Vec<u8>, UInt160
 
 #[test]
 fn empty_pool_has_zero_counts() {
-    let pool = MemoryPool::new(&ProtocolSettings::default());
+    let pool = memory_pool(&ProtocolSettings::default());
     assert_eq!(pool.total_count(), 0);
     assert_eq!(pool.verified_count(), 0);
     assert_eq!(pool.unverified_count(), 0);
@@ -159,7 +185,7 @@ fn empty_pool_has_zero_counts() {
 
 #[test]
 fn block_persist_empty_pool_skips_persisted_transaction_scan() {
-    let pool = MemoryPool::new(&ProtocolSettings::default());
+    let pool = memory_pool(&ProtocolSettings::default());
     let mut oversized = Transaction::new();
     oversized.set_script(vec![OpCode::NOP.byte(); u16::MAX as usize + 1]);
     reset_block_persisted_tx_scan_count();
@@ -178,7 +204,7 @@ fn block_persist_empty_pool_skips_persisted_transaction_scan() {
 #[test]
 fn valid_signed_transaction_is_admitted_verified() {
     let (settings, snapshot, private, public, account) = fixture(0x42);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let tx = signed_tx(&settings, &private, &public, account, 1, 1, Vec::new());
     let hash = tx.hash();
     assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Succeed);
@@ -199,7 +225,7 @@ fn post_faun_mempool_divides_stored_exec_fee_factor_like_csharp() {
         &snapshot,
         30 * neo_execution::application_engine::FEE_FACTOR,
     );
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let tx = signed_tx(&settings, &private, &public, account, 52, 1, Vec::new());
 
     assert_eq!(
@@ -212,7 +238,7 @@ fn post_faun_mempool_divides_stored_exec_fee_factor_like_csharp() {
 #[test]
 fn duplicate_conflicts_attributes_with_same_hash_are_rejected_like_csharp_v3101() {
     let (settings, snapshot, private, public, account) = fixture(0x5B);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let absent = UInt256::from([0xA5; 32]);
     let tx = signed_tx(
         &settings,
@@ -237,7 +263,7 @@ fn duplicate_conflicts_attributes_with_same_hash_are_rejected_like_csharp_v3101(
 #[test]
 fn verified_snapshot_returns_highest_fee_first_like_csharp_sorted_reverse() {
     let (settings, snapshot, private, public, account) = fixture(0x43);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let low_fee = signed_tx_with_fees(
         &settings,
         &private,
@@ -277,7 +303,7 @@ fn verified_snapshot_returns_highest_fee_first_like_csharp_sorted_reverse() {
 #[test]
 fn block_persist_removes_mined_tx_and_evicts_conflicts() {
     let (settings, snapshot, private, public, account) = fixture(0x55);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
 
     // `mined` is pooled and will be in the block (leg 1: removed).
     let mined = signed_tx(&settings, &private, &public, account, 10, 100, Vec::new());
@@ -330,7 +356,7 @@ fn block_persist_removes_mined_tx_and_evicts_conflicts() {
 #[test]
 fn block_persist_keeps_unverified_conflicts_like_csharp() {
     let (settings, snapshot, private, public, account) = fixture(0x56);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
 
     let target = signed_tx(&settings, &private, &public, account, 30, 100, Vec::new());
     let conflicting = signed_tx(
@@ -373,7 +399,7 @@ fn block_persist_keeps_unverified_conflicts_like_csharp() {
 #[test]
 fn block_persist_invalidates_remaining_verified_transactions() {
     let (settings, snapshot, private, public, account) = fixture(0x4E);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let first = signed_tx(&settings, &private, &public, account, 20, 1, Vec::new());
     let second = signed_tx(&settings, &private, &public, account, 21, 1, Vec::new());
 
@@ -411,7 +437,7 @@ fn block_persist_invalidates_remaining_verified_transactions() {
 #[test]
 fn reverify_top_unverified_promotes_highest_priority_survivors() {
     let (settings, snapshot, private, public, account) = fixture(0x78);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let low_fee = signed_tx_with_fees(
         &settings,
         &private,
@@ -460,7 +486,7 @@ fn reverify_top_unverified_promotes_highest_priority_survivors() {
 #[test]
 fn verified_lookup_does_not_return_unverified_transactions() {
     let (settings, snapshot, private, public, account) = fixture(0x4F);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let tx = signed_tx(&settings, &private, &public, account, 22, 1, Vec::new());
     let hash = tx.hash();
 
@@ -476,7 +502,7 @@ fn verified_lookup_does_not_return_unverified_transactions() {
 #[test]
 fn duplicate_admission_reports_already_in_pool() {
     let (settings, snapshot, private, public, account) = fixture(0x43);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let tx = signed_tx(&settings, &private, &public, account, 2, 1, Vec::new());
     assert_eq!(pool.try_add(tx.clone(), &snapshot), VerifyResult::Succeed);
     assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::AlreadyInPool);
@@ -485,7 +511,7 @@ fn duplicate_admission_reports_already_in_pool() {
 #[test]
 fn try_add_conflict_eviction_reports_capacity_exceeded_like_csharp() {
     let (settings, snapshot, private, public, account) = fixture(0x50);
-    let mut pool = MemoryPool::new(&settings);
+    let mut pool = memory_pool(&settings);
     let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(
         TransactionRemovalReason,
         Vec<UInt256>,
@@ -541,7 +567,7 @@ fn try_add_conflict_eviction_reports_capacity_exceeded_like_csharp() {
 fn try_add_self_capacity_eviction_fires_added_then_removed_before_out_of_memory() {
     let (mut settings, snapshot, private, public, account) = fixture(0x51);
     settings.memory_pool_max_transactions = 1;
-    let mut pool = MemoryPool::new(&settings);
+    let mut pool = memory_pool(&settings);
     let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
     let added_calls = calls.clone();
     pool.transaction_added = Some(Box::new(move |_pool, tx| {
@@ -611,7 +637,7 @@ fn try_add_self_capacity_eviction_fires_added_then_removed_before_out_of_memory(
 #[test]
 fn tampered_signature_reports_invalid_signature() {
     let (settings, snapshot, private, public, account) = fixture(0x44);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let mut tx = signed_tx(&settings, &private, &public, account, 3, 1, Vec::new());
     let mut witnesses = tx.witnesses().to_vec();
     *witnesses[0].invocation_script.last_mut().unwrap() ^= 0x01;
@@ -622,7 +648,7 @@ fn tampered_signature_reports_invalid_signature() {
 #[test]
 fn expired_transaction_reports_expired() {
     let (settings, snapshot, private, public, account) = fixture(0x45);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     // C# VerifyStateDependent: ValidUntilBlock <= height (0) → Expired.
     let tx = signed_tx(&settings, &private, &public, account, 4, 0, Vec::new());
     assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Expired);
@@ -631,7 +657,7 @@ fn expired_transaction_reports_expired() {
 #[test]
 fn too_far_future_valid_until_block_reports_not_yet_valid_like_csharp() {
     let (settings, snapshot, private, public, account) = fixture(0x4f);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     // C# v3.10.1 Transaction.VerifyStateDependent returns NotYetValid (not
     // Expired) when ValidUntilBlock > height + increment.
     let valid_until_block = settings.max_valid_until_block_increment + 1;
@@ -650,7 +676,7 @@ fn too_far_future_valid_until_block_reports_not_yet_valid_like_csharp() {
 #[test]
 fn bad_script_reports_invalid_script() {
     let (settings, snapshot, private, public, account) = fixture(0x46);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let mut tx = signed_tx(&settings, &private, &public, account, 5, 1, Vec::new());
     tx.set_script(vec![0xff]); // reserved opcode → strict parse failure
     assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::InvalidScript);
@@ -659,7 +685,7 @@ fn bad_script_reports_invalid_script() {
 #[test]
 fn oversize_transaction_reports_oversize() {
     let (settings, snapshot, private, public, account) = fixture(0x47);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let mut tx = signed_tx(&settings, &private, &public, account, 6, 1, Vec::new());
     tx.set_script(vec![
         OpCode::PUSH1.byte();
@@ -675,7 +701,7 @@ fn blocked_sender_reports_policy_fail() {
         neo_native_contracts::PolicyContract::blocked_account_key(&account),
         neo_storage::StorageItem::from_bytes(Vec::new()),
     );
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let tx = signed_tx(&settings, &private, &public, account, 7, 1, Vec::new());
     assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::PolicyFail);
 }
@@ -686,7 +712,7 @@ fn missing_balance_reports_insufficient_funds() {
     let snapshot = DataCache::new(false); // no GAS minted
     seed_current_ledger(&snapshot, 0);
     let (private, public, account) = keypair(0x49);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let tx = signed_tx(&settings, &private, &public, account, 8, 1, Vec::new());
     assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::InsufficientFunds);
 }
@@ -694,7 +720,7 @@ fn missing_balance_reports_insufficient_funds() {
 #[test]
 fn not_valid_before_reports_invalid_attribute() {
     let (settings, snapshot, private, public, account) = fixture(0x4A);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     // NotValidBefore(5) at height 0 → C# NotValidBefore.Verify false.
     let attributes = vec![TransactionAttribute::not_valid_before(5)];
     let tx = signed_tx(&settings, &private, &public, account, 9, 1, attributes);
@@ -704,7 +730,7 @@ fn not_valid_before_reports_invalid_attribute() {
 #[test]
 fn try_add_does_not_apply_blockchain_conflict_guard_like_csharp() {
     let (settings, snapshot, private, public, account) = fixture(0x5A);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let tx = signed_tx(&settings, &private, &public, account, 15, 1, Vec::new());
     seed_conflict_record(&snapshot, &tx.hash(), &account, 0);
 
@@ -718,7 +744,7 @@ fn try_add_does_not_apply_blockchain_conflict_guard_like_csharp() {
 #[test]
 fn sender_fee_accumulates_until_balance_exhausted() {
     let (settings, snapshot, private, public, account) = fixture(0x4B);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     // Each tx charges 100 + 3_000_000 against the 100M-datoshi balance.
     // Shrink the balance so only one fits: 2 × 3_000_100 > 4_000_000.
     let mut key = vec![20u8];
@@ -741,7 +767,7 @@ fn sender_fee_accumulates_until_balance_exhausted() {
 #[test]
 fn commit_block_removes_confirmed_and_releases_sender_fee() {
     let (settings, snapshot, private, public, account) = fixture(0x4C);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let tx = signed_tx(&settings, &private, &public, account, 12, 1, Vec::new());
     let hash = tx.hash();
     assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Succeed);
@@ -759,7 +785,7 @@ fn commit_block_removes_confirmed_and_releases_sender_fee() {
 #[test]
 fn reverify_with_empty_unverified_is_noop() {
     let (settings, snapshot, private, public, account) = fixture(0x4D);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     let tx = signed_tx(&settings, &private, &public, account, 14, 1, Vec::new());
     assert_eq!(pool.try_add(tx, &snapshot), VerifyResult::Succeed);
     // try_add admits straight into the verified queue (C# TryAdd), so

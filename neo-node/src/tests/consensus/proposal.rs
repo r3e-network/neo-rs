@@ -5,7 +5,7 @@ fn proposal_resolution_caches_unverified_transactions_like_csharp_prepare_reques
     neo_native_contracts::install();
     let settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     seed_current_block(&snapshot, 0);
     set_zero_policy_fee(&snapshot, 10);
     set_zero_policy_fee(&snapshot, 18);
@@ -37,7 +37,7 @@ fn proposal_resolution_reverifies_unverified_transactions_against_context() {
     neo_native_contracts::install();
     let settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     seed_current_block(&snapshot, 0);
     set_zero_policy_fee(&snapshot, 10);
     set_zero_policy_fee(&snapshot, 18);
@@ -113,7 +113,7 @@ fn proposal_resolution_rejects_unverified_conflicts_against_proposal_hashes() {
     neo_native_contracts::install();
     let settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     seed_current_block(&snapshot, 0);
     set_zero_policy_fee(&snapshot, 10);
     set_zero_policy_fee(&snapshot, 18);
@@ -166,7 +166,7 @@ fn proposal_resolution_rejects_unverified_when_context_conflicts_with_it() {
     neo_native_contracts::install();
     let settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     seed_current_block(&snapshot, 0);
     set_zero_policy_fee(&snapshot, 10);
     set_zero_policy_fee(&snapshot, 18);
@@ -315,7 +315,7 @@ fn proposal_resolution_rejects_full_block_over_dbft_max_block_size() {
     neo_native_contracts::install();
     let mut settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
-    let pool = MemoryPool::new(&settings);
+    let pool = memory_pool(&settings);
     seed_current_block(&snapshot, 0);
     set_zero_policy_fee(&snapshot, 10);
     set_zero_policy_fee(&snapshot, 18);
@@ -366,7 +366,7 @@ async fn proposal_resolution_requests_change_view_for_invalid_unverified_transac
     neo_native_contracts::install();
     let settings = Arc::new(ProtocolSettings::default());
     let snapshot = DataCache::new(false);
-    let pool = Arc::new(MemoryPool::new(&settings));
+    let pool = Arc::new(memory_pool(&settings));
     seed_current_block(&snapshot, 0);
     set_zero_policy_fee(&snapshot, 10);
     set_zero_policy_fee(&snapshot, 18);
@@ -480,7 +480,7 @@ async fn proposal_resolution_requests_block_rejected_without_prepare_response_fo
     neo_native_contracts::install();
     let settings = Arc::new(ProtocolSettings::default());
     let snapshot = DataCache::new(false);
-    let pool = Arc::new(MemoryPool::new(&settings));
+    let pool = Arc::new(memory_pool(&settings));
     seed_current_block(&snapshot, 0);
     set_zero_policy_fee(&snapshot, 10);
     set_zero_policy_fee(&snapshot, 18);
@@ -603,7 +603,7 @@ async fn primary_request_transactions_broadcasts_inv_of_proposal_hashes() {
     neo_native_contracts::install();
     let settings = Arc::new(ProtocolSettings::default());
     let snapshot = DataCache::new(false);
-    let pool = Arc::new(MemoryPool::new(&settings));
+    let pool = Arc::new(memory_pool(&settings));
     seed_current_block(&snapshot, 0);
     set_zero_policy_fee(&snapshot, 10);
     set_zero_policy_fee(&snapshot, 18);
@@ -685,7 +685,7 @@ async fn tx_feed_resumes_backup_and_caches_transaction() {
     neo_native_contracts::install();
     let settings = Arc::new(ProtocolSettings::default());
     let snapshot = DataCache::new(false);
-    let pool = Arc::new(MemoryPool::new(&settings));
+    let pool = Arc::new(memory_pool(&settings));
     seed_current_block(&snapshot, 0);
     set_zero_policy_fee(&snapshot, 10);
     set_zero_policy_fee(&snapshot, 18);

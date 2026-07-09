@@ -20,7 +20,6 @@ use crate::transaction_removed_event_args::TransactionRemovedEventArgs;
 use crate::transaction_verification_context::TransactionVerificationContext;
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::StandardNativeProvider;
 use neo_payloads::Transaction;
 use neo_primitives::{TransactionRemovalReason, UInt160, UInt256, VerifyResult};
 use neo_storage::DataCache;
@@ -75,16 +74,6 @@ pub struct MemoryPool {
 }
 
 impl MemoryPool {
-    /// Constructs a new memory pool using the supplied protocol
-    /// settings. The pool capacity is taken from
-    /// `settings.memory_pool_max_transactions`.
-    pub fn new(settings: &ProtocolSettings) -> Self {
-        Self::new_with_native_contract_provider(
-            settings,
-            Arc::new(StandardNativeProvider::new()) as Arc<dyn NativeContractProvider>,
-        )
-    }
-
     /// Constructs a new memory pool using an explicit native-contract provider.
     ///
     /// Node composition should pass the same provider used by block import,
