@@ -5,9 +5,13 @@
 //! crate-local capability seam so the verifier depends on the facts it needs,
 //! not repeated concrete native-contract handle construction.
 
+use std::sync::Arc;
+
 use neo_config::ProtocolSettings;
 use neo_crypto::ECPoint;
-use neo_error::CoreResult;
+use neo_error::{CoreError, CoreResult};
+use neo_execution::NativeContract;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::{
     GasToken, NeoToken, Notary, OracleContract, OracleRequest, PolicyContract, Role, RoleManagement,
 };
@@ -18,7 +22,7 @@ use num_bigint::BigInt;
 /// Native-contract capabilities required by mempool admission.
 pub(super) trait AdmissionNativeProvider {
     /// Returns whether `account` is blocked by Policy.
-    fn policy_is_blocked(&self, snapshot: &DataCache, account: &UInt160) -> bool;
+    fn policy_is_blocked(&self, snapshot: &DataCache, account: &UInt160) -> CoreResult<bool>;
 
     /// Returns the effective max valid-until-block increment.
     fn max_valid_until_block_increment(
@@ -39,13 +43,13 @@ pub(super) trait AdmissionNativeProvider {
     ) -> CoreResult<u32>;
 
     /// Returns the GAS balance for `account`, or zero on absent/invalid state.
-    fn gas_balance(&self, snapshot: &DataCache, account: &UInt160) -> BigInt;
+    fn gas_balance(&self, snapshot: &DataCache, account: &UInt160) -> CoreResult<BigInt>;
 
     /// Returns the Notary deposit balance for `account`, or zero on absent state.
-    fn notary_balance(&self, snapshot: &DataCache, account: &UInt160) -> BigInt;
+    fn notary_balance(&self, snapshot: &DataCache, account: &UInt160) -> CoreResult<BigInt>;
 
     /// Returns the Notary native contract hash.
-    fn notary_hash(&self) -> UInt160;
+    fn notary_hash(&self) -> CoreResult<UInt160>;
 
     /// Returns the cached NEO committee address.
     fn committee_address(&self, snapshot: &DataCache) -> CoreResult<Option<UInt160>>;
@@ -61,40 +65,61 @@ pub(super) trait AdmissionNativeProvider {
     fn designated_oracles(&self, snapshot: &DataCache, height: u32) -> CoreResult<Vec<ECPoint>>;
 }
 
-/// Factory for admission native-contract providers.
-pub(super) trait AdmissionNativeProviderFactory {
-    /// Provider returned by this factory.
-    type Provider: AdmissionNativeProvider;
-
-    /// Creates a provider instance.
-    fn provider(&self) -> Self::Provider;
-}
-
-/// Production provider backed by canonical native-contract handles.
-#[derive(Debug, Default, Clone, Copy)]
+/// Adapter from the node-composed native-contract provider to the admission
+/// verifier's narrow native read capability.
+#[derive(Clone)]
 pub(super) struct NativeAdmissionProvider {
-    neo: NeoToken,
-    oracle: OracleContract,
-    policy: PolicyContract,
-    roles: RoleManagement,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
 }
 
 impl NativeAdmissionProvider {
-    /// Creates a provider backed by canonical native contract handles.
+    /// Creates an adapter over the composition-root native-contract provider.
     #[must_use]
-    pub(super) const fn new() -> Self {
+    pub(super) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
         Self {
-            neo: NeoToken::new(),
-            oracle: OracleContract::new(),
-            policy: PolicyContract::new(),
-            roles: RoleManagement::new(),
+            native_contract_provider,
         }
+    }
+
+    fn provider(&self) -> Arc<dyn NativeContractProvider> {
+        Arc::clone(&self.native_contract_provider)
+    }
+
+    fn native_contract(&self, name: &'static str) -> CoreResult<Arc<dyn NativeContract>> {
+        self.provider()
+            .get_native_contract_by_name(name)
+            .ok_or_else(|| CoreError::invalid_operation(format!("native provider missing {name}")))
+    }
+
+    fn with_contract<T, R>(
+        &self,
+        name: &'static str,
+        f: impl FnOnce(&T) -> CoreResult<R>,
+    ) -> CoreResult<R>
+    where
+        T: 'static,
+    {
+        let contract = self.native_contract(name)?;
+        let concrete = contract.as_any().downcast_ref::<T>().ok_or_else(|| {
+            CoreError::invalid_operation(format!("native provider returned non-{name}"))
+        })?;
+        f(concrete)
+    }
+}
+
+impl std::fmt::Debug for NativeAdmissionProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NativeAdmissionProvider")
+            .field("native_contract_provider", &"NativeContractProvider")
+            .finish()
     }
 }
 
 impl AdmissionNativeProvider for NativeAdmissionProvider {
-    fn policy_is_blocked(&self, snapshot: &DataCache, account: &UInt160) -> bool {
-        PolicyContract::is_blocked_snapshot(snapshot, account)
+    fn policy_is_blocked(&self, snapshot: &DataCache, account: &UInt160) -> CoreResult<bool> {
+        self.with_contract::<PolicyContract, _>("PolicyContract", |_| {
+            Ok(PolicyContract::is_blocked_snapshot(snapshot, account))
+        })
     }
 
     fn max_valid_until_block_increment(
@@ -102,12 +127,15 @@ impl AdmissionNativeProvider for NativeAdmissionProvider {
         snapshot: &DataCache,
         settings: &ProtocolSettings,
     ) -> CoreResult<u32> {
-        self.policy
-            .get_max_valid_until_block_increment_snapshot(snapshot, settings)
+        self.with_contract::<PolicyContract, _>("PolicyContract", |policy| {
+            policy.get_max_valid_until_block_increment_snapshot(snapshot, settings)
+        })
     }
 
     fn fee_per_byte(&self, snapshot: &DataCache) -> CoreResult<u32> {
-        self.policy.get_fee_per_byte_snapshot(snapshot)
+        self.with_contract::<PolicyContract, _>("PolicyContract", |policy| {
+            policy.get_fee_per_byte_snapshot(snapshot)
+        })
     }
 
     fn exec_fee_factor(
@@ -116,24 +144,29 @@ impl AdmissionNativeProvider for NativeAdmissionProvider {
         settings: &ProtocolSettings,
         height: u32,
     ) -> CoreResult<u32> {
-        self.policy
-            .get_exec_fee_factor_snapshot(snapshot, settings, height)
+        self.with_contract::<PolicyContract, _>("PolicyContract", |policy| {
+            policy.get_exec_fee_factor_snapshot(snapshot, settings, height)
+        })
     }
 
-    fn gas_balance(&self, snapshot: &DataCache, account: &UInt160) -> BigInt {
-        GasToken::balance_of(snapshot, account).unwrap_or_else(|_| BigInt::from(0))
+    fn gas_balance(&self, snapshot: &DataCache, account: &UInt160) -> CoreResult<BigInt> {
+        self.with_contract::<GasToken, _>("GasToken", |_| {
+            Ok(GasToken::balance_of(snapshot, account).unwrap_or_else(|_| BigInt::from(0)))
+        })
     }
 
-    fn notary_balance(&self, snapshot: &DataCache, account: &UInt160) -> BigInt {
-        Notary::balance_of(snapshot, account).unwrap_or_else(|_| BigInt::from(0))
+    fn notary_balance(&self, snapshot: &DataCache, account: &UInt160) -> CoreResult<BigInt> {
+        self.with_contract::<Notary, _>("Notary", |_| {
+            Ok(Notary::balance_of(snapshot, account).unwrap_or_else(|_| BigInt::from(0)))
+        })
     }
 
-    fn notary_hash(&self) -> UInt160 {
-        Notary::script_hash()
+    fn notary_hash(&self) -> CoreResult<UInt160> {
+        Ok(self.native_contract("Notary")?.hash())
     }
 
     fn committee_address(&self, snapshot: &DataCache) -> CoreResult<Option<UInt160>> {
-        neo_execution::NativeContract::committee_address(&self.neo, snapshot)
+        self.with_contract::<NeoToken, _>("NeoToken", |neo| neo.committee_address(snapshot))
     }
 
     fn oracle_request(
@@ -141,23 +174,14 @@ impl AdmissionNativeProvider for NativeAdmissionProvider {
         snapshot: &DataCache,
         request_id: u64,
     ) -> CoreResult<Option<OracleRequest>> {
-        self.oracle.get_request(snapshot, request_id)
+        self.with_contract::<OracleContract, _>("OracleContract", |oracle| {
+            oracle.get_request(snapshot, request_id)
+        })
     }
 
     fn designated_oracles(&self, snapshot: &DataCache, height: u32) -> CoreResult<Vec<ECPoint>> {
-        self.roles
-            .get_designated_by_role_at(snapshot, Role::Oracle, height)
-    }
-}
-
-/// Factory for production admission native-contract read providers.
-#[derive(Debug, Default, Clone, Copy)]
-pub(super) struct NativeAdmissionProviderFactory;
-
-impl AdmissionNativeProviderFactory for NativeAdmissionProviderFactory {
-    type Provider = NativeAdmissionProvider;
-
-    fn provider(&self) -> Self::Provider {
-        NativeAdmissionProvider::new()
+        self.with_contract::<RoleManagement, _>("RoleManagement", |roles| {
+            roles.get_designated_by_role_at(snapshot, Role::Oracle, height)
+        })
     }
 }

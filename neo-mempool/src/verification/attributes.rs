@@ -80,7 +80,9 @@ where
         // C# NotaryAssisted.Verify: the Notary hash must sign; when it is
         // the sender there must be exactly two signers (payer second).
         TransactionAttribute::NotaryAssisted(_) => {
-            let notary = native.notary_hash();
+            let Ok(notary) = native.notary_hash() else {
+                return false;
+            };
             if sender(tx) == Some(notary) {
                 return tx.signers().len() == 2;
             }

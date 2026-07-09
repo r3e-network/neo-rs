@@ -32,13 +32,12 @@ use neo_storage::DataCache;
 #[path = "../verification/attributes.rs"]
 mod attributes;
 use attributes::verify_attribute;
+use neo_error::CoreResult;
 use num_bigint::BigInt;
 use std::sync::Arc;
 
 use super::ledger_provider::{AdmissionLedgerProvider, NativeAdmissionLedgerProvider};
-use super::native_provider::{
-    AdmissionNativeProvider, AdmissionNativeProviderFactory, NativeAdmissionProviderFactory,
-};
+use super::native_provider::{AdmissionNativeProvider, NativeAdmissionProvider};
 
 /// C# `NativeContract.GAS.BalanceOf(snapshot, account)`: the first field of the
 /// interoperable NEP-17 `AccountState` struct stored under
@@ -47,8 +46,10 @@ use super::native_provider::{
 /// Delegates to the single canonical decode in `neo-native-contracts` so the
 /// mempool fee check cannot drift from the contract's own balance reader.
 pub fn gas_balance_of(snapshot: &DataCache, account: &UInt160) -> BigInt {
-    let native = NativeAdmissionProviderFactory.provider();
-    native.gas_balance(snapshot, account)
+    let native = NativeAdmissionProvider::new(Arc::new(StandardNativeProvider::new()));
+    native
+        .gas_balance(snapshot, account)
+        .unwrap_or_else(|_| BigInt::from(0))
 }
 
 /// C# v3.10.1 `MemoryPool.GetPayer` balance side: Notary-sponsored
@@ -59,13 +60,15 @@ fn fee_payer_balance(
     snapshot: &DataCache,
     tx: &Transaction,
     native_provider: &impl AdmissionNativeProvider,
-) -> Option<BigInt> {
-    let sender = sender(tx)?;
-    if sender == native_provider.notary_hash() && tx.signers().len() >= 2 {
+) -> CoreResult<Option<BigInt>> {
+    let Some(sender) = sender(tx) else {
+        return Ok(None);
+    };
+    if sender == native_provider.notary_hash()? && tx.signers().len() >= 2 {
         let payer = tx.signers()[1].account;
-        Some(native_provider.notary_balance(snapshot, &payer))
+        Ok(Some(native_provider.notary_balance(snapshot, &payer)?))
     } else {
-        Some(native_provider.gas_balance(snapshot, &sender))
+        Ok(Some(native_provider.gas_balance(snapshot, &sender)?))
     }
 }
 
@@ -291,7 +294,8 @@ pub fn verify_state_dependent_with_native_provider(
     native_contract_provider: Arc<dyn NativeContractProvider>,
 ) -> VerifyResult {
     let ledger_provider = NativeAdmissionLedgerProvider::new();
-    let admission_native_provider = NativeAdmissionProviderFactory.provider();
+    let admission_native_provider =
+        NativeAdmissionProvider::new(Arc::clone(&native_contract_provider));
     verify_state_dependent_with_providers(
         tx,
         snapshot,
@@ -340,16 +344,20 @@ fn verify_state_dependent_with_providers(
     // Blocked accounts.
     let hashes: Vec<UInt160> = tx.signers().iter().map(|s| s.account).collect();
     for hash in &hashes {
-        if admission_native_provider.policy_is_blocked(snapshot, hash) {
-            return VerifyResult::PolicyFail;
+        match admission_native_provider.policy_is_blocked(snapshot, hash) {
+            Ok(true) => return VerifyResult::PolicyFail,
+            Ok(false) => {}
+            Err(_) => return VerifyResult::UnableToVerify,
         }
     }
 
     // Sender GAS balance (C# TransactionVerificationContext.CheckTransaction;
     // `pooled_sender_fee` already carries the pooled-conflict fee rebate
     // applied by `MemoryPool::try_add`'s CheckConflicts).
-    let Some(balance) = fee_payer_balance(snapshot, tx, admission_native_provider) else {
-        return VerifyResult::Invalid;
+    let balance = match fee_payer_balance(snapshot, tx, admission_native_provider) {
+        Ok(Some(balance)) => balance,
+        Ok(None) => return VerifyResult::Invalid,
+        Err(_) => return VerifyResult::UnableToVerify,
     };
     let expected_fee =
         BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee()) + pooled_sender_fee;

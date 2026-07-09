@@ -59,11 +59,7 @@ fn native_provider_impl() -> &'static str {
     let start = provider
         .find("impl AdmissionNativeProvider for NativeAdmissionProvider")
         .expect("provider impl exists");
-    let end = provider[start..]
-        .find("/// Factory for production admission native-contract read providers.")
-        .map(|offset| start + offset)
-        .expect("factory follows provider impl");
-    &provider[start..end]
+    &provider[start..]
 }
 
 fn standard_shape_transaction(account: UInt160) -> Transaction {
@@ -256,7 +252,9 @@ fn native_reads_use_admission_provider_boundary() {
     let provider = include_str!("../../admission/native_provider.rs");
 
     assert!(verifier.contains("AdmissionNativeProvider"));
-    assert!(verifier.contains("NativeAdmissionProviderFactory"));
+    assert!(
+        verifier.contains("NativeAdmissionProvider::new(Arc::clone(&native_contract_provider))")
+    );
     assert!(attributes.contains("AdmissionNativeProvider"));
     assert!(!verifier.contains("PolicyContract::new()"));
     assert!(!attributes.contains("NeoToken::new()"));
@@ -264,9 +262,19 @@ fn native_reads_use_admission_provider_boundary() {
     assert!(!attributes.contains("RoleManagement::new()"));
 
     assert!(provider.contains("trait AdmissionNativeProvider"));
-    assert!(provider.contains("trait AdmissionNativeProviderFactory"));
-    assert!(provider.contains("neo: NeoToken"));
-    assert!(provider.contains("oracle: OracleContract"));
-    assert!(provider.contains("policy: PolicyContract"));
-    assert!(provider.contains("roles: RoleManagement"));
+    assert!(!provider.contains("trait AdmissionNativeProviderFactory"));
+    assert!(!provider.contains("struct NativeAdmissionProviderFactory"));
+    assert!(provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"));
+    assert!(provider.contains("get_native_contract_by_name(name)"));
+    assert!(provider.contains("with_contract::<GasToken"));
+    assert!(provider.contains("with_contract::<NeoToken"));
+    assert!(provider.contains("native_contract(\"Notary\")"));
+    assert!(provider.contains("with_contract::<Notary"));
+    assert!(provider.contains("with_contract::<OracleContract"));
+    assert!(provider.contains("with_contract::<PolicyContract"));
+    assert!(provider.contains("with_contract::<RoleManagement"));
+    assert!(!provider.contains("neo: NeoToken"));
+    assert!(!provider.contains("oracle: OracleContract"));
+    assert!(!provider.contains("policy: PolicyContract"));
+    assert!(!provider.contains("roles: RoleManagement"));
 }

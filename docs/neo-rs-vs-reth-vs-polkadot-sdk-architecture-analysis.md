@@ -415,7 +415,11 @@ import uses the explicit-resource staging/commit path instead of the global
 provider. `NativeContractLookup` is now reduced to a compatibility bridge for
 installing, replacing, scoping, and reading the ambient provider; the
 contract-specific global helper wrappers were removed from
-`neo-execution/src/native/native_contract_provider.rs`.
+`neo-execution/src/native/native_contract_provider.rs`. Mempool admission
+adapts the `MemoryPool`-captured provider for Policy, GAS, Notary, NEO,
+Oracle, and RoleManagement reads instead of constructing a private native
+provider factory, so transaction verification observes the same native-contract
+set as block import, consensus, RPC, and state-root verification.
 
 ### Polkadot SDK innovations
 
@@ -447,7 +451,9 @@ contract-specific global helper wrappers were removed from
    installs the standard provider globally. `NativeContractLookup` now only
    exposes provider install/replace/scope/access helpers, so callers must use
    the provider trait for concrete native lookups instead of contract-specific
-   global wrappers.
+   global wrappers. Mempool admission now follows that same rule: its native
+   read capability is an adapter over the composed provider, with only the
+   ledger-storage read capability left behind its separate provider factory.
 3. Consider WASM runtime for future sidechain/feature-gate support.
 
 ---
