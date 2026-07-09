@@ -6,7 +6,8 @@ use crate::PreverifyCompleted;
 use crate::command::AddTransactionReply;
 use crate::fill_memory_pool::FillMemoryPool;
 use crate::ledger_provider::{
-    LedgerProviderFactory, StorageLedgerProviderFactory, TransactionStateProvider, TxProvider,
+    EmptyLedgerProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
+    TransactionStateProvider, TxProvider,
 };
 use crate::service::{BlockchainService, MempoolLike};
 
@@ -14,6 +15,10 @@ use super::transaction_provider::{NativeTransactionProvider, TransactionNativePr
 
 /// C# `Blockchain.MaxTxToReverifyPerIdle`.
 const MAX_TX_TO_REVERIFY_PER_IDLE: usize = 10;
+
+const TRANSACTION_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
+    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
+
 impl<S, M> BlockchainService<S, M>
 where
     S: crate::service_context::SystemContext,
@@ -23,7 +28,7 @@ where
         let Some(snapshot) = self.system.store_snapshot() else {
             return false;
         };
-        let provider = StorageLedgerProviderFactory.provider(snapshot.as_ref());
+        let provider = TRANSACTION_LEDGER_PROVIDER_FACTORY.provider(snapshot.as_ref());
         match TxProvider::contains_transaction(&provider, hash) {
             Ok(exists) => exists,
             Err(error) => {
@@ -82,7 +87,7 @@ where
                     return false;
                 }
             };
-        let provider = StorageLedgerProviderFactory.provider(snapshot);
+        let provider = TRANSACTION_LEDGER_PROVIDER_FACTORY.provider(snapshot);
         match provider.contains_conflict_hash(hash, signers, max_traceable_blocks) {
             Ok(exists) => exists,
             Err(error) => {

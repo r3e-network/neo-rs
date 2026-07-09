@@ -333,6 +333,22 @@ fn transaction_admission_uses_system_native_provider() {
         !conflict_helper.contains("PolicyContract::new()"),
         "transaction admission must not construct PolicyContract directly in the handler"
     );
+    assert!(
+        source.contains("HotColdLedgerProviderFactory"),
+        "transaction admission ledger checks should use the hot/cold ledger provider factory"
+    );
+    assert!(
+        source.contains("EmptyLedgerProvider"),
+        "transaction admission ledger checks should keep the no-cold-archive case explicit"
+    );
+    assert!(
+        conflict_helper.contains("TRANSACTION_LEDGER_PROVIDER_FACTORY"),
+        "persisted conflict checks should use the routed module provider"
+    );
+    assert!(
+        !source.contains("StorageLedgerProviderFactory"),
+        "transaction admission ledger checks should not bypass the hot/cold provider boundary"
+    );
 
     let provider_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("src/handlers/transaction_provider.rs");

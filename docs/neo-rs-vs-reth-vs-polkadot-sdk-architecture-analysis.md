@@ -31,6 +31,8 @@ Policy reads.
 Blockchain ingress validation also uses the routed factory shape for header
 anchor reads and extensible-payload height checks before applying witness and
 native-provider validation.
+Blockchain transaction admission uses the same shape for persisted transaction
+and conflict checks before calling into mempool policy.
 Durable store fallback reads after in-memory block-cache eviction use the same
 routing for block-hash and full-block reconstruction.
 RPC session dummy-block reads plus blockchain and wallet transaction-state
