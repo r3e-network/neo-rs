@@ -1,5 +1,40 @@
 use super::*;
 
+fn native_provider() -> Arc<neo_native_contracts::StandardNativeProvider> {
+    Arc::new(neo_native_contracts::StandardNativeProvider::new())
+}
+
+#[test]
+fn daemon_context_requires_explicit_native_provider_at_construction() {
+    let source = include_str!("../../node/context/mod.rs");
+    let system_context_source = include_str!("../../node/context/system_context.rs");
+
+    assert!(
+        source.contains("pub(super) struct DaemonContext<P>"),
+        "DaemonContext must stay generic over its native provider type"
+    );
+    assert!(
+        source.contains("native_contract_provider: Arc<P>"),
+        "DaemonContext must store the concrete native provider type, not a dyn-erased provider"
+    );
+    assert!(
+        !source.contains("native_contract_provider: Option"),
+        "DaemonContext must not reintroduce an optional native provider field"
+    );
+    assert!(
+        !source.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
+        "DaemonContext must not erase the provider behind dyn at its owned composition boundary"
+    );
+    assert!(
+        !source.contains("fn with_native_contract_provider"),
+        "DaemonContext must not reintroduce a two-step native provider setter"
+    );
+    assert!(
+        system_context_source.contains("impl<P> SystemContext for DaemonContext<P>"),
+        "DaemonContext must expose the generic provider through the existing SystemContext boundary"
+    );
+}
+
 /// `commit_to_store` flushes the writes accumulated in the shared snapshot
 /// (as a block's native-persist pipeline does) through to the durable store,
 /// so a fresh cache over the same store reads them. Without this, synced
@@ -21,6 +56,7 @@ fn commit_to_store_flushes_snapshot_writes_to_durable_store() {
         None,
         false,
         None,
+        native_provider(),
         None,
     );
 
@@ -64,6 +100,7 @@ fn daemon_context_skips_state_service_mpt_during_default_cold_catchup() {
         Some(state_service),
         false,
         None,
+        native_provider(),
         None,
     );
 
@@ -121,6 +158,7 @@ fn daemon_context_can_track_state_service_mpt_during_cold_catchup_for_validation
         Some(state_service),
         true,
         None,
+        native_provider(),
         None,
     );
 
@@ -396,6 +434,7 @@ track_during_catchup = true
         Some(state_service),
         true,
         None,
+        native_provider(),
         None,
     );
 
@@ -459,6 +498,7 @@ track_during_catchup = true
         Some(state_service),
         true,
         None,
+        native_provider(),
         None,
     );
 
@@ -644,6 +684,7 @@ track_during_catchup = true
         Some(state_service),
         true,
         None,
+        native_provider(),
         None,
     );
 
@@ -702,6 +743,7 @@ full_state = true
         Some(state_service),
         false,
         None,
+        native_provider(),
         None,
     );
 
@@ -1073,6 +1115,7 @@ fn genesis_policy_init_visible_through_fresh_store_cache_after_commit() {
         None,
         false,
         None,
+        native_provider(),
         None,
     );
 
@@ -1130,6 +1173,7 @@ fn daemon_context_indexes_application_executed_notifications() {
         None,
         false,
         Some(Arc::clone(&indexer)),
+        native_provider(),
         None,
     );
 
@@ -1202,6 +1246,7 @@ fn daemon_context_dispatches_application_logs_handlers() {
         None,
         false,
         None,
+        native_provider(),
         Some(Arc::clone(&logs_service)),
     );
     let node = Arc::new(neo_system::Node::new(settings, None, None).expect("node"));
@@ -1281,6 +1326,7 @@ fn daemon_context_skips_application_logs_committed_handler_during_bulk_sync() {
         None,
         false,
         None,
+        native_provider(),
         Some(Arc::clone(&logs_service)),
     );
     let node = Arc::new(neo_system::Node::new(settings, None, None).expect("node"));

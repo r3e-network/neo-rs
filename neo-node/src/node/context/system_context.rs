@@ -17,7 +17,10 @@ use crate::node::ledger_source::snapshot_ledger_index;
 
 use super::DaemonContext;
 
-impl SystemContext for DaemonContext {
+impl<P> SystemContext for DaemonContext<P>
+where
+    P: NativeContractProvider + 'static,
+{
     fn settings(&self) -> Arc<ProtocolSettings> {
         Arc::clone(&self.settings)
     }
@@ -31,7 +34,8 @@ impl SystemContext for DaemonContext {
     }
 
     fn native_contract_provider(&self) -> Option<Arc<dyn NativeContractProvider>> {
-        self.native_contract_provider.as_ref().map(Arc::clone)
+        let provider: Arc<dyn NativeContractProvider> = self.native_contract_provider.clone();
+        Some(provider)
     }
 
     fn block_committing(

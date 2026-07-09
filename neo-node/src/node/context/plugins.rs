@@ -7,13 +7,17 @@
 use std::sync::Arc;
 
 use neo_blockchain::service_context::BlockPersistContext;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Block, CommittedHandler, CommittingHandler};
 use neo_storage::persistence::DataCache;
 use tracing::warn;
 
 use super::DaemonContext;
 
-impl DaemonContext {
+impl<P> DaemonContext<P>
+where
+    P: NativeContractProvider + 'static,
+{
     pub(in crate::node) fn block_committed_with_live_tip_and_context(
         &self,
         block: &Block,

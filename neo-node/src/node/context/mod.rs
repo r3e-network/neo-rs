@@ -27,7 +27,7 @@ mod system_context;
 /// [`neo_blockchain::service_context::SystemContext`] for the daemon:
 /// protocol settings plus the canonical store snapshot the blockchain service
 /// persists blocks into (and verifies transactions against).
-pub(super) struct DaemonContext {
+pub(super) struct DaemonContext<P> {
     settings: Arc<ProtocolSettings>,
     snapshot: Arc<DataCache>,
     /// The store-backed cache whose `DataCache` shares state with `snapshot`
@@ -36,13 +36,13 @@ pub(super) struct DaemonContext {
     state_service: Option<Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers>>,
     state_service_track_during_catchup: bool,
     indexer_service: Option<Arc<neo_indexer::IndexerService>>,
-    native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+    native_contract_provider: Arc<P>,
     node: RwLock<Option<Arc<neo_system::Node>>>,
     application_logs_service: Option<Arc<neo_rpc::application_logs::ApplicationLogsService>>,
     tokens_tracker: RwLock<Option<Arc<neo_rpc::plugins::tokens_tracker::TokensTracker>>>,
 }
 
-impl std::fmt::Debug for DaemonContext {
+impl<P> std::fmt::Debug for DaemonContext<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DaemonContext")
             .field("network", &self.settings.network)
@@ -50,7 +50,10 @@ impl std::fmt::Debug for DaemonContext {
     }
 }
 
-impl DaemonContext {
+impl<P> DaemonContext<P>
+where
+    P: NativeContractProvider + 'static,
+{
     pub(super) fn new(
         settings: Arc<ProtocolSettings>,
         snapshot: Arc<DataCache>,
@@ -58,6 +61,7 @@ impl DaemonContext {
         state_service: Option<Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers>>,
         state_service_track_during_catchup: bool,
         indexer_service: Option<Arc<neo_indexer::IndexerService>>,
+        native_contract_provider: Arc<P>,
         application_logs_service: Option<Arc<neo_rpc::application_logs::ApplicationLogsService>>,
     ) -> Self {
         Self {
@@ -67,19 +71,11 @@ impl DaemonContext {
             state_service,
             state_service_track_during_catchup,
             indexer_service,
-            native_contract_provider: None,
+            native_contract_provider,
             node: RwLock::new(None),
             application_logs_service,
             tokens_tracker: RwLock::new(None),
         }
-    }
-
-    pub(super) fn with_native_contract_provider(
-        mut self,
-        native_contract_provider: Arc<dyn NativeContractProvider>,
-    ) -> Self {
-        self.native_contract_provider = Some(native_contract_provider);
-        self
     }
 
     pub(super) fn set_node(&self, node: Arc<neo_system::Node>) {

@@ -8,7 +8,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
-use neo_execution::native_contract_provider::NativeContractProvider;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -98,8 +97,7 @@ pub(in crate::node) async fn build_node(
     // Native dispatch must be available before genesis initialization, and the
     // composed Node should expose the same provider object. Build it once here
     // and hand the same Arc to every provider-aware subsystem.
-    let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new())
-        as Arc<dyn NativeContractProvider>;
+    let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new());
 
     let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
@@ -112,7 +110,7 @@ pub(in crate::node) async fn build_node(
 
     let mempool = Arc::new(neo_mempool::MemoryPool::new_with_native_contract_provider(
         &settings,
-        Arc::clone(&native_contract_provider),
+        native_contract_provider.clone(),
     ));
     let header_cache = Arc::new(HeaderCache::default());
     // Seed the in-memory ledger tip from the durable store so a node restarted
@@ -176,18 +174,16 @@ pub(in crate::node) async fn build_node(
             Arc::clone(&mempool),
         )),
     };
-    let daemon_ctx = Arc::new(
-        DaemonContext::new(
-            Arc::clone(&settings),
-            snapshot,
-            store_cache,
-            state_service.clone(),
-            config.state_service.track_during_catchup,
-            indexer_service.clone(),
-            application_logs_service.clone(),
-        )
-        .with_native_contract_provider(Arc::clone(&native_contract_provider)),
-    );
+    let daemon_ctx = Arc::new(DaemonContext::new(
+        Arc::clone(&settings),
+        snapshot,
+        store_cache,
+        state_service.clone(),
+        config.state_service.track_during_catchup,
+        indexer_service.clone(),
+        Arc::clone(&native_contract_provider),
+        application_logs_service.clone(),
+    ));
     let system_ctx = Arc::clone(&daemon_ctx);
     let (mut service, blockchain) = BlockchainService::with_defaults(
         system_ctx,
@@ -423,7 +419,7 @@ pub(in crate::node) async fn build_node(
             network.clone(),
             Arc::clone(&settings),
             Arc::clone(&store),
-            Arc::clone(&native_contract_provider),
+            native_contract_provider.clone(),
             state_store,
             inbound_rx,
         );
