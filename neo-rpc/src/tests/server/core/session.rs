@@ -77,6 +77,20 @@ fn server_context_engine_paths_use_explicit_native_provider() {
 
 #[test]
 fn rpc_server_ledger_reads_use_provider_boundaries() {
+    let ledger_queries = include_str!("../../../server/ledger_queries/mod.rs");
+    assert!(
+        ledger_queries.contains("HotColdLedgerProviderFactory"),
+        "shared ledger-query helpers should use the routed ledger provider factory"
+    );
+    assert!(
+        ledger_queries.contains("EmptyLedgerProvider"),
+        "shared ledger-query helpers should keep the no-cold-archive case explicit"
+    );
+    assert!(
+        !ledger_queries.contains("StorageLedgerProviderFactory"),
+        "shared ledger-query helpers should not bypass the hot/cold provider boundary"
+    );
+
     let session_dummy_block = include_str!("../../../server/session/dummy_block.rs");
     assert!(
         session_dummy_block.contains("NativeSessionLedgerProviderFactory"),
