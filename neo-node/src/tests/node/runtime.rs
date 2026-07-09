@@ -197,6 +197,24 @@ fn db_probe_replay_uses_explicit_native_provider() {
 }
 
 #[test]
+fn db_probe_replay_uses_hot_cold_ledger_provider_boundary() {
+    let source = include_str!("../../bin/neo-db-probe.rs");
+    let replay_start = source
+        .find("fn replay_transaction(")
+        .expect("replay transaction helper exists");
+    let replay_end = source[replay_start..]
+        .find("fn replay_raw_transaction(")
+        .map(|offset| replay_start + offset)
+        .expect("raw replay helper follows replay transaction");
+    let replay = &source[replay_start..replay_end];
+
+    assert!(source.contains("HotColdLedgerProviderFactory"));
+    assert!(source.contains("EmptyLedgerProvider"));
+    assert!(replay.contains("DB_PROBE_LEDGER_PROVIDER_FACTORY"));
+    assert!(!source.contains("StorageLedgerProviderFactory"));
+}
+
+#[test]
 fn configured_mdbx_backend_is_used_for_service_stores() {
     let temp = tempfile::tempdir().expect("temp service store root");
     let config: NodeConfig = toml::from_str(&format!(

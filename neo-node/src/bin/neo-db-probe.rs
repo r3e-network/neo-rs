@@ -11,7 +11,8 @@ use anyhow::{Context, Result, anyhow, bail, ensure};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use clap::{Parser, ValueEnum};
 use neo_blockchain::{
-    BlockProvider, LedgerProviderFactory, StorageLedgerProviderFactory, TransactionStateProvider,
+    BlockProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
+    TransactionStateProvider,
 };
 use neo_config::ProtocolSettings;
 use neo_execution::{ApplicationEngine, ContractState, Diagnostic, ExecutionContextState};
@@ -33,6 +34,9 @@ use neo_vm_rs::{
 use num_bigint::BigInt;
 use parking_lot::Mutex;
 use serde_json::{Value, json};
+
+const DB_PROBE_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
+    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
 
 #[derive(Debug, Parser)]
 #[command(
@@ -837,7 +841,7 @@ fn replay_transaction(
 
     let store_cache = open_store_cache(storage_provider, db_path)?;
     let snapshot = store_cache.data_cache();
-    let ledger = StorageLedgerProviderFactory.provider(snapshot);
+    let ledger = DB_PROBE_LEDGER_PROVIDER_FACTORY.provider(snapshot);
     let tx_state = ledger
         .transaction_state_by_hash(&tx_hash)?
         .ok_or_else(|| anyhow!("transaction {tx_hash} was not found in Ledger storage"))?;
