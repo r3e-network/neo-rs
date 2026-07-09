@@ -6,12 +6,15 @@ use neo_payloads::extensible_payload::ExtensiblePayload;
 use tracing::debug;
 
 use crate::ledger_provider::{
-    ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory,
+    ChainTipProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
 };
 use crate::service::{BlockchainService, MempoolLike};
 
 use super::extensible_provider::{ExtensibleNativeProvider, NativeExtensibleProvider};
 use neo_execution::native_contract_provider::NativeContractProvider;
+
+const EXTENSIBLE_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
+    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
 
 impl<S, M> BlockchainService<S, M>
 where
@@ -67,7 +70,7 @@ where
         native_contract_provider: Arc<dyn NativeContractProvider>,
         extensible_native_provider: &impl ExtensibleNativeProvider,
     ) -> CoreResult<()> {
-        let provider = StorageLedgerProviderFactory.provider(snapshot);
+        let provider = EXTENSIBLE_LEDGER_PROVIDER_FACTORY.provider(snapshot);
         let height = provider
             .current_index()
             .map_err(|e| CoreError::other(e.to_string()))?;

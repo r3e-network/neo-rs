@@ -228,8 +228,20 @@ fn extensible_verification_uses_system_native_provider() {
         "extensible payload verification should require an explicit native provider"
     );
     assert!(
-        verifier.contains("StorageLedgerProviderFactory"),
-        "extensible payload height reads must route through the ledger provider factory"
+        source.contains("HotColdLedgerProviderFactory"),
+        "extensible payload height reads must route through the hot/cold ledger provider factory"
+    );
+    assert!(
+        source.contains("EmptyLedgerProvider"),
+        "extensible payload height reads should keep the no-cold-archive case explicit"
+    );
+    assert!(
+        verifier.contains("EXTENSIBLE_LEDGER_PROVIDER_FACTORY"),
+        "extensible payload height reads should use the routed module provider"
+    );
+    assert!(
+        !verifier.contains("StorageLedgerProviderFactory"),
+        "extensible payload height reads should not bypass the hot/cold provider boundary"
     );
     assert!(
         !verifier.contains("LedgerContract::new()"),
@@ -337,8 +349,20 @@ fn header_inventory_verification_uses_system_native_provider() {
         "header inventory verification must use the explicit-provider witness helper"
     );
     assert!(
-        handler.contains("StorageLedgerProviderFactory"),
-        "header inventory anchor reads must route through the ledger provider factory"
+        source.contains("HotColdLedgerProviderFactory"),
+        "header inventory anchor reads must route through the hot/cold ledger provider factory"
+    );
+    assert!(
+        source.contains("EmptyLedgerProvider"),
+        "header inventory anchor reads should keep the no-cold-archive case explicit"
+    );
+    assert!(
+        handler.contains("HEADER_LEDGER_PROVIDER_FACTORY"),
+        "header inventory anchor reads should use the routed module provider"
+    );
+    assert!(
+        !handler.contains("StorageLedgerProviderFactory"),
+        "header inventory anchor reads should not bypass the hot/cold provider boundary"
     );
     assert!(
         !handler.contains("LedgerContract::new()"),

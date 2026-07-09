@@ -28,6 +28,9 @@ native-contract provider for Policy reads. Consensus orchestration uses the
 same shape for tip context, on-chain transaction checks, and traceable-conflict
 checks before adapting the node-composed native-contract provider for NEO and
 Policy reads.
+Blockchain ingress validation also uses the routed factory shape for header
+anchor reads and extensible-payload height checks before applying witness and
+native-provider validation.
 RPC session dummy-block reads plus blockchain and wallet transaction-state
 adapters use the same routed factory shape before projecting JSON-RPC responses;
 the shared RPC ledger-query helper now uses it for block, header, current-tip,

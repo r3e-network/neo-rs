@@ -1,9 +1,13 @@
 use neo_payloads::header::Header;
 
 use crate::ledger_provider::{
-    BlockProvider, ChainTipProvider, LedgerProviderFactory, StorageLedgerProviderFactory,
+    BlockProvider, ChainTipProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory,
+    LedgerProviderFactory,
 };
 use crate::service::{BlockchainService, MempoolLike};
+
+const HEADER_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
+    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
 
 impl<S, M> BlockchainService<S, M>
 where
@@ -31,7 +35,7 @@ where
         if prev.is_none()
             && let Some(snap) = &snapshot
         {
-            let provider = StorageLedgerProviderFactory.provider(snap.as_ref());
+            let provider = HEADER_LEDGER_PROVIDER_FACTORY.provider(snap.as_ref());
             if let Ok(tip_hash) = provider.current_hash() {
                 prev = provider.header_by_hash(&tip_hash).ok().flatten();
             }
