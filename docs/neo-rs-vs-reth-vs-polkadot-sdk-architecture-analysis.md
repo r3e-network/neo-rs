@@ -15,7 +15,10 @@ production default, RocksDB remains supported, and in-memory providers cover
 tests/ephemeral nodes. The ledger read boundary has a hot native-record
 provider, a hot/cold router, and an explicit `EmptyLedgerProvider` for nodes
 without an installed cold archive, so composition roots can keep one provider
-shape before static files land. Current-tip reads are exposed as the separate
+shape before static files land. Node-local peer block serving now uses that
+same hot/cold factory shape with `EmptyLedgerProvider` as the cold side, so
+installing static files later is a provider swap instead of a block-source
+rewrite. Current-tip reads are exposed as the separate
 `ChainTipProvider` capability, and raw transaction-state records (including
 conflict stubs) are exposed as `TransactionStateProvider`, keeping RPC and
 peer-serving code on the same provider seam instead of reaching into the native

@@ -81,6 +81,24 @@ fn local_ledger_block_source_reports_miss_for_unknown_records() {
 }
 
 #[test]
+fn local_ledger_block_source_uses_hot_cold_provider_factory_shape() {
+    let source = include_str!("../../../node/ledger_source/local.rs");
+
+    assert!(
+        source.contains("HotColdLedgerProviderFactory"),
+        "local block serving should use the hot/cold ledger provider factory shape"
+    );
+    assert!(
+        source.contains("EmptyLedgerProvider"),
+        "local block serving should use the explicit empty cold provider until static files are installed"
+    );
+    assert!(
+        !source.contains("StorageLedgerProviderFactory"),
+        "local block serving should not bypass the hot/cold provider boundary"
+    );
+}
+
+#[test]
 fn operational_ledger_tip_reads_stay_behind_local_provider_boundary() {
     let sources = [
         (

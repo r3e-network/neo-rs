@@ -3,8 +3,12 @@
 use std::sync::Arc;
 
 use neo_blockchain::{
-    BlockProvider, LedgerProviderFactory, StorageLedgerProviderFactory, TxProvider,
+    BlockProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
+    TxProvider,
 };
+
+const LOCAL_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
+    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
 
 /// Read-only ledger view that serves peers' block requests
 /// ([`neo_network::BlockSource`]) by reconstructing a full block from the
@@ -35,7 +39,7 @@ impl LedgerBlockSource {
 
     /// Creates the canonical durable ledger provider for this snapshot.
     fn persisted_provider(&self) -> impl neo_blockchain::LedgerProvider + '_ {
-        StorageLedgerProviderFactory.provider(self.snapshot.as_ref())
+        LOCAL_LEDGER_PROVIDER_FACTORY.provider(self.snapshot.as_ref())
     }
 }
 
