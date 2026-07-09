@@ -1,9 +1,16 @@
 use super::verify_state_root_with_native_provider;
 use neo_config::ProtocolSettings;
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_native_contracts::StandardNativeProvider;
 use neo_payloads::Witness;
 use neo_primitives::UInt256;
 use neo_state_service::StateRoot;
 use neo_storage::DataCache;
+use std::sync::Arc;
+
+fn standard_native_provider() -> Arc<dyn NativeContractProvider> {
+    Arc::new(StandardNativeProvider::new())
+}
 
 #[test]
 fn unsigned_state_root_does_not_verify() {
@@ -12,7 +19,10 @@ fn unsigned_state_root_does_not_verify() {
     let sr = StateRoot::new_current(1, UInt256::from([0x11u8; 32]));
     // An unsigned root carries no witness, so there is nothing to verify.
     assert!(!verify_state_root_with_native_provider(
-        &sr, &settings, &snapshot, None
+        &sr,
+        &settings,
+        &snapshot,
+        standard_native_provider()
     ));
 }
 
@@ -27,7 +37,10 @@ fn signed_root_without_designated_state_validators_does_not_verify() {
     let witness = Witness::new_with_scripts(vec![0x00], vec![0x00]);
     let sr = StateRoot::new_current(1, UInt256::from([0x22u8; 32])).with_witness(witness);
     assert!(!verify_state_root_with_native_provider(
-        &sr, &settings, &snapshot, None
+        &sr,
+        &settings,
+        &snapshot,
+        standard_native_provider()
     ));
 }
 
@@ -38,7 +51,10 @@ fn state_root_verification_exposes_explicit_native_provider_path() {
     let sr = StateRoot::new_current(1, UInt256::from([0x33u8; 32]));
 
     assert!(!verify_state_root_with_native_provider(
-        &sr, &settings, &snapshot, None
+        &sr,
+        &settings,
+        &snapshot,
+        standard_native_provider()
     ));
 
     let source = include_str!("../state_root_verify.rs");
@@ -60,8 +76,28 @@ fn state_root_validator_reads_use_provider_factory_seam() {
         "state-root verification should define a narrow native-read capability"
     );
     assert!(
-        source.contains("trait StateRootNativeProviderFactory"),
-        "state-root verification should create native readers through a factory"
+        !source.contains("trait StateRootNativeProviderFactory"),
+        "state-root verification should use the node-composed NativeContractProvider instead of a private factory"
+    );
+    assert!(
+        !source.contains("NativeStateRootProviderFactory"),
+        "state-root verification should not own a second production native provider factory"
+    );
+    assert!(
+        !source.contains("RoleManagement::new()"),
+        "state-root verification must resolve RoleManagement through the explicit native provider seam"
+    );
+    assert!(
+        !source.contains("NativeContractLookup"),
+        "state-root verification must not fall back to the process-global native provider"
+    );
+    assert!(
+        source.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
+        "state-root verification should require an explicit native provider"
+    );
+    assert!(
+        source.contains("get_native_contract_by_name(\"RoleManagement\")"),
+        "state-root verification should read RoleManagement from the explicit NativeContractProvider"
     );
 
     let impl_start = source
@@ -82,7 +118,7 @@ fn state_root_validator_reads_use_provider_factory_seam() {
         .expect("provider-aware state-root verifier exists");
     let verifier = &source[verifier_start..];
     assert!(
-        verifier.contains("NativeStateRootProviderFactory.provider()"),
-        "state-root verifier should create the production native-read provider through the factory"
+        verifier.contains("StateRootNativeProviderAdapter"),
+        "state-root verifier should adapt the explicit native-contract provider into the state-root read capability"
     );
 }

@@ -118,7 +118,6 @@ fn sender_rotates_backward_with_each_retry() {
 #[test]
 fn driver_verifies_signed_roots_with_explicit_native_provider() {
     let source = include_str!("../../state_root/driver.rs");
-    let provider = include_str!("../../state_root/native_provider.rs");
     assert!(
         source.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
         "StateRootDriver must own the native provider captured at node startup"
@@ -128,18 +127,36 @@ fn driver_verifies_signed_roots_with_explicit_native_provider() {
         "inbound signed StateRoot verification must use the explicit-provider verifier"
     );
     assert!(
-        source.contains("Some(Arc::clone(&self.native_contract_provider))"),
+        source.contains("state_root_verifiers_with_native_provider"),
+        "StateRootDriver must read StateValidator designations through the shared explicit-provider helper"
+    );
+    assert!(
+        source.contains("Arc::clone(&self.native_contract_provider)"),
         "StateRootDriver must pass its captured provider into state-root verification"
     );
     assert!(
-        source.contains("NativeStateRootProviderFactory"),
-        "StateRootDriver must read StateValidator designations through the provider factory"
+        !source.contains("Some(Arc::clone(&self.native_contract_provider))"),
+        "StateRootDriver must pass the captured provider directly, not through an optional ambient-provider path"
+    );
+    assert!(
+        !source.contains("NativeStateRootProviderFactory"),
+        "StateRootDriver must not depend on a private state-root native provider factory"
     );
     assert!(
         !source.contains("RoleManagement::new()"),
         "StateRootDriver must not construct RoleManagement directly"
     );
-    assert!(provider.contains("trait StateRootNativeProvider"));
-    assert!(provider.contains("trait StateRootNativeProviderFactory"));
-    assert!(provider.contains("struct NativeStateRootProviderFactory"));
+    let verifier = include_str!("../../../../neo-blockchain/src/state_root_verify.rs");
+    assert!(verifier.contains("trait StateRootNativeProvider"));
+    assert!(
+        verifier.contains("StateRootNativeProviderAdapter"),
+        "state-root verification should adapt the node-composed native provider"
+    );
+    assert!(
+        verifier.contains("get_native_contract_by_name(\"RoleManagement\")"),
+        "state-root verification should resolve RoleManagement through the explicit native provider"
+    );
+    assert!(!verifier.contains("trait StateRootNativeProviderFactory"));
+    assert!(!verifier.contains("struct NativeStateRootProviderFactory"));
+    assert!(!verifier.contains("RoleManagement::new()"));
 }

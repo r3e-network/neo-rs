@@ -29,7 +29,6 @@
 
 mod codec;
 mod driver;
-mod native_provider;
 mod setup;
 
 pub use driver::state_root_driver_task;

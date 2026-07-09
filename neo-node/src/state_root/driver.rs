@@ -10,7 +10,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use neo_blockchain::{
-    BlockchainHandle, RuntimeEvent, StateRootVoteCollector, verify_state_root_with_native_provider,
+    BlockchainHandle, RuntimeEvent, StateRootVoteCollector,
+    state_root_verifiers_with_native_provider, verify_state_root_with_native_provider,
 };
 use neo_config::ProtocolSettings;
 use neo_crypto::{ECPoint, Secp256r1Crypto};
@@ -30,10 +31,6 @@ use super::codec::{
     STATE_ROOT_VALID_BLOCK_END_THRESHOLD, VOTE_VALID_BLOCK_END_THRESHOLD, build_extensible,
     decode_message,
 };
-use super::native_provider::{
-    NativeStateRootProviderFactory, StateRootNativeProvider, StateRootNativeProviderFactory,
-};
-
 /// Initial delay before a validator first broadcasts its vote for a round
 /// (C# `VerificationService.DelayMilliseconds`).
 const INITIAL_VOTE_DELAY_MS: u64 = 3_000;
@@ -83,8 +80,11 @@ impl StateRootDriver {
     /// The StateValidators designated at `index`, in designation order (the
     /// order vote `validator_index` and multisig aggregation both index into).
     fn verifiers_at(&self, snapshot: &DataCache, index: u32) -> Vec<ECPoint> {
-        let native = NativeStateRootProviderFactory.provider();
-        verifiers_at_with_provider(&native, snapshot, index)
+        state_root_verifiers_with_native_provider(
+            snapshot,
+            index,
+            Arc::clone(&self.native_contract_provider),
+        )
     }
 
     /// The locally-computed (unsigned) state root for `index`, if available.
@@ -310,7 +310,7 @@ impl StateRootDriver {
                     &root,
                     &self.settings,
                     &snapshot,
-                    Some(Arc::clone(&self.native_contract_provider)),
+                    Arc::clone(&self.native_contract_provider),
                 ) {
                     warn!(target: "neo::state_root", root_index, "rejected unverifiable signed state root");
                     return;
@@ -380,14 +380,6 @@ impl StateRootDriver {
         }
         info!(target: "neo::state_root", "state root driver loop exited");
     }
-}
-
-fn verifiers_at_with_provider(
-    native: &impl StateRootNativeProvider,
-    snapshot: &DataCache,
-    index: u32,
-) -> Vec<ECPoint> {
-    native.state_validators(snapshot, index)
 }
 
 /// Builds the StateService driver future. Consumes the caller-owned
