@@ -221,34 +221,64 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
 }
 
 #[test]
-fn rpc_session_policy_reads_use_native_provider_factory() {
+fn rpc_session_policy_reads_use_composed_native_provider() {
     let provider = include_str!("../../../server/session/native_provider.rs");
     assert!(provider.contains("trait SessionNativeProvider"));
-    assert!(provider.contains("trait SessionNativeProviderFactory"));
-    assert!(provider.contains("struct NativeSessionProviderFactory"));
-    assert!(provider.contains("PolicyContract::new()"));
+    assert!(provider.contains("struct NativeSessionProvider"));
+    assert!(
+        provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
+        "session native provider should adapt the composition-root provider"
+    );
+    assert!(
+        provider.contains("get_native_contract_by_name(\"PolicyContract\")"),
+        "session native provider should resolve Policy through NativeContractProvider"
+    );
+    assert!(
+        provider.contains("with_contract::<PolicyContract"),
+        "session native provider should downcast through the shared native provider adapter"
+    );
+    assert!(
+        !provider.contains("PolicyContract::new()"),
+        "session native provider should not construct a standalone PolicyContract"
+    );
+    assert!(
+        !provider.contains("SessionNativeProviderFactory"),
+        "session native provider should be created from the composed provider, not a local factory"
+    );
 
-    let session_sources = [
-        (
-            "session dummy block",
-            include_str!("../../../server/session/dummy_block.rs"),
-        ),
-        (
-            "session execution",
-            include_str!("../../../server/session/execution.rs"),
-        ),
-    ];
+    let session_execution = include_str!("../../../server/session/execution.rs");
+    assert!(
+        session_execution
+            .contains("NativeSessionProvider::new(Arc::clone(&native_contract_provider))"),
+        "session execution should adapt the composed native provider once"
+    );
+    assert!(
+        !session_execution.contains("PolicyContract::new()"),
+        "session execution should not construct PolicyContract directly"
+    );
+    assert!(
+        !session_execution.contains("NativeSessionProviderFactory"),
+        "session execution should not create a standalone session native provider factory"
+    );
 
-    for (name, source) in session_sources {
-        assert!(
-            source.contains("NativeSessionProviderFactory"),
-            "{name} should obtain Policy values through the session native provider factory"
-        );
-        assert!(
-            !source.contains("PolicyContract::new()"),
-            "{name} should not construct PolicyContract directly"
-        );
-    }
+    let dummy_block = include_str!("../../../server/session/dummy_block.rs");
+    assert!(
+        dummy_block.contains("native_provider: &impl SessionNativeProvider"),
+        "dummy block construction should receive the narrow native provider capability"
+    );
+    assert!(
+        dummy_block.contains("let milliseconds_per_block = native_provider")
+            && dummy_block.contains(".milliseconds_per_block(snapshot, settings)"),
+        "dummy block construction should read Policy data through the supplied provider"
+    );
+    assert!(
+        !dummy_block.contains("PolicyContract::new()"),
+        "session dummy block should not construct PolicyContract directly"
+    );
+    assert!(
+        !dummy_block.contains("NativeSessionProviderFactory"),
+        "session dummy block should not create a standalone session native provider factory"
+    );
 }
 
 #[test]

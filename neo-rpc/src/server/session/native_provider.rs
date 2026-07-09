@@ -3,12 +3,15 @@
 //! Session construction needs a narrow Policy view for the C# invocation
 //! compatibility fields it synthesizes before execution. Keeping those reads
 //! behind a local provider seam prevents the RPC session workflow from
-//! constructing native contracts directly.
+//! constructing native contracts directly or bypassing the composition root's
+//! native registry.
 
 use neo_config::ProtocolSettings;
-use neo_error::CoreResult;
+use neo_error::{CoreError, CoreResult};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::PolicyContract;
 use neo_storage::DataCache;
+use std::sync::Arc;
 
 /// Native-contract capabilities required by RPC session construction.
 pub(super) trait SessionNativeProvider {
@@ -27,28 +30,44 @@ pub(super) trait SessionNativeProvider {
     ) -> CoreResult<u32>;
 }
 
-/// Factory for RPC session native-contract providers.
-pub(super) trait SessionNativeProviderFactory {
-    /// Provider returned by this factory.
-    type Provider: SessionNativeProvider;
-
-    /// Creates a provider instance.
-    fn provider(&self) -> Self::Provider;
-}
-
-/// Production provider backed by canonical native-contract handles.
-#[derive(Clone, Copy, Debug, Default)]
+/// Adapter from the node-composed native-contract provider to the session's
+/// narrow Policy read capability.
+#[derive(Clone)]
 pub(super) struct NativeSessionProvider {
-    policy: PolicyContract,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
 }
 
 impl NativeSessionProvider {
-    /// Creates a provider backed by canonical native-contract handles.
+    /// Creates an adapter over the composition-root native-contract provider.
     #[must_use]
-    pub(super) const fn new() -> Self {
+    pub(super) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
         Self {
-            policy: PolicyContract::new(),
+            native_contract_provider,
         }
+    }
+
+    fn with_contract<T, R>(&self, f: impl FnOnce(&T) -> CoreResult<R>) -> CoreResult<R>
+    where
+        T: 'static,
+    {
+        let contract = self
+            .native_contract_provider
+            .get_native_contract_by_name("PolicyContract")
+            .ok_or_else(|| {
+                CoreError::invalid_operation("native provider missing PolicyContract")
+            })?;
+        let policy = contract.as_any().downcast_ref::<T>().ok_or_else(|| {
+            CoreError::invalid_operation("native provider returned non-PolicyContract")
+        })?;
+        f(policy)
+    }
+}
+
+impl std::fmt::Debug for NativeSessionProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NativeSessionProvider")
+            .field("native_contract_provider", &"NativeContractProvider")
+            .finish()
     }
 }
 
@@ -58,8 +77,9 @@ impl SessionNativeProvider for NativeSessionProvider {
         snapshot: &DataCache,
         settings: &ProtocolSettings,
     ) -> CoreResult<u32> {
-        self.policy
-            .get_max_valid_until_block_increment_snapshot(snapshot, settings)
+        self.with_contract::<PolicyContract, _>(|policy| {
+            policy.get_max_valid_until_block_increment_snapshot(snapshot, settings)
+        })
     }
 
     fn milliseconds_per_block(
@@ -67,19 +87,8 @@ impl SessionNativeProvider for NativeSessionProvider {
         snapshot: &DataCache,
         settings: &ProtocolSettings,
     ) -> CoreResult<u32> {
-        self.policy
-            .get_milliseconds_per_block_snapshot(snapshot, settings)
-    }
-}
-
-/// Factory for production RPC session native providers.
-#[derive(Clone, Copy, Debug, Default)]
-pub(super) struct NativeSessionProviderFactory;
-
-impl SessionNativeProviderFactory for NativeSessionProviderFactory {
-    type Provider = NativeSessionProvider;
-
-    fn provider(&self) -> Self::Provider {
-        NativeSessionProvider::new()
+        self.with_contract::<PolicyContract, _>(|policy| {
+            policy.get_milliseconds_per_block_snapshot(snapshot, settings)
+        })
     }
 }

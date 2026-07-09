@@ -26,9 +26,7 @@ use crate::server::ledger_queries;
 
 use super::Session;
 use super::dummy_block::create_dummy_block;
-use super::native_provider::{
-    NativeSessionProviderFactory, SessionNativeProvider, SessionNativeProviderFactory,
-};
+use super::native_provider::{NativeSessionProvider, SessionNativeProvider};
 
 impl Session {
     /// Create and execute a new invocation session.
@@ -59,8 +57,9 @@ impl Session {
         // setting when the key is not yet initialized). The static
         // `ConfigProvider::max_valid_until_block_increment()` is only correct
         // pre-Echidna, so read the Policy-aware value from the snapshot.
-        let max_valid_until_block_increment = NativeSessionProviderFactory
-            .provider()
+        let session_native_provider =
+            NativeSessionProvider::new(Arc::clone(&native_contract_provider));
+        let max_valid_until_block_increment = session_native_provider
             .max_valid_until_block_increment(store_cache.data_cache(), settings.as_ref())
             .unwrap_or_else(|_| config_provider.max_valid_until_block_increment());
 
@@ -90,8 +89,12 @@ impl Session {
         // reads see `height` instead of the `height + 1` a real persisting block
         // would give. Build the same dummy block so stateless invoke *results*
         // (GetTime, currentindex) match C# field-for-field.
-        let persisting_block =
-            create_dummy_block(store_cache.data_cache(), settings.as_ref()).map(Arc::new);
+        let persisting_block = create_dummy_block(
+            store_cache.data_cache(),
+            settings.as_ref(),
+            &session_native_provider,
+        )
+        .map(Arc::new);
 
         let diagnostic_box = diagnostic
             .clone()

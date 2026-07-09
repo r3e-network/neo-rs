@@ -6,9 +6,7 @@ use neo_payloads::{Block, Header};
 use super::ledger_provider::{
     NativeSessionLedgerProviderFactory, SessionLedgerProvider, SessionLedgerProviderFactory,
 };
-use super::native_provider::{
-    NativeSessionProviderFactory, SessionNativeProvider, SessionNativeProviderFactory,
-};
+use super::native_provider::SessionNativeProvider;
 
 /// Builds the dummy persisting block for a stateless RPC invoke, mirroring C#
 /// `ApplicationEngine.CreateDummyBlock(IReadOnlyStore snapshot, ProtocolSettings
@@ -33,14 +31,14 @@ use super::native_provider::{
 pub(super) fn create_dummy_block(
     snapshot: &neo_storage::persistence::DataCache,
     settings: &neo_config::ProtocolSettings,
+    native_provider: &impl SessionNativeProvider,
 ) -> Option<Block> {
     let (current_hash, current_header) = NativeSessionLedgerProviderFactory
         .provider()
         .current_header(snapshot)
         .ok()??;
 
-    let milliseconds_per_block = NativeSessionProviderFactory
-        .provider()
+    let milliseconds_per_block = native_provider
         .milliseconds_per_block(snapshot, settings)
         .unwrap_or(settings.milliseconds_per_block);
 
