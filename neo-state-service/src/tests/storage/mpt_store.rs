@@ -1610,11 +1610,10 @@ fn backed_revert_drops_durable_tombstones_from_live_generation() {
     );
 }
 
-/// Cross-pinned against the official C# implementation: the vector
-/// below was produced by the published `Neo.Cryptography.MPT` 3.9.2
-/// package (the NuGet build of `Neo.Cryptography.MPTTrie`, compiled
-/// against `Neo` 3.9.1 — the reference version vendored under
-/// `neo_csharp/`; the MPTTrie project itself is not vendored).
+/// Cross-pinned against the official C# MPT implementation: the vector
+/// below was produced by the published `Neo.Cryptography.MPTTrie`
+/// package and remains part of the Neo N3 v3.10.1 state-root
+/// compatibility surface.
 /// A `MemoryStore`-backed `Trie` applied exactly the
 /// [`two_block_store`] change sets and dumped `Trie.Root.Hash`
 /// after each block plus `Trie.TryGetProof` for `(5, 0xAA03)`
