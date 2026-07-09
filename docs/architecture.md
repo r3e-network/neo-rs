@@ -305,9 +305,9 @@ The detailed rules for this style live in
   intentionally exercise ambient lookup; it no longer exposes contract-specific
   native helper wrappers. Mempool admission, RPC session construction,
   smart-contract wallet invocation, wallet-compat network-fee calculation,
-  oracle service processing, and RPC wallet signing/finalization adapt the
-  composed provider for native reads instead of constructing private
-  native-contract handles.
+  oracle service processing, RPC wallet signing/finalization, and RPC node
+  `getversion` policy projection adapt the composed provider for native reads
+  instead of constructing private native-contract handles.
   `Helper::verify_witness*_with_native_provider` and
   provider-aware script-hash resolution let node services verify witnesses
   against an explicit provider without reading the global slot. Batch block

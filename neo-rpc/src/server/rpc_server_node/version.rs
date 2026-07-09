@@ -2,9 +2,7 @@
 
 use serde_json::{Map, Value};
 
-use super::native_provider::{
-    NativeNodeProviderFactory, NodeNativeProvider, NodeNativeProviderFactory, VersionPolicyValues,
-};
+use super::native_provider::{NativeNodeProvider, NodeNativeProvider, VersionPolicyValues};
 use super::{RpcServerNode, request::NoParamsRequest, response::version_to_json};
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
@@ -37,8 +35,7 @@ fn dynamic_policy_values(server: &RpcServer) -> Result<VersionPolicyValues, RpcE
     let protocol = system.settings();
     let store = system.store_cache();
     let snapshot = store.data_cache();
-    NativeNodeProviderFactory
-        .provider()
+    NativeNodeProvider::new(system.native_contract_provider())
         .version_policy_values(snapshot, &protocol)
 }
 

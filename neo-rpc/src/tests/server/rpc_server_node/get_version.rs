@@ -60,8 +60,8 @@ fn serve_getversion_once(protocol: Value) -> String {
 fn get_version_dynamic_policy_reads_use_node_native_provider_boundary() {
     let version = include_str!("../../../server/rpc_server_node/version.rs");
     assert!(
-        version.contains("NativeNodeProviderFactory"),
-        "getversion should obtain dynamic Policy values through the node native provider factory"
+        version.contains("NativeNodeProvider::new(system.native_contract_provider())"),
+        "getversion should adapt the composition-root native provider"
     );
     assert!(
         !version.contains("StorageLedgerProviderFactory"),
@@ -82,19 +82,35 @@ fn get_version_dynamic_policy_reads_use_node_native_provider_boundary() {
 
     let provider = include_str!("../../../server/rpc_server_node/native_provider.rs");
     assert!(provider.contains("trait NodeNativeProvider"));
-    assert!(provider.contains("trait NodeNativeProviderFactory"));
-    assert!(provider.contains("struct NativeNodeProviderFactory"));
     assert!(
-        provider.contains("ledger_queries::current_index"),
-        "node native provider should read getversion's current height through the shared ledger-query boundary"
+        provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
+        "node native provider should adapt the composition-root provider"
     );
     assert!(
-        !provider.contains("StorageLedgerProviderFactory"),
-        "node native provider should not construct the storage ledger provider directly for current-height reads"
+        provider.contains("get_native_contract_by_name(\"PolicyContract\")"),
+        "node native provider should resolve Policy through NativeContractProvider"
     );
     assert!(
-        provider.contains("PolicyContract::ID"),
-        "node native provider should own getversion's Policy storage key boundary"
+        provider.contains("with_contract::<PolicyContract"),
+        "node native provider should downcast through the shared native provider adapter"
+    );
+    assert!(
+        provider.contains("get_milliseconds_per_block_snapshot")
+            && provider.contains("get_max_traceable_blocks_snapshot")
+            && provider.contains("get_max_valid_until_block_increment_snapshot"),
+        "node native provider should use canonical Policy snapshot readers"
+    );
+    assert!(
+        !provider.contains("NodeNativeProviderFactory"),
+        "node native provider should be created from the composed provider, not a local factory"
+    );
+    assert!(
+        !provider.contains("PolicyContract::ID"),
+        "node native provider should not hand-roll Policy storage keys"
+    );
+    assert!(
+        !provider.contains("POLICY_PREFIX_"),
+        "node native provider should not duplicate Policy storage prefixes"
     );
 }
 
