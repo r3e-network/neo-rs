@@ -4,9 +4,12 @@ use neo_payloads::Block;
 use crate::pipeline::block_validation::{BlockValidationError, BlockValidator, MIN_TIMESTAMP_MS};
 use crate::pipeline::stage_traits::{EngineError, StageContext};
 
-use super::NeoValidateStage;
+use super::{NeoValidateStage, ValidateContext};
 
-impl NeoValidateStage {
+impl<C> NeoValidateStage<C>
+where
+    C: ValidateContext,
+{
     /// Run all stateless checks (no external state needed).
     pub(super) fn run_stateless_checks(
         block: &Block,

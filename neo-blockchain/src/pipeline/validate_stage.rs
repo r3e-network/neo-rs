@@ -49,11 +49,17 @@ use neo_payloads::Block;
 /// + stateful checks.
 ///
 /// Construct via [`NeoValidateStage::new`].
-pub struct NeoValidateStage {
-    ctx: Arc<dyn ValidateContext>,
+pub struct NeoValidateStage<C = SnapshotValidateContext>
+where
+    C: ValidateContext,
+{
+    ctx: Arc<C>,
 }
 
-impl fmt::Debug for NeoValidateStage {
+impl<C> fmt::Debug for NeoValidateStage<C>
+where
+    C: ValidateContext,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("NeoValidateStage")
             .field("validators_count", &self.ctx.validators_count())
@@ -61,15 +67,21 @@ impl fmt::Debug for NeoValidateStage {
     }
 }
 
-impl NeoValidateStage {
+impl<C> NeoValidateStage<C>
+where
+    C: ValidateContext,
+{
     /// Create a new validate stage with the given context.
-    pub fn new(ctx: Arc<dyn ValidateContext>) -> Self {
+    pub fn new(ctx: Arc<C>) -> Self {
         Self { ctx }
     }
 }
 
 #[async_trait]
-impl ValidateStage for NeoValidateStage {
+impl<C> ValidateStage for NeoValidateStage<C>
+where
+    C: ValidateContext,
+{
     async fn validate(&self, ctx: &StageContext, block: &Block) -> EngineResult<()> {
         let settings = self.ctx.settings();
 
@@ -86,7 +98,10 @@ impl ValidateStage for NeoValidateStage {
 }
 
 #[async_trait]
-impl PipelineStage for NeoValidateStage {
+impl<C> PipelineStage for NeoValidateStage<C>
+where
+    C: ValidateContext,
+{
     fn id(&self) -> StageId {
         StageId::Validate
     }

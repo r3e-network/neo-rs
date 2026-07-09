@@ -60,7 +60,7 @@ impl ValidateContext for MockValidateContext {
     }
 }
 
-fn stage(ctx: MockValidateContext) -> NeoValidateStage {
+fn stage(ctx: MockValidateContext) -> NeoValidateStage<MockValidateContext> {
     NeoValidateStage::new(Arc::new(ctx))
 }
 
@@ -101,6 +101,24 @@ fn block_with_transactions(index: u32, tx_count: usize) -> Block {
 fn validate_stage_id_is_validate() {
     let stage = stage(MockValidateContext::new());
     assert_eq!(PipelineStage::id(&stage), StageId::Validate);
+}
+
+#[test]
+fn validate_stage_owns_concrete_context_type() {
+    let source = include_str!("../../pipeline/validate_stage.rs");
+
+    assert!(
+        source.contains("pub struct NeoValidateStage<C = SnapshotValidateContext>"),
+        "validate stage should preserve the concrete context type"
+    );
+    assert!(
+        source.contains("ctx: Arc<C>"),
+        "validate stage should own Arc<C>, not Arc<dyn ValidateContext>"
+    );
+    assert!(
+        !source.contains("ctx: Arc<dyn ValidateContext>"),
+        "owned homogeneous validate context should not be erased to dyn"
+    );
 }
 
 #[tokio::test]
