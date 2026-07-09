@@ -10,9 +10,8 @@ use crate::ledger_provider::{
 };
 use crate::service::{BlockchainService, MempoolLike};
 
-use super::extensible_provider::{
-    ExtensibleNativeProvider, ExtensibleNativeProviderFactory, NativeExtensibleProviderFactory,
-};
+use super::extensible_provider::{ExtensibleNativeProvider, NativeExtensibleProvider};
+use neo_execution::native_contract_provider::NativeContractProvider;
 
 impl<S, M> BlockchainService<S, M>
 where
@@ -32,12 +31,18 @@ where
         let hash = payload.hash();
         if let Some(snapshot) = self.system.store_snapshot() {
             let settings = self.system.settings();
-            let extensible_native_provider = NativeExtensibleProviderFactory.provider();
+            let native_contract_provider = self.system.native_contract_provider().ok_or_else(|| {
+                CoreError::invalid_operation(
+                    "store-backed extensible payload verification requires a native contract provider",
+                )
+            })?;
+            let extensible_native_provider =
+                NativeExtensibleProvider::new(Arc::clone(&native_contract_provider));
             Self::verify_extensible(
                 &payload,
                 settings.as_ref(),
                 &snapshot,
-                self.system.native_contract_provider(),
+                native_contract_provider,
                 &extensible_native_provider,
             )
             .map_err(|error| CoreError::other(format!("extensible payload rejected: {error}")))?;
@@ -59,9 +64,7 @@ where
         payload: &ExtensiblePayload,
         settings: &neo_config::ProtocolSettings,
         snapshot: &neo_storage::DataCache,
-        native_contract_provider: Option<
-            Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>,
-        >,
+        native_contract_provider: Arc<dyn NativeContractProvider>,
         extensible_native_provider: &impl ExtensibleNativeProvider,
     ) -> CoreResult<()> {
         let provider = StorageLedgerProviderFactory.provider(snapshot);
@@ -140,7 +143,7 @@ where
                 hash,
                 witness,
                 remaining_gas,
-                native_contract_provider.clone(),
+                Some(Arc::clone(&native_contract_provider)),
             ) {
                 Ok(fee) => remaining_gas -= fee,
                 Err(error) => {

@@ -207,8 +207,8 @@ fn extensible_verification_uses_system_native_provider() {
         "extensible payload verification must use the provider exposed by SystemContext"
     );
     assert!(
-        handler.contains("NativeExtensibleProviderFactory"),
-        "extensible payload verification must create native read providers through the factory"
+        !handler.contains("NativeExtensibleProviderFactory"),
+        "extensible payload verification must not create a second production native provider factory"
     );
 
     let verifier_start = source
@@ -222,6 +222,10 @@ fn extensible_verification_uses_system_native_provider() {
     assert!(
         verifier.contains("ExtensibleNativeProvider"),
         "extensible payload whitelist reads must depend on a native read capability"
+    );
+    assert!(
+        verifier.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
+        "extensible payload verification should require an explicit native provider"
     );
     assert!(
         verifier.contains("StorageLedgerProviderFactory"),
@@ -242,9 +246,26 @@ fn extensible_verification_uses_system_native_provider() {
 
     let provider = include_str!("../../handlers/extensible_provider.rs");
     assert!(provider.contains("trait ExtensibleNativeProvider"));
-    assert!(provider.contains("trait ExtensibleNativeProviderFactory"));
-    assert!(provider.contains("neo: NeoToken"));
-    assert!(provider.contains("roles: RoleManagement"));
+    assert!(
+        !provider.contains("trait ExtensibleNativeProviderFactory"),
+        "extensible provider seam should adapt the node-composed NativeContractProvider instead of owning a private factory"
+    );
+    assert!(
+        !provider.contains("NeoToken::new()"),
+        "extensible provider seam must resolve NeoToken through the explicit native provider"
+    );
+    assert!(
+        !provider.contains("RoleManagement::new()"),
+        "extensible provider seam must resolve RoleManagement through the explicit native provider"
+    );
+    assert!(
+        provider.contains("get_native_contract_by_name(\"NeoToken\")"),
+        "extensible provider seam should read NeoToken from the explicit NativeContractProvider"
+    );
+    assert!(
+        provider.contains("get_native_contract_by_name(\"RoleManagement\")"),
+        "extensible provider seam should read RoleManagement from the explicit NativeContractProvider"
+    );
 }
 
 #[test]
