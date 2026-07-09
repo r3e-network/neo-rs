@@ -84,21 +84,27 @@ pub(super) trait ConsensusNativeProvider {
 /// Adapter from the node-composed native-contract provider to the consensus
 /// orchestration read capability.
 #[derive(Clone)]
-pub(super) struct NativeConsensusProvider {
-    native_contract_provider: Arc<dyn NativeContractProvider>,
+pub(super) struct NativeConsensusProvider<P>
+where
+    P: NativeContractProvider,
+{
+    native_contract_provider: Arc<P>,
 }
 
-impl NativeConsensusProvider {
+impl<P> NativeConsensusProvider<P>
+where
+    P: NativeContractProvider,
+{
     /// Creates an adapter over the composition-root native-contract provider.
     #[must_use]
-    pub(super) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
+    pub(super) fn new(native_contract_provider: Arc<P>) -> Self {
         Self {
             native_contract_provider,
         }
     }
 
-    fn provider(&self) -> Arc<dyn NativeContractProvider> {
-        Arc::clone(&self.native_contract_provider)
+    fn provider(&self) -> &P {
+        self.native_contract_provider.as_ref()
     }
 
     fn neo_token(&self) -> anyhow::Result<Arc<dyn NativeContract>> {
@@ -114,7 +120,10 @@ impl NativeConsensusProvider {
     }
 }
 
-impl std::fmt::Debug for NativeConsensusProvider {
+impl<P> std::fmt::Debug for NativeConsensusProvider<P>
+where
+    P: NativeContractProvider,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NativeConsensusProvider")
             .field("native_contract_provider", &"NativeContractProvider")
@@ -122,7 +131,10 @@ impl std::fmt::Debug for NativeConsensusProvider {
     }
 }
 
-impl ConsensusNativeProvider for NativeConsensusProvider {
+impl<P> ConsensusNativeProvider for NativeConsensusProvider<P>
+where
+    P: NativeContractProvider,
+{
     fn ledger_tip(&self, snapshot: &DataCache) -> ConsensusLedgerTip {
         let ledger = CONSENSUS_LEDGER_PROVIDER_FACTORY.provider(snapshot);
         let height = ledger.current_index().unwrap_or(0);

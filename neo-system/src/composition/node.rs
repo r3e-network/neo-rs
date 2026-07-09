@@ -49,7 +49,10 @@ use neo_runtime::ServiceRegistry;
 /// Cheap to clone — every field is either `Clone` (handles) or
 /// `Arc<T>` (shared state).
 #[derive(Clone)]
-pub struct Node {
+pub struct Node<P = neo_native_contracts::StandardNativeProvider>
+where
+    P: NativeContractProvider,
+{
     /// Protocol settings the node is running with.
     pub settings: Arc<ProtocolSettings>,
 
@@ -83,7 +86,7 @@ pub struct Node {
     /// Shared memory pool. The same instance the blockchain service /
     /// transaction router admit into; RPC handlers read it for
     /// `getrawmempool` / conflict checks.
-    pub mempool: Arc<MemoryPool>,
+    pub mempool: Arc<MemoryPool<P>>,
 
     /// Shared header cache: headers that are ahead of the persisted
     /// tip. The node binary hands the same instance to the blockchain
@@ -100,7 +103,7 @@ pub struct Node {
     /// Stored on the node so the composition-root dependency remains visible
     /// after `NodeBuilder::build()` instead of disappearing into the global
     /// `neo-execution` lookup seam.
-    pub native_contract_provider: Arc<dyn NativeContractProvider>,
+    pub native_contract_provider: Arc<P>,
 
     /// Cancellation token the node monitors for shutdown. A clone
     /// of this is also handed to every service task so they can
@@ -108,7 +111,10 @@ pub struct Node {
     pub shutdown: CancellationToken,
 }
 
-impl std::fmt::Debug for Node {
+impl<P> std::fmt::Debug for Node<P>
+where
+    P: NativeContractProvider + 'static,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
             .field("settings", &"<ProtocolSettings>")
@@ -128,35 +134,13 @@ impl std::fmt::Debug for Node {
     }
 }
 
-impl Node {
+impl<P> Node<P>
+where
+    P: NativeContractProvider + 'static,
+{
     /// Returns a fresh [`crate::NodeBuilder`].
-    pub fn builder() -> crate::NodeBuilder {
+    pub fn builder() -> crate::NodeBuilder<P> {
         crate::NodeBuilder::default()
-    }
-
-    /// Construct a `Node` with the given protocol settings and an
-    /// in-memory storage backend. Used by tests and by the
-    /// orchestrator's headless mode (no P2P, no consensus, no
-    /// engine).
-    pub fn new(
-        settings: std::sync::Arc<ProtocolSettings>,
-        _blockchain: Option<()>,
-        _network: Option<()>,
-    ) -> Result<Self, crate::error::NodeError> {
-        let storage: Arc<dyn neo_storage::persistence::store::Store> =
-            neo_storage::persistence::StoreFactory::get_store("memory", "")
-                .map_err(crate::error::NodeError::storage)?;
-        let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new())
-            as Arc<dyn NativeContractProvider>;
-        let (blockchain, _rx) = neo_blockchain::BlockchainHandle::with_capacity();
-        let (network, _nrx, _etx) = neo_network::NetworkHandle::channel(8, 8);
-        crate::NodeBuilder::default()
-            .with_settings(settings)
-            .with_storage(storage)
-            .with_blockchain(blockchain)
-            .with_network(network)
-            .with_native_contract_provider(native_contract_provider)
-            .build()
     }
 
     /// Run the node until the cancellation token is fired.
@@ -218,7 +202,7 @@ impl Node {
     }
 
     /// Returns the shared memory pool.
-    pub fn mempool(&self) -> Arc<MemoryPool> {
+    pub fn mempool(&self) -> Arc<MemoryPool<P>> {
         Arc::clone(&self.mempool)
     }
 
@@ -280,7 +264,7 @@ impl Node {
     /// The handle admits into the node's shared `neo-mempool`
     /// instance and best-effort relays accepted transactions through
     /// `neo-network`.
-    pub fn tx_router_actor(&self) -> TxRouterHandle {
+    pub fn tx_router_actor(&self) -> TxRouterHandle<P> {
         TxRouterHandle::new(
             Arc::clone(&self.mempool),
             self.network.clone(),
@@ -289,21 +273,54 @@ impl Node {
     }
 }
 
+impl Node<neo_native_contracts::StandardNativeProvider> {
+    /// Construct a `Node` with the given protocol settings and an
+    /// in-memory storage backend. Used by tests and by the
+    /// orchestrator's headless mode (no P2P, no consensus, no
+    /// engine).
+    pub fn new(
+        settings: std::sync::Arc<ProtocolSettings>,
+        _blockchain: Option<()>,
+        _network: Option<()>,
+    ) -> Result<Self, crate::error::NodeError> {
+        let storage: Arc<dyn neo_storage::persistence::store::Store> =
+            neo_storage::persistence::StoreFactory::get_store("memory", "")
+                .map_err(crate::error::NodeError::storage)?;
+        let native_contract_provider =
+            Arc::new(neo_native_contracts::StandardNativeProvider::new());
+        let (blockchain, _rx) = neo_blockchain::BlockchainHandle::with_capacity();
+        let (network, _nrx, _etx) = neo_network::NetworkHandle::channel(8, 8);
+        crate::NodeBuilder::default()
+            .with_settings(settings)
+            .with_storage(storage)
+            .with_blockchain(blockchain)
+            .with_network(network)
+            .with_native_contract_provider(native_contract_provider)
+            .build()
+    }
+}
+
 /// Handle returned by [`Node::tx_router_actor`]. Wires outbound transactions
 /// (e.g. oracle responses) into the shared memory pool and broadcasts admitted
 /// ones to peers — the reth-style stand-in for C# `system.Blockchain.Tell(tx)`
 /// admit-then-relay.
 #[derive(Clone)]
-pub struct TxRouterHandle {
-    mempool: Arc<MemoryPool>,
+pub struct TxRouterHandle<P = neo_native_contracts::StandardNativeProvider>
+where
+    P: NativeContractProvider,
+{
+    mempool: Arc<MemoryPool<P>>,
     network: NetworkHandle,
     settings: Arc<ProtocolSettings>,
 }
 
-impl TxRouterHandle {
+impl<P> TxRouterHandle<P>
+where
+    P: NativeContractProvider + 'static,
+{
     /// Construct a `TxRouterHandle` over the node's shared mempool + network.
     pub fn new(
-        mempool: Arc<MemoryPool>,
+        mempool: Arc<MemoryPool<P>>,
         network: NetworkHandle,
         settings: Arc<ProtocolSettings>,
     ) -> Self {
@@ -371,7 +388,10 @@ impl TxRouterHandle {
 }
 
 #[async_trait]
-impl StoreProvider for Node {
+impl<P> StoreProvider for Node<P>
+where
+    P: NativeContractProvider + 'static,
+{
     fn store(&self) -> Arc<dyn Store> {
         self.storage.clone()
     }
@@ -381,7 +401,10 @@ impl StoreProvider for Node {
     }
 }
 
-impl ConfigProvider for Node {
+impl<P> ConfigProvider for Node<P>
+where
+    P: NativeContractProvider + 'static,
+{
     fn settings(&self) -> Arc<ProtocolSettings> {
         Arc::clone(&self.settings)
     }
@@ -391,7 +414,10 @@ impl ConfigProvider for Node {
     }
 }
 
-impl TxAdmission for Node {
+impl<P> TxAdmission for Node<P>
+where
+    P: NativeContractProvider + 'static,
+{
     fn try_enqueue_preverify(
         &self,
         tx: neo_payloads::Transaction,

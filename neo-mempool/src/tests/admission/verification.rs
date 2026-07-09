@@ -1,5 +1,4 @@
 use super::*;
-use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::{GasToken, LedgerContract, PolicyContract};
 use neo_payloads::{Signer, Witness};
 use neo_primitives::{UInt256, WitnessScope};
@@ -9,7 +8,7 @@ use neo_vm::StackItem;
 use neo_vm_rs::{ExecutionEngineLimits, OpCode};
 use std::sync::Arc;
 
-fn standard_native_provider() -> Arc<dyn NativeContractProvider> {
+fn standard_native_provider() -> Arc<neo_native_contracts::StandardNativeProvider> {
     Arc::new(neo_native_contracts::StandardNativeProvider::new())
 }
 
@@ -260,6 +259,8 @@ fn non_standard_witness_verification_uses_explicit_native_provider() {
 
     assert!(verifier.contains("Helper::verify_witness_with_native_provider"));
     assert!(verifier.contains("let provider: Arc<dyn NativeContractProvider>"));
+    assert!(verifier.contains("native_contract_provider.clone()"));
+    assert!(!verifier.contains("NativeProviderDynArc"));
     assert!(!verifier.contains("Helper::verify_witness("));
 }
 

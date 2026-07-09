@@ -18,15 +18,13 @@ fn test_node() -> Arc<neo_system::Node> {
     )
 }
 
-fn native_provider() -> Arc<dyn neo_execution::native_contract_provider::NativeContractProvider> {
+fn native_provider() -> Arc<neo_native_contracts::StandardNativeProvider> {
     Arc::new(neo_native_contracts::StandardNativeProvider::new())
 }
 
 fn memory_pool(
     settings: &neo_config::ProtocolSettings,
-    native_contract_provider: Arc<
-        dyn neo_execution::native_contract_provider::NativeContractProvider,
-    >,
+    native_contract_provider: Arc<neo_native_contracts::StandardNativeProvider>,
 ) -> neo_mempool::MemoryPool {
     neo_mempool::MemoryPool::new_with_native_contract_provider(settings, native_contract_provider)
 }

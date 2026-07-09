@@ -38,28 +38,6 @@ use std::sync::Arc;
 use super::ledger_provider::{AdmissionLedgerProvider, NativeAdmissionLedgerProvider};
 use super::native_provider::{AdmissionNativeProvider, NativeAdmissionProvider};
 
-#[doc(hidden)]
-/// Bridges concrete `Arc<P>` providers and existing `Arc<dyn ...>` callers at
-/// the VM witness-verification boundary during the gradual generic migration.
-pub trait NativeProviderDynArc: NativeContractProvider {
-    fn clone_as_dyn(provider: &Arc<Self>) -> Arc<dyn NativeContractProvider>;
-}
-
-impl<T> NativeProviderDynArc for T
-where
-    T: NativeContractProvider + Sized + 'static,
-{
-    fn clone_as_dyn(provider: &Arc<Self>) -> Arc<dyn NativeContractProvider> {
-        provider.clone()
-    }
-}
-
-impl NativeProviderDynArc for dyn NativeContractProvider {
-    fn clone_as_dyn(provider: &Arc<Self>) -> Arc<dyn NativeContractProvider> {
-        Arc::clone(provider)
-    }
-}
-
 /// C# v3.10.1 `MemoryPool.GetPayer` balance side: Notary-sponsored
 /// transactions (`Sender == Notary.Hash` and a second signer exists) spend the
 /// second signer's Notary deposit. Ordinary transactions spend the sender's GAS
@@ -110,7 +88,7 @@ pub fn verify_transaction_with_native_provider<P>(
     native_contract_provider: Arc<P>,
 ) -> VerifyResult
 where
-    P: NativeProviderDynArc + ?Sized + 'static,
+    P: NativeContractProvider + 'static,
 {
     let result = verify_state_independent(tx, settings);
     if result != VerifyResult::Succeed {
@@ -142,7 +120,7 @@ pub fn verify_transaction_dependent_only_with_native_provider<P>(
     native_contract_provider: Arc<P>,
 ) -> VerifyResult
 where
-    P: NativeProviderDynArc + ?Sized + 'static,
+    P: NativeContractProvider + 'static,
 {
     verify_state_dependent_with_native_provider(
         tx,
@@ -247,7 +225,7 @@ pub fn verify_state_dependent_with_native_provider<P>(
     native_contract_provider: Arc<P>,
 ) -> VerifyResult
 where
-    P: NativeProviderDynArc + ?Sized + 'static,
+    P: NativeContractProvider + 'static,
 {
     let ledger_provider = NativeAdmissionLedgerProvider::new();
     let admission_native_provider = NativeAdmissionProvider::new(native_contract_provider.clone());
@@ -274,7 +252,7 @@ fn verify_state_dependent_with_providers<P>(
     admission_native_provider: &impl AdmissionNativeProvider,
 ) -> VerifyResult
 where
-    P: NativeProviderDynArc + ?Sized + 'static,
+    P: NativeContractProvider + 'static,
 {
     use neo_io::Serializable;
 
@@ -397,8 +375,7 @@ where
         } else if let Some((m, n)) = multi {
             net_fee -= exec_fee_factor * Helper::multi_signature_contract_cost(m as i32, n as i32);
         } else {
-            let provider: Arc<dyn NativeContractProvider> =
-                P::clone_as_dyn(&native_contract_provider);
+            let provider: Arc<dyn NativeContractProvider> = native_contract_provider.clone();
             match Helper::verify_witness_with_native_provider(
                 tx,
                 settings,

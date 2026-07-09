@@ -7,7 +7,7 @@ fn memory_store() -> Arc<dyn Store> {
     Arc::new(MemoryStore::new())
 }
 
-fn native_provider() -> Arc<dyn NativeContractProvider> {
+fn native_provider() -> Arc<neo_native_contracts::StandardNativeProvider> {
     Arc::new(neo_native_contracts::StandardNativeProvider::new())
 }
 

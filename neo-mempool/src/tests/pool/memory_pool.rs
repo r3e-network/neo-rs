@@ -27,8 +27,20 @@ fn memory_pool_requires_explicit_native_provider_constructor() {
         "MemoryPool::new must not hide StandardNativeProvider construction"
     );
     assert!(
-        !source.contains("StandardNativeProvider"),
+        !source.contains("StandardNativeProvider::new"),
         "MemoryPool should not construct a production native provider internally"
+    );
+    assert!(
+        source.contains("pub struct MemoryPool<P = neo_native_contracts::StandardNativeProvider>"),
+        "MemoryPool should keep its native provider concrete through a generic type parameter"
+    );
+    assert!(
+        source.contains("native_contract_provider: Arc<P>"),
+        "MemoryPool should own Arc<P>, not erase the provider to dyn at the pool boundary"
+    );
+    assert!(
+        !source.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
+        "MemoryPool must not erase its native provider to dyn"
     );
 }
 

@@ -37,29 +37,34 @@ static BLOCK_PERSISTED_TX_SCAN_COUNT: std::sync::atomic::AtomicUsize =
 
 /// Callback invoked after a new transaction has been accepted into
 /// the pool.
-pub type TransactionAddedCallback = dyn Fn(&MemoryPool, &Transaction) + Send + Sync;
+pub type TransactionAddedCallback<P = neo_native_contracts::StandardNativeProvider> =
+    dyn Fn(&MemoryPool<P>, &Transaction) + Send + Sync;
 /// Callback invoked after a transaction (or set of transactions) is
 /// removed from the pool.
-pub type TransactionRemovedCallback =
-    dyn Fn(&MemoryPool, &TransactionRemovedEventArgs) + Send + Sync;
+pub type TransactionRemovedCallback<P = neo_native_contracts::StandardNativeProvider> =
+    dyn Fn(&MemoryPool<P>, &TransactionRemovedEventArgs) + Send + Sync;
 /// Callback invoked when a transaction should be rebroadcast to the
 /// network.
 pub type TransactionRelayCallback = dyn Fn(&Transaction) + Send + Sync;
 /// Callback invoked for every freshly-admitted transaction; subscribers
 /// may veto the admission by setting `cancel = true` on the event args.
-pub type NewTransactionCallback = dyn Fn(&MemoryPool, &mut NewTransactionEventArgs) + Send + Sync;
+pub type NewTransactionCallback<P = neo_native_contracts::StandardNativeProvider> =
+    dyn Fn(&MemoryPool<P>, &mut NewTransactionEventArgs) + Send + Sync;
 
 /// Neo transaction memory pool.
-pub struct MemoryPool {
+pub struct MemoryPool<P = neo_native_contracts::StandardNativeProvider>
+where
+    P: NativeContractProvider,
+{
     /// Optional subscriber callback invoked to validate a new
     /// transaction before it is admitted.
-    pub new_transaction: Option<Box<NewTransactionCallback>>,
+    pub new_transaction: Option<Box<NewTransactionCallback<P>>>,
     /// Optional subscriber callback invoked after a transaction has
     /// been added to the pool.
-    pub transaction_added: Option<Box<TransactionAddedCallback>>,
+    pub transaction_added: Option<Box<TransactionAddedCallback<P>>>,
     /// Optional subscriber callback invoked after a transaction has
     /// been removed from the pool.
-    pub transaction_removed: Option<Box<TransactionRemovedCallback>>,
+    pub transaction_removed: Option<Box<TransactionRemovedCallback<P>>>,
     /// Optional subscriber callback invoked when a transaction should
     /// be rebroadcast to the network.
     pub transaction_relay: Option<Box<TransactionRelayCallback>>,
@@ -69,11 +74,14 @@ pub struct MemoryPool {
     settings: ProtocolSettings,
     /// Native contracts used by engine-based witness verification during
     /// admission and unverified-transaction promotion.
-    native_contract_provider: Arc<dyn NativeContractProvider>,
+    native_contract_provider: Arc<P>,
     inner: RwLock<MemoryPoolInner>,
 }
 
-impl MemoryPool {
+impl<P> MemoryPool<P>
+where
+    P: NativeContractProvider + 'static,
+{
     /// Constructs a new memory pool using an explicit native-contract provider.
     ///
     /// Node composition should pass the same provider used by block import,
@@ -81,7 +89,7 @@ impl MemoryPool {
     /// process-global provider replacement.
     pub fn new_with_native_contract_provider(
         settings: &ProtocolSettings,
-        native_contract_provider: Arc<dyn NativeContractProvider>,
+        native_contract_provider: Arc<P>,
     ) -> Self {
         let capacity = settings.memory_pool_max_transactions as usize;
         Self {
@@ -96,7 +104,7 @@ impl MemoryPool {
     }
 
     /// Returns the native-contract provider captured by this memory pool.
-    pub fn native_contract_provider(&self) -> Arc<dyn NativeContractProvider> {
+    pub fn native_contract_provider(&self) -> Arc<P> {
         Arc::clone(&self.native_contract_provider)
     }
 
@@ -754,7 +762,10 @@ impl MemoryPool {
     }
 }
 
-impl std::fmt::Debug for MemoryPool {
+impl<P> std::fmt::Debug for MemoryPool<P>
+where
+    P: NativeContractProvider + 'static,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let guard = self.inner.read();
         f.debug_struct("MemoryPool")
@@ -767,7 +778,7 @@ impl std::fmt::Debug for MemoryPool {
 
 /// Shared handle alias for the `Arc<MemoryPool>` pattern used by
 /// services that need to share the pool across tasks.
-pub type SharedMemoryPool = Arc<MemoryPool>;
+pub type SharedMemoryPool<P = neo_native_contracts::StandardNativeProvider> = Arc<MemoryPool<P>>;
 
 #[cfg(test)]
 fn reset_block_persisted_tx_scan_count() {

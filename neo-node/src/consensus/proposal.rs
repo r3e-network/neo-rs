@@ -20,11 +20,14 @@ use super::native_provider::{ConsensusNativeProvider, NativeConsensusProvider};
 
 /// Resolves the full transactions for `hashes`, in block order, from the
 /// proposal cache then the live mempool. Returns `None` if any is missing.
-pub(super) fn resolve_transactions(
+pub(super) fn resolve_transactions<P>(
     hashes: &[UInt256],
     cache: &HashMap<UInt256, Arc<Transaction>>,
-    mempool: &MemoryPool,
-) -> Option<Vec<Transaction>> {
+    mempool: &MemoryPool<P>,
+) -> Option<Vec<Transaction>>
+where
+    P: NativeContractProvider + 'static,
+{
     let mut out = Vec::with_capacity(hashes.len());
     for hash in hashes {
         if let Some(tx) = cache.get(hash) {
@@ -252,14 +255,17 @@ fn oracle_response_id(tx: &Transaction) -> Option<u64> {
         })
 }
 
-fn verify_unverified_proposal_transaction(
+fn verify_unverified_proposal_transaction<P>(
     tx: &Transaction,
     proposal_hashes: &HashSet<UInt256>,
     context: &ProposalVerificationContext,
     snapshot: &DataCache,
     settings: &ProtocolSettings,
-    native_contract_provider: Arc<dyn NativeContractProvider>,
-) -> VerifyResult {
+    native_contract_provider: Arc<P>,
+) -> VerifyResult
+where
+    P: NativeContractProvider + 'static,
+{
     if conflict_hashes(tx).any(|hash| proposal_hashes.contains(&hash)) {
         return VerifyResult::HasConflicts;
     }
@@ -298,14 +304,17 @@ pub(super) fn proposal_rejection_reason(result: VerifyResult) -> ChangeViewReaso
 /// `TransactionVerificationContext` (`AddTransaction(tx, true)`). That context
 /// catches proposal-internal conflicts, duplicated oracle responses, and sender
 /// fee exhaustion across transactions before the backup reports availability.
-pub(super) fn cache_available_proposal_transactions(
+pub(super) fn cache_available_proposal_transactions<P>(
     hashes: &[UInt256],
     cache: &mut HashMap<UInt256, Arc<Transaction>>,
-    mempool: &MemoryPool,
+    mempool: &MemoryPool<P>,
     snapshot: &DataCache,
     settings: &ProtocolSettings,
     validators: &[ValidatorInfo],
-) -> ProposalTransactionAvailability {
+) -> ProposalTransactionAvailability
+where
+    P: NativeContractProvider + 'static,
+{
     let proposal_hashes: HashSet<UInt256> = hashes.iter().copied().collect();
     let mut context = ProposalVerificationContext::default();
     let mut unverified = Vec::new();
@@ -362,12 +371,15 @@ pub(super) fn cache_available_proposal_transactions(
 /// C# DBFT `OnPrepareRequestReceived` rejects proposals that name a transaction
 /// already persisted in Ledger, and rejects available local transactions whose
 /// hash has a traceable on-chain conflict record.
-pub(super) fn prepare_request_passes_ledger_guards(
+pub(super) fn prepare_request_passes_ledger_guards<P>(
     payload: &ConsensusPayload,
     snapshot: &DataCache,
-    mempool: &MemoryPool,
+    mempool: &MemoryPool<P>,
     settings: &ProtocolSettings,
-) -> bool {
+) -> bool
+where
+    P: NativeContractProvider + 'static,
+{
     if payload.message_type != ConsensusMessageType::PrepareRequest {
         return true;
     }

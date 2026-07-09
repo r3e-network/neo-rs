@@ -544,7 +544,7 @@ pub(in crate::node) async fn build_node(
                 tracker_settings,
                 tracker_store,
                 node.settings(),
-                Arc::clone(&node.native_contract_provider),
+                node.native_contract_provider.clone(),
             ),
         )));
     }

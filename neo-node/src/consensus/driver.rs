@@ -14,6 +14,7 @@ use neo_config::ProtocolSettings;
 use neo_consensus::messages::ConsensusPayload;
 use neo_consensus::{ConsensusEvent, ConsensusService, ValidatorInfo};
 use neo_crypto::ECPoint;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::Serializable;
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
@@ -75,7 +76,10 @@ fn round_validator_context_with_provider(
 
 /// The single-task consensus driver: owns the `ConsensusService` (so no lock is
 /// needed) and routes its events to the network/mempool/ledger.
-pub(super) struct ConsensusDriver {
+pub(super) struct ConsensusDriver<P = neo_native_contracts::StandardNativeProvider>
+where
+    P: NativeContractProvider,
+{
     pub(super) service: ConsensusService,
     pub(super) event_rx: mpsc::Receiver<ConsensusEvent>,
     pub(super) inbound_rx: mpsc::Receiver<ConsensusPayload>,
@@ -85,7 +89,7 @@ pub(super) struct ConsensusDriver {
     /// transaction can resume the round when it finally arrives.
     pub(super) tx_feed_rx: mpsc::Receiver<UInt256>,
     pub(super) blockchain: BlockchainHandle,
-    pub(super) mempool: Arc<MemoryPool>,
+    pub(super) mempool: Arc<MemoryPool<P>>,
     pub(super) network: NetworkHandle,
     pub(super) settings: Arc<ProtocolSettings>,
     pub(super) validators: Arc<RwLock<Vec<ValidatorInfo>>>,
@@ -114,7 +118,10 @@ fn recovery_log_path(data_dir: Option<&std::path::Path>) -> Option<std::path::Pa
     Some(dir.join("consensus-state.bin"))
 }
 
-impl ConsensusDriver {
+impl<P> ConsensusDriver<P>
+where
+    P: NativeContractProvider + 'static,
+{
     /// Builds a fresh read snapshot of the current persisted store state. Called
     /// once per round (at start and on each `Imported`) so a driver process that
     /// spans a committee-refresh height reads the updated validator set rather
@@ -478,10 +485,10 @@ impl ConsensusDriver {
 /// caller-owned `inbound_rx` (its matching sender is wired into the network
 /// forwarder before this is called — the network, and thus this driver, is
 /// built after the forwarder). Returns `None` when this node is relay-only.
-pub fn consensus_driver_task(
+pub fn consensus_driver_task<P>(
     setup: ConsensusSetup,
     blockchain: BlockchainHandle,
-    mempool: Arc<MemoryPool>,
+    mempool: Arc<MemoryPool<P>>,
     network: NetworkHandle,
     settings: Arc<ProtocolSettings>,
     validators: Arc<RwLock<Vec<ValidatorInfo>>>,
@@ -489,7 +496,10 @@ pub fn consensus_driver_task(
     data_dir: Option<&std::path::Path>,
     inbound_rx: mpsc::Receiver<ConsensusPayload>,
     tx_feed_rx: mpsc::Receiver<UInt256>,
-) -> Option<impl std::future::Future<Output = ()> + Send + 'static> {
+) -> Option<impl std::future::Future<Output = ()> + Send + 'static>
+where
+    P: NativeContractProvider + 'static,
+{
     // Generously sized: a commit emits BroadcastMessage(Commit) + BlockCommitted
     // back-to-back via the consensus crate's non-blocking try_send.
     let (event_tx, event_rx) = mpsc::channel::<ConsensusEvent>(1024);

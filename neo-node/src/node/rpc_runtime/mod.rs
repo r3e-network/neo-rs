@@ -44,7 +44,7 @@ pub(super) fn start_rpc_server(
         Arc::clone(&node.mempool),
         Arc::clone(&node.header_cache),
         node.services.clone(),
-        Arc::clone(&node.native_contract_provider),
+        node.native_contract_provider.clone(),
     ));
     let mut server = RpcServer::new(node_ctx, rpc_config);
     if let Some(endpoint) = remote_ledger_rpc {

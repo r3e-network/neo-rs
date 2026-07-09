@@ -7,9 +7,11 @@ fn memory_store() -> Arc<dyn Store> {
     Arc::new(MemoryStore::new())
 }
 
-fn native_provider() -> Arc<dyn NativeContractProvider> {
+fn native_provider() -> Arc<neo_native_contracts::StandardNativeProvider> {
     Arc::new(neo_native_contracts::StandardNativeProvider::new())
 }
+
+type StandardNodeBuilder = NodeBuilder<neo_native_contracts::StandardNativeProvider>;
 
 // Shared with node.rs tests via the parent module, so tests that deliberately
 // inspect the process-global native provider serialize on one lock.
@@ -22,7 +24,7 @@ fn builder_requires_settings() {
     let _guard = native_provider_test_lock();
     NativeContractLookup::replace_provider(None);
 
-    let result = NodeBuilder::default().build();
+    let result = StandardNodeBuilder::default().build();
 
     assert!(result.is_err());
     assert!(NativeContractLookup::native_contract_provider().is_none());
@@ -31,7 +33,7 @@ fn builder_requires_settings() {
 #[test]
 fn builder_requires_storage() {
     let _guard = native_provider_test_lock();
-    let result = NodeBuilder::default()
+    let result = StandardNodeBuilder::default()
         .with_settings(Arc::new(ProtocolSettings::default()))
         .build();
     assert!(result.is_err());
@@ -40,7 +42,7 @@ fn builder_requires_storage() {
 #[test]
 fn builder_requires_blockchain_and_network() {
     let _guard = native_provider_test_lock();
-    let result = NodeBuilder::default()
+    let result = StandardNodeBuilder::default()
         .with_settings(Arc::new(ProtocolSettings::default()))
         .with_storage(memory_store())
         .build();
@@ -57,7 +59,7 @@ fn builder_requires_native_contract_provider() {
     let (bc, _rx) = BlockchainHandle::with_capacity();
     let (net, _nrx, _etx) = NetworkHandle::channel(8, 8);
 
-    let result = NodeBuilder::default()
+    let result = StandardNodeBuilder::default()
         .with_settings(settings)
         .with_storage(storage)
         .with_blockchain(bc)

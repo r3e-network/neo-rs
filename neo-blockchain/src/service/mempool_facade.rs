@@ -5,6 +5,7 @@
 //! the service construction root focused on command-loop state while preserving
 //! a small mockable boundary for pipeline and service tests.
 
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_primitives::verify_result::VerifyResult;
 
 /// Minimal mempool facade used by the high-level service API.
@@ -62,7 +63,10 @@ pub trait MempoolLike: std::fmt::Debug + Send + Sync {
     }
 }
 
-impl MempoolLike for neo_mempool::MemoryPool {
+impl<P> MempoolLike for neo_mempool::MemoryPool<P>
+where
+    P: NativeContractProvider + 'static,
+{
     fn try_add(
         &self,
         tx: &neo_payloads::Transaction,

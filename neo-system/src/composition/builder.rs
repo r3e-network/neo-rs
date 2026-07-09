@@ -33,21 +33,46 @@ use crate::wallet_provider::WalletProvider;
 use neo_runtime::ServiceRegistry;
 
 /// Fluent builder for [`Node`].
-#[derive(Default)]
-pub struct NodeBuilder {
+pub struct NodeBuilder<P = neo_native_contracts::StandardNativeProvider>
+where
+    P: NativeContractProvider,
+{
     settings: Option<Arc<ProtocolSettings>>,
     storage: Option<Arc<dyn Store>>,
     wallets: Option<WalletProvider>,
     blockchain: Option<BlockchainHandle>,
     network: Option<NetworkHandle>,
-    mempool: Option<Arc<MemoryPool>>,
+    mempool: Option<Arc<MemoryPool<P>>>,
     header_cache: Option<Arc<HeaderCache>>,
     services: Option<ServiceRegistry>,
-    native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+    native_contract_provider: Option<Arc<P>>,
     sync_import_pipeline: Option<Arc<SyncImportPipeline>>,
 }
 
-impl std::fmt::Debug for NodeBuilder {
+impl<P> Default for NodeBuilder<P>
+where
+    P: NativeContractProvider,
+{
+    fn default() -> Self {
+        Self {
+            settings: None,
+            storage: None,
+            wallets: None,
+            blockchain: None,
+            network: None,
+            mempool: None,
+            header_cache: None,
+            services: None,
+            native_contract_provider: None,
+            sync_import_pipeline: None,
+        }
+    }
+}
+
+impl<P> std::fmt::Debug for NodeBuilder<P>
+where
+    P: NativeContractProvider + 'static,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NodeBuilder")
             .field("settings", &self.settings.is_some())
@@ -67,7 +92,10 @@ impl std::fmt::Debug for NodeBuilder {
     }
 }
 
-impl NodeBuilder {
+impl<P> NodeBuilder<P>
+where
+    P: NativeContractProvider + 'static,
+{
     /// Install the protocol settings.
     pub fn with_settings(mut self, settings: Arc<ProtocolSettings>) -> Self {
         self.settings = Some(settings);
@@ -102,7 +130,7 @@ impl NodeBuilder {
     /// fresh pool from the protocol settings and the explicit native-contract
     /// provider. Pass the same `Arc` the blockchain service admits into so RPC
     /// reads see the live pool.
-    pub fn with_mempool(mut self, mempool: Arc<MemoryPool>) -> Self {
+    pub fn with_mempool(mut self, mempool: Arc<MemoryPool<P>>) -> Self {
         self.mempool = Some(mempool);
         self
     }
@@ -129,10 +157,7 @@ impl NodeBuilder {
     /// The provider is required. Composition roots should create one provider
     /// and pass the same `Arc` into block import, RPC, consensus, and mempool
     /// admission so native dispatch has one visible owner.
-    pub fn with_native_contract_provider(
-        mut self,
-        provider: Arc<dyn NativeContractProvider>,
-    ) -> Self {
+    pub fn with_native_contract_provider(mut self, provider: Arc<P>) -> Self {
         self.native_contract_provider = Some(provider);
         self
     }
@@ -149,7 +174,7 @@ impl NodeBuilder {
     }
 
     /// Finalise the builder.
-    pub fn build(self) -> NodeResult<Node> {
+    pub fn build(self) -> NodeResult<Node<P>> {
         let settings = self
             .settings
             .ok_or_else(|| crate::error::NodeError::missing_config("settings"))?;

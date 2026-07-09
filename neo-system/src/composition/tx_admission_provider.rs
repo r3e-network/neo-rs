@@ -104,21 +104,27 @@ pub(super) trait TxAdmissionNativeProvider {
 /// Adapter from the node-composed native-contract provider to the transaction
 /// admission Policy read capability.
 #[derive(Clone)]
-pub(super) struct NativeTxAdmissionProvider {
-    native_contract_provider: Arc<dyn NativeContractProvider>,
+pub(super) struct NativeTxAdmissionProvider<P>
+where
+    P: NativeContractProvider,
+{
+    native_contract_provider: Arc<P>,
 }
 
-impl NativeTxAdmissionProvider {
+impl<P> NativeTxAdmissionProvider<P>
+where
+    P: NativeContractProvider,
+{
     /// Creates an adapter over the node's composition-root native provider.
     #[must_use]
-    pub(super) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
+    pub(super) fn new(native_contract_provider: Arc<P>) -> Self {
         Self {
             native_contract_provider,
         }
     }
 
-    fn provider(&self) -> Arc<dyn NativeContractProvider> {
-        Arc::clone(&self.native_contract_provider)
+    fn provider(&self) -> &P {
+        self.native_contract_provider.as_ref()
     }
 
     fn policy_contract(&self) -> CoreResult<Arc<dyn NativeContract>> {
@@ -128,7 +134,10 @@ impl NativeTxAdmissionProvider {
     }
 }
 
-impl std::fmt::Debug for NativeTxAdmissionProvider {
+impl<P> std::fmt::Debug for NativeTxAdmissionProvider<P>
+where
+    P: NativeContractProvider,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NativeTxAdmissionProvider")
             .field("native_contract_provider", &"NativeContractProvider")
@@ -136,7 +145,10 @@ impl std::fmt::Debug for NativeTxAdmissionProvider {
     }
 }
 
-impl TxAdmissionNativeProvider for NativeTxAdmissionProvider {
+impl<P> TxAdmissionNativeProvider for NativeTxAdmissionProvider<P>
+where
+    P: NativeContractProvider,
+{
     fn max_traceable_blocks(
         &self,
         snapshot: &DataCache,
