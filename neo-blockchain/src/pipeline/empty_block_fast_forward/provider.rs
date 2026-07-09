@@ -29,21 +29,24 @@ pub(super) trait EmptyBlockFastForwardNativeProvider {
 /// Adapter from the batch native-persistence provider to the fast-forward
 /// reward capability.
 #[derive(Clone)]
-pub(super) struct NativeEmptyBlockFastForwardProvider {
-    native_contract_provider: Arc<dyn NativeContractProvider>,
+pub(super) struct NativeEmptyBlockFastForwardProvider<P: ?Sized> {
+    native_contract_provider: Arc<P>,
 }
 
-impl NativeEmptyBlockFastForwardProvider {
+impl<P> NativeEmptyBlockFastForwardProvider<P>
+where
+    P: NativeContractProvider + ?Sized,
+{
     /// Creates an adapter over the native provider captured for the persist batch.
     #[must_use]
-    pub(super) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
+    pub(super) fn new(native_contract_provider: Arc<P>) -> Self {
         Self {
             native_contract_provider,
         }
     }
 
-    fn provider(&self) -> Arc<dyn NativeContractProvider> {
-        Arc::clone(&self.native_contract_provider)
+    fn provider(&self) -> &P {
+        self.native_contract_provider.as_ref()
     }
 
     fn neo_token(&self) -> CoreResult<Arc<dyn NativeContract>> {
@@ -53,7 +56,10 @@ impl NativeEmptyBlockFastForwardProvider {
     }
 }
 
-impl std::fmt::Debug for NativeEmptyBlockFastForwardProvider {
+impl<P> std::fmt::Debug for NativeEmptyBlockFastForwardProvider<P>
+where
+    P: NativeContractProvider + ?Sized,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NativeEmptyBlockFastForwardProvider")
             .field("native_contract_provider", &"NativeContractProvider")
@@ -61,7 +67,10 @@ impl std::fmt::Debug for NativeEmptyBlockFastForwardProvider {
     }
 }
 
-impl EmptyBlockFastForwardNativeProvider for NativeEmptyBlockFastForwardProvider {
+impl<P> EmptyBlockFastForwardNativeProvider for NativeEmptyBlockFastForwardProvider<P>
+where
+    P: NativeContractProvider + ?Sized,
+{
     fn fast_forward_empty_block_rewards(
         &self,
         snapshot: &DataCache,

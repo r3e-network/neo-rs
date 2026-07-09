@@ -35,21 +35,24 @@ pub(super) trait ExtensibleNativeProvider {
 /// Adapter from the node-composed native-contract provider to the extensible
 /// verifier's narrow whitelist read capability.
 #[derive(Clone)]
-pub(super) struct NativeExtensibleProvider {
-    native_contract_provider: Arc<dyn NativeContractProvider>,
+pub(super) struct NativeExtensibleProvider<P: ?Sized> {
+    native_contract_provider: Arc<P>,
 }
 
-impl NativeExtensibleProvider {
+impl<P> NativeExtensibleProvider<P>
+where
+    P: NativeContractProvider + ?Sized,
+{
     /// Creates an adapter over the composition-root native-contract provider.
     #[must_use]
-    pub(super) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
+    pub(super) fn new(native_contract_provider: Arc<P>) -> Self {
         Self {
             native_contract_provider,
         }
     }
 
-    fn provider(&self) -> Arc<dyn NativeContractProvider> {
-        Arc::clone(&self.native_contract_provider)
+    fn provider(&self) -> &P {
+        self.native_contract_provider.as_ref()
     }
 
     fn neo_token(&self) -> CoreResult<Arc<dyn NativeContract>> {
@@ -65,7 +68,10 @@ impl NativeExtensibleProvider {
     }
 }
 
-impl std::fmt::Debug for NativeExtensibleProvider {
+impl<P> std::fmt::Debug for NativeExtensibleProvider<P>
+where
+    P: NativeContractProvider + ?Sized,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NativeExtensibleProvider")
             .field("native_contract_provider", &"NativeContractProvider")
@@ -73,7 +79,10 @@ impl std::fmt::Debug for NativeExtensibleProvider {
     }
 }
 
-impl ExtensibleNativeProvider for NativeExtensibleProvider {
+impl<P> ExtensibleNativeProvider for NativeExtensibleProvider<P>
+where
+    P: NativeContractProvider + ?Sized,
+{
     fn committee_address(&self, snapshot: &DataCache) -> CoreResult<Option<UInt160>> {
         self.neo_token()?
             .as_any()

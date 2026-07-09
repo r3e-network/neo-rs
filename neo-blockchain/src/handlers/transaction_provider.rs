@@ -27,21 +27,24 @@ pub(super) trait TransactionNativeProvider {
 /// Adapter from the node-composed native-contract provider to the transaction
 /// admission Policy read capability.
 #[derive(Clone)]
-pub(super) struct NativeTransactionProvider {
-    native_contract_provider: Arc<dyn NativeContractProvider>,
+pub(super) struct NativeTransactionProvider<P: ?Sized> {
+    native_contract_provider: Arc<P>,
 }
 
-impl NativeTransactionProvider {
+impl<P> NativeTransactionProvider<P>
+where
+    P: NativeContractProvider + ?Sized,
+{
     /// Creates an adapter over the composition-root native-contract provider.
     #[must_use]
-    pub(super) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
+    pub(super) fn new(native_contract_provider: Arc<P>) -> Self {
         Self {
             native_contract_provider,
         }
     }
 
-    fn provider(&self) -> Arc<dyn NativeContractProvider> {
-        Arc::clone(&self.native_contract_provider)
+    fn provider(&self) -> &P {
+        self.native_contract_provider.as_ref()
     }
 
     fn policy_contract(&self) -> CoreResult<Arc<dyn NativeContract>> {
@@ -51,7 +54,10 @@ impl NativeTransactionProvider {
     }
 }
 
-impl std::fmt::Debug for NativeTransactionProvider {
+impl<P> std::fmt::Debug for NativeTransactionProvider<P>
+where
+    P: NativeContractProvider + ?Sized,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NativeTransactionProvider")
             .field("native_contract_provider", &"NativeContractProvider")
@@ -59,7 +65,10 @@ impl std::fmt::Debug for NativeTransactionProvider {
     }
 }
 
-impl TransactionNativeProvider for NativeTransactionProvider {
+impl<P> TransactionNativeProvider for NativeTransactionProvider<P>
+where
+    P: NativeContractProvider + ?Sized,
+{
     fn max_traceable_blocks(
         &self,
         snapshot: &DataCache,

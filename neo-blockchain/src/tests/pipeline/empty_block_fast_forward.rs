@@ -407,6 +407,18 @@ fn stage_empty_block_fast_forward_uses_composed_native_provider() {
         .unwrap_or_else(|error| panic!("{}: {error}", provider_path.display()));
     assert!(provider.contains("trait EmptyBlockFastForwardNativeProvider"));
     assert!(
+        provider.contains("struct NativeEmptyBlockFastForwardProvider<P: ?Sized>"),
+        "empty-block fast-forward provider adapter should preserve the caller's provider type"
+    );
+    assert!(
+        provider.contains("native_contract_provider: Arc<P>"),
+        "empty-block fast-forward provider adapter should own Arc<P>, not erase to dyn internally"
+    );
+    assert!(
+        !provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
+        "empty-block fast-forward provider adapter must not erase its provider to dyn"
+    );
+    assert!(
         !provider.contains("trait EmptyBlockFastForwardNativeProviderFactory"),
         "empty-block fast-forward should adapt NativePersistResources instead of owning a private factory"
     );

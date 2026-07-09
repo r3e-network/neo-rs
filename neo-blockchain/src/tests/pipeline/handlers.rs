@@ -284,6 +284,18 @@ fn extensible_verification_uses_system_native_provider() {
     let provider = include_str!("../../handlers/extensible_provider.rs");
     assert!(provider.contains("trait ExtensibleNativeProvider"));
     assert!(
+        provider.contains("struct NativeExtensibleProvider<P: ?Sized>"),
+        "extensible provider adapter should preserve the caller's provider type"
+    );
+    assert!(
+        provider.contains("native_contract_provider: Arc<P>"),
+        "extensible provider adapter should own Arc<P>, not erase to dyn internally"
+    );
+    assert!(
+        !provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
+        "extensible provider adapter must not erase its provider to dyn"
+    );
+    assert!(
         !provider.contains("trait ExtensibleNativeProviderFactory"),
         "extensible provider seam should adapt the node-composed NativeContractProvider instead of owning a private factory"
     );
@@ -359,6 +371,18 @@ fn transaction_admission_uses_system_native_provider() {
     let provider = std::fs::read_to_string(&provider_path)
         .unwrap_or_else(|error| panic!("{}: {error}", provider_path.display()));
     assert!(provider.contains("trait TransactionNativeProvider"));
+    assert!(
+        provider.contains("struct NativeTransactionProvider<P: ?Sized>"),
+        "transaction provider adapter should preserve the caller's provider type"
+    );
+    assert!(
+        provider.contains("native_contract_provider: Arc<P>"),
+        "transaction provider adapter should own Arc<P>, not erase to dyn internally"
+    );
+    assert!(
+        !provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
+        "transaction provider adapter must not erase its provider to dyn"
+    );
     assert!(
         !provider.contains("trait TransactionNativeProviderFactory"),
         "transaction admission should adapt the node-composed NativeContractProvider instead of owning a private factory"
