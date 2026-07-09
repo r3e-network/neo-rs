@@ -272,6 +272,45 @@ async fn sync_pipeline_driver_resumes_from_store_checkpoint() {
 }
 
 #[tokio::test]
+async fn sync_pipeline_driver_can_align_forward_to_live_chain_tip() {
+    let checkpoints = Arc::new(InMemorySyncStageCheckpointStore::default());
+    checkpoints
+        .put_checkpoint(SyncStageCheckpoint::new(SyncStageKind::Import, 2).with_counters(2, 0))
+        .expect("seed checkpoint");
+    let importer = Arc::new(RecordingImport::default());
+    let queue = Arc::new(BlockImportQueue::new(importer, 2));
+    let mut driver = SyncPipelineDriver::new(
+        queue,
+        checkpoints,
+        CommitPolicy::new().with_max_blocks(1),
+        BlockOrigin::Sync,
+    )
+    .expect("driver");
+
+    driver.align_next_height_to_chain_tip(5);
+
+    let err = driver
+        .push_batch(SyncBlockBatch::new(3, vec![block(3)]))
+        .await
+        .expect_err("alignment must not move the cursor backward to stale checkpoint height");
+    assert!(
+        err.to_string().contains("expected height 6"),
+        "unexpected error: {err}"
+    );
+
+    let outcome = driver
+        .push_batch(SyncBlockBatch::new(6, vec![block(6)]))
+        .await
+        .expect("aligned live-height batch");
+
+    assert_eq!(outcome.next_height, Some(7));
+    assert_eq!(
+        outcome.checkpoint,
+        Some(SyncStageCheckpoint::new(SyncStageKind::Import, 6).with_counters(1, 0))
+    );
+}
+
+#[tokio::test]
 async fn sync_pipeline_driver_rejects_height_gaps() {
     let importer = Arc::new(RecordingImport::default());
     let queue = Arc::new(BlockImportQueue::new(importer, 2));

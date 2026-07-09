@@ -111,3 +111,46 @@ async fn download_import_driver_surfaces_downloader_errors_before_import() {
 
     assert!(err.to_string().contains("download failed"), "{err}");
 }
+
+#[tokio::test]
+async fn download_import_driver_allows_live_height_ahead_of_checkpoint() {
+    let (blockchain, mut commands) = BlockchainHandle::with_capacity();
+    let command_task = tokio::spawn(async move {
+        let Some(BlockchainCommand::ImportBlocks { import, reply }) = commands.recv().await else {
+            panic!("blockchain command channel closed before import");
+        };
+        let indexes = import.blocks.iter().map(Block::index).collect::<Vec<_>>();
+        reply
+            .send(neo_blockchain::command::ImportBlocksReply::ok(
+                import.blocks.len(),
+            ))
+            .expect("send import reply");
+        indexes
+    });
+
+    let checkpoints = Arc::new(InMemorySyncStageCheckpointStore::default());
+    checkpoints
+        .put_checkpoint(SyncStageCheckpoint::new(SyncStageKind::Import, 2).with_counters(2, 0))
+        .expect("seed stale checkpoint");
+    let pipeline = Arc::new(SyncImportPipeline::with_parts(
+        Arc::new(BlockImportQueue::new(Arc::new(blockchain), 2)),
+        checkpoints,
+        CommitPolicy::new().with_max_blocks(1),
+        BlockOrigin::Sync,
+    ));
+    let (tx, downloader) = ChannelBlockDownloader::channel(BlockDownloadConfig::new(1, 1), 1);
+    tx.send(Ok(BlockDownloadBatch::new(None, 6, vec![block(6)])))
+        .await
+        .expect("send live batch");
+    drop(tx);
+
+    let mut driver = SyncDownloadImportDriver::new_at_chain_tip(pipeline, downloader, 5);
+    let summary = driver
+        .import_all()
+        .await
+        .expect("live-height sync should not be pinned to stale checkpoint");
+
+    assert_eq!(summary.imported_blocks, 1);
+    assert_eq!(summary.last_imported_height, Some(6));
+    assert_eq!(command_task.await.expect("command task"), vec![6]);
+}

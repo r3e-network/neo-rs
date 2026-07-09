@@ -53,6 +53,7 @@ impl SyncDownloadImportSummary {
 pub struct SyncDownloadImportDriver<D: BlockDownloader> {
     pipeline: Arc<SyncImportPipeline>,
     downloader: D,
+    chain_tip_height: Option<u32>,
 }
 
 impl<D: BlockDownloader> SyncDownloadImportDriver<D> {
@@ -62,6 +63,25 @@ impl<D: BlockDownloader> SyncDownloadImportDriver<D> {
         Self {
             pipeline,
             downloader,
+            chain_tip_height: None,
+        }
+    }
+
+    /// Create a driver whose first downloader batch starts after `chain_tip_height`.
+    ///
+    /// This is the production P2P-sync constructor. It keeps the reusable
+    /// runtime sync driver strict, but aligns that driver's initial cursor with
+    /// the node's authoritative local tip before draining the downloader.
+    #[must_use]
+    pub fn new_at_chain_tip(
+        pipeline: Arc<SyncImportPipeline>,
+        downloader: D,
+        chain_tip_height: u32,
+    ) -> Self {
+        Self {
+            pipeline,
+            downloader,
+            chain_tip_height: Some(chain_tip_height),
         }
     }
 
@@ -85,6 +105,9 @@ impl<D: BlockDownloader> SyncDownloadImportDriver<D> {
     /// runtime service error.
     pub async fn import_all(&mut self) -> ServiceResult<SyncDownloadImportSummary> {
         let mut import_driver = self.pipeline.driver()?;
+        if let Some(chain_tip_height) = self.chain_tip_height {
+            import_driver.align_next_height_to_chain_tip(chain_tip_height);
+        }
         let mut summary = SyncDownloadImportSummary::default();
 
         while let Some(downloaded) = next_download_batch(&mut self.downloader).await {

@@ -74,8 +74,11 @@ pub(super) async fn run_coordinator_download_import(
                     config,
                     Arc::clone(&peer_registry),
                 );
-                let mut driver =
-                    neo_system::SyncDownloadImportDriver::new(Arc::clone(&pipeline), downloader);
+                let mut driver = neo_system::SyncDownloadImportDriver::new_at_chain_tip(
+                    Arc::clone(&pipeline),
+                    downloader,
+                    local_height,
+                );
                 match driver.import_all().await {
                     Ok(summary) => {
                         if summary.imported_blocks > 0 {

@@ -565,6 +565,21 @@ where
         })
     }
 
+    /// Move the expected import cursor forward to `chain_tip_height + 1`.
+    ///
+    /// Production P2P sync windows are anchored to the live chain height. A
+    /// durable import checkpoint may lag behind that authoritative tip after a
+    /// restart or a previous import path, so the composition layer can call this
+    /// before feeding downloader batches. The cursor never moves backward; gap
+    /// checks in [`Self::push_batch`] remain strict for every following batch.
+    pub fn align_next_height_to_chain_tip(&mut self, chain_tip_height: u32) {
+        let live_next = chain_tip_height.saturating_add(1);
+        self.next_height = Some(
+            self.next_height
+                .map_or(live_next, |next| next.max(live_next)),
+        );
+    }
+
     /// Push one contiguous block batch through the canonical import path.
     pub async fn push_batch(
         &mut self,
