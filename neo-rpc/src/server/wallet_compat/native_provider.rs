@@ -6,9 +6,11 @@
 //! and transaction-building algorithms.
 
 use neo_config::ProtocolSettings;
-use neo_error::CoreResult;
+use neo_error::{CoreError, CoreResult};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::PolicyContract;
 use neo_storage::DataCache;
+use std::sync::Arc;
 
 /// Native-contract capabilities required by wallet compatibility helpers.
 pub(super) trait WalletCompatNativeProvider {
@@ -24,28 +26,44 @@ pub(super) trait WalletCompatNativeProvider {
     fn fee_per_byte(&self, snapshot: &DataCache) -> CoreResult<u32>;
 }
 
-/// Factory for wallet-compat native-contract providers.
-pub(super) trait WalletCompatNativeProviderFactory {
-    /// Provider returned by this factory.
-    type Provider: WalletCompatNativeProvider;
-
-    /// Creates a provider instance.
-    fn provider(&self) -> Self::Provider;
-}
-
-/// Production provider backed by canonical native-contract handles.
-#[derive(Clone, Copy, Debug, Default)]
+/// Adapter from the node-composed native-contract provider to wallet
+/// compatibility Policy read capabilities.
+#[derive(Clone)]
 pub(super) struct NativeWalletCompatProvider {
-    policy: PolicyContract,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
 }
 
 impl NativeWalletCompatProvider {
-    /// Creates a provider backed by canonical native-contract handles.
+    /// Creates an adapter over the composition-root native-contract provider.
     #[must_use]
-    pub(super) const fn new() -> Self {
+    pub(super) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
         Self {
-            policy: PolicyContract::new(),
+            native_contract_provider,
         }
+    }
+
+    fn with_contract<T, R>(&self, f: impl FnOnce(&T) -> CoreResult<R>) -> CoreResult<R>
+    where
+        T: 'static,
+    {
+        let contract = self
+            .native_contract_provider
+            .get_native_contract_by_name("PolicyContract")
+            .ok_or_else(|| {
+                CoreError::invalid_operation("native provider missing PolicyContract")
+            })?;
+        let policy = contract.as_any().downcast_ref::<T>().ok_or_else(|| {
+            CoreError::invalid_operation("native provider returned non-PolicyContract")
+        })?;
+        f(policy)
+    }
+}
+
+impl std::fmt::Debug for NativeWalletCompatProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NativeWalletCompatProvider")
+            .field("native_contract_provider", &"NativeContractProvider")
+            .finish()
     }
 }
 
@@ -56,23 +74,12 @@ impl WalletCompatNativeProvider for NativeWalletCompatProvider {
         settings: &ProtocolSettings,
         block_index: u32,
     ) -> CoreResult<u32> {
-        self.policy
-            .get_exec_fee_factor_snapshot(snapshot, settings, block_index)
+        self.with_contract::<PolicyContract, _>(|policy| {
+            policy.get_exec_fee_factor_snapshot(snapshot, settings, block_index)
+        })
     }
 
     fn fee_per_byte(&self, snapshot: &DataCache) -> CoreResult<u32> {
-        self.policy.get_fee_per_byte_snapshot(snapshot)
-    }
-}
-
-/// Factory for production wallet compatibility native providers.
-#[derive(Clone, Copy, Debug, Default)]
-pub(super) struct NativeWalletCompatProviderFactory;
-
-impl WalletCompatNativeProviderFactory for NativeWalletCompatProviderFactory {
-    type Provider = NativeWalletCompatProvider;
-
-    fn provider(&self) -> Self::Provider {
-        NativeWalletCompatProvider::new()
+        self.with_contract::<PolicyContract, _>(|policy| policy.get_fee_per_byte_snapshot(snapshot))
     }
 }

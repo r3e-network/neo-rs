@@ -324,21 +324,44 @@ fn smart_contract_wallet_policy_reads_use_composed_native_provider() {
 }
 
 #[test]
-fn wallet_compat_policy_reads_use_native_provider_factory() {
+fn wallet_compat_policy_reads_use_composed_native_provider() {
     let provider = include_str!("../../../server/wallet_compat/native_provider.rs");
     assert!(provider.contains("trait WalletCompatNativeProvider"));
-    assert!(provider.contains("trait WalletCompatNativeProviderFactory"));
-    assert!(provider.contains("struct NativeWalletCompatProviderFactory"));
-    assert!(provider.contains("PolicyContract::new()"));
+    assert!(provider.contains("struct NativeWalletCompatProvider"));
+    assert!(
+        provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
+        "wallet-compat native provider should adapt the composition-root provider"
+    );
+    assert!(
+        provider.contains("get_native_contract_by_name(\"PolicyContract\")"),
+        "wallet-compat native provider should resolve Policy through NativeContractProvider"
+    );
+    assert!(
+        provider.contains("with_contract::<PolicyContract"),
+        "wallet-compat native provider should downcast through the shared native provider adapter"
+    );
+    assert!(
+        !provider.contains("PolicyContract::new()"),
+        "wallet-compat native provider should not construct a standalone PolicyContract"
+    );
+    assert!(
+        !provider.contains("WalletCompatNativeProviderFactory"),
+        "wallet-compat native provider should be created from the composed provider, not a local factory"
+    );
 
     let network_fee = include_str!("../../../server/wallet_compat/network_fee.rs");
     assert!(
-        network_fee.contains("NativeWalletCompatProviderFactory"),
-        "wallet network-fee calculation should read Policy values through the wallet-compat native provider factory"
+        network_fee
+            .contains("NativeWalletCompatProvider::new(Arc::clone(native_contract_provider))"),
+        "wallet network-fee calculation should adapt the composed native provider"
     );
     assert!(
         !network_fee.contains("PolicyContract::new()"),
         "wallet network-fee calculation should not construct PolicyContract directly"
+    );
+    assert!(
+        !network_fee.contains("NativeWalletCompatProviderFactory"),
+        "wallet network-fee calculation should not create a standalone wallet-compat native provider factory"
     );
 }
 

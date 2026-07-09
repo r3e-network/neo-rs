@@ -19,10 +19,7 @@ use neo_vm_rs::{OpCode, VmState as VMState};
 use num_bigint::BigInt;
 use num_traits::Zero;
 
-use super::native_provider::{
-    NativeWalletCompatProviderFactory, WalletCompatNativeProvider,
-    WalletCompatNativeProviderFactory,
-};
+use super::native_provider::{NativeWalletCompatProvider, WalletCompatNativeProvider};
 use super::{WalletCompatError, WalletCompatResult, core_err};
 use crate::server::ledger_queries;
 
@@ -53,7 +50,7 @@ where
         + SerializeHelper::get_var_size_bytes(tx.script())
         + SerializeHelper::get_var_size_usize(hashes.len());
 
-    let policy = NativeWalletCompatProviderFactory.provider();
+    let policy = NativeWalletCompatProvider::new(Arc::clone(native_contract_provider));
     let current_index = ledger_queries::current_index(snapshot).map_err(core_err)?;
     let exec_fee_factor = i64::from(
         policy
