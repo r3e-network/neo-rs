@@ -10,11 +10,14 @@ use std::sync::Arc;
 use crate::plugins::tokens_tracker::{
     Nep11BalanceKey, Nep11Tracker, Nep17BalanceKey, Nep17Tracker, TokenBalance, find_prefix,
 };
+use crate::server::contract_state_provider::{
+    DeployedContractProvider, DeployedContractProviderFactory,
+    NativeDeployedContractProviderFactory,
+};
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
-use neo_native_contracts::contract_management::ContractManagement;
 use neo_primitives::{UInt160, hex_util};
 use serde_json::Value;
 
@@ -50,6 +53,7 @@ impl RpcServerTokensTracker {
         let store_cache = server.system().store_cache();
         let snapshot = Arc::new(store_cache.data_cache().clone());
         let max_results = service.settings().max_results_limit();
+        let deployed_contracts = NativeDeployedContractProviderFactory.provider();
 
         let mut grouped: HashMap<UInt160, Vec<(String, TokenBalance)>> = HashMap::new();
         let mut count = 0usize;
@@ -58,11 +62,9 @@ impl RpcServerTokensTracker {
             if count >= max_results {
                 break;
             }
-            let Some(_) = ContractManagement::get_contract_from_snapshot(
-                snapshot.as_ref(),
-                &key.asset_script_hash,
-            )
-            .map_err(|err| internal_error(err.to_string()))?
+            let Some(_) = deployed_contracts
+                .contract_state_by_hash(snapshot.as_ref(), &key.asset_script_hash)
+                .map_err(|err| internal_error(err.to_string()))?
             else {
                 continue;
             };
@@ -76,9 +78,9 @@ impl RpcServerTokensTracker {
 
         let mut results = Vec::new();
         for (asset, tokens) in grouped {
-            let Some(contract) =
-                ContractManagement::get_contract_from_snapshot(snapshot.as_ref(), &asset)
-                    .map_err(|err| internal_error(err.to_string()))?
+            let Some(contract) = deployed_contracts
+                .contract_state_by_hash(snapshot.as_ref(), &asset)
+                .map_err(|err| internal_error(err.to_string()))?
             else {
                 continue;
             };
@@ -138,16 +140,15 @@ impl RpcServerTokensTracker {
         let snapshot = Arc::new(store_cache.data_cache().clone());
         let mut results = Vec::new();
         let max_results = service.settings().max_results_limit();
+        let deployed_contracts = NativeDeployedContractProviderFactory.provider();
 
         for (key, value) in balances {
             if results.len() >= max_results {
                 break;
             }
-            let Some(contract) = ContractManagement::get_contract_from_snapshot(
-                snapshot.as_ref(),
-                &key.asset_script_hash,
-            )
-            .map_err(|err| internal_error(err.to_string()))?
+            let Some(contract) = deployed_contracts
+                .contract_state_by_hash(snapshot.as_ref(), &key.asset_script_hash)
+                .map_err(|err| internal_error(err.to_string()))?
             else {
                 continue;
             };

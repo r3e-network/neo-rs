@@ -505,6 +505,26 @@ fn rpc_deployed_contract_reads_use_shared_provider() {
         !network_fee.contains("ContractManagement::get_contract_from_snapshot"),
         "wallet network-fee calculation should not reach into ContractManagement storage directly"
     );
+
+    let native_handlers = include_str!("../../../server/rpc_server_blockchain/native.rs");
+    assert!(
+        native_handlers.contains("NativeDeployedContractProviderFactory"),
+        "getnativecontracts should resolve persisted native contract states through the shared provider"
+    );
+    assert!(
+        !native_handlers.contains("ContractManagement::get_contract_from_snapshot"),
+        "getnativecontracts should not reach into ContractManagement storage directly"
+    );
+
+    let token_balances = include_str!("../../../server/rpc_server_tokens_tracker/balances.rs");
+    assert!(
+        token_balances.contains("NativeDeployedContractProviderFactory"),
+        "token tracker balance enrichment should resolve deployed assets through the shared provider"
+    );
+    assert!(
+        !token_balances.contains("ContractManagement::get_contract_from_snapshot"),
+        "token tracker balance enrichment should not reach into ContractManagement storage directly"
+    );
 }
 
 /// Genesis-block timestamp seeded by the RPC test harness

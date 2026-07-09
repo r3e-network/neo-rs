@@ -7,12 +7,15 @@
 use std::cmp::Reverse;
 use std::sync::Arc;
 
+use crate::server::contract_state_provider::{
+    DeployedContractProvider, DeployedContractProviderFactory,
+    NativeDeployedContractProviderFactory,
+};
 use crate::server::native_queries;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
-use neo_native_contracts::contract_management::ContractManagement;
 use num_traits::ToPrimitive;
 use serde_json::Value;
 
@@ -47,14 +50,13 @@ impl RpcServerBlockchain {
 
         let registry = native_queries::NativeQueries::native_registry();
         let mut contract_states = Vec::new();
+        let deployed_contracts = NativeDeployedContractProviderFactory.provider();
 
         for contract in registry.contracts() {
-            let state = ContractManagement::get_contract_from_snapshot(
-                store.data_cache(),
-                &contract.hash(),
-            )
-            .map_err(internal_error)?
-            .or_else(|| contract.contract_state(&settings, block_height));
+            let state = deployed_contracts
+                .contract_state_by_hash(store.data_cache(), &contract.hash())
+                .map_err(internal_error)?
+                .or_else(|| contract.contract_state(&settings, block_height));
 
             if let Some(state) = state {
                 contract_states.push(state);
