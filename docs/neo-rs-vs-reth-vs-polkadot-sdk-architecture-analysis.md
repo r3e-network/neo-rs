@@ -420,11 +420,11 @@ adapts the `MemoryPool`-captured provider for Policy, GAS, Notary, NEO,
 Oracle, and RoleManagement reads instead of constructing a private native
 provider factory, so transaction verification observes the same native-contract
 set as block import, consensus, RPC, and state-root verification. RPC session
-construction now follows the same rule for Policy reads: it adapts the composed
-provider passed into `Session::new` for max-valid-until-block and
-milliseconds-per-block values, including dummy persisting block construction,
-instead of constructing a standalone `PolicyContract` through a local session
-factory. Oracle service processing also adapts the `OracleService`-owned
+construction and smart-contract wallet invocation now follow the same rule for
+Policy reads: they adapt the composed provider passed into their execution path
+for max-valid-until-block and milliseconds-per-block values instead of
+constructing standalone `PolicyContract` handles through local native factories.
+Oracle service processing also adapts the `OracleService`-owned
 `NativeContractProvider` for Oracle, ContractManagement, RoleManagement, and
 Policy reads instead of constructing private native handles or a service-local
 native factory.

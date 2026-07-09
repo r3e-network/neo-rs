@@ -282,21 +282,44 @@ fn rpc_session_policy_reads_use_composed_native_provider() {
 }
 
 #[test]
-fn smart_contract_wallet_policy_reads_use_native_provider_factory() {
+fn smart_contract_wallet_policy_reads_use_composed_native_provider() {
     let provider = include_str!("../../../server/smart_contract/native_provider.rs");
     assert!(provider.contains("trait SmartContractNativeProvider"));
-    assert!(provider.contains("trait SmartContractNativeProviderFactory"));
-    assert!(provider.contains("struct NativeSmartContractProviderFactory"));
-    assert!(provider.contains("PolicyContract::new()"));
+    assert!(provider.contains("struct NativeSmartContractProvider"));
+    assert!(
+        provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
+        "smart-contract native provider should adapt the composition-root provider"
+    );
+    assert!(
+        provider.contains("get_native_contract_by_name(\"PolicyContract\")"),
+        "smart-contract native provider should resolve Policy through NativeContractProvider"
+    );
+    assert!(
+        provider.contains("with_contract::<PolicyContract"),
+        "smart-contract native provider should downcast through the shared native provider adapter"
+    );
+    assert!(
+        !provider.contains("PolicyContract::new()"),
+        "smart-contract native provider should not construct a standalone PolicyContract"
+    );
+    assert!(
+        !provider.contains("SmartContractNativeProviderFactory"),
+        "smart-contract native provider should be created from the composed provider, not a local factory"
+    );
 
     let invocation_wallet = include_str!("../../../server/smart_contract/invocation_wallet.rs");
     assert!(
-        invocation_wallet.contains("NativeSmartContractProviderFactory"),
-        "wallet invoke tx materialization should read Policy values through the smart-contract native provider factory"
+        invocation_wallet
+            .contains("NativeSmartContractProvider::new(Arc::clone(&native_contract_provider))"),
+        "wallet invoke tx materialization should adapt the composed native provider"
     );
     assert!(
         !invocation_wallet.contains("PolicyContract::new()"),
         "wallet invoke tx materialization should not construct PolicyContract directly"
+    );
+    assert!(
+        !invocation_wallet.contains("NativeSmartContractProviderFactory"),
+        "wallet invoke tx materialization should not create a standalone smart-contract native provider factory"
     );
 }
 

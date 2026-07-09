@@ -24,10 +24,7 @@ use crate::server::ledger_queries;
 use crate::server::rpc_server::RpcServer;
 use crate::server::wallet_compat;
 
-use super::native_provider::{
-    NativeSmartContractProviderFactory, SmartContractNativeProvider,
-    SmartContractNativeProviderFactory,
-};
+use super::native_provider::{NativeSmartContractProvider, SmartContractNativeProvider};
 
 const TRANSACTION_TYPE_NAME: &str = "Neo.Network.P2P.Payloads.Transaction";
 
@@ -87,6 +84,7 @@ fn build_and_sign_transaction(
     let rpc_settings = server.settings().clone();
     let system = server.system();
     let protocol_settings = system.settings();
+    let native_contract_provider = system.native_contract_provider();
     let mut tx = Transaction::new();
     tx.set_version(0);
     tx.set_nonce(random());
@@ -101,8 +99,9 @@ fn build_and_sign_transaction(
     // Policy storage value from HF_Echidna onward (falling back to the setting
     // when the key is not yet initialized). The static
     // `system.max_valid_until_block_increment()` is only correct pre-Echidna.
-    let max_valid_until_block_increment = NativeSmartContractProviderFactory
-        .provider()
+    let smart_contract_native_provider =
+        NativeSmartContractProvider::new(Arc::clone(&native_contract_provider));
+    let max_valid_until_block_increment = smart_contract_native_provider
         .max_valid_until_block_increment(snapshot.data_cache(), &protocol_settings)
         .unwrap_or_else(|_| system.max_valid_until_block_increment());
     let valid_until = ledger_queries::current_index(snapshot.data_cache())
@@ -112,7 +111,6 @@ fn build_and_sign_transaction(
     tx.set_system_fee(system_fee);
 
     let data_cache = snapshot.data_cache();
-    let native_contract_provider = system.native_contract_provider();
     let account_script = |hash: &neo_primitives::UInt160| -> Option<Vec<u8>> {
         wallet
             .account(hash)

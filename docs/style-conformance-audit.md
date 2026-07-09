@@ -336,7 +336,8 @@ High-signal clusters found during the first pass:
   `OracleService`-owned `NativeContractProvider` instead of using a private
   service-local native factory. RPC session construction now follows the same
   composed-provider rule for Policy reads used to calculate
-  `MaxValidUntilBlockIncrement` and dummy-block `MillisecondsPerBlock`.
+  `MaxValidUntilBlockIncrement` and dummy-block `MillisecondsPerBlock`;
+  smart-contract wallet invocation follows it for valid-until-block materialization.
 - Existing git hygiene rules exclude local ledgers, RocksDB state,
   checkpoints, logs, and build outputs. A scan did not find obvious tracked
   chain.acc/RocksDB artifacts, but runtime-data checks should stay in CI.
