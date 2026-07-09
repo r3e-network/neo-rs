@@ -160,12 +160,16 @@ fn verified_import_pipeline_uses_explicit_native_providers() {
     let branch = &import_source[import_start..import_end];
 
     assert!(
-        branch.contains("Some(resources.native_persist.provider())"),
-        "batch verified import must pass the provider captured in BatchPersistResources"
+        branch.contains("resources.native_persist.provider()"),
+        "batch verified import must pass the provider captured in BatchPersistResources directly"
     );
     assert!(
         branch.contains("self.system.native_contract_provider()"),
         "store-backed verified import must pass the provider exposed by SystemContext"
+    );
+    assert!(
+        branch.contains("native contract provider unavailable for block validation"),
+        "store-backed verified import must fail clearly instead of passing an optional provider fallback"
     );
 }
 

@@ -31,7 +31,7 @@ where
                 bulk_sync,
                 Arc::clone(&resources.settings),
                 Arc::clone(&resources.snapshot),
-                Some(resources.native_persist.provider()),
+                resources.native_persist.provider(),
             )
             .await
         } else {
@@ -52,7 +52,17 @@ where
                 bulk_sync,
                 self.system.settings(),
                 snapshot,
-                self.system.native_contract_provider(),
+                match self.system.native_contract_provider() {
+                    Some(provider) => provider,
+                    None => {
+                        warn!(
+                            target: "neo",
+                            height = block.index(),
+                            "import aborted: native contract provider unavailable for block validation"
+                        );
+                        return false;
+                    }
+                },
             )
             .await
         };

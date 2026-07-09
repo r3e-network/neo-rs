@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use neo_error::{CoreError, CoreResult};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::block::Block;
 
 use crate::pipeline::consensus_witness_stage::{
@@ -36,7 +37,12 @@ where
             block,
             settings,
             snapshot,
-            self.system.native_contract_provider(),
+            self.system.native_contract_provider().ok_or_else(|| {
+                CoreError::other(format!(
+                    "block {}: native contract provider unavailable",
+                    block.index()
+                ))
+            })?,
         )
     }
 
@@ -45,9 +51,7 @@ where
         block: &Block,
         settings: Arc<neo_config::ProtocolSettings>,
         snapshot: Arc<neo_storage::DataCache>,
-        native_contract_provider: Option<
-            Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>,
-        >,
+        native_contract_provider: Arc<dyn NativeContractProvider>,
     ) -> CoreResult<()> {
         let stage = NeoConsensusWitnessStage::new(Arc::new(SnapshotConsensusWitnessContext::new(
             settings,
@@ -66,9 +70,7 @@ where
         bulk_sync: bool,
         settings: Arc<neo_config::ProtocolSettings>,
         snapshot: Arc<neo_storage::DataCache>,
-        native_contract_provider: Option<
-            Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>,
-        >,
+        native_contract_provider: Arc<dyn NativeContractProvider>,
     ) -> CoreResult<()> {
         VerifiedImportPipeline::verify_block(
             block,

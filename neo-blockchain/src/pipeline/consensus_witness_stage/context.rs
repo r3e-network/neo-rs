@@ -42,17 +42,14 @@ pub trait ConsensusWitnessContext: Send + Sync + fmt::Debug + 'static {
 pub struct SnapshotConsensusWitnessContext {
     settings: Arc<ProtocolSettings>,
     snapshot: Arc<DataCache>,
-    native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
 }
 
 impl fmt::Debug for SnapshotConsensusWitnessContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SnapshotConsensusWitnessContext")
             .field("validators_count", &self.settings.validators_count)
-            .field(
-                "has_native_contract_provider",
-                &self.native_contract_provider.is_some(),
-            )
+            .field("native_contract_provider", &"NativeContractProvider")
             .finish_non_exhaustive()
     }
 }
@@ -64,7 +61,7 @@ impl SnapshotConsensusWitnessContext {
     pub fn new(
         settings: Arc<ProtocolSettings>,
         snapshot: Arc<DataCache>,
-        native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+        native_contract_provider: Arc<dyn NativeContractProvider>,
     ) -> Self {
         Self {
             settings,
@@ -84,7 +81,7 @@ impl ConsensusWitnessContext for SnapshotConsensusWitnessContext {
     }
 
     fn native_contract_provider(&self) -> Option<Arc<dyn NativeContractProvider>> {
-        self.native_contract_provider.clone()
+        Some(Arc::clone(&self.native_contract_provider))
     }
 
     fn parent_header(&self, block: &Block) -> CoreResult<ParentHeaderContext> {

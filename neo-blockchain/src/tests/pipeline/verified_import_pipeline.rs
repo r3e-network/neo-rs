@@ -10,12 +10,39 @@ use neo_storage::DataCache;
 use crate::pipeline::block_validation::MIN_TIMESTAMP_MS;
 use crate::pipeline::stage_traits::StageContext;
 
+fn native_provider() -> Arc<dyn neo_execution::native_contract_provider::NativeContractProvider> {
+    Arc::new(neo_native_contracts::StandardNativeProvider::new())
+}
+
 fn pipeline() -> VerifiedImportPipeline {
     VerifiedImportPipeline::new(
         Arc::new(ProtocolSettings::default()),
         Arc::new(DataCache::new(false)),
-        None,
+        native_provider(),
     )
+}
+
+#[test]
+fn verified_import_pipeline_requires_explicit_native_provider() {
+    let source = include_str!("../../pipeline/verified_import_pipeline.rs");
+    let context = include_str!("../../pipeline/consensus_witness_stage/context.rs");
+
+    assert!(
+        source.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
+        "verified import must receive a caller-composed native provider"
+    );
+    assert!(
+        !source.contains("Option<Arc<dyn NativeContractProvider>>"),
+        "verified import must not preserve an optional provider fallback"
+    );
+    assert!(
+        context.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
+        "snapshot consensus-witness context should store an explicit provider"
+    );
+    assert!(
+        !context.contains("native_contract_provider: Option<Arc<dyn NativeContractProvider>>"),
+        "snapshot consensus-witness context must not store an optional provider"
+    );
 }
 
 fn stage_context() -> StageContext {

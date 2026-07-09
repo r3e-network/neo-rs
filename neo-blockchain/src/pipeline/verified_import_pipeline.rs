@@ -38,7 +38,7 @@ impl VerifiedImportPipeline {
     pub fn new(
         settings: Arc<ProtocolSettings>,
         snapshot: Arc<DataCache>,
-        native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+        native_contract_provider: Arc<dyn NativeContractProvider>,
     ) -> Self {
         let validate = NeoValidateStage::new(Arc::new(SnapshotValidateContext::new(
             Arc::clone(&settings),
@@ -69,7 +69,7 @@ impl VerifiedImportPipeline {
         bulk_sync: bool,
         settings: Arc<ProtocolSettings>,
         snapshot: Arc<DataCache>,
-        native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+        native_contract_provider: Arc<dyn NativeContractProvider>,
     ) -> EngineResult<()> {
         let pipeline = Self::new(settings, snapshot, native_contract_provider);
         pipeline
