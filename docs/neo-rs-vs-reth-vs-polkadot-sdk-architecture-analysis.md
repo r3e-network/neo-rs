@@ -20,7 +20,10 @@ same hot/cold factory shape with `EmptyLedgerProvider` as the cold side, so
 installing static files later is a provider swap instead of a block-source
 rewrite. Observability ledger-height reads (health/readiness/metrics) share the
 same routed factory shape for local-ledger mode while remote-ledger mode reports
-the upstream RPC height. Current-tip reads are exposed as the separate
+the upstream RPC height. Composition-root transaction admission also uses the
+routed factory shape for persisted-transaction and conflict checks before it
+adapts the mempool-captured native-contract provider for Policy reads.
+Current-tip reads are exposed as the separate
 `ChainTipProvider` capability, and raw transaction-state records (including
 conflict stubs) are exposed as `TransactionStateProvider`, keeping RPC and
 peer-serving code on the same provider seam instead of reaching into the native

@@ -49,8 +49,16 @@ fn tx_admission_uses_ledger_provider_boundary() {
     assert!(provider.contains("trait TxAdmissionLedgerProviderFactory"));
     assert!(provider.contains("struct NativeTxAdmissionLedgerProviderFactory"));
     assert!(
-        provider.contains("StorageLedgerProviderFactory"),
-        "the tx-admission ledger provider should own raw storage-ledger provider construction"
+        provider.contains("HotColdLedgerProviderFactory"),
+        "the tx-admission ledger provider should use the routed ledger provider factory"
+    );
+    assert!(
+        provider.contains("EmptyLedgerProvider"),
+        "the tx-admission ledger provider should keep the no-cold-archive case explicit"
+    );
+    assert!(
+        !provider.contains("StorageLedgerProviderFactory"),
+        "the tx-admission ledger provider should not bypass the hot/cold provider boundary"
     );
     assert!(provider.contains("trait TxAdmissionNativeProvider"));
     assert!(

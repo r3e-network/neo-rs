@@ -6,7 +6,8 @@
 //! transaction-admission provider seams.
 
 use neo_blockchain::{
-    LedgerProviderFactory, StorageLedgerProviderFactory, TransactionStateProvider, TxProvider,
+    EmptyLedgerProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
+    TransactionStateProvider, TxProvider,
 };
 use std::sync::Arc;
 
@@ -17,6 +18,9 @@ use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::PolicyContract;
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::DataCache;
+
+const TX_ADMISSION_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
+    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
 
 /// Ledger capabilities required by transaction admission routing.
 pub(super) trait TxAdmissionLedgerProvider {
@@ -58,7 +62,7 @@ impl<'a> NativeTxAdmissionLedgerProvider<'a> {
 
 impl TxAdmissionLedgerProvider for NativeTxAdmissionLedgerProvider<'_> {
     fn contains_transaction(&self, hash: &UInt256) -> CoreResult<bool> {
-        StorageLedgerProviderFactory
+        TX_ADMISSION_LEDGER_PROVIDER_FACTORY
             .provider(self.snapshot)
             .contains_transaction(hash)
     }
@@ -69,7 +73,7 @@ impl TxAdmissionLedgerProvider for NativeTxAdmissionLedgerProvider<'_> {
         signers: &[UInt160],
         max_traceable_blocks: u32,
     ) -> CoreResult<bool> {
-        StorageLedgerProviderFactory
+        TX_ADMISSION_LEDGER_PROVIDER_FACTORY
             .provider(self.snapshot)
             .contains_conflict_hash(hash, signers, max_traceable_blocks)
     }
