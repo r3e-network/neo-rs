@@ -6,20 +6,23 @@
 //! builders from constructing concrete native handles at each call site while
 //! preserving the native contracts' canonical storage codecs.
 
+use super::OracleService;
 use neo_config::ProtocolSettings;
 use neo_crypto::ECPoint;
-use neo_error::CoreResult;
-use neo_execution::ContractState;
+use neo_error::{CoreError, CoreResult};
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_execution::{ContractState, NativeContract};
 use neo_native_contracts::{
     ContractManagement, OracleContract, OracleRequest, PolicyContract, Role, RoleManagement,
 };
 use neo_primitives::UInt160;
 use neo_storage::DataCache;
+use std::sync::Arc;
 
 /// Native-contract read capabilities required by oracle processing.
 pub(super) trait OracleServiceNativeProvider {
     /// Returns the Oracle native contract hash.
-    fn oracle_hash(&self) -> UInt160;
+    fn oracle_hash(&self) -> CoreResult<UInt160>;
 
     /// Returns the deployed Oracle native contract state, when present.
     fn oracle_contract_state(&self, snapshot: &DataCache) -> CoreResult<Option<ContractState>>;
@@ -32,7 +35,7 @@ pub(super) trait OracleServiceNativeProvider {
     ) -> CoreResult<Option<OracleRequest>>;
 
     /// Returns all pending oracle requests.
-    fn oracle_requests(&self, snapshot: &DataCache) -> Vec<(u64, OracleRequest)>;
+    fn oracle_requests(&self, snapshot: &DataCache) -> CoreResult<Vec<(u64, OracleRequest)>>;
 
     /// Returns all pending oracle requests for `url`.
     fn oracle_requests_by_url(
@@ -63,42 +66,68 @@ pub(super) trait OracleServiceNativeProvider {
     fn fee_per_byte(&self, snapshot: &DataCache) -> CoreResult<u32>;
 }
 
-/// Factory for native-contract read providers.
-pub(super) trait OracleServiceNativeProviderFactory {
-    /// Provider returned by this factory.
-    type Provider: OracleServiceNativeProvider;
-
-    /// Creates a provider instance.
-    fn provider(&self) -> Self::Provider;
-}
-
-/// Native-contract backed provider for production oracle processing.
-#[derive(Debug, Default, Clone, Copy)]
+/// Adapter from the node-composed native-contract provider to the oracle
+/// service's narrow native read capability.
+#[derive(Clone)]
 pub(super) struct NativeOracleServiceProvider {
-    oracle: OracleContract,
-    roles: RoleManagement,
-    policy: PolicyContract,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
 }
 
 impl NativeOracleServiceProvider {
-    /// Creates a provider backed by canonical native contract handles.
+    /// Creates an adapter over the composition-root native-contract provider.
     #[must_use]
-    pub(super) const fn new() -> Self {
+    pub(super) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
         Self {
-            oracle: OracleContract::new(),
-            roles: RoleManagement::new(),
-            policy: PolicyContract::new(),
+            native_contract_provider,
         }
+    }
+
+    fn native_contract(&self, name: &'static str) -> CoreResult<Arc<dyn NativeContract>> {
+        self.native_contract_provider
+            .get_native_contract_by_name(name)
+            .ok_or_else(|| CoreError::invalid_operation(format!("native provider missing {name}")))
+    }
+
+    fn with_contract<T, R>(
+        &self,
+        name: &'static str,
+        f: impl FnOnce(&T) -> CoreResult<R>,
+    ) -> CoreResult<R>
+    where
+        T: 'static,
+    {
+        let contract = self.native_contract(name)?;
+        let concrete = contract.as_any().downcast_ref::<T>().ok_or_else(|| {
+            CoreError::invalid_operation(format!("native provider returned non-{name}"))
+        })?;
+        f(concrete)
+    }
+}
+
+impl std::fmt::Debug for NativeOracleServiceProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NativeOracleServiceProvider")
+            .field("native_contract_provider", &"NativeContractProvider")
+            .finish()
+    }
+}
+
+impl OracleService {
+    pub(super) fn native_provider(&self) -> NativeOracleServiceProvider {
+        NativeOracleServiceProvider::new(Arc::clone(&self.native_contract_provider))
     }
 }
 
 impl OracleServiceNativeProvider for NativeOracleServiceProvider {
-    fn oracle_hash(&self) -> UInt160 {
-        self.oracle.hash()
+    fn oracle_hash(&self) -> CoreResult<UInt160> {
+        Ok(self.native_contract("OracleContract")?.hash())
     }
 
     fn oracle_contract_state(&self, snapshot: &DataCache) -> CoreResult<Option<ContractState>> {
-        ContractManagement::get_contract_from_snapshot(snapshot, &self.oracle_hash())
+        self.with_contract::<ContractManagement, _>("ContractManagement", |_| {
+            let oracle_hash = self.oracle_hash()?;
+            ContractManagement::get_contract_from_snapshot(snapshot, &oracle_hash)
+        })
     }
 
     fn oracle_request(
@@ -106,11 +135,15 @@ impl OracleServiceNativeProvider for NativeOracleServiceProvider {
         snapshot: &DataCache,
         request_id: u64,
     ) -> CoreResult<Option<OracleRequest>> {
-        self.oracle.get_request(snapshot, request_id)
+        self.with_contract::<OracleContract, _>("OracleContract", |oracle| {
+            oracle.get_request(snapshot, request_id)
+        })
     }
 
-    fn oracle_requests(&self, snapshot: &DataCache) -> Vec<(u64, OracleRequest)> {
-        self.oracle.get_requests(snapshot)
+    fn oracle_requests(&self, snapshot: &DataCache) -> CoreResult<Vec<(u64, OracleRequest)>> {
+        self.with_contract::<OracleContract, _>("OracleContract", |oracle| {
+            Ok(oracle.get_requests(snapshot))
+        })
     }
 
     fn oracle_requests_by_url(
@@ -118,12 +151,15 @@ impl OracleServiceNativeProvider for NativeOracleServiceProvider {
         snapshot: &DataCache,
         url: &str,
     ) -> CoreResult<Vec<(u64, OracleRequest)>> {
-        self.oracle.get_requests_by_url(snapshot, url)
+        self.with_contract::<OracleContract, _>("OracleContract", |oracle| {
+            oracle.get_requests_by_url(snapshot, url)
+        })
     }
 
     fn designated_oracles(&self, snapshot: &DataCache, height: u32) -> CoreResult<Vec<ECPoint>> {
-        self.roles
-            .get_designated_by_role_at(snapshot, Role::Oracle, height)
+        self.with_contract::<RoleManagement, _>("RoleManagement", |roles| {
+            roles.get_designated_by_role_at(snapshot, Role::Oracle, height)
+        })
     }
 
     fn max_valid_until_block_increment(
@@ -131,8 +167,9 @@ impl OracleServiceNativeProvider for NativeOracleServiceProvider {
         snapshot: &DataCache,
         settings: &ProtocolSettings,
     ) -> CoreResult<u32> {
-        self.policy
-            .get_max_valid_until_block_increment_snapshot(snapshot, settings)
+        self.with_contract::<PolicyContract, _>("PolicyContract", |policy| {
+            policy.get_max_valid_until_block_increment_snapshot(snapshot, settings)
+        })
     }
 
     fn exec_fee_factor(
@@ -141,23 +178,14 @@ impl OracleServiceNativeProvider for NativeOracleServiceProvider {
         settings: &ProtocolSettings,
         height: u32,
     ) -> CoreResult<u32> {
-        self.policy
-            .get_exec_fee_factor_snapshot(snapshot, settings, height)
+        self.with_contract::<PolicyContract, _>("PolicyContract", |policy| {
+            policy.get_exec_fee_factor_snapshot(snapshot, settings, height)
+        })
     }
 
     fn fee_per_byte(&self, snapshot: &DataCache) -> CoreResult<u32> {
-        self.policy.get_fee_per_byte_snapshot(snapshot)
-    }
-}
-
-/// Factory for production native-contract read providers.
-#[derive(Debug, Default, Clone, Copy)]
-pub(super) struct NativeOracleServiceProviderFactory;
-
-impl OracleServiceNativeProviderFactory for NativeOracleServiceProviderFactory {
-    type Provider = NativeOracleServiceProvider;
-
-    fn provider(&self) -> Self::Provider {
-        NativeOracleServiceProvider::new()
+        self.with_contract::<PolicyContract, _>("PolicyContract", |policy| {
+            policy.get_fee_per_byte_snapshot(snapshot)
+        })
     }
 }

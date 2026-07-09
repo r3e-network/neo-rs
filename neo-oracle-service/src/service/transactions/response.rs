@@ -1,8 +1,5 @@
 use super::super::ledger_provider::{NativeOracleLedgerProvider, OracleLedgerProvider};
-use super::super::native_provider::{
-    NativeOracleServiceProviderFactory, OracleServiceNativeProvider,
-    OracleServiceNativeProviderFactory,
-};
+use super::super::native_provider::OracleServiceNativeProvider;
 use super::super::{OracleService, OracleServiceError};
 use neo_config::ProtocolSettings;
 use neo_crypto::ECPoint;
@@ -33,7 +30,7 @@ impl OracleService {
         use_current_height: bool,
     ) -> Result<Transaction, OracleServiceError> {
         let ledger = NativeOracleLedgerProvider::new();
-        let native = NativeOracleServiceProviderFactory.provider();
+        let native = self.native_provider();
         let state = ledger
             .transaction_state(snapshot, &request.original_tx_id)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?
@@ -57,7 +54,9 @@ impl OracleService {
             valid_until_block = valid_until_block.saturating_add(max_vub);
         }
 
-        let oracle_hash = native.oracle_hash();
+        let oracle_hash = native
+            .oracle_hash()
+            .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
         let mut tx = Transaction::new();
         tx.set_version(0);
         tx.set_nonce(response.id as u32);

@@ -331,7 +331,10 @@ High-signal clusters found during the first pass:
   writer calls, and response-signature queue invariants now report
   `OracleServiceError`. The NeoFS gRPC verification recursion now carries the
   already-validated origin header instead of re-reading it with `expect`, so the
-  oracle-service production panic scan is clear.
+  oracle-service production panic scan is clear. Native Oracle, Policy,
+  RoleManagement, and ContractManagement reads now adapt the
+  `OracleService`-owned `NativeContractProvider` instead of using a private
+  service-local native factory.
 - Existing git hygiene rules exclude local ledgers, RocksDB state,
   checkpoints, logs, and build outputs. A scan did not find obvious tracked
   chain.acc/RocksDB artifacts, but runtime-data checks should stay in CI.

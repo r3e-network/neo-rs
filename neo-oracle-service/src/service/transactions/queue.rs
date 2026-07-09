@@ -1,8 +1,5 @@
 use super::super::ledger_provider::{NativeOracleLedgerProvider, OracleLedgerProvider};
-use super::super::native_provider::{
-    NativeOracleServiceProviderFactory, OracleServiceNativeProvider,
-    OracleServiceNativeProviderFactory,
-};
+use super::super::native_provider::OracleServiceNativeProvider;
 use super::super::utils::{ledger_height, ledger_height_with_provider, verify_oracle_signature};
 use super::super::{OracleService, OracleServiceError, OracleTask};
 use neo_crypto::ECPoint;
@@ -37,7 +34,7 @@ impl OracleService {
         backup_sign: Option<Vec<u8>>,
     ) -> Result<(), OracleServiceError> {
         let ledger = NativeOracleLedgerProvider::new();
-        let native = NativeOracleServiceProviderFactory.provider();
+        let native = self.native_provider();
 
         // Validate queue size to prevent memory exhaustion
         {
@@ -165,7 +162,7 @@ impl OracleService {
             return false;
         }
 
-        let native = NativeOracleServiceProviderFactory.provider();
+        let native = self.native_provider();
         let oracle_nodes = match native.designated_oracles(snapshot, height) {
             Ok(nodes) => nodes,
             Err(_) => return false,

@@ -419,7 +419,11 @@ contract-specific global helper wrappers were removed from
 adapts the `MemoryPool`-captured provider for Policy, GAS, Notary, NEO,
 Oracle, and RoleManagement reads instead of constructing a private native
 provider factory, so transaction verification observes the same native-contract
-set as block import, consensus, RPC, and state-root verification.
+set as block import, consensus, RPC, and state-root verification. Oracle
+service processing now follows the same rule: it adapts the
+`OracleService`-owned `NativeContractProvider` for Oracle, ContractManagement,
+RoleManagement, and Policy reads instead of constructing private native handles
+or a service-local native factory.
 
 ### Polkadot SDK innovations
 
@@ -454,6 +458,10 @@ set as block import, consensus, RPC, and state-root verification.
    global wrappers. Mempool admission now follows that same rule: its native
    read capability is an adapter over the composed provider, with only the
    ledger-storage read capability left behind its separate provider factory.
+   Oracle service request processing and response construction also adapt the
+   `OracleService`-owned provider for Oracle/ContractManagement/RoleManagement/
+   Policy reads, so off-chain oracle work observes the same native-contract set
+   as the rest of the node.
 3. Consider WASM runtime for future sidechain/feature-gate support.
 
 ---

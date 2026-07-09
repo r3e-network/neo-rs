@@ -1,7 +1,4 @@
-use super::super::native_provider::{
-    NativeOracleServiceProviderFactory, OracleServiceNativeProvider,
-    OracleServiceNativeProviderFactory,
-};
+use super::super::native_provider::OracleServiceNativeProvider;
 use super::super::utils::{ledger_height, wallet_has_oracle_account};
 use super::super::{OracleService, OracleStatus};
 use neo_wallets::Wallet;
@@ -18,7 +15,7 @@ impl OracleService {
 
         let snapshot = self.snapshot_cache();
         let height = ledger_height(&snapshot);
-        let native = NativeOracleServiceProviderFactory.provider();
+        let native = self.native_provider();
         let oracles = match native.designated_oracles(&snapshot, height) {
             Ok(oracles) => oracles,
             Err(err) => {

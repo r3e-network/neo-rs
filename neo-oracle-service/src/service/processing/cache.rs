@@ -1,21 +1,17 @@
 use super::super::OracleService;
 use super::super::cache::ExpiryBoundary;
-use super::super::native_provider::{
-    NativeOracleServiceProviderFactory, OracleServiceNativeProvider,
-    OracleServiceNativeProviderFactory,
-};
+use super::super::native_provider::OracleServiceNativeProvider;
 use neo_storage::persistence::{DataCache, StoreCache};
 use std::collections::HashSet;
 use std::time::SystemTime;
 
 impl OracleService {
     pub(in super::super) fn sync_pending_queue(&self, snapshot: &DataCache) {
-        let native = NativeOracleServiceProviderFactory.provider();
-        let offchain: HashSet<u64> = native
-            .oracle_requests(snapshot)
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect();
+        let native = self.native_provider();
+        let Ok(requests) = native.oracle_requests(snapshot) else {
+            return;
+        };
+        let offchain: HashSet<u64> = requests.into_iter().map(|(id, _)| id).collect();
 
         let mut queue = self.pending_queue.lock();
         queue.retain(|id, _| offchain.contains(id));

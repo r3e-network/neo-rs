@@ -1,7 +1,4 @@
-use super::super::super::native_provider::{
-    NativeOracleServiceProviderFactory, OracleServiceNativeProvider,
-    OracleServiceNativeProviderFactory,
-};
+use super::super::super::native_provider::OracleServiceNativeProvider;
 use super::super::super::utils::{ledger_height, verify_oracle_signature};
 use super::super::super::{OracleService, OracleServiceError};
 use neo_crypto::ECPoint;
@@ -25,7 +22,7 @@ impl OracleService {
 
         let snapshot = self.snapshot_cache();
         let height = ledger_height(&snapshot);
-        let native = NativeOracleServiceProviderFactory.provider();
+        let native = self.native_provider();
         let oracles = native
             .designated_oracles(&snapshot, height)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;

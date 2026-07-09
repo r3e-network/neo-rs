@@ -190,15 +190,21 @@ fn oracle_service_native_reads_use_provider_boundary() {
     for source in [
         handlers, lifecycle, loops, cache, process, submit, queue, response,
     ] {
-        assert!(source.contains("NativeOracleServiceProviderFactory"));
+        assert!(source.contains("self.native_provider()"));
+        assert!(!source.contains("NativeOracleServiceProviderFactory"));
         assert!(!source.contains("OracleContract::new()"));
         assert!(!source.contains("RoleManagement::new()"));
         assert!(!source.contains("PolicyContract::new()"));
     }
 
     assert!(provider.contains("trait OracleServiceNativeProvider"));
-    assert!(provider.contains("trait OracleServiceNativeProviderFactory"));
-    assert!(provider.contains("oracle: OracleContract"));
-    assert!(provider.contains("roles: RoleManagement"));
-    assert!(provider.contains("policy: PolicyContract"));
+    assert!(!provider.contains("trait OracleServiceNativeProviderFactory"));
+    assert!(!provider.contains("struct NativeOracleServiceProviderFactory"));
+    assert!(provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"));
+    assert!(provider.contains("get_native_contract_by_name(name)"));
+    assert!(provider.contains("with_contract::<OracleContract"));
+    assert!(provider.contains("with_contract::<ContractManagement"));
+    assert!(provider.contains("with_contract::<RoleManagement"));
+    assert!(provider.contains("with_contract::<PolicyContract"));
+    assert!(provider.contains("fn native_provider(&self) -> NativeOracleServiceProvider"));
 }

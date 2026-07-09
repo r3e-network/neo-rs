@@ -1,7 +1,4 @@
-use super::super::native_provider::{
-    NativeOracleServiceProviderFactory, OracleServiceNativeProvider,
-    OracleServiceNativeProviderFactory,
-};
+use super::super::native_provider::OracleServiceNativeProvider;
 use super::super::{OracleService, OracleStatus, REFRESH_INTERVAL};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -13,8 +10,19 @@ impl OracleService {
             let snapshot = self.snapshot_cache();
             self.sync_pending_queue(&snapshot);
 
-            let native = NativeOracleServiceProviderFactory.provider();
-            let requests = native.oracle_requests(&snapshot);
+            let native = self.native_provider();
+            let requests = match native.oracle_requests(&snapshot) {
+                Ok(requests) => requests,
+                Err(err) => {
+                    tracing::warn!(
+                        target: "neo::oracle",
+                        %err,
+                        "failed to load pending oracle requests"
+                    );
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    continue;
+                }
+            };
 
             for (request_id, request) in requests {
                 if self.cancel.load(Ordering::SeqCst) {

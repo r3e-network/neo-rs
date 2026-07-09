@@ -1,7 +1,4 @@
-use super::native_provider::{
-    NativeOracleServiceProviderFactory, OracleServiceNativeProvider,
-    OracleServiceNativeProviderFactory,
-};
+use super::native_provider::OracleServiceNativeProvider;
 use super::utils::{ledger_height, wallet_has_oracle_account};
 use super::{OracleService, OracleStatus};
 use neo_config::ProtocolSettings;
@@ -37,7 +34,7 @@ impl neo_payloads::CommittingHandler for OracleService {
         }
 
         let height = ledger_height(snapshot);
-        let native = NativeOracleServiceProviderFactory.provider();
+        let native = self.native_provider();
         let oracles = native
             .designated_oracles(snapshot, height)
             .unwrap_or_default();
