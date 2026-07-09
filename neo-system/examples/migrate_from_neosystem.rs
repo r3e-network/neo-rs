@@ -43,11 +43,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //    parameters are: settings, storage, blockchain handle,
     //    network handle.
     let storage: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new());
     let node = Node::builder()
         .with_settings(settings.clone())
         .with_storage(storage)
         .with_blockchain(blockchain_handle)
         .with_network(network_handle)
+        .with_native_contract_provider(native_contract_provider)
         .build()?;
 
     // 3. Drive the node lifecycle. `Node::run` blocks until the

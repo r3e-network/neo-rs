@@ -18,11 +18,17 @@ fn test_node() -> Arc<neo_system::Node> {
     )
 }
 
-fn memory_pool(settings: &neo_config::ProtocolSettings) -> neo_mempool::MemoryPool {
-    neo_mempool::MemoryPool::new_with_native_contract_provider(
-        settings,
-        Arc::new(neo_native_contracts::StandardNativeProvider::new()),
-    )
+fn native_provider() -> Arc<dyn neo_execution::native_contract_provider::NativeContractProvider> {
+    Arc::new(neo_native_contracts::StandardNativeProvider::new())
+}
+
+fn memory_pool(
+    settings: &neo_config::ProtocolSettings,
+    native_contract_provider: Arc<
+        dyn neo_execution::native_contract_provider::NativeContractProvider,
+    >,
+) -> neo_mempool::MemoryPool {
+    neo_mempool::MemoryPool::new_with_native_contract_provider(settings, native_contract_provider)
 }
 
 fn rocksdb_test_node() -> (Arc<neo_system::Node>, tempfile::TempDir) {
@@ -44,6 +50,7 @@ fn rocksdb_test_node() -> (Arc<neo_system::Node>, tempfile::TempDir) {
             .expect("rocksdb store"),
     );
     let settings = Arc::new(neo_config::ProtocolSettings::testnet());
+    let native_contract_provider = native_provider();
     let (blockchain, _rx) = neo_blockchain::BlockchainHandle::with_capacity();
     let (network, _nrx, _etx) = NetworkHandle::channel(8, 8);
     let node = neo_system::Node::builder()
@@ -51,8 +58,12 @@ fn rocksdb_test_node() -> (Arc<neo_system::Node>, tempfile::TempDir) {
         .with_storage(storage)
         .with_blockchain(blockchain)
         .with_network(network)
-        .with_mempool(Arc::new(memory_pool(&settings)))
+        .with_mempool(Arc::new(memory_pool(
+            &settings,
+            Arc::clone(&native_contract_provider),
+        )))
         .with_header_cache(Arc::new(HeaderCache::default()))
+        .with_native_contract_provider(native_contract_provider)
         .build()
         .expect("node");
     (Arc::new(node), tmp)
@@ -75,6 +86,7 @@ fn mdbx_test_node(map_size: isize) -> (Arc<neo_system::Node>, tempfile::TempDir)
         },
     )
     .expect("mdbx store");
+    let native_contract_provider = native_provider();
     let (blockchain, _rx) = neo_blockchain::BlockchainHandle::with_capacity();
     let (network, _nrx, _etx) = NetworkHandle::channel(8, 8);
     let node = neo_system::Node::builder()
@@ -82,8 +94,12 @@ fn mdbx_test_node(map_size: isize) -> (Arc<neo_system::Node>, tempfile::TempDir)
         .with_storage(storage)
         .with_blockchain(blockchain)
         .with_network(network)
-        .with_mempool(Arc::new(memory_pool(&settings)))
+        .with_mempool(Arc::new(memory_pool(
+            &settings,
+            Arc::clone(&native_contract_provider),
+        )))
         .with_header_cache(Arc::new(HeaderCache::default()))
+        .with_native_contract_provider(native_contract_provider)
         .build()
         .expect("node");
     (Arc::new(node), tmp)

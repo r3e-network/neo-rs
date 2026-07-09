@@ -146,6 +146,8 @@ impl Node {
         let storage: Arc<dyn neo_storage::persistence::store::Store> =
             neo_storage::persistence::StoreFactory::get_store("memory", "")
                 .map_err(crate::error::NodeError::storage)?;
+        let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new())
+            as Arc<dyn NativeContractProvider>;
         let (blockchain, _rx) = neo_blockchain::BlockchainHandle::with_capacity();
         let (network, _nrx, _etx) = neo_network::NetworkHandle::channel(8, 8);
         crate::NodeBuilder::default()
@@ -153,6 +155,7 @@ impl Node {
             .with_storage(storage)
             .with_blockchain(blockchain)
             .with_network(network)
+            .with_native_contract_provider(native_contract_provider)
             .build()
     }
 

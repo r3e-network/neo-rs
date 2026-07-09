@@ -10,11 +10,11 @@
 //! field and returns a descriptive missing-service / missing-config error when
 //! one is absent. There are no trait-object executor / consensus / engine
 //! fields to compose: those were removed in ADR-032 / ADR-033. The native
-//! contract provider can be supplied explicitly by a composition root; when it
-//! is not supplied, the builder owns the standard Neo N3 provider locally. The
-//! sync import pipeline is also built by default from the same blockchain and
-//! storage handles, then registered in the service registry, so staged-sync
-//! callers can use one shared import/checkpoint boundary.
+//! contract provider is an explicit composition-root dependency; callers must
+//! pass the same provider that block import, RPC, consensus, and mempool
+//! admission use. The sync import pipeline is built by default from the same
+//! blockchain and storage handles, then registered in the service registry, so
+//! staged-sync callers can use one shared import/checkpoint boundary.
 
 use std::sync::Arc;
 use tracing::debug;
@@ -98,10 +98,10 @@ impl NodeBuilder {
         self
     }
 
-    /// Install a shared memory pool. When unset, [`Self::build`]
-    /// constructs a fresh pool from the protocol settings. Pass the
-    /// same `Arc` the blockchain service admits into so RPC reads see
-    /// the live pool.
+    /// Install a shared memory pool. When unset, [`Self::build`] constructs a
+    /// fresh pool from the protocol settings and the explicit native-contract
+    /// provider. Pass the same `Arc` the blockchain service admits into so RPC
+    /// reads see the live pool.
     pub fn with_mempool(mut self, mempool: Arc<MemoryPool>) -> Self {
         self.mempool = Some(mempool);
         self
@@ -126,9 +126,9 @@ impl NodeBuilder {
 
     /// Sets the native-contract provider used by NeoVM host calls.
     ///
-    /// When unset, [`Self::build`] uses the standard Neo N3 provider from
-    /// `neo-native-contracts`. Supplying a provider here makes native dispatch
-    /// an explicit composition-root dependency.
+    /// The provider is required. Composition roots should create one provider
+    /// and pass the same `Arc` into block import, RPC, consensus, and mempool
+    /// admission so native dispatch has one visible owner.
     pub fn with_native_contract_provider(
         mut self,
         provider: Arc<dyn NativeContractProvider>,
@@ -162,10 +162,9 @@ impl NodeBuilder {
         let network = self
             .network
             .ok_or_else(|| crate::error::NodeError::missing_service("network"))?;
-        let native_contract_provider = self.native_contract_provider.unwrap_or_else(|| {
-            Arc::new(neo_native_contracts::StandardNativeProvider::new())
-                as Arc<dyn NativeContractProvider>
-        });
+        let native_contract_provider = self
+            .native_contract_provider
+            .ok_or_else(|| crate::error::NodeError::missing_service("native_contract_provider"))?;
 
         debug!("NodeBuilder::build: composing runtime node");
         let mempool = self.mempool.unwrap_or_else(|| {

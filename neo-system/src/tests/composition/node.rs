@@ -7,6 +7,10 @@ fn memory_store() -> Arc<dyn Store> {
     Arc::new(MemoryStore::new())
 }
 
+fn native_provider() -> Arc<dyn NativeContractProvider> {
+    Arc::new(neo_native_contracts::StandardNativeProvider::new())
+}
+
 #[test]
 fn builder_returns_node_builder() {
     let _: NodeBuilder = Node::builder();
@@ -85,12 +89,14 @@ async fn cancellation_token_clone_is_independent() {
     let settings = Arc::new(ProtocolSettings::default());
     let (bc, _rx) = BlockchainHandle::with_capacity();
     let (net, _nrx, _etx) = NetworkHandle::channel(8, 8);
+    let provider = native_provider();
 
     let node = NodeBuilder::default()
         .with_settings(settings)
         .with_storage(storage)
         .with_blockchain(bc)
         .with_network(net)
+        .with_native_contract_provider(provider)
         .build()
         .expect("builder should succeed");
 
@@ -105,7 +111,7 @@ fn direct_constructor_uses_builder_defaults() {
     NativeContractLookup::replace_provider(None);
 
     let node = Node::new(Arc::new(ProtocolSettings::default()), None, None)
-        .expect("headless node should use builder defaults");
+        .expect("headless node should use explicit standard provider defaults");
 
     assert!(node.mempool.total_count() == 0);
     assert_eq!(node.header_cache.count(), 0);
@@ -117,6 +123,6 @@ fn direct_constructor_uses_builder_defaults() {
     );
     assert!(
         NativeContractLookup::native_contract_provider().is_none(),
-        "Node::new should use a local provider through NodeBuilder defaults"
+        "Node::new should pass a local provider into NodeBuilder without installing it globally"
     );
 }

@@ -7,6 +7,10 @@ fn memory_store() -> Arc<dyn Store> {
     Arc::new(MemoryStore::new())
 }
 
+fn native_provider() -> Arc<dyn NativeContractProvider> {
+    Arc::new(neo_native_contracts::StandardNativeProvider::new())
+}
+
 // Shared with node.rs tests via the parent module, so tests that deliberately
 // inspect the process-global native provider serialize on one lock.
 fn native_provider_test_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -26,8 +30,6 @@ fn builder_requires_settings() {
 
 #[test]
 fn builder_requires_storage() {
-    // `.build()` can touch the process-global native contract provider, so take
-    // the shared guard to stay serialized with the provider-asserting tests.
     let _guard = native_provider_test_lock();
     let result = NodeBuilder::default()
         .with_settings(Arc::new(ProtocolSettings::default()))
@@ -46,7 +48,7 @@ fn builder_requires_blockchain_and_network() {
 }
 
 #[test]
-fn builder_succeeds_with_required_services() {
+fn builder_requires_native_contract_provider() {
     let _guard = native_provider_test_lock();
     NativeContractLookup::replace_provider(None);
 
@@ -55,13 +57,40 @@ fn builder_succeeds_with_required_services() {
     let (bc, _rx) = BlockchainHandle::with_capacity();
     let (net, _nrx, _etx) = NetworkHandle::channel(8, 8);
 
+    let result = NodeBuilder::default()
+        .with_settings(settings)
+        .with_storage(storage)
+        .with_blockchain(bc)
+        .with_network(net)
+        .build();
+
+    assert!(result.is_err());
+    assert!(
+        NativeContractLookup::native_contract_provider().is_none(),
+        "NodeBuilder must not install a process-global fallback provider"
+    );
+}
+
+#[test]
+fn builder_succeeds_with_required_services_and_native_provider() {
+    let _guard = native_provider_test_lock();
+    NativeContractLookup::replace_provider(None);
+
+    let storage = memory_store();
+    let settings = Arc::new(ProtocolSettings::default());
+    let (bc, _rx) = BlockchainHandle::with_capacity();
+    let (net, _nrx, _etx) = NetworkHandle::channel(8, 8);
+    let provider = native_provider();
+
     let node = NodeBuilder::default()
         .with_settings(settings)
         .with_storage(storage)
         .with_blockchain(bc)
         .with_network(net)
+        .with_native_contract_provider(Arc::clone(&provider))
         .build()
         .expect("required services set");
+    assert!(Arc::ptr_eq(&node.native_contract_provider, &provider));
     assert!(
         !node
             .native_contract_provider
@@ -108,8 +137,7 @@ fn builder_keeps_custom_native_contract_provider_local() {
     let settings = Arc::new(ProtocolSettings::default());
     let (bc, _rx) = BlockchainHandle::with_capacity();
     let (net, _nrx, _etx) = NetworkHandle::channel(8, 8);
-    let provider = Arc::new(neo_native_contracts::StandardNativeProvider::new())
-        as Arc<dyn NativeContractProvider>;
+    let provider = native_provider();
 
     let node = NodeBuilder::default()
         .with_settings(settings)
@@ -138,12 +166,14 @@ fn builder_keeps_custom_sync_import_pipeline_local() {
     let (bc, _rx) = BlockchainHandle::with_capacity();
     let (net, _nrx, _etx) = NetworkHandle::channel(8, 8);
     let pipeline = Arc::new(SyncImportPipeline::new(bc.clone(), Arc::clone(&storage)));
+    let provider = native_provider();
 
     let node = NodeBuilder::default()
         .with_settings(settings)
         .with_storage(storage)
         .with_blockchain(bc)
         .with_network(net)
+        .with_native_contract_provider(provider)
         .with_sync_import_pipeline(Arc::clone(&pipeline))
         .build()
         .expect("required services set");
@@ -166,12 +196,14 @@ fn builder_uses_pre_registered_sync_import_pipeline_when_not_explicit() {
     let pipeline = Arc::new(SyncImportPipeline::new(bc.clone(), Arc::clone(&storage)));
     let services = ServiceRegistry::new();
     services.register(Arc::clone(&pipeline));
+    let provider = native_provider();
 
     let node = NodeBuilder::default()
         .with_settings(settings)
         .with_storage(storage)
         .with_blockchain(bc)
         .with_network(net)
+        .with_native_contract_provider(provider)
         .with_services(services)
         .build()
         .expect("required services set");
