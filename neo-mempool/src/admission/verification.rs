@@ -38,6 +38,28 @@ use std::sync::Arc;
 use super::ledger_provider::{AdmissionLedgerProvider, NativeAdmissionLedgerProvider};
 use super::native_provider::{AdmissionNativeProvider, NativeAdmissionProvider};
 
+#[doc(hidden)]
+/// Bridges concrete `Arc<P>` providers and existing `Arc<dyn ...>` callers at
+/// the VM witness-verification boundary during the gradual generic migration.
+pub trait NativeProviderDynArc: NativeContractProvider {
+    fn clone_as_dyn(provider: &Arc<Self>) -> Arc<dyn NativeContractProvider>;
+}
+
+impl<T> NativeProviderDynArc for T
+where
+    T: NativeContractProvider + Sized + 'static,
+{
+    fn clone_as_dyn(provider: &Arc<Self>) -> Arc<dyn NativeContractProvider> {
+        provider.clone()
+    }
+}
+
+impl NativeProviderDynArc for dyn NativeContractProvider {
+    fn clone_as_dyn(provider: &Arc<Self>) -> Arc<dyn NativeContractProvider> {
+        Arc::clone(provider)
+    }
+}
+
 /// C# v3.10.1 `MemoryPool.GetPayer` balance side: Notary-sponsored
 /// transactions (`Sender == Notary.Hash` and a second signer exists) spend the
 /// second signer's Notary deposit. Ordinary transactions spend the sender's GAS
@@ -79,14 +101,17 @@ fn single_signature_invocation(invocation: &[u8]) -> Option<&[u8]> {
 }
 
 /// The full C# `Transaction.Verify` using an explicit native-contract provider.
-pub fn verify_transaction_with_native_provider(
+pub fn verify_transaction_with_native_provider<P>(
     tx: &Transaction,
     snapshot: &DataCache,
     settings: &ProtocolSettings,
     pooled_sender_fee: &BigInt,
     oracle_duplicate: bool,
-    native_contract_provider: Arc<dyn NativeContractProvider>,
-) -> VerifyResult {
+    native_contract_provider: Arc<P>,
+) -> VerifyResult
+where
+    P: NativeProviderDynArc + ?Sized + 'static,
+{
     let result = verify_state_independent(tx, settings);
     if result != VerifyResult::Succeed {
         return result;
@@ -108,14 +133,17 @@ pub fn verify_transaction_with_native_provider(
 /// redundant ECDSA signature verification. C# achieves the same by caching
 /// `Transaction.VerificationResult` which `MemoryPool.TryAdd` reads before
 /// performing state-dependent checks only.
-pub fn verify_transaction_dependent_only_with_native_provider(
+pub fn verify_transaction_dependent_only_with_native_provider<P>(
     tx: &Transaction,
     snapshot: &DataCache,
     settings: &ProtocolSettings,
     pooled_sender_fee: &BigInt,
     oracle_duplicate: bool,
-    native_contract_provider: Arc<dyn NativeContractProvider>,
-) -> VerifyResult {
+    native_contract_provider: Arc<P>,
+) -> VerifyResult
+where
+    P: NativeProviderDynArc + ?Sized + 'static,
+{
     verify_state_dependent_with_native_provider(
         tx,
         snapshot,
@@ -210,17 +238,19 @@ pub fn verify_state_independent(tx: &Transaction, settings: &ProtocolSettings) -
 
 /// C# `Transaction.VerifyStateDependent` (Transaction.cs:323) using an explicit
 /// native-contract provider for engine-based witness verification.
-pub fn verify_state_dependent_with_native_provider(
+pub fn verify_state_dependent_with_native_provider<P>(
     tx: &Transaction,
     snapshot: &DataCache,
     settings: &ProtocolSettings,
     pooled_sender_fee: &BigInt,
     oracle_duplicate: bool,
-    native_contract_provider: Arc<dyn NativeContractProvider>,
-) -> VerifyResult {
+    native_contract_provider: Arc<P>,
+) -> VerifyResult
+where
+    P: NativeProviderDynArc + ?Sized + 'static,
+{
     let ledger_provider = NativeAdmissionLedgerProvider::new();
-    let admission_native_provider =
-        NativeAdmissionProvider::new(Arc::clone(&native_contract_provider));
+    let admission_native_provider = NativeAdmissionProvider::new(native_contract_provider.clone());
     verify_state_dependent_with_providers(
         tx,
         snapshot,
@@ -233,16 +263,19 @@ pub fn verify_state_dependent_with_native_provider(
     )
 }
 
-fn verify_state_dependent_with_providers(
+fn verify_state_dependent_with_providers<P>(
     tx: &Transaction,
     snapshot: &DataCache,
     settings: &ProtocolSettings,
     pooled_sender_fee: &BigInt,
     oracle_duplicate: bool,
-    native_contract_provider: Arc<dyn NativeContractProvider>,
+    native_contract_provider: Arc<P>,
     ledger_provider: &impl AdmissionLedgerProvider,
     admission_native_provider: &impl AdmissionNativeProvider,
-) -> VerifyResult {
+) -> VerifyResult
+where
+    P: NativeProviderDynArc + ?Sized + 'static,
+{
     use neo_io::Serializable;
 
     let Ok(height) = ledger_provider.current_index(snapshot) else {
@@ -364,6 +397,8 @@ fn verify_state_dependent_with_providers(
         } else if let Some((m, n)) = multi {
             net_fee -= exec_fee_factor * Helper::multi_signature_contract_cost(m as i32, n as i32);
         } else {
+            let provider: Arc<dyn NativeContractProvider> =
+                P::clone_as_dyn(&native_contract_provider);
             match Helper::verify_witness_with_native_provider(
                 tx,
                 settings,
@@ -371,7 +406,7 @@ fn verify_state_dependent_with_providers(
                 hash,
                 witness,
                 net_fee,
-                Some(Arc::clone(&native_contract_provider)),
+                Some(provider),
             ) {
                 Ok(fee) => net_fee -= fee,
                 Err(_) => return VerifyResult::Invalid,

@@ -63,7 +63,7 @@ fn seed_policy_fee_settings(snapshot: &DataCache, exec_fee_factor: i64) {
 fn native_provider_impl() -> &'static str {
     let provider = include_str!("../../admission/native_provider.rs");
     let start = provider
-        .find("impl AdmissionNativeProvider for NativeAdmissionProvider")
+        .find("impl<P> AdmissionNativeProvider for NativeAdmissionProvider<P>")
         .expect("provider impl exists");
     &provider[start..]
 }
@@ -141,6 +141,31 @@ fn missing_core_policy_fee_settings_fail_closed() {
         ),
         VerifyResult::UnableToVerify,
         "C# Policy.GetFeePerByte/GetExecFeeFactor index initialized storage; missing keys must not fall back to defaults and admit a transaction"
+    );
+}
+
+#[test]
+fn admission_verifier_accepts_concrete_native_provider_arc() {
+    let snapshot = DataCache::new(false);
+    seed_current_ledger(&snapshot, 0);
+    let public_key = [2u8; 33];
+    let account = UInt160::from_script(
+        &neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&public_key),
+    );
+    mint_gas(&snapshot, &account, 100_000_000);
+    let tx = standard_shape_transaction(account);
+
+    assert_eq!(
+        verify_state_dependent_with_native_provider(
+            &tx,
+            &snapshot,
+            &ProtocolSettings::default(),
+            &BigInt::from(0),
+            false,
+            Arc::new(neo_native_contracts::StandardNativeProvider::new()),
+        ),
+        VerifyResult::UnableToVerify,
+        "generic admission verification must accept a concrete provider Arc without forcing dyn erasure at the call site"
     );
 }
 
@@ -234,7 +259,7 @@ fn non_standard_witness_verification_uses_explicit_native_provider() {
     let verifier = &source[start..end];
 
     assert!(verifier.contains("Helper::verify_witness_with_native_provider"));
-    assert!(verifier.contains("Arc::clone(&native_contract_provider)"));
+    assert!(verifier.contains("let provider: Arc<dyn NativeContractProvider>"));
     assert!(!verifier.contains("Helper::verify_witness("));
 }
 
@@ -260,8 +285,10 @@ fn native_reads_use_admission_provider_boundary() {
     let provider = include_str!("../../admission/native_provider.rs");
 
     assert!(verifier.contains("AdmissionNativeProvider"));
+    assert!(verifier.contains("NativeAdmissionProvider::new(native_contract_provider.clone())"));
     assert!(
-        verifier.contains("NativeAdmissionProvider::new(Arc::clone(&native_contract_provider))")
+        verifier.contains("pub fn verify_state_dependent_with_native_provider<P>"),
+        "admission verification should stay generic over the composed native provider"
     );
     assert!(
         !verifier.contains("StandardNativeProvider"),
@@ -276,7 +303,9 @@ fn native_reads_use_admission_provider_boundary() {
     assert!(provider.contains("trait AdmissionNativeProvider"));
     assert!(!provider.contains("trait AdmissionNativeProviderFactory"));
     assert!(!provider.contains("struct NativeAdmissionProviderFactory"));
-    assert!(provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"));
+    assert!(provider.contains("struct NativeAdmissionProvider<P: ?Sized>"));
+    assert!(provider.contains("native_contract_provider: Arc<P>"));
+    assert!(!provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"));
     assert!(provider.contains("get_native_contract_by_name(name)"));
     assert!(provider.contains("with_contract::<GasToken"));
     assert!(provider.contains("with_contract::<NeoToken"));

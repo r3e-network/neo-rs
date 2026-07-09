@@ -68,21 +68,24 @@ pub(super) trait AdmissionNativeProvider {
 /// Adapter from the node-composed native-contract provider to the admission
 /// verifier's narrow native read capability.
 #[derive(Clone)]
-pub(super) struct NativeAdmissionProvider {
-    native_contract_provider: Arc<dyn NativeContractProvider>,
+pub(super) struct NativeAdmissionProvider<P: ?Sized> {
+    native_contract_provider: Arc<P>,
 }
 
-impl NativeAdmissionProvider {
+impl<P> NativeAdmissionProvider<P>
+where
+    P: NativeContractProvider + ?Sized,
+{
     /// Creates an adapter over the composition-root native-contract provider.
     #[must_use]
-    pub(super) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
+    pub(super) fn new(native_contract_provider: Arc<P>) -> Self {
         Self {
             native_contract_provider,
         }
     }
 
-    fn provider(&self) -> Arc<dyn NativeContractProvider> {
-        Arc::clone(&self.native_contract_provider)
+    fn provider(&self) -> &P {
+        &self.native_contract_provider
     }
 
     fn native_contract(&self, name: &'static str) -> CoreResult<Arc<dyn NativeContract>> {
@@ -107,7 +110,10 @@ impl NativeAdmissionProvider {
     }
 }
 
-impl std::fmt::Debug for NativeAdmissionProvider {
+impl<P> std::fmt::Debug for NativeAdmissionProvider<P>
+where
+    P: NativeContractProvider + ?Sized,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NativeAdmissionProvider")
             .field("native_contract_provider", &"NativeContractProvider")
@@ -115,7 +121,10 @@ impl std::fmt::Debug for NativeAdmissionProvider {
     }
 }
 
-impl AdmissionNativeProvider for NativeAdmissionProvider {
+impl<P> AdmissionNativeProvider for NativeAdmissionProvider<P>
+where
+    P: NativeContractProvider + ?Sized,
+{
     fn policy_is_blocked(&self, snapshot: &DataCache, account: &UInt160) -> CoreResult<bool> {
         self.with_contract::<PolicyContract, _>("PolicyContract", |_| {
             Ok(PolicyContract::is_blocked_snapshot(snapshot, account))
