@@ -168,9 +168,12 @@ impl NodeBuilder {
         });
 
         debug!("NodeBuilder::build: composing runtime node");
-        let mempool = self
-            .mempool
-            .unwrap_or_else(|| Arc::new(MemoryPool::new(&settings)));
+        let mempool = self.mempool.unwrap_or_else(|| {
+            Arc::new(MemoryPool::new_with_native_contract_provider(
+                &settings,
+                Arc::clone(&native_contract_provider),
+            ))
+        });
         let services = self.services.unwrap_or_default();
         let sync_import_pipeline = self
             .sync_import_pipeline

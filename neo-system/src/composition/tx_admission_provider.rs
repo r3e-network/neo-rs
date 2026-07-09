@@ -8,8 +8,12 @@
 use neo_blockchain::{
     LedgerProviderFactory, StorageLedgerProviderFactory, TransactionStateProvider, TxProvider,
 };
+use std::sync::Arc;
+
 use neo_config::ProtocolSettings;
-use neo_error::CoreResult;
+use neo_error::{CoreError, CoreResult};
+use neo_execution::NativeContract;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::PolicyContract;
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::DataCache;
@@ -93,28 +97,38 @@ pub(super) trait TxAdmissionNativeProvider {
     ) -> CoreResult<u32>;
 }
 
-/// Factory for transaction-admission native providers.
-pub(super) trait TxAdmissionNativeProviderFactory {
-    /// Provider returned by this factory.
-    type Provider: TxAdmissionNativeProvider;
-
-    /// Creates a provider instance.
-    fn provider(&self) -> Self::Provider;
-}
-
-/// Production provider backed by canonical native-contract handles.
-#[derive(Clone, Copy, Debug, Default)]
+/// Adapter from the node-composed native-contract provider to the transaction
+/// admission Policy read capability.
+#[derive(Clone)]
 pub(super) struct NativeTxAdmissionProvider {
-    policy: PolicyContract,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
 }
 
 impl NativeTxAdmissionProvider {
-    /// Creates a provider backed by canonical native-contract handles.
+    /// Creates an adapter over the node's composition-root native provider.
     #[must_use]
-    pub(super) const fn new() -> Self {
+    pub(super) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
         Self {
-            policy: PolicyContract::new(),
+            native_contract_provider,
         }
+    }
+
+    fn provider(&self) -> Arc<dyn NativeContractProvider> {
+        Arc::clone(&self.native_contract_provider)
+    }
+
+    fn policy_contract(&self) -> CoreResult<Arc<dyn NativeContract>> {
+        self.provider()
+            .get_native_contract_by_name("PolicyContract")
+            .ok_or_else(|| CoreError::invalid_operation("native provider missing PolicyContract"))
+    }
+}
+
+impl std::fmt::Debug for NativeTxAdmissionProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NativeTxAdmissionProvider")
+            .field("native_contract_provider", &"NativeContractProvider")
+            .finish()
     }
 }
 
@@ -124,19 +138,12 @@ impl TxAdmissionNativeProvider for NativeTxAdmissionProvider {
         snapshot: &DataCache,
         settings: &ProtocolSettings,
     ) -> CoreResult<u32> {
-        self.policy
+        self.policy_contract()?
+            .as_any()
+            .downcast_ref::<PolicyContract>()
+            .ok_or_else(|| {
+                CoreError::invalid_operation("native provider returned non-PolicyContract")
+            })?
             .get_max_traceable_blocks_snapshot(snapshot, settings)
-    }
-}
-
-/// Factory for production transaction-admission native providers.
-#[derive(Clone, Copy, Debug, Default)]
-pub(super) struct NativeTxAdmissionProviderFactory;
-
-impl TxAdmissionNativeProviderFactory for NativeTxAdmissionProviderFactory {
-    type Provider = NativeTxAdmissionProvider;
-
-    fn provider(&self) -> Self::Provider {
-        NativeTxAdmissionProvider::new()
     }
 }

@@ -30,8 +30,12 @@ fn tx_admission_uses_ledger_provider_boundary() {
         "composition-root tx admission must not construct storage ledger providers directly"
     );
     assert!(
-        body.contains("NativeTxAdmissionProviderFactory"),
-        "composition-root tx admission must read native policy through the provider factory"
+        body.contains("NativeTxAdmissionProvider::new(self.mempool.native_contract_provider())"),
+        "composition-root tx admission must adapt the mempool-captured native provider for policy reads"
+    );
+    assert!(
+        !body.contains("NativeTxAdmissionProviderFactory"),
+        "composition-root tx admission must not create a second production native provider factory"
     );
     assert!(
         !body.contains("LedgerContract::new()"),
@@ -49,8 +53,22 @@ fn tx_admission_uses_ledger_provider_boundary() {
         "the tx-admission ledger provider should own raw storage-ledger provider construction"
     );
     assert!(provider.contains("trait TxAdmissionNativeProvider"));
-    assert!(provider.contains("trait TxAdmissionNativeProviderFactory"));
-    assert!(provider.contains("struct NativeTxAdmissionProviderFactory"));
+    assert!(
+        !provider.contains("trait TxAdmissionNativeProviderFactory"),
+        "tx admission native provider should adapt the node-composed NativeContractProvider instead of owning a private factory"
+    );
+    assert!(
+        !provider.contains("struct NativeTxAdmissionProviderFactory"),
+        "tx admission native provider should not own a second production native provider factory"
+    );
+    assert!(
+        !provider.contains("PolicyContract::new()"),
+        "tx admission native provider must resolve PolicyContract through the explicit native provider"
+    );
+    assert!(
+        provider.contains("get_native_contract_by_name(\"PolicyContract\")"),
+        "tx admission native provider should read PolicyContract from the explicit NativeContractProvider"
+    );
 }
 
 #[tokio::test]

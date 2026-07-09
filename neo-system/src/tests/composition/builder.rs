@@ -122,6 +122,10 @@ fn builder_keeps_custom_native_contract_provider_local() {
 
     assert!(Arc::ptr_eq(&node.native_contract_provider, &provider));
     assert!(
+        Arc::ptr_eq(&node.mempool.native_contract_provider(), &provider),
+        "default mempool should capture the same native provider as the composed node"
+    );
+    assert!(
         NativeContractLookup::native_contract_provider().is_none(),
         "custom providers should be captured by the node, not installed globally"
     );

@@ -35,9 +35,8 @@ use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_cache::StoreCache;
 
 use super::tx_admission_provider::{
-    NativeTxAdmissionLedgerProviderFactory, NativeTxAdmissionProviderFactory,
-    TxAdmissionLedgerProvider, TxAdmissionLedgerProviderFactory, TxAdmissionNativeProvider,
-    TxAdmissionNativeProviderFactory,
+    NativeTxAdmissionLedgerProviderFactory, NativeTxAdmissionProvider, TxAdmissionLedgerProvider,
+    TxAdmissionLedgerProviderFactory, TxAdmissionNativeProvider,
 };
 use crate::error::NodeResult;
 use crate::sync_import_pipeline::SyncImportPipeline;
@@ -340,7 +339,7 @@ impl TxRouterHandle {
                 VerifyResult::AlreadyExists
             )));
         }
-        let native = NativeTxAdmissionProviderFactory.provider();
+        let native = NativeTxAdmissionProvider::new(self.mempool.native_contract_provider());
         let max_traceable_blocks = native
             .max_traceable_blocks(snapshot, self.settings.as_ref())
             .map_err(|error| CoreError::other(format!("MaxTraceableBlocks: {error}")))?;
