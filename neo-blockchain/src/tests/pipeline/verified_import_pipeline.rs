@@ -23,21 +23,65 @@ fn pipeline() -> VerifiedImportPipeline {
 }
 
 #[test]
+fn verified_import_pipeline_accepts_concrete_native_provider() {
+    let pipeline: VerifiedImportPipeline<neo_native_contracts::StandardNativeProvider> =
+        VerifiedImportPipeline::new(
+            Arc::new(ProtocolSettings::default()),
+            Arc::new(DataCache::new(false)),
+            Arc::new(neo_native_contracts::StandardNativeProvider::new()),
+        );
+
+    let context: SnapshotConsensusWitnessContext<neo_native_contracts::StandardNativeProvider> =
+        SnapshotConsensusWitnessContext::new(
+            Arc::new(ProtocolSettings::default()),
+            Arc::new(DataCache::new(false)),
+            Arc::new(neo_native_contracts::StandardNativeProvider::new()),
+        );
+
+    let _ = (pipeline, context);
+}
+
+#[test]
 fn verified_import_pipeline_requires_explicit_native_provider() {
     let source = include_str!("../../pipeline/verified_import_pipeline.rs");
     let context = include_str!("../../pipeline/consensus_witness_stage/context.rs");
 
     assert!(
-        source.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
-        "verified import must receive a caller-composed native provider"
+        source
+            .contains("pub struct VerifiedImportPipeline<P: ?Sized = dyn NativeContractProvider>"),
+        "verified import pipeline should preserve concrete native provider types"
+    );
+    assert!(
+        source.contains(
+            "consensus_witness: NeoConsensusWitnessStage<SnapshotConsensusWitnessContext<P>>"
+        ),
+        "verified import pipeline should pass the concrete provider type into the consensus-witness context"
     );
     assert!(
         !source.contains("Option<Arc<dyn NativeContractProvider>>"),
         "verified import must not preserve an optional provider fallback"
     );
     assert!(
-        context.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
-        "snapshot consensus-witness context should store an explicit provider"
+        context.contains(
+            "pub struct SnapshotConsensusWitnessContext<P: ?Sized = dyn NativeContractProvider>"
+        ),
+        "snapshot consensus-witness context should preserve concrete native provider types"
+    );
+    assert!(
+        context.contains("native_contract_provider: Arc<P>"),
+        "snapshot consensus-witness context should store Arc<P>, not erase the provider internally"
+    );
+    assert!(
+        context.contains("type NativeProvider: NativeContractProvider + ?Sized"),
+        "consensus-witness context trait should expose the captured provider type"
+    );
+    assert!(
+        context.contains("fn native_contract_provider_for_vm"),
+        "remaining dyn erasure should be named as the VM host boundary"
+    );
+    assert!(
+        !context.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
+        "snapshot consensus-witness context should not erase its provider field to dyn"
     );
     assert!(
         !context.contains("native_contract_provider: Option<Arc<dyn NativeContractProvider>>"),

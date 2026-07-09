@@ -34,6 +34,8 @@ impl MempoolLike for TestMempool {
 struct TestContext;
 
 impl crate::service_context::SystemContext for TestContext {
+    type NativeProvider = neo_native_contracts::StandardNativeProvider;
+
     fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
         Arc::new(neo_config::ProtocolSettings::default())
     }

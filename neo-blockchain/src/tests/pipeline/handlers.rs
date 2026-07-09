@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::oneshot;
 
-type NativeProviderArc = Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>;
+type NativeProviderArc = Arc<neo_native_contracts::StandardNativeProvider>;
 
 fn standard_native_provider() -> NativeProviderArc {
     Arc::new(neo_native_contracts::StandardNativeProvider::new())
@@ -31,6 +31,8 @@ fn standard_native_provider() -> NativeProviderArc {
 #[derive(Debug)]
 struct TestContext;
 impl SystemContext for TestContext {
+    type NativeProvider = neo_native_contracts::StandardNativeProvider;
+
     fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
         Arc::new(neo_config::ProtocolSettings::default())
     }
@@ -498,6 +500,8 @@ impl std::fmt::Debug for StoreContext {
     }
 }
 impl SystemContext for StoreContext {
+    type NativeProvider = neo_native_contracts::StandardNativeProvider;
+
     fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
         Arc::clone(&self.settings)
     }

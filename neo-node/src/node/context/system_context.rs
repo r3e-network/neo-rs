@@ -21,6 +21,8 @@ impl<P> SystemContext for DaemonContext<P>
 where
     P: NativeContractProvider + 'static,
 {
+    type NativeProvider = P;
+
     fn settings(&self) -> Arc<ProtocolSettings> {
         Arc::clone(&self.settings)
     }
@@ -33,9 +35,8 @@ where
         Some(Arc::clone(&self.snapshot))
     }
 
-    fn native_contract_provider(&self) -> Option<Arc<dyn NativeContractProvider>> {
-        let provider: Arc<dyn NativeContractProvider> = self.native_contract_provider.clone();
-        Some(provider)
+    fn native_contract_provider(&self) -> Option<Arc<Self::NativeProvider>> {
+        Some(Arc::clone(&self.native_contract_provider))
     }
 
     fn block_committing(

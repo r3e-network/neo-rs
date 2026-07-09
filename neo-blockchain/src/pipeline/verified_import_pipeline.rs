@@ -13,17 +13,27 @@ use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::Block;
 use neo_storage::DataCache;
 
-use super::consensus_witness_stage::{NeoConsensusWitnessStage, SnapshotConsensusWitnessContext};
+use super::consensus_witness_stage::{
+    ConsensusWitnessContext, NeoConsensusWitnessStage, SnapshotConsensusWitnessContext,
+};
 use super::stage_traits::{ConsensusWitnessStage, EngineResult, StageContext, ValidateStage};
 use super::validate_stage::{NeoValidateStage, SnapshotValidateContext};
 
 /// Concrete verified-import chain: validate, then verify consensus witness.
-pub struct VerifiedImportPipeline {
+pub struct VerifiedImportPipeline<P: ?Sized = dyn NativeContractProvider>
+where
+    P: NativeContractProvider,
+    SnapshotConsensusWitnessContext<P>: ConsensusWitnessContext,
+{
     validate: NeoValidateStage,
-    consensus_witness: NeoConsensusWitnessStage,
+    consensus_witness: NeoConsensusWitnessStage<SnapshotConsensusWitnessContext<P>>,
 }
 
-impl fmt::Debug for VerifiedImportPipeline {
+impl<P> fmt::Debug for VerifiedImportPipeline<P>
+where
+    P: NativeContractProvider + ?Sized,
+    SnapshotConsensusWitnessContext<P>: ConsensusWitnessContext,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VerifiedImportPipeline")
             .field("validate", &self.validate)
@@ -32,13 +42,17 @@ impl fmt::Debug for VerifiedImportPipeline {
     }
 }
 
-impl VerifiedImportPipeline {
+impl<P> VerifiedImportPipeline<P>
+where
+    P: NativeContractProvider + ?Sized,
+    SnapshotConsensusWitnessContext<P>: ConsensusWitnessContext,
+{
     /// Creates a verified-import chain over one immutable snapshot.
     #[must_use]
     pub fn new(
         settings: Arc<ProtocolSettings>,
         snapshot: Arc<DataCache>,
-        native_contract_provider: Arc<dyn NativeContractProvider>,
+        native_contract_provider: Arc<P>,
     ) -> Self {
         let validate = NeoValidateStage::new(Arc::new(SnapshotValidateContext::new(
             Arc::clone(&settings),
@@ -61,7 +75,9 @@ impl VerifiedImportPipeline {
             .verify_consensus_witness(ctx, block)
             .await
     }
+}
 
+impl VerifiedImportPipeline<dyn NativeContractProvider> {
     /// Creates and runs the verified-import chain for one block.
     pub async fn verify_block(
         block: &Block,

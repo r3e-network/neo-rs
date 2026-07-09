@@ -31,6 +31,8 @@ impl std::fmt::Debug for FailingSecondCommitContext {
 }
 
 impl SystemContext for FailingSecondCommitContext {
+    type NativeProvider = neo_native_contracts::StandardNativeProvider;
+
     fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
         Arc::clone(&self.settings)
     }
@@ -80,6 +82,8 @@ impl std::fmt::Debug for FailingBulkFlushContext {
 }
 
 impl SystemContext for FailingBulkFlushContext {
+    type NativeProvider = neo_native_contracts::StandardNativeProvider;
+
     fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
         Arc::clone(&self.settings)
     }
@@ -126,6 +130,8 @@ impl std::fmt::Debug for StateServiceEmptyFastPathContext {
 }
 
 impl SystemContext for StateServiceEmptyFastPathContext {
+    type NativeProvider = neo_native_contracts::StandardNativeProvider;
+
     fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
         Arc::clone(&self.settings)
     }

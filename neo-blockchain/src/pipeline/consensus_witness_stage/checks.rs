@@ -48,7 +48,7 @@ where
             &parent.next_consensus,
             &block.header.witness,
             CONSENSUS_WITNESS_MAX_GAS,
-            self.ctx.native_contract_provider(),
+            self.ctx.native_contract_provider_for_vm(),
         )
         .map_err(|_| {
             EngineError::validation_failed(block.index(), "consensus witness verification failed")

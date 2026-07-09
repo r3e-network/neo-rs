@@ -38,6 +38,8 @@ impl MockConsensusWitnessContext {
 }
 
 impl ConsensusWitnessContext for MockConsensusWitnessContext {
+    type NativeProvider = dyn neo_execution::native_contract_provider::NativeContractProvider;
+
     fn settings(&self) -> Arc<ProtocolSettings> {
         Arc::clone(&self.settings)
     }
@@ -47,6 +49,12 @@ impl ConsensusWitnessContext for MockConsensusWitnessContext {
     }
 
     fn native_contract_provider(
+        &self,
+    ) -> Option<Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>> {
+        None
+    }
+
+    fn native_contract_provider_for_vm(
         &self,
     ) -> Option<Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>> {
         None

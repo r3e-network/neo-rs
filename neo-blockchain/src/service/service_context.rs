@@ -16,6 +16,7 @@
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Block};
 
 /// Extra metadata for the current block persistence call.
@@ -40,15 +41,16 @@ impl BlockPersistContext {
     }
 }
 
-/// Trait object giving the [`crate::service::BlockchainService`]
-/// access to the system it is orchestrating.
+/// System access required by [`crate::service::BlockchainService`].
 ///
-/// Implementations are expected to be cheap to clone (`Arc<dyn …>`
-/// everywhere) and `Send + Sync`. The blockchain service is the
-/// *only* owner of the canonical tip, so concurrent callers go
-/// through the service's command channel rather than through this
+/// Implementations are expected to be cheap to clone and `Send + Sync`. The
+/// blockchain service is the *only* owner of the canonical tip, so concurrent
+/// callers go through the service's command channel rather than through this
 /// trait directly.
 pub trait SystemContext: Send + Sync + std::fmt::Debug {
+    /// Native-contract provider captured by the composition root.
+    type NativeProvider: NativeContractProvider + 'static;
+
     /// Returns the effective protocol settings.
     fn settings(&self) -> Arc<ProtocolSettings>;
 
@@ -74,9 +76,7 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
     /// paths that execute native-contract lookups. Lightweight tests and
     /// store-less contexts can leave it unset only when they do not expose a
     /// store-backed persistence path.
-    fn native_contract_provider(
-        &self,
-    ) -> Option<Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>> {
+    fn native_contract_provider(&self) -> Option<Arc<Self::NativeProvider>> {
         None
     }
 
