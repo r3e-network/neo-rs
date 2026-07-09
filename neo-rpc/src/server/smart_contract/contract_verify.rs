@@ -39,7 +39,7 @@ pub(super) fn invoke_contract_verify(
 
     let contract = NativeDeployedContractProviderFactory
         .provider()
-        .contract_state(snapshot_cache.as_ref(), &request.script_hash)
+        .contract_state_by_hash(snapshot_cache.as_ref(), &request.script_hash)
         .map_err(|err| internal_error(err.to_string()))?
         .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))?;
 

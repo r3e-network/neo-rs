@@ -458,6 +458,8 @@ fn rpc_deployed_contract_reads_use_shared_provider() {
     let provider = include_str!("../../../server/contract_state_provider.rs");
     assert!(provider.contains("trait DeployedContractProvider"));
     assert!(provider.contains("trait DeployedContractProviderFactory"));
+    assert!(provider.contains("fn contract_state_by_id"));
+    assert!(provider.contains("fn contract_state_by_hash"));
     assert!(provider.contains("struct NativeDeployedContractProvider"));
     assert!(
         provider.contains("ContractManagement::get_contract_from_snapshot"),
@@ -482,6 +484,26 @@ fn rpc_deployed_contract_reads_use_shared_provider() {
     assert!(
         !signing.contains("ContractManagement::get_contract_from_snapshot"),
         "wallet signing should not reach into ContractManagement storage directly"
+    );
+
+    let request_helpers = include_str!("../../../server/rpc_server_blockchain/request_helpers.rs");
+    assert!(
+        request_helpers.contains("NativeDeployedContractProviderFactory"),
+        "blockchain contract request helpers should resolve deployed contracts through the shared provider"
+    );
+    assert!(
+        !request_helpers.contains("ContractManagement::get_contract"),
+        "blockchain contract request helpers should not reach into ContractManagement storage directly"
+    );
+
+    let network_fee = include_str!("../../../server/wallet_compat/network_fee.rs");
+    assert!(
+        network_fee.contains("NativeDeployedContractProviderFactory"),
+        "wallet network-fee calculation should resolve deployed verification contracts through the shared provider"
+    );
+    assert!(
+        !network_fee.contains("ContractManagement::get_contract_from_snapshot"),
+        "wallet network-fee calculation should not reach into ContractManagement storage directly"
     );
 }
 

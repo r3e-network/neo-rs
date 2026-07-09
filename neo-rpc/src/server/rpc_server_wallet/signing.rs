@@ -260,7 +260,7 @@ fn add_with_script_hash(
 ) {
     let contract = match NativeDeployedContractProviderFactory
         .provider()
-        .contract_state(snapshot, script_hash)
+        .contract_state_by_hash(snapshot, script_hash)
     {
         Ok(Some(contract)) => contract,
         _ => return,

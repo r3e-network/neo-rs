@@ -9,7 +9,6 @@ use neo_execution::helper::Helper as ContractHelper;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::serializable::helper::SerializeHelper;
 use neo_manifest::CallFlags;
-use neo_native_contracts::ContractManagement;
 use neo_payloads::HEADER_SIZE;
 use neo_payloads::transaction::Transaction;
 use neo_primitives::{ContractParameterType, TriggerType, UInt160, Verifiable, Witness as _};
@@ -21,6 +20,10 @@ use num_traits::Zero;
 
 use super::native_provider::{NativeWalletCompatProvider, WalletCompatNativeProvider};
 use super::{WalletCompatError, WalletCompatResult, core_err};
+use crate::server::contract_state_provider::{
+    DeployedContractProvider, DeployedContractProviderFactory,
+    NativeDeployedContractProviderFactory,
+};
 use crate::server::ledger_queries;
 
 /// C# `Helper.CalculateNetworkFee(tx, snapshot, settings, accountScript,
@@ -135,7 +138,9 @@ fn contract_verification_fee(
     max_execution_cost: &mut i64,
     size: &mut usize,
 ) -> WalletCompatResult<i64> {
-    let contract = ContractManagement::get_contract_from_snapshot(snapshot, hash)
+    let contract = NativeDeployedContractProviderFactory
+        .provider()
+        .contract_state_by_hash(snapshot, hash)
         .map_err(core_err)?
         .ok_or_else(|| {
             let address = neo_wallets::wallet_helper::WalletAddress::to_address(

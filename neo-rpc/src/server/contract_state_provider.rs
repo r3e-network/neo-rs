@@ -13,8 +13,15 @@ use neo_storage::DataCache;
 
 /// Read capability for deployed ContractManagement records.
 pub(crate) trait DeployedContractProvider {
+    /// Returns the deployed contract state for `id`, when present.
+    fn contract_state_by_id(
+        &self,
+        snapshot: &DataCache,
+        id: i32,
+    ) -> CoreResult<Option<ContractState>>;
+
     /// Returns the deployed contract state for `script_hash`, when present.
-    fn contract_state(
+    fn contract_state_by_hash(
         &self,
         snapshot: &DataCache,
         script_hash: &UInt160,
@@ -35,7 +42,15 @@ pub(crate) trait DeployedContractProviderFactory {
 pub(crate) struct NativeDeployedContractProvider;
 
 impl DeployedContractProvider for NativeDeployedContractProvider {
-    fn contract_state(
+    fn contract_state_by_id(
+        &self,
+        snapshot: &DataCache,
+        id: i32,
+    ) -> CoreResult<Option<ContractState>> {
+        ContractManagement::get_contract_by_id_from_snapshot(snapshot, id)
+    }
+
+    fn contract_state_by_hash(
         &self,
         snapshot: &DataCache,
         script_hash: &UInt160,

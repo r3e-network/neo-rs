@@ -1,11 +1,14 @@
 use std::str::FromStr;
 
 use neo_execution::contract_state::ContractState;
-use neo_native_contracts::contract_management::ContractManagement;
 use neo_payloads::block::Block;
 use neo_primitives::{UInt160, UInt256};
 use serde_json::Value;
 
+use crate::server::contract_state_provider::{
+    DeployedContractProvider, DeployedContractProviderFactory,
+    NativeDeployedContractProviderFactory,
+};
 use crate::server::ledger_queries;
 use crate::server::model::block_hash_or_index::BlockHashOrIndex as RpcBlockHashOrIndex;
 use crate::server::model::contract_name_or_hash_or_id::ContractNameOrHashOrId;
@@ -299,18 +302,19 @@ impl RpcServerBlockchain {
         store: &neo_storage::persistence::StoreCache,
         identifier: &ContractNameOrHashOrId,
     ) -> Result<Option<ContractState>, RpcException> {
+        let provider = NativeDeployedContractProviderFactory.provider();
+        let snapshot = store.data_cache();
         match identifier {
-            ContractNameOrHashOrId::Id(id) => {
-                ContractManagement::get_contract_by_id_from_snapshot(store.data_cache(), *id)
-                    .map_err(internal_error)
-            }
-            ContractNameOrHashOrId::Hash(hash) => {
-                ContractManagement::get_contract_from_snapshot(store.data_cache(), hash)
-                    .map_err(internal_error)
-            }
+            ContractNameOrHashOrId::Id(id) => provider
+                .contract_state_by_id(snapshot, *id)
+                .map_err(internal_error),
+            ContractNameOrHashOrId::Hash(hash) => provider
+                .contract_state_by_hash(snapshot, hash)
+                .map_err(internal_error),
             ContractNameOrHashOrId::Name(name) => {
                 let hash = Self::contract_name_to_hash(name)?;
-                ContractManagement::get_contract_from_snapshot(store.data_cache(), &hash)
+                provider
+                    .contract_state_by_hash(snapshot, &hash)
                     .map_err(internal_error)
             }
         }
@@ -321,9 +325,10 @@ impl RpcServerBlockchain {
         identifier: &ContractNameOrHashOrId,
     ) -> Result<i32, RpcException> {
         if let ContractNameOrHashOrId::Id(id) = identifier {
-            let state =
-                ContractManagement::get_contract_by_id_from_snapshot(store.data_cache(), *id)
-                    .map_err(internal_error)?;
+            let state = NativeDeployedContractProviderFactory
+                .provider()
+                .contract_state_by_id(store.data_cache(), *id)
+                .map_err(internal_error)?;
             state
                 .map(|contract| contract.id)
                 .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))
