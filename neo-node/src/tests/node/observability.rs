@@ -29,3 +29,21 @@ fn observability_runtime_source_does_not_panic_on_recoverable_state() {
         );
     }
 }
+
+#[test]
+fn observability_ledger_height_uses_routed_provider_shape() {
+    let source = include_str!("../../node/observability/ledger_provider.rs");
+
+    assert!(
+        source.contains("HotColdLedgerProviderFactory"),
+        "observability ledger height should use the routed ledger provider factory"
+    );
+    assert!(
+        source.contains("EmptyLedgerProvider"),
+        "observability ledger height should keep the no-cold-archive case explicit"
+    );
+    assert!(
+        !source.contains("StorageLedgerProviderFactory"),
+        "observability ledger height should not bypass the hot/cold ledger provider boundary"
+    );
+}
