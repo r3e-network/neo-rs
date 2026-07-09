@@ -96,6 +96,7 @@ class ProtocolTargetDocsTests(unittest.TestCase):
         )
 
         self.assertIn("d10e9ceecdabe3fcff719ee68ea5b76ba7e62c3d", text)
+        self.assertIn("004cd6070a940405818d9357638277dd44407e2e", text)
         self.assertIn("v3.10.0...v3.10.1", text)
         for marker in {
             "df402675",
@@ -110,6 +111,10 @@ class ProtocolTargetDocsTests(unittest.TestCase):
             "#4563",
             "6b1c90c6",
             "#4566",
+            "7a8018e",
+            "#581",
+            "004cd60",
+            "#587",
             "55c14029",
             "#4569",
             "abbc3a25",

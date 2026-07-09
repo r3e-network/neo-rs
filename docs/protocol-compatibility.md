@@ -31,8 +31,10 @@ flowchart LR
 The v3.10.1 compatibility target is based on the official `neo-project/neo`
 [`v3.10.1`](https://github.com/neo-project/neo/releases/tag/v3.10.1) release,
 published on 2026-07-07 and pointing at commit
-`d10e9ceecdabe3fcff719ee68ea5b76ba7e62c3d`. The audited upstream range is
-`v3.10.0...v3.10.1`:
+`d10e9ceecdabe3fcff719ee68ea5b76ba7e62c3d`. The C# release depends on
+`neo-project/neo-vm` [`v3.10.1`](https://github.com/neo-project/neo-vm/releases/tag/v3.10.1),
+commit `004cd6070a940405818d9357638277dd44407e2e`. The audited upstream
+ranges are `neo` `v3.10.0...v3.10.1` and `neo-vm` `v3.10.0...v3.10.1`:
 
 | Upstream commit / PR | Consensus or wire effect | neo-rs coverage |
 |---|---|---|
@@ -40,7 +42,7 @@ published on 2026-07-07 and pointing at commit
 | `9f4795ab` / #4571 | Adds `HF_Huyao` after `HF_Gorgon`. Empty `Hardforks: {}` now backfills every known hardfork through Huyao at height 0. | `neo-primitives::Hardfork::HfHuyao`, `neo-config::HardforkManager`, and config tests define Huyao and the C# empty-object backfill rule. Built-in MainNet/TestNet presets stay explicit operational schedules unless a loaded network config schedules later forks. |
 | `f5ae5e82` / #4565 | Centralizes `ApplicationEngine.AddFee(gas, applyFactor)` so datoshi-vs-picoGAS conversion happens once, negative fees fault before whitelist bypass, and overflow cannot leave partial fee-consumed side effects. | `neo-execution` keeps `add_fee_datoshi`, `add_fee_pico`, `add_cpu_fee`, and native-method combined charging separate; fee tests cover negative-fee ordering, storage-fee units, and no-side-effect overflow. |
 | `e66e4dfc` / #4563 | `StdLib.Itoa` formats integers with invariant culture. | `neo-native-contracts::StdLib` uses deterministic base-10/base-16 formatting; tests pin C# base-10 and two's-complement hex output independently of host locale. |
-| `6b1c90c6` / #4566 | Refreshes NeoVM to v3.10.1 reference-counter behavior. | `neo-vm` matches the recursive C# `ReferenceCounter`, including `CLEARITEMS` cycle and underflow behavior; runtime reference-counter tests pin those paths. |
+| `6b1c90c6` / #4566 plus `neo-vm` `7a8018e` / #581 and `004cd60` / #587 | Refreshes NeoVM to v3.10.1 reference-counter behavior. | `neo-vm` matches the recursive C# `ReferenceCounter`, including `CLEARITEMS` cycle and underflow behavior; runtime reference-counter tests pin those paths. |
 | `55c14029` / #4569 | From `HF_Gorgon`, committee voter-reward refreshes use live candidate votes rather than stale committee-cache votes. | `neo-native-contracts::NeoToken` reads live candidate votes for refresh-time voter rewards, including the empty-block fast-forward path; tests cover post-Gorgon normal and fast-forward rewards. |
 | `abbc3a25` / #4570 | Notary-sponsored transactions reserve and persist fees against the secondary signer's Notary deposit; missing or overdrawn deposits fault instead of spending unrelated Notary GAS balance. | `neo-mempool` tracks v3.10.1 payer tuples `(Notary, Signers[1])`, verification reads Notary deposit balances, and `neo-native-contracts::Notary` faults on missing or overdrawn deposits during persist. |
 | `7f8454f4` / #4572 | Hardening: invalid `ExtensiblePayload` relay results are returned to the sender but not published to the event stream; witnesses must hash to `Sender`. | `neo-payloads::ExtensiblePayload` rejects mismatched witness script hashes, `neo-blockchain` validates before cache/relay insertion, and failed extensible relay results are suppressed from runtime events. |
