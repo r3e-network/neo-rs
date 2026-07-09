@@ -5,8 +5,12 @@
 //! dependent on a narrow native capability instead of constructing native
 //! contracts directly in the pipeline code.
 
+use std::sync::Arc;
+
 use neo_config::ProtocolSettings;
-use neo_error::CoreResult;
+use neo_error::{CoreError, CoreResult};
+use neo_execution::NativeContract;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::NeoToken;
 use neo_storage::DataCache;
 
@@ -22,28 +26,38 @@ pub(super) trait EmptyBlockFastForwardNativeProvider {
     ) -> CoreResult<()>;
 }
 
-/// Factory for empty-block fast-forward native providers.
-pub(super) trait EmptyBlockFastForwardNativeProviderFactory {
-    /// Provider returned by this factory.
-    type Provider: EmptyBlockFastForwardNativeProvider;
-
-    /// Creates a provider instance.
-    fn provider(&self) -> Self::Provider;
-}
-
-/// Production provider backed by canonical native-contract handles.
-#[derive(Clone, Copy, Debug, Default)]
+/// Adapter from the batch native-persistence provider to the fast-forward
+/// reward capability.
+#[derive(Clone)]
 pub(super) struct NativeEmptyBlockFastForwardProvider {
-    neo: NeoToken,
+    native_contract_provider: Arc<dyn NativeContractProvider>,
 }
 
 impl NativeEmptyBlockFastForwardProvider {
-    /// Creates a provider backed by canonical native-contract handles.
+    /// Creates an adapter over the native provider captured for the persist batch.
     #[must_use]
-    pub(super) const fn new() -> Self {
+    pub(super) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
         Self {
-            neo: NeoToken::new(),
+            native_contract_provider,
         }
+    }
+
+    fn provider(&self) -> Arc<dyn NativeContractProvider> {
+        Arc::clone(&self.native_contract_provider)
+    }
+
+    fn neo_token(&self) -> CoreResult<Arc<dyn NativeContract>> {
+        self.provider()
+            .get_native_contract_by_name("NeoToken")
+            .ok_or_else(|| CoreError::invalid_operation("native provider missing NeoToken"))
+    }
+}
+
+impl std::fmt::Debug for NativeEmptyBlockFastForwardProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NativeEmptyBlockFastForwardProvider")
+            .field("native_contract_provider", &"NativeContractProvider")
+            .finish()
     }
 }
 
@@ -55,19 +69,10 @@ impl EmptyBlockFastForwardNativeProvider for NativeEmptyBlockFastForwardProvider
         start: u32,
         end: u32,
     ) -> CoreResult<()> {
-        self.neo
+        self.neo_token()?
+            .as_any()
+            .downcast_ref::<NeoToken>()
+            .ok_or_else(|| CoreError::invalid_operation("native provider returned non-NeoToken"))?
             .fast_forward_empty_block_rewards(snapshot, settings, start, end)
-    }
-}
-
-/// Factory for production empty-block fast-forward native providers.
-#[derive(Clone, Copy, Debug, Default)]
-pub(super) struct NativeEmptyBlockFastForwardProviderFactory;
-
-impl EmptyBlockFastForwardNativeProviderFactory for NativeEmptyBlockFastForwardProviderFactory {
-    type Provider = NativeEmptyBlockFastForwardProvider;
-
-    fn provider(&self) -> Self::Provider {
-        NativeEmptyBlockFastForwardProvider::new()
     }
 }

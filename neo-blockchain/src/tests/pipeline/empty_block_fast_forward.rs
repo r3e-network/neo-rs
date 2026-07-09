@@ -376,7 +376,7 @@ fn stage_empty_block_fast_forward_reuses_last_hash_from_ledger_loop() {
 }
 
 #[test]
-fn stage_empty_block_fast_forward_uses_native_provider_factory() {
+fn stage_empty_block_fast_forward_uses_composed_native_provider() {
     let source = include_str!("../../pipeline/empty_block_fast_forward/stage.rs");
     let stage = source
         .split("pub fn stage_empty_block_fast_forward")
@@ -389,8 +389,12 @@ fn stage_empty_block_fast_forward_uses_native_provider_factory() {
         "stage should depend on a native fast-forward capability"
     );
     assert!(
-        stage.contains("NativeEmptyBlockFastForwardProviderFactory"),
-        "stage should create native fast-forward providers through a factory"
+        !stage.contains("NativeEmptyBlockFastForwardProviderFactory"),
+        "stage must not create a second production native provider factory"
+    );
+    assert!(
+        stage.contains("NativeEmptyBlockFastForwardProvider::new(resources.provider())"),
+        "stage should adapt the provider captured in NativePersistResources"
     );
     assert!(
         !stage.contains("NeoToken::new()"),
@@ -402,8 +406,18 @@ fn stage_empty_block_fast_forward_uses_native_provider_factory() {
     let provider = std::fs::read_to_string(&provider_path)
         .unwrap_or_else(|error| panic!("{}: {error}", provider_path.display()));
     assert!(provider.contains("trait EmptyBlockFastForwardNativeProvider"));
-    assert!(provider.contains("trait EmptyBlockFastForwardNativeProviderFactory"));
-    assert!(provider.contains("neo: NeoToken"));
+    assert!(
+        !provider.contains("trait EmptyBlockFastForwardNativeProviderFactory"),
+        "empty-block fast-forward should adapt NativePersistResources instead of owning a private factory"
+    );
+    assert!(
+        !provider.contains("NeoToken::new()"),
+        "empty-block fast-forward provider must resolve NeoToken through the explicit native provider"
+    );
+    assert!(
+        provider.contains("get_native_contract_by_name(\"NeoToken\")"),
+        "empty-block fast-forward provider should read NeoToken from the explicit NativeContractProvider"
+    );
 }
 
 #[test]
