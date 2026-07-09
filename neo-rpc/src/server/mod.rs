@@ -11,6 +11,8 @@
 //! ## Contents
 //!
 //! - `diagnostic`: RPC diagnostic endpoints and health reporting helpers.
+//! - `contract_state_provider`: Shared deployed-contract storage provider used
+//!   by RPC handlers.
 //! - `dispatch`: RPC method dispatch, registration, and handler lookup helpers.
 //! - `jsonrpsee_adapter`: jsonrpsee integration that exposes the internal RPC
 //!   registry.
@@ -52,6 +54,7 @@
 //! - `wallet_compat`: Wallet compatibility helpers for RPC responses.
 //! - `ws`: WebSocket events, bridges, and notification models.
 
+mod contract_state_provider;
 mod diagnostic;
 pub(crate) mod dispatch;
 pub(crate) mod jsonrpsee_adapter;

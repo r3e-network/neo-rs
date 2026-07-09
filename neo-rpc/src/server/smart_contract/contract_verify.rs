@@ -10,6 +10,10 @@ use neo_primitives::ContractParameterType;
 use rand::random;
 use serde_json::Value;
 
+use crate::server::contract_state_provider::{
+    DeployedContractProvider, DeployedContractProviderFactory,
+    NativeDeployedContractProviderFactory,
+};
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_error_factory;
 use crate::server::rpc_exception::RpcException;
@@ -33,12 +37,11 @@ pub(super) fn invoke_contract_verify(
     let store_cache = system.store_cache();
     let snapshot_cache = Arc::new(store_cache.data_cache().clone());
 
-    let contract = neo_native_contracts::ContractManagement::get_contract_from_snapshot(
-        snapshot_cache.as_ref(),
-        &request.script_hash,
-    )
-    .map_err(|err| internal_error(err.to_string()))?
-    .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))?;
+    let contract = NativeDeployedContractProviderFactory
+        .provider()
+        .contract_state(snapshot_cache.as_ref(), &request.script_hash)
+        .map_err(|err| internal_error(err.to_string()))?
+        .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))?;
 
     let verify_method = contract
         .manifest

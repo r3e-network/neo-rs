@@ -16,6 +16,10 @@ use neo_wallets::Wallet as CoreWallet;
 use serde_json::Value;
 use std::sync::Arc;
 
+use crate::server::contract_state_provider::{
+    DeployedContractProvider, DeployedContractProviderFactory,
+    NativeDeployedContractProviderFactory,
+};
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
@@ -254,10 +258,10 @@ fn add_with_script_hash(
     snapshot: &DataCache,
     script_hash: &UInt160,
 ) {
-    let contract = match neo_native_contracts::ContractManagement::get_contract_from_snapshot(
-        snapshot,
-        script_hash,
-    ) {
+    let contract = match NativeDeployedContractProviderFactory
+        .provider()
+        .contract_state(snapshot, script_hash)
+    {
         Ok(Some(contract)) => contract,
         _ => return,
     };

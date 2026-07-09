@@ -453,6 +453,38 @@ fn rpc_wallet_policy_reads_use_composed_native_provider() {
     );
 }
 
+#[test]
+fn rpc_deployed_contract_reads_use_shared_provider() {
+    let provider = include_str!("../../../server/contract_state_provider.rs");
+    assert!(provider.contains("trait DeployedContractProvider"));
+    assert!(provider.contains("trait DeployedContractProviderFactory"));
+    assert!(provider.contains("struct NativeDeployedContractProvider"));
+    assert!(
+        provider.contains("ContractManagement::get_contract_from_snapshot"),
+        "deployed contract storage codec should be centralized in the shared RPC provider"
+    );
+
+    let contract_verify = include_str!("../../../server/smart_contract/contract_verify.rs");
+    assert!(
+        contract_verify.contains("NativeDeployedContractProviderFactory"),
+        "invokecontractverify should resolve deployed contracts through the shared provider"
+    );
+    assert!(
+        !contract_verify.contains("ContractManagement::get_contract_from_snapshot"),
+        "invokecontractverify should not reach into ContractManagement storage directly"
+    );
+
+    let signing = include_str!("../../../server/rpc_server_wallet/signing.rs");
+    assert!(
+        signing.contains("NativeDeployedContractProviderFactory"),
+        "wallet AddWithScriptHash should resolve deployed contracts through the shared provider"
+    );
+    assert!(
+        !signing.contains("ContractManagement::get_contract_from_snapshot"),
+        "wallet signing should not reach into ContractManagement storage directly"
+    );
+}
+
 /// Genesis-block timestamp seeded by the RPC test harness
 /// (`seed_genesis_state` / `genesis_header`).
 const GENESIS_TIMESTAMP: u64 = 1_468_595_301_000;
