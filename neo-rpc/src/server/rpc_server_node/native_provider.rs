@@ -7,7 +7,6 @@
 
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::PolicyContract;
 use neo_storage::persistence::DataCache;
 use std::sync::Arc;
 
@@ -61,7 +60,7 @@ impl NodeNativeProvider for NativeNodeProvider {
         settings: &ProtocolSettings,
     ) -> Result<VersionPolicyValues, RpcException> {
         self.adapter
-            .with_contract::<PolicyContract, _>("PolicyContract", |policy| {
+            .with_policy(|policy| {
                 Ok(VersionPolicyValues {
                     milliseconds_per_block: policy
                         .get_milliseconds_per_block_snapshot(snapshot, settings)?,

@@ -257,6 +257,14 @@ fn rpc_policy_native_providers_share_adapter_helper() {
             "{name} Policy provider should use the shared native-provider adapter"
         );
         assert!(
+            source.contains(".with_policy("),
+            "{name} Policy provider should use the shared Policy adapter method"
+        );
+        assert!(
+            !source.contains("PolicyContract"),
+            "{name} Policy provider should not name the concrete PolicyContract type"
+        );
+        assert!(
             !source.contains("get_native_contract_by_name(\"PolicyContract\")"),
             "{name} Policy provider should not duplicate native-contract lookup"
         );
@@ -277,7 +285,7 @@ fn rpc_session_policy_reads_use_composed_native_provider() {
         "session native provider should adapt the composition-root provider through the shared adapter"
     );
     assert!(
-        provider.contains("with_contract::<PolicyContract"),
+        provider.contains(".with_policy("),
         "session native provider should downcast through the shared native provider adapter"
     );
     assert!(
@@ -334,7 +342,7 @@ fn smart_contract_wallet_policy_reads_use_composed_native_provider() {
         "smart-contract native provider should adapt the composition-root provider through the shared adapter"
     );
     assert!(
-        provider.contains("with_contract::<PolicyContract"),
+        provider.contains(".with_policy("),
         "smart-contract native provider should downcast through the shared native provider adapter"
     );
     assert!(
@@ -372,7 +380,7 @@ fn wallet_compat_policy_reads_use_composed_native_provider() {
         "wallet-compat native provider should adapt the composition-root provider through the shared adapter"
     );
     assert!(
-        provider.contains("with_contract::<PolicyContract"),
+        provider.contains(".with_policy("),
         "wallet-compat native provider should downcast through the shared native provider adapter"
     );
     assert!(
@@ -410,7 +418,7 @@ fn rpc_wallet_policy_reads_use_composed_native_provider() {
         "wallet native provider should adapt the composition-root provider through the shared adapter"
     );
     assert!(
-        provider.contains("with_contract::<PolicyContract"),
+        provider.contains(".with_policy("),
         "wallet native provider should downcast through the shared native provider adapter"
     );
     assert!(

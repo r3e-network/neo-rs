@@ -7,6 +7,7 @@
 
 use neo_error::{CoreError, CoreResult};
 use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_native_contracts::PolicyContract;
 use std::sync::Arc;
 
 /// Adapter over the node-composed native-contract provider.
@@ -43,6 +44,14 @@ impl NativeProviderAdapter {
             CoreError::invalid_operation(format!("native provider returned non-{name}"))
         })?;
         f(typed)
+    }
+
+    /// Resolves the canonical Policy native contract and invokes `f`.
+    pub(crate) fn with_policy<R>(
+        &self,
+        f: impl FnOnce(&PolicyContract) -> CoreResult<R>,
+    ) -> CoreResult<R> {
+        self.with_contract("PolicyContract", f)
     }
 }
 

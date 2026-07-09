@@ -87,8 +87,12 @@ fn get_version_dynamic_policy_reads_use_node_native_provider_boundary() {
         "node native provider should adapt the composition-root provider through the shared adapter"
     );
     assert!(
-        provider.contains("with_contract::<PolicyContract"),
+        provider.contains(".with_policy("),
         "node native provider should downcast through the shared native provider adapter"
+    );
+    assert!(
+        !provider.contains("PolicyContract"),
+        "node native provider should not name the concrete PolicyContract type"
     );
     assert!(
         provider.contains("get_milliseconds_per_block_snapshot")

@@ -7,7 +7,6 @@
 
 use neo_error::CoreResult;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::PolicyContract;
 use neo_storage::DataCache;
 use std::sync::Arc;
 
@@ -39,8 +38,6 @@ impl NativeWalletProvider {
 impl WalletNativeProvider for NativeWalletProvider {
     fn fee_per_byte(&self, snapshot: &DataCache) -> CoreResult<u32> {
         self.adapter
-            .with_contract::<PolicyContract, _>("PolicyContract", |policy| {
-                policy.get_fee_per_byte_snapshot(snapshot)
-            })
+            .with_policy(|policy| policy.get_fee_per_byte_snapshot(snapshot))
     }
 }

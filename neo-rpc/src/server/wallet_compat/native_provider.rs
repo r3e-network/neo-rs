@@ -8,7 +8,6 @@
 use neo_config::ProtocolSettings;
 use neo_error::CoreResult;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::PolicyContract;
 use neo_storage::DataCache;
 use std::sync::Arc;
 
@@ -52,16 +51,13 @@ impl WalletCompatNativeProvider for NativeWalletCompatProvider {
         settings: &ProtocolSettings,
         block_index: u32,
     ) -> CoreResult<u32> {
-        self.adapter
-            .with_contract::<PolicyContract, _>("PolicyContract", |policy| {
-                policy.get_exec_fee_factor_snapshot(snapshot, settings, block_index)
-            })
+        self.adapter.with_policy(|policy| {
+            policy.get_exec_fee_factor_snapshot(snapshot, settings, block_index)
+        })
     }
 
     fn fee_per_byte(&self, snapshot: &DataCache) -> CoreResult<u32> {
         self.adapter
-            .with_contract::<PolicyContract, _>("PolicyContract", |policy| {
-                policy.get_fee_per_byte_snapshot(snapshot)
-            })
+            .with_policy(|policy| policy.get_fee_per_byte_snapshot(snapshot))
     }
 }

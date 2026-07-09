@@ -9,7 +9,6 @@
 use neo_config::ProtocolSettings;
 use neo_error::CoreResult;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::PolicyContract;
 use neo_storage::DataCache;
 use std::sync::Arc;
 
@@ -55,10 +54,9 @@ impl SessionNativeProvider for NativeSessionProvider {
         snapshot: &DataCache,
         settings: &ProtocolSettings,
     ) -> CoreResult<u32> {
-        self.adapter
-            .with_contract::<PolicyContract, _>("PolicyContract", |policy| {
-                policy.get_max_valid_until_block_increment_snapshot(snapshot, settings)
-            })
+        self.adapter.with_policy(|policy| {
+            policy.get_max_valid_until_block_increment_snapshot(snapshot, settings)
+        })
     }
 
     fn milliseconds_per_block(
@@ -67,8 +65,6 @@ impl SessionNativeProvider for NativeSessionProvider {
         settings: &ProtocolSettings,
     ) -> CoreResult<u32> {
         self.adapter
-            .with_contract::<PolicyContract, _>("PolicyContract", |policy| {
-                policy.get_milliseconds_per_block_snapshot(snapshot, settings)
-            })
+            .with_policy(|policy| policy.get_milliseconds_per_block_snapshot(snapshot, settings))
     }
 }

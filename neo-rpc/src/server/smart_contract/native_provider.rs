@@ -8,7 +8,6 @@
 use neo_config::ProtocolSettings;
 use neo_error::CoreResult;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::PolicyContract;
 use neo_storage::DataCache;
 use std::sync::Arc;
 
@@ -47,9 +46,8 @@ impl SmartContractNativeProvider for NativeSmartContractProvider {
         snapshot: &DataCache,
         settings: &ProtocolSettings,
     ) -> CoreResult<u32> {
-        self.adapter
-            .with_contract::<PolicyContract, _>("PolicyContract", |policy| {
-                policy.get_max_valid_until_block_increment_snapshot(snapshot, settings)
-            })
+        self.adapter.with_policy(|policy| {
+            policy.get_max_valid_until_block_increment_snapshot(snapshot, settings)
+        })
     }
 }
