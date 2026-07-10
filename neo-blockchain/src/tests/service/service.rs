@@ -46,6 +46,26 @@ impl crate::service_context::SystemContext for TestContext {
     }
 }
 
+#[derive(Debug)]
+struct StopAfterCommandContext;
+
+impl crate::service_context::SystemContext for StopAfterCommandContext {
+    type NativeProvider = neo_native_contracts::StandardNativeProvider;
+    type CacheBacking = neo_storage::EmptyCacheBacking;
+
+    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
+        Arc::new(neo_config::ProtocolSettings::default())
+    }
+
+    fn current_height(&self) -> u32 {
+        0
+    }
+
+    fn should_stop_blockchain_service(&self) -> bool {
+        true
+    }
+}
+
 #[test]
 fn blockchain_service_can_be_assembled_from_concrete_types() {
     let system = Arc::new(TestContext);
@@ -100,6 +120,46 @@ async fn handle_shutdown_stops_service_run_loop() {
         .await
         .expect("shutdown wait task")
         .expect("service run loop should stop after shutdown");
+    task.await.expect("service task");
+}
+
+#[tokio::test]
+async fn fatal_persistence_state_drops_queued_commands_immediately() {
+    let system = Arc::new(StopAfterCommandContext);
+    let ledger = Arc::new(LedgerContext::default());
+    let header_cache = Arc::new(HeaderCache::default());
+    let mempool = Arc::new(TestMempool);
+    let (service, handle) = BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+
+    let (first_reply, first_response) = tokio::sync::oneshot::channel();
+    handle
+        .cmd_tx
+        .send(BlockchainCommand::GetHeight { reply: first_reply })
+        .await
+        .expect("queue first command");
+    let (second_reply, second_response) = tokio::sync::oneshot::channel();
+    handle
+        .cmd_tx
+        .send(BlockchainCommand::GetHeight {
+            reply: second_reply,
+        })
+        .await
+        .expect("queue second command");
+
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let task = tokio::spawn(async move {
+        service.run().await;
+        let _ = done_tx.send(());
+    });
+    assert_eq!(first_response.await.expect("first command reply"), 0);
+    assert!(
+        second_response.await.is_err(),
+        "queued commands after a fatal persistence result must be dropped"
+    );
+    tokio::task::spawn_blocking(move || done_rx.recv_timeout(std::time::Duration::from_secs(1)))
+        .await
+        .expect("fatal stop wait task")
+        .expect("fatal service stop timeout");
     task.await.expect("service task");
 }
 
@@ -261,12 +321,39 @@ async fn handle_add_transaction_round_trips_service_reply() {
 async fn handle_initializes_without_exposing_command_enum() {
     let (handle, mut cmd_rx, _event_tx) = BlockchainHandle::channel(4, 4);
 
-    handle.initialize().await.expect("initialize");
+    let task = tokio::spawn(async move { handle.initialize().await });
 
     match cmd_rx.recv().await.expect("initialize command") {
-        BlockchainCommand::Initialize => {}
+        BlockchainCommand::Initialize { reply } => {
+            reply.send(Ok(())).expect("initialize reply send");
+        }
         other => panic!("expected Initialize command, got {other:?}"),
     }
+    task.await
+        .expect("initialize task")
+        .expect("initialize result");
+}
+
+#[tokio::test]
+async fn handle_initialization_surfaces_durable_genesis_failure() {
+    let (handle, mut cmd_rx, _event_tx) = BlockchainHandle::channel(4, 4);
+    let task = tokio::spawn(async move { handle.initialize().await });
+
+    match cmd_rx.recv().await.expect("initialize command") {
+        BlockchainCommand::Initialize { reply } => {
+            reply
+                .send(Err("injected genesis commit failure".to_string()))
+                .expect("initialize reply send");
+        }
+        other => panic!("expected Initialize command, got {other:?}"),
+    }
+
+    let error = task
+        .await
+        .expect("initialize task")
+        .expect_err("initialization error must reach the handle caller");
+    assert_eq!(error.category(), "internal");
+    assert!(error.to_string().contains("genesis commit failure"));
 }
 
 #[test]

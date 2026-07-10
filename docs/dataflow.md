@@ -52,6 +52,10 @@ Two startup details matter for correctness:
   The in-memory ledger tip and the advertised height are seeded from it, so a
   restarted node requests blocks from `tip + 1` instead of re-syncing from
   genesis (`neo-system::NodeCoreBuilder`).
+- **Genesis fence.** Local initialization is a typed request/reply command. The
+  daemon waits for genesis staging, backend flush, and ledger-cache publication;
+  a persistence failure is returned to startup and prevents the node from
+  opening live services on an uninitialized store.
 
 ## 2. Block ingestion
 
@@ -110,6 +114,8 @@ sequenceDiagram
     participant BC as BlockchainService (neo-blockchain)
     participant NP as native_persist pipeline
     participant AE as ApplicationEngine (neo-execution)
+    participant Guard as LocalReplayGuard (neo-node)
+    participant State as StateService / persistent indexer
     participant Store as DataCache / StoreCache (neo-storage)
 
     Peer->>RN: block message
@@ -130,7 +136,18 @@ sequenceDiagram
     end
     NP->>AE: PostPersist engine
     NP->>Store: stage all writes in child cache, commit on success
-    BC->>Store: commit_to_store() flush to durable backend
+    opt independent pre-commit store configured
+        BC->>Guard: write + fsync recovery marker
+        BC->>State: pre-commit update + durable fence
+    end
+    BC->>Store: commit_to_store() -> Result<br/>flush to durable backend
+    alt commit failed
+        Store-->>BC: error; discard root overlay
+        BC->>BC: rewind staged batch tip; publish nothing
+    else commit succeeded
+        BC->>Guard: remove marker + sync directory
+        BC->>BC: block_committed observers in height order
+    end
     BC->>BC: mempool.block_persisted (drop mined + conflicts)
     BC-->>Fwd: RuntimeEvent::Imported { height }
 ```
@@ -310,10 +327,33 @@ Key points:
   store; `commit()` merges a child into its parent atomically, and dropping a
   child discards its writes. This is the per-block atomicity mechanism
   (`neo-blockchain/src/native_persist.rs`).
-- **Durability.** `commit_to_store()` flushes the snapshot's tracked writes
-  through the `StoreCache` to the configured store backend. MDBX is the
-  production default, RocksDB remains a supported fallback, and the in-memory
-  backend does not persist across restarts.
+- **Durability.** `commit_to_store()` is fallible and flushes the snapshot's
+  tracked writes through `StoreCache::try_commit_durable()` to the configured
+  backend. Every canonical backend must implement the atomic durable borrowed-
+  overlay capability; the writer rejects unsupported stores instead of using
+  an unsafe commit-then-flush fallback. MDBX uses one atomic write transaction,
+  while RocksDB bypasses fast-sync buffering with a WAL-synchronous batch and
+  first persists any earlier WAL-disabled prefix.
+  A failure discards the uncommitted root overlay; bulk paths also rewind their
+  staged in-memory tip. Post-commit observers, mempool maintenance, and import
+  events run only after this fence succeeds. MDBX is the production default,
+  RocksDB remains a supported fallback, and the in-memory backend does not
+  persist across restarts.
+- **Cross-store recovery.** StateService and a persistent indexer do not share a
+  transaction with the canonical Ledger store. The node writes and fsyncs
+  `.neo-local-replay-poisoned` before either pre-commit store can publish, then
+  durably fences both observer backends before committing Ledger. A persistent
+  observer mutation or fence failure rejects the block. Canonical success
+  removes the marker and syncs its directory. A crash, deferred-hook
+  failure, or Ledger commit failure leaves the marker for startup to reject.
+  Startup also rejects an MPT height that does not match the canonical height,
+  including the genesis edge case where the chain is uninitialized but
+  StateService already has root `0`. Operators must restore matching stores;
+  pruning-mode MPT data is never guessed or rolled back automatically.
+  ApplicationLogs and TokensTracker persist post-canonical and do not arm this
+  marker. Even without an auxiliary-store hazard, canonical durability failure
+  cancels the node because the process must not continue on an indeterminate
+  storage result.
 - **Typed table boundary.** `neo-storage::persistence::Table`,
   `TableCodec`, and `TableReader` give storage code a typed table API over the
   existing raw bytes. `StorageKey` still encodes with `to_array()` and

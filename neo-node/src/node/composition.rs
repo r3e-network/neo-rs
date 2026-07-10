@@ -26,6 +26,7 @@ use super::inventory_relay::{
 };
 use super::ledger_source::{LedgerBlockSource, RpcLedgerBlockSource, store_ledger_index};
 use super::observability;
+use super::recovery::{LocalReplayGuard, local_replay_marker_path, refuse_local_replay_marker};
 use super::remote_ledger::RemoteLedgerStatus;
 use super::services::{self, NodeServiceHandles, OperationalServices};
 use super::sync_downloader;
@@ -119,6 +120,18 @@ pub(in crate::node) async fn build_node(
     startup_bulk_import: bool,
     observability: Option<observability::ObservabilityRuntime>,
 ) -> anyhow::Result<RunningNode> {
+    let persistent_storage_root = ledger_mode
+        .uses_local_replay_services()
+        .then(|| {
+            storage_override
+                .map(Path::to_path_buf)
+                .or_else(|| config.storage.data_directory())
+        })
+        .flatten();
+    let replay_marker_path = local_replay_marker_path(persistent_storage_root.as_deref());
+    refuse_local_replay_marker(replay_marker_path.as_deref())?;
+    let shutdown = CancellationToken::new();
+
     // ----- storage backend -----
     let store: Arc<RuntimeStore> = match ledger_mode {
         LedgerMode::Local => open_store(config, storage_override)?,
@@ -183,6 +196,7 @@ pub(in crate::node) async fn build_node(
         config.state_service.track_during_catchup,
         indexer_service.clone(),
         application_logs_service.clone(),
+        Arc::new(LocalReplayGuard::new(replay_marker_path, shutdown.clone())),
     ));
     let core_launch = neo_system::NodeCoreBuilder::new(
         Arc::clone(&settings),
@@ -238,7 +252,6 @@ pub(in crate::node) async fn build_node(
         ))),
     };
 
-    let shutdown = CancellationToken::new();
     let mut handles = Vec::new();
     spawn_daemon_task(
         &mut handles,
@@ -254,7 +267,7 @@ pub(in crate::node) async fn build_node(
         blockchain
             .initialize()
             .await
-            .map_err(|_| anyhow::anyhow!("blockchain service command loop closed during init"))?;
+            .map_err(|error| anyhow::anyhow!("blockchain initialization failed: {error}"))?;
     } else {
         info!(
             target: "neo::remote_ledger",

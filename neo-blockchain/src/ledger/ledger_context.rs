@@ -82,6 +82,20 @@ impl LedgerContext {
         self.best_header.fetch_max(index, Ordering::Relaxed);
     }
 
+    /// Rewinds block-derived cache state to the last durable height.
+    ///
+    /// This is used only after an atomic backend commit fails. Full block and
+    /// header LRUs are cleared because retaining entries above `index` would
+    /// let read paths observe data the durable ledger rejected; older entries
+    /// remain available through the store-backed provider.
+    pub(crate) fn rewind_to(&self, index: u32) {
+        self.best_height.store(index, Ordering::Relaxed);
+        self.best_header.store(index, Ordering::Relaxed);
+        self.hashes_by_index.write().truncate(index as usize + 1);
+        self.headers_by_index.lock().clear();
+        self.blocks_by_hash.lock().clear();
+    }
+
     /// Inserts a transaction into the mempool cache and returns its
     /// hash.
     pub fn insert_transaction(&self, transaction: Transaction) -> CoreResult<UInt256> {
@@ -109,9 +123,18 @@ impl LedgerContext {
     /// Records a shared block and its header for quick access by hash or
     /// index without forcing a deep clone at the call site.
     pub(crate) fn insert_block_arc(&self, block: Arc<Block>) -> CoreResult<UInt256> {
+        let hash = block.try_hash()?;
+        self.insert_block_arc_with_hash(block, hash);
+        Ok(hash)
+    }
+
+    /// Records a block after its hash has been computed by the caller.
+    ///
+    /// Persistence paths use this form so no fallible work remains after a
+    /// staged block has merged into the canonical batch snapshot.
+    pub(crate) fn insert_block_arc_with_hash(&self, block: Arc<Block>, hash: UInt256) {
         let header = block.header.clone();
         let index = header.index();
-        let hash = block.try_hash()?;
 
         self.blocks_by_hash.lock().put(hash, block);
         self.headers_by_index.lock().put(index, header);
@@ -127,7 +150,6 @@ impl LedgerContext {
 
         self.best_height.fetch_max(index, Ordering::Relaxed);
         self.best_header.fetch_max(index, Ordering::Relaxed);
-        Ok(hash)
     }
 
     /// Retrieves a cached block by hash.

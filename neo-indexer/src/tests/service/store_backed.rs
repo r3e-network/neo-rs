@@ -35,6 +35,9 @@ fn store_backed_service_round_trips_prefixed_records() {
             )],
         )
         .expect("index block notifications");
+    service
+        .flush_durable()
+        .expect("fence persistent indexer records");
 
     let restored =
         IndexerService::open_store_with_path(Arc::clone(&store), Some(store_path.clone()))

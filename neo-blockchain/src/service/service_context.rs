@@ -117,8 +117,29 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
     /// a block's native-persist pipeline) through to the durable backing store.
     /// The blockchain service calls this once per successfully persisted block
     /// (mirroring C# `snapshot.Commit()` at the end of `Blockchain.Persist`).
-    /// The default is a no-op for store-less / in-memory test contexts.
-    fn commit_to_store(&self) {}
+    /// The default is a successful no-op for store-less test contexts.
+    ///
+    /// A commit error must reach the import path, and implementations must
+    /// discard the failed root overlay before returning it. Logging and
+    /// continuing would let in-memory tip state and post-commit observers
+    /// advance past the last durable block.
+    fn commit_to_store(&self) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// Discards the canonical overlay after a pre-commit fence or durable
+    /// backend commit fails.
+    ///
+    /// Store-backed implementations must restore reads to the last durable
+    /// snapshot. The default remains a no-op for store-less test contexts.
+    fn abort_store_commit(&self) {}
+
+    /// Returns whether a fatal persistence condition requires the active
+    /// command to abort and the canonical writer loop to stop before
+    /// dispatching another command.
+    fn should_stop_blockchain_service(&self) -> bool {
+        false
+    }
 
     /// Flushes any deferred commit-handler work that was queued during a trusted
     /// bulk-sync batch before the batch is durably committed.

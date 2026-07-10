@@ -16,11 +16,35 @@ fn sign_header_for_test(
     neo_payloads::Witness::new_with_scripts(invocation, verification.to_vec())
 }
 
+fn first_two_empty_blocks() -> (Block, Block) {
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Block::from_parts(header1, Vec::new());
+    let block1_hash = BlockchainService::<StoreContext, TestMempool>::try_block_hash(&block1)
+        .expect("block 1 hash");
+
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+
+    (block1, Block::from_parts(header2, Vec::new()))
+}
+
 struct FailingSecondCommitContext {
     snapshot: Arc<neo_storage::DataCache>,
     settings: Arc<neo_config::ProtocolSettings>,
     commit_attempts: Arc<AtomicUsize>,
     commit_to_store_calls: Arc<AtomicUsize>,
+    abort_store_commit_calls: Arc<AtomicUsize>,
+    fatal_on_rejection: bool,
 }
 
 impl std::fmt::Debug for FailingSecondCommitContext {
@@ -59,8 +83,18 @@ impl SystemContext for FailingSecondCommitContext {
         self.commit_attempts.fetch_add(1, Ordering::SeqCst) == 0
     }
 
-    fn commit_to_store(&self) {
+    fn abort_store_commit(&self) {
+        self.abort_store_commit_calls.fetch_add(1, Ordering::SeqCst);
+        self.snapshot.reset();
+    }
+
+    fn should_stop_blockchain_service(&self) -> bool {
+        self.fatal_on_rejection && self.commit_attempts.load(Ordering::SeqCst) >= 2
+    }
+
+    fn commit_to_store(&self) -> Result<(), String> {
         self.commit_to_store_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(())
     }
 
     fn allows_empty_block_fast_forward(&self) -> bool {
@@ -73,6 +107,156 @@ struct FailingBulkFlushContext {
     settings: Arc<neo_config::ProtocolSettings>,
     flush_calls: Arc<AtomicUsize>,
     commit_to_store_calls: Arc<AtomicUsize>,
+}
+
+struct FailingDurableCommitContext {
+    snapshot: Arc<neo_storage::DataCache>,
+    settings: Arc<neo_config::ProtocolSettings>,
+    fail_commits: Arc<std::sync::atomic::AtomicBool>,
+    commit_calls: Arc<AtomicUsize>,
+    committed_heights: Arc<parking_lot::Mutex<Vec<u32>>>,
+}
+
+struct StopAfterDurableCommitContext {
+    snapshot: Arc<neo_storage::DataCache>,
+    settings: Arc<neo_config::ProtocolSettings>,
+    arm_stop: Arc<std::sync::atomic::AtomicBool>,
+    stop_requested: Arc<std::sync::atomic::AtomicBool>,
+    commit_calls: Arc<AtomicUsize>,
+    committed_heights: Arc<parking_lot::Mutex<Vec<u32>>>,
+}
+
+impl std::fmt::Debug for StopAfterDurableCommitContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StopAfterDurableCommitContext")
+            .finish_non_exhaustive()
+    }
+}
+
+impl SystemContext for StopAfterDurableCommitContext {
+    type NativeProvider = neo_native_contracts::StandardNativeProvider;
+    type CacheBacking = neo_storage::EmptyCacheBacking;
+
+    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
+        Arc::clone(&self.settings)
+    }
+
+    fn current_height(&self) -> u32 {
+        0
+    }
+
+    fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache>> {
+        Some(Arc::clone(&self.snapshot))
+    }
+
+    fn native_contract_provider(&self) -> Option<NativeProviderArc> {
+        Some(standard_native_provider())
+    }
+
+    fn commit_to_store(&self) -> Result<(), String> {
+        self.commit_calls.fetch_add(1, Ordering::SeqCst);
+        if self.arm_stop.load(Ordering::SeqCst) {
+            self.stop_requested.store(true, Ordering::SeqCst);
+        }
+        Ok(())
+    }
+
+    fn should_stop_blockchain_service(&self) -> bool {
+        self.stop_requested.load(Ordering::SeqCst)
+    }
+
+    fn block_committed(&self, block: &Block) {
+        self.committed_heights.lock().push(block.index());
+    }
+
+    fn block_committed_with_context(
+        &self,
+        block: &Block,
+        _context: crate::service_context::BlockPersistContext,
+    ) {
+        self.block_committed(block);
+    }
+
+    fn allows_empty_block_fast_forward(&self) -> bool {
+        false
+    }
+}
+
+impl std::fmt::Debug for FailingDurableCommitContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FailingDurableCommitContext")
+            .finish_non_exhaustive()
+    }
+}
+
+impl SystemContext for FailingDurableCommitContext {
+    type NativeProvider = neo_native_contracts::StandardNativeProvider;
+    type CacheBacking = neo_storage::EmptyCacheBacking;
+
+    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
+        Arc::clone(&self.settings)
+    }
+
+    fn current_height(&self) -> u32 {
+        0
+    }
+
+    fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache>> {
+        Some(Arc::clone(&self.snapshot))
+    }
+
+    fn native_contract_provider(&self) -> Option<NativeProviderArc> {
+        Some(standard_native_provider())
+    }
+
+    fn commit_to_store(&self) -> Result<(), String> {
+        self.commit_calls.fetch_add(1, Ordering::SeqCst);
+        if self.fail_commits.load(Ordering::SeqCst) {
+            Err("injected durable store failure".to_string())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn block_committed(&self, block: &Block) {
+        self.committed_heights.lock().push(block.index());
+    }
+
+    fn block_committed_with_context(
+        &self,
+        block: &Block,
+        _context: crate::service_context::BlockPersistContext,
+    ) {
+        self.block_committed(block);
+    }
+
+    fn allows_empty_block_fast_forward(&self) -> bool {
+        false
+    }
+}
+
+fn failing_durable_commit_fixture() -> (
+    BlockchainService<FailingDurableCommitContext, TestMempool>,
+    Arc<std::sync::atomic::AtomicBool>,
+    Arc<AtomicUsize>,
+    Arc<parking_lot::Mutex<Vec<u32>>>,
+) {
+    let fail_commits = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let commit_calls = Arc::new(AtomicUsize::new(0));
+    let committed_heights = Arc::new(parking_lot::Mutex::new(Vec::new()));
+    let system = Arc::new(FailingDurableCommitContext {
+        snapshot: Arc::new(neo_storage::DataCache::new(false)),
+        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        fail_commits: Arc::clone(&fail_commits),
+        commit_calls: Arc::clone(&commit_calls),
+        committed_heights: Arc::clone(&committed_heights),
+    });
+    let ledger = Arc::new(LedgerContext::default());
+    let header_cache = Arc::new(HeaderCache::default());
+    let mempool = Arc::new(TestMempool);
+    let (service, _handle) =
+        BlockchainService::with_defaults(system, ledger, header_cache, mempool);
+    (service, fail_commits, commit_calls, committed_heights)
 }
 
 impl std::fmt::Debug for FailingBulkFlushContext {
@@ -107,8 +291,13 @@ impl SystemContext for FailingBulkFlushContext {
         Err("state-root worker reported a failed operation".to_string())
     }
 
-    fn commit_to_store(&self) {
+    fn abort_store_commit(&self) {
+        self.snapshot.reset();
+    }
+
+    fn commit_to_store(&self) -> Result<(), String> {
         self.commit_to_store_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(())
     }
 
     fn allows_empty_block_fast_forward(&self) -> bool {
@@ -194,7 +383,7 @@ async fn initialize_bootstraps_genesis_once_and_inventory_runs_native_hooks() {
 
     // C# Blockchain.OnInitialize: an uninitialized store gets the
     // genesis block persisted (native deploy seeds + mints).
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     assert!(crate::native_persist::chain_state_initialized(&snapshot));
     assert_eq!(
         neo_total_supply(&snapshot),
@@ -217,7 +406,7 @@ async fn initialize_bootstraps_genesis_once_and_inventory_runs_native_hooks() {
     // Re-initializing must NOT re-persist (the initialized probe
     // guards the C# `Ledger.Initialized` branch): the supply stays
     // 100M instead of doubling.
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     assert_eq!(
         neo_total_supply(&snapshot),
         Some(num_bigint::BigInt::from(100_000_000))
@@ -260,7 +449,7 @@ async fn initialize_bootstraps_genesis_once_and_inventory_runs_native_hooks() {
 #[tokio::test]
 async fn state_service_failure_aborts_before_chain_tip_advances() {
     let (service, _handle, snapshot, state_store) = store_fixture_with_state_service();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     assert_eq!(service.ledger.current_height(), 0);
     assert_eq!(
         neo_native_contracts::LedgerContract::new()
@@ -334,7 +523,7 @@ async fn bulk_import_flush_failure_aborts_batch_before_durable_store_commit() {
     let mempool = Arc::new(TestMempool);
     let (service, _handle) =
         BlockchainService::with_defaults(system, ledger, header_cache, mempool);
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     flush_calls.store(0, Ordering::SeqCst);
     commit_to_store_calls.store(0, Ordering::SeqCst);
 
@@ -357,15 +546,15 @@ async fn bulk_import_flush_failure_aborts_batch_before_durable_store_commit() {
 
     let imported = service
         .handle_import(Import {
-            blocks: vec![block1, Block::from_parts(header2, vec![])],
+            blocks: vec![genesis, block1, Block::from_parts(header2, vec![])],
             verify: false,
             bulk_sync: true,
         })
         .await;
 
     assert_eq!(
-        imported.imported, 2,
-        "bulk importer should preserve the accepted prefix count when finalization fails"
+        imported.imported, 1,
+        "only the already-present genesis block remains durable after rewind"
     );
     assert!(
         imported
@@ -398,12 +587,254 @@ async fn bulk_import_flush_failure_aborts_batch_before_durable_store_commit() {
         imported.stats.finalization_elapsed >= imported.stats.finalization_commit_handlers_elapsed,
         "aggregate finalization must cover commit-handler flush time"
     );
+    assert_eq!(
+        service.ledger.current_height(),
+        0,
+        "failed bulk finalization must rewind the in-memory canonical tip"
+    );
+}
+
+#[tokio::test]
+async fn live_commit_failure_does_not_publish_or_advance_the_in_memory_tip() {
+    let (service, fail_commits, commit_calls, committed_heights) = failing_durable_commit_fixture();
+    service.initialize().await.expect("initialize");
+    committed_heights.lock().clear();
+    fail_commits.store(true, Ordering::SeqCst);
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp() + 15_000);
+    header.set_next_consensus(*genesis.header.next_consensus());
+
+    let error = service
+        .handle_block_inventory(Arc::new(Block::from_parts(header, Vec::new())), false, true)
+        .await
+        .expect_err("injected commit failure must reject the block");
+
+    assert!(error.to_string().contains("durable store commit failed"));
+    assert_eq!(commit_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(service.ledger.current_height(), 0);
+    assert!(
+        committed_heights.lock().is_empty(),
+        "post-commit observers must not run after a failed durable commit"
+    );
+}
+
+#[tokio::test]
+async fn non_bulk_import_reply_surfaces_durable_commit_failure() {
+    let (service, fail_commits, _commit_calls, committed_heights) =
+        failing_durable_commit_fixture();
+    service.initialize().await.expect("initialize");
+    committed_heights.lock().clear();
+    fail_commits.store(true, Ordering::SeqCst);
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp() + 15_000);
+    header.set_next_consensus(*genesis.header.next_consensus());
+
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![Block::from_parts(header, Vec::new())],
+            verify: false,
+            bulk_sync: false,
+        })
+        .await;
+
+    assert_eq!(imported.imported, 0);
+    assert!(
+        imported
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("durable store commit failed"))
+    );
+    assert_eq!(service.ledger.current_height(), 0);
+    assert!(committed_heights.lock().is_empty());
+}
+
+#[tokio::test]
+async fn non_bulk_import_stops_after_durable_block_requests_writer_shutdown() {
+    let arm_stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop_requested = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let commit_calls = Arc::new(AtomicUsize::new(0));
+    let committed_heights = Arc::new(parking_lot::Mutex::new(Vec::new()));
+    let system = Arc::new(StopAfterDurableCommitContext {
+        snapshot: Arc::new(neo_storage::DataCache::new(false)),
+        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        arm_stop: Arc::clone(&arm_stop),
+        stop_requested: Arc::clone(&stop_requested),
+        commit_calls: Arc::clone(&commit_calls),
+        committed_heights: Arc::clone(&committed_heights),
+    });
+    let (service, _handle) = BlockchainService::with_defaults(
+        system,
+        Arc::new(LedgerContext::default()),
+        Arc::new(HeaderCache::default()),
+        Arc::new(TestMempool),
+    );
+    service.initialize().await.expect("initialize");
+    commit_calls.store(0, Ordering::SeqCst);
+    committed_heights.lock().clear();
+    arm_stop.store(true, Ordering::SeqCst);
+
+    let (block1, block2) = first_two_empty_blocks();
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![block1, block2],
+            verify: false,
+            bulk_sync: false,
+        })
+        .await;
+
+    assert_eq!(imported.imported, 1, "the first block is already durable");
+    assert!(
+        imported
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("writer shutdown requested"))
+    );
+    assert_eq!(commit_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(service.ledger.current_height(), 1);
+    assert_eq!(committed_heights.lock().as_slice(), &[1]);
+    assert!(stop_requested.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn bulk_import_reports_shutdown_requested_after_successful_durable_fence() {
+    let arm_stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop_requested = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let commit_calls = Arc::new(AtomicUsize::new(0));
+    let committed_heights = Arc::new(parking_lot::Mutex::new(Vec::new()));
+    let system = Arc::new(StopAfterDurableCommitContext {
+        snapshot: Arc::new(neo_storage::DataCache::new(false)),
+        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        arm_stop: Arc::clone(&arm_stop),
+        stop_requested: Arc::clone(&stop_requested),
+        commit_calls: Arc::clone(&commit_calls),
+        committed_heights: Arc::clone(&committed_heights),
+    });
+    let (service, _handle) = BlockchainService::with_defaults(
+        system,
+        Arc::new(LedgerContext::default()),
+        Arc::new(HeaderCache::default()),
+        Arc::new(TestMempool),
+    );
+    service.initialize().await.expect("initialize");
+    commit_calls.store(0, Ordering::SeqCst);
+    committed_heights.lock().clear();
+    arm_stop.store(true, Ordering::SeqCst);
+
+    let (block1, block2) = first_two_empty_blocks();
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![block1, block2],
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+
+    assert_eq!(
+        imported.imported, 2,
+        "the atomic batch completed its durable fence"
+    );
+    assert!(
+        imported
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("writer shutdown was requested"))
+    );
+    assert_eq!(commit_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(service.ledger.current_height(), 2);
+    assert_eq!(committed_heights.lock().as_slice(), &[1, 2]);
+    assert!(stop_requested.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn bulk_commit_failure_rewinds_staged_tip_and_suppresses_post_commit_hooks() {
+    let (service, fail_commits, commit_calls, committed_heights) = failing_durable_commit_fixture();
+    service.initialize().await.expect("initialize");
+    committed_heights.lock().clear();
+    fail_commits.store(true, Ordering::SeqCst);
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let mut header1 = Header::new();
+    header1.set_index(1);
+    header1.set_prev_hash(genesis.hash());
+    header1.set_timestamp(genesis.header.timestamp() + 15_000);
+    header1.set_next_consensus(*genesis.header.next_consensus());
+    let block1 = Block::from_parts(header1, Vec::new());
+    let block1_hash = BlockchainService::<StoreContext, TestMempool>::try_block_hash(&block1)
+        .expect("block 1 hash");
+    let mut header2 = Header::new();
+    header2.set_index(2);
+    header2.set_prev_hash(block1_hash);
+    header2.set_timestamp(genesis.header.timestamp() + 30_000);
+    header2.set_next_consensus(*genesis.header.next_consensus());
+
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![block1, Block::from_parts(header2, Vec::new())],
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+
+    assert_eq!(
+        imported.imported, 0,
+        "a failed atomic bulk commit leaves no durable imported prefix"
+    );
+    assert!(
+        imported
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("injected durable store failure"))
+    );
+    assert_eq!(commit_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(service.ledger.current_height(), 0);
+    assert!(committed_heights.lock().is_empty());
+}
+
+#[tokio::test]
+async fn inventory_batch_commit_failure_rewinds_tip_before_publishing_blocks() {
+    let (service, fail_commits, commit_calls, committed_heights) = failing_durable_commit_fixture();
+    service.initialize().await.expect("initialize");
+    committed_heights.lock().clear();
+    fail_commits.store(true, Ordering::SeqCst);
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp() + 15_000);
+    header.set_next_consensus(*genesis.header.next_consensus());
+
+    let error = service
+        .handle_block_inventory_batch(
+            vec![Arc::new(Block::from_parts(header, Vec::new()))],
+            false,
+            true,
+        )
+        .await
+        .expect_err("batch commit failure must reach the caller");
+
+    assert!(error.to_string().contains("durable store commit failed"));
+    assert_eq!(commit_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(service.ledger.current_height(), 0);
+    assert!(committed_heights.lock().is_empty());
 }
 
 #[tokio::test]
 async fn future_inventory_block_is_parked_then_drained_after_parent_persists() {
     let (service, _handle, snapshot) = store_fixture();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
 
     let settings = neo_config::ProtocolSettings::default();
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
@@ -474,7 +905,7 @@ fn unverified_cache_evicts_exact_block_fraction_when_one_height_is_flooded() {
 #[tokio::test]
 async fn inventory_block_batch_persists_consecutive_blocks_through_inventory_path() {
     let (service, _handle, snapshot) = store_fixture();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
 
     let settings = neo_config::ProtocolSettings::default();
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
@@ -498,7 +929,8 @@ async fn inventory_block_batch_persists_consecutive_blocks_through_inventory_pat
 
     let imported = service
         .handle_block_inventory_batch(vec![block1, block2], false, true)
-        .await;
+        .await
+        .expect("inventory batch commit");
 
     assert_eq!(imported, 2);
     assert_eq!(service.ledger.current_height(), 2);
@@ -513,7 +945,7 @@ async fn inventory_block_batch_persists_consecutive_blocks_through_inventory_pat
 #[tokio::test]
 async fn inventory_block_batch_continues_after_rejected_block_like_individual_commands() {
     let (service, _handle, snapshot) = store_fixture();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
 
     let settings = neo_config::ProtocolSettings::default();
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
@@ -539,7 +971,8 @@ async fn inventory_block_batch_continues_after_rejected_block_like_individual_co
             false,
             true,
         )
-        .await;
+        .await
+        .expect("inventory batch commit");
 
     assert_eq!(imported, 1);
     assert_eq!(service.ledger.current_height(), 1);
@@ -555,7 +988,7 @@ async fn inventory_block_batch_continues_after_rejected_block_like_individual_co
 async fn stop_height_allows_target_block_and_rejects_later_blocks() {
     let (mut service, _handle, _snapshot) = store_fixture();
     service.set_stop_at_height(Some(1));
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
 
     let settings = neo_config::ProtocolSettings::default();
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
@@ -623,7 +1056,7 @@ async fn future_block_with_cached_header_hash_mismatch_is_rejected_not_parked() 
 #[tokio::test]
 async fn import_verify_true_rejects_invalid_header_like_csharp() {
     let (service, _handle, snapshot) = store_fixture();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
 
     let settings = neo_config::ProtocolSettings::default();
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
@@ -658,7 +1091,7 @@ async fn import_verify_true_rejects_invalid_header_like_csharp() {
 #[tokio::test]
 async fn import_verify_true_rejects_invalid_transaction_merkle_root() {
     let (service, _handle, snapshot) = store_fixture();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
 
     let settings = neo_config::ProtocolSettings::default();
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
@@ -697,7 +1130,7 @@ async fn import_verify_true_rejects_invalid_transaction_merkle_root() {
 #[tokio::test]
 async fn bulk_import_uses_batch_block_before_parked_duplicate_height() {
     let (service, _handle, snapshot) = store_fixture();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     fund_test_signer_gas(&snapshot, 100_0000_0000);
 
     let settings = neo_config::ProtocolSettings::default();
@@ -770,7 +1203,7 @@ async fn bulk_import_uses_batch_block_before_parked_duplicate_height() {
 #[tokio::test]
 async fn import_verify_false_skips_header_verification_like_csharp() {
     let (service, _handle, snapshot) = store_fixture();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
 
     let settings = neo_config::ProtocolSettings::default();
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
@@ -815,7 +1248,7 @@ async fn import_verify_false_skips_header_verification_like_csharp() {
 async fn explicit_bulk_import_skips_replay_artifacts_but_normal_import_keeps_them() {
     let (normal_service, _normal_handle, _normal_snapshot, normal_lengths) =
         store_fixture_recording_application_executed_lengths();
-    normal_service.initialize().await;
+    normal_service.initialize().await.expect("initialize");
     normal_lengths.lock().clear();
 
     let settings = neo_config::ProtocolSettings::default();
@@ -842,7 +1275,7 @@ async fn explicit_bulk_import_skips_replay_artifacts_but_normal_import_keeps_the
 
     let (bulk_service, _bulk_handle, _bulk_snapshot, bulk_lengths) =
         store_fixture_recording_application_executed_lengths();
-    bulk_service.initialize().await;
+    bulk_service.initialize().await.expect("initialize");
     bulk_lengths.lock().clear();
 
     let mut bulk_header = Header::new();
@@ -870,7 +1303,7 @@ async fn explicit_bulk_import_skips_replay_artifacts_but_normal_import_keeps_the
 async fn bulk_import_flushes_store_once_per_accepted_batch() {
     let (normal_service, _normal_handle, _normal_snapshot, normal_commits) =
         store_fixture_counting_commits();
-    normal_service.initialize().await;
+    normal_service.initialize().await.expect("initialize");
     normal_commits.store(0, Ordering::SeqCst);
 
     let settings = neo_config::ProtocolSettings::default();
@@ -909,7 +1342,7 @@ async fn bulk_import_flushes_store_once_per_accepted_batch() {
 
     let (bulk_service, _bulk_handle, _bulk_snapshot, bulk_commits) =
         store_fixture_counting_commits();
-    bulk_service.initialize().await;
+    bulk_service.initialize().await.expect("initialize");
     bulk_commits.store(0, Ordering::SeqCst);
 
     let mut bulk_header1 = Header::new();
@@ -961,7 +1394,7 @@ async fn bulk_import_flushes_store_once_per_accepted_batch() {
 async fn bulk_import_reuses_store_snapshot_for_accepted_batch() {
     let (service, _handle, _snapshot, snapshot_calls, commit_calls) =
         store_fixture_counting_snapshot_and_commits();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     snapshot_calls.store(0, Ordering::SeqCst);
     commit_calls.store(0, Ordering::SeqCst);
 
@@ -1008,7 +1441,7 @@ async fn bulk_import_reuses_store_snapshot_for_accepted_batch() {
 async fn bulk_import_fast_forwards_empty_run_when_no_per_block_observers_are_active() {
     let (service, _handle, snapshot, snapshot_calls, commit_calls) =
         store_fixture_counting_snapshot_and_commits();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     snapshot_calls.store(0, Ordering::SeqCst);
     commit_calls.store(0, Ordering::SeqCst);
 
@@ -1077,7 +1510,7 @@ async fn bulk_import_fast_forwards_empty_run_when_no_per_block_observers_are_act
 async fn bulk_import_fast_forwards_short_empty_bursts_around_transaction_blocks() {
     let (service, _handle, snapshot, snapshot_calls, commit_calls, committed_heights) =
         store_fixture_counting_snapshot_commits_and_committed_heights();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     fund_test_signer_gas(&snapshot, 100_0000_0000);
     snapshot_calls.store(0, Ordering::SeqCst);
     commit_calls.store(0, Ordering::SeqCst);
@@ -1191,7 +1624,7 @@ async fn bulk_import_fast_forwards_short_empty_bursts_around_transaction_blocks(
 async fn bulk_import_fast_forward_chunks_empty_runs_beyond_one_internal_batch() {
     let (service, _handle, snapshot, snapshot_calls, commit_calls) =
         store_fixture_counting_snapshot_and_commits();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     snapshot_calls.store(0, Ordering::SeqCst);
     commit_calls.store(0, Ordering::SeqCst);
 
@@ -1255,7 +1688,7 @@ async fn bulk_import_fast_forward_chunks_empty_runs_beyond_one_internal_batch() 
 async fn bulk_import_fast_forward_skips_observer_callbacks_when_fast_path_is_allowed() {
     let (service, _handle, _snapshot, committed_heights) =
         store_fixture_recording_committed_heights();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     committed_heights.lock().clear();
 
     let settings = neo_config::ProtocolSettings::default();
@@ -1296,7 +1729,7 @@ async fn bulk_import_fast_forward_skips_observer_callbacks_when_fast_path_is_all
 async fn bulk_import_falls_back_when_per_block_committing_observer_is_active() {
     let (service, _handle, _snapshot, lengths) =
         store_fixture_recording_application_executed_lengths();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     lengths.lock().clear();
 
     let settings = neo_config::ProtocolSettings::default();
@@ -1357,7 +1790,7 @@ async fn bulk_import_uses_empty_fast_path_when_only_state_service_is_loaded() {
     let mempool = Arc::new(TestMempool);
     let (service, _handle) =
         BlockchainService::with_defaults(system, ledger, header_cache, mempool);
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     fast_path_checks.store(0, Ordering::SeqCst);
     committing_heights.lock().clear();
 
@@ -1419,7 +1852,7 @@ async fn bulk_import_uses_empty_fast_path_when_only_state_service_is_loaded() {
 
     let (normal_service, _normal_handle, _normal_snapshot, normal_state_store) =
         store_fixture_with_state_service();
-    normal_service.initialize().await;
+    normal_service.initialize().await.expect("initialize");
     let mut normal_header1 = Header::new();
     normal_header1.set_index(1);
     normal_header1.set_prev_hash(genesis.hash());
@@ -1482,7 +1915,7 @@ async fn bulk_import_verify_true_validates_against_prior_batch_block() {
 
     let (service, _handle, snapshot, snapshot_calls, commit_calls) =
         store_fixture_counting_snapshot_and_commits_with(settings.clone());
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     snapshot_calls.store(0, Ordering::SeqCst);
     commit_calls.store(0, Ordering::SeqCst);
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
@@ -1536,18 +1969,21 @@ async fn bulk_import_keeps_accepted_prefix_when_second_block_committing_fails() 
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let commit_attempts = Arc::new(AtomicUsize::new(0));
     let commit_to_store_calls = Arc::new(AtomicUsize::new(0));
+    let abort_store_commit_calls = Arc::new(AtomicUsize::new(0));
     let system = Arc::new(FailingSecondCommitContext {
         snapshot: Arc::clone(&snapshot),
         settings: Arc::new(neo_config::ProtocolSettings::default()),
         commit_attempts: Arc::clone(&commit_attempts),
         commit_to_store_calls: Arc::clone(&commit_to_store_calls),
+        abort_store_commit_calls: Arc::clone(&abort_store_commit_calls),
+        fatal_on_rejection: false,
     });
     let ledger = Arc::new(LedgerContext::default());
     let header_cache = Arc::new(HeaderCache::default());
     let mempool = Arc::new(TestMempool);
     let (service, _handle) =
         BlockchainService::with_defaults(system, ledger, header_cache, mempool);
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     commit_attempts.store(0, Ordering::SeqCst);
     commit_to_store_calls.store(0, Ordering::SeqCst);
 
@@ -1583,10 +2019,11 @@ async fn bulk_import_keeps_accepted_prefix_when_second_block_committing_fails() 
     );
     assert_eq!(service.ledger.current_height(), 1);
     assert_eq!(commit_attempts.load(Ordering::SeqCst), 2);
+    assert_eq!(abort_store_commit_calls.load(Ordering::SeqCst), 0);
     assert_eq!(
         commit_to_store_calls.load(Ordering::SeqCst),
-        0,
-        "bulk imports durably flush only after the full accepted batch finalizes"
+        1,
+        "the accepted prefix must pass through the durable batch fence before it is returned"
     );
     assert_eq!(
         neo_native_contracts::LedgerContract::new()
@@ -1606,9 +2043,116 @@ async fn bulk_import_keeps_accepted_prefix_when_second_block_committing_fails() 
 }
 
 #[tokio::test]
+async fn fatal_bulk_precommit_failure_aborts_staged_prefix_without_finalizing() {
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let commit_attempts = Arc::new(AtomicUsize::new(0));
+    let commit_to_store_calls = Arc::new(AtomicUsize::new(0));
+    let abort_store_commit_calls = Arc::new(AtomicUsize::new(0));
+    let system = Arc::new(FailingSecondCommitContext {
+        snapshot,
+        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        commit_attempts: Arc::clone(&commit_attempts),
+        commit_to_store_calls: Arc::clone(&commit_to_store_calls),
+        abort_store_commit_calls: Arc::clone(&abort_store_commit_calls),
+        fatal_on_rejection: true,
+    });
+    let (service, _handle) = BlockchainService::with_defaults(
+        system,
+        Arc::new(LedgerContext::default()),
+        Arc::new(HeaderCache::default()),
+        Arc::new(TestMempool),
+    );
+    service.initialize().await.expect("initialize");
+    commit_attempts.store(0, Ordering::SeqCst);
+    commit_to_store_calls.store(0, Ordering::SeqCst);
+
+    let (block1, block2) = first_two_empty_blocks();
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![block1, block2],
+            verify: false,
+            bulk_sync: true,
+        })
+        .await;
+
+    assert_eq!(
+        imported.imported, 0,
+        "fatal bulk rejection discards the staged prefix"
+    );
+    assert!(
+        imported
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("native persistence pipeline failed"))
+    );
+    assert_eq!(commit_attempts.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        commit_to_store_calls.load(Ordering::SeqCst),
+        0,
+        "fatal bulk failure must not durably finalize the accepted prefix"
+    );
+    assert_eq!(abort_store_commit_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(service.ledger.current_height(), 0);
+}
+
+#[tokio::test]
+async fn fatal_inventory_batch_failure_aborts_without_processing_later_blocks() {
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let commit_attempts = Arc::new(AtomicUsize::new(0));
+    let commit_to_store_calls = Arc::new(AtomicUsize::new(0));
+    let abort_store_commit_calls = Arc::new(AtomicUsize::new(0));
+    let system = Arc::new(FailingSecondCommitContext {
+        snapshot,
+        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        commit_attempts: Arc::clone(&commit_attempts),
+        commit_to_store_calls: Arc::clone(&commit_to_store_calls),
+        abort_store_commit_calls: Arc::clone(&abort_store_commit_calls),
+        fatal_on_rejection: true,
+    });
+    let (service, _handle) = BlockchainService::with_defaults(
+        system,
+        Arc::new(LedgerContext::default()),
+        Arc::new(HeaderCache::default()),
+        Arc::new(TestMempool),
+    );
+    service.initialize().await.expect("initialize");
+    commit_attempts.store(0, Ordering::SeqCst);
+    commit_to_store_calls.store(0, Ordering::SeqCst);
+
+    let (block1, block2) = first_two_empty_blocks();
+    let block2 = Arc::new(block2);
+    let error = service
+        .handle_block_inventory_batch(
+            vec![Arc::new(block1), Arc::clone(&block2), block2],
+            false,
+            true,
+        )
+        .await
+        .expect_err("fatal second-block rejection must abort the inventory command");
+
+    assert!(
+        error
+            .to_string()
+            .contains("native persistence pipeline failed")
+    );
+    assert_eq!(
+        commit_attempts.load(Ordering::SeqCst),
+        2,
+        "the duplicate candidate after the fatal block must not be processed"
+    );
+    assert_eq!(
+        commit_to_store_calls.load(Ordering::SeqCst),
+        0,
+        "fatal inventory failure must not commit the staged first block"
+    );
+    assert_eq!(abort_store_commit_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(service.ledger.current_height(), 0);
+}
+
+#[tokio::test]
 async fn inventory_block_batch_flushes_store_once_for_contiguous_accepted_burst() {
     let (service, _handle, snapshot, commit_calls) = store_fixture_counting_commits();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     commit_calls.store(0, Ordering::SeqCst);
 
     let settings = neo_config::ProtocolSettings::default();
@@ -1633,7 +2177,8 @@ async fn inventory_block_batch_flushes_store_once_for_contiguous_accepted_burst(
 
     let imported = service
         .handle_block_inventory_batch(vec![block1, block2], false, true)
-        .await;
+        .await
+        .expect("inventory batch commit");
 
     assert_eq!(imported, 2);
     assert_eq!(service.ledger.current_height(), 2);
@@ -1653,7 +2198,7 @@ async fn inventory_block_batch_flushes_store_once_for_contiguous_accepted_burst(
 #[tokio::test]
 async fn inventory_block_batch_counts_and_flushes_drained_parked_children() {
     let (service, _handle, snapshot, commit_calls) = store_fixture_counting_commits();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     commit_calls.store(0, Ordering::SeqCst);
 
     let settings = neo_config::ProtocolSettings::default();
@@ -1695,7 +2240,8 @@ async fn inventory_block_batch_counts_and_flushes_drained_parked_children() {
 
     let imported = service
         .handle_block_inventory_batch(vec![block1, block2], false, true)
-        .await;
+        .await
+        .expect("inventory batch commit");
 
     assert_eq!(
         imported, 3,
@@ -1740,7 +2286,7 @@ async fn bulk_import_skips_per_block_mempool_maintenance() {
     });
     let (service, _handle) =
         BlockchainService::with_defaults(system, ledger, header_cache, mempool);
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
 
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
     let mut header1 = Header::new();
@@ -1783,7 +2329,7 @@ async fn bulk_import_skips_per_block_mempool_maintenance() {
 #[tokio::test]
 async fn import_blocks_handle_waits_until_batch_is_processed() {
     let (service, handle, snapshot) = store_fixture();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     let service_task = tokio::spawn(service.run());
 
     let settings = neo_config::ProtocolSettings::default();
@@ -1816,7 +2362,7 @@ async fn import_blocks_handle_waits_until_batch_is_processed() {
 #[tokio::test]
 async fn import_blocks_counts_duplicate_prefix_as_processed() {
     let (service, handle, snapshot) = store_fixture();
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     let service_task = tokio::spawn(service.run());
 
     let settings = neo_config::ProtocolSettings::default();
@@ -1876,7 +2422,7 @@ async fn persisted_inventory_block_removes_cached_header_after_mempool_update() 
     let (service, _handle) =
         BlockchainService::with_defaults(system, ledger, Arc::clone(&header_cache), mempool);
 
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
 
     let mut header = Header::new();
@@ -1923,7 +2469,7 @@ async fn peer_block_witness_verification_accepts_valid_and_rejects_tampered() {
     let network = settings.network;
 
     let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
 
     // Block 1 over genesis (no transactions; merkle root stays zero).
@@ -1988,7 +2534,7 @@ async fn peer_block_witness_verification_does_not_trust_catchup_peer_tip() {
     let network = settings.network;
 
     let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
 
     neo_runtime::sync_metrics::set_peer_live_tip(1_000_000);
@@ -2045,7 +2591,7 @@ async fn peer_block_must_match_cached_header_hash() {
     let network = settings.network;
 
     let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
     let verification =
         neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
@@ -2108,7 +2654,7 @@ async fn handle_import_block_reports_rejection_and_verifies_witness() {
     let network = settings.network;
 
     let (service, handle, _snapshot) = store_fixture_with(settings.clone());
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
 
     let mut header = Header::new();
@@ -2195,7 +2741,7 @@ async fn handle_implements_runtime_block_import_contract() {
     let network = settings.network;
 
     let (service, handle, _snapshot) = store_fixture_with(settings.clone());
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     let runner = tokio::spawn(service.run());
 
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");

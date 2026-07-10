@@ -178,6 +178,16 @@ impl Store for MemoryStore {
         overlay_source.visit_raw_overlay(&mut sink);
         self.try_commit_raw_overlay(&overlay)
     }
+
+    fn try_commit_durable_borrowed_raw_overlay<O>(
+        &self,
+        overlay_source: &mut O,
+    ) -> crate::error::StorageResult<bool>
+    where
+        O: RawOverlaySource + ?Sized,
+    {
+        self.try_commit_borrowed_raw_overlay(overlay_source)
+    }
 }
 
 impl Clone for MemoryStore {

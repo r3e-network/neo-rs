@@ -76,6 +76,7 @@ where
         {
             return Ok(false);
         }
+        let block_hash = Self::try_block_hash(block)?;
 
         let single = std::slice::from_ref(block);
         let staged = match stage_empty_block_fast_forward(
@@ -113,14 +114,8 @@ where
 
         staged.commit();
         let block = Arc::new(block.clone());
-        if let Err(error) = self.ledger.insert_block_arc(Arc::clone(&block)) {
-            return Err(CoreError::other(format!(
-                "block {} ledger insert: {error}",
-                block.index()
-            )));
-        }
-        self.system
-            .block_committed_with_context(block.as_ref(), persist_context);
+        self.ledger
+            .insert_block_arc_with_hash(Arc::clone(&block), block_hash);
         Ok(true)
     }
 }

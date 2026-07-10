@@ -10,7 +10,7 @@ use crate::persistence::{
     write_store::WriteStore,
 };
 use crate::rocksdb::write_batch_buffer::{WriteBatchConfig, WriteBatchStatsSnapshot};
-use crate::{StorageItem, StorageKey, StorageResult};
+use crate::{StorageError, StorageItem, StorageKey, StorageResult};
 use parking_lot::{Mutex, RwLock};
 use rocksdb::{
     DB, DBIteratorWithThreadMode, ReadOptions, Snapshot as DbSnapshot, WriteBatch, WriteOptions,
@@ -411,9 +411,7 @@ impl Store for RocksDbStore {
     fn flush(&self) -> StorageResult<()> {
         // Propagate batch-write failures so callers can react to durability loss.
         self.flush_batch_writes()?;
-        // flush_memtables logs WAL/memtable errors internally (best-effort).
-        self.flush_memtables();
-        Ok(())
+        self.flush_memtables()
     }
 
     fn backend_kind(&self) -> StoreBackendKind {
@@ -512,6 +510,42 @@ impl Store for RocksDbStore {
             crate::StorageError::CommitFailed(format!(
                 "RocksDB borrowed raw overlay commit failed: {err}"
             ))
+        })?;
+        Ok(true)
+    }
+
+    fn try_commit_durable_borrowed_raw_overlay<O>(&self, overlay: &mut O) -> StorageResult<bool>
+    where
+        O: RawOverlaySource + ?Sized,
+    {
+        // Fast-sync batches may already have auto-flushed with WAL disabled.
+        // They are visible to readers but are not durable until their memtable
+        // is flushed, so every canonical fence in fast-sync mode must persist
+        // that prefix before writing its own WAL-synchronous batch.
+        if self.fast_sync_buffering.load(Ordering::Acquire) || self.has_pending_fast_sync_writes() {
+            self.flush()?;
+        }
+
+        let mut batch = WriteBatch::default();
+        let mut has_entries = false;
+        let mut sink = |key: &[u8], value: Option<&[u8]>| {
+            has_entries = true;
+            match value {
+                Some(value) => batch.put(key, value),
+                None => batch.delete(key),
+            }
+        };
+        overlay.visit_raw_overlay(&mut sink);
+
+        if !has_entries {
+            return Ok(true);
+        }
+
+        let mut write_options = WriteOptions::default();
+        write_options.set_sync(true);
+        self.db.write_opt(batch, &write_options).map_err(|error| {
+            error!(target: "neo", error = %error, "rocksdb durable overlay commit failed");
+            StorageError::commit_failed(format!("RocksDB durable overlay commit failed: {error}"))
         })?;
         Ok(true)
     }
@@ -846,13 +880,15 @@ impl RocksDbStore {
     }
 
     /// Force flush all memtables to disk.
-    pub fn flush_memtables(&self) {
-        if let Err(err) = self.db.flush_wal(true) {
-            warn!(target: "neo", error = %err, "failed to flush WAL");
-        }
-        if let Err(err) = self.db.flush_opt(&rocksdb::FlushOptions::default()) {
-            warn!(target: "neo", error = %err, "failed to flush memtables");
-        }
+    pub fn flush_memtables(&self) -> StorageResult<()> {
+        self.db.flush_wal(true).map_err(|error| {
+            StorageError::commit_failed(format!("RocksDB WAL flush failed: {error}"))
+        })?;
+        self.db
+            .flush_opt(&rocksdb::FlushOptions::default())
+            .map_err(|error| {
+                StorageError::commit_failed(format!("RocksDB memtable flush failed: {error}"))
+            })
     }
 
     /// Returns memory usage statistics.

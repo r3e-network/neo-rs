@@ -21,6 +21,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use neo_storage::persistence::{Store, providers::RuntimeStore};
 use parking_lot::{Mutex, RwLock};
@@ -49,6 +50,7 @@ pub struct IndexerService {
     inner: Arc<RwLock<Indexer>>,
     persist_lock: Arc<Mutex<()>>,
     persistence: Option<Arc<PersistenceBackend>>,
+    durability_pending: Arc<AtomicBool>,
 }
 
 impl std::fmt::Debug for IndexerService {
@@ -75,6 +77,7 @@ impl IndexerService {
             inner: Arc::new(RwLock::new(Indexer::new())),
             persist_lock: Arc::new(Mutex::new(())),
             persistence: None,
+            durability_pending: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -89,6 +92,7 @@ impl IndexerService {
             inner: Arc::new(RwLock::new(indexer)),
             persist_lock: Arc::new(Mutex::new(())),
             persistence: Some(Arc::new(PersistenceBackend::json_file(path))),
+            durability_pending: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -118,12 +122,30 @@ impl IndexerService {
                 store,
                 path.map(Into::into),
             ))),
+            durability_pending: Arc::new(AtomicBool::new(false)),
         })
     }
 
     /// Returns whether this service has a durable persistence backend.
     pub fn is_persistent(&self) -> bool {
         self.persistence.is_some()
+    }
+
+    /// Fences all index mutations completed before this call to durable media.
+    ///
+    /// The node's canonical writer calls this after the pre-commit indexer
+    /// mutation and before Ledger durability. In-memory indexers are already
+    /// complete when their mutation returns and therefore need no fence.
+    pub fn flush_durable(&self) -> crate::error::IndexerResult<()> {
+        let _persist_guard = self.persistence_guard();
+        if !self.durability_pending.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        self.persistence
+            .as_deref()
+            .map_or(Ok(()), PersistenceBackend::flush_durable)?;
+        self.durability_pending.store(false, Ordering::Release);
+        Ok(())
     }
 
     /// Returns a stable name for the configured persistence backend.

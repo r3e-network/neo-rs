@@ -12,6 +12,7 @@
 //!
 //! - `config_parsing`: node config parsing coverage.
 //! - `config_validation`: node config validation coverage.
+//! - `recovery`: local replay poison-marker and fail-stop coverage.
 //! - `runtime`: Runtime flags, execution context state, and VM-facing support
 //!   types.
 
@@ -400,5 +401,7 @@ mod application;
 mod config_parsing;
 #[path = "config_validation.rs"]
 mod config_validation;
+#[path = "recovery.rs"]
+mod recovery;
 #[path = "runtime.rs"]
 mod runtime;

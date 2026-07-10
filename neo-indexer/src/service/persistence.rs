@@ -93,6 +93,35 @@ pub(super) fn write_snapshot(path: &Path, snapshot: &IndexerSnapshot) -> Indexer
     Ok(())
 }
 
+pub(super) fn flush_snapshot(path: &Path) -> IndexerResult<()> {
+    match File::open(path) {
+        Ok(file) => file
+            .sync_all()
+            .map_err(|source| IndexerError::SnapshotWrite {
+                path: path.to_path_buf(),
+                source,
+            })?,
+        Err(source) => {
+            return Err(IndexerError::SnapshotWrite {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    }
+
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|source| IndexerError::SnapshotWrite {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    Ok(())
+}
+
 pub(super) fn temporary_snapshot_path(path: &Path) -> PathBuf {
     let mut temp_path = path.to_path_buf();
     let extension = path

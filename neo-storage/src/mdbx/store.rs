@@ -402,6 +402,13 @@ impl Store for MdbxStore {
         }
         Ok(true)
     }
+
+    fn try_commit_durable_borrowed_raw_overlay<O>(&self, overlay: &mut O) -> StorageResult<bool>
+    where
+        O: RawOverlaySource + ?Sized,
+    {
+        self.try_commit_borrowed_raw_overlay(overlay)
+    }
 }
 
 impl Clone for MdbxStore {

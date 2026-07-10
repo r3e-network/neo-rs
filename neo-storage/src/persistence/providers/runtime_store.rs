@@ -484,4 +484,15 @@ impl Store for RuntimeStore {
             Self::RocksDb(store) => store.try_commit_borrowed_raw_overlay(overlay),
         }
     }
+
+    fn try_commit_durable_borrowed_raw_overlay<O>(&self, overlay: &mut O) -> StorageResult<bool>
+    where
+        O: RawOverlaySource + ?Sized,
+    {
+        match self {
+            Self::Memory(store) => store.try_commit_durable_borrowed_raw_overlay(overlay),
+            Self::Mdbx(store) => store.try_commit_durable_borrowed_raw_overlay(overlay),
+            Self::RocksDb(store) => store.try_commit_durable_borrowed_raw_overlay(overlay),
+        }
+    }
 }

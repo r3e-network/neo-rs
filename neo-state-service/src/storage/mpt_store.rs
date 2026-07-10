@@ -485,6 +485,18 @@ impl<S> MptStore<S>
 where
     S: Store,
 {
+    /// Flushes the optional durable backend after all MPT writes before this
+    /// call have completed.
+    pub(crate) fn flush_backing(&self) -> MptResult<()> {
+        let _write_guard = self.write_gate.lock();
+        if let Some(backing) = &self.backing {
+            backing.flush().map_err(|error| {
+                MptError::storage(format!("state-service backing flush failed: {error}"))
+            })?;
+        }
+        Ok(())
+    }
+
     /// Opens a store over an existing durable byte namespace.
     pub fn from_store(backing: Arc<S>, full_state: bool) -> MptResult<Self> {
         let latest_local_root = Self::load_latest_local_root_from_backing(backing.as_ref());

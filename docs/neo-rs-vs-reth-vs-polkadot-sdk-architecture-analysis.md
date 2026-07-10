@@ -12,10 +12,25 @@
 
 Single `Store` trait with `DataCache` + `StoreCache` overlay. MDBX is the
 production default, RocksDB remains supported, and in-memory providers cover
-tests/ephemeral nodes. The ledger read boundary has a hot native-record
-provider, a hot/cold router, and an explicit `EmptyLedgerProvider` for nodes
-without an installed cold archive, so composition roots can keep one provider
-shape before static files land. Node-local peer block serving now uses that
+tests/ephemeral nodes. The canonical `SystemContext::commit_to_store` boundary
+propagates backend failures from `StoreCache::try_commit_durable`; failed
+overlays are discarded, staged bulk tips are rewound, and post-commit callbacks
+are emitted only after the durable fence succeeds. Accepted bulk prefixes
+therefore cannot be reported from an unflushed shared snapshot. MDBX implements
+that fence with its atomic write transaction; RocksDB uses a WAL-synchronous
+overlay batch and persists any earlier WAL-disabled fast-sync prefix first.
+StateService and a persistent indexer remain separate durability domains, so
+neo-rs uses write-ahead fail-stop recovery rather than claiming cross-store
+atomicity: it writes and fsyncs a poison marker before either observer can
+publish, fences both observer stores before Ledger, and removes the marker only
+after canonical success. A crash or failure leaves the marker for startup to reject
+(including the uninitialized-chain/genesis-root mismatch). ApplicationLogs and
+TokensTracker persist post-canonical and avoid this marker cost. Canonical
+durability failure always stops the active writer immediately. The ledger read
+boundary has a hot native-record provider, a hot/cold router, and an explicit
+`EmptyLedgerProvider` for nodes without an installed cold archive, so
+composition roots can keep one provider shape before static files land.
+Node-local peer block serving now uses that
 same hot/cold factory shape with `EmptyLedgerProvider` as the cold side, so
 installing static files later is a provider swap instead of a block-source
 rewrite. Operational persisted-tip reads (startup, config validation, chain.acc

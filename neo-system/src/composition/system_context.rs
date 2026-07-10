@@ -7,6 +7,7 @@
 
 use std::fmt;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use neo_blockchain::{
     BlockPersistContext, ChainTipProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory,
@@ -51,6 +52,23 @@ where
         Ok(())
     }
 
+    /// Fences pre-commit observer stores before canonical Ledger durability.
+    fn fence_precommit_durability(&self) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// Notify application recovery policy after the canonical durability fence.
+    fn canonical_commit_succeeded(&self) {}
+
+    /// Notify application recovery policy when canonical publication cannot
+    /// safely complete after pre-commit observers may have persisted state.
+    fn canonical_commit_failed(&self, _reason: &str) {}
+
+    /// Whether application recovery policy has made the canonical writer fatal.
+    fn should_stop_blockchain_service(&self) -> bool {
+        false
+    }
+
     /// Whether a bulk import may skip per-block commit hooks entirely.
     fn allows_empty_block_fast_forward(&self) -> bool {
         false
@@ -80,6 +98,7 @@ where
     store_cache: Mutex<StoreCache<S>>,
     native_contract_provider: Arc<P>,
     hooks: Arc<H>,
+    fatal_persistence_error: AtomicBool,
 }
 
 impl<P, S, H> NodeSystemContext<P, S, H>
@@ -102,7 +121,13 @@ where
             store_cache: Mutex::new(store_cache),
             native_contract_provider,
             hooks,
+            fatal_persistence_error: AtomicBool::new(false),
         }
+    }
+
+    fn mark_fatal_persistence_error(&self, reason: &str) {
+        self.fatal_persistence_error.store(true, Ordering::Release);
+        self.hooks.canonical_commit_failed(reason);
     }
 }
 
@@ -155,13 +180,17 @@ where
         snapshot: &StoreDataCache<S>,
         application_executed: &[ApplicationExecuted],
     ) -> bool {
-        self.hooks.block_committing(
+        let accepted = self.hooks.block_committing(
             block,
             snapshot,
             application_executed,
             neo_runtime::sync_metrics::peer_live_tip(),
             BlockPersistContext::live(),
-        )
+        );
+        if !accepted {
+            self.mark_fatal_persistence_error("block pre-commit observer rejected persistence");
+        }
+        accepted
     }
 
     fn block_committing_with_context(
@@ -171,21 +200,54 @@ where
         application_executed: &[ApplicationExecuted],
         context: BlockPersistContext,
     ) -> bool {
-        self.hooks.block_committing(
+        let accepted = self.hooks.block_committing(
             block,
             snapshot,
             application_executed,
             neo_runtime::sync_metrics::peer_live_tip(),
             context,
-        )
+        );
+        if !accepted {
+            self.mark_fatal_persistence_error("block pre-commit observer rejected persistence");
+        }
+        accepted
     }
 
-    fn commit_to_store(&self) {
-        self.store_cache.lock().commit();
+    fn commit_to_store(&self) -> Result<(), String> {
+        if let Err(error) = self.hooks.fence_precommit_durability() {
+            self.store_cache.lock().discard_pending_changes();
+            let error = format!("pre-commit durability fence failed: {error}");
+            self.mark_fatal_persistence_error(&error);
+            return Err(error);
+        }
+        let result = self
+            .store_cache
+            .lock()
+            .try_commit_durable()
+            .map_err(|error| error.to_string());
+        match &result {
+            Ok(()) => self.hooks.canonical_commit_succeeded(),
+            Err(error) => self.mark_fatal_persistence_error(error),
+        }
+        result
+    }
+
+    fn abort_store_commit(&self) {
+        self.store_cache.lock().discard_pending_changes();
+        self.mark_fatal_persistence_error("canonical store commit aborted");
+    }
+
+    fn should_stop_blockchain_service(&self) -> bool {
+        self.fatal_persistence_error.load(Ordering::Acquire)
+            || self.hooks.should_stop_blockchain_service()
     }
 
     fn flush_bulk_sync_commit_handlers(&self) -> Result<(), String> {
-        self.hooks.flush_bulk_sync()
+        let result = self.hooks.flush_bulk_sync();
+        if let Err(error) = &result {
+            self.mark_fatal_persistence_error(error);
+        }
+        result
     }
 
     fn allows_empty_block_fast_forward(&self) -> bool {

@@ -306,6 +306,117 @@ fn fast_sync_store_cache_raw_overlay_uses_batch_buffer_until_flush() {
 }
 
 #[test]
+fn fast_sync_durable_store_cache_commit_bypasses_batch_buffer() {
+    let tmp = TempDir::new().expect("tempdir");
+    let db_path = tmp.path().join("rocksdb-store-cache-fast-sync-durable");
+    let cfg = StorageConfig {
+        path: db_path.clone(),
+        ..Default::default()
+    };
+    let store = Arc::new(
+        RocksDbStore::open(&cfg, WriteBatchConfig::balanced(), true, true).expect("rocksdb store"),
+    );
+    store.enable_fast_sync_mode();
+
+    let key = StorageKey::new(42, vec![0xD0]);
+    let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
+    writer.add(key.clone(), StorageItem::from_bytes(vec![0xAB]));
+    writer
+        .try_commit_durable()
+        .expect("canonical commit should reach durable RocksDB storage");
+
+    assert!(
+        !store.has_pending_fast_sync_writes(),
+        "a canonical durability fence must not leave buffered writes"
+    );
+    let stats = store.batch_commit_stats();
+    assert_eq!(stats.pending_operations, 0);
+    assert_eq!(
+        stats.batches_flushed, 0,
+        "the durable overlay capability should bypass the fast-sync batch buffer"
+    );
+
+    let snapshot_reader = StoreCache::<RocksDbStore>::new_from_snapshot(store.snapshot());
+    assert_eq!(
+        snapshot_reader.get(&key).map(|item| item.to_value()),
+        Some(vec![0xAB]),
+        "a fresh backend snapshot must see the durable commit"
+    );
+
+    drop(snapshot_reader);
+    drop(writer);
+    drop(store);
+
+    let reopened = Arc::new(
+        RocksDbStore::open(&cfg, WriteBatchConfig::balanced(), true, true)
+            .expect("reopen RocksDB store"),
+    );
+    let reopened_reader = StoreCache::new_from_store(reopened, false);
+    assert_eq!(
+        reopened_reader.get(&key).map(|item| item.to_value()),
+        Some(vec![0xAB]),
+        "a reopened database must retain the durable commit"
+    );
+}
+
+#[test]
+fn fast_sync_durable_commit_fences_previously_buffered_writes() {
+    let tmp = TempDir::new().expect("tempdir");
+    let db_path = tmp
+        .path()
+        .join("rocksdb-store-cache-fast-sync-buffered-prefix");
+    let cfg = StorageConfig {
+        path: db_path.clone(),
+        ..Default::default()
+    };
+    let store = Arc::new(
+        RocksDbStore::open(&cfg, WriteBatchConfig::balanced(), true, true).expect("rocksdb store"),
+    );
+    store.enable_fast_sync_mode();
+
+    let buffered_key = StorageKey::new(42, vec![0xB0]);
+    let durable_key = StorageKey::new(42, vec![0xD0]);
+    let mut buffered_writer = StoreCache::new_from_store(Arc::clone(&store), false);
+    buffered_writer.add(buffered_key.clone(), StorageItem::from_bytes(vec![0x01]));
+    buffered_writer
+        .try_commit()
+        .expect("first overlay should enter the fast-sync buffer");
+    assert_eq!(store.batch_commit_stats().pending_operations, 1);
+
+    let mut durable_writer = StoreCache::new_from_store(Arc::clone(&store), false);
+    durable_writer.add(durable_key.clone(), StorageItem::from_bytes(vec![0x02]));
+    durable_writer
+        .try_commit_durable()
+        .expect("durable overlay must fence the buffered prefix");
+
+    assert!(
+        !store.has_pending_fast_sync_writes(),
+        "the durability fence must drain every earlier fast-sync write"
+    );
+    assert_eq!(store.batch_commit_stats().pending_operations, 0);
+
+    drop(buffered_writer);
+    drop(durable_writer);
+    drop(store);
+
+    let reopened = Arc::new(
+        RocksDbStore::open(&cfg, WriteBatchConfig::balanced(), true, true)
+            .expect("reopen RocksDB store"),
+    );
+    let reader = StoreCache::new_from_store(reopened, false);
+    assert_eq!(
+        reader.get(&buffered_key).map(|item| item.to_value()),
+        Some(vec![0x01]),
+        "the previously buffered prefix must survive reopen"
+    );
+    assert_eq!(
+        reader.get(&durable_key).map(|item| item.to_value()),
+        Some(vec![0x02]),
+        "the canonical durable overlay must survive reopen"
+    );
+}
+
+#[test]
 fn fast_sync_buffered_store_cache_commits_are_visible_before_flush() {
     let tmp = TempDir::new().expect("tempdir");
     let cfg = StorageConfig {

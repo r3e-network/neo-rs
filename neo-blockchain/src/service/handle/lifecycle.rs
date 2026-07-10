@@ -1,8 +1,8 @@
 //! Blockchain handle lifecycle commands.
 //!
-//! Lifecycle commands are one-way control messages for the service actor. They
-//! remain typed methods on [`BlockchainHandle`] so callers do not construct
-//! [`BlockchainCommand`] directly.
+//! Lifecycle commands remain typed methods on [`BlockchainHandle`] so callers
+//! do not construct [`BlockchainCommand`] directly. Initialization is a
+//! request/reply durability fence; shutdown is a one-way control message.
 
 use neo_runtime::ServiceError;
 
@@ -12,10 +12,15 @@ use crate::command::BlockchainCommand;
 impl BlockchainHandle {
     /// Request blockchain service initialization.
     pub async fn initialize(&self) -> Result<(), ServiceError> {
+        let (reply, response) = tokio::sync::oneshot::channel();
         self.cmd_tx
-            .send(BlockchainCommand::Initialize)
+            .send(BlockchainCommand::Initialize { reply })
             .await
-            .map_err(|_| ServiceError::unavailable("blockchain command channel closed"))
+            .map_err(|_| ServiceError::unavailable("blockchain command channel closed"))?;
+        response
+            .await
+            .map_err(|_| ServiceError::unavailable("blockchain initialization reply dropped"))?
+            .map_err(ServiceError::internal)
     }
 
     /// Request graceful shutdown of the service loop.

@@ -3,12 +3,14 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use neo_storage::persistence::providers::RuntimeStore;
+use neo_storage::persistence::{Store, providers::RuntimeStore};
 
 use crate::error::IndexerResult;
 use crate::store;
 
-use super::persistence::{MutationPersistenceMode, PendingPersistence, write_snapshot};
+use super::persistence::{
+    MutationPersistenceMode, PendingPersistence, flush_snapshot, write_snapshot,
+};
 
 pub(super) enum PersistenceBackend {
     JsonFile(PathBuf),
@@ -73,6 +75,15 @@ impl PersistenceBackend {
                 store::write_indexer_delta(store, &previous, &current)
             }
             _ => Ok(()),
+        }
+    }
+
+    pub(super) fn flush_durable(&self) -> IndexerResult<()> {
+        match self {
+            Self::JsonFile(path) => flush_snapshot(path),
+            Self::Store { store, .. } => store
+                .flush()
+                .map_err(|source| crate::IndexerError::StoreRecordWrite { source }),
         }
     }
 }

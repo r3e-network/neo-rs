@@ -19,6 +19,8 @@ use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::persistence::store::Store;
 use parking_lot::RwLock;
 
+use super::recovery::LocalReplayGuard;
+
 mod plugins;
 
 /// Application observers and catch-up policy used by the core system context.
@@ -36,6 +38,7 @@ pub(super) struct DaemonCommitHooks<
     indexer_service: Option<Arc<neo_indexer::IndexerService>>,
     application_logs_service: Option<Arc<neo_rpc::application_logs::ApplicationLogsService<L>>>,
     tokens_tracker: RwLock<Option<Arc<neo_rpc::plugins::tokens_tracker::TokensTracker<P, T>>>>,
+    replay_guard: Arc<LocalReplayGuard>,
 }
 
 impl<P, S, L, T> std::fmt::Debug for DaemonCommitHooks<P, S, L, T>
@@ -67,6 +70,7 @@ where
         state_service_track_during_catchup: bool,
         indexer_service: Option<Arc<neo_indexer::IndexerService>>,
         application_logs_service: Option<Arc<neo_rpc::application_logs::ApplicationLogsService<L>>>,
+        replay_guard: Arc<LocalReplayGuard>,
     ) -> Self {
         Self {
             network,
@@ -75,6 +79,7 @@ where
             indexer_service,
             application_logs_service,
             tokens_tracker: RwLock::new(None),
+            replay_guard,
         }
     }
 

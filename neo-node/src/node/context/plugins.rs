@@ -94,13 +94,30 @@ where
         let block_index = block.index();
         let catching_up =
             context.bulk_sync || (live_tip > 0 && (block_index as u64) + 10000 < live_tip);
+        let should_track_state = self.state_service.is_some()
+            && (!catching_up || self.state_service_track_during_catchup);
+        // StateService and a persistent indexer can make an independent store
+        // durable before Ledger. ApplicationLogs and TokensTracker only stage
+        // here and commit from the post-canonical callback, so they do not arm
+        // the cross-store recovery marker.
+        let has_persistent_indexer = !catching_up
+            && self
+                .indexer_service
+                .as_ref()
+                .is_some_and(|indexer| indexer.is_persistent());
+        if (should_track_state || has_persistent_indexer)
+            && !self.replay_guard.begin_observer_commit()
+        {
+            return false;
+        }
 
         if let Some(state_service) = &self.state_service {
-            let should_track_state = !catching_up || self.state_service_track_during_catchup;
-            let state_ok = if should_track_state && catching_up {
-                state_service.on_committing_deferred(block.index(), snapshot)
-            } else if should_track_state {
-                state_service.on_committing(block.index(), snapshot)
+            let state_ok = if should_track_state {
+                if catching_up {
+                    state_service.on_committing_deferred(block.index(), snapshot)
+                } else {
+                    state_service.on_committing(block.index(), snapshot)
+                }
             } else {
                 true
             };
@@ -113,16 +130,21 @@ where
             return true;
         }
 
-        if let Some(indexer) = &self.indexer_service
-            && let Err(error) =
+        if let Some(indexer) = &self.indexer_service {
+            if let Err(error) =
                 indexer.index_block_with_application_executions(block, application_executed_list)
-        {
-            warn!(
-                target: "neo::indexer",
-                height = block.index(),
-                error = %error,
-                "failed to index block application executions"
-            );
+            {
+                warn!(
+                    target: "neo::indexer",
+                    height = block.index(),
+                    persistent = indexer.is_persistent(),
+                    error = %error,
+                    "failed to index block application executions"
+                );
+                if indexer.is_persistent() {
+                    return false;
+                }
+            }
         }
 
         self.commit_plugin_committing_handlers(block, snapshot, application_executed_list);
@@ -196,6 +218,30 @@ where
                 .map_err(|error| error.to_string())?;
         }
         Ok(())
+    }
+
+    fn fence_precommit_durability(&self) -> Result<(), String> {
+        if let Some(state_service) = &self.state_service {
+            state_service.flush_durable_result()?;
+        }
+        if let Some(indexer) = &self.indexer_service {
+            indexer
+                .flush_durable()
+                .map_err(|error| format!("indexer durability fence failed: {error}"))?;
+        }
+        Ok(())
+    }
+
+    fn canonical_commit_succeeded(&self) {
+        self.replay_guard.canonical_commit_succeeded();
+    }
+
+    fn canonical_commit_failed(&self, reason: &str) {
+        self.replay_guard.canonical_commit_failed(reason);
+    }
+
+    fn should_stop_blockchain_service(&self) -> bool {
+        self.replay_guard.shutdown_requested()
     }
 
     fn allows_empty_block_fast_forward(&self) -> bool {

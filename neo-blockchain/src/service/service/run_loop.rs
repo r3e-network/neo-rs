@@ -34,6 +34,9 @@ where
                 break;
             }
             self.dispatch(cmd).await;
+            if self.system.should_stop_blockchain_service() {
+                break;
+            }
 
             let mut drained = 0u32;
             while let Ok(cmd) = self.cmd_rx.try_recv() {
@@ -41,6 +44,9 @@ where
                     break 'service;
                 }
                 self.dispatch(cmd).await;
+                if self.system.should_stop_blockchain_service() {
+                    break 'service;
+                }
                 drained += 1;
                 if drained >= MAX_DRAIN_PER_BATCH {
                     tokio::task::yield_now().await;

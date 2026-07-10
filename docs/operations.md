@@ -600,6 +600,16 @@ available checkpoints. It recommends either restoring the nearest checkpoint
 that includes both `mainnet/` and `StateRoot/`, or doing a clean replay when
 only chain-only checkpoints are available.
 
+Startup also refuses a persistent storage root containing
+`.neo-local-replay-poisoned`. The node fsyncs this write-ahead marker before a
+StateService or persistent-indexer pre-commit write, fences those stores, and
+removes it only after the canonical Ledger commit is durable. Its presence
+therefore means the process crashed or lost durability inside a cross-store
+commit window. Do not delete it and continue with unverified data. Restore a
+checkpoint containing the matching chain, StateService, and persistent-indexer
+stores (or prepare a clean replay), verify their heights, and only then remove
+the marker before preflight.
+
 For a clean replay, prepare a fresh isolated config instead of reusing the
 mismatched directories:
 

@@ -35,10 +35,13 @@ where
         blocks: Vec<Arc<Block>>,
         relay: bool,
         pre_verified: bool,
-    ) -> usize {
+    ) -> CoreResult<usize> {
+        let durable_height = self.ledger.current_height();
         let mut imported = 0usize;
         let mut direct_imported = 0usize;
+        let mut committed_blocks = Vec::new();
         for block in blocks {
+            let committed_block = Arc::clone(&block);
             let before_height = self.ledger.current_height();
             match self
                 .handle_block_inventory_without_drain(block, relay, pre_verified, true)
@@ -46,6 +49,11 @@ where
             {
                 Ok(()) => {}
                 Err(error) => {
+                    if self.system.should_stop_blockchain_service() {
+                        self.system.abort_store_commit();
+                        self.ledger.rewind_to(durable_height);
+                        return Err(error);
+                    }
                     warn!(target: "neo", %error, "inventory block rejected in batch");
                     continue;
                 }
@@ -54,17 +62,27 @@ where
             if current_height > before_height {
                 imported += 1;
                 direct_imported += 1;
+                committed_blocks.push(committed_block);
             }
         }
         if direct_imported > 0 {
-            self.system.commit_to_store();
+            if let Err(error) = self.system.commit_to_store() {
+                self.ledger.rewind_to(durable_height);
+                return Err(CoreError::other(format!(
+                    "inventory batch durable store commit failed: {error}"
+                )));
+            }
+            for block in committed_blocks {
+                let hash = Self::try_block_hash(block.as_ref())?;
+                self.publish_persisted_inventory_block(block.as_ref(), hash);
+            }
         }
         let drained = self.handle_drain_unverified_blocks().await;
         if drained > 0 {
             debug!(target: "neo", drained, "drained parked unverified blocks after inventory batch");
             imported += drained;
         }
-        imported
+        Ok(imported)
     }
 
     async fn handle_block_inventory_without_drain(
@@ -194,19 +212,24 @@ where
 
         let after_persist = wall_start.elapsed();
 
-        if let Err(error) = self.ledger.insert_block_arc(Arc::clone(&block)) {
-            return Err(CoreError::other(format!("ledger insert: {error}")));
-        }
-
         if !defer_store_commit {
             // Flush the block's native-persist writes through to the durable store.
             // Per-block commit is memory-safe (no unbounded DataCache growth) and
             // with fast-sync store mode (WAL disabled) the RocksDB write is only
             // ~17us - negligible compared to the 0.5ms native-contract persist.
-            self.system.commit_to_store();
+            self.system.commit_to_store().map_err(|error| {
+                CoreError::other(format!(
+                    "block {index} durable store commit failed: {error}"
+                ))
+            })?;
         }
+
+        self.ledger
+            .insert_block_arc_with_hash(Arc::clone(&block), hash);
         let after_commit = wall_start.elapsed();
-        self.system.block_committed(block.as_ref());
+        if !defer_store_commit {
+            self.publish_persisted_inventory_block(block.as_ref(), hash);
+        }
 
         // Per-block timing breakdown (debug-level). Shows where wall-clock
         // time goes: hash, verify (signature), persist (native contracts),
@@ -235,10 +258,18 @@ where
             total_us,
         );
 
+        let _ = relay; // relay broadcast is handled by the network service
+        Ok(())
+    }
+
+    fn publish_persisted_inventory_block(&self, block: &Block, hash: neo_primitives::UInt256) {
+        let index = block.index();
+        self.system.block_committed(block);
+
         // C# Blockchain.Persist -> MemPool.UpdatePoolForBlockPersisted: drop the
         // block's transactions from the pool and evict pooled conflicts, so
         // mined txs are no longer served to peers or re-proposed by consensus.
-        self.mempool.block_persisted(block.as_ref());
+        self.mempool.block_persisted(block);
         self.reverify_mempool_after_persist(
             index,
             self.system.settings().max_transactions_per_block as usize,
@@ -252,8 +283,5 @@ where
             })
             .ok();
         self.header_cache.remove_up_to(index);
-
-        let _ = relay; // relay broadcast is handled by the network service
-        Ok(())
     }
 }

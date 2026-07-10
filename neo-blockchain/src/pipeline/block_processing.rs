@@ -80,6 +80,9 @@ where
     pub(crate) async fn handle_drain_unverified_blocks(&self) -> usize {
         let mut drained = 0usize;
         while drained < DRAIN_BATCH_SIZE {
+            if self.system.should_stop_blockchain_service() {
+                break;
+            }
             let Some(candidate) = self.pop_next_unverified_block() else {
                 break;
             };

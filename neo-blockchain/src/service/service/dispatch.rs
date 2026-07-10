@@ -63,8 +63,12 @@ where
                 relay,
                 pre_verified,
             } => {
-                self.handle_block_inventory_batch(blocks, relay, pre_verified)
-                    .await;
+                if let Err(error) = self
+                    .handle_block_inventory_batch(blocks, relay, pre_verified)
+                    .await
+                {
+                    tracing::error!(target: "neo", %error, "inventory block batch failed");
+                }
             }
             BlockchainCommand::ImportBlock { block, reply } => {
                 let before_height = self.ledger.current_height();
@@ -93,8 +97,8 @@ where
             BlockchainCommand::RelayResult(result) => {
                 self.handle_relay_result(result).await;
             }
-            BlockchainCommand::Initialize => {
-                self.initialize().await;
+            BlockchainCommand::Initialize { reply } => {
+                let _ = reply.send(self.initialize().await);
             }
             BlockchainCommand::Shutdown => {}
             BlockchainCommand::AddTransaction { transaction, reply } => {

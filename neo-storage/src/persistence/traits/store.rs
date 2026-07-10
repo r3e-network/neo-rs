@@ -109,8 +109,11 @@ pub trait RawOverlaySource {
 /// - **Snapshot** — concrete `Snapshot` associated type + `snapshot()`
 /// - **Backend capabilities** — explicit backend identity and optional metrics
 ///
-/// Additional optional backend capabilities are exposed as default methods:
-/// fast-sync mode controls, direct raw-overlay commits, and backend metrics.
+/// Additional backend capabilities are exposed as default methods: fast-sync
+/// controls, direct raw-overlay commits, and backend metrics. Most are
+/// optional. Atomic durable-overlay commit is mandatory when a store backs the
+/// canonical chain writer; its default `Ok(false)` only permits non-canonical
+/// implementations to compile without claiming a durability guarantee.
 pub trait Store:
     ReadOnlyStore
     + RawReadOnlyStore
@@ -200,6 +203,21 @@ pub trait Store:
     /// the hot commit path sorted without forcing every backend to clone the
     /// overlay just to sort it again.
     fn try_commit_borrowed_raw_overlay<O>(&self, overlay: &mut O) -> StorageResult<bool>
+    where
+        O: RawOverlaySource + ?Sized,
+    {
+        let _ = overlay;
+        Ok(false)
+    }
+
+    /// Commits a borrowed overlay as one durable backend transaction.
+    ///
+    /// Canonical-tip publishers use this capability to bypass throughput
+    /// buffers whose writes may be visible before their durability fence. A
+    /// backend returns `Ok(false)` when it has no stronger implementation.
+    /// Canonical publishers must reject that result: commit-then-flush cannot
+    /// roll back a transaction when the later flush fails.
+    fn try_commit_durable_borrowed_raw_overlay<O>(&self, overlay: &mut O) -> StorageResult<bool>
     where
         O: RawOverlaySource + ?Sized,
     {

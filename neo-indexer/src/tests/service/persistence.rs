@@ -10,13 +10,39 @@ fn persistent_service_round_trips_snapshot_file() {
 
     let service = IndexerService::open(&path).expect("open empty");
     assert_eq!(service.snapshot_path(), Some(path.as_path()));
+    service
+        .flush_durable()
+        .expect("empty indexer has no pending durability work");
     let record = service.index_block(&block).expect("index block");
+    service.flush_durable().expect("fence snapshot file");
     assert!(path.exists(), "snapshot file is written");
 
     let restored = IndexerService::open(&path).expect("restore");
 
     assert_eq!(restored.status().indexed_height, Some(3));
     assert_eq!(restored.block_by_hash(&record.hash), Some(record));
+}
+
+#[test]
+fn durable_fence_reports_missing_pending_snapshot() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let path = temp.path().join("indexer.json");
+    let service = IndexerService::open(&path).expect("open empty");
+    let mut header = Header::new();
+    header.set_index(1);
+    service
+        .index_block(&Block::from_parts(header, Vec::new()))
+        .expect("index block");
+    std::fs::remove_file(&path).expect("remove pending snapshot");
+
+    let error = service
+        .flush_durable()
+        .expect_err("a missing pending snapshot must fail the durability fence");
+    assert!(
+        error
+            .to_string()
+            .contains("failed to write indexer snapshot")
+    );
 }
 
 #[test]

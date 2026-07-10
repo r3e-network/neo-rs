@@ -463,6 +463,12 @@ pub(in crate::node) fn validate_storage(
     storage_override: Option<&Path>,
     network: u32,
 ) -> anyhow::Result<()> {
+    let storage_root = storage_override
+        .map(Path::to_path_buf)
+        .or_else(|| config.storage.data_directory());
+    let marker_path = crate::node::recovery::local_replay_marker_path(storage_root.as_deref());
+    crate::node::recovery::refuse_local_replay_marker(marker_path.as_deref())?;
+
     let state_service_provider = service_store_provider(config)?;
     let store = open_store(config, storage_override)?;
     let ledger_index = durable_ledger_index(&store);
@@ -486,24 +492,37 @@ pub(in crate::node) fn validate_state_service_storage(
     if !config.state_service.enabled {
         return Ok(());
     }
-    let Some(chain_height) = ledger_index else {
-        return Ok(());
-    };
+    let chain_height = ledger_index;
     let Some(path) = &config.state_service.path else {
-        anyhow::bail!(
-            "StateService is enabled while the chain store is already at height {chain_height}, but [state_service].path is not configured; set a persisted StateRoot path, restore a matching checkpoint, or replay from genesis with [state_service].track_during_catchup = true"
-        );
+        return match chain_height {
+            Some(chain_height) => anyhow::bail!(
+                "StateService is enabled while the chain store is already at height {chain_height}, but [state_service].path is not configured; set a persisted StateRoot path, restore a matching checkpoint, or replay from genesis with [state_service].track_during_catchup = true"
+            ),
+            None => Ok(()),
+        };
     };
 
     let path = network_scoped_path(path, network);
     if !path.exists() {
-        anyhow::bail!(
-            "StateService MPT store {} is missing while the chain store is already at height {chain_height}; restore a matching StateRoot checkpoint or replay from genesis with [state_service].track_during_catchup = true",
-            path.display()
-        );
+        return match chain_height {
+            Some(chain_height) => anyhow::bail!(
+                "StateService MPT store {} is missing while the chain store is already at height {chain_height}; restore a matching StateRoot checkpoint or replay from genesis with [state_service].track_during_catchup = true",
+                path.display()
+            ),
+            None => Ok(()),
+        };
     }
 
     let state_height = read_state_service_mpt_height(storage_provider, &config.storage, &path)?;
+    let Some(chain_height) = chain_height else {
+        return match state_height {
+            Some(height) => anyhow::bail!(
+                "StateService MPT height {height} at {} exists while the chain store is uninitialized; restore matching canonical and StateService stores or remove both local stores and replay from genesis",
+                path.display()
+            ),
+            None => Ok(()),
+        };
+    };
     match state_height {
         Some(height) if height == chain_height => Ok(()),
         Some(height) => anyhow::bail!(

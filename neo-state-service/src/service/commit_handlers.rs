@@ -145,6 +145,16 @@ where
             .map_or(Ok(()), AsyncStateRootWorker::flush_result)
     }
 
+    /// Drains queued MPT work and fences the backing store before the
+    /// canonical Ledger transaction is allowed to commit.
+    pub fn flush_durable_result(&self) -> Result<(), String> {
+        self.flush_result().map_err(str::to_string)?;
+        if let Some(mpt) = self.state_store.mpt() {
+            mpt.flush_backing().map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+
     /// Applies the block snapshot's storage changes to the local MPT state
     /// root store.
     pub fn on_committing<B: neo_storage::CacheRead>(

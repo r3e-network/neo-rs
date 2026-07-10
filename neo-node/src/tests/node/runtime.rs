@@ -15,6 +15,7 @@ where
 {
     core: NodeSystemContext<P, C, DaemonCommitHooks<P, S, L, T>>,
     hooks: Arc<DaemonCommitHooks<P, S, L, T>>,
+    shutdown: tokio_util::sync::CancellationToken,
 }
 
 impl<P, C, S, L, T> std::ops::Deref for TestDaemonContext<P, C, S, L, T>
@@ -69,12 +70,17 @@ where
     L: Store + 'static,
     T: Store + 'static,
 {
+    let shutdown = tokio_util::sync::CancellationToken::new();
     let hooks = Arc::new(DaemonCommitHooks::new(
         settings.network,
         state_service,
         state_service_track_during_catchup,
         indexer_service,
         application_logs_service,
+        Arc::new(crate::node::recovery::LocalReplayGuard::new(
+            None,
+            shutdown.clone(),
+        )),
     ));
     let core = NodeSystemContext::new(
         settings,
@@ -83,7 +89,11 @@ where
         native_contract_provider,
         Arc::clone(&hooks),
     );
-    TestDaemonContext { core, hooks }
+    TestDaemonContext {
+        core,
+        hooks,
+        shutdown,
+    }
 }
 
 fn native_provider() -> Arc<neo_native_contracts::StandardNativeProvider> {
@@ -114,6 +124,34 @@ fn daemon_commit_hooks_do_not_own_core_system_resources() {
     assert!(
         system_context_source.contains("SystemContext for NodeSystemContext<P, S, H>"),
         "the composition layer must implement the blockchain SystemContext contract"
+    );
+}
+
+#[test]
+fn canonical_store_failure_requests_shutdown_without_precommit_observers() {
+    use neo_blockchain::SystemContext;
+    use neo_storage::persistence::StoreCache;
+
+    let chain_store = Arc::new(MemoryStore::new());
+    let store_cache = StoreCache::new_from_store(chain_store, true);
+    let snapshot = Arc::new(store_cache.data_cache().clone());
+    let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
+        Arc::new(ProtocolSettings::default()),
+        snapshot,
+        store_cache,
+        None,
+        false,
+        None,
+        native_provider(),
+        None,
+    );
+
+    ctx.commit_to_store()
+        .expect_err("read-only canonical store must reject commit");
+
+    assert!(
+        ctx.shutdown.is_cancelled(),
+        "canonical durability loss must stop the node even without auxiliary observers"
     );
 }
 
@@ -249,6 +287,51 @@ fn state_service_store_uses_fast_sync_for_validation_import() {
             .expect("service store exposes RocksDB batch metrics")
             .disable_wal,
         "StateService fast-sync import should disable WAL like the chain store"
+    );
+}
+
+#[test]
+fn state_service_durable_fence_flushes_fast_sync_backing() {
+    use neo_state_service::{StateStore, commit_handlers::StateServiceCommitHandlers};
+    use neo_storage::{DataCache, StorageItem, StorageKey};
+
+    let temp = tempfile::tempdir().expect("temp StateService root");
+    let path = temp.path().join("StateRoot_{0}");
+    let backing = services::open_service_store_with_storage_config(
+        "StateService",
+        "rocksdb",
+        &super::config::StorageSection::default(),
+        &path,
+        0x334F_454E,
+        true,
+    )
+    .expect("open fast-sync StateService store");
+    let state_store =
+        Arc::new(StateStore::with_mpt_store(false, Arc::clone(&backing)).expect("open MPT store"));
+    let handlers = StateServiceCommitHandlers::new(Arc::clone(&state_store));
+    let snapshot = DataCache::new(false);
+    snapshot.add(
+        StorageKey::new(5, vec![0xAB]),
+        StorageItem::from_bytes(vec![0x01]),
+    );
+
+    assert!(handlers.on_committing_deferred(0, &snapshot));
+    assert!(
+        backing.has_pending_fast_sync_writes(),
+        "ordinary StateService apply should remain buffered before its durability fence"
+    );
+
+    handlers
+        .flush_durable_result()
+        .expect("StateService backing durability fence");
+
+    assert!(
+        !backing.has_pending_fast_sync_writes(),
+        "durability fence must drain the StateService backend buffer"
+    );
+    assert_eq!(
+        state_store.mpt().expect("MPT").current_local_root_index(),
+        Some(0)
     );
 }
 
@@ -487,6 +570,10 @@ track_during_catchup = true
         err.contains("state-root worker"),
         "unexpected flush error: {err}"
     );
+    assert!(
+        ctx.shutdown.is_cancelled(),
+        "a failed deferred StateService publication must stop local replay"
+    );
 }
 
 #[test]
@@ -544,6 +631,10 @@ track_during_catchup = true
     assert!(
         !ctx.block_committing_with_context(&block, &snapshot, &[], BlockPersistContext::live()),
         "live async StateService must fail before chain commit when MPT roots are non-contiguous"
+    );
+    assert!(
+        ctx.shutdown.is_cancelled(),
+        "a failed live StateService publication must request node shutdown"
     );
 }
 
@@ -1129,7 +1220,7 @@ fn genesis_policy_init_visible_through_fresh_store_cache_after_commit() {
         &resources,
     )
     .expect("genesis persist");
-    ctx.commit_to_store();
+    ctx.commit_to_store().expect("commit store");
 
     // The live RPC read path: a FRESH store_cache over the same backing store.
     let read_cache = StoreCache::new_from_store(Arc::clone(&store), false);
@@ -1212,6 +1303,107 @@ fn daemon_context_indexes_application_executed_notifications() {
 }
 
 #[test]
+fn persistent_indexer_write_failure_rejects_precommit_and_requests_shutdown() {
+    use neo_blockchain::SystemContext;
+    use neo_payloads::{Block, Header};
+    use neo_storage::persistence::StoreCache;
+    use neo_storage::persistence::providers::memory_store::MemoryStore;
+
+    let temp = tempfile::tempdir().expect("temp dir");
+    let indexer_path = temp.path().join("indexer.json");
+    let indexer = Arc::new(
+        neo_indexer::IndexerService::open(&indexer_path).expect("open persistent indexer"),
+    );
+    std::fs::create_dir(&indexer_path).expect("block indexer snapshot rename");
+
+    let chain_store = Arc::new(MemoryStore::new());
+    let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
+    let snapshot = Arc::new(store_cache.data_cache().clone());
+    let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
+        Arc::new(ProtocolSettings::default()),
+        Arc::clone(&snapshot),
+        store_cache,
+        None,
+        false,
+        Some(indexer),
+        native_provider(),
+        None,
+    );
+    let mut header = Header::new();
+    header.set_index(1);
+    let block = Block::from_parts(header, Vec::new());
+
+    assert!(
+        !ctx.block_committing(&block, &snapshot, &[]),
+        "a persistent pre-commit projection cannot fail open"
+    );
+    assert!(ctx.should_stop_blockchain_service());
+    assert!(ctx.shutdown.is_cancelled());
+}
+
+#[test]
+fn persistent_indexer_arms_replay_marker_before_precommit_write() {
+    use neo_blockchain::BlockPersistContext;
+    use neo_payloads::{Block, Header};
+    use neo_storage::persistence::StoreCache;
+    use neo_storage::persistence::providers::memory_store::MemoryStore;
+    use neo_system::BlockCommitHooks;
+
+    let temp = tempfile::tempdir().expect("temp dir");
+    let marker = temp.path().join(".neo-local-replay-poisoned");
+    let shutdown = tokio_util::sync::CancellationToken::new();
+    let indexer_store = Arc::new(MemoryStore::new());
+    let indexer = Arc::new(
+        neo_indexer::IndexerService::open_store(indexer_store).expect("persistent indexer service"),
+    );
+    let hooks: DaemonCommitHooks<
+        neo_native_contracts::StandardNativeProvider,
+        MemoryStore,
+        MemoryStore,
+        MemoryStore,
+    > = DaemonCommitHooks::new(
+        ProtocolSettings::default().network,
+        None,
+        false,
+        Some(indexer),
+        None,
+        Arc::new(crate::node::recovery::LocalReplayGuard::new(
+            Some(marker.clone()),
+            shutdown,
+        )),
+    );
+    let chain_store = Arc::new(MemoryStore::new());
+    let snapshot = StoreCache::new_from_store(chain_store, false)
+        .data_cache()
+        .clone();
+    let mut header = Header::new();
+    header.set_index(1);
+    let block = Block::from_parts(header, Vec::new());
+
+    assert!(BlockCommitHooks::block_committing(
+        &hooks,
+        &block,
+        &snapshot,
+        &[],
+        1,
+        BlockPersistContext::live(),
+    ));
+    assert!(
+        marker.exists(),
+        "persistent pre-commit indexer writes require write-ahead recovery"
+    );
+    <DaemonCommitHooks<
+        neo_native_contracts::StandardNativeProvider,
+        MemoryStore,
+        MemoryStore,
+        MemoryStore,
+    > as BlockCommitHooks<neo_storage::persistence::StoreCacheBacking<MemoryStore>>>::fence_precommit_durability(&hooks)
+        .expect("persistent indexer durability fence");
+    crate::node::recovery::refuse_local_replay_marker(Some(&marker))
+        .expect_err("startup must reject an indexer pre-commit without canonical Ledger");
+}
+
+#[test]
 fn daemon_context_dispatches_application_logs_handlers() {
     use neo_blockchain::SystemContext;
     use neo_payloads::{ApplicationExecuted, Block, Header, NotifyEventArgs, Signer, Transaction};
@@ -1285,6 +1477,64 @@ fn daemon_context_dispatches_application_logs_handlers() {
     assert_eq!(
         tx_log["executions"][0]["notifications"][0]["eventname"],
         "Transfer"
+    );
+}
+
+#[test]
+fn post_canonical_application_logs_do_not_arm_replay_marker() {
+    use neo_blockchain::BlockPersistContext;
+    use neo_payloads::{Block, Header};
+    use neo_rpc::application_logs::{ApplicationLogsService, ApplicationLogsSettings};
+    use neo_storage::persistence::StoreCache;
+    use neo_storage::persistence::providers::memory_store::MemoryStore;
+    use neo_system::BlockCommitHooks;
+
+    let temp = tempfile::tempdir().expect("temp dir");
+    let marker = temp.path().join(".neo-local-replay-poisoned");
+    let shutdown = tokio_util::sync::CancellationToken::new();
+    let settings = ProtocolSettings::default();
+    let mut logs_settings = ApplicationLogsSettings::default();
+    logs_settings.enabled = true;
+    logs_settings.network = settings.network;
+    let logs = Arc::new(ApplicationLogsService::new(
+        logs_settings,
+        Arc::new(MemoryStore::new()),
+    ));
+    let hooks: DaemonCommitHooks<
+        neo_native_contracts::StandardNativeProvider,
+        MemoryStore,
+        MemoryStore,
+        MemoryStore,
+    > = DaemonCommitHooks::new(
+        settings.network,
+        None,
+        false,
+        None,
+        Some(logs),
+        Arc::new(crate::node::recovery::LocalReplayGuard::new(
+            Some(marker.clone()),
+            shutdown,
+        )),
+    );
+    let chain_store = Arc::new(MemoryStore::new());
+    let snapshot = StoreCache::new_from_store(chain_store, false)
+        .data_cache()
+        .clone();
+    let mut header = Header::new();
+    header.set_index(1);
+    let block = Block::from_parts(header, Vec::new());
+
+    assert!(BlockCommitHooks::block_committing(
+        &hooks,
+        &block,
+        &snapshot,
+        &[],
+        1,
+        BlockPersistContext::live(),
+    ));
+    assert!(
+        !marker.exists(),
+        "post-canonical ApplicationLogs persistence must not fsync the recovery marker"
     );
 }
 

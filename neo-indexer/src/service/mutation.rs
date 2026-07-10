@@ -8,7 +8,7 @@ use crate::indexer::Indexer;
 use crate::model::IndexerSnapshot;
 
 impl IndexerService {
-    fn persistence_guard(&self) -> Option<parking_lot::MutexGuard<'_, ()>> {
+    pub(super) fn persistence_guard(&self) -> Option<parking_lot::MutexGuard<'_, ()>> {
         self.persistence.as_ref().map(|_| self.persist_lock.lock())
     }
 
@@ -60,11 +60,16 @@ impl IndexerService {
             };
             (result, change, rollback_snapshot)
         };
+        let durability_pending = change.is_some();
         if let Err(err) = self.persist_change(change) {
             if let Some(snapshot) = rollback_snapshot {
                 self.restore_indexer_after_persistence_failure(snapshot);
             }
             return Err(err);
+        }
+        if durability_pending {
+            self.durability_pending
+                .store(true, std::sync::atomic::Ordering::Release);
         }
         Ok(result)
     }

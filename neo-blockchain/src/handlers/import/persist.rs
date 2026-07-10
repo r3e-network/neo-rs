@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use neo_payloads::Block;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::block_processing::BatchPersistResources;
 use crate::command::ImportBlocksStats;
@@ -31,7 +31,7 @@ where
         persist_context: BlockPersistContext,
         batch_persist_resources: Option<&BatchPersistResources<S::NativeProvider, S::CacheBacking>>,
         stats: &mut ImportBlocksStats,
-    ) -> bool {
+    ) -> Result<(), String> {
         let index = block.index();
         let transaction_block = !block.transactions.is_empty();
         let clone_start = transaction_block.then(Instant::now);
@@ -39,6 +39,8 @@ where
         if let Some(start) = clone_start {
             stats.transaction_block_clone_elapsed += start.elapsed();
         }
+        let hash = Self::try_block_hash(block.as_ref())
+            .map_err(|error| format!("import block {index} hash failed: {error}"))?;
 
         let transaction_block = !block.transactions.is_empty();
         let transaction_start = transaction_block.then(Instant::now);
@@ -58,30 +60,13 @@ where
                 .await
         };
         if !persisted {
-            warn!(
-                target: "neo",
-                height = index,
-                "import aborted: native persistence pipeline failed"
-            );
-            return false;
+            return Err(format!(
+                "import aborted at height {index}: native persistence pipeline failed"
+            ));
         }
         if let Some(start) = transaction_start {
             stats.transaction_blocks += 1;
             stats.transaction_elapsed += start.elapsed();
-        }
-
-        let ledger_insert_start = transaction_block.then(Instant::now);
-        if let Err(error) = self.ledger.insert_block_arc(Arc::clone(&block)) {
-            warn!(
-                target: "neo",
-                %error,
-                height = index,
-                "failed to import block into ledger cache"
-            );
-            return false;
-        }
-        if let Some(start) = ledger_insert_start {
-            stats.transaction_ledger_insert_elapsed += start.elapsed();
         }
 
         // Normal live imports flush each block immediately. Trusted bulk-sync
@@ -89,14 +74,25 @@ where
         // accepted batch, avoiding one durable commit per block while preserving
         // per-block native/state transitions.
         if !bulk_sync {
-            self.system.commit_to_store();
+            self.system.commit_to_store().map_err(|error| {
+                format!("import aborted at height {index}: durable store commit failed: {error}")
+            })?;
         }
 
-        let committed_hook_start = transaction_block.then(Instant::now);
-        self.system
-            .block_committed_with_context(block.as_ref(), persist_context);
-        if let Some(start) = committed_hook_start {
-            stats.transaction_committed_hook_elapsed += start.elapsed();
+        let ledger_insert_start = transaction_block.then(Instant::now);
+        self.ledger
+            .insert_block_arc_with_hash(Arc::clone(&block), hash);
+        if let Some(start) = ledger_insert_start {
+            stats.transaction_ledger_insert_elapsed += start.elapsed();
+        }
+
+        if !bulk_sync {
+            let committed_hook_start = transaction_block.then(Instant::now);
+            self.system
+                .block_committed_with_context(block.as_ref(), persist_context);
+            if let Some(start) = committed_hook_start {
+                stats.transaction_committed_hook_elapsed += start.elapsed();
+            }
         }
 
         // Cold-start bulk sync imports a trusted local chain.acc package, so it
@@ -116,6 +112,6 @@ where
             }
         }
 
-        true
+        Ok(())
     }
 }

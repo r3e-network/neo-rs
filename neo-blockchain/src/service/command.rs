@@ -43,26 +43,30 @@ pub type BlockReply = Option<Block>;
 /// Reply payload for [`BlockchainCommand::ImportBlocks`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImportBlocksReply {
-    /// Number of input blocks accepted or already processed before completion
-    /// or first failure.
+    /// Number of input blocks durably accepted or already present before
+    /// completion or first failure. An atomic bulk batch that is rewound after
+    /// finalization failure contributes zero staged blocks to this count.
     pub imported: usize,
     /// Service-side timing and composition for accepted blocks.
     pub stats: ImportBlocksStats,
-    /// Late finalization error after the accepted prefix was processed.
+    /// Persistence, validation, or late-finalization error.
     pub error: Option<String>,
 }
 
-/// Service-side import composition and timing for an accepted block batch.
+/// Service-side import composition and timing for a processed block batch.
 ///
 /// Callers use this to separate real transaction-bearing work from empty-block
 /// fast-forward work without forcing extra command boundaries only for metrics.
+/// On an atomic bulk-finalization failure these counters describe staged work,
+/// while [`ImportBlocksReply::imported`] remains zero because none became
+/// durable.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ImportBlocksStats {
-    /// Empty blocks accepted through the service's empty-block fast path.
+    /// Empty blocks processed through the service's empty-block fast path.
     pub empty_blocks: usize,
     /// Elapsed time spent in empty-block fast paths.
     pub empty_elapsed: Duration,
-    /// Transaction-bearing blocks accepted through normal persistence.
+    /// Transaction-bearing blocks processed through normal persistence.
     pub transaction_blocks: usize,
     /// Elapsed time spent in native/state persistence for transaction-bearing blocks.
     pub transaction_elapsed: Duration,
@@ -109,7 +113,7 @@ impl ImportBlocksReply {
         }
     }
 
-    /// Failed import reply that preserves the accepted prefix count.
+    /// Failed import reply with the caller-supplied durable prefix count.
     #[must_use]
     pub fn failed(imported: usize, error: impl Into<String>) -> Self {
         Self {
@@ -151,9 +155,9 @@ pub enum BlockchainCommand {
     ImportBlocks {
         /// Blocks to import.
         import: Import,
-        /// Reply channel; value is the number of blocks processed from the
-        /// supplied batch before completion or first rejected/gapped block,
-        /// plus any late finalization error.
+        /// Reply channel; value is the number of blocks durably accepted or
+        /// already present before completion or the first failure, plus the
+        /// failure when one occurred.
         reply: tokio::sync::oneshot::Sender<ImportBlocksReply>,
     },
     /// Request to fill the memory pool.
@@ -202,8 +206,11 @@ pub enum BlockchainCommand {
     Idle,
     /// Relay result notification.
     RelayResult(RelayResult),
-    /// Initialize the blockchain service.
-    Initialize,
+    /// Initialize the blockchain service and report genesis persistence.
+    Initialize {
+        /// Initialization result returned after the durable genesis fence.
+        reply: tokio::sync::oneshot::Sender<Result<(), String>>,
+    },
     /// Stop the blockchain service command loop after previously queued work.
     Shutdown,
     /// Check unverified cache and persist any ready consecutive blocks.

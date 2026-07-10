@@ -530,10 +530,11 @@ impl SystemContext for StoreContext {
             None => true,
         }
     }
-    fn commit_to_store(&self) {
+    fn commit_to_store(&self) -> Result<(), String> {
         if let Some(calls) = &self.commit_to_store_calls {
             calls.fetch_add(1, Ordering::SeqCst);
         }
+        Ok(())
     }
     fn block_committed_with_context(
         &self,
@@ -890,7 +891,7 @@ fn dispatch_command_variants_is_exhaustive() {
             BlockchainCommand::Idle => unreachable!(),
             BlockchainCommand::DrainUnverified => unreachable!(),
             BlockchainCommand::RelayResult(_) => unreachable!(),
-            BlockchainCommand::Initialize => unreachable!(),
+            BlockchainCommand::Initialize { .. } => unreachable!(),
             BlockchainCommand::Shutdown => unreachable!(),
             BlockchainCommand::AddTransaction { .. } => unreachable!(),
             BlockchainCommand::GetHeight { .. } => unreachable!(),

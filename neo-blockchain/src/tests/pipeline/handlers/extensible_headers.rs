@@ -17,7 +17,7 @@ async fn extensible_inventory_verifies_range_whitelist_and_witness() {
     let network = settings.network;
 
     let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
 
     let verification =
         neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&public_key);
@@ -95,7 +95,7 @@ async fn extensible_inventory_rejects_witness_script_hash_mismatch() {
     let network = settings.network;
 
     let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
 
     let whitelisted_verification =
         neo_vm::script_builder::redeem_script::RedeemScript::signature_redeem_script(&public_key);
@@ -150,7 +150,7 @@ async fn headers_verify_against_the_anchor_next_consensus() {
     let network = settings.network;
 
     let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
-    service.initialize().await;
+    service.initialize().await.expect("initialize");
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
 
     let mut header = Header::new();

@@ -22,6 +22,7 @@ where
     /// Handle a [`BlockchainCommand::Import`] request.
     pub(crate) async fn handle_import(&self, import: Import) -> ImportBlocksReply {
         let mut imported = 0usize;
+        let mut already_durable = 0usize;
         let mut stats = ImportBlocksStats::default();
         let bulk_sync = import.bulk_sync;
         let persist_options = if bulk_sync {
@@ -37,6 +38,9 @@ where
             BlockPersistContext::live()
         };
         let blocks = import.blocks;
+        let durable_height = self.ledger.current_height();
+        let mut deferred_committed_positions = Vec::new();
+        let mut import_error = None;
         let mut batch_persist_resources = None;
         let mut batch_persist_resources_loaded = false;
         let mut last_imported_height = None;
@@ -48,6 +52,7 @@ where
             match ImportDisposition::classify_import_block(current_height, index) {
                 ImportDisposition::AlreadySeen => {
                     imported += 1;
+                    already_durable += 1;
                     position += 1;
                     continue;
                 }
@@ -58,7 +63,7 @@ where
                         actual = index,
                         "import block out of sequence"
                     );
-                    return ImportBlocksReply::ok_with_stats(imported, stats);
+                    break;
                 }
                 ImportDisposition::NextExpected => {}
             }
@@ -75,7 +80,8 @@ where
                             height = index,
                             "import aborted: native persistence resource setup failed"
                         );
-                        return ImportBlocksReply::ok_with_stats(imported, stats);
+                        import_error = Some(error.to_string());
+                        break;
                     }
                 }
                 batch_persist_resources_loaded = true;
@@ -106,7 +112,7 @@ where
                     batch_persist_resources.as_ref(),
                 )
             {
-                return ImportBlocksReply::ok_with_stats(imported, stats);
+                break;
             }
 
             if bulk_sync && let Some(resources) = &batch_persist_resources {
@@ -123,6 +129,7 @@ where
                         stats.empty_elapsed += empty_start.elapsed();
                         imported += 1;
                         last_imported_height = Some(index);
+                        deferred_committed_positions.push(position);
                         position += 1;
                         continue;
                     }
@@ -134,12 +141,13 @@ where
                             %error,
                             "import aborted: empty-block committing fast-forward failed"
                         );
-                        return ImportBlocksReply::ok_with_stats(imported, stats);
+                        import_error = Some(error.to_string());
+                        break;
                     }
                 }
             }
 
-            if !self
+            if let Err(error) = self
                 .persist_import_block_for_command(
                     &blocks[position],
                     bulk_sync,
@@ -150,19 +158,61 @@ where
                 )
                 .await
             {
-                return ImportBlocksReply::ok_with_stats(imported, stats);
+                warn!(target: "neo", %error, height = index, "block import persistence failed");
+                import_error = Some(error);
+                break;
             }
             imported += 1;
             last_imported_height = Some(index);
+            if bulk_sync {
+                deferred_committed_positions.push(position);
+            }
             position += 1;
+            if self.system.should_stop_blockchain_service() {
+                import_error.get_or_insert_with(|| {
+                    format!(
+                        "import stopped after durable block {index}: canonical writer shutdown requested"
+                    )
+                });
+                break;
+            }
         }
         if bulk_sync {
-            if let Err(error) = self
-                .finalize_bulk_import(imported, last_imported_height, &mut stats)
-                .await
-            {
-                return ImportBlocksReply::failed_with_stats(imported, stats, error);
+            if self.system.should_stop_blockchain_service() {
+                self.system.abort_store_commit();
+                self.ledger.rewind_to(durable_height);
+                return ImportBlocksReply::failed_with_stats(
+                    already_durable,
+                    stats,
+                    import_error.unwrap_or_else(|| {
+                        "bulk import aborted after a fatal persistence failure".to_string()
+                    }),
+                );
             }
+            if let Err(error) = self.finalize_bulk_import(imported, &mut stats) {
+                self.ledger.rewind_to(durable_height);
+                return ImportBlocksReply::failed_with_stats(already_durable, stats, error);
+            }
+            for position in deferred_committed_positions {
+                let committed_hook_start =
+                    (!blocks[position].transactions.is_empty()).then(std::time::Instant::now);
+                self.system
+                    .block_committed_with_context(&blocks[position], persist_context);
+                if let Some(start) = committed_hook_start {
+                    stats.transaction_committed_hook_elapsed += start.elapsed();
+                }
+            }
+            self.finish_bulk_import_cache_maintenance(last_imported_height)
+                .await;
+            if self.system.should_stop_blockchain_service() {
+                import_error.get_or_insert_with(|| {
+                    "bulk import committed durably but canonical writer shutdown was requested"
+                        .to_string()
+                });
+            }
+        }
+        if let Some(error) = import_error {
+            return ImportBlocksReply::failed_with_stats(imported, stats, error);
         }
         ImportBlocksReply::ok_with_stats(imported, stats)
     }

@@ -692,6 +692,24 @@ backend = "rocksdb"
 }
 
 #[test]
+fn validate_storage_rejects_local_replay_poison_marker() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let chain_path = temp.path().join("chain");
+    std::fs::create_dir_all(&chain_path).expect("create chain directory");
+    let marker = chain_path.join(".neo-local-replay-poisoned");
+    std::fs::write(&marker, b"reason=injected commit failure\n").expect("write marker");
+
+    let mut config = NodeConfig::default();
+    config.storage.backend = Some("rocksdb".to_string());
+    config.storage.data_dir = Some(chain_path);
+
+    let error = validate_storage(&config, None, ProtocolSettings::default().network)
+        .expect_err("storage preflight must reject poisoned local replay");
+    assert!(error.to_string().contains("local replay is poisoned"));
+    assert!(error.to_string().contains(&marker.display().to_string()));
+}
+
+#[test]
 fn validate_storage_rejects_state_service_mpt_height_mismatch() {
     use neo_storage::persistence::storage::StorageConfig;
     use neo_storage::rocksdb::RocksDBStoreProvider;
@@ -728,6 +746,46 @@ fn validate_storage_rejects_state_service_mpt_height_mismatch() {
     assert!(
         err.to_string().contains("does not match chain height 1"),
         "{err}"
+    );
+}
+
+#[test]
+fn validate_storage_rejects_state_service_root_for_uninitialized_chain() {
+    use neo_storage::persistence::storage::StorageConfig;
+    use neo_storage::rocksdb::RocksDBStoreProvider;
+
+    let temp = tempfile::tempdir().expect("temp dir");
+    let chain_path = temp.path().join("chain");
+    let state_path_template = temp.path().join("StateRoot_{0}");
+    let settings = ProtocolSettings::default();
+    let state_path = temp
+        .path()
+        .join(format!("StateRoot_{:08X}", settings.network));
+    {
+        let provider = RocksDBStoreProvider::new(StorageConfig {
+            path: state_path,
+            ..StorageConfig::default()
+        });
+        let state_store = provider.get_store("").expect("open state store");
+        let mut snapshot = state_store.snapshot();
+        let writer = Arc::get_mut(&mut snapshot).expect("exclusive snapshot");
+        writer
+            .put(vec![0x02], 0u32.to_le_bytes().to_vec())
+            .expect("write genesis root index");
+        writer.try_commit().expect("commit genesis root index");
+    }
+
+    let mut config = NodeConfig::default();
+    config.storage.backend = Some("rocksdb".to_string());
+    config.storage.data_dir = Some(chain_path);
+    config.state_service.enabled = true;
+    config.state_service.path = Some(state_path_template);
+
+    let error = validate_storage(&config, None, settings.network)
+        .expect_err("StateService must not be ahead of an uninitialized chain");
+    assert!(
+        error.to_string().contains("chain store is uninitialized"),
+        "{error}"
     );
 }
 

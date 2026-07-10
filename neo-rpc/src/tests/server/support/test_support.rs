@@ -65,8 +65,11 @@ impl SystemContext for FixtureContext {
         Some(Arc::clone(&self.native_contract_provider))
     }
 
-    fn commit_to_store(&self) {
-        self.store_cache.lock().commit();
+    fn commit_to_store(&self) -> Result<(), String> {
+        self.store_cache
+            .lock()
+            .try_commit_durable()
+            .map_err(|error| error.to_string())
     }
 }
 

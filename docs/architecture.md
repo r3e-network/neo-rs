@@ -285,7 +285,24 @@ The detailed rules for this style live in
   use `submit_inventory_extensible`, and startup genesis bootstrapping uses
   `initialize`. Node composition does not construct `BlockchainCommand` variants
   directly while inventory-specific relay, parking, draining, and mempool
-  behavior remains in the service loop.
+  behavior remains in the service loop. The canonical store commit is fallible:
+  failures discard the uncommitted root overlay, rewind a staged batch tip, and
+  suppress post-commit observers and import events. Bulk accepted prefixes are
+  routed through the same durable fence before being returned, and ordered
+  `block_committed` callbacks run before parked-child draining. The canonical
+  Ledger and pre-commit StateService/persistent-indexer stores are separate
+  durability domains; they are not presented as one atomic transaction. Before
+  either independent observer can publish, `neo-node` writes and fsyncs
+  `.neo-local-replay-poisoned`. StateService and the persistent indexer are then
+  durably fenced before the canonical Ledger transaction; mutation or fence
+  failure in either observer rejects the block. Canonical success removes the
+  marker and syncs its directory; a crash or failed fence leaves it
+  in place, requests graceful shutdown, and makes restart refuse the local data
+  set until matching stores are restored. ApplicationLogs and TokensTracker
+  persist only from the post-canonical callback and do not arm the marker. This
+  fail-stop rule is required because pruning can make MPT rollback impossible.
+  Every canonical durability failure is fatal to the running writer, including
+  one detected inside the active batch command.
 
 - **Staged-sync policies are shared runtime contracts.**
   `neo_runtime::sync_pipeline` defines stable stage identifiers,

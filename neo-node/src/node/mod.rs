@@ -32,6 +32,8 @@
 //!   outcomes.
 //! - `remote_ledger`: RPC-backed ledger source used when the node runs without
 //!   a local ledger.
+//! - `recovery`: Fail-stop protection for canonical-ledger and independent
+//!   pre-commit observer store failures.
 //! - `rpc_runtime`: RPC server runtime wiring and shutdown handling.
 //! - `seeds`: Seed-node selection and network bootstrap helpers.
 //! - `services`: Auxiliary service startup and handles used by the daemon.
@@ -73,6 +75,7 @@ mod live_services;
 mod logging;
 mod observability;
 mod preflight;
+mod recovery;
 mod remote_ledger;
 mod rpc_payload;
 mod rpc_runtime;

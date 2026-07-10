@@ -11,9 +11,9 @@ where
     S: crate::service_context::SystemContext,
     M: MempoolLike,
 {
-    /// Handle a [`BlockchainCommand::PersistCompleted`]: update hot ledger
-    /// caches, evict persisted transactions from the mempool cache, flush the
-    /// durable store, and broadcast the persistence event.
+    /// Handle a [`BlockchainCommand::PersistCompleted`]: durably commit the
+    /// store, then update hot ledger caches, evict persisted transactions, run
+    /// post-commit observers, and broadcast the persistence event.
     pub(crate) async fn handle_persist_completed(&self, persist: PersistCompleted) {
         let PersistCompleted { block } = persist;
         let index = block.index();
@@ -36,14 +36,20 @@ where
             "persist completed for block"
         );
 
-        if let Err(error) = self.ledger.insert_block_arc(Arc::clone(&block)) {
+        // Flush the persisted state through to the durable backing store
+        // before publishing it through in-memory caches or observers.
+        if let Err(error) = self.system.commit_to_store() {
             warn!(
                 target: "neo",
                 %error,
                 index,
-                "failed to insert persisted block into ledger cache"
+                "persist-completed durable store commit failed"
             );
+            return;
         }
+
+        self.ledger
+            .insert_block_arc_with_hash(Arc::clone(&block), hash);
 
         for transaction in &block.transactions {
             if let Ok(hash) = transaction.try_hash() {
@@ -52,9 +58,6 @@ where
         }
 
         self.header_cache.remove_up_to(index);
-        // Flush the persisted state through to the durable backing store
-        // (C# snapshot.Commit() at the end of Blockchain.Persist).
-        self.system.commit_to_store();
         self.system
             .block_committed_with_context(block.as_ref(), BlockPersistContext::live());
         self.event_tx

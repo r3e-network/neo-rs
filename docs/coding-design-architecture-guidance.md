@@ -257,6 +257,24 @@ Priority order for crate refactors:
    crash-resume markers belong in
    `neo_runtime::sync_pipeline::{CommitPolicy, SyncStageCheckpointStore}`
    instead of ad hoc thresholds inside service loops.
+   Treat the durable store fence as fallible: do not publish committed events,
+   run post-commit observers, or advance externally visible in-memory state
+   until it succeeds. On failure, discard the canonical overlay and rewind any
+   batch-local tip before returning the error.
+   Canonical stores must implement the atomic durable-overlay capability;
+   never substitute commit-then-flush because a failed flush cannot roll back
+   the already-applied overlay. Never claim atomicity across independently
+   committed stores. StateService and a persistent indexer may persist before
+   the canonical Ledger fence. Write and fsync an operator-visible marker
+   *before* entering either observer, durably fence both before Ledger, and
+   fail the canonical write if either persistent observer cannot mutate or
+   fence its data. Clear the marker only after Ledger succeeds. A crash or failure leaves
+   the marker for startup to reject until store heights match. ApplicationLogs
+   and TokensTracker stage pre-commit data but persist only post-canonical, so
+   they must not pay the marker fsync cost. Do not call MPT rollback as a
+   generic repair because pruning may already have removed required nodes.
+   Cancel the node on every canonical durability failure and stop the active
+   writer command immediately.
    Per-peer request-window decisions belong in
    `neo_network::BlockRequestScheduler`; session code should only serialize and
    send the planned wire request. Cross-peer range assignment, peer bias, and

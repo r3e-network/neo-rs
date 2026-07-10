@@ -14,7 +14,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 enum OverlayMode {
     Unsupported,
     Fails,
+    FlushFails,
     Borrowed,
+    DurableBorrowed,
     Materialized,
 }
 
@@ -23,6 +25,7 @@ struct OverlayContractStore {
     inner: MemoryStore,
     mode: OverlayMode,
     borrowed_overlay: Mutex<Vec<(Vec<u8>, Option<Vec<u8>>)>>,
+    durable_overlay: Mutex<Vec<(Vec<u8>, Option<Vec<u8>>)>>,
     cloned_overlay: Mutex<Vec<(Vec<u8>, Option<Vec<u8>>)>>,
     cloned_raw_overlay_attempts: AtomicUsize,
 }
@@ -33,6 +36,7 @@ impl OverlayContractStore {
             inner: MemoryStore::new(),
             mode,
             borrowed_overlay: Mutex::new(Vec::new()),
+            durable_overlay: Mutex::new(Vec::new()),
             cloned_overlay: Mutex::new(Vec::new()),
             cloned_raw_overlay_attempts: AtomicUsize::new(0),
         }
@@ -40,6 +44,10 @@ impl OverlayContractStore {
 
     fn borrowed_overlay(&self) -> Vec<(Vec<u8>, Option<Vec<u8>>)> {
         self.borrowed_overlay.lock().clone()
+    }
+
+    fn durable_overlay(&self) -> Vec<(Vec<u8>, Option<Vec<u8>>)> {
+        self.durable_overlay.lock().clone()
     }
 
     fn cloned_overlay(&self) -> Vec<(Vec<u8>, Option<Vec<u8>>)> {
@@ -122,14 +130,28 @@ impl Store for OverlayContractStore {
         match self.mode {
             OverlayMode::Unsupported => unreachable!("handled before recording overlay attempts"),
             OverlayMode::Fails => Err(StorageError::backend("raw overlay failed")),
+            OverlayMode::FlushFails => {
+                self.cloned_overlay.lock().extend_from_slice(overlay);
+                Ok(true)
+            }
             OverlayMode::Borrowed => {
                 panic!("borrowed overlay mode must not materialize the cloned raw overlay")
+            }
+            OverlayMode::DurableBorrowed => {
+                panic!("durable overlay mode must not use the ordinary raw overlay path")
             }
             OverlayMode::Materialized => {
                 self.cloned_overlay.lock().extend_from_slice(overlay);
                 Ok(true)
             }
         }
+    }
+
+    fn flush(&self) -> crate::StorageResult<()> {
+        if matches!(self.mode, OverlayMode::FlushFails) {
+            return Err(StorageError::backend("injected backend flush failure"));
+        }
+        Ok(())
     }
 
     fn try_commit_borrowed_raw_overlay<O>(
@@ -139,11 +161,36 @@ impl Store for OverlayContractStore {
     where
         O: crate::persistence::RawOverlaySource + ?Sized,
     {
+        if matches!(self.mode, OverlayMode::DurableBorrowed) {
+            panic!("durable commits must not use the ordinary borrowed overlay path");
+        }
         if !matches!(self.mode, OverlayMode::Borrowed) {
             return Ok(false);
         }
 
         let mut overlay = self.borrowed_overlay.lock();
+        let mut collect = |key: &[u8], value: Option<&[u8]>| {
+            overlay.push((key.to_vec(), value.map(<[u8]>::to_vec)));
+        };
+        overlay_source.visit_raw_overlay(&mut collect);
+        Ok(true)
+    }
+
+    fn try_commit_durable_borrowed_raw_overlay<O>(
+        &self,
+        overlay_source: &mut O,
+    ) -> crate::StorageResult<bool>
+    where
+        O: crate::persistence::RawOverlaySource + ?Sized,
+    {
+        if matches!(self.mode, OverlayMode::Fails) {
+            return Err(StorageError::backend("durable overlay failed"));
+        }
+        if !matches!(self.mode, OverlayMode::DurableBorrowed) {
+            return Ok(false);
+        }
+
+        let mut overlay = self.durable_overlay.lock();
         let mut collect = |key: &[u8], value: Option<&[u8]>| {
             overlay.push((key.to_vec(), value.map(<[u8]>::to_vec)));
         };
@@ -218,6 +265,91 @@ fn raw_overlay_error_propagates_and_keeps_cache_dirty() {
     assert!(
         store.try_get(&key).is_none(),
         "failed commit must not persist partial changes"
+    );
+}
+
+#[test]
+fn discard_pending_changes_restores_last_committed_view_after_failure() {
+    let store = Arc::new(OverlayContractStore::new(OverlayMode::Fails));
+    let key = StorageKey::new(7, vec![0x22]);
+    let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
+    writer.add(key.clone(), StorageItem::from_bytes(vec![0xBB]));
+
+    writer
+        .try_commit()
+        .expect_err("injected overlay failure should reach the caller");
+    writer.discard_pending_changes();
+
+    assert_eq!(writer.data_cache().pending_change_count(), 0);
+    assert!(writer.get(&key).is_none());
+    assert!(store.try_get(&key).is_none());
+}
+
+#[test]
+fn durable_commit_propagates_backend_flush_failure_and_clears_overlay() {
+    let store = Arc::new(OverlayContractStore::new(OverlayMode::FlushFails));
+    let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
+
+    let error = writer
+        .try_commit_durable()
+        .expect_err("backend flush failure must reach the durability caller");
+
+    assert!(error.to_string().contains("injected backend flush failure"));
+    assert_eq!(writer.data_cache().pending_change_count(), 0);
+}
+
+#[test]
+fn durable_commit_clears_overlay_when_overlay_transaction_fails() {
+    let store = Arc::new(OverlayContractStore::new(OverlayMode::Fails));
+    let key = StorageKey::new(7, vec![0x24]);
+    let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
+    writer.add(key.clone(), StorageItem::from_bytes(vec![0xDD]));
+
+    let error = writer
+        .try_commit_durable()
+        .expect_err("overlay transaction failure must reach the durability caller");
+
+    assert!(error.to_string().contains("durable overlay failed"));
+    assert_eq!(writer.data_cache().pending_change_count(), 0);
+    assert!(writer.get(&key).is_none());
+    assert!(store.try_get(&key).is_none());
+}
+
+#[test]
+fn durable_commit_rejects_backend_without_atomic_overlay_capability() {
+    let store = Arc::new(OverlayContractStore::new(OverlayMode::Materialized));
+    let key = StorageKey::new(7, vec![0x26]);
+    let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
+    writer.add(key.clone(), StorageItem::from_bytes(vec![0xEF]));
+
+    let error = writer
+        .try_commit_durable()
+        .expect_err("canonical commit must require an atomic durable overlay");
+
+    assert!(
+        error.to_string().contains("atomic durable overlay"),
+        "unexpected error: {error}"
+    );
+    assert_eq!(store.cloned_raw_overlay_attempts(), 0);
+    assert_eq!(writer.data_cache().pending_change_count(), 0);
+    assert!(store.try_get(&key).is_none());
+}
+
+#[test]
+fn durable_commit_prefers_backend_durable_overlay_capability() {
+    let store = Arc::new(OverlayContractStore::new(OverlayMode::DurableBorrowed));
+    let key = StorageKey::new(7, vec![0x25]);
+    let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
+    writer.add(key.clone(), StorageItem::from_bytes(vec![0xEE]));
+
+    writer
+        .try_commit_durable()
+        .expect("durable backend overlay should be accepted");
+
+    assert_eq!(writer.data_cache().pending_change_count(), 0);
+    assert_eq!(
+        store.durable_overlay(),
+        vec![(key.to_array(), Some(vec![0xEE]))]
     );
 }
 
