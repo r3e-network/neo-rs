@@ -13,7 +13,10 @@ fn reason_carries_rejected_hashes(reason: ChangeViewReason) -> bool {
     )
 }
 
-impl ConsensusService {
+impl<S> ConsensusService<S>
+where
+    S: crate::ConsensusSigner,
+{
     /// Handles `ChangeView` message
     pub(in crate::service) async fn on_change_view(
         &mut self,

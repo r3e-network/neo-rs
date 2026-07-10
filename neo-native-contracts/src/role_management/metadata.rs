@@ -7,9 +7,13 @@ use neo_primitives::{CallFlags, ContractParameterType};
 use super::{ROLE_DESIGNATION_EVENT, RoleManagement};
 use crate::support::invoke::{NativeMethodBinding, method_metadata};
 
-pub(super) static ROLE_MANAGEMENT_METHOD_BINDINGS: LazyLock<
-    Vec<NativeMethodBinding<RoleManagement>>,
-> = LazyLock::new(|| {
+pub(super) fn role_management_method_bindings<P, D, B>()
+-> Vec<NativeMethodBinding<RoleManagement, P, D, B>>
+where
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+    D: neo_execution::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     vec![
         NativeMethodBinding::new(
             NativeMethod::new(
@@ -40,10 +44,15 @@ pub(super) static ROLE_MANAGEMENT_METHOD_BINDINGS: LazyLock<
             RoleManagement::invoke_designate_as_role,
         ),
     ]
-});
+}
 
-pub(super) static ROLE_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> =
-    LazyLock::new(|| method_metadata(&ROLE_MANAGEMENT_METHOD_BINDINGS));
+pub(super) static ROLE_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
+    method_metadata(&role_management_method_bindings::<
+        neo_execution::native_contract_provider::NoNativeContractProvider,
+        neo_execution::NoDiagnostic,
+        neo_storage::EmptyCacheBacking,
+    >())
+});
 
 /// The dual `Designation` event registration (RoleManagement.cs:27-37): both
 /// share order 0 and exactly one is active at any height. V0

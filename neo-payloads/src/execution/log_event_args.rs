@@ -1,26 +1,29 @@
-//! LogEventArgs - matches C# Neo.SmartContract.LogEventArgs exactly
+//! Log event arguments emitted by `ApplicationEngine`.
 
-use crate::{UInt160, Verifiable};
 use std::fmt;
 use std::sync::Arc;
 
-/// The EventArgs of ApplicationEngine.Log (matches C# LogEventArgs)
+use neo_primitives::UInt160;
+
+use crate::VerifiableContainer;
+
+/// Event arguments for `ApplicationEngine.Log`.
 #[derive(Clone)]
 pub struct LogEventArgs {
-    /// The container that containing the executed script
-    pub script_container: Option<Arc<dyn Verifiable>>,
+    /// Script container that emitted the log, when execution has one.
+    pub script_container: Option<Arc<VerifiableContainer>>,
 
-    /// The script hash of the contract that sends the log
+    /// Script hash of the contract that emitted the log.
     pub script_hash: UInt160,
 
-    /// The message of the log
+    /// Log message.
     pub message: String,
 }
 
 impl LogEventArgs {
-    /// Initializes a new instance
+    /// Creates log event arguments.
     pub fn new(
-        container: impl Into<Option<Arc<dyn Verifiable>>>,
+        container: impl Into<Option<Arc<VerifiableContainer>>>,
         script_hash: UInt160,
         message: String,
     ) -> Self {

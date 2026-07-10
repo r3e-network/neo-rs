@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::Block;
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 use crate::native_persist::{NativePersistOptions, NativePersistResources};
 use crate::service_context::BlockPersistContext;
@@ -14,16 +15,16 @@ use super::provider::{EmptyBlockFastForwardNativeProvider, NativeEmptyBlockFastF
 use super::types::EmptyBlockFastForwardPlan;
 
 /// Empty-block fast-forward writes staged in an isolated child cache.
-pub struct StagedEmptyBlockFastForward {
+pub struct StagedEmptyBlockFastForward<C: CacheRead> {
     /// Staged writes, isolated from the canonical snapshot until commit.
-    snapshot: Arc<DataCache>,
+    snapshot: Arc<DataCache<C>>,
     /// Eligible interval covered by this staged write.
     pub plan: EmptyBlockFastForwardPlan,
 }
 
-impl StagedEmptyBlockFastForward {
+impl<C: CacheRead> StagedEmptyBlockFastForward<C> {
     /// Returns the staged snapshot for tests and committing gates.
-    pub fn snapshot(&self) -> &DataCache {
+    pub fn snapshot(&self) -> &DataCache<C> {
         self.snapshot.as_ref()
     }
 
@@ -38,17 +39,19 @@ impl StagedEmptyBlockFastForward {
 /// Ledger history is written for every block, the current-block pointer
 /// advances to the interval end, and NEO/GAS empty-block effects are aggregated
 /// through `neo-native-contracts` storage helpers.
-pub fn stage_empty_block_fast_forward<B>(
-    snapshot: Arc<DataCache>,
-    blocks: &[B],
+pub fn stage_empty_block_fast_forward<T, P, C>(
+    snapshot: Arc<DataCache<C>>,
+    blocks: &[T],
     settings: &ProtocolSettings,
     persist_options: NativePersistOptions,
     persist_context: BlockPersistContext,
-    resources: &NativePersistResources,
+    resources: &NativePersistResources<P>,
     current_height: u32,
-) -> CoreResult<StagedEmptyBlockFastForward>
+) -> CoreResult<StagedEmptyBlockFastForward<C>>
 where
-    B: Borrow<Block>,
+    T: Borrow<Block>,
+    P: NativeContractProvider + 'static,
+    C: CacheRead,
 {
     let plan = plan_empty_block_fast_forward(EmptyBlockFastForwardRequest {
         current_height,

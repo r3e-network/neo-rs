@@ -16,6 +16,7 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
 use crate::server::rpc_server::RpcServer;
+use neo_execution::NativeContract;
 use num_traits::ToPrimitive;
 use serde_json::Value;
 
@@ -56,7 +57,11 @@ impl RpcServerBlockchain {
             let state = deployed_contracts
                 .contract_state_by_hash(store.data_cache(), &contract.hash())
                 .map_err(internal_error)?
-                .or_else(|| contract.contract_state(&settings, block_height));
+                .or_else(|| {
+                    <neo_native_contracts::StandardNativeContract as NativeContract<
+                        neo_native_contracts::StandardNativeProvider,
+                    >>::contract_state(&contract, &settings, block_height)
+                });
 
             if let Some(state) = state {
                 contract_states.push(state);

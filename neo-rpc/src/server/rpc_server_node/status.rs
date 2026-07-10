@@ -1,6 +1,6 @@
 //! Peer status endpoint handlers.
 
-use neo_network::handle::LocalNodeInfo;
+use neo_network::LocalNodeInfo;
 use serde_json::Value;
 
 use super::{

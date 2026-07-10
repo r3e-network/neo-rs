@@ -28,37 +28,51 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use neo_execution::ApplicationEngine;
-use neo_storage::persistence::StoreCache;
+use neo_storage::persistence::providers::RuntimeStore;
+use neo_storage::persistence::{CacheRead, DataCache, EmptyCacheBacking, StoreCacheBacking};
+use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::server::diagnostic::Diagnostic;
 
 use iterators::IteratorEntry;
 
+type SessionEngine<B> =
+    ApplicationEngine<neo_native_contracts::StandardNativeProvider, Option<Diagnostic>, B>;
+
+/// Invocation session backed by the runtime-selected persistent store.
+pub type Session = SessionRecord<StoreCacheBacking<RuntimeStore>>;
+
 /// Represents an invocation session that can retain iterators between RPC calls.
-pub struct Session {
+pub struct SessionRecord<B = EmptyCacheBacking>
+where
+    B: CacheRead,
+{
     script: Vec<u8>,
-    snapshot: StoreCache,
-    engine: Mutex<ApplicationEngine>,
+    snapshot: Arc<DataCache<B>>,
+    engine: Mutex<SessionEngine<B>>,
     diagnostic: Mutex<Option<Diagnostic>>,
     iterators: Mutex<HashMap<Uuid, IteratorEntry>>,
     iterator_lookup: Mutex<HashMap<u32, Uuid>>,
     start_time: Mutex<Instant>,
 }
 
-impl Session {
+impl<B> SessionRecord<B>
+where
+    B: CacheRead,
+{
     /// Return the script executed by this session.
     pub fn script(&self) -> &[u8] {
         &self.script
     }
 
     /// Lock and return the session's application engine.
-    pub fn engine(&self) -> MutexGuard<'_, ApplicationEngine> {
+    pub fn engine(&self) -> MutexGuard<'_, SessionEngine<B>> {
         self.engine.lock()
     }
 
     /// Lock and return the session's application engine for mutable use.
-    pub fn engine_mut(&self) -> MutexGuard<'_, ApplicationEngine> {
+    pub fn engine_mut(&self) -> MutexGuard<'_, SessionEngine<B>> {
         self.engine()
     }
 
@@ -68,7 +82,7 @@ impl Session {
     }
 
     /// Return the storage snapshot associated with this session.
-    pub const fn snapshot(&self) -> &StoreCache {
+    pub fn snapshot(&self) -> &DataCache<B> {
         &self.snapshot
     }
 

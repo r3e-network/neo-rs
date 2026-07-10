@@ -1,13 +1,13 @@
 //! ApplicationLogs service for capturing execution logs and serving RPC queries.
 
-use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
 use neo_payloads::{CommittedHandler, CommittingHandler};
 use neo_primitives::UInt256;
 use neo_primitives::panic_message;
-use neo_storage::persistence::{DataCache, Store, StoreSnapshot};
+use neo_storage::persistence::providers::MemoryStore;
+use neo_storage::persistence::{DataCache, ReadOnlyStoreGeneric, Store, StoreSnapshot, WriteStore};
 use parking_lot::Mutex;
 use serde_json::Value;
 use std::any::Any;
@@ -19,19 +19,22 @@ use tracing::error;
 use super::ApplicationLogsSettings;
 
 /// ApplicationLogs storage and commit handler.
-pub struct ApplicationLogsService {
+pub struct ApplicationLogsService<S: Store = MemoryStore> {
     settings: ApplicationLogsSettings,
-    store: Arc<dyn Store>,
-    snapshot: Mutex<Option<Arc<dyn StoreSnapshot>>>,
+    store: Arc<S>,
+    snapshot: Mutex<Option<Arc<S::Snapshot>>>,
     disabled: AtomicBool,
 }
 
-impl ApplicationLogsService {
+impl<S> ApplicationLogsService<S>
+where
+    S: Store,
+{
     const PREFIX_BLOCK: u8 = 0x40;
     const PREFIX_TX: u8 = 0x41;
 
     /// Creates a new ApplicationLogs service.
-    pub fn new(settings: ApplicationLogsSettings, store: Arc<dyn Store>) -> Self {
+    pub fn new(settings: ApplicationLogsSettings, store: Arc<S>) -> Self {
         Self {
             settings,
             store,
@@ -149,21 +152,21 @@ impl ApplicationLogsService {
     }
 }
 
-impl CommittingHandler for ApplicationLogsService {
-    fn blockchain_committing_handler(
+impl<S> CommittingHandler for ApplicationLogsService<S>
+where
+    S: Store,
+{
+    fn blockchain_committing_handler<B: neo_storage::CacheRead>(
         &self,
-        system: &dyn Any,
+        network: u32,
         block: &Block,
-        _snapshot: &DataCache,
+        _snapshot: &DataCache<B>,
         application_executed_list: &[ApplicationExecuted],
     ) {
         if self.disabled.load(Ordering::Relaxed) {
             return;
         }
-        let Some(settings) = system.downcast_ref::<ProtocolSettings>() else {
-            return;
-        };
-        if settings.network != self.settings.network {
+        if network != self.settings.network {
             return;
         }
         let result = panic::catch_unwind(AssertUnwindSafe(|| -> CoreResult<()> {
@@ -191,15 +194,15 @@ impl CommittingHandler for ApplicationLogsService {
     }
 }
 
-impl CommittedHandler for ApplicationLogsService {
-    fn blockchain_committed_handler(&self, system: &dyn Any, _block: &Block) {
+impl<S> CommittedHandler for ApplicationLogsService<S>
+where
+    S: Store,
+{
+    fn blockchain_committed_handler(&self, network: u32, _block: &Block) {
         if self.disabled.load(Ordering::Relaxed) {
             return;
         }
-        let Some(settings) = system.downcast_ref::<ProtocolSettings>() else {
-            return;
-        };
-        if settings.network != self.settings.network {
+        if network != self.settings.network {
             return;
         }
         let result = panic::catch_unwind(AssertUnwindSafe(|| self.commit_batch()));

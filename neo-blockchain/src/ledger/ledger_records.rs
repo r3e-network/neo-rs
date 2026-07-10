@@ -55,7 +55,7 @@ use neo_native_contracts::ledger_contract::storage::{
 
 /// Upsert helper: C# `GetAndChange(key, factory).FromReplica(item)`
 /// replaces the stored value whether or not the key already exists.
-fn upsert(cache: &DataCache, key: StorageKey, value: Vec<u8>) {
+fn upsert<B: neo_storage::CacheRead>(cache: &DataCache<B>, key: StorageKey, value: Vec<u8>) {
     if cache.get(&key).is_some() {
         cache.update(key, StorageItem::from_bytes(value));
     } else {
@@ -144,8 +144,8 @@ impl LedgerRecords {
     /// records (initial `VMState::NONE`, like C#'s `State = VMState.NONE`),
     /// and the conflict stubs for every `Conflicts` attribute (one stub per
     /// conflict hash plus one per conflicting signer).
-    pub(crate) fn write_on_persist_records(
-        cache: &DataCache,
+    pub(crate) fn write_on_persist_records<B: neo_storage::CacheRead>(
+        cache: &DataCache<B>,
         block: &Block,
         block_hash: &UInt256,
     ) -> CoreResult<()> {
@@ -213,8 +213,8 @@ impl LedgerRecords {
     /// `OnPersistAsync` (`transactionState.State = engine.Execute()`), so
     /// the record committed at the end of `Blockchain.Persist` carries the
     /// execution result; the explicit Rust codec requires a rewrite.
-    pub(crate) fn update_transaction_vm_state(
-        cache: &DataCache,
+    pub(crate) fn update_transaction_vm_state<B: neo_storage::CacheRead>(
+        cache: &DataCache<B>,
         block_index: u32,
         tx: &Transaction,
         tx_hash: &UInt256,
@@ -231,8 +231,8 @@ impl LedgerRecords {
 
     /// The exact write of C# `LedgerContract.PostPersistAsync`: the
     /// `Prefix_CurrentBlock` pointer becomes `(block hash, block index)`.
-    pub(crate) fn write_post_persist_record(
-        cache: &DataCache,
+    pub(crate) fn write_post_persist_record<B: neo_storage::CacheRead>(
+        cache: &DataCache<B>,
         block_hash: &UInt256,
         index: u32,
     ) -> CoreResult<()> {

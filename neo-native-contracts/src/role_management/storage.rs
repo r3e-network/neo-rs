@@ -1,5 +1,6 @@
 //! Designation storage keys and lookup helpers for RoleManagement.
 
+use neo_storage::CacheRead;
 use neo_storage::StorageKey;
 use neo_storage::persistence::{DataCache, SeekDirection};
 
@@ -12,8 +13,8 @@ use super::RoleManagement;
 /// A `Backward` prefix scan yields them in descending designation-index order, so
 /// the first one with `designation_index <= index` is the effective designation,
 /// matching C#'s `FindRange((role, index), (role), Backward).FirstOrDefault`.
-pub(super) fn find_designation_value(
-    snapshot: &DataCache,
+pub(super) fn find_designation_value<B: CacheRead>(
+    snapshot: &DataCache<B>,
     role_byte: u8,
     index: u32,
 ) -> Option<Vec<u8>> {

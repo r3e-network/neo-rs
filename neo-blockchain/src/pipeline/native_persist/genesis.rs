@@ -30,7 +30,7 @@ pub(crate) const NEO_PREFIX_COMMITTEE_KEY: u8 = 14;
 /// `NeoToken` committee cache -- a key genesis initialization always
 /// seeds and that can never be deleted afterwards -- which keeps stores
 /// persisted before the ledger records landed reporting initialized.
-pub fn chain_state_initialized(snapshot: &DataCache) -> bool {
+pub fn chain_state_initialized<B: neo_storage::CacheRead>(snapshot: &DataCache<B>) -> bool {
     let block_prefix = StorageKey::new(LEDGER_CONTRACT_ID, vec![LEDGER_PREFIX_BLOCK]);
     if snapshot
         .find(Some(&block_prefix), SeekDirection::Forward)

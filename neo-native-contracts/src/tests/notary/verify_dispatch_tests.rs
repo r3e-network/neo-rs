@@ -15,11 +15,11 @@ use neo_crypto::Secp256r1Crypto;
 use neo_execution::native_contract::build_native_contract_state;
 use neo_execution::{ApplicationEngine, Contract, NativeContract};
 use neo_payloads::{
-    Block, Header, NotaryAssisted, Signer, Transaction, TransactionAttribute, Witness,
-    get_sign_data,
+    Block, Header, NotaryAssisted, Signer, Transaction, TransactionAttribute, VerifiableContainer,
+    Witness, get_sign_data,
 };
 use neo_primitives::{
-    CallFlags, TransactionAttributeType, TriggerType, UInt160, UInt256, Verifiable, WitnessScope,
+    CallFlags, TransactionAttributeType, TriggerType, UInt160, UInt256, WitnessScope,
 };
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
@@ -60,7 +60,6 @@ fn seed_current_block(cache: &DataCache, index: u32) {
 /// A snapshot with the Notary native deployed and (optionally) the given
 /// compressed public keys designated as P2PNotary nodes from genesis.
 fn seeded_snapshot(notary_pubkeys: &[Vec<u8>]) -> Arc<DataCache> {
-    crate::install();
     let cache = DataCache::new(false);
     seed_current_block(&cache, 0);
     deploy_native(
@@ -78,7 +77,7 @@ fn seeded_snapshot(notary_pubkeys: &[Vec<u8>]) -> Arc<DataCache> {
 /// Returns the final VM state and the Boolean result.
 fn call_verify(
     snapshot: Arc<DataCache>,
-    container: Option<Arc<dyn Verifiable>>,
+    container: Option<Arc<VerifiableContainer>>,
     signature: Option<&[u8]>,
 ) -> (VmState, bool) {
     let mut builder = ScriptBuilder::new();
@@ -104,7 +103,7 @@ fn call_verify(
         None,
         echidna_settings(),
         10_00000000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
@@ -151,7 +150,7 @@ fn verify_accepts_designated_notary_signature() {
     let payer = UInt160::from_bytes(&[0x05; 20]).unwrap();
     let tx = notary_assisted_tx(vec![Signer::new(payer, WitnessScope::NONE)]);
     let signature = sign_tx(&tx, &private_key);
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
 
     // A designated notary's signature over the tx sign-data verifies.
     let (state, ok) = call_verify(
@@ -190,14 +189,14 @@ fn verify_rejects_missing_container_attribute_or_malformed_signature() {
     plain.set_signers(vec![Signer::new(payer, WitnessScope::NONE)]);
     plain.set_witnesses(vec![Witness::empty()]);
     let signature = sign_tx(&plain, &private_key);
-    let container: Arc<dyn Verifiable> = Arc::new(plain);
+    let container = Arc::new(VerifiableContainer::from(plain));
     let (state2, ok2) = call_verify(Arc::clone(&snapshot), Some(container), Some(&signature));
     assert_eq!(state2, VmState::HALT);
     assert!(!ok2, "verify requires the NotaryAssisted attribute");
 
     // Wrong signature length and Null signature -> false.
     let tx = notary_assisted_tx(vec![Signer::new(payer, WitnessScope::NONE)]);
-    let container2: Arc<dyn Verifiable> = Arc::new(tx);
+    let container2 = Arc::new(VerifiableContainer::from(tx));
     let (state3, ok3) = call_verify(
         Arc::clone(&snapshot),
         Some(Arc::clone(&container2)),
@@ -218,7 +217,7 @@ fn verify_rejects_when_no_notary_nodes_designated() {
     let payer = UInt160::from_bytes(&[0x05; 20]).unwrap();
     let tx = notary_assisted_tx(vec![Signer::new(payer, WitnessScope::NONE)]);
     let signature = sign_tx(&tx, &private_key);
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
 
     let (state, ok) = call_verify(snapshot, Some(container), Some(&signature));
     assert_eq!(state, VmState::HALT);
@@ -239,7 +238,7 @@ fn verify_requires_scope_none_on_the_notary_signer() {
         Signer::new(Notary::script_hash(), WitnessScope::GLOBAL),
     ]);
     let signature = sign_tx(&tx, &private_key);
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
     let (state, ok) = call_verify(Arc::clone(&snapshot), Some(container), Some(&signature));
     assert_eq!(state, VmState::HALT);
     assert!(!ok, "a scoped Notary signer must be rejected");
@@ -250,7 +249,7 @@ fn verify_requires_scope_none_on_the_notary_signer() {
         Signer::new(Notary::script_hash(), WitnessScope::NONE),
     ]);
     let signature2 = sign_tx(&tx2, &private_key);
-    let container2: Arc<dyn Verifiable> = Arc::new(tx2);
+    let container2 = Arc::new(VerifiableContainer::from(tx2));
     let (state2, ok2) = call_verify(snapshot, Some(container2), Some(&signature2));
     assert_eq!(state2, VmState::HALT);
     assert!(ok2, "a scope-None Notary signer must pass");
@@ -271,7 +270,7 @@ fn verify_notary_paid_transactions_require_a_funding_deposit() {
     tx.set_system_fee(6);
     tx.set_network_fee(4);
     let signature = sign_tx(&tx, &private_key);
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
 
     // No deposit -> false.
     let snapshot = seeded_snapshot(&[pubkey]);
@@ -312,7 +311,7 @@ fn verify_notary_paid_transactions_require_a_funding_deposit() {
     single.set_system_fee(6);
     single.set_network_fee(4);
     let sig_single = sign_tx(&single, &private_key);
-    let container_single: Arc<dyn Verifiable> = Arc::new(single);
+    let container_single = Arc::new(VerifiableContainer::from(single));
     let (state4, ok4) = call_verify(snapshot, Some(container_single), Some(&sig_single));
     assert_eq!(state4, VmState::HALT);
     assert!(!ok4, "Sender == Notary requires exactly two signers");
@@ -392,7 +391,7 @@ fn on_persist_debits_payer_deposit_and_mints_notary_reward() {
         Some(block),
         echidna_settings(),
         0,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
@@ -448,7 +447,7 @@ fn on_persist_faults_when_notary_paid_payer_deposit_is_missing() {
         Some(block),
         echidna_settings(),
         0,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
@@ -490,7 +489,7 @@ fn on_persist_faults_when_notary_paid_payer_deposit_is_overdrawn() {
         Some(block),
         echidna_settings(),
         0,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");

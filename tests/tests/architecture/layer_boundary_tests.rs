@@ -7,9 +7,9 @@
 //! Layer 1 (Infrastructure): neo-io, neo-error, neo-crypto, neo-storage, neo-config, neo-vm, neo-serialization, neo-manifest
 //! Layer 2 (Protocol): neo-payloads, neo-consensus, neo-hsm
 //! Layer 3 (Domain services): neo-execution, neo-native-contracts, neo-mempool, neo-state-service, neo-runtime
-//! Layer 4 (Node services): neo-blockchain, neo-network, neo-wallets, neo-indexer
+//! Layer 4 (Node services): neo-blockchain, neo-network, neo-wallets, neo-indexer, neo-oracle-service
 //! Layer 5 (Composition): neo-system
-//! Layer 6 (Plugin/RPC boundary): neo-oracle-service, neo-rpc
+//! Layer 6 (Plugin/RPC boundary): neo-rpc
 //! Layer 7 (Applications): neo-node, neo-gui
 //! ```
 
@@ -31,6 +31,19 @@ enum Layer {
 }
 
 impl Layer {
+    fn metadata_name(self) -> &'static str {
+        match self {
+            Self::Foundation => "foundation",
+            Self::Infrastructure => "infrastructure",
+            Self::Protocol => "protocol",
+            Self::DomainServices => "domain-services",
+            Self::NodeServices => "node-services",
+            Self::Composition => "composition",
+            Self::PluginBoundary => "plugin-boundary",
+            Self::Application => "application",
+        }
+    }
+
     fn from_crate_name(name: &str) -> Option<Self> {
         match name {
             // Layer 0: Foundation (no neo-* dependencies allowed).
@@ -47,18 +60,45 @@ impl Layer {
             | "neo-state-service"
             | "neo-runtime" => Some(Layer::DomainServices),
             // Layer 4: Long-running or queryable node services.
-            "neo-blockchain" | "neo-network" | "neo-wallets" | "neo-indexer" => {
-                Some(Layer::NodeServices)
-            }
+            "neo-blockchain" | "neo-network" | "neo-wallets" | "neo-indexer"
+            | "neo-oracle-service" => Some(Layer::NodeServices),
             // Layer 5: Node composition root.
             "neo-system" => Some(Layer::Composition),
             // Layer 6: Optional plugin/RPC-facing service boundary.
-            "neo-oracle-service" | "neo-rpc" => Some(Layer::PluginBoundary),
+            "neo-rpc" => Some(Layer::PluginBoundary),
             // Layer 7: Binaries, UI clients, and development-only tooling.
             "neo-node" | "neo-gui" | "neo-test-fixtures" => Some(Layer::Application),
             _ => None,
         }
     }
+}
+
+fn architecture_metadata(workspace_root: &Path) -> toml::Value {
+    let root_manifest = read_toml_manifest(&workspace_root.join("Cargo.toml"));
+    root_manifest
+        .get("workspace")
+        .and_then(|workspace| workspace.get("metadata"))
+        .and_then(|metadata| metadata.get("architecture"))
+        .cloned()
+        .expect("root Cargo.toml should declare [workspace.metadata.architecture]")
+}
+
+fn parse_allowed_same_layer_dependencies(workspace_root: &Path) -> HashSet<(String, String)> {
+    architecture_metadata(workspace_root)
+        .get("allowed-same-layer-dependencies")
+        .and_then(toml::Value::as_array)
+        .expect("architecture metadata should declare allowed-same-layer-dependencies")
+        .iter()
+        .map(|entry| {
+            let edge = entry
+                .as_str()
+                .expect("same-layer dependency entries should be strings");
+            let (source, dependency) = edge.split_once(" -> ").unwrap_or_else(|| {
+                panic!("same-layer dependency `{edge}` should use `source -> dependency`")
+            });
+            (source.to_string(), dependency.to_string())
+        })
+        .collect()
 }
 
 fn read_toml_manifest(cargo_toml_path: &Path) -> toml::Value {
@@ -272,6 +312,61 @@ async fn test_all_neo_crates_are_classified() {
         unclassified.is_empty(),
         "Every neo-* crate with a Cargo.toml should have an explicit architecture layer: {:?}",
         unclassified
+    );
+}
+
+#[test]
+fn test_workspace_architecture_metadata_matches_layer_model() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let architecture = architecture_metadata(workspace_root);
+    let layers = architecture
+        .get("layers")
+        .and_then(toml::Value::as_table)
+        .expect("architecture metadata should declare a layers table");
+    let crates = get_workspace_crates(workspace_root);
+
+    let mut metadata_layers = HashMap::new();
+    for layer in [
+        Layer::Foundation,
+        Layer::Infrastructure,
+        Layer::Protocol,
+        Layer::DomainServices,
+        Layer::NodeServices,
+        Layer::Composition,
+        Layer::PluginBoundary,
+        Layer::Application,
+    ] {
+        let members = layers
+            .get(layer.metadata_name())
+            .and_then(toml::Value::as_array)
+            .unwrap_or_else(|| {
+                panic!(
+                    "architecture metadata should list `{}` layer members",
+                    layer.metadata_name()
+                )
+            });
+        for member in members {
+            let member = member
+                .as_str()
+                .expect("architecture layer members should be strings");
+            assert!(
+                metadata_layers.insert(member.to_string(), layer).is_none(),
+                "architecture metadata lists `{member}` in more than one layer"
+            );
+        }
+    }
+
+    let expected = crates
+        .into_iter()
+        .map(|crate_name| {
+            let layer = Layer::from_crate_name(&crate_name)
+                .unwrap_or_else(|| panic!("unclassified crate `{crate_name}`"));
+            (crate_name, layer)
+        })
+        .collect::<HashMap<_, _>>();
+    assert_eq!(
+        metadata_layers, expected,
+        "Cargo architecture metadata and the enforced layer model must stay identical"
     );
 }
 
@@ -530,6 +625,44 @@ async fn test_no_upward_dependencies() {
     );
 }
 
+#[test]
+fn test_same_layer_dependencies_are_explicit() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let crates = get_workspace_crates(workspace_root);
+    let allowed = parse_allowed_same_layer_dependencies(workspace_root);
+    let mut actual = HashSet::new();
+    let mut violations = Vec::new();
+
+    for crate_name in &crates {
+        let Some(crate_layer) = Layer::from_crate_name(crate_name) else {
+            continue;
+        };
+        let cargo_toml = workspace_root.join(crate_name).join("Cargo.toml");
+        for dependency in parse_neo_dependencies(&cargo_toml) {
+            if Layer::from_crate_name(&dependency) != Some(crate_layer) {
+                continue;
+            }
+            let edge = (crate_name.clone(), dependency.clone());
+            actual.insert(edge.clone());
+            if !allowed.contains(&edge) {
+                violations.push(format!("{} -> {}", edge.0, edge.1));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "Same-layer dependencies require an explicit architecture exception:\n{}",
+        violations.join("\n")
+    );
+
+    let stale = allowed.difference(&actual).collect::<Vec<_>>();
+    assert!(
+        stale.is_empty(),
+        "Remove stale same-layer dependency exceptions: {stale:?}"
+    );
+}
+
 #[tokio::test]
 async fn test_runtime_vocabulary_stays_below_composition_root() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
@@ -557,6 +690,167 @@ async fn test_runtime_vocabulary_stays_below_composition_root() {
             "{service_crate} must not depend on neo-system; shared service vocabulary belongs in neo-runtime"
         );
     }
+}
+
+#[test]
+fn test_composition_node_hides_component_layout() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let node_path = workspace_root
+        .join("neo-system")
+        .join("src")
+        .join("composition")
+        .join("node.rs");
+    let source = fs::read_to_string(&node_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", node_path.display()));
+
+    let public_fields = [
+        "pub settings:",
+        "pub storage:",
+        "pub wallets:",
+        "pub blockchain:",
+        "pub network:",
+        "pub sync_import_pipeline:",
+        "pub mempool:",
+        "pub header_cache:",
+        "pub native_contract_provider:",
+        "pub shutdown:",
+    ];
+    let exposed = public_fields
+        .into_iter()
+        .filter(|field| source.contains(field))
+        .collect::<Vec<_>>();
+    assert!(
+        exposed.is_empty(),
+        "neo-system::Node is an application-facing facade; component layout must stay private: {exposed:?}"
+    );
+
+    for accessor in [
+        "pub fn settings(&self)",
+        "pub fn storage(&self)",
+        "pub fn blockchain(&self)",
+        "pub fn network(&self)",
+        "pub fn mempool(&self)",
+        "pub fn header_cache(&self)",
+        "pub fn native_contract_provider(&self)",
+    ] {
+        assert!(
+            source.contains(accessor),
+            "neo-system::Node should expose named capability accessor `{accessor}`"
+        );
+    }
+
+    assert!(
+        !source.contains("cancellation_token(") && !source.contains("CancellationToken"),
+        "process cancellation belongs to the application supervisor, not neo-system::Node"
+    );
+}
+
+#[test]
+fn test_rpc_node_context_hides_component_layout() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let context_path = workspace_root
+        .join("neo-rpc")
+        .join("src")
+        .join("server")
+        .join("node_context.rs");
+    let source = fs::read_to_string(&context_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", context_path.display()));
+
+    let public_fields = [
+        "pub settings:",
+        "pub storage:",
+        "pub blockchain:",
+        "pub network:",
+        "pub mempool:",
+        "pub header_cache:",
+        "pub services:",
+        "pub native_contract_provider:",
+    ];
+    let exposed = public_fields
+        .into_iter()
+        .filter(|field| source.contains(field))
+        .collect::<Vec<_>>();
+    assert!(
+        exposed.is_empty(),
+        "RPC callers must use named NodeContext capabilities, not its component layout: {exposed:?}"
+    );
+}
+
+#[test]
+fn test_node_services_hide_command_loop_and_wire_module_layouts() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let blockchain_root = workspace_root.join("neo-blockchain").join("src");
+    let blockchain_lib =
+        fs::read_to_string(blockchain_root.join("lib.rs")).expect("read neo-blockchain crate root");
+    let blockchain_service = fs::read_to_string(blockchain_root.join("service/mod.rs"))
+        .expect("read neo-blockchain service module");
+
+    assert!(
+        blockchain_lib.contains("mod service;"),
+        "neo-blockchain should expose handles and capabilities, not its service module tree"
+    );
+    for forbidden in [
+        "pub mod service;",
+        "pub use internal::{",
+        "pub mod internal;",
+    ] {
+        assert!(
+            !blockchain_lib.contains(forbidden) && !blockchain_service.contains(forbidden),
+            "neo-blockchain command-loop internal `{forbidden}` must stay private"
+        );
+    }
+
+    let network_lib_path = workspace_root.join("neo-network").join("src/lib.rs");
+    let network_lib = fs::read_to_string(&network_lib_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", network_lib_path.display()));
+    for forbidden in [
+        "pub mod proto;",
+        "pub mod wire;",
+        "block_sync_mode, command, event, handle, local_node, remote_node, task_manager,",
+    ] {
+        assert!(
+            !network_lib.contains(forbidden),
+            "neo-network should export typed capabilities, not module layout `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn test_application_context_contains_only_commit_hooks() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let context_dir = workspace_root
+        .join("neo-node")
+        .join("src")
+        .join("node")
+        .join("context");
+    let mut violations = Vec::new();
+
+    for entry in fs::read_dir(&context_dir)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", context_dir.display()))
+    {
+        let path = entry.expect("context directory entry").path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("rs") {
+            continue;
+        }
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        for forbidden in [
+            "neo_system::Node",
+            "impl SystemContext",
+            "StoreCache<",
+            "\n    native_contract_provider:",
+        ] {
+            if source.contains(forbidden) {
+                violations.push(format!("{} contains `{forbidden}`", path.display()));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "application commit hooks must not reclaim composition-owned core context responsibilities:\n{}",
+        violations.join("\n")
+    );
 }
 
 #[tokio::test]

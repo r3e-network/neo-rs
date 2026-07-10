@@ -15,7 +15,6 @@ fn other_pubkey(index: u8) -> ECPoint {
 /// after projection.
 #[test]
 fn get_candidates_filters_blocked_and_projects_votes() {
-    crate::install();
     let cache = DataCache::new(false);
 
     let kept = other_pubkey(0);
@@ -45,7 +44,7 @@ fn get_candidates_filters_blocked_and_projects_votes() {
         None,
         ProtocolSettings::default(),
         10_000_000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
@@ -70,7 +69,6 @@ fn get_candidates_filters_blocked_and_projects_votes() {
 /// signature-contract address PolicyContract blocks.
 #[test]
 fn get_all_candidates_iterator_filters_and_projects() {
-    crate::install();
     let cache = DataCache::new(false);
     let kept = other_pubkey(0);
     cache.add(
@@ -99,7 +97,7 @@ fn get_all_candidates_iterator_filters_and_projects() {
         None,
         ProtocolSettings::default(),
         10_000_000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");

@@ -66,8 +66,8 @@ fn state_root_verification_exposes_explicit_native_provider_path() {
         "state-root verification must use the explicit-provider witness helper"
     );
     assert!(
-        verifier.contains("let provider: Arc<dyn NativeContractProvider>"),
-        "state-root verification should erase to dyn only at the execution witness boundary"
+        verifier.contains("native_contract_provider"),
+        "state-root verification should pass the concrete provider into the generic witness helper"
     );
 }
 
@@ -117,12 +117,8 @@ fn state_root_validator_reads_use_generic_provider_seam() {
         "state-root verification should not erase provider ownership before it reaches execution"
     );
     assert!(
-        !source.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
-        "state-root verification should not store the provider behind dyn in its local adapter"
-    );
-    assert!(
-        source.contains("get_native_contract_by_name(\"RoleManagement\")"),
-        "state-root verification should read RoleManagement from the explicit NativeContractProvider"
+        source.contains(".state_validators(snapshot, index)"),
+        "state-root verification should read StateValidator designations from the explicit NativeContractProvider capability"
     );
 
     let impl_start = source

@@ -1,11 +1,17 @@
-use super::super::OracleService;
+use super::super::native_provider::OracleContractReadProvider;
+use super::super::{OracleRuntimeProvider, OracleService};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::OracleResponseCode;
 use neo_wallets::KeyPair;
 
 /// Maximum URL length allowed.
 const MAX_URL_LENGTH: usize = 2048;
 
-impl OracleService {
+impl<R, P> OracleService<R, P>
+where
+    R: OracleRuntimeProvider + 'static,
+    P: NativeContractProvider + OracleContractReadProvider,
+{
     pub(in super::super) async fn process_url(
         &self,
         url: &str,

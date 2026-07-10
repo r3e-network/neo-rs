@@ -18,14 +18,26 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use neo_blockchain::{BlockchainHandle, HeaderCache};
+use neo_blockchain::{
+    BlockchainHandle, EmptyLedgerProvider, HeaderCache, HotColdLedgerProviderFactory,
+    LedgerProviderFactory, TransactionStateProvider, TxProvider,
+};
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
-use neo_runtime::{ConfigProvider, ServiceRegistry, StoreProvider};
+use neo_payloads::{Transaction, VerifyResult};
+use neo_runtime::{ConfigProvider, ServiceError, StoreProvider, TxAdmission};
+use neo_storage::persistence::DataCache;
+use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_cache::StoreCache;
+
+use super::native_provider::NativeProviderAdapter;
+use super::rpc_services::RpcServices;
+
+const NODE_CONTEXT_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
+    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
 
 /// Service handle bundle for the RPC server.
 ///
@@ -34,34 +46,41 @@ use neo_storage::persistence::store_cache::StoreCache;
 ///
 /// Cheap to clone — every field is either `Clone` (handles) or `Arc<T>`.
 #[derive(Clone)]
-pub struct NodeContext {
+pub struct NodeContext<P = neo_native_contracts::StandardNativeProvider, S = RuntimeStore>
+where
+    P: NativeContractProvider,
+    S: Store,
+{
     /// Protocol settings the node is running with.
-    pub settings: Arc<ProtocolSettings>,
+    settings: Arc<ProtocolSettings>,
 
     /// Storage backend.
-    pub storage: Arc<dyn Store>,
+    storage: Arc<S>,
 
     /// Blockchain service handle.
-    pub blockchain: BlockchainHandle,
+    blockchain: BlockchainHandle,
 
     /// Network service handle.
-    pub network: NetworkHandle,
+    network: NetworkHandle,
 
     /// Shared memory pool.
-    pub mempool: Arc<MemoryPool>,
+    mempool: Arc<MemoryPool<P>>,
 
     /// Shared header cache.
-    pub header_cache: Arc<HeaderCache>,
+    header_cache: Arc<HeaderCache>,
 
-    /// Service registry for optional services (application logs, tokens
-    /// tracker, oracle, state service, …).
-    pub services: ServiceRegistry,
+    /// Named, statically typed optional services used by RPC handlers.
+    services: RpcServices<S>,
 
     /// Native-contract provider for NeoVM host calls.
-    pub native_contract_provider: Arc<dyn NativeContractProvider>,
+    native_contract_provider: Arc<P>,
 }
 
-impl std::fmt::Debug for NodeContext {
+impl<P, S> std::fmt::Debug for NodeContext<P, S>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NodeContext")
             .field("settings", &"<ProtocolSettings>")
@@ -79,21 +98,25 @@ impl std::fmt::Debug for NodeContext {
     }
 }
 
-impl NodeContext {
+impl<P, S> NodeContext<P, S>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
     /// Construct a `NodeContext` from its component parts.
     ///
-    /// The composition root (typically `neo-node` or `neo-system`) calls
-    /// this with the concrete `Node`'s public fields, keeping the
-    /// dependency direction downward (L5 → L6, not L6 → L5).
+    /// The application composition root passes named capabilities obtained
+    /// from the core node. `NodeContext` deliberately does not depend on the
+    /// concrete `neo_system::Node` layout.
     pub fn from_parts(
         settings: Arc<ProtocolSettings>,
-        storage: Arc<dyn Store>,
+        storage: Arc<S>,
         blockchain: BlockchainHandle,
         network: NetworkHandle,
-        mempool: Arc<MemoryPool>,
+        mempool: Arc<MemoryPool<P>>,
         header_cache: Arc<HeaderCache>,
-        services: ServiceRegistry,
-        native_contract_provider: Arc<dyn NativeContractProvider>,
+        services: RpcServices<S>,
+        native_contract_provider: Arc<P>,
     ) -> Self {
         Self {
             settings,
@@ -123,17 +146,17 @@ impl NodeContext {
     }
 
     /// Returns the storage backend.
-    pub fn storage(&self) -> Arc<dyn Store> {
+    pub fn storage(&self) -> Arc<S> {
         Arc::clone(&self.storage)
     }
 
     /// Returns a fresh [`StoreCache`] over the node's storage backend.
-    pub fn store_cache(&self) -> StoreCache {
-        StoreCache::new_from_store(Arc::clone(&self.storage), false)
+    pub fn store_cache(&self) -> StoreCache<S> {
+        StoreCache::<S>::new_from_store(Arc::clone(&self.storage), false)
     }
 
     /// Returns the shared memory pool.
-    pub fn mempool(&self) -> Arc<MemoryPool> {
+    pub fn mempool(&self) -> Arc<MemoryPool<P>> {
         Arc::clone(&self.mempool)
     }
 
@@ -157,24 +180,37 @@ impl NodeContext {
         self.settings.max_traceable_blocks
     }
 
-    /// Looks up the registered instance of type `T`, if any.
-    pub fn get_service<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
-        self.services.get::<T>()
+    /// Returns the typed RPC service bundle.
+    pub fn services(&self) -> &RpcServices<S> {
+        &self.services
     }
 
-    /// Registers `service` as *the* instance of type `T`, replacing
-    /// any previously registered instance of the same type.
-    pub fn register_service<T: Send + Sync + 'static>(&self, service: Arc<T>) -> Option<Arc<T>> {
-        self.services.register(service)
+    /// Returns the state-service store, if one was started.
+    pub fn state_store(&self) -> Option<Arc<neo_state_service::StateStore<S>>> {
+        self.services.state_store()
     }
 
-    /// Returns the registered state-service store, if one was started.
-    pub fn state_store(&self) -> Option<Arc<neo_state_service::StateStore>> {
-        self.get_service::<neo_state_service::StateStore>()
+    /// Returns the indexer service, if one was started.
+    pub fn indexer_service(&self) -> Option<Arc<neo_indexer::IndexerService>> {
+        self.services.indexer()
+    }
+
+    /// Returns the application-log service, if one was started.
+    pub fn application_logs_service(
+        &self,
+    ) -> Option<Arc<crate::application_logs::ApplicationLogsService<S>>> {
+        self.services.application_logs()
+    }
+
+    /// Returns the token-tracker service, if one was started.
+    pub fn tokens_tracker_service(
+        &self,
+    ) -> Option<Arc<crate::plugins::tokens_tracker::TokensTrackerService<S>>> {
+        self.services.tokens_tracker()
     }
 
     /// Returns the native-contract provider.
-    pub fn native_contract_provider(&self) -> Arc<dyn NativeContractProvider> {
+    pub fn native_contract_provider(&self) -> Arc<P> {
         Arc::clone(&self.native_contract_provider)
     }
 }
@@ -183,20 +219,31 @@ impl NodeContext {
 // Provider trait implementations
 //
 // These allow `NodeContext` to be used anywhere the provider traits are
-// expected (e.g. `Session::new()` accepting `Arc<dyn StoreProvider>`).
+// expected while preserving the concrete node context type at call sites that
+// are generic over providers.
 // =============================================================================
 
-impl StoreProvider for NodeContext {
-    fn store(&self) -> Arc<dyn Store> {
+impl<P, S> StoreProvider for NodeContext<P, S>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
+    type Store = S;
+
+    fn store(&self) -> Arc<S> {
         Arc::clone(&self.storage)
     }
 
-    fn store_cache(&self) -> StoreCache {
-        StoreCache::new_from_store(Arc::clone(&self.storage), false)
+    fn store_cache(&self) -> StoreCache<S> {
+        StoreCache::<S>::new_from_store(Arc::clone(&self.storage), false)
     }
 }
 
-impl ConfigProvider for NodeContext {
+impl<P, S> ConfigProvider for NodeContext<P, S>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
     fn settings(&self) -> Arc<ProtocolSettings> {
         Arc::clone(&self.settings)
     }
@@ -206,10 +253,54 @@ impl ConfigProvider for NodeContext {
     }
 }
 
-// Convert a `neo_system::Node` into a `NodeContext`.
-//
-// **Removed**: The `From<&neo_system::Node> for NodeContext` impl previously
-// lived here, forcing `neo-rpc` to depend on `neo-system` (L5) as a required
-// dependency — a layer violation (L6 → L5). Callers in the composition root
-// (`neo-node`, `neo-system`) must now use [`NodeContext::from_parts`] to
-// assemble a `NodeContext` from the concrete `Node`'s public fields.
+impl<P, S> TxAdmission for NodeContext<P, S>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
+    fn try_enqueue_preverify<B: neo_storage::CacheRead>(
+        &self,
+        tx: Transaction,
+        relay: bool,
+        snapshot: &DataCache<B>,
+    ) -> Result<(), ServiceError> {
+        let hash = tx
+            .try_hash()
+            .map_err(|_| ServiceError::internal(format!("{:?}", VerifyResult::Invalid)))?;
+        let ledger = NODE_CONTEXT_LEDGER_PROVIDER_FACTORY.provider(snapshot);
+        if ledger.contains_transaction(&hash).map_err(|error| {
+            ServiceError::internal(format!("ledger contains_transaction: {error}"))
+        })? {
+            return Err(ServiceError::internal(format!(
+                "{:?}",
+                VerifyResult::AlreadyExists
+            )));
+        }
+
+        let native = NativeProviderAdapter::new(Arc::clone(&self.native_contract_provider));
+        let max_traceable_blocks = native
+            .max_traceable_blocks(snapshot, self.settings.as_ref())
+            .map_err(|error| ServiceError::internal(format!("MaxTraceableBlocks: {error}")))?;
+        let signers: Vec<_> = tx.signers().iter().map(|signer| signer.account).collect();
+        if ledger
+            .contains_conflict_hash(&hash, &signers, max_traceable_blocks)
+            .map_err(|error| {
+                ServiceError::internal(format!("ledger contains_conflict_hash: {error}"))
+            })?
+        {
+            return Err(ServiceError::internal(format!(
+                "{:?}",
+                VerifyResult::HasConflicts
+            )));
+        }
+
+        let result = self.mempool.try_add(tx.clone(), snapshot);
+        if result != VerifyResult::Succeed {
+            return Err(ServiceError::internal(format!("{result:?}")));
+        }
+        if relay {
+            let _ = self.network.try_broadcast_transaction(tx);
+        }
+        Ok(())
+    }
+}

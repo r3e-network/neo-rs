@@ -19,7 +19,7 @@ use neo_blockchain::ledger_provider::{
 use neo_error::CoreResult;
 use neo_payloads::Block;
 use neo_primitives::UInt256;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::{CacheRead, DataCache};
 
 use crate::server::model::block_hash_or_index::BlockHashOrIndex;
 
@@ -43,8 +43,8 @@ pub(crate) struct TransactionLedgerContext {
 /// Routes the index case through the shared hot/cold ledger provider factory.
 /// With [`EmptyLedgerProvider`] as the cold side, behavior matches hot native
 /// Ledger storage today while keeping the static-file archive seam explicit.
-pub(crate) fn resolve_block_hash(
-    snapshot: &DataCache,
+pub(crate) fn resolve_block_hash<B: CacheRead>(
+    snapshot: &DataCache<B>,
     identifier: &BlockHashOrIndex,
 ) -> CoreResult<Option<UInt256>> {
     match identifier {
@@ -62,7 +62,7 @@ pub(crate) fn resolve_block_hash(
 /// constructing ledger providers directly. That keeps each RPC handler on a
 /// narrow capability trait while keeping the hot/cold routing boundary in one
 /// shared module.
-pub(crate) fn current_index(snapshot: &DataCache) -> CoreResult<u32> {
+pub(crate) fn current_index<B: CacheRead>(snapshot: &DataCache<B>) -> CoreResult<u32> {
     LEDGER_QUERY_PROVIDER_FACTORY
         .provider(snapshot)
         .current_index()
@@ -70,7 +70,7 @@ pub(crate) fn current_index(snapshot: &DataCache) -> CoreResult<u32> {
 
 /// Returns the current persisted ledger hash through the routed
 /// ledger provider.
-pub(crate) fn current_hash(snapshot: &DataCache) -> CoreResult<UInt256> {
+pub(crate) fn current_hash<B: CacheRead>(snapshot: &DataCache<B>) -> CoreResult<UInt256> {
     LEDGER_QUERY_PROVIDER_FACTORY
         .provider(snapshot)
         .current_hash()
@@ -78,7 +78,7 @@ pub(crate) fn current_hash(snapshot: &DataCache) -> CoreResult<UInt256> {
 
 /// Returns the current persisted block count through the routed
 /// ledger provider.
-pub(crate) fn block_count(snapshot: &DataCache) -> CoreResult<u32> {
+pub(crate) fn block_count<B: CacheRead>(snapshot: &DataCache<B>) -> CoreResult<u32> {
     LEDGER_QUERY_PROVIDER_FACTORY
         .provider(snapshot)
         .block_count()
@@ -86,7 +86,10 @@ pub(crate) fn block_count(snapshot: &DataCache) -> CoreResult<u32> {
 
 /// Returns the canonical block hash for `index` through the shared storage
 /// ledger boundary.
-pub(crate) fn block_hash_by_index(snapshot: &DataCache, index: u32) -> CoreResult<Option<UInt256>> {
+pub(crate) fn block_hash_by_index<B: CacheRead>(
+    snapshot: &DataCache<B>,
+    index: u32,
+) -> CoreResult<Option<UInt256>> {
     LEDGER_QUERY_PROVIDER_FACTORY
         .provider(snapshot)
         .block_hash_by_index(index)
@@ -94,8 +97,8 @@ pub(crate) fn block_hash_by_index(snapshot: &DataCache, index: u32) -> CoreResul
 
 /// Returns the current height plus the canonical next block hash for the block
 /// or header at `index`.
-pub(crate) fn current_index_and_next_hash(
-    snapshot: &DataCache,
+pub(crate) fn current_index_and_next_hash<B: CacheRead>(
+    snapshot: &DataCache<B>,
     index: u32,
 ) -> CoreResult<(u32, Option<UInt256>)> {
     let provider = LEDGER_QUERY_PROVIDER_FACTORY.provider(snapshot);
@@ -106,8 +109,8 @@ pub(crate) fn current_index_and_next_hash(
 
 /// Returns the ledger metadata that C# adds to verbose transaction JSON:
 /// confirmations, block hash, and block timestamp.
-pub(crate) fn transaction_context(
-    snapshot: &DataCache,
+pub(crate) fn transaction_context<B: CacheRead>(
+    snapshot: &DataCache<B>,
     block_index: u32,
 ) -> CoreResult<TransactionLedgerContext> {
     let provider = LEDGER_QUERY_PROVIDER_FACTORY.provider(snapshot);
@@ -140,8 +143,8 @@ pub(crate) fn transaction_context(
 /// `CoreError::invalid_data` message when a referenced transaction has no
 /// ledger record), so the result is byte-identical to the former hand-rolled
 /// loop.
-pub(crate) fn get_full_block(
-    snapshot: &DataCache,
+pub(crate) fn get_full_block<B: CacheRead>(
+    snapshot: &DataCache<B>,
     identifier: &BlockHashOrIndex,
 ) -> CoreResult<Option<Block>> {
     let Some(hash) = resolve_block_hash(snapshot, identifier)? else {

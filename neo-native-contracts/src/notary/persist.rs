@@ -29,7 +29,14 @@ impl Notary {
     /// primary-validator network-fee mint, so per-block GAS supply is
     /// conserved (matching C#, including the dropped integer-division
     /// remainder).
-    pub(super) fn on_persist_native(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    pub(super) fn on_persist_native<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        &self,
+        engine: &mut ApplicationEngine<P, D, B>,
+    ) -> CoreResult<()> {
         let notary_hash = Self::script_hash();
 
         // Pass 1: under the persisting-block borrow, accumulate the fee

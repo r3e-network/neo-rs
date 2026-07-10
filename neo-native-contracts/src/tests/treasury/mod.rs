@@ -49,7 +49,7 @@ fn faun_activation_and_manifest_standards() {
     use neo_execution::native_contract::build_native_contract_state;
 
     let c = Treasury::new();
-    assert_eq!(NativeContract::active_in(&c), Some(Hardfork::HfFaun));
+    assert_eq!(c.active_in(), Some(Hardfork::HfFaun));
     // Neo N3 v3.10.1 MainNet schedules Faun at 8,800,000, so default
     // settings must not expose Treasury before that block.
     let settings = ProtocolSettings::default();

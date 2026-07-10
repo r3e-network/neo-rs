@@ -12,7 +12,6 @@ use super::support::{block, corrupt_block_by_height_record, find_handler};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn indexer_rpc_reports_service_store_decode_errors() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let store = MemoryStoreProvider::new()
         .get_store("")
         .expect("memory store");
@@ -20,7 +19,10 @@ async fn indexer_rpc_reports_service_store_decode_errors() {
     let block = block(5, Vec::new());
     service.index_block(&block).expect("index block");
     corrupt_block_by_height_record(&store, 5);
-    system.register_service(service);
+    let system = crate::server::test_support::test_system_with_services(
+        ProtocolSettings::default(),
+        crate::server::RpcServices::new().with_indexer(service),
+    );
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerIndexer::register_handlers();
@@ -35,9 +37,10 @@ async fn indexer_rpc_reports_service_store_decode_errors() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn block_notification_selector_errors_name_calling_method() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
-    let service = Arc::new(IndexerService::new());
-    system.register_service(service);
+    let system = crate::server::test_support::test_system_with_services(
+        ProtocolSettings::default(),
+        crate::server::RpcServices::new().with_indexer(Arc::new(IndexerService::new())),
+    );
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerIndexer::register_handlers();

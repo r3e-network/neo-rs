@@ -3,7 +3,6 @@
 use super::super::ContractManagement;
 use neo_config::Hardfork;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::application_engine_contract::NativeArgNullMask;
 use neo_execution::{ApplicationEngine, ContractState};
 use neo_manifest::manifest::contract_manifest::MAX_MANIFEST_LENGTH;
 use neo_manifest::{ContractAbi, ContractManifest, NefFile};
@@ -17,9 +16,13 @@ impl ContractManagement {
     /// C# Deploy/Update post-Aspidochelone guard (refs neo#2653 / neo#2673): the
     /// current (native) context must carry `CallFlags.All`, i.e. the caller must
     /// have requested a full-trust call.
-    pub(in crate::contract_management) fn require_call_flags_all(
+    pub(in crate::contract_management) fn require_call_flags_all<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &ApplicationEngine,
+        engine: &ApplicationEngine<P, D, B>,
         method: &str,
     ) -> CoreResult<()> {
         if !engine.is_hardfork_enabled(Hardfork::HfAspidochelone) {
@@ -37,18 +40,19 @@ impl ContractManagement {
     }
 
     /// Returns whether native-call argument `index` was pushed as `StackItem::Null`
-    /// (bit `index` of the dispatcher's [`NativeArgNullMask`]). This is the only
+    /// (bit `index` of the dispatcher's null mask). This is the only
     /// reliable null signal: a `Null` ByteArray arg reaches the `Vec<u8>` layer as
     /// the 1-byte serialized-null payload, not as empty bytes.
-    pub(in crate::contract_management) fn native_arg_is_null(
+    pub(in crate::contract_management) fn native_arg_is_null<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &ApplicationEngine,
+        engine: &ApplicationEngine<P, D, B>,
         index: usize,
     ) -> bool {
-        index < 32
-            && engine
-                .get_state::<NativeArgNullMask>()
-                .is_some_and(|mask| mask.0 & (1u32 << index) != 0)
+        engine.native_arg_is_null(index)
     }
 
     /// C# `nefFile.AsSerializable<NefFile>()` with the preceding
@@ -210,9 +214,13 @@ impl ContractManagement {
     /// Decodes the optional trailing `data: Any` argument shared by the 3-arg
     /// `deploy` / `update` overloads. The 2-arg overloads and an explicit `Null`
     /// argument both yield `StackItem::Null` (C# passes `StackItem.Null` through).
-    pub(in crate::contract_management) fn optional_data_arg(
+    pub(in crate::contract_management) fn optional_data_arg<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &ApplicationEngine,
+        engine: &ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
         method: &str,
     ) -> CoreResult<StackItem> {

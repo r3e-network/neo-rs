@@ -3,7 +3,10 @@ use crate::messages::ConsensusPayload;
 use crate::{ConsensusError, ConsensusResult};
 use neo_primitives::{UInt160, UInt256};
 
-impl ConsensusService {
+impl<S> ConsensusService<S>
+where
+    S: crate::ConsensusSigner,
+{
     pub(in crate::service) fn dbft_sender(&self, validator_index: u8) -> ConsensusResult<UInt160> {
         self.context
             .validators

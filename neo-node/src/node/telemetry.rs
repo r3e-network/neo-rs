@@ -7,11 +7,14 @@ use std::sync::Arc;
 use anyhow::Context;
 use hyper::Server;
 use hyper::service::{make_service_fn, service_fn};
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_storage::persistence::Store;
 use tracing::info;
 
 use self::exporter::MetricsExporter;
 use self::http::serve_metrics_request;
 use super::config::TelemetryMetricsSection;
+use super::services::NodeServiceHandles;
 
 mod exporter;
 mod http;
@@ -21,10 +24,14 @@ mod readiness;
 #[path = "../tests/node/telemetry.rs"]
 mod tests;
 
-pub(super) fn metrics_server_task(
+pub(super) fn metrics_server_task<P, S>(
     config: &TelemetryMetricsSection,
-    node: Arc<neo_system::Node>,
+    node: Arc<neo_system::Node<P, S>>,
+    services: Arc<NodeServiceHandles<S>>,
 ) -> anyhow::Result<Option<impl std::future::Future<Output = anyhow::Result<()>> + Send + 'static>>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
 {
     if !config.enabled {
         return Ok(None);
@@ -40,7 +47,7 @@ pub(super) fn metrics_server_task(
         .local_addr()
         .context("reading metrics listener address")?;
     let path = config.endpoint_path().to_string();
-    let exporter = Arc::new(MetricsExporter::new(node)?);
+    let exporter = Arc::new(MetricsExporter::new(node, services)?);
 
     let make_service = make_service_fn(move |_| {
         let exporter = Arc::clone(&exporter);

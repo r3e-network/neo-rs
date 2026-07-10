@@ -1,9 +1,8 @@
-//! Error type used by the [`crate::Node`] builder and lifecycle.
+//! Error type used by [`crate::Node`] composition.
 
 use thiserror::Error;
 
-/// Errors produced by the [`crate::NodeBuilder`] and the
-/// [`crate::Node::run`] lifecycle.
+/// Errors produced while composing a [`crate::Node`] with [`crate::NodeBuilder`].
 #[derive(Debug, Error)]
 pub enum NodeError {
     /// A required service was not set on the builder.
@@ -54,8 +53,7 @@ impl NodeError {
     }
 }
 
-/// Result alias used by [`crate::NodeBuilder::build`] and
-/// [`crate::Node::run`].
+/// Result alias used by [`crate::NodeBuilder::build`].
 pub type NodeResult<T> = Result<T, NodeError>;
 
 #[cfg(test)]

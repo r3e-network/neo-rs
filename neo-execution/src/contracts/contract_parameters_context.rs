@@ -13,7 +13,7 @@ use neo_payloads::{transaction::Transaction, witness::Witness};
 use neo_primitives::ContractParameterType;
 use neo_primitives::hex_util;
 use neo_primitives::{UInt160, UInt256};
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
 use num_traits::ToPrimitive;
@@ -165,9 +165,6 @@ pub struct ContractParametersContext {
     verifiable_hash: UInt256,
     /// Informational type name
     verifiable_type: String,
-    /// The snapshot cache used to read data
-    pub snapshot_cache: Arc<DataCache>,
-
     /// The magic number of the network
     pub network: u32,
 
@@ -180,8 +177,8 @@ pub struct ContractParametersContext {
 
 impl ContractParametersContext {
     /// Creates a new context
-    pub fn new(
-        snapshot_cache: Arc<DataCache>,
+    pub fn new<B: CacheRead>(
+        snapshot_cache: Arc<DataCache<B>>,
         verifiable: impl VerifiableExt + Serializable + 'static,
         network: u32,
     ) -> Self {
@@ -189,8 +186,8 @@ impl ContractParametersContext {
     }
 
     /// Creates a new context with an explicit type name (for parity with C# ToJson()).
-    pub fn new_with_type(
-        snapshot_cache: Arc<DataCache>,
+    pub fn new_with_type<B: CacheRead>(
+        snapshot_cache: Arc<DataCache<B>>,
         verifiable: impl VerifiableExt + Serializable + 'static,
         network: u32,
         verifiable_type: Option<String>,
@@ -208,7 +205,6 @@ impl ContractParametersContext {
             verifiable_bytes,
             verifiable_hash,
             verifiable_type,
-            snapshot_cache,
             network,
             context_items: HashMap::new(),
             script_hashes,
@@ -481,10 +477,10 @@ impl ContractParametersContext {
     }
 
     /// Creates from JSON
-    pub fn from_json(
+    pub fn from_json<B: CacheRead>(
         json: &serde_json::Value,
         verifiable: impl VerifiableExt + Serializable + 'static,
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<DataCache<B>>,
     ) -> CoreResult<Self> {
         let obj = json
             .as_object()
@@ -508,9 +504,9 @@ impl ContractParametersContext {
     }
 
     /// Parses a transaction signing context from JSON, returning the hydrated context and transaction.
-    pub fn from_transaction_json(
+    pub fn from_transaction_json<B: CacheRead>(
         json: &serde_json::Value,
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<DataCache<B>>,
     ) -> CoreResult<(Self, Transaction)> {
         let obj = json
             .as_object()
@@ -560,9 +556,9 @@ impl ContractParametersContext {
     }
 
     /// Helper that parses from a JSON string payload.
-    pub fn parse_transaction_context(
+    pub fn parse_transaction_context<B: CacheRead>(
         json_text: &str,
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<DataCache<B>>,
     ) -> CoreResult<(Self, Transaction)> {
         let value: serde_json::Value =
             serde_json::from_str(json_text).map_err(|err| CoreError::other(err.to_string()))?;

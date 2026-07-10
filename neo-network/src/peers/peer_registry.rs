@@ -1,7 +1,7 @@
 //! Shared connected-peer registry with admission control.
 //!
 //! The single source of truth for "who is connected", shared by the
-//! [`crate::local_node::LocalNodeService`] command loop (dial path),
+//! [`crate::LocalNodeService`] command loop (dial path),
 //! its accept loop (inbound path), and every spawned
 //! [`crate::remote_node::RemoteNodeService`] (self-removal on exit and
 //! the duplicate-connection filter). Replaces the earlier split-brain
@@ -86,19 +86,21 @@ impl PeerRegistry {
     pub const UNCONNECTED_MAX: usize = 1000;
 }
 
-#[async_trait::async_trait]
 impl BlockRangeFetcher for Arc<PeerRegistry> {
-    async fn fetch_range(
+    fn fetch_range(
         &self,
         assignment: BlockRangeAssignment,
-    ) -> NetworkResult<BlockDownloadBatch> {
-        let Some(handle) = self.handle(assignment.peer_id) else {
-            return Err(NetworkError::RemoteUnavailable {
-                peer_id: assignment.peer_id.to_string(),
-                detail: "peer is no longer connected".to_string(),
-            });
-        };
-        handle.fetch_blocks_by_index(assignment.request).await
+    ) -> impl std::future::Future<Output = NetworkResult<BlockDownloadBatch>> + Send + 'static {
+        let registry = Arc::clone(self);
+        async move {
+            let Some(handle) = registry.handle(assignment.peer_id) else {
+                return Err(NetworkError::RemoteUnavailable {
+                    peer_id: assignment.peer_id.to_string(),
+                    detail: "peer is no longer connected".to_string(),
+                });
+            };
+            handle.fetch_blocks_by_index(assignment.request).await
+        }
     }
 }
 

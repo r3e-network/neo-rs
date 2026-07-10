@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
-use neo_consensus::{ConsensusSigner, ValidatorInfo};
+use neo_consensus::{ConsensusError, ConsensusResult, ConsensusSigner, ValidatorInfo};
 use neo_crypto::{ECPoint, Secp256r1Crypto};
 use neo_primitives::{UInt160, hex_util};
 use neo_vm::script_builder::RedeemScript;
@@ -63,6 +63,38 @@ pub(super) fn resolve_public_key_index(
         .map(|v| v.index)
 }
 
+/// Concrete external signer selected by node configuration.
+///
+/// The consensus service is generic over this type, so the node keeps signer
+/// dispatch explicit without storing a trait object in the dBFT hot path.
+pub(crate) enum NodeConsensusSigner {
+    /// PKCS#11-backed signer selected from `[consensus.hsm]`.
+    #[cfg(feature = "hsm")]
+    Pkcs11(neo_hsm::Pkcs11Signer),
+}
+
+impl ConsensusSigner for NodeConsensusSigner {
+    fn can_sign(&self, _script_hash: &UInt160) -> bool {
+        match self {
+            #[cfg(feature = "hsm")]
+            Self::Pkcs11(signer) => signer.can_sign(_script_hash),
+            #[allow(unreachable_patterns)]
+            _ => false,
+        }
+    }
+
+    async fn sign(&self, _data: &[u8], _script_hash: &UInt160) -> ConsensusResult<Vec<u8>> {
+        match self {
+            #[cfg(feature = "hsm")]
+            Self::Pkcs11(signer) => signer.sign(_data, _script_hash).await,
+            #[allow(unreachable_patterns)]
+            _ => Err(ConsensusError::state_error(
+                "external consensus signer is unavailable in this build",
+            )),
+        }
+    }
+}
+
 /// Resolved consensus configuration: the validator set and this node's key/index.
 pub struct ConsensusSetup {
     /// The ordered dBFT validator set.
@@ -80,7 +112,7 @@ pub struct ConsensusSetup {
     pub ms_per_block: u64,
     /// Optional HSM-backed signer. When `Some`, the consensus service signs via
     /// this signer (keyed by the validator script hash) instead of `private_key`.
-    pub signer: Option<Arc<dyn ConsensusSigner>>,
+    pub signer: Option<Arc<NodeConsensusSigner>>,
 }
 
 /// Builds the consensus setup from the protocol settings and the `[consensus]`

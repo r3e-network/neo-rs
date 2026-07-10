@@ -7,9 +7,7 @@ use crate::evaluation_stack::EvaluationStack;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
 use crate::slot::Slot;
-use parking_lot::{Mutex, RwLock};
-use std::any::{Any, TypeId};
-use std::collections::HashMap;
+use parking_lot::Mutex;
 use std::sync::Arc;
 
 /// Shared states for execution contexts that can be cloned and shared.
@@ -27,8 +25,7 @@ use std::sync::Arc;
 /// 3. **Low overhead**: `parking_lot::Mutex` on an uncontended lock is a single
 ///    atomic CAS with no syscall, so the practical cost is negligible for the
 ///    single-threaded VM execution path.
-#[derive(Clone)]
-pub struct SharedStates {
+pub struct SharedStates<S = ()> {
     /// Script being executed
     script: Arc<Script>,
     /// Evaluation stack for this context (shared across CALL clones; see struct doc)
@@ -37,31 +34,62 @@ pub struct SharedStates {
     static_fields: Arc<Mutex<Option<Slot>>>,
     /// Reference counter for garbage collection
     reference_counter: ReferenceCounter,
-    /// State map matching C# Dictionary<Type, object>
-    states: Arc<RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>>,
+    /// Shared typed context state.
+    state: Arc<Mutex<S>>,
 }
 
-impl std::fmt::Debug for SharedStates {
+impl<S> std::fmt::Debug for SharedStates<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SharedStates")
             .field("script", &"<Script>")
             .field("evaluation_stack", &"<SharedEvaluationStack>")
             .field("static_fields", &"<SharedStaticFields>")
+            .field("state", &"<SharedState>")
             .finish()
     }
 }
 
-impl SharedStates {
+impl<S> Clone for SharedStates<S> {
+    fn clone(&self) -> Self {
+        Self {
+            script: Arc::clone(&self.script),
+            evaluation_stack: Arc::clone(&self.evaluation_stack),
+            static_fields: Arc::clone(&self.static_fields),
+            reference_counter: self.reference_counter.clone(),
+            state: Arc::clone(&self.state),
+        }
+    }
+}
+
+impl<S: Default> SharedStates<S> {
     /// Creates a new shared states instance.
     #[must_use]
     pub fn new(script: Script, reference_counter: ReferenceCounter) -> Self {
+        Self::new_with_state_factory(script, reference_counter, S::default)
+    }
+}
+
+impl<S> SharedStates<S> {
+    /// Creates a new shared states instance with an explicit typed state value.
+    #[must_use]
+    pub fn new_with_state(script: Script, reference_counter: ReferenceCounter, state: S) -> Self {
+        Self::new_with_state_factory(script, reference_counter, || state)
+    }
+
+    /// Creates a new shared states instance with a typed-state factory.
+    #[must_use]
+    pub fn new_with_state_factory<F: FnOnce() -> S>(
+        script: Script,
+        reference_counter: ReferenceCounter,
+        factory: F,
+    ) -> Self {
         let script = Arc::new(script);
         Self {
             script: Arc::clone(&script),
             evaluation_stack: Arc::new(Mutex::new(EvaluationStack::new(reference_counter.clone()))),
             static_fields: Arc::new(Mutex::new(None)),
             reference_counter,
-            states: Arc::new(RwLock::new(HashMap::new())),
+            state: Arc::new(Mutex::new(factory())),
         }
     }
 
@@ -117,50 +145,31 @@ impl SharedStates {
         Arc::ptr_eq(&self.static_fields, &other.static_fields)
     }
 
+    /// Returns the shared typed state.
+    #[must_use]
+    pub fn state(&self) -> Arc<Mutex<S>> {
+        Arc::clone(&self.state)
+    }
+
+    /// Executes a closure with mutable access to the shared typed state.
+    pub fn with_state<R, F: FnOnce(&mut S) -> R>(&self, f: F) -> R {
+        let mut guard = self.state.lock();
+        f(&mut guard)
+    }
+
+    /// Replaces the shared typed state value and returns the previous state.
+    pub fn replace_state(&self, state: S) -> S {
+        self.with_state(|current| std::mem::replace(current, state))
+    }
+
+    /// Checks whether two shared state instances point to the same typed state.
+    #[must_use]
+    pub fn state_ptr_eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.state, &other.state)
+    }
+
     /// Sets the static fields.
     pub fn set_static_fields(&mut self, static_fields: Option<Slot>) {
         *self.static_fields.lock() = static_fields;
-    }
-
-    /// Gets custom data of the specified type. If the data does not exist, create a new one.
-    /// Mirrors the C# SharedStates.GetState\<T>() behaviour by caching instances per type.
-    pub fn get_state<T: 'static + Default + Send + Sync>(&self) -> Arc<Mutex<T>> {
-        self.get_state_with_factory(T::default)
-    }
-
-    /// Gets custom data of the specified type, creating it with the provided factory if it doesn't exist.
-    /// Mirrors the C# SharedStates.GetState\<T>(Func\<T>) API.
-    pub fn get_state_with_factory<T: 'static + Send + Sync, F: FnOnce() -> T>(
-        &self,
-        factory: F,
-    ) -> Arc<Mutex<T>> {
-        let type_id = TypeId::of::<T>();
-
-        if let Some(existing) = self.states.read().get(&type_id) {
-            if let Some(arc) = existing.downcast_ref::<Arc<Mutex<T>>>() {
-                return Arc::clone(arc);
-            }
-        }
-
-        let mut states = self.states.write();
-        if let Some(existing) = states.get(&type_id) {
-            if let Some(arc) = existing.downcast_ref::<Arc<Mutex<T>>>() {
-                return Arc::clone(arc);
-            }
-        }
-
-        let new_state = Arc::new(Mutex::new(factory()));
-        states.insert(type_id, Box::new(Arc::clone(&new_state)));
-        new_state
-    }
-
-    /// Sets a state value by type.
-    /// This matches the C# implementation's state setting behavior.
-    pub fn set_state<T: 'static + Send + Sync>(&self, value: T) {
-        let type_id = TypeId::of::<T>();
-        let state = Arc::new(Mutex::new(value));
-
-        let mut states = self.states.write();
-        states.insert(type_id, Box::new(state));
     }
 }

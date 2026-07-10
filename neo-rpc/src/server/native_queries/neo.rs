@@ -5,7 +5,7 @@ use std::sync::Arc;
 use neo_error::{CoreError, CoreResult};
 use neo_native_contracts::NeoToken;
 use neo_primitives::UInt160;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::{CacheRead, DataCache};
 use num_bigint::BigInt;
 
 use super::NativeQueries;
@@ -22,9 +22,9 @@ impl NativeQueries {
 
     /// `NEO.unclaimedGas(account, end)` — the amount of unclaimed GAS for
     /// `account` at the `end` block height.
-    pub(crate) fn neo_unclaimed_gas(
+    pub(crate) fn neo_unclaimed_gas<B: CacheRead>(
         server: &RpcServer,
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<DataCache<B>>,
         neo_hash: &UInt160,
         account: &UInt160,
         end: u32,
@@ -45,9 +45,9 @@ impl NativeQueries {
     }
 
     /// `NEO.getCommittee()` — the current committee public keys (sorted).
-    pub(crate) fn neo_committee(
+    pub(crate) fn neo_committee<B: CacheRead>(
         server: &RpcServer,
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<DataCache<B>>,
         neo_hash: &UInt160,
     ) -> CoreResult<Vec<Vec<u8>>> {
         let item = invoke_native_read(server, snapshot, neo_hash, "getCommittee", &[])?;
@@ -55,9 +55,9 @@ impl NativeQueries {
     }
 
     /// `NEO.getNextBlockValidators()` — the validators for the next block.
-    pub(crate) fn neo_next_block_validators(
+    pub(crate) fn neo_next_block_validators<B: CacheRead>(
         server: &RpcServer,
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<DataCache<B>>,
         neo_hash: &UInt160,
     ) -> CoreResult<Vec<Vec<u8>>> {
         let item = invoke_native_read(server, snapshot, neo_hash, "getNextBlockValidators", &[])?;
@@ -65,9 +65,9 @@ impl NativeQueries {
     }
 
     /// `NEO.getCandidates()` — registered candidates with their votes.
-    pub(crate) fn neo_candidates(
+    pub(crate) fn neo_candidates<B: CacheRead>(
         server: &RpcServer,
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<DataCache<B>>,
         neo_hash: &UInt160,
     ) -> CoreResult<Vec<(Vec<u8>, BigInt)>> {
         let item = invoke_native_read(server, snapshot, neo_hash, "getCandidates", &[])?;
@@ -76,9 +76,9 @@ impl NativeQueries {
 
     /// `NEO.getCandidateVote(pubkey)` — the candidate's vote count, or `-1`
     /// when the key is not a registered candidate.
-    pub(crate) fn neo_candidate_vote(
+    pub(crate) fn neo_candidate_vote<B: CacheRead>(
         server: &RpcServer,
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<DataCache<B>>,
         neo_hash: &UInt160,
         pubkey: &[u8],
     ) -> CoreResult<BigInt> {

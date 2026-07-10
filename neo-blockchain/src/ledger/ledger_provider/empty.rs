@@ -7,7 +7,7 @@
 use neo_error::CoreResult;
 use neo_payloads::{Block, Header, Transaction, TransactionState};
 use neo_primitives::{UInt160, UInt256};
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 use super::{BlockProvider, LedgerProviderFactory, TransactionStateProvider, TxProvider};
 
@@ -55,9 +55,12 @@ impl TransactionStateProvider for EmptyLedgerProvider {
 pub struct EmptyLedgerProviderFactory;
 
 impl LedgerProviderFactory for EmptyLedgerProviderFactory {
-    type Provider<'a> = EmptyLedgerProvider;
+    type Provider<'a, B>
+        = EmptyLedgerProvider
+    where
+        B: CacheRead;
 
-    fn provider<'a>(&'a self, _snapshot: &'a DataCache) -> Self::Provider<'a> {
+    fn provider<'a, B: CacheRead>(&'a self, _snapshot: &'a DataCache<B>) -> Self::Provider<'a, B> {
         EmptyLedgerProvider
     }
 }

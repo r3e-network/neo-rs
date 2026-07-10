@@ -14,7 +14,14 @@ impl Notary {
     /// (Notary.cs:52-59; ActiveIn is HF_Echidna, so this runs while persisting
     /// the Echidna activation block): seed `Prefix_MaxNotValidBeforeDelta` with
     /// `DefaultMaxNotValidBeforeDelta` (140).
-    pub(super) fn initialize_native(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    pub(super) fn initialize_native<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        &self,
+        engine: &mut ApplicationEngine<P, D, B>,
+    ) -> CoreResult<()> {
         engine.snapshot_cache().add(
             Self::max_not_valid_before_delta_key(),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(

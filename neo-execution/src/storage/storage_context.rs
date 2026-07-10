@@ -131,8 +131,4 @@ impl Interoperable for StorageContext {
     fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
         Ok(StackValue::ByteString(self.to_bytes().to_vec()))
     }
-
-    fn clone_box(&self) -> Box<dyn Interoperable> {
-        Box::new(self.clone())
-    }
 }

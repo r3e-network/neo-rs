@@ -72,9 +72,13 @@ impl GasToken {
     /// is a deployed contract - queue its `onNEP17Payment(from, amount, data)`
     /// callback (run after this native call returns, faithful to
     /// `CallFromNativeContractAsync`).
-    fn post_transfer(
+    fn post_transfer<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         from: &UInt160,
         to: &UInt160,
         amount: &BigInt,
@@ -111,9 +115,13 @@ impl GasToken {
     /// `onNEP17Payment` when `call_on_payment` and the recipient is a deployed
     /// contract. A zero amount is a no-op; a negative amount faults.
     /// `pub(crate)` so NeoToken's reward distribution can mint GAS.
-    pub(crate) fn gas_mint(
+    pub(crate) fn gas_mint<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         account: &UInt160,
         amount: &BigInt,
         call_on_payment: bool,
@@ -145,9 +153,13 @@ impl GasToken {
     /// emit `Transfer(null, account, amount)`, then queue
     /// `onNEP17Payment(null, amount, null)` when `call_on_payment` and the
     /// recipient is a deployed contract.
-    fn post_mint(
+    fn post_mint<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         account: &UInt160,
         amount: &BigInt,
         call_on_payment: bool,
@@ -184,9 +196,13 @@ impl GasToken {
     /// amount`, and a missing account entry NREs on the null-forgiving
     /// `GetAndChange`). `pub(crate)` so NeoToken's Echidna `onNEP17Payment` can
     /// burn the register-price GAS it receives.
-    pub(crate) fn gas_burn(
+    pub(crate) fn gas_burn<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         account: &UInt160,
         amount: &BigInt,
     ) -> CoreResult<()> {
@@ -237,8 +253,12 @@ impl GasToken {
     /// its own balance (where C#'s nested call would set `CallingScriptHash` to
     /// that contract) passes its own hash, so the witness check passes. Returns
     /// `Ok(true)`/`Ok(false)` per NEP-17, or `Err` for a negative `amount`.
-    pub(crate) fn transfer_core(
-        engine: &mut ApplicationEngine,
+    pub(crate) fn transfer_core<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        engine: &mut ApplicationEngine<P, D, B>,
         caller: UInt160,
         from: &UInt160,
         to: &UInt160,

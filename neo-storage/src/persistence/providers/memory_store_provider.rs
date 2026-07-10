@@ -1,6 +1,6 @@
 use super::memory_store::MemoryStore;
 use crate::error::StorageResult;
-use crate::persistence::{store::Store, store_provider::StoreProvider};
+use crate::persistence::store_provider::StoreProvider;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -15,7 +15,7 @@ impl MemoryStoreProvider {
 
     /// Opens an in-memory store. The path is accepted for provider API
     /// consistency and ignored because memory stores are process-local.
-    pub fn get_store<P>(&self, _path: P) -> StorageResult<Arc<dyn Store>>
+    pub fn get_store<P>(&self, _path: P) -> StorageResult<Arc<MemoryStore>>
     where
         P: AsRef<Path>,
     {
@@ -26,15 +26,13 @@ impl MemoryStoreProvider {
 neo_io::impl_default_via_new!(MemoryStoreProvider);
 
 impl StoreProvider for MemoryStoreProvider {
+    type Store = MemoryStore;
+
     fn name(&self) -> &str {
         "memory"
     }
 
-    fn get_store(&self, _path: &Path) -> StorageResult<Arc<dyn Store>> {
-        self.get_store(Path::new(""))
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn get_store(&self, _path: &Path) -> StorageResult<Arc<MemoryStore>> {
+        MemoryStoreProvider::get_store(self, Path::new(""))
     }
 }

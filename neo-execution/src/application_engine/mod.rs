@@ -22,20 +22,22 @@
 //! - `storage_low_level`: low-level storage syscall handlers.
 //! - `witness_and_misc`: witness and miscellaneous syscall handlers.
 
+use crate::execution_context_state::{
+    ApplicationExecutionContext as ExecutionContext, ApplicationExecutionEngine as ExecutionEngine,
+    ApplicationJumpTable as JumpTable,
+};
 use neo_config::hardfork::Hardfork;
 use neo_crypto::{Crypto, ECCurve, ECPoint, murmur};
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::Block;
 use neo_primitives::constants::HASH_SIZE;
 use neo_vm::evaluation_stack::EvaluationStack;
-use neo_vm::execution_context::ExecutionContext;
 use neo_vm::interop_service::InteropHost;
-use neo_vm::jump_table::JumpTable;
 use neo_vm::script::Script;
 // InteropInterface trait removed - StackValue::Interop(u64) is used instead
 // Verifiable script containers are passed via the interop host registry, not inline in the VM stack
 use crate::contract_state::ContractState;
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, NoDiagnostic};
 use crate::execution_context_state::ExecutionContextState;
 use crate::helper::Helper;
 use crate::iterators::StorageIterator;
@@ -43,23 +45,21 @@ use crate::iterators::iterator::StorageIterator as _;
 use neo_config::ProtocolSettings;
 use neo_manifest::CallFlags;
 use neo_manifest::ContractMethodDescriptor;
-use neo_payloads::{Transaction, TransactionAttribute};
+use neo_payloads::{LogEventArgs, TransactionAttribute, VerifiableContainer};
 use neo_primitives::ContractParameterType;
 use neo_primitives::FindOptions;
-use neo_primitives::LogEventArgs;
-use neo_storage::DataCache;
 use neo_storage::SeekDirection;
-use neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
+use neo_storage::{DataCache, EmptyCacheBacking};
+use neo_vm::{StackItem, VmError, VmResult};
 // ContractManagement is now accessed via the native contract provider
 // LedgerContract and PolicyContract are now accessed via the native contract provider
 
 use crate::NotifyEventArgs;
 use crate::StorageContext;
-use crate::native_contract_provider::NativeContractProvider;
+use crate::native_contract_provider::{NativeContractProvider, NoNativeContractProvider};
 use crate::{NativeContract, NativeContractsCache, NativeRegistry};
 use neo_payloads::WitnessCondition;
 use neo_primitives::TriggerType;
-use neo_primitives::Verifiable;
 use neo_primitives::WitnessRuleAction;
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::StorageItem;
@@ -74,7 +74,6 @@ use neo_vm_rs::interpret_with_stack_and_syscalls_at;
 use neo_vm_rs::interpret_with_stack_and_syscalls_at_with_result_limit;
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
-use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -91,12 +90,17 @@ pub const CHECK_SIG_PRICE: i64 = 1 << 15;
 /// PicoGAS-to-datoshi fee scale factor used by C# `ApplicationEngine`.
 pub const FEE_FACTOR: i64 = 10000;
 
-type InteropHandler = fn(&mut ApplicationEngine, &mut ExecutionEngine) -> VmResult<()>;
+type InteropHandler<P, D, B> =
+    fn(&mut ApplicationEngine<P, D, B>, &mut ExecutionEngine<B>) -> VmResult<()>;
 
 /// Neo N3 application engine that hosts VM execution, syscalls, and native contracts.
-pub struct ApplicationEngine {
+pub struct ApplicationEngine<P = NoNativeContractProvider, D = NoDiagnostic, B = EmptyCacheBacking>
+where
+    P: NativeContractProvider + 'static,
+    D: Diagnostic + 'static,
+{
     trigger: TriggerType,
-    script_container: Option<Arc<dyn Verifiable>>,
+    script_container: Option<Arc<VerifiableContainer>>,
     persisting_block: Option<Arc<Block>>,
     protocol_settings: ProtocolSettings,
     gas_consumed: i64,
@@ -105,14 +109,14 @@ pub struct ApplicationEngine {
     exec_fee_factor: u32,
     storage_price: u32,
     call_flags: CallFlags,
-    vm_engine: VmEngineHost,
-    interop_handlers: HashMap<u32, HostInteropHandler>,
-    snapshot_cache: Arc<DataCache>,
-    original_snapshot_cache: Arc<DataCache>,
+    vm_engine: VmEngineHost<B>,
+    interop_handlers: HashMap<u32, HostInteropHandler<P, D, B>>,
+    snapshot_cache: Arc<DataCache<B>>,
+    original_snapshot_cache: Arc<DataCache<B>>,
     notifications: Vec<NotifyEventArgs>,
     logs: Vec<LogEventArgs>,
-    native_registry: NativeRegistry,
-    native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+    native_registry: NativeRegistry<P>,
+    native_contract_provider: Option<Arc<P>>,
     native_contract_cache: Arc<Mutex<NativeContractsCache>>,
     contracts: HashMap<UInt160, ContractState>,
     storage_iterators: HashMap<u32, StorageIterator>,
@@ -140,10 +144,10 @@ pub struct ApplicationEngine {
     host_syscall_registrations: Vec<(String, i64, CallFlags)>,
     nonce_data: [u8; 16],
     random_times: u32,
-    diagnostic: Option<Box<dyn Diagnostic>>,
+    diagnostic: D,
     fault_exception: Option<String>,
-    states: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
-    runtime_context: Option<Arc<dyn std::any::Any + Send + Sync>>, // SystemContext trait object
+    native_arg_null_mask: u32,
+    native_return_null: bool,
 }
 
 mod contracts;

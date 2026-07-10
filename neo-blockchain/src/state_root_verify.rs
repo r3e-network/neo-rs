@@ -19,12 +19,11 @@ use neo_config::ProtocolSettings;
 use neo_crypto::Crypto;
 use neo_execution::Helper;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::{Role, RoleManagement};
 use neo_payloads::{VerifiableExt, Witness};
 use neo_primitives::error::PrimitiveResult;
 use neo_primitives::{UInt160, UInt256, Verifiable};
 use neo_state_service::StateRoot;
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 use neo_vm::script_builder::RedeemScript;
 use std::sync::Arc;
 
@@ -34,7 +33,11 @@ const STATE_ROOT_VERIFY_GAS: i64 = 2_0000_0000;
 /// Native-contract capabilities required to resolve state-root verifiers.
 trait StateRootNativeProvider: Send + Sync {
     /// Returns StateValidator designated nodes effective at `index`.
-    fn state_validators(&self, snapshot: &DataCache, index: u32) -> Vec<neo_crypto::ECPoint>;
+    fn state_validators<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        index: u32,
+    ) -> Vec<neo_crypto::ECPoint>;
 }
 
 /// Adapter from the node-composed native-contract provider to the state-root
@@ -74,19 +77,14 @@ impl<P> StateRootNativeProvider for StateRootNativeProviderAdapter<P>
 where
     P: NativeContractProvider,
 {
-    fn state_validators(&self, snapshot: &DataCache, index: u32) -> Vec<neo_crypto::ECPoint> {
+    fn state_validators<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        index: u32,
+    ) -> Vec<neo_crypto::ECPoint> {
         self.provider()
-            .get_native_contract_by_name("RoleManagement")
-            .and_then(|contract| {
-                contract
-                    .as_any()
-                    .downcast_ref::<RoleManagement>()
-                    .and_then(|roles| {
-                        roles
-                            .get_designated_by_role_at(snapshot, Role::StateValidator, index)
-                            .ok()
-                    })
-            })
+            .state_validators(snapshot, index)
+            .ok()
             .unwrap_or_default()
     }
 }
@@ -98,20 +96,21 @@ where
 /// C# `RoleManagement.GetDesignatedByRole(StateValidator, index)` view. Keeping
 /// this lookup here lets node drivers use the same provider seam without
 /// constructing native contract handles locally.
-pub fn state_root_verifiers_with_native_provider<P>(
-    snapshot: &DataCache,
+pub fn state_root_verifiers_with_native_provider<P, B>(
+    snapshot: &DataCache<B>,
     index: u32,
     native_contract_provider: Arc<P>,
 ) -> Vec<neo_crypto::ECPoint>
 where
     P: NativeContractProvider,
+    B: CacheRead,
 {
     StateRootNativeProviderAdapter::new(native_contract_provider).state_validators(snapshot, index)
 }
 
 /// Owned wrapper making a [`StateRoot`] verifiable through the engine machinery.
-/// It is owned rather than borrowing the root because `neo_primitives::Verifiable`
-/// requires `Any + 'static`; `StateRoot` is small and clones cheaply.
+/// Owning the root keeps witness verification independent of caller lifetimes;
+/// `StateRoot` is small and clones cheaply.
 struct VerifiableStateRoot<P> {
     root: StateRoot,
     native: P,
@@ -140,17 +139,16 @@ where
     fn hash_data(&self) -> Vec<u8> {
         self.root.unsigned_bytes()
     }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
 }
 
 impl<P> VerifiableExt for VerifiableStateRoot<P>
 where
     P: StateRootNativeProvider + 'static,
 {
-    fn script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
+    fn script_hashes_for_verifying<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+    ) -> Vec<UInt160> {
         // C# GetScriptHashesForVerifying: the BFT address of the StateValidators
         // designated at this root's index. No designation -> no verifiable hash.
         let validators = self.native.state_validators(snapshot, self.root.index());
@@ -169,27 +167,27 @@ where
 /// Callers that already own composition or persistence resources should prefer
 /// this entry point so state-root witness verification stays bound to the same
 /// native-contract set as the surrounding node service.
-pub fn verify_state_root_with_native_provider<P>(
+pub fn verify_state_root_with_native_provider<P, B>(
     state_root: &StateRoot,
     settings: &ProtocolSettings,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     native_contract_provider: Arc<P>,
 ) -> bool
 where
     P: NativeContractProvider + 'static,
+    B: CacheRead,
 {
     if state_root.witness().is_none() {
         return false;
     }
     let native = StateRootNativeProviderAdapter::new(native_contract_provider.clone());
     let verifiable = VerifiableStateRoot::new(state_root.clone(), native);
-    let provider: Arc<dyn NativeContractProvider> = native_contract_provider.clone();
     Helper::verify_witnesses_with_native_provider(
         &verifiable,
         settings,
         snapshot,
         STATE_ROOT_VERIFY_GAS,
-        Some(provider),
+        Some(native_contract_provider),
     )
 }
 

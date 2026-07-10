@@ -9,22 +9,22 @@ use neo_error::CoreResult;
 use neo_native_contracts::LedgerContract;
 use neo_payloads::TransactionState;
 use neo_primitives::UInt256;
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 /// Ledger capabilities required by oracle request processing.
 pub(super) trait OracleLedgerProvider {
     /// Returns the persisted ledger height.
-    fn current_index(&self, snapshot: &DataCache) -> CoreResult<u32>;
+    fn current_index<B: CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<u32>;
 
     /// Returns the persisted transaction state for `hash`, when available.
-    fn transaction_state(
+    fn transaction_state<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         hash: &UInt256,
     ) -> CoreResult<Option<TransactionState>>;
 
     /// Returns the next block height used by oracle queue validity checks.
-    fn next_block_height(&self, snapshot: &DataCache) -> u32 {
+    fn next_block_height<B: CacheRead>(&self, snapshot: &DataCache<B>) -> u32 {
         self.current_index(snapshot).unwrap_or(0).saturating_add(1)
     }
 }
@@ -46,13 +46,13 @@ impl NativeOracleLedgerProvider {
 }
 
 impl OracleLedgerProvider for NativeOracleLedgerProvider {
-    fn current_index(&self, snapshot: &DataCache) -> CoreResult<u32> {
+    fn current_index<B: CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<u32> {
         self.ledger.current_index(snapshot)
     }
 
-    fn transaction_state(
+    fn transaction_state<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         hash: &UInt256,
     ) -> CoreResult<Option<TransactionState>> {
         self.ledger.get_transaction_state(snapshot, hash)

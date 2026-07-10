@@ -1,9 +1,16 @@
-use super::super::super::native_provider::OracleServiceNativeProvider;
+use super::super::super::native_provider::{
+    OracleContractReadProvider, OracleServiceNativeProvider,
+};
 use super::super::super::utils::{ledger_height, verify_oracle_signature};
-use super::super::super::{OracleService, OracleServiceError};
+use super::super::super::{OracleRuntimeProvider, OracleService, OracleServiceError};
 use neo_crypto::ECPoint;
+use neo_execution::native_contract_provider::NativeContractProvider;
 
-impl OracleService {
+impl<R, P> OracleService<R, P>
+where
+    R: OracleRuntimeProvider + 'static,
+    P: NativeContractProvider + OracleContractReadProvider + 'static,
+{
     /// Submit a signed oracle response for aggregation into the response transaction.
     pub fn submit_oracle_response(
         &self,

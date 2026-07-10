@@ -11,10 +11,10 @@ use neo_primitives::{
     UInt160, Verifiable,
     error::{PrimitiveError, PrimitiveResult},
 };
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 use super::Transaction;
-use crate::{VerifiableExt, Witness};
+use crate::{VerifiableContainer, VerifiableExt, Witness};
 
 // The transaction wire size is provided by the canonical `Serializable::size`
 // impl (see `serialization.rs`), which includes the version (1 byte), the
@@ -35,10 +35,6 @@ impl Verifiable for Transaction {
             return Vec::new();
         }
         writer.into_bytes()
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 
     /// Lightweight pre-verification that the transaction is structurally valid.
@@ -63,7 +59,7 @@ impl Verifiable for Transaction {
 }
 
 impl VerifiableExt for Transaction {
-    fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
+    fn script_hashes_for_verifying<B: CacheRead>(&self, _snapshot: &DataCache<B>) -> Vec<UInt160> {
         self.signers().iter().map(|s| s.account).collect()
     }
 
@@ -87,7 +83,7 @@ impl VerifiableExt for Transaction {
         Some(self)
     }
 
-    fn to_verifiable_container(&self) -> Option<Arc<dyn Verifiable>> {
-        Some(Arc::new(self.clone()))
+    fn to_verifiable_container(&self) -> Option<Arc<VerifiableContainer>> {
+        Some(Arc::new(VerifiableContainer::from(self.clone())))
     }
 }

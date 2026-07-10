@@ -7,7 +7,7 @@
 
 use neo_error::CoreResult;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 use std::sync::Arc;
 
 use crate::server::native_provider::NativeProviderAdapter;
@@ -15,29 +15,37 @@ use crate::server::native_provider::NativeProviderAdapter;
 /// Native-contract capabilities required by wallet RPC handlers.
 pub(super) trait WalletNativeProvider {
     /// Returns the active `FeePerByte`.
-    fn fee_per_byte(&self, snapshot: &DataCache) -> CoreResult<u32>;
+    fn fee_per_byte<B: CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<u32>;
 }
 
 /// Adapter from the node-composed native-contract provider to wallet RPC
 /// Policy read capabilities.
 #[derive(Clone, Debug)]
-pub(super) struct NativeWalletProvider {
-    adapter: NativeProviderAdapter,
+pub(super) struct NativeWalletProvider<P>
+where
+    P: NativeContractProvider,
+{
+    adapter: NativeProviderAdapter<P>,
 }
 
-impl NativeWalletProvider {
+impl<P> NativeWalletProvider<P>
+where
+    P: NativeContractProvider,
+{
     /// Creates an adapter over the composition-root native-contract provider.
     #[must_use]
-    pub(super) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
+    pub(super) fn new(native_contract_provider: Arc<P>) -> Self {
         Self {
             adapter: NativeProviderAdapter::new(native_contract_provider),
         }
     }
 }
 
-impl WalletNativeProvider for NativeWalletProvider {
-    fn fee_per_byte(&self, snapshot: &DataCache) -> CoreResult<u32> {
-        self.adapter
-            .with_policy(|policy| policy.get_fee_per_byte_snapshot(snapshot))
+impl<P> WalletNativeProvider for NativeWalletProvider<P>
+where
+    P: NativeContractProvider,
+{
+    fn fee_per_byte<B: CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<u32> {
+        self.adapter.fee_per_byte(snapshot)
     }
 }

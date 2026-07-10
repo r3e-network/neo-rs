@@ -8,15 +8,24 @@
 use neo_blockchain::{
     ChainTipProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
 };
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_storage::persistence::Store;
 
-use super::super::remote_ledger::RemoteLedgerStatus;
+use super::super::services::NodeServiceHandles;
 
 const OBSERVABILITY_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
     HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
 
 /// Returns the observability-facing ledger height for `node`.
-pub(in crate::node) fn observability_ledger_height(node: &neo_system::Node) -> Option<u32> {
-    if let Some(remote_ledger) = node.get_service::<RemoteLedgerStatus>() {
+pub(in crate::node) fn observability_ledger_height<P, S>(
+    node: &neo_system::Node<P, S>,
+    services: &NodeServiceHandles<S>,
+) -> Option<u32>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
+    if let Some(remote_ledger) = services.remote_ledger() {
         return remote_ledger.advertised_height;
     }
     let cache = node.store_cache();

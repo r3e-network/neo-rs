@@ -15,13 +15,16 @@ use tracing::{debug, info, warn};
 pub(super) const COORDINATOR_SYNC_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Runs coordinator-backed P2P block download until shutdown.
-pub(super) async fn run_coordinator_download_import(
+pub(super) async fn run_coordinator_download_import<C>(
     blockchain: neo_blockchain::BlockchainHandle,
-    pipeline: Arc<neo_system::SyncImportPipeline>,
+    pipeline: Arc<neo_system::SyncImportPipeline<C>>,
     peer_registry: Arc<neo_network::PeerRegistry>,
     shutdown: CancellationToken,
     config: neo_network::BlockDownloadConfig,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: neo_runtime::SyncStageCheckpointStore + 'static,
+{
     let mut tick = tokio::time::interval(COORDINATOR_SYNC_POLL_INTERVAL);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     tick.tick().await;

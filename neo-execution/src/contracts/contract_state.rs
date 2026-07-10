@@ -197,10 +197,6 @@ impl Interoperable for ContractState {
     fn to_stack_value(&self) -> Result<StackValue, neo_vm::InteroperableError> {
         Ok(self.to_stack_value())
     }
-
-    fn clone_box(&self) -> Box<dyn Interoperable> {
-        Box::new(self.clone())
-    }
 }
 
 impl ContractState {

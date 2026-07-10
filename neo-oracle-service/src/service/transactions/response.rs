@@ -1,17 +1,18 @@
 use super::super::ledger_provider::{NativeOracleLedgerProvider, OracleLedgerProvider};
-use super::super::native_provider::OracleServiceNativeProvider;
-use super::super::{OracleService, OracleServiceError};
+use super::super::native_provider::{OracleContractReadProvider, OracleServiceNativeProvider};
+use super::super::{OracleRuntimeProvider, OracleService, OracleServiceError};
 use neo_config::ProtocolSettings;
 use neo_crypto::ECPoint;
-use neo_execution::ApplicationEngine;
 use neo_execution::Contract;
 use neo_execution::TriggerType;
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_execution::{ApplicationEngine, NoDiagnostic};
 use neo_io::serializable::helper::SerializeHelper;
 use neo_manifest::CallFlags;
 use neo_payloads::VerifiableExt;
 use neo_payloads::{
     HEADER_SIZE, OracleResponse, OracleResponseCode, Signer, Transaction, TransactionAttribute,
-    Witness, oracle_response::MAX_RESULT_SIZE,
+    VerifiableContainer, Witness, oracle_response::MAX_RESULT_SIZE,
 };
 use neo_primitives::ContractBasicMethod;
 use neo_primitives::{UInt160, WitnessScope};
@@ -19,10 +20,14 @@ use neo_storage::persistence::DataCache;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-impl OracleService {
-    pub(in super::super) fn create_response_tx(
+impl<R, P> OracleService<R, P>
+where
+    R: OracleRuntimeProvider + 'static,
+    P: NativeContractProvider + OracleContractReadProvider + 'static,
+{
+    pub(in super::super) fn create_response_tx<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         request: &neo_native_contracts::OracleRequest,
         response: &mut OracleResponse,
         oracle_nodes: &[ECPoint],
@@ -99,12 +104,12 @@ impl OracleService {
 
         let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
             TriggerType::Verification,
-            Some(Arc::new(tx.clone())),
+            Some(Arc::new(VerifiableContainer::from(tx.clone()))),
             Arc::new(snapshot.clone()),
             None,
             settings.clone(),
             neo_execution::helper::Helper::MAX_VERIFICATION_GAS,
-            None,
+            NoDiagnostic,
             Some(Arc::clone(&self.native_contract_provider)),
         )
         .map_err(|err| OracleServiceError::Processing(err.to_string()))?;

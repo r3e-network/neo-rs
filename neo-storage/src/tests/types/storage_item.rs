@@ -1,25 +1,8 @@
 use super::*;
 
-#[derive(Clone, Debug)]
-struct BytesCache(Vec<u8>);
-
-impl CacheProvider for BytesCache {
-    fn to_bytes(&self) -> Vec<u8> {
-        self.0.clone()
-    }
-
-    fn clone_box(&self) -> Box<dyn CacheProvider> {
-        Box::new(self.clone())
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
 fn cache_item(bytes: Vec<u8>) -> StorageItem {
     let mut item = StorageItem::new();
-    item.set_cache(Box::new(BytesCache(bytes)));
+    item.set_cache(StorageItemCache::bytes(bytes));
     item
 }
 

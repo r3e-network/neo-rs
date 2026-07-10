@@ -8,18 +8,16 @@
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
-use neo_error::{CoreError, CoreResult};
-use neo_execution::NativeContract;
+use neo_error::CoreResult;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::NeoToken;
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 /// Native-contract capabilities required by empty-block fast-forward staging.
 pub(super) trait EmptyBlockFastForwardNativeProvider {
     /// Applies byte-equivalent native storage effects for a contiguous empty run.
-    fn fast_forward_empty_block_rewards(
+    fn fast_forward_empty_block_rewards<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
         start: u32,
         end: u32,
@@ -29,13 +27,13 @@ pub(super) trait EmptyBlockFastForwardNativeProvider {
 /// Adapter from the batch native-persistence provider to the fast-forward
 /// reward capability.
 #[derive(Clone)]
-pub(super) struct NativeEmptyBlockFastForwardProvider<P: ?Sized> {
+pub(super) struct NativeEmptyBlockFastForwardProvider<P> {
     native_contract_provider: Arc<P>,
 }
 
 impl<P> NativeEmptyBlockFastForwardProvider<P>
 where
-    P: NativeContractProvider + ?Sized,
+    P: NativeContractProvider,
 {
     /// Creates an adapter over the native provider captured for the persist batch.
     #[must_use]
@@ -48,17 +46,11 @@ where
     fn provider(&self) -> &P {
         self.native_contract_provider.as_ref()
     }
-
-    fn neo_token(&self) -> CoreResult<Arc<dyn NativeContract>> {
-        self.provider()
-            .get_native_contract_by_name("NeoToken")
-            .ok_or_else(|| CoreError::invalid_operation("native provider missing NeoToken"))
-    }
 }
 
 impl<P> std::fmt::Debug for NativeEmptyBlockFastForwardProvider<P>
 where
-    P: NativeContractProvider + ?Sized,
+    P: NativeContractProvider,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NativeEmptyBlockFastForwardProvider")
@@ -69,19 +61,16 @@ where
 
 impl<P> EmptyBlockFastForwardNativeProvider for NativeEmptyBlockFastForwardProvider<P>
 where
-    P: NativeContractProvider + ?Sized,
+    P: NativeContractProvider,
 {
-    fn fast_forward_empty_block_rewards(
+    fn fast_forward_empty_block_rewards<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
         start: u32,
         end: u32,
     ) -> CoreResult<()> {
-        self.neo_token()?
-            .as_any()
-            .downcast_ref::<NeoToken>()
-            .ok_or_else(|| CoreError::invalid_operation("native provider returned non-NeoToken"))?
+        self.provider()
             .fast_forward_empty_block_rewards(snapshot, settings, start, end)
     }
 }

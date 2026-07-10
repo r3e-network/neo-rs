@@ -17,12 +17,12 @@ where
     /// The verified import pipeline remains the canonical validation path.
     /// This helper only keeps resource selection and import-command logging out
     /// of the main block loop.
-    pub(crate) async fn verify_import_block_for_command(
+    pub(crate) fn verify_import_block_for_command(
         &self,
         block: &Block,
         current_height: u32,
         bulk_sync: bool,
-        batch_persist_resources: Option<&BatchPersistResources>,
+        batch_persist_resources: Option<&BatchPersistResources<S::NativeProvider, S::CacheBacking>>,
     ) -> bool {
         let verify_result = if let Some(resources) = batch_persist_resources {
             self.verify_import_block_with_pipeline(
@@ -33,7 +33,6 @@ where
                 Arc::clone(&resources.snapshot),
                 resources.native_persist.provider(),
             )
-            .await
         } else {
             let snapshot = match self.system.store_snapshot() {
                 Some(snapshot) => snapshot,
@@ -64,7 +63,6 @@ where
                     }
                 },
             )
-            .await
         };
 
         if let Err(error) = verify_result {

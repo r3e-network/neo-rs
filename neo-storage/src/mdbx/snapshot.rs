@@ -3,7 +3,6 @@ use crate::persistence::{
     read_only_store::RawReadOnlyStore,
     read_only_store::ReadOnlyStoreGeneric,
     seek_direction::SeekDirection,
-    store::Store,
     store_snapshot::{SnapshotCommitResult, StoreSnapshot},
     write_store::WriteStore,
 };
@@ -69,6 +68,8 @@ impl MdbxSnapshot {
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MdbxSnapshot {
+    type FindIterator<'a> = std::vec::IntoIter<(Vec<u8>, Vec<u8>)>;
+
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
         match self.read_entry(key) {
             Ok(value) => value,
@@ -83,12 +84,12 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MdbxSnapshot {
         &self,
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+    ) -> Self::FindIterator<'_> {
         match self.collect_entries(key_prefix.map(Vec::as_slice), direction) {
-            Ok(entries) => Box::new(entries.into_iter()),
+            Ok(entries) => entries.into_iter(),
             Err(err) => {
                 error!(target: "neo", error = %err, "MDBX snapshot find failed - this may cause incorrect state");
-                Box::new(std::iter::empty())
+                Vec::new().into_iter()
             }
         }
     }
@@ -119,7 +120,9 @@ impl WriteStore<Vec<u8>, Vec<u8>> for MdbxSnapshot {
 }
 
 impl StoreSnapshot for MdbxSnapshot {
-    fn store(&self) -> Arc<dyn Store> {
+    type Store = MdbxStore;
+
+    fn store(&self) -> Arc<Self::Store> {
         self.store.clone()
     }
 

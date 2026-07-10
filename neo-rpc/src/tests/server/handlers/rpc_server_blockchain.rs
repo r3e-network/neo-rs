@@ -70,12 +70,14 @@ fn build_signed_transaction(
     tx
 }
 
-fn mint_gas(
-    store: &mut neo_storage::persistence::StoreCache,
+fn mint_gas<S>(
+    store: &mut neo_storage::persistence::StoreCache<S>,
     _settings: &ProtocolSettings,
     account: UInt160,
     amount: BigInt,
-) {
+) where
+    S: neo_storage::persistence::Store,
+{
     crate::server::test_support::seed_gas_balance(store, &account, amount);
 }
 
@@ -92,24 +94,32 @@ fn make_transaction(nonce: u32) -> Transaction {
         .build()
 }
 
-fn make_ledger_block(
-    store: &neo_storage::persistence::StoreCache,
+fn make_ledger_block<S>(
+    store: &neo_storage::persistence::StoreCache<S>,
     index: u32,
     transactions: Vec<Transaction>,
-) -> LedgerBlock {
+) -> LedgerBlock
+where
+    S: neo_storage::persistence::Store,
+{
     neo_test_fixtures::try_make_ledger_block(store, index, transactions)
         .expect("make ledger block fixture")
 }
 
-fn store_block(store: &mut neo_storage::persistence::StoreCache, block: &LedgerBlock) {
+fn store_block<S>(store: &mut neo_storage::persistence::StoreCache<S>, block: &LedgerBlock)
+where
+    S: neo_storage::persistence::Store,
+{
     neo_test_fixtures::try_store_block_with_vmstate(store, block, VMState::NONE)
         .expect("store ledger block fixture");
 }
 
-fn store_contract_state(
-    store: &mut neo_storage::persistence::StoreCache,
+fn store_contract_state<S>(
+    store: &mut neo_storage::persistence::StoreCache<S>,
     contract: &ContractState,
-) {
+) where
+    S: neo_storage::persistence::Store,
+{
     const PREFIX_CONTRACT: u8 = 0x08;
     const PREFIX_CONTRACT_HASH: u8 = 0x0c;
 
@@ -149,12 +159,14 @@ fn store_contract_state(
     store.commit();
 }
 
-fn store_storage_item(
-    store: &mut neo_storage::persistence::StoreCache,
+fn store_storage_item<S>(
+    store: &mut neo_storage::persistence::StoreCache<S>,
     contract_id: i32,
     key: &[u8],
     value: &[u8],
-) {
+) where
+    S: neo_storage::persistence::Store,
+{
     let storage_key = StorageKey::new(contract_id, key.to_vec());
     store.add(storage_key, StorageItem::from_bytes(value.to_vec()));
     store.commit();
@@ -165,10 +177,12 @@ fn serialize_test_stack_value(value: &StackValue) -> Vec<u8> {
         .expect("serialize stack value")
 }
 
-fn store_committee(
-    store: &mut neo_storage::persistence::StoreCache,
+fn store_committee<S>(
+    store: &mut neo_storage::persistence::StoreCache<S>,
     committee: &[neo_crypto::ECPoint],
-) {
+) where
+    S: neo_storage::persistence::Store,
+{
     const PREFIX_COMMITTEE: u8 = 0x0e;
     let neo_token_id = crate::server::native_queries::NativeQueries::native_registry()
         .get_by_name("NeoToken")
@@ -190,12 +204,14 @@ fn store_committee(
     store.commit();
 }
 
-fn store_candidate_state(
-    store: &mut neo_storage::persistence::StoreCache,
+fn store_candidate_state<S>(
+    store: &mut neo_storage::persistence::StoreCache<S>,
     candidate: &neo_crypto::ECPoint,
     registered: bool,
     votes: BigInt,
-) {
+) where
+    S: neo_storage::persistence::Store,
+{
     let item = StackValue::Struct(vec![
         StackValue::Boolean(registered),
         StackValue::BigInteger(votes.to_signed_bytes_le()),
@@ -204,11 +220,13 @@ fn store_candidate_state(
     store_candidate_state_raw(store, candidate, bytes);
 }
 
-fn store_candidate_state_raw(
-    store: &mut neo_storage::persistence::StoreCache,
+fn store_candidate_state_raw<S>(
+    store: &mut neo_storage::persistence::StoreCache<S>,
     candidate: &neo_crypto::ECPoint,
     bytes: Vec<u8>,
-) {
+) where
+    S: neo_storage::persistence::Store,
+{
     const PREFIX_CANDIDATE: u8 = 0x21;
     let neo_token_id = crate::server::native_queries::NativeQueries::native_registry()
         .get_by_name("NeoToken")
@@ -222,7 +240,10 @@ fn store_candidate_state_raw(
     store.commit();
 }
 
-fn store_blocked_account(store: &mut neo_storage::persistence::StoreCache, account: &UInt160) {
+fn store_blocked_account<S>(store: &mut neo_storage::persistence::StoreCache<S>, account: &UInt160)
+where
+    S: neo_storage::persistence::Store,
+{
     const PREFIX_BLOCKED_ACCOUNT: u8 = 0x0f;
     let policy_id = crate::server::native_queries::NativeQueries::native_registry()
         .get_by_name("PolicyContract")

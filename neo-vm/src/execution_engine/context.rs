@@ -4,9 +4,9 @@
 
 use super::{ExecutionContext, ExecutionEngine, Script, VMState, VmError, VmResult};
 
-impl ExecutionEngine {
+impl<S> ExecutionEngine<S> {
     /// Loads a context into the invocation stack.
-    pub fn load_context(&mut self, context: ExecutionContext) -> VmResult<()> {
+    pub fn load_context(&mut self, context: ExecutionContext<S>) -> VmResult<()> {
         if self.invocation_stack.len() >= self.limits.max_invocation_stack_size as usize {
             return Err(VmError::invalid_operation_msg(format!(
                 "MaxInvocationStackSize exceed: {}",
@@ -27,7 +27,7 @@ impl ExecutionEngine {
     }
 
     /// Unloads a context from the invocation stack.
-    pub fn unload_context(&mut self, context: &mut ExecutionContext) -> VmResult<()> {
+    pub fn unload_context(&mut self, context: &mut ExecutionContext<S>) -> VmResult<()> {
         // Update current context
         if self.invocation_stack.is_empty() {
             // No more contexts
@@ -60,7 +60,7 @@ impl ExecutionEngine {
     }
 
     /// Removes a context from the invocation stack.
-    pub fn remove_context(&mut self, context_index: usize) -> VmResult<ExecutionContext> {
+    pub fn remove_context(&mut self, context_index: usize) -> VmResult<ExecutionContext<S>> {
         // Get the context
         if context_index >= self.invocation_stack.len() {
             return Err(VmError::invalid_operation_msg("Context index out of range"));
@@ -82,6 +82,79 @@ impl ExecutionEngine {
         Ok(context)
     }
 
+    /// Creates a new context with an explicit typed state value.
+    #[must_use]
+    pub fn create_context_with_state(
+        &self,
+        script: Script,
+        rvcount: i32,
+        initial_position: usize,
+        state: S,
+    ) -> ExecutionContext<S> {
+        let mut context =
+            ExecutionContext::new_with_state(script, rvcount, &self.reference_counter, state);
+        context.set_instruction_pointer(initial_position);
+        context
+    }
+
+    /// Creates a new context using a typed-state factory.
+    #[must_use]
+    pub fn create_context_with_state_factory<F: FnOnce() -> S>(
+        &self,
+        script: Script,
+        rvcount: i32,
+        initial_position: usize,
+        factory: F,
+    ) -> ExecutionContext<S> {
+        let mut context = ExecutionContext::new_with_state_factory(
+            script,
+            rvcount,
+            &self.reference_counter,
+            factory,
+        );
+        context.set_instruction_pointer(initial_position);
+        context
+    }
+
+    /// Loads a script and creates a new context with an explicit typed state value.
+    pub fn load_script_with_state(
+        &mut self,
+        script: Script,
+        rvcount: i32,
+        initial_position: usize,
+        state: S,
+    ) -> VmResult<&ExecutionContext<S>> {
+        let context = self.create_context_with_state(script, rvcount, initial_position, state);
+        self.load_context(context)?;
+
+        self.current_context()
+            .ok_or_else(|| VmError::InvalidOperation {
+                operation: "load_script_with_state".into(),
+                reason: "No current execution context after loading".into(),
+            })
+    }
+
+    /// Loads a script and creates a new context using a typed-state factory.
+    pub fn load_script_with_state_factory<F: FnOnce() -> S>(
+        &mut self,
+        script: Script,
+        rvcount: i32,
+        initial_position: usize,
+        factory: F,
+    ) -> VmResult<&ExecutionContext<S>> {
+        let context =
+            self.create_context_with_state_factory(script, rvcount, initial_position, factory);
+        self.load_context(context)?;
+
+        self.current_context()
+            .ok_or_else(|| VmError::InvalidOperation {
+                operation: "load_script_with_state_factory".into(),
+                reason: "No current execution context after loading".into(),
+            })
+    }
+}
+
+impl<S: Default> ExecutionEngine<S> {
     /// Creates a new context with the specified script.
     #[must_use]
     pub fn create_context(
@@ -89,7 +162,7 @@ impl ExecutionEngine {
         script: Script,
         rvcount: i32,
         initial_position: usize,
-    ) -> ExecutionContext {
+    ) -> ExecutionContext<S> {
         let mut context = ExecutionContext::new(script, rvcount, &self.reference_counter);
         context.set_instruction_pointer(initial_position);
         context
@@ -101,7 +174,7 @@ impl ExecutionEngine {
         script: Script,
         rvcount: i32,
         initial_position: usize,
-    ) -> VmResult<&ExecutionContext> {
+    ) -> VmResult<&ExecutionContext<S>> {
         let context = self.create_context(script, rvcount, initial_position);
         self.load_context(context)?;
 

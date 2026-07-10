@@ -1,9 +1,8 @@
 use super::*;
 use crate::{
     BlockBatchImportOutcome, BlockImport, BlockImportOutcome, BlockImportQueue, BlockOrigin,
-    ImportQueue, ImportedTip, Service, ServiceError,
+    ImportedTip, Service, ServiceError,
 };
-use async_trait::async_trait;
 use neo_payloads::{Block, Header};
 use neo_storage::mdbx::MdbxStoreProvider;
 use neo_storage::persistence::providers::MemoryStore;
@@ -104,8 +103,8 @@ fn store_checkpoint_store_round_trips_and_overwrites_memory_backend() {
 }
 
 #[test]
-fn shared_store_checkpoint_store_round_trips_erased_memory_backend() {
-    let backing: Arc<dyn neo_storage::persistence::Store> = Arc::new(MemoryStore::new());
+fn shared_store_checkpoint_store_round_trips_memory_backend() {
+    let backing = Arc::new(MemoryStore::new());
     let store = SharedStoreSyncStageCheckpointStore::new(Arc::clone(&backing));
     let checkpoint = SyncStageCheckpoint::new(SyncStageKind::Import, 77).with_counters(70, 4_096);
 
@@ -113,7 +112,7 @@ fn shared_store_checkpoint_store_round_trips_erased_memory_backend() {
 
     store
         .put_checkpoint(checkpoint.clone())
-        .expect("put checkpoint through erased store");
+        .expect("put checkpoint through shared store");
 
     let fresh_view = SharedStoreSyncStageCheckpointStore::new(backing);
     assert_eq!(
@@ -172,7 +171,6 @@ struct RecordingImport {
 
 impl Service for RecordingImport {}
 
-#[async_trait]
 impl BlockImport for RecordingImport {
     async fn check(&self, block: &Block) -> Result<(), ServiceError> {
         if self.fail_check_at == Some(block.index()) {
@@ -207,8 +205,6 @@ impl BlockImport for RecordingImport {
     }
 }
 
-fn _import_queue_trait_object(_: &dyn ImportQueue) {}
-
 #[tokio::test]
 async fn sync_pipeline_driver_imports_contiguous_batches_and_checkpoints() {
     let importer = Arc::new(RecordingImport::default());
@@ -221,7 +217,6 @@ async fn sync_pipeline_driver_imports_contiguous_batches_and_checkpoints() {
         BlockOrigin::Sync,
     )
     .expect("driver");
-    _import_queue_trait_object(queue.as_ref());
 
     let outcome = driver
         .push_batch(SyncBlockBatch::new(1, vec![block(1), block(2)]))

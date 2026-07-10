@@ -20,5 +20,5 @@ mod storage_watch;
 /// Trackable storage entry state and cache configuration.
 pub mod trackable;
 
-pub use cache::{DataCache, OnEntryDelegate};
+pub use cache::{CacheRead, DataCache, EmptyCacheBacking};
 pub use trackable::{DataCacheConfig, DataCacheError, DataCacheResult, Trackable, TrackableEntry};

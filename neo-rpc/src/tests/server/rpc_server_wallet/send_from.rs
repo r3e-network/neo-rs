@@ -158,8 +158,6 @@ async fn send_from_returns_invalid_request_without_funds() {
 #[tokio::test(flavor = "multi_thread")]
 async fn send_from_multisig_collects_member_signatures() {
     use neo_execution::contract::Contract;
-    use neo_wallets::Wallet as CoreWalletTrait;
-
     let settings = Arc::new(ProtocolSettings::default());
     let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let server = RpcServer::new(system.clone(), authenticated_config());
@@ -191,8 +189,7 @@ async fn send_from_multisig_collects_member_signatures() {
         .await
         .expect("multisig account");
 
-    let wallet_arc: Arc<dyn CoreWalletTrait> = Arc::new(wallet);
-    server.set_wallet(Some(wallet_arc));
+    server.set_wallet(Some(Arc::new(wallet)));
 
     // Fund the multi-sig account so `make_transaction` can build the transfer.
     let mut store = system.store_cache();

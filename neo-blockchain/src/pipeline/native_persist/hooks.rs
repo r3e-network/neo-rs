@@ -1,8 +1,7 @@
-use std::sync::Arc;
-
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::ApplicationEngine;
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_execution::{ApplicationEngine, NativeContract};
 use neo_payloads::Block;
 use neo_primitives::{TriggerType, UInt256};
 
@@ -17,14 +16,18 @@ use super::LEDGER_CONTRACT_ID;
 /// `NativePostPersist` syscalls (`NativeContract.OnPersistAsync` /
 /// `PostPersistAsync` over `Contracts.Where(IsActive)`). A hook error aborts
 /// the block, like the C# native script faulting.
-pub(super) fn run_native_persist_hooks(
-    contracts: &[Arc<dyn neo_execution::NativeContract>],
-    engine: &mut ApplicationEngine,
+pub(super) fn run_native_persist_hooks<P, B>(
+    contracts: &[P::Contract],
+    engine: &mut ApplicationEngine<P, neo_execution::NoDiagnostic, B>,
     settings: &ProtocolSettings,
     block: &Block,
     block_hash: &UInt256,
     block_index: u32,
-) -> CoreResult<()> {
+) -> CoreResult<()>
+where
+    P: NativeContractProvider + 'static,
+    B: neo_storage::CacheRead,
+{
     let trigger = engine.trigger_type();
     let metric_hook = match trigger {
         TriggerType::OnPersist => neo_runtime::sync_metrics::NativePersistHook::OnPersist,

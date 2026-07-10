@@ -26,18 +26,21 @@ use super::package::{ensure_chain_acc_extracted, ensure_package_cached, fetch_la
 use super::reference;
 use super::report::{FastSyncReferenceReport, FastSyncReport, log_fast_sync_throughput};
 
-pub(in crate::node) async fn run_fast_sync_report(
+pub(in crate::node) async fn run_fast_sync_report<S>(
     blockchain: &BlockchainHandle,
-    storage: Arc<dyn Store>,
+    storage: Arc<S>,
     config: &NodeConfig,
     storage_override: Option<&Path>,
     cache_dir_override: Option<&Path>,
     network: u32,
     stop_at_height: Option<u32>,
     reference_rpc: Option<&str>,
-    state_store: Option<&Arc<StateStore>>,
-    state_service: Option<&Arc<StateServiceCommitHandlers>>,
-) -> anyhow::Result<FastSyncReport> {
+    state_store: Option<&Arc<StateStore<S>>>,
+    state_service: Option<&Arc<StateServiceCommitHandlers<S>>>,
+) -> anyhow::Result<FastSyncReport>
+where
+    S: Store,
+{
     let package = fetch_latest_package(network).await?;
     validate_fast_sync_preflight(&storage, &package)?;
     let cache_dir = fast_sync_cache_dir(config, storage_override, cache_dir_override);

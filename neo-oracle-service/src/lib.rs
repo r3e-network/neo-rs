@@ -26,5 +26,5 @@ pub mod service;
 #[path = "config/settings.rs"]
 pub mod settings;
 
-pub use service::{OracleService, OracleServiceError, OracleStatus};
+pub use service::{OracleContractReadProvider, OracleService, OracleServiceError, OracleStatus};
 pub use settings::OracleServiceSettings;

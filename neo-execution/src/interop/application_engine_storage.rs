@@ -1,16 +1,26 @@
 //! ApplicationEngine.Storage - matches C# Neo.SmartContract.ApplicationEngine.Storage.cs exactly
 
+use crate::ApplicationExecutionEngine as ExecutionEngine;
 use crate::application_engine::ApplicationEngine;
 use crate::iterators::{IteratorInterop, StorageIterator};
+use crate::native_contract_provider::NativeContractProvider;
 use crate::storage_context::StorageContext;
 use neo_config::hardfork::Hardfork;
 use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
 use neo_primitives::FindOptions;
 use neo_vm::error::VmError;
-use neo_vm::{ExecutionEngine, StackItem, VmResult};
+use neo_vm::{StackItem, VmResult};
 
-pub(crate) fn storage_trace_enabled(app: &ApplicationEngine, legacy_env: &str) -> bool {
+pub(crate) fn storage_trace_enabled<P, D, B>(
+    app: &ApplicationEngine<P, D, B>,
+    legacy_env: &str,
+) -> bool
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     if std::env::var_os(legacy_env).is_some() {
         return true;
     }
@@ -20,10 +30,7 @@ pub(crate) fn storage_trace_enabled(app: &ApplicationEngine, legacy_env: &str) -
     let Some(container) = app.get_script_container() else {
         return false;
     };
-    let Some(transaction) = container
-        .as_any()
-        .downcast_ref::<neo_payloads::Transaction>()
-    else {
+    let Some(transaction) = container.as_transaction() else {
         return false;
     };
     let Ok(hash) = transaction.try_hash() else {
@@ -66,25 +73,31 @@ fn storage_trace_key_enabled(key: &[u8]) -> bool {
     })
 }
 
-fn storage_trace_scope(app: &ApplicationEngine) -> String {
+fn storage_trace_scope<P, D, B>(app: &ApplicationEngine<P, D, B>) -> String
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let block = app
         .persisting_block()
         .map(|block| block.index().to_string())
         .unwrap_or_else(|| "none".to_string());
     let tx = app
         .get_script_container()
-        .and_then(|container| {
-            container
-                .as_any()
-                .downcast_ref::<neo_payloads::Transaction>()
-        })
+        .and_then(|container| container.as_transaction())
         .and_then(|tx| tx.try_hash().ok())
         .map(|hash| hash.to_string())
         .unwrap_or_else(|| "none".to_string());
     format!("block={block} tx={tx}")
 }
 
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     /// Gets storage context for reading
     pub fn storage_get_context(&mut self) -> CoreResult<StorageContext> {
         self.get_storage_context()
@@ -215,7 +228,16 @@ fn map_storage_error(service: &str, error: impl std::fmt::Display) -> VmError {
     }
 }
 
-fn pop_storage_bytes(app: &mut ApplicationEngine, service: &str, label: &str) -> VmResult<Vec<u8>> {
+fn pop_storage_bytes<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    service: &str,
+    label: &str,
+) -> VmResult<Vec<u8>>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let item = app.pop().map_err(|e| map_storage_error(service, e))?;
     item.as_bytes().map_err(|error| {
         map_storage_error(
@@ -228,10 +250,15 @@ fn pop_storage_bytes(app: &mut ApplicationEngine, service: &str, label: &str) ->
     })
 }
 
-fn storage_get_context_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn storage_get_context_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let context = app
         .storage_get_context()
         .map_err(|e| map_storage_error("System.Storage.GetContext", e))?;
@@ -240,10 +267,15 @@ fn storage_get_context_handler(
     Ok(())
 }
 
-fn storage_get_read_only_context_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn storage_get_read_only_context_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let context = app
         .storage_get_read_only_context()
         .map_err(|e| map_storage_error("System.Storage.GetReadOnlyContext", e))?;
@@ -252,10 +284,15 @@ fn storage_get_read_only_context_handler(
     Ok(())
 }
 
-fn storage_as_read_only_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn storage_as_read_only_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let item = app
         .pop()
         .map_err(|e| map_storage_error("System.Storage.AsReadOnly", e))?;
@@ -266,7 +303,15 @@ fn storage_as_read_only_handler(
     Ok(())
 }
 
-fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngine) -> VmResult<()> {
+fn storage_get_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let context_item = app
         .pop()
         .map_err(|e| map_storage_error("System.Storage.Get", e))?;
@@ -319,7 +364,15 @@ fn storage_get_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
     Ok(())
 }
 
-fn storage_put_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngine) -> VmResult<()> {
+fn storage_put_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let context_item = app
         .pop()
         .map_err(|e| map_storage_error("System.Storage.Put", e))?;
@@ -358,10 +411,15 @@ fn storage_put_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngin
     Ok(())
 }
 
-fn storage_delete_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn storage_delete_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let context_item = app
         .pop()
         .map_err(|e| map_storage_error("System.Storage.Delete", e))?;
@@ -391,10 +449,15 @@ fn storage_delete_handler(
     Ok(())
 }
 
-fn storage_get_local_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn storage_get_local_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let key = app
         .pop_bytes()
         .map_err(|e| map_storage_error("System.Storage.Local.Get", e))?;
@@ -413,10 +476,15 @@ fn storage_get_local_handler(
     Ok(())
 }
 
-fn storage_put_local_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn storage_put_local_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let key = pop_storage_bytes(app, "System.Storage.Local.Put", "key")?;
     let value = pop_storage_bytes(app, "System.Storage.Local.Put", "value")?;
 
@@ -425,10 +493,15 @@ fn storage_put_local_handler(
     Ok(())
 }
 
-fn storage_delete_local_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn storage_delete_local_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let key = app
         .pop_bytes()
         .map_err(|e| map_storage_error("System.Storage.Local.Delete", e))?;
@@ -437,10 +510,15 @@ fn storage_delete_local_handler(
     Ok(())
 }
 
-fn storage_find_local_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn storage_find_local_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let prefix = app
         .pop_bytes()
         .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
@@ -465,15 +543,22 @@ fn storage_find_local_handler(
     let iterator_id = app
         .store_storage_iterator(iterator)
         .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
-    app.push(StackItem::from_interface(IteratorInterop::new(iterator_id)))
-        .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
+    app.push(StackItem::from_interface(IteratorInterop::iterator(
+        iterator_id,
+    )))
+    .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
     Ok(())
 }
 
-fn storage_find_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn storage_find_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let context_item = app
         .pop()
         .map_err(|e| map_storage_error("System.Storage.Find", e))?;
@@ -521,12 +606,19 @@ fn storage_find_handler(
     let iterator_id = app
         .store_storage_iterator(iterator)
         .map_err(|e| map_storage_error("System.Storage.Find", e))?;
-    app.push(StackItem::from_interface(IteratorInterop::new(iterator_id)))
-        .map_err(|e| map_storage_error("System.Storage.Find", e))?;
+    app.push(StackItem::from_interface(IteratorInterop::iterator(
+        iterator_id,
+    )))
+    .map_err(|e| map_storage_error("System.Storage.Find", e))?;
     Ok(())
 }
 
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     pub(crate) fn register_storage_interops(&mut self) -> VmResult<()> {
         self.register_host_service(
             "System.Storage.GetContext",

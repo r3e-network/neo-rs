@@ -10,9 +10,11 @@ use std::sync::Arc;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn indexer_methods_return_indexed_records() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let service = Arc::new(IndexerService::new());
-    system.register_service(Arc::clone(&service));
+    let system = crate::server::test_support::test_system_with_services(
+        ProtocolSettings::default(),
+        crate::server::RpcServices::new().with_indexer(Arc::clone(&service)),
+    );
 
     let first = account(8);
     let second = account(2);
@@ -255,9 +257,11 @@ async fn indexer_methods_return_indexed_records() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn indexer_methods_return_null_for_missing_records() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let service = Arc::new(IndexerService::new());
-    system.register_service(service);
+    let system = crate::server::test_support::test_system_with_services(
+        ProtocolSettings::default(),
+        crate::server::RpcServices::new().with_indexer(service),
+    );
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerIndexer::register_handlers();

@@ -9,9 +9,13 @@ use super::{
 };
 use crate::support::invoke::{NativeMethodBinding, method_metadata};
 
-pub(super) static CONTRACT_MANAGEMENT_METHOD_BINDINGS: LazyLock<
-    Vec<NativeMethodBinding<ContractManagement>>,
-> = LazyLock::new(|| {
+pub(super) fn contract_management_method_bindings<P, D, B>()
+-> Vec<NativeMethodBinding<ContractManagement, P, D, B>>
+where
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+    D: neo_execution::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let read_states = CallFlags::READ_STATES.bits();
     vec![
         NativeMethodBinding::new(
@@ -188,10 +192,15 @@ pub(super) static CONTRACT_MANAGEMENT_METHOD_BINDINGS: LazyLock<
             ContractManagement::invoke_update,
         ),
     ]
-});
+}
 
-pub(super) static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> =
-    LazyLock::new(|| method_metadata(&CONTRACT_MANAGEMENT_METHOD_BINDINGS));
+pub(super) static CONTRACT_MANAGEMENT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
+    method_metadata(&contract_management_method_bindings::<
+        neo_execution::native_contract_provider::NoNativeContractProvider,
+        neo_execution::NoDiagnostic,
+        neo_storage::EmptyCacheBacking,
+    >())
+});
 
 /// ContractManagement's `[ContractEvent]` declarations
 /// (ContractManagement.cs:40-42), all ungated and all carrying a single

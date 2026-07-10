@@ -15,13 +15,13 @@ use std::sync::Arc;
 use neo_config::ProtocolSettings;
 use neo_primitives::{CallFlags, TriggerType, UInt160};
 use neo_runtime::{Nep17Metadata, Nep17MetadataReader, ServiceError};
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache, EmptyCacheBacking};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::VmState;
 use num_traits::ToPrimitive;
 
-use crate::ApplicationEngine;
 use crate::native_contract_provider::NativeContractProvider;
+use crate::{ApplicationEngine, NoDiagnostic};
 
 /// GAS budget for the metadata probe, matching C# `ApplicationEngine.Run`
 /// (`gas: 0_30000000L` — 0.3 GAS).
@@ -33,13 +33,13 @@ const DESCRIPTOR_PROBE_GAS: i64 = 30_000_000;
 /// `ApplicationEngine` for each `read_metadata` call. Cheap to clone because
 /// the snapshot and native provider are `Arc`s and settings are cloneable.
 #[derive(Clone)]
-pub struct Nep17MetadataReaderImpl {
-    snapshot: Arc<DataCache>,
+pub struct Nep17MetadataReaderImpl<P, B = EmptyCacheBacking> {
+    snapshot: Arc<DataCache<B>>,
     settings: ProtocolSettings,
-    native_contract_provider: Arc<dyn NativeContractProvider>,
+    native_contract_provider: Arc<P>,
 }
 
-impl std::fmt::Debug for Nep17MetadataReaderImpl {
+impl<P, B> std::fmt::Debug for Nep17MetadataReaderImpl<P, B> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Nep17MetadataReaderImpl")
             .field("snapshot", &"DataCache")
@@ -49,7 +49,11 @@ impl std::fmt::Debug for Nep17MetadataReaderImpl {
     }
 }
 
-impl Nep17MetadataReaderImpl {
+impl<P, B> Nep17MetadataReaderImpl<P, B>
+where
+    P: NativeContractProvider + 'static,
+    B: CacheRead,
+{
     /// Construct a new reader with an explicit native-contract provider.
     ///
     /// The provider is captured by the reader and passed into each probe engine,
@@ -57,9 +61,9 @@ impl Nep17MetadataReaderImpl {
     /// server, or embedded node should not observe ambient provider changes made
     /// by unrelated tests or nodes.
     pub fn new_with_native_contract_provider(
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<DataCache<B>>,
         settings: ProtocolSettings,
-        native_contract_provider: Arc<dyn NativeContractProvider>,
+        native_contract_provider: Arc<P>,
     ) -> Self {
         Self {
             snapshot,
@@ -69,7 +73,11 @@ impl Nep17MetadataReaderImpl {
     }
 }
 
-impl Nep17MetadataReader for Nep17MetadataReaderImpl {
+impl<P, B> Nep17MetadataReader for Nep17MetadataReaderImpl<P, B>
+where
+    P: NativeContractProvider + 'static,
+    B: CacheRead,
+{
     fn read_metadata(&self, contract_hash: UInt160) -> Result<Nep17Metadata, ServiceError> {
         let mut builder = ScriptBuilder::new();
         emit_descriptor_call(&mut builder, &contract_hash, "decimals")
@@ -85,7 +93,7 @@ impl Nep17MetadataReader for Nep17MetadataReaderImpl {
             None,
             self.settings.clone(),
             DESCRIPTOR_PROBE_GAS,
-            None,
+            NoDiagnostic,
             Some(Arc::clone(&self.native_contract_provider)),
         )
         .map_err(|e| ServiceError::Internal(e.to_string()))?;

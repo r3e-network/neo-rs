@@ -41,7 +41,8 @@ impl RpcServerTokensTracker {
         let address_version = server.system().settings().address_version;
         let request = AccountRequest::parse(params, "getnep11balances", address_version)?;
 
-        let (balance_prefix, _, _) = Nep11Tracker::rpc_prefixes();
+        let (balance_prefix, _, _) =
+            Nep11Tracker::<neo_native_contracts::StandardNativeProvider>::rpc_prefixes();
         let mut prefix = Vec::with_capacity(1 + UInt160::LENGTH);
         prefix.push(balance_prefix);
         prefix.extend_from_slice(&request.script_hash.to_bytes());
@@ -127,7 +128,8 @@ impl RpcServerTokensTracker {
         let address_version = server.system().settings().address_version;
         let request = AccountRequest::parse(params, "getnep17balances", address_version)?;
 
-        let (balance_prefix, _, _) = Nep17Tracker::rpc_prefixes();
+        let (balance_prefix, _, _) =
+            Nep17Tracker::<neo_native_contracts::StandardNativeProvider>::rpc_prefixes();
         let mut prefix = Vec::with_capacity(1 + UInt160::LENGTH);
         prefix.push(balance_prefix);
         prefix.extend_from_slice(&request.script_hash.to_bytes());

@@ -1,28 +1,19 @@
 use super::*;
-use crate::native_contract_provider::{NativeContractLookup, NativeContractProvider};
+use crate::native_contract_provider::{
+    NativeContractProvider, NoNativeContract, NoNativeContractProvider,
+};
 use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
 struct CurrentIndexProvider(u32);
 
 impl NativeContractProvider for CurrentIndexProvider {
-    fn get_native_contract(&self, _hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
-        None
-    }
+    type Contract = NoNativeContract;
 
-    fn get_native_contract_by_name(&self, _name: &str) -> Option<Arc<dyn NativeContract>> {
-        None
-    }
-
-    fn all_native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
-        Vec::new()
-    }
-
-    fn all_native_contract_hashes(&self) -> Vec<UInt160> {
-        Vec::new()
-    }
-
-    fn current_block_index(&self, _snapshot: &DataCache) -> CoreResult<u32> {
+    fn current_block_index<B: neo_storage::CacheRead>(
+        &self,
+        _snapshot: &neo_storage::DataCache<B>,
+    ) -> CoreResult<u32> {
         Ok(self.0)
     }
 }
@@ -46,14 +37,14 @@ fn registered_services(engine: &ApplicationEngine) -> Vec<(String, i64, u8)> {
 #[test]
 fn negative_fee_faults_before_whitelist_like_csharp_v3101() {
     let snapshot = Arc::new(DataCache::new(false));
-    let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
+    let mut engine = ApplicationEngine::<CurrentIndexProvider>::new_with_shared_block_and_native_contract_provider(
         TriggerType::Application,
         None,
         snapshot,
         None,
         ProtocolSettings::default(),
         TEST_MODE_GAS,
-        None,
+        NoDiagnostic,
         None,
     )
     .expect("engine");
@@ -82,9 +73,7 @@ fn gorgon_selects_default_jump_table_like_csharp_v3101() {
     settings.hardforks.clear();
     settings.hardforks.insert(Hardfork::HfEchidna, 0);
     settings.hardforks.insert(Hardfork::HfGorgon, 0);
-    let snapshot = DataCache::new(false);
-
-    let selected = ApplicationEngine::select_jump_table(&settings, None, &snapshot, None);
+    let selected = ApplicationEngine::<NoNativeContractProvider>::select_jump_table(&settings, 0);
     let default = JumpTable::default();
 
     for opcode in [OpCode::SHL, OpCode::SHR, OpCode::HASKEY, OpCode::PICKITEM] {
@@ -104,9 +93,7 @@ fn echidna_without_gorgon_selects_not_gorgon_table_like_csharp_v3101() {
     let mut settings = ProtocolSettings::default();
     settings.hardforks.clear();
     settings.hardforks.insert(Hardfork::HfEchidna, 0);
-    let snapshot = DataCache::new(false);
-
-    let selected = ApplicationEngine::select_jump_table(&settings, None, &snapshot, None);
+    let selected = ApplicationEngine::<NoNativeContractProvider>::select_jump_table(&settings, 0);
     let default = JumpTable::default();
     let not_gorgon = JumpTable::not_gorgon();
 
@@ -155,10 +142,7 @@ fn jump_table_selection_uses_supplied_native_provider_current_index() {
     settings.hardforks.clear();
     settings.hardforks.insert(Hardfork::HfEchidna, 1);
     settings.hardforks.insert(Hardfork::HfGorgon, 10);
-    let snapshot = DataCache::new(false);
-    let provider = Arc::new(CurrentIndexProvider(10)) as Arc<dyn NativeContractProvider>;
-
-    let selected = ApplicationEngine::select_jump_table(&settings, None, &snapshot, Some(provider));
+    let selected = ApplicationEngine::<NoNativeContractProvider>::select_jump_table(&settings, 10);
     let default = JumpTable::default();
 
     assert_eq!(
@@ -170,25 +154,22 @@ fn jump_table_selection_uses_supplied_native_provider_current_index() {
 
 #[test]
 fn engine_native_provider_is_fixed_at_construction() {
-    let engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
+    let engine = ApplicationEngine::<CurrentIndexProvider>::new_with_shared_block_and_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
         None,
         ProtocolSettings::default(),
         TEST_MODE_GAS,
-        None,
+        NoDiagnostic,
         None,
     )
     .expect("engine without native provider");
 
-    let late_provider = Arc::new(CurrentIndexProvider(42)) as Arc<dyn NativeContractProvider>;
-    NativeContractLookup::with_scoped_provider(late_provider, || {
-        assert!(
-            engine.native_contract_provider().is_none(),
-            "an engine constructed without a provider must not observe later ambient provider changes"
-        );
-    });
+    assert!(
+        engine.native_contract_provider().is_none(),
+        "an engine constructed without a provider must not observe any ambient provider"
+    );
 }
 
 fn expected_base_services() -> Vec<(String, i64, u8)> {
@@ -412,14 +393,14 @@ fn expected_faun_services() -> Vec<(String, i64, u8)> {
 }
 
 fn engine_with_settings(settings: ProtocolSettings) -> ApplicationEngine {
-    ApplicationEngine::new_with_native_contract_provider(
+    ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
         None,
         settings,
         TEST_MODE_GAS,
-        None,
+        NoDiagnostic,
         None,
     )
     .expect("application engine")
@@ -431,14 +412,14 @@ fn engine_with_settings_at_block(
 ) -> ApplicationEngine {
     let mut block = Block::new();
     block.header.set_index(block_index);
-    ApplicationEngine::new_with_native_contract_provider(
+    ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
         Some(block),
         settings,
         TEST_MODE_GAS,
-        None,
+        NoDiagnostic,
         None,
     )
     .expect("application engine")
@@ -516,5 +497,30 @@ fn long_cheap_loop_halts_without_instruction_cap_like_csharp_v3101() {
         "a >1,000,000-instruction cheap loop must HALT (gas is the only bound), \
          not FAULT on an instruction cap; fault: {:?}",
         engine.fault_exception()
+    );
+}
+
+#[test]
+fn application_engine_diagnostic_is_typed_not_trait_object() {
+    let engine_source = include_str!("../../application_engine/mod.rs");
+    let state_source = include_str!("../../application_engine/state.rs");
+
+    assert!(
+        engine_source.contains(
+            "pub struct ApplicationEngine<P = NoNativeContractProvider, D = NoDiagnostic, B = EmptyCacheBacking>"
+        ),
+        "ApplicationEngine should expose provider, diagnostic, and cache backing as explicit generic parameters"
+    );
+    assert!(
+        engine_source.contains("diagnostic: D"),
+        "ApplicationEngine should store the concrete diagnostic sink, not an erased object"
+    );
+    assert!(
+        !engine_source.contains("Box<dyn Diagnostic>"),
+        "engine state must not reintroduce boxed diagnostic dispatch"
+    );
+    assert!(
+        !state_source.contains("Box<dyn Diagnostic>"),
+        "engine constructors must accept typed diagnostics, not boxed trait objects"
     );
 }

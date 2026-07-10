@@ -325,26 +325,12 @@ impl WriteBatchBuffer {
     where
         I: IntoIterator<Item = (&'a [u8], Option<&'a [u8]>)>,
     {
-        let mut iter = operations.into_iter();
-        self.extend_from(|sink| {
-            for (key, value) in iter.by_ref() {
-                sink(key, value);
-            }
-        });
-    }
-
-    /// Adds multiple put/delete operations produced by a visitor with one lock
-    /// and one flush-threshold check.
-    pub fn extend_from<F>(&self, mut visit: F)
-    where
-        F: FnMut(&mut dyn FnMut(&[u8], Option<&[u8]>)),
-    {
         let config = self.config.read();
         let (added_count, added_bytes, new_count, new_bytes) = {
             let mut pending = self.pending.lock();
             let mut added_count = 0usize;
             let mut added_bytes = 0usize;
-            let mut sink = |key: &[u8], value: Option<&[u8]>| {
+            for (key, value) in operations {
                 pending.capture_config(*config);
                 added_count += 1;
                 added_bytes += key.len();
@@ -355,8 +341,7 @@ impl WriteBatchBuffer {
                     }
                     None => pending.batch.delete(key),
                 }
-            };
-            visit(&mut sink);
+            }
             if added_count == 0 {
                 return;
             }

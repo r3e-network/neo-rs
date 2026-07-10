@@ -11,7 +11,7 @@ mod execution_engine_tests {
 
     #[test]
     fn test_execution_engine_creation() {
-        let engine = ExecutionEngine::new(None);
+        let engine = ExecutionEngine::<()>::new(None);
         assert_eq!(engine.state(), VMState::BREAK);
         assert!(engine.invocation_stack().is_empty());
         assert!(engine.result_stack().is_empty());
@@ -20,7 +20,7 @@ mod execution_engine_tests {
 
     #[test]
     fn test_load_script() {
-        let mut engine = ExecutionEngine::new(None);
+        let mut engine = ExecutionEngine::<()>::new(None);
 
         let script_bytes = vec![
             OpCode::PUSH1.byte(),
@@ -44,7 +44,7 @@ mod execution_engine_tests {
 
     #[test]
     fn test_set_state() {
-        let mut engine = ExecutionEngine::new(None);
+        let mut engine = ExecutionEngine::<()>::new(None);
         assert_eq!(engine.state(), VMState::BREAK);
 
         engine.set_state(VMState::NONE);
@@ -59,7 +59,7 @@ mod execution_engine_tests {
 
     #[test]
     fn test_jump_table_methods() {
-        let mut engine = ExecutionEngine::new(None);
+        let mut engine = ExecutionEngine::<()>::new(None);
 
         // Test jump_table getter
         let _jump_table = engine.jump_table();
@@ -68,13 +68,13 @@ mod execution_engine_tests {
         let _jump_table_mut = engine.jump_table_mut();
 
         // Test set_jump_table
-        let new_jump_table = JumpTable::new();
+        let new_jump_table = JumpTable::<()>::new();
         engine.set_jump_table(new_jump_table);
     }
 
     #[test]
     fn test_stack_operations() {
-        let mut engine = ExecutionEngine::new(None);
+        let mut engine = ExecutionEngine::<()>::new(None);
 
         // Create a script with a few instructions
         let script_bytes = vec![
@@ -155,7 +155,7 @@ mod execution_engine_tests {
 
     #[test]
     fn test_unload_context() {
-        let mut engine = ExecutionEngine::new(None);
+        let mut engine = ExecutionEngine::<()>::new(None);
 
         // Create a script with a few instructions
         let script_bytes = vec![
@@ -193,7 +193,7 @@ mod execution_engine_tests {
 
     #[test]
     fn pickitem_struct_out_of_range_is_catchable() {
-        let mut engine = ExecutionEngine::new(None);
+        let mut engine = ExecutionEngine::<()>::new(None);
         let script_bytes = vec![
             OpCode::TRY.byte(),
             9,
@@ -230,7 +230,7 @@ mod execution_engine_tests {
 
     #[test]
     fn test_gas_tracking_basic() {
-        let mut engine = ExecutionEngine::new(None);
+        let mut engine = ExecutionEngine::<()>::new(None);
 
         // Initial gas consumed should be 0
         assert_eq!(engine.gas_consumed(), 0);
@@ -256,7 +256,7 @@ mod execution_engine_tests {
 
     #[test]
     fn test_gas_tracking_limit_exceeded() {
-        let mut engine = ExecutionEngine::new(None);
+        let mut engine = ExecutionEngine::<()>::new(None);
 
         // Set a low gas limit for testing
         engine.set_gas_limit(1000);
@@ -279,7 +279,7 @@ mod execution_engine_tests {
 
     #[test]
     fn test_gas_tracking_refund() {
-        let mut engine = ExecutionEngine::new(None);
+        let mut engine = ExecutionEngine::<()>::new(None);
 
         // Add some gas
         engine.add_gas_consumed(500).expect("Should add gas");
@@ -296,7 +296,7 @@ mod execution_engine_tests {
 
     #[test]
     fn test_gas_tracking_reset() {
-        let mut engine = ExecutionEngine::new(None);
+        let mut engine = ExecutionEngine::<()>::new(None);
 
         // Add some gas
         engine.add_gas_consumed(500).expect("Should add gas");
@@ -309,7 +309,7 @@ mod execution_engine_tests {
 
     #[test]
     fn test_gas_tracking_edge_cases() {
-        let mut engine = ExecutionEngine::new(None);
+        let mut engine = ExecutionEngine::<()>::new(None);
 
         // Test adding 0 gas
         engine.add_gas_consumed(0).expect("Should handle 0");

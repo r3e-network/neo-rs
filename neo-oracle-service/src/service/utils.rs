@@ -5,8 +5,8 @@ use neo_execution::Contract;
 use neo_payloads::Transaction;
 use neo_payloads::helper::get_sign_data_vec;
 use neo_serialization::json::JToken;
-use neo_storage::persistence::DataCache;
-use neo_wallets::{KeyPair, Wallet};
+use neo_storage::persistence::{CacheRead, DataCache};
+use neo_wallets::{KeyPair, Wallet, WalletAccount};
 
 pub(super) fn sign_transaction(tx: &Transaction, key: &KeyPair, network: u32) -> Vec<u8> {
     let Ok(data) = get_sign_data_vec(tx, network) else {
@@ -41,19 +41,22 @@ pub(super) fn filter_json(
         .map_err(|err| OracleServiceError::Processing(err.to_string()))
 }
 
-pub(super) fn ledger_height(snapshot: &DataCache) -> u32 {
+pub(super) fn ledger_height<B: CacheRead>(snapshot: &DataCache<B>) -> u32 {
     let ledger = NativeOracleLedgerProvider::new();
     ledger_height_with_provider(snapshot, &ledger)
 }
 
-pub(super) fn ledger_height_with_provider(
-    snapshot: &DataCache,
+pub(super) fn ledger_height_with_provider<B: CacheRead>(
+    snapshot: &DataCache<B>,
     ledger: &impl OracleLedgerProvider,
 ) -> u32 {
     ledger.next_block_height(snapshot)
 }
 
-pub(super) fn wallet_has_oracle_account(wallet: &dyn Wallet, oracles: &[ECPoint]) -> bool {
+pub(super) fn wallet_has_oracle_account(
+    wallet: &(impl Wallet + ?Sized),
+    oracles: &[ECPoint],
+) -> bool {
     wallet.accounts().iter().any(|account| {
         if !account.has_key() || account.is_locked() {
             return false;
@@ -68,7 +71,10 @@ pub(super) fn wallet_has_oracle_account(wallet: &dyn Wallet, oracles: &[ECPoint]
     })
 }
 
-pub(super) fn select_oracle_key(wallet: &dyn Wallet, oracles: &[ECPoint]) -> Option<KeyPair> {
+pub(super) fn select_oracle_key(
+    wallet: &(impl Wallet + ?Sized),
+    oracles: &[ECPoint],
+) -> Option<KeyPair> {
     for oracle in oracles {
         let script_hash = Contract::create_signature_contract(oracle.clone()).script_hash();
         let Some(account) = wallet.account(&script_hash) else {

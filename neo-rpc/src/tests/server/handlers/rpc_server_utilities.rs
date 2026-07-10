@@ -57,8 +57,10 @@ async fn list_plugins_returns_empty() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn list_plugins_includes_indexer_when_registered() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
-    system.register_service(Arc::new(IndexerService::new()));
+    let system = crate::server::test_support::test_system_with_services(
+        ProtocolSettings::default(),
+        crate::server::RpcServices::new().with_indexer(Arc::new(IndexerService::new())),
+    );
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerUtilities::register_handlers();
     let handler = find_handler(&handlers, "listplugins");
@@ -105,8 +107,10 @@ async fn list_services_reports_registered_method_groups() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn list_services_reports_indexer_status_when_registered() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
-    system.register_service(Arc::new(IndexerService::new()));
+    let system = crate::server::test_support::test_system_with_services(
+        ProtocolSettings::default(),
+        crate::server::RpcServices::new().with_indexer(Arc::new(IndexerService::new())),
+    );
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerUtilities::register_handlers();
     let handler = find_handler(&handlers, "listservices");

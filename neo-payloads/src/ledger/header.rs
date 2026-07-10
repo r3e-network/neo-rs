@@ -298,8 +298,10 @@ impl crate::VerifiableExt for Header {
         vec![&mut self.witness]
     }
 
-    fn to_verifiable_container(&self) -> Option<std::sync::Arc<dyn neo_primitives::Verifiable>> {
-        Some(std::sync::Arc::new(self.clone()))
+    fn to_verifiable_container(&self) -> Option<std::sync::Arc<crate::VerifiableContainer>> {
+        Some(std::sync::Arc::new(crate::VerifiableContainer::from(
+            self.clone(),
+        )))
     }
 }
 
@@ -387,10 +389,6 @@ impl neo_primitives::Verifiable for Header {
             return Vec::new();
         }
         writer.into_bytes()
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 
     fn verify(&self) -> bool {

@@ -8,22 +8,27 @@ use neo_execution::ApplicationEngine;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_manifest::CallFlags;
 use neo_native_contracts::GasToken;
-use neo_primitives::{TriggerType, UInt160, Verifiable};
-use neo_storage::persistence::DataCache;
+use neo_payloads::VerifiableContainer;
+use neo_primitives::{TriggerType, UInt160};
+use neo_storage::persistence::{CacheRead, DataCache};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::{OpCode, VmState as VMState};
 use num_bigint::BigInt;
 
 use super::{WalletCompatError, WalletCompatResult};
 
-pub(super) fn run_test_invocation(
+pub(super) fn run_test_invocation<P, B>(
     script: Vec<u8>,
-    snapshot: &DataCache,
-    container: Option<Arc<dyn Verifiable>>,
+    snapshot: &DataCache<B>,
+    container: Option<Arc<VerifiableContainer>>,
     settings: &ProtocolSettings,
-    native_contract_provider: &Arc<dyn NativeContractProvider>,
+    native_contract_provider: &Arc<P>,
     max_gas: i64,
-) -> CoreResult<ApplicationEngine> {
+) -> CoreResult<ApplicationEngine<P, neo_execution::NoDiagnostic, B>>
+where
+    P: NativeContractProvider + 'static,
+    B: CacheRead,
+{
     let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
         TriggerType::Application,
         container,
@@ -31,7 +36,7 @@ pub(super) fn run_test_invocation(
         None,
         settings.clone(),
         max_gas,
-        None,
+        neo_execution::NoDiagnostic,
         Some(Arc::clone(native_contract_provider)),
     )
     .map_err(|err| CoreError::other(err.to_string()))?;
@@ -44,12 +49,16 @@ pub(super) fn run_test_invocation(
 
 /// `NativeContract.GAS.BalanceOf(snapshot, account)` via a `balanceOf`
 /// engine probe (the canonical read in the Rust tree).
-pub(crate) fn gas_balance_of(
-    snapshot: &DataCache,
+pub(crate) fn gas_balance_of<P, B>(
+    snapshot: &DataCache<B>,
     settings: &ProtocolSettings,
-    native_contract_provider: &Arc<dyn NativeContractProvider>,
+    native_contract_provider: &Arc<P>,
     account: &UInt160,
-) -> WalletCompatResult<BigInt> {
+) -> WalletCompatResult<BigInt>
+where
+    P: NativeContractProvider + 'static,
+    B: CacheRead,
+{
     nep17_balance_of(
         snapshot,
         settings,
@@ -60,13 +69,17 @@ pub(crate) fn gas_balance_of(
 }
 
 /// `balanceOf` probe for an arbitrary NEP-17 asset.
-pub(super) fn nep17_balance_of(
-    snapshot: &DataCache,
+pub(super) fn nep17_balance_of<P, B>(
+    snapshot: &DataCache<B>,
     settings: &ProtocolSettings,
-    native_contract_provider: &Arc<dyn NativeContractProvider>,
+    native_contract_provider: &Arc<P>,
     asset: &UInt160,
     account: &UInt160,
-) -> WalletCompatResult<BigInt> {
+) -> WalletCompatResult<BigInt>
+where
+    P: NativeContractProvider + 'static,
+    B: CacheRead,
+{
     let mut builder = ScriptBuilder::new();
     emit_dynamic_call(
         &mut builder,

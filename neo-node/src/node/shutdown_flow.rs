@@ -8,21 +8,28 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use neo_storage::persistence::Store;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use super::observability::ObservabilityRuntime;
+use super::services::NodeServiceHandles;
 use super::shutdown::wait_for_shutdown_signal;
 use super::startup_cleanup::{flush_state_service_for_shutdown, restore_durable_store_mode};
 
-pub(in crate::node) async fn run_daemon_shutdown(
-    node: &Arc<neo_system::Node>,
+pub(in crate::node) async fn run_daemon_shutdown<S, ServiceS>(
+    node: &Arc<neo_system::Node<neo_native_contracts::StandardNativeProvider, S>>,
+    services: &NodeServiceHandles<S>,
     stop_at_height: Option<u32>,
     shutdown: CancellationToken,
     handles: Vec<tokio::task::JoinHandle<()>>,
-    durable_service_stores: &[Arc<dyn neo_storage::persistence::store::Store>],
+    durable_service_stores: &[Arc<ServiceS>],
     observability: Option<&ObservabilityRuntime>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    S: Store + 'static,
+    ServiceS: Store + 'static,
+{
     // Wait for a shutdown signal, handling SIGTERM as well as Ctrl-C (SIGINT)
     // so `kill`/`pkill`, Docker, and systemd all stop the node gracefully. The
     // validation stop-height path uses the same shutdown route after observing a
@@ -54,7 +61,7 @@ pub(in crate::node) async fn run_daemon_shutdown(
     for handle in handles {
         handle.abort();
     }
-    flush_state_service_for_shutdown(node)?;
+    flush_state_service_for_shutdown(services)?;
     restore_durable_store_mode(node.storage().as_ref(), durable_service_stores)?;
     Ok(())
 }

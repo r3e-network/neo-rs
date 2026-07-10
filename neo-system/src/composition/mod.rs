@@ -1,6 +1,6 @@
 //! # neo-system::composition
 //!
-//! Composition-root builders, registries, and node assembly helpers.
+//! Composition-root builders and node assembly helpers.
 //!
 //! ## Boundary
 //!
@@ -9,44 +9,28 @@
 //!
 //! ## Contents
 //!
-//! - `builder`: RPC client builder.
-//! - `node`: Daemon composition, CLI modes, and long-running node startup.
+//! - `builder`: final composed-node builder.
+//! - `core`: provider-neutral core service construction and staged launch.
+//! - `node`: composed node runtime and capability accessors.
 //! - `sync_download_import`: Download-stream to sync-import bridge.
 //! - `sync_import_pipeline`: Node-local sync import queue/checkpoint wiring.
 //! - `tx_admission_provider`: Ledger/native read seams for transaction
 //!   admission routing.
 //! - `wallet_provider`: wallet provider adapter.
-//!
-//! `ServiceRegistry` is re-exported from `neo-runtime` — see
-//! [`neo_runtime::ServiceRegistry`].
 
 pub mod builder;
+pub mod core;
 pub mod node;
 pub mod sync_download_import;
 pub mod sync_import_pipeline;
+pub mod system_context;
 mod tx_admission_provider;
 pub mod wallet_provider;
 
 pub use builder::NodeBuilder;
-pub use neo_runtime::ServiceRegistry;
+pub use core::{BlockchainTask, NodeCore, NodeCoreBuilder, NodeCoreLaunch};
 pub use node::Node;
 pub use sync_download_import::{SyncDownloadImportDriver, SyncDownloadImportSummary};
 pub use sync_import_pipeline::SyncImportPipeline;
+pub use system_context::{BlockCommitHooks, NodeSystemContext, NoopBlockCommitHooks};
 pub use wallet_provider::WalletProvider;
-
-/// Serializes tests across this module tree that deliberately inspect or reset
-/// the process-global native-contract provider (`NativeContractLookup`).
-/// Production composition keeps providers local, but these assertions still
-/// need one shared guard because the compatibility bridge is a process-global
-/// slot inside the `neo-system` test binary.
-#[cfg(test)]
-pub(crate) static NATIVE_PROVIDER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// Acquires [`NATIVE_PROVIDER_TEST_LOCK`], recovering from poisoning so a panic
-/// in one guarded test does not cascade `PoisonError` into the others.
-#[cfg(test)]
-pub(crate) fn native_provider_test_guard() -> std::sync::MutexGuard<'static, ()> {
-    NATIVE_PROVIDER_TEST_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}

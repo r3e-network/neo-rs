@@ -22,7 +22,7 @@ use num_traits::ToPrimitive;
 /// Notary (`read_max_not_valid_before_delta`) and Oracle (`read_price`) can
 /// reuse the same logic.
 pub(crate) fn read_optional_i64_setting_key(
-    snapshot: &DataCache,
+    snapshot: &DataCache<impl neo_storage::CacheRead>,
     key: StorageKey,
     setting: &str,
 ) -> CoreResult<Option<i64>> {
@@ -42,7 +42,7 @@ pub(crate) fn read_optional_i64_setting_key(
 /// Faults when the key is absent (matching the C# direct-index `snapshot[key]`
 /// throw). Delegates to [`read_optional_i64_setting_key`].
 pub(crate) fn read_required_i64_setting_key(
-    snapshot: &DataCache,
+    snapshot: &DataCache<impl neo_storage::CacheRead>,
     key: StorageKey,
     setting: &str,
 ) -> CoreResult<i64> {
@@ -56,7 +56,7 @@ pub(crate) fn read_required_i64_setting_key(
 /// `GetAndChange(...)` which throws on a missing key). The value is stored as
 /// a little-endian `BigInteger`, byte-identical to the inlined code.
 pub(crate) fn put_required_i64_setting_key(
-    snapshot: &DataCache,
+    snapshot: &DataCache<impl neo_storage::CacheRead>,
     key: StorageKey,
     setting: &str,
     value: i64,
@@ -91,7 +91,7 @@ pub(crate) fn put_required_i64_setting_key(
 /// pre-genesis behaviour: when the ledger has no current block (e.g. during
 /// genesis construction) the protocol default is returned.
 pub(crate) fn read_hardfork_gated_u32_setting(
-    snapshot: &DataCache,
+    snapshot: &DataCache<impl neo_storage::CacheRead>,
     settings: &ProtocolSettings,
     default: u32,
     hardfork: Hardfork,

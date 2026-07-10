@@ -4,14 +4,18 @@ use neo_indexer::NotificationIndexRecord;
 use neo_payloads::Block;
 use neo_primitives::{UInt160, UInt256};
 use neo_rpc::application_logs::ApplicationLogsService;
+use neo_storage::persistence::Store;
 use serde_json::Value;
 use tracing::warn;
 
-pub(super) fn recover_application_log_notifications(
-    application_logs: Option<&ApplicationLogsService>,
+pub(super) fn recover_application_log_notifications<S>(
+    application_logs: Option<&ApplicationLogsService<S>>,
     block: &Block,
     context: &'static str,
-) -> Vec<NotificationIndexRecord> {
+) -> Vec<NotificationIndexRecord>
+where
+    S: Store,
+{
     let Some(logs) = application_logs else {
         return Vec::new();
     };
@@ -83,10 +87,13 @@ pub(super) enum ApplicationLogRecoveryError {
     MissingStringField { field: &'static str },
 }
 
-pub(super) fn application_log_notification_records(
-    logs: &ApplicationLogsService,
+pub(super) fn application_log_notification_records<S>(
+    logs: &ApplicationLogsService<S>,
     block: &Block,
-) -> Result<Vec<NotificationIndexRecord>, ApplicationLogRecoveryError> {
+) -> Result<Vec<NotificationIndexRecord>, ApplicationLogRecoveryError>
+where
+    S: Store,
+{
     let block_hash = block
         .try_hash()
         .map_err(|err| ApplicationLogRecoveryError::BlockHash {

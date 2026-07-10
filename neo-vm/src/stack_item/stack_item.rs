@@ -18,19 +18,70 @@ use neo_vm_rs::StackItemType;
 use neo_vm_rs::{StackValue, VmOrderedDictionary};
 use num_bigint::BigInt;
 use std::collections::hash_map::DefaultHasher;
-use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use super::vm_integer::VmInteger;
 
-/// A trait for interop interfaces that can be wrapped by a stack item.
-pub trait InteropInterface: fmt::Debug + Send + Sync {
-    /// Gets the type of the interop interface.
-    fn interface_type(&self) -> &str;
+/// Concrete VM interop handles carried by [`StackItem::InteropInterface`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InteropInterface {
+    /// Engine-managed storage iterator handle.
+    Iterator {
+        /// Engine-side iterator table id.
+        id: u32,
+    },
+    /// BLS12-381 point represented by its canonical encoding.
+    Bls12381 {
+        /// Canonical compressed point or pairing bytes.
+        bytes: Vec<u8>,
+    },
+}
 
-    /// Allows downcasting to concrete types.
-    fn as_any(&self) -> &dyn std::any::Any;
+impl InteropInterface {
+    /// Creates a storage iterator interop handle.
+    #[must_use]
+    pub const fn iterator(id: u32) -> Self {
+        Self::Iterator { id }
+    }
+
+    /// Creates a BLS12-381 point interop handle.
+    #[must_use]
+    pub fn bls12381(bytes: Vec<u8>) -> Self {
+        Self::Bls12381 { bytes }
+    }
+
+    /// Gets the C#-style interop object kind used for diagnostics and ordering.
+    #[must_use]
+    pub fn interface_type(&self) -> &str {
+        match self {
+            Self::Iterator { .. } => "StorageIterator",
+            Self::Bls12381 { bytes } => match bytes.len() {
+                48 => "G1Affine",
+                96 => "G2Affine",
+                576 => "Gt",
+                _ => "Bls12381Point",
+            },
+        }
+    }
+
+    /// Returns the storage iterator id if this interface carries one.
+    #[must_use]
+    pub const fn iterator_id(&self) -> Option<u32> {
+        match self {
+            Self::Iterator { id } => Some(*id),
+            Self::Bls12381 { .. } => None,
+        }
+    }
+
+    /// Returns the BLS12-381 point bytes if this interface carries one.
+    #[must_use]
+    pub fn bls12381_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Bls12381 { bytes } => Some(bytes.as_slice()),
+            Self::Iterator { .. } => None,
+        }
+    }
 }
 
 const VM_INTEGER_MAX_SIZE: usize = 32;
@@ -105,7 +156,7 @@ pub enum StackItem {
     Pointer(PointerItem),
 
     /// Represents an interop interface.
-    InteropInterface(Arc<dyn InteropInterface>),
+    InteropInterface(Arc<InteropInterface>),
 }
 
 impl StackItem {
@@ -188,7 +239,7 @@ impl StackItem {
 
     /// Creates an interop interface stack item.
     #[inline]
-    pub fn from_interface<T: InteropInterface + 'static>(value: T) -> Self {
+    pub fn from_interface(value: InteropInterface) -> Self {
         Self::InteropInterface(Arc::new(value))
     }
 
@@ -413,21 +464,9 @@ impl StackItem {
     }
 
     /// Gets the interop interface from the stack item.
-    /// Production implementation with proper type downcasting for C# compatibility.
-    pub fn as_interface<T: InteropInterface + 'static>(&self) -> VmResult<&T> {
+    pub fn as_interface(&self) -> VmResult<&InteropInterface> {
         match self {
-            Self::InteropInterface(i) => {
-                // Use Any trait for runtime type checking (matches C# reflection pattern)
-                let interface_any = i.as_any();
-
-                // Attempt to downcast to the requested type
-                interface_any.downcast_ref::<T>().ok_or_else(|| {
-                    VmError::invalid_type_simple(format!(
-                        "Cannot cast InteropInterface to type {}",
-                        std::any::type_name::<T>()
-                    ))
-                })
-            }
+            Self::InteropInterface(i) => Ok(i.as_ref()),
             _ => Err(VmError::invalid_type_simple(
                 "Stack item is not an InteropInterface",
             )),

@@ -40,7 +40,7 @@ use std::time::Duration;
 use neo_config::ProtocolSettings;
 
 pub use builder::RpcClientBuilder;
-pub use hooks::{RpcClientHooks, RpcRequestOutcome};
+pub use hooks::{RpcClientHooks, RpcObserver, RpcRequestOutcome, TracingRpcObserver};
 
 const MAX_JSON_NESTING: usize = 128;
 const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -48,10 +48,10 @@ const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 /// The RPC client to call NEO RPC methods
 /// Matches C# `RpcClient`
 #[derive(Clone)]
-pub struct RpcClient {
+pub struct RpcClient<O = TracingRpcObserver> {
     base_address: Url,
     http_client: Client,
     pub(crate) protocol_settings: Arc<ProtocolSettings>,
     request_timeout: Duration,
-    hooks: RpcClientHooks,
+    hooks: RpcClientHooks<O>,
 }

@@ -17,7 +17,14 @@ impl NeoToken {
     /// voters count, the genesis 5-GAS gas-per-block record at index 0, the
     /// 1000-GAS register price, and mint `TotalAmount` NEO to the BFT address of
     /// the standby validators.
-    pub(super) fn initialize_native(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    pub(super) fn initialize_native<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        &self,
+        engine: &mut ApplicationEngine<P, D, B>,
+    ) -> CoreResult<()> {
         let standby_committee = engine.protocol_settings().standby_committee.clone();
         let standby_validators = engine.protocol_settings().standby_validators();
         let snapshot = engine.snapshot_cache();

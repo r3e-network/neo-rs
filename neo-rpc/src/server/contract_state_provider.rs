@@ -9,21 +9,21 @@ use neo_error::CoreResult;
 use neo_execution::contract_state::ContractState;
 use neo_native_contracts::contract_management::ContractManagement;
 use neo_primitives::UInt160;
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 /// Read capability for deployed ContractManagement records.
 pub(crate) trait DeployedContractProvider {
     /// Returns the deployed contract state for `id`, when present.
-    fn contract_state_by_id(
+    fn contract_state_by_id<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         id: i32,
     ) -> CoreResult<Option<ContractState>>;
 
     /// Returns the deployed contract state for `script_hash`, when present.
-    fn contract_state_by_hash(
+    fn contract_state_by_hash<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         script_hash: &UInt160,
     ) -> CoreResult<Option<ContractState>>;
 }
@@ -42,17 +42,17 @@ pub(crate) trait DeployedContractProviderFactory {
 pub(crate) struct NativeDeployedContractProvider;
 
 impl DeployedContractProvider for NativeDeployedContractProvider {
-    fn contract_state_by_id(
+    fn contract_state_by_id<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         id: i32,
     ) -> CoreResult<Option<ContractState>> {
         ContractManagement::get_contract_by_id_from_snapshot(snapshot, id)
     }
 
-    fn contract_state_by_hash(
+    fn contract_state_by_hash<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         script_hash: &UInt160,
     ) -> CoreResult<Option<ContractState>> {
         ContractManagement::get_contract_from_snapshot(snapshot, script_hash)

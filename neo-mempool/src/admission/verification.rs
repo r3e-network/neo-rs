@@ -24,9 +24,7 @@ use neo_execution::helper::Helper;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{MAX_TRANSACTION_SIZE, Transaction, TransactionAttribute};
 use neo_primitives::{UInt160, VerifyResult};
-// `invocation_script`/`verification_script` on `Witness` are trait methods.
-use neo_primitives::Witness as _;
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache, StorageKey};
 
 #[path = "../verification/attributes.rs"]
 mod attributes;
@@ -38,12 +36,16 @@ use std::sync::Arc;
 use super::ledger_provider::{AdmissionLedgerProvider, NativeAdmissionLedgerProvider};
 use super::native_provider::{AdmissionNativeProvider, NativeAdmissionProvider};
 
+const POLICY_CONTRACT_ID: i32 = -7;
+const POLICY_PREFIX_ATTRIBUTE_FEE: u8 = 20;
+const DEFAULT_ATTRIBUTE_FEE: i64 = 0;
+
 /// C# v3.10.1 `MemoryPool.GetPayer` balance side: Notary-sponsored
 /// transactions (`Sender == Notary.Hash` and a second signer exists) spend the
 /// second signer's Notary deposit. Ordinary transactions spend the sender's GAS
 /// balance.
-fn fee_payer_balance(
-    snapshot: &DataCache,
+fn fee_payer_balance<B: CacheRead>(
+    snapshot: &DataCache<B>,
     tx: &Transaction,
     native_provider: &impl AdmissionNativeProvider,
 ) -> CoreResult<Option<BigInt>> {
@@ -79,15 +81,16 @@ fn single_signature_invocation(invocation: &[u8]) -> Option<&[u8]> {
 }
 
 /// The full C# `Transaction.Verify` using an explicit native-contract provider.
-pub fn verify_transaction_with_native_provider<P>(
+pub fn verify_transaction_with_native_provider<B, P>(
     tx: &Transaction,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     settings: &ProtocolSettings,
     pooled_sender_fee: &BigInt,
     oracle_duplicate: bool,
     native_contract_provider: Arc<P>,
 ) -> VerifyResult
 where
+    B: CacheRead,
     P: NativeContractProvider + 'static,
 {
     let result = verify_state_independent(tx, settings);
@@ -111,15 +114,16 @@ where
 /// redundant ECDSA signature verification. C# achieves the same by caching
 /// `Transaction.VerificationResult` which `MemoryPool.TryAdd` reads before
 /// performing state-dependent checks only.
-pub fn verify_transaction_dependent_only_with_native_provider<P>(
+pub fn verify_transaction_dependent_only_with_native_provider<B, P>(
     tx: &Transaction,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     settings: &ProtocolSettings,
     pooled_sender_fee: &BigInt,
     oracle_duplicate: bool,
     native_contract_provider: Arc<P>,
 ) -> VerifyResult
 where
+    B: CacheRead,
     P: NativeContractProvider + 'static,
 {
     verify_state_dependent_with_native_provider(
@@ -216,15 +220,16 @@ pub fn verify_state_independent(tx: &Transaction, settings: &ProtocolSettings) -
 
 /// C# `Transaction.VerifyStateDependent` (Transaction.cs:323) using an explicit
 /// native-contract provider for engine-based witness verification.
-pub fn verify_state_dependent_with_native_provider<P>(
+pub fn verify_state_dependent_with_native_provider<B, P>(
     tx: &Transaction,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     settings: &ProtocolSettings,
     pooled_sender_fee: &BigInt,
     oracle_duplicate: bool,
     native_contract_provider: Arc<P>,
 ) -> VerifyResult
 where
+    B: CacheRead,
     P: NativeContractProvider + 'static,
 {
     let ledger_provider = NativeAdmissionLedgerProvider::new();
@@ -241,9 +246,9 @@ where
     )
 }
 
-fn verify_state_dependent_with_providers<P>(
+fn verify_state_dependent_with_providers<B, P>(
     tx: &Transaction,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     settings: &ProtocolSettings,
     pooled_sender_fee: &BigInt,
     oracle_duplicate: bool,
@@ -252,6 +257,7 @@ fn verify_state_dependent_with_providers<P>(
     admission_native_provider: &impl AdmissionNativeProvider,
 ) -> VerifyResult
 where
+    B: CacheRead,
     P: NativeContractProvider + 'static,
 {
     use neo_io::Serializable;
@@ -375,7 +381,6 @@ where
         } else if let Some((m, n)) = multi {
             net_fee -= exec_fee_factor * Helper::multi_signature_contract_cost(m as i32, n as i32);
         } else {
-            let provider: Arc<dyn NativeContractProvider> = native_contract_provider.clone();
             match Helper::verify_witness_with_native_provider(
                 tx,
                 settings,
@@ -383,7 +388,7 @@ where
                 hash,
                 witness,
                 net_fee,
-                Some(provider),
+                Some(native_contract_provider.clone()),
             ) {
                 Ok(fee) => net_fee -= fee,
                 Err(_) => return VerifyResult::Invalid,
@@ -397,12 +402,24 @@ where
 }
 
 /// C# `TransactionAttribute.CalculateNetworkFee` dispatch.
-fn attribute_network_fee(
-    snapshot: &DataCache,
+fn attribute_network_fee<B: CacheRead>(
+    snapshot: &DataCache<B>,
     tx: &Transaction,
     attribute: &TransactionAttribute,
 ) -> i64 {
-    attribute.calculate_network_fee(snapshot, tx)
+    let key = StorageKey::new(
+        POLICY_CONTRACT_ID,
+        vec![POLICY_PREFIX_ATTRIBUTE_FEE, attribute.type_id().to_byte()],
+    );
+    let base = snapshot
+        .get(&key)
+        .and_then(|item| i64::try_from(BigInt::from_signed_bytes_le(&item.value_bytes())).ok())
+        .unwrap_or(DEFAULT_ATTRIBUTE_FEE);
+    match attribute {
+        TransactionAttribute::Conflicts(_) => tx.signers().len() as i64 * base,
+        TransactionAttribute::NotaryAssisted(attr) => (i64::from(attr.nkeys) + 1) * base,
+        _ => base,
+    }
 }
 
 #[cfg(test)]

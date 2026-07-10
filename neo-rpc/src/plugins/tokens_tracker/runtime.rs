@@ -9,11 +9,13 @@ use super::trackers::nep_17::Nep17Tracker;
 use super::trackers::tracker_base::Tracker;
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_native_contracts::StandardNativeProvider;
 use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
 use neo_payloads::{CommittedHandler, CommittingHandler};
 use neo_primitives::panic_message;
-use neo_storage::persistence::{DataCache, Store};
+use neo_storage::persistence::providers::MemoryStore;
+use neo_storage::persistence::{CacheRead, DataCache, Store};
 use parking_lot::RwLock;
 use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
@@ -25,13 +27,70 @@ use tracing::error;
 ///
 /// Implements `CommittingHandler` and `CommittedHandler` to index
 /// token transfers during block commits.
-pub struct TokensTracker {
+pub struct TokensTracker<P = StandardNativeProvider, S: Store = MemoryStore>
+where
+    P: NativeContractProvider,
+{
     settings: TokensTrackerSettings,
-    trackers: RwLock<Vec<Box<dyn Tracker>>>,
+    trackers: RwLock<Vec<TrackerRuntime<P, S>>>,
     disabled: AtomicBool,
+    _provider: std::marker::PhantomData<P>,
+    _store: std::marker::PhantomData<fn(&S)>,
 }
 
-impl TokensTracker {
+enum TrackerRuntime<P, S>
+where
+    P: NativeContractProvider,
+    S: Store,
+{
+    Nep17(Nep17Tracker<P, S>),
+    Nep11(Nep11Tracker<P, S>),
+}
+
+impl<P, S> TrackerRuntime<P, S>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
+    fn track_name(&self) -> &str {
+        match self {
+            Self::Nep17(tracker) => tracker.track_name(),
+            Self::Nep11(tracker) => tracker.track_name(),
+        }
+    }
+
+    fn reset_batch(&mut self) {
+        match self {
+            Self::Nep17(tracker) => tracker.reset_batch(),
+            Self::Nep11(tracker) => tracker.reset_batch(),
+        }
+    }
+
+    fn on_persist<B: CacheRead>(
+        &mut self,
+        block: &Block,
+        snapshot: &DataCache<B>,
+        application_executed_list: &[ApplicationExecuted],
+    ) {
+        match self {
+            Self::Nep17(tracker) => tracker.on_persist(block, snapshot, application_executed_list),
+            Self::Nep11(tracker) => tracker.on_persist(block, snapshot, application_executed_list),
+        }
+    }
+
+    fn commit(&mut self) -> neo_error::CoreResult<()> {
+        match self {
+            Self::Nep17(tracker) => tracker.commit(),
+            Self::Nep11(tracker) => tracker.commit(),
+        }
+    }
+}
+
+impl<P, S> TokensTracker<P, S>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
     /// Creates a new TokensTracker with the given configuration.
     ///
     /// # Arguments
@@ -41,14 +100,14 @@ impl TokensTracker {
     /// * `protocol_settings` - Protocol settings (for VM execution)
     pub fn new(
         settings: TokensTrackerSettings,
-        db: Arc<dyn Store>,
+        db: Arc<S>,
         protocol_settings: Arc<ProtocolSettings>,
-        native_contract_provider: Arc<dyn NativeContractProvider>,
+        native_contract_provider: Arc<P>,
     ) -> Self {
-        let mut trackers: Vec<Box<dyn Tracker>> = Vec::new();
+        let mut trackers = Vec::new();
 
         if settings.enabled_nep17() {
-            trackers.push(Box::new(Nep17Tracker::new(
+            trackers.push(TrackerRuntime::Nep17(Nep17Tracker::new(
                 Arc::clone(&db),
                 settings.max_results,
                 settings.track_history,
@@ -58,7 +117,7 @@ impl TokensTracker {
         }
 
         if settings.enabled_nep11() {
-            trackers.push(Box::new(Nep11Tracker::new(
+            trackers.push(TrackerRuntime::Nep11(Nep11Tracker::new(
                 Arc::clone(&db),
                 settings.max_results,
                 settings.track_history,
@@ -71,6 +130,8 @@ impl TokensTracker {
             settings,
             trackers: RwLock::new(trackers),
             disabled: AtomicBool::new(false),
+            _provider: std::marker::PhantomData,
+            _store: std::marker::PhantomData,
         }
     }
 
@@ -141,18 +202,19 @@ impl TokensTracker {
     }
 }
 
-impl CommittingHandler for TokensTracker {
-    fn blockchain_committing_handler(
+impl<P, S> CommittingHandler for TokensTracker<P, S>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
+    fn blockchain_committing_handler<B: neo_storage::CacheRead>(
         &self,
-        system: &dyn Any,
+        network: u32,
         block: &Block,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         application_executed_list: &[ApplicationExecuted],
     ) {
-        let Some(settings) = system.downcast_ref::<ProtocolSettings>() else {
-            return;
-        };
-        if settings.network != self.settings.network {
+        if network != self.settings.network {
             return;
         }
 
@@ -178,12 +240,13 @@ impl CommittingHandler for TokensTracker {
     }
 }
 
-impl CommittedHandler for TokensTracker {
-    fn blockchain_committed_handler(&self, system: &dyn Any, _block: &Block) {
-        let Some(settings) = system.downcast_ref::<ProtocolSettings>() else {
-            return;
-        };
-        if settings.network != self.settings.network {
+impl<P, S> CommittedHandler for TokensTracker<P, S>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
+    fn blockchain_committed_handler(&self, network: u32, _block: &Block) {
+        if network != self.settings.network {
             return;
         }
 

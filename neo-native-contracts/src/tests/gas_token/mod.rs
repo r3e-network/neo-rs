@@ -14,7 +14,7 @@
 
 use super::*;
 use neo_execution::Contract;
-use neo_payloads::TransactionAttribute;
+use neo_payloads::{TransactionAttribute, VerifiableContainer};
 use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
@@ -38,8 +38,6 @@ fn gas_transfer_from_calling_contract_uses_contract_as_witness() {
     use neo_primitives::{TriggerType, WitnessScope};
     use std::sync::Arc;
 
-    crate::install();
-
     let cache = DataCache::new(false);
     let contract_account = UInt160::from_bytes(&[0x48; 20]).unwrap();
     let recipient = UInt160::from_bytes(&[0x23; 20]).unwrap();
@@ -60,12 +58,12 @@ fn gas_transfer_from_calling_contract_uses_contract_as_witness() {
     let snapshot = Arc::new(cache);
     let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
-        Some(Arc::new(tx)),
+        Some(Arc::new(VerifiableContainer::from(tx))),
         Arc::clone(&snapshot),
         None,
         ProtocolSettings::default(),
         10_000_000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
@@ -74,9 +72,7 @@ fn gas_transfer_from_calling_contract_uses_contract_as_witness() {
         .load_script(vec![neo_vm_rs::OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load calling contract context");
     let entry = engine.current_context().cloned().expect("entry context");
-    let state = entry.get_state_with_factory::<neo_execution::ExecutionContextState, _>(
-        neo_execution::ExecutionContextState::new,
-    );
+    let state = entry.state();
     state.lock().script_hash = Some(contract_account);
 
     engine
@@ -243,10 +239,10 @@ fn gas_account_storage_round_trips() {
 fn gas_account_storage_uses_stack_value_projection() {
     let source = include_str!("../../gas_token/storage.rs");
     let read_start = source
-        .find("fn read_gas_account(")
+        .find("fn read_gas_account<")
         .expect("read_gas_account helper exists");
     let start = source
-        .find("fn write_gas_account(")
+        .find("fn write_gas_account<")
         .expect("write_gas_account helper exists");
     let end = source[start..]
         .find("fn delete_gas_account")
@@ -303,7 +299,7 @@ fn total_supply_invoke_reads_full_bigint() {
         None,
         ProtocolSettings::default(),
         10_000_000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
@@ -354,7 +350,7 @@ fn gas_burn_debits_balance_and_supply() {
         None,
         ProtocolSettings::default(),
         10_000_000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
@@ -455,7 +451,10 @@ mod persist_tests {
         tx
     }
 
-    fn on_persist_engine(snapshot: Arc<DataCache>, block: Block) -> ApplicationEngine {
+    fn on_persist_engine(
+        snapshot: Arc<DataCache>,
+        block: Block,
+    ) -> ApplicationEngine<crate::StandardNativeProvider> {
         // C# runs the native OnPersist script with gas limit 0.
         ApplicationEngine::new_with_native_contract_provider(
             TriggerType::OnPersist,
@@ -464,7 +463,7 @@ mod persist_tests {
             Some(block),
             ProtocolSettings::default(),
             0,
-            None,
+            neo_execution::NoDiagnostic,
             Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
         )
         .expect("engine builds")
@@ -504,7 +503,7 @@ mod persist_tests {
             None,
             settings.clone(),
             0,
-            None,
+            neo_execution::NoDiagnostic,
             Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
         )
         .expect("engine builds");

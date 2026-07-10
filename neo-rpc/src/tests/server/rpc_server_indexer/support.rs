@@ -4,7 +4,7 @@ use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcHandler;
 use neo_payloads::{ApplicationExecuted, Block, Header, NotifyEventArgs, Signer, Transaction};
 use neo_primitives::{TriggerType, UInt160, WitnessScope};
-use neo_storage::persistence::Store;
+use neo_storage::persistence::{Store, StoreSnapshot, WriteStore};
 use neo_vm::StackItem;
 use neo_vm_rs::VmState as VMState;
 
@@ -84,7 +84,10 @@ pub(super) fn transfer_state(from: UInt160, to: UInt160, amount: i64) -> Vec<Sta
     ]
 }
 
-pub(super) fn corrupt_block_by_height_record(store: &Arc<dyn Store>, height: u32) {
+pub(super) fn corrupt_block_by_height_record<S>(store: &Arc<S>, height: u32)
+where
+    S: Store,
+{
     let mut key = b"neo-indexer:v3:block-by-height:".to_vec();
     key.extend_from_slice(&height.to_be_bytes());
     let mut snapshot = store.snapshot();

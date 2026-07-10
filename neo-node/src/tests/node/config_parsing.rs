@@ -1,5 +1,6 @@
 use super::super::config::network_scoped_path;
 use super::*;
+use neo_storage::persistence::{Store, StoreBackendKind};
 
 /// A representative TOML config (mirroring the shipped
 /// `neo_testnet_node.toml`) parses, derives the TestNet protocol
@@ -259,7 +260,7 @@ data_dir = "{}"
 
     let store = open_store(&config, None).expect("open MDBX store");
 
-    assert!(store.as_any().is::<neo_storage::mdbx::MdbxStore>());
+    assert_eq!(store.backend_kind(), StoreBackendKind::Mdbx);
 }
 
 #[test]
@@ -270,7 +271,7 @@ fn storage_path_defaults_to_mdbx_persistent_backend() {
 
     let store = open_store(&config, Some(&db_path)).expect("open default persistent store");
 
-    assert!(store.as_any().is::<neo_storage::mdbx::MdbxStore>());
+    assert_eq!(store.backend_kind(), StoreBackendKind::Mdbx);
 }
 
 #[test]

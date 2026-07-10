@@ -26,7 +26,10 @@ impl InvocationScript {
     }
 }
 
-impl ConsensusService {
+impl<S> ConsensusService<S>
+where
+    S: crate::ConsensusSigner,
+{
     fn my_script_hash(&self) -> ConsensusResult<UInt160> {
         let my_index = self.my_index()?;
         self.context

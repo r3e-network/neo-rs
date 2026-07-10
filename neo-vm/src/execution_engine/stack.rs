@@ -4,7 +4,7 @@
 
 use super::{DEFAULT_GAS_LIMIT, ExecutionEngine, StackItem, VmError, VmResult};
 
-impl ExecutionEngine {
+impl<S> ExecutionEngine<S> {
     /// Returns the item at the specified index from the top of the current stack without removing it.
     #[inline]
     pub fn peek(&self, index: usize) -> VmResult<StackItem> {

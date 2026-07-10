@@ -1,12 +1,11 @@
 //! Shared support helpers for wallet RPC handlers.
 
 use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use neo_execution::helper::Helper as ContractHelper;
 use neo_primitives::UInt160;
-use neo_wallets::{Wallet as CoreWallet, WalletResult};
+use neo_wallets::{Nep6Wallet, Wallet, WalletResult};
 use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 
 use crate::server::rpc_error::RpcError;
@@ -24,9 +23,11 @@ impl RpcServerWallet {
         request::parse_wallet_script_hash(value, version)
     }
 
-    pub(super) fn await_wallet_future<T: Send + 'static>(
-        future: Pin<Box<dyn Future<Output = WalletResult<T>> + Send>>,
-    ) -> Result<T, RpcException> {
+    pub(super) fn await_wallet_future<T, F>(future: F) -> Result<T, RpcException>
+    where
+        T: Send + 'static,
+        F: Future<Output = WalletResult<T>> + Send,
+    {
         // The RPC handlers are synchronous, so we must block on the wallet
         // future here. When a tokio runtime is available we always use
         // `block_in_place`, which is safe on a multi-thread runtime.
@@ -55,12 +56,12 @@ impl RpcServerWallet {
         result.map_err(errors::wallet_failure)
     }
 
-    pub(super) fn save_wallet(wallet: &Arc<dyn CoreWallet>) -> Result<(), RpcException> {
+    pub(super) fn save_wallet(wallet: &Arc<Nep6Wallet>) -> Result<(), RpcException> {
         let wallet_clone = Arc::clone(wallet);
-        Self::await_wallet_future(Box::pin(async move { wallet_clone.save().await }))
+        Self::await_wallet_future(async move { wallet_clone.save().await })
     }
 
-    pub(super) fn require_wallet(server: &RpcServer) -> Result<Arc<dyn CoreWallet>, RpcException> {
+    pub(super) fn require_wallet(server: &RpcServer) -> Result<Arc<Nep6Wallet>, RpcException> {
         server
             .wallet()
             .ok_or_else(|| RpcException::from(RpcError::no_opened_wallet()))

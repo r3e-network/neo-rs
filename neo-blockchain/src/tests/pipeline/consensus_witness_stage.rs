@@ -38,7 +38,8 @@ impl MockConsensusWitnessContext {
 }
 
 impl ConsensusWitnessContext for MockConsensusWitnessContext {
-    type NativeProvider = dyn neo_execution::native_contract_provider::NativeContractProvider;
+    type NativeProvider = neo_native_contracts::StandardNativeProvider;
+    type CacheBacking = neo_storage::EmptyCacheBacking;
 
     fn settings(&self) -> Arc<ProtocolSettings> {
         Arc::clone(&self.settings)
@@ -50,13 +51,7 @@ impl ConsensusWitnessContext for MockConsensusWitnessContext {
 
     fn native_contract_provider(
         &self,
-    ) -> Option<Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>> {
-        None
-    }
-
-    fn native_contract_provider_for_vm(
-        &self,
-    ) -> Option<Arc<dyn neo_execution::native_contract_provider::NativeContractProvider>> {
+    ) -> Option<Arc<neo_native_contracts::StandardNativeProvider>> {
         None
     }
 
@@ -104,8 +99,12 @@ fn consensus_witness_stage_owns_concrete_context_type() {
     let source = include_str!("../../pipeline/consensus_witness_stage.rs");
 
     assert!(
-        source.contains("pub struct NeoConsensusWitnessStage<C = SnapshotConsensusWitnessContext>"),
+        source.contains("pub struct NeoConsensusWitnessStage<C>"),
         "consensus-witness stage should preserve the concrete context type"
+    );
+    assert!(
+        !source.contains("C = SnapshotConsensusWitnessContext"),
+        "consensus-witness stage must not default to an erased provider context"
     );
     assert!(
         source.contains("ctx: Arc<C>"),
@@ -117,8 +116,8 @@ fn consensus_witness_stage_owns_concrete_context_type() {
     );
 }
 
-#[tokio::test]
-async fn consensus_witness_stage_accepts_authorized_header_witness() {
+#[test]
+fn consensus_witness_stage_accepts_authorized_header_witness() {
     let witness = true_witness();
     let parent_hash = UInt256::from([1u8; 32]);
     let parent = ParentHeaderContext {
@@ -131,24 +130,22 @@ async fn consensus_witness_stage_accepts_authorized_header_witness() {
 
     stage(Some(parent))
         .verify_consensus_witness(&stage_context(), &block)
-        .await
         .expect("matching parent next-consensus should authorize the witness");
 }
 
-#[tokio::test]
-async fn consensus_witness_stage_rejects_missing_parent() {
+#[test]
+fn consensus_witness_stage_rejects_missing_parent() {
     let block = block(1, UInt256::from([1u8; 32]), 20, true_witness());
 
     let err = stage(None)
         .verify_consensus_witness(&stage_context(), &block)
-        .await
         .expect_err("missing parent must fail");
 
     assert!(err.to_string().contains("previous block not found"));
 }
 
-#[tokio::test]
-async fn consensus_witness_stage_rejects_non_increasing_timestamp() {
+#[test]
+fn consensus_witness_stage_rejects_non_increasing_timestamp() {
     let witness = true_witness();
     let parent_hash = UInt256::from([1u8; 32]);
     let parent = ParentHeaderContext {
@@ -161,7 +158,6 @@ async fn consensus_witness_stage_rejects_non_increasing_timestamp() {
 
     let err = stage(Some(parent))
         .verify_consensus_witness(&stage_context(), &block)
-        .await
         .expect_err("non-increasing timestamp must fail");
 
     assert!(
@@ -170,8 +166,8 @@ async fn consensus_witness_stage_rejects_non_increasing_timestamp() {
     );
 }
 
-#[tokio::test]
-async fn consensus_witness_stage_rejects_wrong_consensus_account() {
+#[test]
+fn consensus_witness_stage_rejects_wrong_consensus_account() {
     let witness = true_witness();
     let parent_hash = UInt256::from([1u8; 32]);
     let parent = ParentHeaderContext {
@@ -188,7 +184,6 @@ async fn consensus_witness_stage_rejects_wrong_consensus_account() {
 
     let err = stage(Some(parent))
         .verify_consensus_witness(&stage_context(), &block)
-        .await
         .expect_err("wrong parent next-consensus must fail");
 
     assert!(

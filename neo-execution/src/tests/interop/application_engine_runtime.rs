@@ -1,11 +1,12 @@
 use super::*;
+use crate::Diagnostic;
 use crate::NativeContract;
+use crate::NoDiagnostic;
 use crate::application_engine::TEST_MODE_GAS;
-use crate::native_contract_provider::{NativeContractLookup, NativeContractProvider};
+use crate::native_contract_provider::{NativeContractProvider, NoNativeContractProvider};
 use neo_config::ProtocolSettings;
 use neo_primitives::TriggerType;
-use neo_storage::DataCache;
-use neo_storage::{StorageItem, StorageKey};
+use neo_storage::{CacheRead, DataCache, StorageItem, StorageKey};
 use neo_vm::Script;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
@@ -16,7 +17,7 @@ use std::sync::Arc;
 const POLICY_CONTRACT_ID: i32 = -7;
 const POLICY_PREFIX_EXEC_FEE_FACTOR: u8 = 18;
 
-fn seed_policy_exec_fee_factor(snapshot: &DataCache, value: i64) {
+fn seed_policy_exec_fee_factor<B: CacheRead>(snapshot: &DataCache<B>, value: i64) {
     snapshot.add(
         StorageKey::new(POLICY_CONTRACT_ID, vec![POLICY_PREFIX_EXEC_FEE_FACTOR]),
         StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()),
@@ -27,7 +28,10 @@ struct TestPolicyContract {
     raw_exec_fee_factor: i64,
 }
 
-impl NativeContract for TestPolicyContract {
+impl<P> NativeContract<P> for TestPolicyContract
+where
+    P: NativeContractProvider + 'static,
+{
     fn id(&self) -> i32 {
         POLICY_CONTRACT_ID
     }
@@ -44,12 +48,16 @@ impl NativeContract for TestPolicyContract {
         &[]
     }
 
-    fn invoke(
+    fn invoke<D, B>(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         method: &str,
         _args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
+    ) -> CoreResult<Vec<u8>>
+    where
+        D: Diagnostic + 'static,
+        B: CacheRead,
+    {
         match method {
             "getExecPicoFeeFactor" => {
                 Ok(BigInt::from(self.raw_exec_fee_factor).to_signed_bytes_le())
@@ -61,10 +69,6 @@ impl NativeContract for TestPolicyContract {
             ))),
         }
     }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
 }
 
 struct TestPolicyProvider {
@@ -72,33 +76,25 @@ struct TestPolicyProvider {
 }
 
 impl NativeContractProvider for TestPolicyProvider {
-    fn get_native_contract(&self, hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
-        (&self.policy.hash() == hash).then(|| self.policy.clone() as Arc<dyn NativeContract>)
+    type Contract = crate::native_contract_provider::NoNativeContract;
+
+    fn exec_fee_factor_raw<B: CacheRead>(&self, _snapshot: &DataCache<B>) -> CoreResult<u32> {
+        u32::try_from(self.policy.raw_exec_fee_factor)
+            .map_err(|_| CoreError::invalid_operation("invalid raw execution fee factor"))
     }
 
-    fn get_native_contract_by_name(&self, name: &str) -> Option<Arc<dyn NativeContract>> {
-        name.eq_ignore_ascii_case("PolicyContract")
-            .then(|| self.policy.clone() as Arc<dyn NativeContract>)
-    }
-
-    fn all_native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
-        vec![self.policy.clone() as Arc<dyn NativeContract>]
-    }
-
-    fn all_native_contract_hashes(&self) -> Vec<UInt160> {
-        vec![self.policy.hash()]
+    fn storage_price<B: CacheRead>(&self, _snapshot: &DataCache<B>) -> CoreResult<u32> {
+        Ok(100_000)
     }
 }
 
-fn with_test_policy(raw_exec_fee_factor: i64, test: impl FnOnce()) {
-    NativeContractLookup::with_scoped_provider(
-        Arc::new(TestPolicyProvider {
-            policy: Arc::new(TestPolicyContract {
-                raw_exec_fee_factor,
-            }),
+fn with_test_policy(raw_exec_fee_factor: i64, test: impl FnOnce(Arc<TestPolicyProvider>)) {
+    let provider = Arc::new(TestPolicyProvider {
+        policy: Arc::new(TestPolicyContract {
+            raw_exec_fee_factor,
         }),
-        test,
-    );
+    });
+    test(provider);
 }
 
 #[test]
@@ -138,17 +134,18 @@ fn runtime_log_allows_dynamic_script_without_container_like_csharp() {
         .expect("emit Runtime.Log");
     builder.emit_opcode(OpCode::RET);
 
-    let mut engine = ApplicationEngine::new_with_native_contract_provider(
-        TriggerType::Application,
-        None,
-        Arc::new(DataCache::new(false)),
-        None,
-        ProtocolSettings::default(),
-        TEST_MODE_GAS,
-        None,
-        None,
-    )
-    .expect("application engine");
+    let mut engine =
+        ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            NoDiagnostic,
+            None,
+        )
+        .expect("application engine");
     engine
         .load_script(builder.to_array(), CallFlags::ALLOW_NOTIFY, None)
         .expect("load script");
@@ -166,17 +163,18 @@ fn send_notification_enforces_echidna_cap_for_native_paths_like_csharp() {
     settings.hardforks.clear();
     settings.hardforks.insert(Hardfork::HfEchidna, 0);
 
-    let mut engine = ApplicationEngine::new_with_native_contract_provider(
-        TriggerType::Application,
-        None,
-        Arc::new(DataCache::new(false)),
-        None,
-        settings,
-        TEST_MODE_GAS,
-        None,
-        None,
-    )
-    .expect("application engine");
+    let mut engine =
+        ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            settings,
+            TEST_MODE_GAS,
+            NoDiagnostic,
+            None,
+        )
+        .expect("application engine");
     engine
         .load_script(vec![OpCode::RET.byte()], CallFlags::ALLOW_NOTIFY, None)
         .expect("load script");
@@ -203,17 +201,18 @@ fn get_notifications_deep_copies_domovoi_state_like_csharp() {
     settings.hardforks.clear();
     settings.hardforks.insert(Hardfork::HfDomovoi, 0);
 
-    let mut engine = ApplicationEngine::new_with_native_contract_provider(
-        TriggerType::Application,
-        None,
-        Arc::new(DataCache::new(false)),
-        None,
-        settings,
-        TEST_MODE_GAS,
-        None,
-        None,
-    )
-    .expect("application engine");
+    let mut engine =
+        ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            settings,
+            TEST_MODE_GAS,
+            NoDiagnostic,
+            None,
+        )
+        .expect("application engine");
     engine
         .load_script(vec![OpCode::RET.byte()], CallFlags::ALLOW_NOTIFY, None)
         .expect("load script");
@@ -296,17 +295,18 @@ fn runtime_check_witness_faults_on_invalid_public_key_like_csharp() {
         .expect("emit Runtime.CheckWitness");
     builder.emit_opcode(OpCode::RET);
 
-    let mut engine = ApplicationEngine::new_with_native_contract_provider(
-        TriggerType::Application,
-        None,
-        Arc::new(DataCache::new(false)),
-        None,
-        ProtocolSettings::default(),
-        TEST_MODE_GAS,
-        None,
-        None,
-    )
-    .expect("application engine");
+    let mut engine =
+        ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            NoDiagnostic,
+            None,
+        )
+        .expect("application engine");
     engine
         .load_script(builder.to_array(), CallFlags::NONE, None)
         .expect("load script");
@@ -325,17 +325,18 @@ fn verification_trigger_without_persisting_block_uses_configured_hardforks_like_
         .expect("emit Runtime.GetRandom");
     builder.emit_opcode(OpCode::RET);
 
-    let mut engine = ApplicationEngine::new_with_native_contract_provider(
-        TriggerType::Verification,
-        None,
-        Arc::new(DataCache::new(false)),
-        None,
-        settings,
-        TEST_MODE_GAS,
-        None,
-        None,
-    )
-    .expect("application engine");
+    let mut engine =
+        ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
+            TriggerType::Verification,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            settings,
+            TEST_MODE_GAS,
+            NoDiagnostic,
+            None,
+        )
+        .expect("application engine");
     engine
         .load_script(builder.to_array(), CallFlags::NONE, None)
         .expect("load script");
@@ -349,17 +350,18 @@ fn default_policy_storage_exec_fee_factor_charges_push1_as_thirty_datoshi() {
     let snapshot = Arc::new(DataCache::new(false));
     seed_policy_exec_fee_factor(&snapshot, 30);
 
-    let mut engine = ApplicationEngine::new_with_native_contract_provider(
-        TriggerType::Application,
-        None,
-        Arc::clone(&snapshot),
-        None,
-        ProtocolSettings::default(),
-        TEST_MODE_GAS,
-        None,
-        None,
-    )
-    .expect("application engine");
+    let mut engine =
+        ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
+            TriggerType::Application,
+            None,
+            Arc::clone(&snapshot),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            NoDiagnostic,
+            None,
+        )
+        .expect("application engine");
     engine
         .load_script(vec![OpCode::PUSH1.byte()], CallFlags::ALL, None)
         .expect("load script");
@@ -374,7 +376,7 @@ fn default_policy_storage_exec_fee_factor_charges_push1_as_thirty_datoshi() {
 
 #[test]
 fn policy_provider_legacy_exec_fee_factor_is_scaled_until_faun_height() {
-    with_test_policy(30, || {
+    with_test_policy(30, |provider| {
         let snapshot = Arc::new(DataCache::new(false));
         seed_policy_exec_fee_factor(&snapshot, 30);
 
@@ -385,8 +387,8 @@ fn policy_provider_legacy_exec_fee_factor_is_scaled_until_faun_height() {
             None,
             ProtocolSettings::default(),
             TEST_MODE_GAS,
-            None,
-            None,
+            NoDiagnostic,
+            Some(provider),
         )
         .expect("application engine");
         engine
@@ -403,17 +405,18 @@ fn external_vm_loop_hits_gas_limit_before_instruction_cap() {
     let mut builder = ScriptBuilder::new();
     builder.emit_jump(OpCode::JMP_L, 0).expect("jump loop");
 
-    let mut engine = ApplicationEngine::new_with_native_contract_provider(
-        TriggerType::Application,
-        None,
-        Arc::new(DataCache::new(false)),
-        None,
-        ProtocolSettings::default(),
-        1_000_000,
-        None,
-        None,
-    )
-    .expect("application engine");
+    let mut engine =
+        ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            1_000_000,
+            NoDiagnostic,
+            None,
+        )
+        .expect("application engine");
     engine
         .load_script(builder.to_array(), CallFlags::ALL, None)
         .expect("load script");
@@ -437,17 +440,18 @@ fn invocation_counter_uses_explicit_context_script_hash_like_csharp() {
         .expect("emit Runtime.GetInvocationCounter");
     builder.emit_opcode(OpCode::RET);
 
-    let mut engine = ApplicationEngine::new_with_native_contract_provider(
-        TriggerType::Application,
-        None,
-        Arc::new(DataCache::new(false)),
-        None,
-        ProtocolSettings::default(),
-        TEST_MODE_GAS,
-        None,
-        None,
-    )
-    .expect("application engine");
+    let mut engine =
+        ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            NoDiagnostic,
+            None,
+        )
+        .expect("application engine");
     engine
         .load_script(builder.to_array(), CallFlags::NONE, Some(logical_hash))
         .expect("load script with logical hash");
@@ -479,17 +483,18 @@ fn external_vm_pointer_result_halts_like_local_engine() {
         0x00,
         OpCode::RET.byte(),
     ];
-    let mut engine = ApplicationEngine::new_with_native_contract_provider(
-        TriggerType::Application,
-        None,
-        Arc::new(DataCache::new(false)),
-        None,
-        ProtocolSettings::default(),
-        TEST_MODE_GAS,
-        None,
-        None,
-    )
-    .expect("application engine");
+    let mut engine =
+        ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            NoDiagnostic,
+            None,
+        )
+        .expect("application engine");
     engine
         .load_script(script, CallFlags::NONE, None)
         .expect("load script");

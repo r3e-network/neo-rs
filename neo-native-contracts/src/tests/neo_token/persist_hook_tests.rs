@@ -11,7 +11,7 @@ fn engine_for(
     snapshot: Arc<DataCache>,
     index: u32,
     settings: ProtocolSettings,
-) -> ApplicationEngine {
+) -> ApplicationEngine<crate::StandardNativeProvider> {
     let mut header = BlockHeader::default();
     header.set_index(index);
     ApplicationEngine::new_with_native_contract_provider(
@@ -21,7 +21,7 @@ fn engine_for(
         Some(Block::from_parts(header, vec![])),
         settings,
         0,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds")
@@ -565,5 +565,9 @@ fn manifest_standards_gain_nep27_at_echidna() {
     let after = build_native_contract_state(&NeoToken, &settings, 10);
     assert_eq!(after.manifest.supported_standards, ["NEP-17", "NEP-27"]);
 
-    assert!(NativeContract::used_hardforks(&NeoToken).contains(&Hardfork::HfEchidna));
+    assert!(
+        NeoToken::new()
+            .used_hardforks()
+            .contains(&Hardfork::HfEchidna)
+    );
 }

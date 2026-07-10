@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context;
+use neo_storage::persistence::ReadOnlyStoreGeneric;
 use tracing::info;
 
 use super::super::cli::LedgerMode;
@@ -469,7 +470,10 @@ pub(in crate::node) fn validate_storage(
     Ok(())
 }
 
-fn durable_ledger_index(store: &Arc<dyn neo_storage::persistence::store::Store>) -> Option<u32> {
+fn durable_ledger_index<S>(store: &Arc<S>) -> Option<u32>
+where
+    S: neo_storage::persistence::store::Store + 'static,
+{
     store_ledger_index(store, false)
 }
 
@@ -518,7 +522,7 @@ fn read_state_service_mpt_height(
     storage: &StorageSection,
     path: &Path,
 ) -> anyhow::Result<Option<u32>> {
-    use neo_storage::persistence::StoreFactory;
+    use neo_storage::persistence::{Store, StoreFactory};
 
     const CURRENT_LOCAL_ROOT_INDEX_KEY: &[u8] = &[0x02];
 
@@ -595,11 +599,13 @@ fn unsupported_storage_backend_message(backend: &str) -> String {
 pub(in crate::node) fn open_store(
     config: &NodeConfig,
     storage_override: Option<&Path>,
-) -> anyhow::Result<Arc<dyn neo_storage::persistence::store::Store>> {
-    use neo_storage::persistence::{StoreFactory, store::Store};
+) -> anyhow::Result<Arc<neo_storage::persistence::providers::RuntimeStore>> {
+    use neo_storage::mdbx::MdbxStoreProvider;
+    use neo_storage::persistence::providers::RuntimeStore;
+    use neo_storage::rocksdb::RocksDBStoreProvider;
 
     let provider = persistent_store_provider(config, storage_override)?;
-    let store: Arc<dyn Store> = if let Some(provider) = provider {
+    let store = if let Some(provider) = provider {
         let path = storage_override
             .map(Path::to_path_buf)
             .or_else(|| config.storage.data_directory())
@@ -611,8 +617,21 @@ pub(in crate::node) fn open_store(
             })?;
         info!(target: "neo", backend = provider, path = %path.display(), "opening persistent store");
         let cfg = config.storage.storage_config_for_path(path.clone());
-        StoreFactory::get_store_with_config(&provider, cfg)
-            .map_err(|e| anyhow::anyhow!("failed to open {provider} store: {e}"))?
+        let store = match provider.as_str() {
+            "mdbx" => RuntimeStore::Mdbx(
+                MdbxStoreProvider::new(cfg)
+                    .get_mdbx_store("")
+                    .map_err(|e| anyhow::anyhow!("failed to open {provider} store: {e}"))?,
+            ),
+            "rocksdb" => RuntimeStore::RocksDb(
+                RocksDBStoreProvider::new(cfg)
+                    .get_rocksdb_store("")
+                    .map_err(|e| anyhow::anyhow!("failed to open {provider} store: {e}"))?,
+            ),
+            "memory" => return open_memory_store(),
+            other => anyhow::bail!("{}", unsupported_storage_backend_message(other)),
+        };
+        Arc::new(store)
     } else {
         info!(target: "neo", "using in-memory store (state is not persisted across restarts)");
         open_memory_store()?
@@ -622,9 +641,8 @@ pub(in crate::node) fn open_store(
 }
 
 pub(in crate::node) fn open_memory_store()
--> anyhow::Result<Arc<dyn neo_storage::persistence::store::Store>> {
-    use neo_storage::persistence::StoreFactory;
+-> anyhow::Result<Arc<neo_storage::persistence::providers::RuntimeStore>> {
+    use neo_storage::persistence::providers::{MemoryStore, RuntimeStore};
 
-    StoreFactory::get_store("memory", "")
-        .map_err(|e| anyhow::anyhow!("failed to open in-memory store: {e}"))
+    Ok(Arc::new(RuntimeStore::Memory(MemoryStore::new())))
 }

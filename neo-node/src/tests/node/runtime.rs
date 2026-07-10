@@ -1,99 +1,136 @@
 use super::*;
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_storage::persistence::StoreDataCache;
+use neo_storage::persistence::providers::MemoryStore;
+use neo_storage::persistence::{Store, StoreBackendKind, StoreSnapshot, WriteStore};
+use neo_system::NodeSystemContext;
+
+struct TestDaemonContext<P, C = MemoryStore, S = MemoryStore, L = MemoryStore, T = MemoryStore>
+where
+    P: NativeContractProvider + 'static,
+    C: Store + 'static,
+    S: Store + 'static,
+    L: Store + 'static,
+    T: Store + 'static,
+{
+    core: NodeSystemContext<P, C, DaemonCommitHooks<P, S, L, T>>,
+    hooks: Arc<DaemonCommitHooks<P, S, L, T>>,
+}
+
+impl<P, C, S, L, T> std::ops::Deref for TestDaemonContext<P, C, S, L, T>
+where
+    P: NativeContractProvider + 'static,
+    C: Store + 'static,
+    S: Store + 'static,
+    L: Store + 'static,
+    T: Store + 'static,
+{
+    type Target = NodeSystemContext<P, C, DaemonCommitHooks<P, S, L, T>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.core
+    }
+}
+
+impl<P, C, S, L, T> TestDaemonContext<P, C, S, L, T>
+where
+    P: NativeContractProvider + 'static,
+    C: Store + 'static,
+    S: Store + 'static,
+    L: Store + 'static,
+    T: Store + 'static,
+{
+    fn block_committing_with_live_tip(
+        &self,
+        block: &neo_payloads::Block,
+        snapshot: &StoreDataCache<C>,
+        application_executed: &[neo_payloads::ApplicationExecuted],
+        live_tip: u64,
+    ) -> bool {
+        self.hooks
+            .block_committing_with_live_tip(block, snapshot, application_executed, live_tip)
+    }
+}
+
+fn daemon_context<P, C, S, L, T>(
+    settings: Arc<ProtocolSettings>,
+    snapshot: Arc<StoreDataCache<C>>,
+    store_cache: neo_storage::persistence::StoreCache<C>,
+    state_service: Option<Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers<S>>>,
+    state_service_track_during_catchup: bool,
+    indexer_service: Option<Arc<neo_indexer::IndexerService>>,
+    native_contract_provider: Arc<P>,
+    application_logs_service: Option<Arc<neo_rpc::application_logs::ApplicationLogsService<L>>>,
+) -> TestDaemonContext<P, C, S, L, T>
+where
+    P: NativeContractProvider + 'static,
+    C: Store + 'static,
+    S: Store + 'static,
+    L: Store + 'static,
+    T: Store + 'static,
+{
+    let hooks = Arc::new(DaemonCommitHooks::new(
+        settings.network,
+        state_service,
+        state_service_track_during_catchup,
+        indexer_service,
+        application_logs_service,
+    ));
+    let core = NodeSystemContext::new(
+        settings,
+        snapshot,
+        store_cache,
+        native_contract_provider,
+        Arc::clone(&hooks),
+    );
+    TestDaemonContext { core, hooks }
+}
 
 fn native_provider() -> Arc<neo_native_contracts::StandardNativeProvider> {
     Arc::new(neo_native_contracts::StandardNativeProvider::new())
 }
 
 #[test]
-fn daemon_context_requires_explicit_native_provider_at_construction() {
+fn daemon_commit_hooks_do_not_own_core_system_resources() {
     let source = include_str!("../../node/context/mod.rs");
-    let system_context_source = include_str!("../../node/context/system_context.rs");
+    let system_context_source =
+        include_str!("../../../../neo-system/src/composition/system_context.rs");
 
     assert!(
-        source.contains("pub(super) struct DaemonContext<P>"),
-        "DaemonContext must stay generic over its native provider type"
+        source.contains("pub(super) struct DaemonCommitHooks<"),
+        "the application layer should expose only its typed commit-hook policy"
     );
     assert!(
-        source.contains("native_contract_provider: Arc<P>"),
-        "DaemonContext must store the concrete native provider type, not a dyn-erased provider"
+        !source.contains("StoreCache")
+            && !source.contains("StoreDataCache")
+            && !source.contains("\n    native_contract_provider:"),
+        "application hooks must not own core storage or native-provider mechanics"
     );
     assert!(
-        !source.contains("native_contract_provider: Option"),
-        "DaemonContext must not reintroduce an optional native provider field"
+        system_context_source.contains("pub struct NodeSystemContext<P, S, H>")
+            && system_context_source.contains("H: BlockCommitHooks<StoreCacheBacking<S>>"),
+        "neo-system must own the generic core context and static hook boundary"
     );
     assert!(
-        !source.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
-        "DaemonContext must not erase the provider behind dyn at its owned composition boundary"
-    );
-    assert!(
-        !source.contains("fn with_native_contract_provider"),
-        "DaemonContext must not reintroduce a two-step native provider setter"
-    );
-    assert!(
-        system_context_source.contains("impl<P> SystemContext for DaemonContext<P>"),
-        "DaemonContext must expose the generic provider through the existing SystemContext boundary"
-    );
-}
-
-/// `commit_to_store` flushes the writes accumulated in the shared snapshot
-/// (as a block's native-persist pipeline does) through to the durable store,
-/// so a fresh cache over the same store reads them. Without this, synced
-/// blocks stay in-memory and the on-disk tip is stuck at genesis.
-#[test]
-fn commit_to_store_flushes_snapshot_writes_to_durable_store() {
-    use neo_blockchain::service_context::SystemContext;
-    use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use neo_storage::persistence::{StoreCache, store::Store};
-    use neo_storage::{StorageItem, StorageKey};
-
-    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
-    let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
-    let snapshot = Arc::new(store_cache.data_cache().clone());
-    let ctx = DaemonContext::new(
-        Arc::new(ProtocolSettings::default()),
-        Arc::clone(&snapshot),
-        store_cache,
-        None,
-        false,
-        None,
-        native_provider(),
-        None,
-    );
-
-    // Stage a write into the shared snapshot (the blockchain persist path).
-    let key = StorageKey::new(-1, vec![0xAB, 0xCD]);
-    snapshot.add(key.clone(), StorageItem::from_bytes(vec![0x01, 0x02, 0x03]));
-
-    // Not durable yet: a fresh cache over the same store cannot see it.
-    let before = StoreCache::new_from_store(Arc::clone(&store), false);
-    assert!(
-        before.data_cache().get(&key).is_none(),
-        "write must not reach the store before commit_to_store"
-    );
-
-    // Flush, then a fresh cache over the same store reads the write.
-    ctx.commit_to_store();
-    let after = StoreCache::new_from_store(Arc::clone(&store), false);
-    assert!(
-        after.data_cache().get(&key).is_some(),
-        "commit_to_store must flush the snapshot write through to the store"
+        system_context_source.contains("SystemContext for NodeSystemContext<P, S, H>"),
+        "the composition layer must implement the blockchain SystemContext contract"
     );
 }
 
 #[test]
 fn daemon_context_skips_state_service_mpt_during_default_cold_catchup() {
-    use neo_blockchain::service_context::{BlockPersistContext, SystemContext};
+    use neo_blockchain::{BlockPersistContext, SystemContext};
     use neo_payloads::{Block, Header};
     use neo_state_service::{StateStore, commit_handlers::StateServiceCommitHandlers};
+    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use neo_storage::persistence::{StoreCache, store::Store};
 
-    let chain_store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let chain_store = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     let state_store = Arc::new(StateStore::with_mpt(true));
     let state_service = Arc::new(StateServiceCommitHandlers::new(Arc::clone(&state_store)));
-    let ctx = DaemonContext::new(
+    let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
         Arc::new(ProtocolSettings::default()),
         Arc::clone(&snapshot),
         store_cache,
@@ -140,18 +177,18 @@ fn daemon_context_skips_state_service_mpt_during_default_cold_catchup() {
 
 #[test]
 fn daemon_context_can_track_state_service_mpt_during_cold_catchup_for_validation() {
-    use neo_blockchain::service_context::{BlockPersistContext, SystemContext};
+    use neo_blockchain::{BlockPersistContext, SystemContext};
     use neo_payloads::{Block, Header};
     use neo_state_service::{StateStore, commit_handlers::StateServiceCommitHandlers};
+    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use neo_storage::persistence::{StoreCache, store::Store};
 
-    let chain_store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let chain_store = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     let state_store = Arc::new(StateStore::with_mpt(true));
     let state_service = Arc::new(StateServiceCommitHandlers::new(Arc::clone(&state_store)));
-    let ctx = DaemonContext::new(
+    let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
         Arc::new(ProtocolSettings::default()),
         Arc::clone(&snapshot),
         store_cache,
@@ -206,13 +243,11 @@ fn state_service_store_uses_fast_sync_for_validation_import() {
     )
     .expect("open fast-sync StateService store");
 
-    let rocksdb = store
-        .as_any()
-        .downcast_ref::<neo_storage::rocksdb::RocksDbStore>()
-        .expect("service store uses RocksDB");
-
     assert!(
-        rocksdb.write_batch_config().disable_wal,
+        store
+            .rocksdb_batch_metrics()
+            .expect("service store exposes RocksDB batch metrics")
+            .disable_wal,
         "StateService fast-sync import should disable WAL like the chain store"
     );
 }
@@ -221,12 +256,12 @@ fn state_service_store_uses_fast_sync_for_validation_import() {
 fn db_probe_replay_uses_explicit_native_provider() {
     let source = include_str!("../../bin/neo-db-probe.rs");
     let start = source
-        .find("fn execute_transaction_probe(")
+        .find("fn execute_transaction_probe")
         .expect("probe replay function exists");
     let end = source[start..]
-        .find("fn vm_state_name(")
+        .find("fn trace_engine_frames")
         .map(|offset| start + offset)
-        .expect("vm state helper follows probe replay");
+        .expect("frame tracing helper follows probe replay");
     let replay = &source[start..end];
 
     assert!(replay.contains("new_with_shared_block_and_native_contract_provider"));
@@ -275,7 +310,7 @@ path = "{}"
         .first()
         .expect("state service durable store");
 
-    assert!(state_store.as_any().is::<neo_storage::mdbx::MdbxStore>());
+    assert_eq!(state_store.backend_kind(), StoreBackendKind::Mdbx);
 }
 
 #[test]
@@ -304,12 +339,12 @@ path = "{}"
         .first()
         .expect("state service durable store");
     let mdbx = service_store
-        .as_any()
-        .downcast_ref::<neo_storage::mdbx::MdbxStore>()
-        .expect("service store uses MDBX");
+        .mdbx_environment_info()
+        .expect("service store exposes MDBX info")
+        .expect("MDBX info");
 
     assert_eq!(
-        mdbx.info().expect("MDBX info").map_size(),
+        mdbx.map_size,
         1024 * 1024 * 1024,
         "service stores must inherit MDBX geometry from [storage]"
     );
@@ -337,13 +372,11 @@ path = "{}"
         .durable_stores
         .first()
         .expect("state service durable store");
-    let rocksdb = state_store
-        .as_any()
-        .downcast_ref::<neo_storage::rocksdb::RocksDbStore>()
-        .expect("state service uses RocksDB");
-
     assert!(
-        !rocksdb.write_batch_config().disable_wal,
+        !state_store
+            .rocksdb_batch_metrics()
+            .expect("state service exposes RocksDB batch metrics")
+            .disable_wal,
         "normal restart must not leave StateService RocksDB in fast-sync mode"
     );
     assert!(
@@ -393,10 +426,10 @@ track_during_catchup = true
 
 #[test]
 fn daemon_context_bulk_sync_flush_reports_async_state_service_failure() {
-    use neo_blockchain::service_context::{BlockPersistContext, SystemContext};
+    use neo_blockchain::{BlockPersistContext, SystemContext};
     use neo_payloads::{Block, Header};
+    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use neo_storage::persistence::{StoreCache, store::Store};
     use neo_storage::{StorageItem, StorageKey};
 
     let config: NodeConfig = toml::from_str(
@@ -420,23 +453,24 @@ track_during_catchup = true
         "fixture must exercise the async StateService worker"
     );
 
-    let chain_store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let chain_store = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     snapshot.add(
         StorageKey::new(5, vec![0xAA]),
         StorageItem::from_bytes(vec![0x01]),
     );
-    let ctx = DaemonContext::new(
-        Arc::new(ProtocolSettings::default()),
-        Arc::clone(&snapshot),
-        store_cache,
-        Some(state_service),
-        true,
-        None,
-        native_provider(),
-        None,
-    );
+    let ctx: TestDaemonContext<_, MemoryStore, neo_storage::persistence::providers::RuntimeStore> =
+        daemon_context(
+            Arc::new(ProtocolSettings::default()),
+            Arc::clone(&snapshot),
+            store_cache,
+            Some(state_service),
+            true,
+            None,
+            native_provider(),
+            None,
+        );
 
     let mut header = Header::new();
     header.set_index(5);
@@ -457,10 +491,10 @@ track_during_catchup = true
 
 #[test]
 fn daemon_context_live_async_state_service_failure_is_immediate() {
-    use neo_blockchain::service_context::{BlockPersistContext, SystemContext};
+    use neo_blockchain::{BlockPersistContext, SystemContext};
     use neo_payloads::{Block, Header};
+    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use neo_storage::persistence::{StoreCache, store::Store};
     use neo_storage::{StorageItem, StorageKey};
 
     let config: NodeConfig = toml::from_str(
@@ -484,23 +518,24 @@ track_during_catchup = true
         "fixture must exercise the async StateService worker"
     );
 
-    let chain_store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let chain_store = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     snapshot.add(
         StorageKey::new(5, vec![0xAA]),
         StorageItem::from_bytes(vec![0x01]),
     );
-    let ctx = DaemonContext::new(
-        Arc::new(ProtocolSettings::default()),
-        Arc::clone(&snapshot),
-        store_cache,
-        Some(state_service),
-        true,
-        None,
-        native_provider(),
-        None,
-    );
+    let ctx: TestDaemonContext<_, MemoryStore, neo_storage::persistence::providers::RuntimeStore> =
+        daemon_context(
+            Arc::new(ProtocolSettings::default()),
+            Arc::clone(&snapshot),
+            store_cache,
+            Some(state_service),
+            true,
+            None,
+            native_provider(),
+            None,
+        );
 
     let mut header = Header::new();
     header.set_index(5);
@@ -545,12 +580,11 @@ track_during_catchup = false
         .durable_stores
         .first()
         .expect("state service durable store");
-    let rocksdb = state_store
-        .as_any()
-        .downcast_ref::<neo_storage::rocksdb::RocksDbStore>()
-        .expect("state service uses RocksDB");
     assert!(
-        !rocksdb.write_batch_config().disable_wal,
+        !state_store
+            .rocksdb_batch_metrics()
+            .expect("state service exposes RocksDB batch metrics")
+            .disable_wal,
         "StateService RocksDB should stay in durable mode when catch-up MPT tracking is disabled"
     );
 }
@@ -558,7 +592,7 @@ track_during_catchup = false
 #[tokio::test]
 async fn build_node_uses_fast_sync_store_mode_for_resumed_startup_import() {
     use neo_storage::persistence::storage::StorageConfig;
-    use neo_storage::rocksdb::{RocksDBStoreProvider, RocksDbStore};
+    use neo_storage::rocksdb::RocksDBStoreProvider;
 
     const DURABLE_TIP: u32 = 1;
 
@@ -610,42 +644,35 @@ backend = "rocksdb"
     .await
     .expect("build node for resumed startup import");
 
-    let chain_store = running.node.storage();
-    let chain_rocksdb = chain_store
-        .as_any()
-        .downcast_ref::<RocksDbStore>()
-        .expect("chain store uses RocksDB");
+    let chain_store = running.node().storage();
     assert!(
-        chain_rocksdb.write_batch_config().disable_wal,
+        chain_store
+            .rocksdb_batch_metrics()
+            .expect("chain store exposes RocksDB batch metrics")
+            .disable_wal,
         "resumed startup import should keep chain RocksDB in fast-sync mode even when the durable tip is nonzero"
     );
 
     let service_store = running
-        .durable_service_stores
+        .durable_service_stores()
         .first()
         .expect("state service durable store");
-    let service_rocksdb = service_store
-        .as_any()
-        .downcast_ref::<RocksDbStore>()
-        .expect("state service uses RocksDB");
     assert!(
-        service_rocksdb.write_batch_config().disable_wal,
+        service_store
+            .rocksdb_batch_metrics()
+            .expect("state service exposes RocksDB batch metrics")
+            .disable_wal,
         "resumed startup import should put StateService RocksDB in fast-sync mode too"
     );
 
-    for handle in running.handles {
-        handle.abort();
-        let _ = handle.await;
-    }
-    drop(running.node);
-    drop(running.network);
+    running.abort_for_test().await;
 }
 
 #[test]
 fn validation_state_service_reports_non_contiguous_root_before_chain_commit() {
     use neo_payloads::{Block, Header};
+    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use neo_storage::persistence::{StoreCache, store::Store};
     use neo_storage::{StorageItem, StorageKey};
 
     let config: NodeConfig = toml::from_str(
@@ -670,23 +697,24 @@ track_during_catchup = true
         .expect("state service enabled")
         .clone();
 
-    let chain_store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let chain_store = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     snapshot.add(
         StorageKey::new(5, vec![0xAA]),
         StorageItem::from_bytes(vec![0x01]),
     );
-    let ctx = DaemonContext::new(
-        Arc::new(ProtocolSettings::default()),
-        Arc::clone(&snapshot),
-        store_cache,
-        Some(state_service),
-        true,
-        None,
-        native_provider(),
-        None,
-    );
+    let ctx: TestDaemonContext<_, MemoryStore, neo_storage::persistence::providers::RuntimeStore> =
+        daemon_context(
+            Arc::new(ProtocolSettings::default()),
+            Arc::clone(&snapshot),
+            store_cache,
+            Some(state_service),
+            true,
+            None,
+            native_provider(),
+            None,
+        );
 
     let mut header = Header::new();
     header.set_index(5);
@@ -704,8 +732,8 @@ track_during_catchup = true
 #[test]
 fn default_state_service_reports_near_tip_root_failure_before_chain_commit() {
     use neo_payloads::{Block, Header};
+    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use neo_storage::persistence::{StoreCache, store::Store};
     use neo_storage::{StorageItem, StorageKey};
 
     let config: NodeConfig = toml::from_str(
@@ -729,23 +757,24 @@ full_state = true
         .expect("state service enabled")
         .clone();
 
-    let chain_store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let chain_store = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     snapshot.add(
         StorageKey::new(5, vec![0xBB]),
         StorageItem::from_bytes(vec![0x02]),
     );
-    let ctx = DaemonContext::new(
-        Arc::new(ProtocolSettings::default()),
-        Arc::clone(&snapshot),
-        store_cache,
-        Some(state_service),
-        false,
-        None,
-        native_provider(),
-        None,
-    );
+    let ctx: TestDaemonContext<_, MemoryStore, neo_storage::persistence::providers::RuntimeStore> =
+        daemon_context(
+            Arc::new(ProtocolSettings::default()),
+            Arc::clone(&snapshot),
+            store_cache,
+            Some(state_service),
+            false,
+            None,
+            native_provider(),
+            None,
+        );
 
     let mut header = Header::new();
     header.set_index(5);
@@ -763,8 +792,7 @@ full_state = true
 #[test]
 fn restore_durable_store_mode_reenables_wal_for_chain_and_service_stores() {
     use neo_storage::persistence::storage::StorageConfig;
-    use neo_storage::persistence::store::Store;
-    use neo_storage::rocksdb::{RocksDBStoreProvider, RocksDbStore};
+    use neo_storage::rocksdb::RocksDBStoreProvider;
 
     let temp = tempfile::tempdir().expect("temp store root");
     let chain_cfg = StorageConfig {
@@ -777,7 +805,6 @@ fn restore_durable_store_mode_reenables_wal_for_chain_and_service_stores() {
             .expect("chain RocksDB store"),
     );
     chain_store.enable_fast_sync_mode();
-    let chain_store_trait: Arc<dyn Store> = chain_store.clone();
 
     let state_path = temp.path().join("StateRoot_{0}");
     let service_store = services::open_service_store_with_storage_config(
@@ -790,19 +817,18 @@ fn restore_durable_store_mode_reenables_wal_for_chain_and_service_stores() {
     )
     .expect("open fast-sync StateService store");
 
-    restore_durable_store_mode(chain_store_trait.as_ref(), &[Arc::clone(&service_store)])
+    restore_durable_store_mode(chain_store.as_ref(), &[Arc::clone(&service_store)])
         .expect("restore durable mode");
 
     assert!(
         !chain_store.write_batch_config().disable_wal,
         "chain store must restore WAL before normal node operation"
     );
-    let service_rocksdb = service_store
-        .as_any()
-        .downcast_ref::<RocksDbStore>()
-        .expect("service store uses RocksDB");
     assert!(
-        !service_rocksdb.write_batch_config().disable_wal,
+        !service_store
+            .rocksdb_batch_metrics()
+            .expect("service store exposes RocksDB batch metrics")
+            .disable_wal,
         "StateService store must restore WAL with the chain store"
     );
 }
@@ -826,7 +852,6 @@ fn abort_fast_sync_store_mode_discards_pending_chain_and_service_writes() {
             .expect("chain RocksDB store"),
     );
     chain_store.enable_fast_sync_mode();
-    let chain_store_trait: Arc<dyn Store> = chain_store.clone();
 
     let state_path = temp.path().join("StateRoot_{0}");
     let service_store = services::open_service_store_with_storage_config(
@@ -852,7 +877,7 @@ fn abort_fast_sync_store_mode_discards_pending_chain_and_service_writes() {
         .try_commit()
         .expect("service fast-sync write buffers");
 
-    abort_fast_sync_store_mode(chain_store_trait.as_ref(), &[Arc::clone(&service_store)]);
+    abort_fast_sync_store_mode(chain_store.as_ref(), &[Arc::clone(&service_store)]);
     chain_store.flush().expect("chain cleanup flush");
     service_store.flush().expect("service cleanup flush");
 
@@ -901,10 +926,7 @@ backend = "rocksdb"
     .await
     {
         Ok(running) => {
-            for handle in running.handles {
-                handle.abort();
-                let _ = handle.await;
-            }
+            running.abort_for_test().await;
             panic!("missing StateRoot store must abort local node startup");
         }
         Err(err) => err,
@@ -967,47 +989,31 @@ db_path = "{}"
     .expect("build remote-ledger node");
 
     assert!(
-        running
-            .node
-            .get_service::<neo_state_service::commit_handlers::StateServiceCommitHandlers>()
-            .is_none(),
+        running.services().state_store().is_none(),
+        "remote-ledger mode must not build a local StateService store"
+    );
+    assert!(
+        running.services().state_commit_handlers().is_none(),
         "remote-ledger mode must not start local StateService replay"
     );
     assert!(
-        running
-            .node
-            .get_service::<neo_indexer::IndexerService>()
-            .is_none(),
+        running.services().indexer().is_none(),
         "remote-ledger mode must not start local indexer replay"
     );
     assert!(
-        running
-            .node
-            .get_service::<neo_rpc::application_logs::ApplicationLogsService>()
-            .is_none(),
+        running.services().application_logs().is_none(),
         "remote-ledger mode must not start local application-log replay"
     );
     assert!(
-        running
-            .node
-            .get_service::<neo_rpc::plugins::tokens_tracker::TokensTrackerService>()
-            .is_none(),
+        running.services().tokens_tracker().is_none(),
         "remote-ledger mode must not start local token tracker replay"
     );
     assert!(
-        running
-            .node
-            .get_service::<neo_network::PeerRegistry>()
-            .is_some(),
-        "remote-ledger mode still shares the live peer registry for P2P downloader composition"
+        running.services().remote_ledger().is_some(),
+        "remote-ledger mode must expose the remote-ledger status in explicit runtime composition"
     );
     assert!(
-        running
-            .node
-            .storage()
-            .as_any()
-            .downcast_ref::<neo_storage::persistence::providers::memory_store::MemoryStore>()
-            .is_some(),
+        running.node().storage().backend_kind() == StoreBackendKind::Memory,
         "remote-ledger mode should use an ephemeral chain context instead of opening the configured local ledger"
     );
     assert!(
@@ -1016,17 +1022,12 @@ db_path = "{}"
     );
     assert!(
         neo_native_contracts::LedgerContract::new()
-            .current_index(running.node.store_cache().data_cache())
+            .current_index(running.node().store_cache().data_cache())
             .is_err(),
         "remote-ledger mode must not initialize even an ephemeral canonical ledger"
     );
 
-    for handle in running.handles {
-        handle.abort();
-        let _ = handle.await;
-    }
-    drop(running.node);
-    drop(running.network);
+    running.abort_for_test().await;
 }
 
 #[tokio::test]
@@ -1051,11 +1052,11 @@ async fn remote_ledger_node_advertises_upstream_height_when_available() {
     .expect("build remote-ledger node");
 
     running
-        .network
+        .network()
         .start("127.0.0.1:0".parse().unwrap())
         .await
         .expect("start P2P listener");
-    let port = running.network.local_node_info().port();
+    let port = running.network().local_node_info().port();
     let mut fake = fake_dial(port).await;
     let node_version = recv_frame(&mut fake).await;
     assert_eq!(node_version.command, MessageCommand::Version);
@@ -1070,13 +1071,7 @@ async fn remote_ledger_node_advertises_upstream_height_when_available() {
         "remote-ledger mode should advertise the upstream RPC tip height"
     );
 
-    running.network.shutdown().await.expect("shutdown network");
-    for handle in running.handles {
-        handle.abort();
-        let _ = handle.await;
-    }
-    drop(running.node);
-    drop(running.network);
+    running.abort_for_test().await;
 }
 
 /// Reproduces the v3.10.1 consistency testnet failure
@@ -1091,24 +1086,24 @@ async fn remote_ledger_node_advertises_upstream_height_when_available() {
 /// `ExecFeeFactor=30` write is visible there, the live node must return 30.
 #[test]
 fn genesis_policy_init_visible_through_fresh_store_cache_after_commit() {
+    use neo_blockchain::SystemContext;
     use neo_blockchain::native_persist::{
         NativePersistOptions, NativePersistResources, chain_state_initialized, genesis_block,
         persist_block_natives_with_resources,
     };
-    use neo_blockchain::service_context::SystemContext;
     use neo_native_contracts::PolicyContract;
     use neo_storage::StorageKey;
+    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use neo_storage::persistence::{StoreCache, store::Store};
     use num_bigint::BigInt;
 
     let resources = NativePersistResources::from_provider(Arc::new(
         neo_native_contracts::StandardNativeProvider::new(),
     ));
-    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let store = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
-    let ctx = DaemonContext::new(
+    let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
         Arc::new(ProtocolSettings::default()),
         Arc::clone(&snapshot),
         store_cache,
@@ -1155,18 +1150,18 @@ fn genesis_policy_init_visible_through_fresh_store_cache_after_commit() {
 
 #[test]
 fn daemon_context_indexes_application_executed_notifications() {
-    use neo_blockchain::service_context::SystemContext;
+    use neo_blockchain::SystemContext;
     use neo_payloads::{ApplicationExecuted, Block, Header, NotifyEventArgs, Signer, Transaction};
     use neo_primitives::{TriggerType, UInt160, WitnessScope};
+    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use neo_storage::persistence::{StoreCache, store::Store};
     use neo_vm_rs::VmState as VMState;
 
-    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let store = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     let indexer = Arc::new(neo_indexer::IndexerService::new());
-    let ctx = DaemonContext::new(
+    let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
         Arc::new(ProtocolSettings::default()),
         Arc::clone(&snapshot),
         store_cache,
@@ -1218,16 +1213,16 @@ fn daemon_context_indexes_application_executed_notifications() {
 
 #[test]
 fn daemon_context_dispatches_application_logs_handlers() {
-    use neo_blockchain::service_context::SystemContext;
+    use neo_blockchain::SystemContext;
     use neo_payloads::{ApplicationExecuted, Block, Header, NotifyEventArgs, Signer, Transaction};
     use neo_primitives::{TriggerType, UInt160, WitnessScope};
     use neo_rpc::application_logs::{ApplicationLogsService, ApplicationLogsSettings};
+    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use neo_storage::persistence::{StoreCache, store::Store};
     use neo_vm_rs::VmState as VMState;
 
     let settings = Arc::new(ProtocolSettings::default());
-    let chain_store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let chain_store = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
 
@@ -1239,7 +1234,7 @@ fn daemon_context_dispatches_application_logs_handlers() {
         Arc::new(MemoryStore::new()),
     ));
 
-    let ctx = DaemonContext::new(
+    let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
         Arc::clone(&settings),
         Arc::clone(&snapshot),
         store_cache,
@@ -1249,9 +1244,6 @@ fn daemon_context_dispatches_application_logs_handlers() {
         native_provider(),
         Some(Arc::clone(&logs_service)),
     );
-    let node = Arc::new(neo_system::Node::new(settings, None, None).expect("node"));
-    ctx.set_node(node);
-
     let signer = UInt160::from_bytes(&[5; UInt160::LENGTH]).expect("signer");
     let contract = UInt160::from_bytes(&[6; UInt160::LENGTH]).expect("contract");
     let mut tx = Transaction::new();
@@ -1298,16 +1290,16 @@ fn daemon_context_dispatches_application_logs_handlers() {
 
 #[test]
 fn daemon_context_skips_application_logs_committed_handler_during_bulk_sync() {
-    use neo_blockchain::service_context::{BlockPersistContext, SystemContext};
+    use neo_blockchain::{BlockPersistContext, SystemContext};
     use neo_payloads::{ApplicationExecuted, Block, Header, NotifyEventArgs, Signer, Transaction};
     use neo_primitives::{TriggerType, UInt160, WitnessScope};
     use neo_rpc::application_logs::{ApplicationLogsService, ApplicationLogsSettings};
+    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use neo_storage::persistence::{StoreCache, store::Store};
     use neo_vm_rs::VmState as VMState;
 
     let settings = Arc::new(ProtocolSettings::default());
-    let chain_store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let chain_store = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
 
@@ -1319,7 +1311,7 @@ fn daemon_context_skips_application_logs_committed_handler_during_bulk_sync() {
         Arc::new(MemoryStore::new()),
     ));
 
-    let ctx = DaemonContext::new(
+    let ctx: TestDaemonContext<_, MemoryStore> = daemon_context(
         Arc::clone(&settings),
         Arc::clone(&snapshot),
         store_cache,
@@ -1329,9 +1321,6 @@ fn daemon_context_skips_application_logs_committed_handler_during_bulk_sync() {
         native_provider(),
         Some(Arc::clone(&logs_service)),
     );
-    let node = Arc::new(neo_system::Node::new(settings, None, None).expect("node"));
-    ctx.set_node(node);
-
     let signer = UInt160::from_bytes(&[7; UInt160::LENGTH]).expect("signer");
     let contract = UInt160::from_bytes(&[8; UInt160::LENGTH]).expect("contract");
     let mut tx = Transaction::new();
@@ -1405,11 +1394,11 @@ async fn build_node_restarts_from_durable_rocksdb_tip_and_resumes_sync_cursor() 
     .expect("build node over durable store");
 
     running
-        .network
+        .network()
         .start("127.0.0.1:0".parse().unwrap())
         .await
         .expect("start P2P listener");
-    let port = running.network.local_node_info().port();
+    let port = running.network().local_node_info().port();
     assert_ne!(port, 0);
 
     let mut fake = fake_dial(port).await;
@@ -1445,13 +1434,7 @@ async fn build_node_restarts_from_durable_rocksdb_tip_and_resumes_sync_cursor() 
     );
     assert_eq!(request.count, (PEER_HEIGHT - DURABLE_TIP) as i16);
 
-    running.network.shutdown().await.expect("shutdown network");
-    for handle in running.handles {
-        handle.abort();
-        let _ = handle.await;
-    }
-    drop(running.node);
-    drop(running.network);
+    running.abort_for_test().await;
 }
 
 /// Operator-facing RPC smoke test: a daemon rebuilt over a durable RocksDB
@@ -1490,8 +1473,14 @@ async fn rpc_getblockcount_reads_restarted_durable_rocksdb_tip() {
     )
     .await
     .expect("build node over durable store");
-    let server = start_rpc_server(&running.node, &config, settings.network, None)
-        .expect("start JSON-RPC server");
+    let server = start_rpc_server(
+        running.node(),
+        running.services().as_ref(),
+        &config,
+        settings.network,
+        None,
+    )
+    .expect("start JSON-RPC server");
     assert!(server.read().is_started(), "JSON-RPC server must bind");
 
     let response = rpc_post_json(
@@ -1511,10 +1500,5 @@ async fn rpc_getblockcount_reads_restarted_durable_rocksdb_tip() {
 
     server.write().stop_rpc_server();
     drop(server);
-    for handle in running.handles {
-        handle.abort();
-        let _ = handle.await;
-    }
-    drop(running.node);
-    drop(running.network);
+    running.abort_for_test().await;
 }

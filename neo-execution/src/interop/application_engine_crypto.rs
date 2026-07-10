@@ -1,13 +1,14 @@
 //! ApplicationEngine.Crypto - matches C# Neo.SmartContract.ApplicationEngine.Crypto.cs
 
 use crate::ApplicationEngine;
+use crate::ApplicationExecutionEngine as ExecutionEngine;
+use crate::native_contract_provider::NativeContractProvider;
 use neo_config::Hardfork;
 use neo_crypto::Crypto;
 use neo_crypto::{CryptoError, ECCurve, ECPoint, Secp256r1Crypto};
 use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
 use neo_vm::VmResult;
-use neo_vm::execution_engine::ExecutionEngine;
 
 /// The price of CheckSig in GAS (1 << 15 = 32768 * 30 = 983040). Re-exported
 /// from `application_engine` so the value has a single source of truth.
@@ -17,7 +18,12 @@ pub use crate::application_engine::CHECK_SIG_PRICE;
 /// The syscall charges `CHECK_SIG_PRICE * n` where `n` is the number of public keys.
 pub const CHECK_MULTISIG_PRICE: i64 = 0;
 
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     /// Verifies a signature using secp256r1 (NIST P-256)
     pub fn crypto_check_sig(&mut self) -> CoreResult<bool> {
         // Neo VM calling convention: the first parameter is on top of the stack.
@@ -225,10 +231,15 @@ fn pubkey_coord_out_of_field(pk: &[u8]) -> bool {
 }
 
 // Handler functions for syscall registration
-fn crypto_check_sig_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn crypto_check_sig_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     match app.crypto_check_sig() {
         Ok(result) => app
             .push_boolean(result)
@@ -243,10 +254,15 @@ fn crypto_check_sig_handler(
     }
 }
 
-fn crypto_check_multisig_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn crypto_check_multisig_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     match app.crypto_check_multisig() {
         Ok(result) => app
             .push_boolean(result)
@@ -262,7 +278,12 @@ fn crypto_check_multisig_handler(
 }
 
 /// Registers crypto-related interop services
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     pub(crate) fn register_crypto_interops(&mut self) -> VmResult<()> {
         self.register_host_service(
             "System.Crypto.CheckSig",

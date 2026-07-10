@@ -29,7 +29,7 @@ where
         bulk_sync: bool,
         persist_options: NativePersistOptions,
         persist_context: BlockPersistContext,
-        batch_persist_resources: Option<&BatchPersistResources>,
+        batch_persist_resources: Option<&BatchPersistResources<S::NativeProvider, S::CacheBacking>>,
         stats: &mut ImportBlocksStats,
     ) -> bool {
         let index = block.index();

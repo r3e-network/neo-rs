@@ -10,9 +10,13 @@ use neo_error::CoreResult;
 use neo_execution::ApplicationEngine;
 
 impl Treasury {
-    pub(super) fn invoke_nep_payment(
+    pub(super) fn invoke_nep_payment<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // Both callbacks are no-ops in C# (empty bodies); they return Void,
@@ -20,9 +24,13 @@ impl Treasury {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_verify(
+    pub(super) fn invoke_verify<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# `Treasury.Verify` (Treasury.cs:41-42) = `CheckCommittee(engine)`:

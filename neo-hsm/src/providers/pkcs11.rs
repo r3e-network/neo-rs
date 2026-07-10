@@ -20,9 +20,9 @@
 //! └─────────────────────────────────┘         └───────────────────────────────────┘
 //! ```
 //!
-//! `sign()` is **synchronous** (no async, no async_trait) with a bounded
-//! `SIGN_TIMEOUT`.  If the HSM stalls, the timeout fires and the consensus
-//! driver receives an error → triggers change-view.
+//! `sign()` returns a concrete async future (no `async_trait` boxing) with a
+//! bounded `SIGN_TIMEOUT`. If the HSM stalls, the timeout fires and the
+//! consensus driver receives an error and triggers change-view.
 //!
 //! # Signature post-processing
 //!
@@ -37,7 +37,6 @@
 
 use crate::config::{HsmConfig, SigFormat, profile};
 use crate::error::{HsmError, HsmResult};
-use async_trait::async_trait;
 use neo_consensus::ConsensusSigner;
 use neo_consensus::error::ConsensusError;
 use neo_crypto::{Crypto, Secp256r1Crypto};
@@ -391,7 +390,6 @@ impl Drop for Pkcs11Signer {
     }
 }
 
-#[async_trait]
 impl ConsensusSigner for Pkcs11Signer {
     fn can_sign(&self, script_hash: &UInt160) -> bool {
         *script_hash == self.script_hash

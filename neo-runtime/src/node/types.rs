@@ -79,11 +79,14 @@ impl NodeTypes for NeoNodeTypes {
 /// Separated from `ConfigProvider` because not all consumers
 /// need cache access.
 pub trait StoreProvider: Send + Sync + Debug + 'static {
+    /// Concrete storage backend exposed by this provider.
+    type Store: neo_storage::persistence::store::Store + 'static;
+
     /// Returns the storage backend.
-    fn store(&self) -> Arc<dyn neo_storage::persistence::store::Store>;
+    fn store(&self) -> Arc<Self::Store>;
 
     /// Returns a snapshot of the current state.
-    fn store_cache(&self) -> neo_storage::persistence::store_cache::StoreCache;
+    fn store_cache(&self) -> neo_storage::persistence::store_cache::StoreCache<Self::Store>;
 }
 
 /// Provider trait for node configuration access.
@@ -113,10 +116,10 @@ pub trait TxAdmission: Send + Sync + Debug + 'static {
     /// Returns `Ok(())` only when the mempool accepts the transaction;
     /// any other verdict is surfaced as an error so the caller can log
     /// and retain the work.
-    fn try_enqueue_preverify(
+    fn try_enqueue_preverify<B: neo_storage::CacheRead>(
         &self,
         tx: Transaction,
         relay: bool,
-        snapshot: &neo_storage::persistence::DataCache,
+        snapshot: &neo_storage::persistence::DataCache<B>,
     ) -> Result<(), ServiceError>;
 }

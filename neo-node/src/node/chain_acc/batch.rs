@@ -7,8 +7,7 @@
 
 use std::time::{Duration, Instant};
 
-use neo_blockchain::command::ImportBlocksStats;
-use neo_blockchain::handle::BlockchainHandle;
+use neo_blockchain::{BlockchainHandle, ImportBlocksStats};
 use neo_payloads::block::Block;
 use neo_runtime::BlockImport;
 

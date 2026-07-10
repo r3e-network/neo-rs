@@ -1,4 +1,6 @@
 use super::*;
+use crate::NoDiagnostic;
+use crate::native_contract_provider::NoNativeContractProvider;
 use neo_config::ProtocolSettings;
 use neo_primitives::TriggerType;
 use neo_storage::persistence::DataCache;
@@ -6,17 +8,18 @@ use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
 fn storage_engine() -> ApplicationEngine {
-    let mut engine = ApplicationEngine::new_with_native_contract_provider(
-        TriggerType::Application,
-        None,
-        Arc::new(DataCache::new(false)),
-        None,
-        ProtocolSettings::default(),
-        1_000_000,
-        None,
-        None,
-    )
-    .expect("engine builds");
+    let mut engine =
+        ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            1_000_000,
+            NoDiagnostic,
+            None,
+        )
+        .expect("engine builds");
     engine
         .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("script loads");

@@ -438,17 +438,20 @@ fn state_service_import_metrics_projects_direct_hot_snapshot_fields() {
 
 #[test]
 fn rocksdb_batch_import_metrics_projects_buffer_stats() {
-    let stats = neo_storage::rocksdb::WriteBatchStatsSnapshot {
-        batches_flushed: 2,
-        operations_written: 17,
-        bytes_written: 4096,
-        total_flush_duration_ms: 12,
-        flush_timeouts: 1,
-        pending_operations: 5,
-    };
-    let config = neo_storage::rocksdb::WriteBatchConfig::high_throughput();
-
-    let metrics = RocksDbBatchImportMetrics::from_parts(stats, config);
+    let metrics =
+        RocksDbBatchImportMetrics::from_metrics(neo_storage::persistence::RocksDbBatchMetrics {
+            pending_operations: 5,
+            batches_flushed: 2,
+            operations_written: 17,
+            bytes_written: 4096,
+            flush_timeouts: 1,
+            avg_ops_per_flush: 8,
+            avg_bytes_per_flush: 2048,
+            avg_flush_duration_ms: 6,
+            max_batch_size: 50_000,
+            max_batch_bytes: 64 * 1024 * 1024,
+            disable_wal: true,
+        });
 
     assert_eq!(metrics.pending_operations, 5);
     assert_eq!(metrics.batches_flushed, 2);

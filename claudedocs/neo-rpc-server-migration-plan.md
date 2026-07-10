@@ -1,5 +1,9 @@
 # neo-rpc `server` Feature Migration Plan (NeoSystem -> neo_system::Node)
 
+> **Historical plan.** The migration is complete. Its proposed service
+> registry was subsequently removed by ADR-034 in favor of typed
+> `RpcServices<S>` fields; do not implement the registry steps below.
+
 > Produced 2026-06-10 by a read-only scoping pass over the 12 compile errors in
 > `cargo check -p neo-rpc --features server`. Verified against the live tree;
 > see the inventory tables for file:line citations.

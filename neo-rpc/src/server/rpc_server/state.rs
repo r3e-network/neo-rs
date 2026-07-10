@@ -27,7 +27,6 @@ impl RpcServer {
             handler_lookup: Arc::new(RwLock::new(HashMap::new())),
             started: false,
             wallet: wallet::new_wallet_handle(),
-            wallet_change_callback: None,
             sessions: sessions::new_session_store(),
             server_task: None,
             shutdown_signal: None,
@@ -37,6 +36,7 @@ impl RpcServer {
             ws_bridge: None,
             rate_limiter,
             remote_ledger_rpc: None,
+            oracle_service: None,
         }
     }
 
@@ -68,6 +68,20 @@ impl RpcServer {
     #[must_use]
     pub fn remote_ledger_rpc(&self) -> Option<&RemoteLedgerRpcClient> {
         self.remote_ledger_rpc.as_ref()
+    }
+
+    /// Installs the oracle runtime used by oracle RPC methods.
+    pub fn set_oracle_service(
+        &mut self,
+        service: Arc<neo_oracle_service::OracleService<NodeContext>>,
+    ) {
+        self.oracle_service = Some(service);
+    }
+
+    /// Returns the oracle runtime, if one was configured.
+    #[must_use]
+    pub fn oracle_service(&self) -> Option<Arc<neo_oracle_service::OracleService<NodeContext>>> {
+        self.oracle_service.as_ref().map(Arc::clone)
     }
 
     /// Enable WebSocket subscriptions.

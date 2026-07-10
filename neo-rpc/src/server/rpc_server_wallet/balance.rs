@@ -5,7 +5,7 @@ use neo_manifest::CallFlags;
 use neo_primitives::{BigDecimal, TriggerType, UInt160};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::{OpCode, VmState as VMState};
-use neo_wallets::Wallet as CoreWallet;
+use neo_wallets::{Wallet as CoreWallet, WalletAccount};
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use serde_json::Value;
@@ -93,7 +93,7 @@ impl RpcServerWallet {
             None,
             system.settings().as_ref().clone(),
             server.settings().max_gas_invoke,
-            None,
+            neo_execution::NoDiagnostic,
             Some(system.native_contract_provider()),
         )
         .map_err(|err| internal_error(err.to_string()))?;

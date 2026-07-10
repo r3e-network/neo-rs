@@ -15,7 +15,14 @@ impl OracleContract {
     /// `hardfork == ActiveIn` (the Oracle contract is genesis-active): seed the
     /// request-id counter with `BigInteger.Zero` (stored as empty bytes) and the
     /// request price with 0.5 GAS (`0_50000000` datoshi).
-    pub(super) fn initialize_native(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    pub(super) fn initialize_native<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        &self,
+        engine: &mut ApplicationEngine<P, D, B>,
+    ) -> CoreResult<()> {
         let snapshot = engine.snapshot_cache();
         snapshot.add(
             Self::request_id_key(),

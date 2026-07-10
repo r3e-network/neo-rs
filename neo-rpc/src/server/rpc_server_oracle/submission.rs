@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use neo_oracle_service::{OracleService, OracleServiceError};
+use neo_oracle_service::OracleServiceError;
 use serde_json::Value;
 
 use crate::server::rpc_error::RpcError;
@@ -10,9 +10,9 @@ use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::invalid_params;
 use crate::server::rpc_server::RpcServer;
 
-use super::RpcServerOracle;
 use super::request::SubmitOracleResponseRequest;
 use super::response::submit_oracle_response_to_json;
+use super::{RpcOracleService, RpcServerOracle};
 
 impl RpcServerOracle {
     pub(super) fn submit_oracle_response(
@@ -34,10 +34,9 @@ impl RpcServerOracle {
     }
 }
 
-fn oracle_service(server: &RpcServer) -> Result<Arc<OracleService>, RpcException> {
+fn oracle_service(server: &RpcServer) -> Result<Arc<RpcOracleService>, RpcException> {
     server
-        .system()
-        .get_service::<OracleService>()
+        .oracle_service()
         .ok_or_else(|| RpcException::from(RpcError::oracle_disabled()))
 }
 

@@ -24,7 +24,7 @@
 //! ## Example
 //!
 //! ```rust
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # fn main() -> neo_primitives::PrimitiveResult<()> {
 //! use neo_primitives::BigDecimal;
 //! use num_bigint::BigInt;
 //!

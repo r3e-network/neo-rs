@@ -9,10 +9,10 @@ use neo_execution::helper::Helper as ContractHelper;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::serializable::helper::SerializeHelper;
 use neo_manifest::CallFlags;
-use neo_payloads::HEADER_SIZE;
 use neo_payloads::transaction::Transaction;
-use neo_primitives::{ContractParameterType, TriggerType, UInt160, Verifiable, Witness as _};
-use neo_storage::persistence::DataCache;
+use neo_payloads::{HEADER_SIZE, VerifiableContainer};
+use neo_primitives::{ContractParameterType, TriggerType, UInt160};
+use neo_storage::persistence::{CacheRead, DataCache};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::{OpCode, VmState as VMState};
 use num_bigint::BigInt;
@@ -33,15 +33,17 @@ use crate::server::ledger_queries;
 /// contract script (C# `wallet.GetAccount(hash)?.Contract?.Script`);
 /// pass a closure returning `None` for wallet-less calls so the
 /// transaction's own witnesses are consulted instead.
-pub(crate) fn calculate_network_fee<F>(
+pub(crate) fn calculate_network_fee<P, B, F>(
     tx: &Transaction,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     settings: &ProtocolSettings,
-    native_contract_provider: &Arc<dyn NativeContractProvider>,
+    native_contract_provider: &Arc<P>,
     account_script: &F,
     mut max_execution_cost: i64,
 ) -> WalletCompatResult<i64>
 where
+    P: NativeContractProvider + 'static,
+    B: CacheRead,
     F: Fn(&UInt160) -> Option<Vec<u8>> + ?Sized,
 {
     let hashes: Vec<UInt160> = tx.signers().iter().map(|signer| signer.account).collect();
@@ -128,11 +130,11 @@ where
 // Rationale: fee calculation must thread transaction, snapshot, protocol
 // settings, native provider, contract hash, mutable script, and output counters.
 #[allow(clippy::too_many_arguments)]
-fn contract_verification_fee(
+fn contract_verification_fee<B: CacheRead>(
     tx: &Transaction,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     settings: &ProtocolSettings,
-    native_contract_provider: &Arc<dyn NativeContractProvider>,
+    native_contract_provider: &Arc<impl NativeContractProvider + 'static>,
     hash: &UInt160,
     mut invocation_script: Option<Vec<u8>>,
     max_execution_cost: &mut i64,
@@ -237,17 +239,21 @@ fn dummy_verify_invocation_script(
     builder.to_array()
 }
 
-fn run_contract_verify(
+fn run_contract_verify<P, B>(
     tx: &Transaction,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     settings: &ProtocolSettings,
-    native_contract_provider: &Arc<dyn NativeContractProvider>,
+    native_contract_provider: &Arc<P>,
     contract: ContractState,
     verify_method: neo_manifest::ContractMethodDescriptor,
     invocation_script: Option<Vec<u8>>,
     max_execution_cost: i64,
-) -> WalletCompatResult<i64> {
-    let container = Arc::new(tx.clone()) as Arc<dyn Verifiable>;
+) -> WalletCompatResult<i64>
+where
+    P: NativeContractProvider + 'static,
+    B: CacheRead,
+{
+    let container = Arc::new(VerifiableContainer::from(tx.clone()));
     let contract_hash = contract.hash;
     let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
         TriggerType::Verification,
@@ -256,7 +262,7 @@ fn run_contract_verify(
         None,
         settings.clone(),
         max_execution_cost,
-        None,
+        neo_execution::NoDiagnostic,
         Some(Arc::clone(native_contract_provider)),
     )
     .map_err(|err| WalletCompatError::Other(err.to_string()))?;

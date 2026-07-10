@@ -1,29 +1,16 @@
 //! RPC session iterator retention and disposal helpers.
 
-use std::sync::Arc;
-
 use neo_error::CoreResult;
-use neo_execution::iterators::IteratorInterop;
 use neo_execution::iterators::StorageIterator;
 use neo_execution::iterators::iterator::StorageIterator as _;
-use neo_vm::stack_item::{InteropInterface as VmInteropInterface, StackItem};
+use neo_vm::stack_item::{InteropInterface, StackItem};
 use uuid::Uuid;
 
 use super::Session;
 
-/// Trait representing an iterator stored within an RPC session.
-pub(super) trait SessionIterator: Send {
-    /// Advance the iterator to the next item.
-    fn next(&mut self) -> bool;
-    /// Return the current item.
-    fn value(&self) -> CoreResult<StackItem>;
-    /// Release any resources owned by the iterator.
-    fn dispose(&mut self);
-}
-
 /// Wrapper storing iterator instances with automatic disposal.
 pub(super) struct IteratorEntry {
-    pub(super) inner: Box<dyn SessionIterator>,
+    pub(super) inner: SessionIterator,
 }
 
 impl IteratorEntry {
@@ -46,6 +33,32 @@ impl Drop for IteratorEntry {
     }
 }
 
+/// Concrete iterator variants retained by an RPC session.
+pub(super) enum SessionIterator {
+    /// Iterator created by `System.Storage.Find`.
+    Storage(StorageSessionIterator),
+}
+
+impl SessionIterator {
+    fn next(&mut self) -> bool {
+        match self {
+            Self::Storage(iterator) => iterator.next(),
+        }
+    }
+
+    fn value(&self) -> CoreResult<StackItem> {
+        match self {
+            Self::Storage(iterator) => iterator.value(),
+        }
+    }
+
+    fn dispose(&mut self) {
+        match self {
+            Self::Storage(iterator) => iterator.dispose(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct StorageSessionIterator {
     iterator: StorageIterator,
@@ -57,7 +70,7 @@ impl StorageSessionIterator {
     }
 }
 
-impl SessionIterator for StorageSessionIterator {
+impl StorageSessionIterator {
     fn next(&mut self) -> bool {
         self.iterator.next()
     }
@@ -80,12 +93,8 @@ impl Session {
     /// Register a VM iterator interface and return the stable RPC iterator id.
     ///
     /// Re-registering the same VM iterator returns its existing UUID.
-    pub fn register_iterator_interface(
-        &self,
-        interface: &Arc<dyn VmInteropInterface>,
-    ) -> Option<Uuid> {
-        let iterator_interop = interface.as_any().downcast_ref::<IteratorInterop>()?;
-        let iterator_id = iterator_interop.id();
+    pub fn register_iterator_interface(&self, interface: &InteropInterface) -> Option<Uuid> {
+        let iterator_id = interface.iterator_id()?;
 
         if let Some(existing) = self.iterator_lookup.lock().get(&iterator_id).copied() {
             return Some(existing);
@@ -100,7 +109,7 @@ impl Session {
         self.iterators.lock().insert(
             uuid,
             IteratorEntry {
-                inner: Box::new(StorageSessionIterator::new(iterator)),
+                inner: SessionIterator::Storage(StorageSessionIterator::new(iterator)),
             },
         );
         self.iterator_lookup.lock().insert(iterator_id, uuid);

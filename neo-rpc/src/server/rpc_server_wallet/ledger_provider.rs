@@ -11,7 +11,7 @@ use neo_blockchain::{
 };
 use neo_payloads::TransactionState;
 use neo_primitives::UInt256;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::{CacheRead, DataCache};
 
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
@@ -23,9 +23,9 @@ const WALLET_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerPr
 pub(super) trait WalletLedgerProvider {
     /// Returns the persisted transaction-state record for `hash`, including
     /// conflict stubs.
-    fn transaction_state_by_hash(
+    fn transaction_state_by_hash<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         hash: &UInt256,
     ) -> Result<Option<TransactionState>, RpcException>;
 }
@@ -52,9 +52,9 @@ impl NativeWalletLedgerProvider {
 }
 
 impl WalletLedgerProvider for NativeWalletLedgerProvider {
-    fn transaction_state_by_hash(
+    fn transaction_state_by_hash<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         hash: &UInt256,
     ) -> Result<Option<TransactionState>, RpcException> {
         WALLET_LEDGER_PROVIDER_FACTORY

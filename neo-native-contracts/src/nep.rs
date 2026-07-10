@@ -253,7 +253,7 @@ pub(crate) fn serialize_account_state(state: &AccountState) -> neo_error::CoreRe
 /// reads `item.GetInteroperable<TState>().Balance` and returns
 /// `BigInteger.Zero` when the key is absent.
 pub(crate) fn read_nep17_balance(
-    snapshot: &neo_storage::persistence::DataCache,
+    snapshot: &neo_storage::persistence::DataCache<impl neo_storage::CacheRead>,
     contract_id: i32,
     account: &neo_primitives::UInt160,
 ) -> neo_error::CoreResult<num_bigint::BigInt> {
@@ -270,7 +270,7 @@ pub(crate) fn read_nep17_balance(
 /// 0 when the supply key is absent. Matches C# `FungibleToken.TotalSupply`,
 /// which reads the raw `StorageItem` as a `BigInteger`.
 pub(crate) fn read_nep17_total_supply(
-    snapshot: &neo_storage::persistence::DataCache,
+    snapshot: &neo_storage::persistence::DataCache<impl neo_storage::CacheRead>,
     contract_id: i32,
 ) -> num_bigint::BigInt {
     let key = nep17_total_supply_key(contract_id);

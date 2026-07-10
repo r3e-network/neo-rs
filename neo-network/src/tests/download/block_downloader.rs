@@ -175,31 +175,37 @@ impl FakeRangeFetcher {
     }
 }
 
-#[async_trait::async_trait]
 impl BlockRangeFetcher for FakeRangeFetcher {
-    async fn fetch_range(
+    fn fetch_range(
         &self,
         assignment: BlockRangeAssignment,
-    ) -> NetworkResult<BlockDownloadBatch> {
-        self.calls.lock().push(assignment);
-        let delay = self.delays.lock().get(&assignment.request.start).copied();
-        if let Some(delay) = delay {
-            tokio::time::sleep(delay).await;
+    ) -> impl std::future::Future<Output = NetworkResult<BlockDownloadBatch>> + Send + 'static {
+        let fetcher = self.clone();
+        async move {
+            fetcher.calls.lock().push(assignment);
+            let delay = fetcher
+                .delays
+                .lock()
+                .get(&assignment.request.start)
+                .copied();
+            if let Some(delay) = delay {
+                tokio::time::sleep(delay).await;
+            }
+            if fetcher.fail_once.lock().remove(&assignment.request.start) {
+                return Err(NetworkError::Protocol(format!(
+                    "temporary failure at {}",
+                    assignment.request.start
+                )));
+            }
+            let blocks = (assignment.request.start..=assignment.request.end())
+                .map(block)
+                .collect::<Vec<_>>();
+            Ok(BlockDownloadBatch::new(
+                Some(assignment.peer_id),
+                assignment.request.start,
+                blocks,
+            ))
         }
-        if self.fail_once.lock().remove(&assignment.request.start) {
-            return Err(NetworkError::Protocol(format!(
-                "temporary failure at {}",
-                assignment.request.start
-            )));
-        }
-        let blocks = (assignment.request.start..=assignment.request.end())
-            .map(block)
-            .collect::<Vec<_>>();
-        Ok(BlockDownloadBatch::new(
-            Some(assignment.peer_id),
-            assignment.request.start,
-            blocks,
-        ))
     }
 }
 

@@ -13,8 +13,8 @@
 //! contract provider is an explicit composition-root dependency; callers must
 //! pass the same provider that block import, RPC, consensus, and mempool
 //! admission use. The sync import pipeline is built by default from the same
-//! blockchain and storage handles, then registered in the service registry, so
-//! staged-sync callers can use one shared import/checkpoint boundary.
+//! blockchain and storage handles, so staged-sync callers use one explicit
+//! import/checkpoint boundary.
 
 use std::sync::Arc;
 use tracing::debug;
@@ -24,34 +24,36 @@ use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
+use neo_runtime::SharedStoreSyncStageCheckpointStore;
+use neo_storage::persistence::providers::MemoryStore;
 use neo_storage::persistence::store::Store;
 
 use crate::error::NodeResult;
 use crate::node::Node;
 use crate::sync_import_pipeline::SyncImportPipeline;
 use crate::wallet_provider::WalletProvider;
-use neo_runtime::ServiceRegistry;
 
 /// Fluent builder for [`Node`].
-pub struct NodeBuilder<P = neo_native_contracts::StandardNativeProvider>
+pub struct NodeBuilder<P = neo_native_contracts::StandardNativeProvider, S = MemoryStore>
 where
     P: NativeContractProvider,
+    S: Store,
 {
     settings: Option<Arc<ProtocolSettings>>,
-    storage: Option<Arc<dyn Store>>,
+    storage: Option<Arc<S>>,
     wallets: Option<WalletProvider>,
     blockchain: Option<BlockchainHandle>,
     network: Option<NetworkHandle>,
     mempool: Option<Arc<MemoryPool<P>>>,
     header_cache: Option<Arc<HeaderCache>>,
-    services: Option<ServiceRegistry>,
     native_contract_provider: Option<Arc<P>>,
-    sync_import_pipeline: Option<Arc<SyncImportPipeline>>,
+    sync_import_pipeline: Option<Arc<SyncImportPipeline<SharedStoreSyncStageCheckpointStore<S>>>>,
 }
 
-impl<P> Default for NodeBuilder<P>
+impl<P, S> Default for NodeBuilder<P, S>
 where
     P: NativeContractProvider,
+    S: Store,
 {
     fn default() -> Self {
         Self {
@@ -62,16 +64,16 @@ where
             network: None,
             mempool: None,
             header_cache: None,
-            services: None,
             native_contract_provider: None,
             sync_import_pipeline: None,
         }
     }
 }
 
-impl<P> std::fmt::Debug for NodeBuilder<P>
+impl<P, S> std::fmt::Debug for NodeBuilder<P, S>
 where
     P: NativeContractProvider + 'static,
+    S: Store + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NodeBuilder")
@@ -82,7 +84,6 @@ where
             .field("network", &self.network.is_some())
             .field("mempool", &self.mempool.is_some())
             .field("header_cache", &self.header_cache.is_some())
-            .field("services", &self.services.is_some())
             .field(
                 "native_contract_provider",
                 &self.native_contract_provider.is_some(),
@@ -92,9 +93,10 @@ where
     }
 }
 
-impl<P> NodeBuilder<P>
+impl<P, S> NodeBuilder<P, S>
 where
     P: NativeContractProvider + 'static,
+    S: Store + 'static,
 {
     /// Install the protocol settings.
     pub fn with_settings(mut self, settings: Arc<ProtocolSettings>) -> Self {
@@ -103,7 +105,7 @@ where
     }
 
     /// Install the storage backend.
-    pub fn with_storage(mut self, storage: Arc<dyn Store>) -> Self {
+    pub fn with_storage(mut self, storage: Arc<S>) -> Self {
         self.storage = Some(storage);
         self
     }
@@ -143,15 +145,6 @@ where
         self
     }
 
-    /// Install a pre-populated service registry. When unset,
-    /// [`Self::build`] starts with an empty registry; services can
-    /// also be registered after `build()` via
-    /// [`Node::register_service`].
-    pub fn with_services(mut self, services: ServiceRegistry) -> Self {
-        self.services = Some(services);
-        self
-    }
-
     /// Sets the native-contract provider used by NeoVM host calls.
     ///
     /// The provider is required. Composition roots should create one provider
@@ -165,16 +158,17 @@ where
     /// Install a pre-composed sync import pipeline.
     ///
     /// When unset, [`Self::build`] creates one over the same blockchain handle
-    /// and storage provider installed on the node unless the supplied service
-    /// registry already contains one. The selected pipeline is always
-    /// registered in the node's service registry.
-    pub fn with_sync_import_pipeline(mut self, pipeline: Arc<SyncImportPipeline>) -> Self {
+    /// and storage provider installed on the node.
+    pub fn with_sync_import_pipeline(
+        mut self,
+        pipeline: Arc<SyncImportPipeline<SharedStoreSyncStageCheckpointStore<S>>>,
+    ) -> Self {
         self.sync_import_pipeline = Some(pipeline);
         self
     }
 
     /// Finalise the builder.
-    pub fn build(self) -> NodeResult<Node<P>> {
+    pub fn build(self) -> NodeResult<Node<P, S>> {
         let settings = self
             .settings
             .ok_or_else(|| crate::error::NodeError::missing_config("settings"))?;
@@ -198,17 +192,12 @@ where
                 Arc::clone(&native_contract_provider),
             ))
         });
-        let services = self.services.unwrap_or_default();
-        let sync_import_pipeline = self
-            .sync_import_pipeline
-            .or_else(|| services.get::<SyncImportPipeline>())
-            .unwrap_or_else(|| {
-                Arc::new(SyncImportPipeline::new(
-                    blockchain.clone(),
-                    Arc::clone(&storage),
-                ))
-            });
-        services.register(Arc::clone(&sync_import_pipeline));
+        let sync_import_pipeline = self.sync_import_pipeline.unwrap_or_else(|| {
+            Arc::new(SyncImportPipeline::new(
+                blockchain.clone(),
+                Arc::clone(&storage),
+            ))
+        });
         Ok(Node {
             settings,
             storage,
@@ -218,9 +207,7 @@ where
             sync_import_pipeline,
             mempool,
             header_cache: self.header_cache.unwrap_or_default(),
-            services,
             native_contract_provider,
-            shutdown: tokio_util::sync::CancellationToken::new(),
         })
     }
 }

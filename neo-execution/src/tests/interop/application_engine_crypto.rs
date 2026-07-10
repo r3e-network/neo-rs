@@ -1,5 +1,8 @@
 use super::*;
+use crate::NoDiagnostic;
+use crate::native_contract_provider::NoNativeContractProvider;
 use neo_config::{Hardfork, ProtocolSettings};
+use neo_payloads::VerifiableContainer;
 use neo_primitives::TriggerType;
 use neo_storage::DataCache;
 use neo_vm::StackItem;
@@ -13,14 +16,16 @@ fn engine_with_gorgon(active: bool) -> ApplicationEngine {
     } else {
         settings.hardforks.remove(&Hardfork::HfGorgon);
     }
-    ApplicationEngine::new_with_native_contract_provider(
+    ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
         TriggerType::Application,
-        Some(Arc::new(neo_payloads::Transaction::new())),
+        Some(Arc::new(VerifiableContainer::from(
+            neo_payloads::Transaction::new(),
+        ))),
         Arc::new(DataCache::new(false)),
         None,
         settings,
         crate::application_engine::TEST_MODE_GAS,
-        None,
+        NoDiagnostic,
         None,
     )
     .expect("application engine")

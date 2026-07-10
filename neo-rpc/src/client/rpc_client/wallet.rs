@@ -4,6 +4,7 @@ use super::RpcClient;
 use super::helpers::{
     parse_object_array_result, token_as_boolean, token_as_object, token_as_string,
 };
+use super::hooks::RpcObserver;
 use crate::client::utility::object_array;
 use neo_primitives::BigDecimal;
 use neo_serialization::json::{JObject, JToken};
@@ -11,7 +12,10 @@ use num_bigint::BigInt;
 use std::str::FromStr;
 use std::sync::Arc;
 
-impl RpcClient {
+impl<O> RpcClient<O>
+where
+    O: RpcObserver,
+{
     /// Close the wallet opened by RPC.
     /// Matches C# `CloseWalletAsync`
     pub async fn close_wallet(&self) -> Result<bool, ClientRpcError> {

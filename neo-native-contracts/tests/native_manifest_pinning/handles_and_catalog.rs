@@ -2,21 +2,24 @@ use super::*;
 
 #[test]
 fn native_contract_handle_names_are_uniform_constants() {
-    let contracts: Vec<(&'static str, Box<dyn NativeContract>)> = vec![
-        (
-            ContractManagement::NAME,
-            Box::new(ContractManagement::new()),
-        ),
-        (StdLib::NAME, Box::new(StdLib::new())),
-        (CryptoLib::NAME, Box::new(CryptoLib::new())),
-        (LedgerContract::NAME, Box::new(LedgerContract::new())),
-        (NeoToken::NAME, Box::new(NeoToken::new())),
-        (GasToken::NAME, Box::new(GasToken::new())),
-        (PolicyContract::NAME, Box::new(PolicyContract::new())),
-        (RoleManagement::NAME, Box::new(RoleManagement::new())),
-        (OracleContract::NAME, Box::new(OracleContract::new())),
-        (Notary::NAME, Box::new(Notary::new())),
-        (Treasury::NAME, Box::new(Treasury::new())),
+    macro_rules! handle_case {
+        ($contract:ty) => {
+            (<$contract>::NAME, <$contract>::new().name().to_string())
+        };
+    }
+
+    let contracts = [
+        handle_case!(ContractManagement),
+        handle_case!(StdLib),
+        handle_case!(CryptoLib),
+        handle_case!(LedgerContract),
+        handle_case!(NeoToken),
+        handle_case!(GasToken),
+        handle_case!(PolicyContract),
+        handle_case!(RoleManagement),
+        handle_case!(OracleContract),
+        handle_case!(Notary),
+        handle_case!(Treasury),
     ];
 
     assert_eq!(
@@ -36,8 +39,8 @@ fn native_contract_handle_names_are_uniform_constants() {
         ]
     );
 
-    for (name, contract) in contracts {
-        assert_eq!(contract.name(), name);
+    for (expected, actual) in contracts {
+        assert_eq!(actual.as_str(), expected);
     }
 }
 
@@ -160,13 +163,6 @@ fn standard_native_contract_catalog_matches_provider_order_and_metadata() {
                 .expect("hash resolves")
                 .name(),
             spec.name
-        );
-        assert_eq!(
-            provider
-                .get_native_contract_by_name(spec.name)
-                .expect("name resolves")
-                .hash(),
-            spec.hash
         );
     }
 }

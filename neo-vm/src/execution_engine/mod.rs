@@ -46,7 +46,7 @@ pub const DEFAULT_GAS_LIMIT: u64 = 20_0000_0000; // 20 GAS
 use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};
 
 /// The execution engine for the Neo VM.
-pub struct ExecutionEngine {
+pub struct ExecutionEngine<S = ()> {
     /// The current state of the VM
     pub(crate) state: VMState,
 
@@ -54,7 +54,7 @@ pub struct ExecutionEngine {
     pub is_jumping: bool,
 
     /// The jump table used to execute instructions
-    pub(crate) jump_table: JumpTable,
+    pub(crate) jump_table: JumpTable<S>,
 
     /// Restrictions on the VM
     pub(crate) limits: ExecutionEngineLimits,
@@ -63,20 +63,20 @@ pub struct ExecutionEngine {
     pub(crate) reference_counter: ReferenceCounter,
 
     /// Optional interop service used for handling syscalls
-    pub(crate) interop_service: Option<InteropService>,
+    pub(crate) interop_service: Option<InteropService<S>>,
 
     /// Host responsible for advanced syscall execution (`ApplicationEngine`).
     ///
     /// All unsafe pointer access is encapsulated inside [`HostPtr`], which provides
     /// safe method wrappers for every `InteropHost` callback. See the `HostPtr` type
     /// documentation for the safety invariants that callers must uphold.
-    pub(crate) interop_host: Option<HostPtr>,
+    pub(crate) interop_host: Option<HostPtr<S>>,
 
     /// Effective call flags for the current execution context
     pub(crate) call_flags: CallFlags,
 
     /// The invocation stack of the VM
-    pub(crate) invocation_stack: Vec<ExecutionContext>,
+    pub(crate) invocation_stack: Vec<ExecutionContext<S>>,
 
     /// The stack to store the return values
     pub(crate) result_stack: EvaluationStack,

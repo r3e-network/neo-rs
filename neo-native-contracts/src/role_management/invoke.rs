@@ -13,9 +13,13 @@ use neo_execution::ApplicationEngine;
 use neo_storage::StorageItem;
 
 impl RoleManagement {
-    pub(super) fn invoke_get_designated_by_role(
+    pub(super) fn invoke_get_designated_by_role<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let context = "RoleManagement::getDesignatedByRole";
@@ -44,9 +48,13 @@ impl RoleManagement {
         }
     }
 
-    pub(super) fn invoke_designate_as_role(
+    pub(super) fn invoke_designate_as_role<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# order: validate nodes (1..32) -> validate role ->

@@ -14,7 +14,7 @@ use num_bigint::BigInt;
 const HASH_SIZE: usize = 32;
 
 /// Registers the push operation handlers.
-pub fn register_handlers(jump_table: &mut JumpTable) {
+pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
     register_jump_handlers![
         jump_table;
         OpCode::PUSHINT8 => push_int8,
@@ -53,34 +53,34 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 
 /// Implements the PUSHINT8 operation.
 #[inline]
-fn push_int8(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn push_int8<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let value = instruction.read_i8_operand()?;
     require_context(engine)?.push(StackItem::from_int(value))
 }
 
 /// Implements the PUSHINT16 operation.
 #[inline]
-fn push_int16(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn push_int16<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let value = instruction.read_i16_operand()?;
     require_context(engine)?.push(StackItem::from_int(value))
 }
 
 /// Implements the PUSHINT32 operation.
 #[inline]
-fn push_int32(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn push_int32<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let value = instruction.read_i32_operand()?;
     require_context(engine)?.push(StackItem::from_int(value))
 }
 
 /// Implements the PUSHINT64 operation.
 #[inline]
-fn push_int64(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn push_int64<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let value = instruction.read_i64_operand()?;
     require_context(engine)?.push(StackItem::from_int(value))
 }
 
 /// Implements the PUSHINT128 operation.
-fn push_int128(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn push_int128<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let bytes = instruction.operand();
     if bytes.len() != 16 {
         return Err(VmError::invalid_instruction_msg(format!(
@@ -93,7 +93,7 @@ fn push_int128(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 }
 
 /// Implements the PUSHINT256 operation.
-fn push_int256(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn push_int256<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let bytes = instruction.operand();
     if bytes.len() != HASH_SIZE {
         return Err(VmError::invalid_instruction_msg(format!(
@@ -107,7 +107,7 @@ fn push_int256(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 }
 
 /// Implements the PUSHA operation.
-fn push_a(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn push_a<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let context = require_context(engine)?;
     let offset = instruction.read_i32_operand()?;
     let current_ip = context.instruction_pointer();
@@ -131,13 +131,13 @@ fn push_a(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<(
 
 /// Implements the PUSHNULL operation.
 #[inline]
-fn push_null(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn push_null<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     engine.push(StackItem::Null)
 }
 
 /// Unified PUSHDATA handler for PUSHDATA1, PUSHDATA2, PUSHDATA4.
 /// The instruction already contains the parsed operand data.
-fn push_data(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn push_data<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let data = instruction.operand();
     // C# JumpTable.Push PushData1/2/4 each call engine.Limits.AssertMaxItemSize
     // on the operand length BEFORE pushing — a larger operand faults.
@@ -154,87 +154,87 @@ fn push_data(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 
 // Small integer push operations - all use the same pattern
 #[inline]
-fn push_m1(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_m1<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(-1))
 }
 #[inline]
-fn push_0(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_0<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(0))
 }
 #[inline]
-fn push_1(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_1<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(1))
 }
 #[inline]
-fn push_2(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_2<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(2))
 }
 #[inline]
-fn push_3(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_3<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(3))
 }
 #[inline]
-fn push_4(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_4<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(4))
 }
 #[inline]
-fn push_5(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_5<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(5))
 }
 #[inline]
-fn push_6(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_6<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(6))
 }
 #[inline]
-fn push_7(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_7<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(7))
 }
 #[inline]
-fn push_8(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_8<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(8))
 }
 #[inline]
-fn push_9(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_9<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(9))
 }
 #[inline]
-fn push_10(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_10<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(10))
 }
 #[inline]
-fn push_11(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_11<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(11))
 }
 #[inline]
-fn push_12(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_12<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(12))
 }
 #[inline]
-fn push_13(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_13<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(13))
 }
 #[inline]
-fn push_14(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_14<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(14))
 }
 #[inline]
-fn push_15(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_15<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(15))
 }
 #[inline]
-fn push_16(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn push_16<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_i64(16))
 }
 
 /// Implements the PUSHT operation.
 #[inline]
-fn push_t(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn push_t<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_bool(true))
 }
 
 /// Implements the PUSHF operation.
 #[inline]
-fn push_f(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn push_f<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     engine.push(StackItem::from_bool(false))
 }
 

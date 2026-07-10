@@ -20,14 +20,13 @@ use neo_manifest::NefFile;
 use neo_manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
 };
-use neo_native_contracts::GasToken;
-use neo_native_contracts::NativeContract;
 use neo_native_contracts::contract_management::ContractManagement;
+use neo_native_contracts::{GasToken, StandardNativeProvider};
 use neo_primitives::ContractParameterType;
 use neo_primitives::UInt160;
 use neo_primitives::UInt256;
-use neo_storage::persistence::Store;
-use neo_storage::persistence::providers::MemoryStoreProvider;
+use neo_storage::persistence::providers::{MemoryStore, MemoryStoreProvider, RuntimeStore};
+use neo_storage::persistence::{Store, StoreSnapshot, WriteStore};
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
@@ -48,15 +47,16 @@ fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
         .unwrap_or_else(|| panic!("handler {} not found", name))
 }
 
-fn create_tracker_store() -> Arc<dyn Store> {
+fn create_tracker_store() -> Arc<MemoryStore> {
     let provider = MemoryStoreProvider::new();
     provider
         .get_store("tokens")
         .expect("memory store available")
 }
 
-fn write_tracker_entry<K, V>(store: &Arc<dyn Store>, prefix: u8, key: &K, value: &V)
+fn write_tracker_entry<S, K, V>(store: &Arc<S>, prefix: u8, key: &K, value: &V)
 where
+    S: Store,
     K: Serializable,
     V: Serializable,
 {
@@ -73,19 +73,25 @@ where
     snapshot.commit();
 }
 
-fn attach_tokens_tracker(
-    system: &Arc<NodeContext>,
-    store: Arc<dyn Store>,
+fn system_with_tokens_tracker(
+    store: Arc<MemoryStore>,
     enabled_trackers: Vec<String>,
     track_history: bool,
-) {
-    let mut settings = TokensTrackerSettings::default();
-    settings.enabled_trackers = enabled_trackers;
-    settings.track_history = track_history;
-    settings.network = system.settings().network;
+) -> Arc<NodeContext> {
+    let protocol_settings = ProtocolSettings::default();
+    let mut tracker_settings = TokensTrackerSettings::default();
+    tracker_settings.enabled_trackers = enabled_trackers;
+    tracker_settings.track_history = track_history;
+    tracker_settings.network = protocol_settings.network;
 
-    let service = Arc::new(TokensTrackerService::new(settings, store));
-    system.register_service(Arc::clone(&service));
+    let service_store = Arc::new(RuntimeStore::Memory(store.as_ref().clone()));
+    crate::server::test_support::test_system_with_services(
+        protocol_settings,
+        crate::server::RpcServices::new().with_tokens_tracker(Arc::new(TokensTrackerService::new(
+            tracker_settings,
+            service_store,
+        ))),
+    )
 }
 
 fn store_contract_state(system: &Arc<NodeContext>, contract: &ContractState) {
@@ -182,14 +188,8 @@ fn build_nep11_properties_contract() -> ContractState {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_nep17_balances_reports_asset_metadata() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let store = create_tracker_store();
-    attach_tokens_tracker(
-        &system,
-        Arc::clone(&store),
-        vec!["NEP-17".to_string()],
-        true,
-    );
+    let system = system_with_tokens_tracker(Arc::clone(&store), vec!["NEP-17".to_string()], true);
 
     let gas_token = GasToken::new();
     let asset = gas_token.hash();
@@ -212,7 +212,7 @@ async fn get_nep17_balances_reports_asset_metadata() {
         None,
         system.settings().as_ref().clone(),
         TEST_MODE_GAS,
-        None,
+        neo_execution::NoDiagnostic,
         Some(system.native_contract_provider()),
     )
     .expect("engine");
@@ -253,7 +253,7 @@ async fn get_nep17_balances_reports_asset_metadata() {
         last_updated_block: 7,
     };
     let key = Nep17BalanceKey::new(user, asset);
-    let (balance_prefix, _, _) = Nep17Tracker::rpc_prefixes();
+    let (balance_prefix, _, _) = Nep17Tracker::<StandardNativeProvider>::rpc_prefixes();
     write_tracker_entry(&store, balance_prefix, &key, &balance);
     let mut prefix = Vec::with_capacity(1 + UInt160::LENGTH);
     prefix.push(balance_prefix);
@@ -300,14 +300,8 @@ async fn get_nep17_balances_reports_asset_metadata() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_nep11_balances_groups_tokens_by_asset() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let store = create_tracker_store();
-    attach_tokens_tracker(
-        &system,
-        Arc::clone(&store),
-        vec!["NEP-11".to_string()],
-        true,
-    );
+    let system = system_with_tokens_tracker(Arc::clone(&store), vec!["NEP-11".to_string()], true);
 
     let gas_token = GasToken::new();
     let asset = gas_token.hash();
@@ -321,7 +315,7 @@ async fn get_nep11_balances_groups_tokens_by_asset() {
     let token_b = vec![0x02, 0x03];
     let key_a = Nep11BalanceKey::new(user, asset, token_a.clone());
     let key_b = Nep11BalanceKey::new(user, asset, token_b.clone());
-    let (balance_prefix, _, _) = Nep11Tracker::rpc_prefixes();
+    let (balance_prefix, _, _) = Nep11Tracker::<StandardNativeProvider>::rpc_prefixes();
 
     write_tracker_entry(
         &store,
@@ -405,14 +399,8 @@ async fn get_nep11_balances_groups_tokens_by_asset() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_nep11_transfers_orders_by_timestamp_descending() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let store = create_tracker_store();
-    attach_tokens_tracker(
-        &system,
-        Arc::clone(&store),
-        vec!["NEP-11".to_string()],
-        true,
-    );
+    let system = system_with_tokens_tracker(Arc::clone(&store), vec!["NEP-11".to_string()], true);
 
     let user = UInt160::from_bytes(&[8u8; 20]).expect("user hash");
     let other = UInt160::from_bytes(&[9u8; 20]).expect("other hash");
@@ -427,7 +415,7 @@ async fn get_nep11_transfers_orders_by_timestamp_descending() {
     let t1 = now_ms - 1_000;
     let t2 = now_ms - 500;
 
-    let (_, sent_prefix, received_prefix) = Nep11Tracker::rpc_prefixes();
+    let (_, sent_prefix, received_prefix) = Nep11Tracker::<StandardNativeProvider>::rpc_prefixes();
     let token_a = vec![0xAA];
     let token_b = vec![0xBB, 0xCC];
 
@@ -517,9 +505,8 @@ async fn get_nep11_transfers_orders_by_timestamp_descending() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_nep11_properties_returns_expected_fields() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let store = create_tracker_store();
-    attach_tokens_tracker(&system, store, vec!["NEP-11".to_string()], true);
+    let system = system_with_tokens_tracker(store, vec!["NEP-11".to_string()], true);
 
     let contract = build_nep11_properties_contract();
     let contract_hash = contract.hash;
@@ -551,14 +538,8 @@ async fn get_nep11_properties_returns_expected_fields() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_nep17_transfers_orders_by_timestamp_descending() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let store = create_tracker_store();
-    attach_tokens_tracker(
-        &system,
-        Arc::clone(&store),
-        vec!["NEP-17".to_string()],
-        true,
-    );
+    let system = system_with_tokens_tracker(Arc::clone(&store), vec!["NEP-17".to_string()], true);
 
     let gas_token = GasToken::new();
     let asset = gas_token.hash();
@@ -578,7 +559,7 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
     let t1 = now_ms - 1_000;
     let t2 = now_ms - 500;
 
-    let (_, sent_prefix, received_prefix) = Nep17Tracker::rpc_prefixes();
+    let (_, sent_prefix, received_prefix) = Nep17Tracker::<StandardNativeProvider>::rpc_prefixes();
     let sent_key_1 = Nep17TransferKey::new(user, t1, asset, 0);
     let sent_key_2 = Nep17TransferKey::new(user, t2, asset, 1);
     write_tracker_entry(
@@ -674,9 +655,8 @@ async fn get_nep17_transfers_orders_by_timestamp_descending() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn get_nep17_balances_requires_enabled_tracker() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let store = create_tracker_store();
-    attach_tokens_tracker(&system, store, Vec::new(), true);
+    let system = system_with_tokens_tracker(store, Vec::new(), true);
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerTokensTracker::register_handlers();

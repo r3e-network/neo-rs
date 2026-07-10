@@ -13,12 +13,10 @@ use neo_blockchain::BlockchainHandle;
 use neo_config::ProtocolSettings;
 use neo_network::NetworkHandle;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
-use neo_storage::persistence::store::Store;
 use neo_system::Node;
 use std::sync::Arc;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), String> {
     let settings = Arc::new(ProtocolSettings::default());
 
     // ---- Legacy pattern (the code we are migrating from) ----
@@ -42,24 +40,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 2. Compose the Node from the handles. The required
     //    parameters are: settings, storage, blockchain handle,
     //    network handle.
-    let storage: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let storage: Arc<MemoryStore> = Arc::new(MemoryStore::new());
     let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new());
-    let node = Node::builder()
+    let _node = Node::builder()
         .with_settings(settings.clone())
         .with_storage(storage)
         .with_blockchain(blockchain_handle)
         .with_network(network_handle)
         .with_native_contract_provider(native_contract_provider)
-        .build()?;
+        .build()
+        .map_err(|err| err.to_string())?;
 
-    // 3. Drive the node lifecycle. `Node::run` blocks until the
-    //    cancellation token is fired.
-    let shutdown = node.cancellation_token();
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.ok();
-        shutdown.cancel();
-    });
-    node.run().await?;
+    // 3. Application lifecycle remains outside `neo-system`. The daemon owns
+    //    task supervision, cancellation, startup imports, and graceful
+    //    shutdown; embedders should provide the same policy explicitly.
 
     Ok(())
 }

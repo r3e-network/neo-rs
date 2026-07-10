@@ -28,7 +28,6 @@
 //! crate (GA'd 2026-05).
 
 use crate::error::{HsmError, HsmResult};
-use async_trait::async_trait;
 use neo_consensus::ConsensusSigner;
 use neo_consensus::error::ConsensusError;
 use neo_crypto::{Crypto, Secp256r1Crypto};
@@ -172,7 +171,6 @@ impl AzureKeyVaultSigner {
     }
 }
 
-#[async_trait]
 impl ConsensusSigner for AzureKeyVaultSigner {
     fn can_sign(&self, script_hash: &UInt160) -> bool {
         *script_hash == self.cfg.script_hash

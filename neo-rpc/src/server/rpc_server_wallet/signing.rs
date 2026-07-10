@@ -11,8 +11,8 @@ use neo_execution::helper::Helper as ContractHelper;
 use neo_io::Serializable;
 use neo_payloads::transaction::Transaction;
 use neo_primitives::UInt160;
-use neo_storage::persistence::DataCache;
-use neo_wallets::Wallet as CoreWallet;
+use neo_storage::persistence::{CacheRead, DataCache};
+use neo_wallets::{Nep6Account, Nep6Wallet, Wallet as CoreWallet, WalletAccount};
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -31,11 +31,11 @@ use super::RpcServerWallet;
 use super::native_provider::{NativeWalletProvider, WalletNativeProvider};
 use super::support::signature_contract_pubkey;
 
-pub(super) fn sign_and_relay(
+pub(super) fn sign_and_relay<B: CacheRead>(
     server: &RpcServer,
-    wallet: &Arc<dyn CoreWallet>,
+    wallet: &Arc<Nep6Wallet>,
     mut tx: Transaction,
-    snapshot_arc: Arc<DataCache>,
+    snapshot_arc: Arc<DataCache<B>>,
 ) -> Result<Value, RpcException> {
     let mut sign_data: Option<Vec<u8>> = None;
 
@@ -240,10 +240,7 @@ fn member_point(member_bytes: &[u8]) -> Option<ECPoint> {
 /// Looks up the wallet account for a member public key, mirroring C#
 /// `Wallet.GetAccount(ECPoint)` which resolves the account by the script
 /// hash of the single-signature redeem script for that key (Wallet.cs:305-308).
-fn account_for_point(
-    wallet: &Arc<dyn CoreWallet>,
-    point: &ECPoint,
-) -> Option<Arc<dyn neo_wallets::WalletAccount>> {
+fn account_for_point(wallet: &Arc<Nep6Wallet>, point: &ECPoint) -> Option<Arc<Nep6Account>> {
     let script = Contract::create_signature_redeem_script(point.clone());
     let script_hash = UInt160::from(Crypto::hash160(&script));
     wallet.account(&script_hash)
@@ -253,9 +250,9 @@ fn account_for_point(
 /// (ContractParametersContext.cs:253-268): if a deployed contract exists for
 /// the script hash and its `verify` method takes no parameters, add it as a
 /// parameterless witness so the transaction can be verified by the contract.
-fn add_with_script_hash(
+fn add_with_script_hash<B: CacheRead>(
     context: &mut ContractParametersContext,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     script_hash: &UInt160,
 ) {
     let contract = match NativeDeployedContractProviderFactory

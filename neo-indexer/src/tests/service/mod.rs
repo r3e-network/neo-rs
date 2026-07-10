@@ -26,8 +26,8 @@ use crate::store::{
 };
 use neo_payloads::{ApplicationExecuted, Block, Header, NotifyEventArgs, Signer, Transaction};
 use neo_primitives::{TriggerType, UInt160, WitnessScope};
-use neo_storage::persistence::SeekDirection;
 use neo_storage::persistence::providers::memory_store_provider::MemoryStoreProvider;
+use neo_storage::persistence::{ReadOnlyStoreGeneric, SeekDirection, StoreSnapshot, WriteStore};
 use neo_vm::StackItem;
 use neo_vm_rs::VmState as VMState;
 
@@ -109,13 +109,19 @@ fn transfer_state(from: UInt160, to: UInt160, amount: i64) -> Vec<StackItem> {
     ]
 }
 
-fn count_store_rows(store: &Arc<dyn Store>, prefix: &[u8]) -> usize {
+fn count_store_rows<S>(store: &Arc<S>, prefix: &[u8]) -> usize
+where
+    S: Store,
+{
     let snapshot = store.snapshot();
     let prefix = prefix.to_vec();
     snapshot.find(Some(&prefix), SeekDirection::Forward).count()
 }
 
-fn put_legacy_store_snapshot(store: &Arc<dyn Store>, snapshot: &IndexerSnapshot) {
+fn put_legacy_store_snapshot<S>(store: &Arc<S>, snapshot: &IndexerSnapshot)
+where
+    S: Store,
+{
     let bytes = serde_json::to_vec(snapshot).expect("encode legacy snapshot");
     let mut store_snapshot = store.snapshot();
     let store_snapshot = Arc::get_mut(&mut store_snapshot).expect("unique store snapshot");

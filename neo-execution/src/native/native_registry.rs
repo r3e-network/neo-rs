@@ -1,7 +1,7 @@
 //! Registry of native contract implementations.
 //!
-//! The `NativeRegistry` is a thin map of contract hash → `Arc<dyn
-//! NativeContract>`. The application engine consults the registry to
+//! The `NativeRegistry` is a thin map of contract hash to provider-typed
+//! native contract handles. The application engine consults the registry to
 //! dispatch `System.Contract.CallNative` and `getcontractstate`.
 //!
 //! The canonical home of this type is [`crate::native_registry`] (it
@@ -21,16 +21,22 @@
 
 use indexmap::IndexMap;
 use neo_primitives::UInt160;
-use std::sync::Arc;
 
 use crate::native_contract::NativeContract;
+use crate::native_contract_provider::{NativeContractProvider, NoNativeContractProvider};
 
 /// Registry for native contracts.
-pub struct NativeRegistry {
-    contracts: IndexMap<UInt160, Arc<dyn NativeContract>>,
+pub struct NativeRegistry<P = NoNativeContractProvider>
+where
+    P: NativeContractProvider + 'static,
+{
+    contracts: IndexMap<UInt160, P::Contract>,
 }
 
-impl NativeRegistry {
+impl<P> NativeRegistry<P>
+where
+    P: NativeContractProvider + 'static,
+{
     /// Creates a new, empty native contract registry.
     ///
     /// Note: this used to pre-populate the registry with the standard
@@ -54,36 +60,22 @@ impl NativeRegistry {
     }
 
     /// Registers a native contract.
-    pub fn register(&mut self, contract: Arc<dyn NativeContract>) {
+    pub fn register(&mut self, contract: P::Contract) {
         let hash = contract.hash();
         self.contracts.insert(hash, contract);
     }
 
     /// Gets a native contract by hash.
-    pub fn get(&self, hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
+    pub fn get(&self, hash: &UInt160) -> Option<P::Contract> {
         self.contracts.get(hash).cloned()
     }
 
     /// Gets a native contract by name.
-    pub fn get_by_name(&self, name: &str) -> Option<Arc<dyn NativeContract>> {
+    pub fn get_by_name(&self, name: &str) -> Option<P::Contract> {
         self.contracts
             .values()
             .find(|contract| contract.name().eq_ignore_ascii_case(name))
             .cloned()
-    }
-
-    /// Internal helper to look up a contract hash by name.
-    fn find_hash_by_name(&self, name: &str) -> Option<UInt160> {
-        self.contracts
-            .iter()
-            .find(|(_, contract)| contract.name().eq_ignore_ascii_case(name))
-            .map(|(hash, _)| *hash)
-    }
-
-    /// Removes a contract from the registry by name.
-    pub fn take_contract_by_name(&mut self, name: &str) -> Option<Arc<dyn NativeContract>> {
-        let hash = self.find_hash_by_name(name)?;
-        self.contracts.shift_remove(&hash)
     }
 
     /// Checks if a contract hash is a native contract.
@@ -101,12 +93,19 @@ impl NativeRegistry {
     /// Persistence order is consensus-critical. This follows the same
     /// declaration order as the standard registration routine in
     /// `neo-native-contracts`.
-    pub fn contracts(&self) -> impl Iterator<Item = Arc<dyn NativeContract>> + '_ {
+    pub fn contracts(&self) -> impl Iterator<Item = P::Contract> + '_ {
         self.contracts.values().cloned()
     }
 }
 
-neo_io::impl_default_via_new!(NativeRegistry);
+impl<P> Default for NativeRegistry<P>
+where
+    P: NativeContractProvider + 'static,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[cfg(test)]
 #[path = "../tests/native/native_registry.rs"]

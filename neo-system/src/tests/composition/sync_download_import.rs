@@ -32,7 +32,7 @@ async fn download_import_driver_drains_batches_into_canonical_import_queue() {
             let indexes = import.blocks.iter().map(Block::index).collect::<Vec<_>>();
             let imported = import.blocks.len();
             reply
-                .send(neo_blockchain::command::ImportBlocksReply::ok(imported))
+                .send(neo_blockchain::ImportBlocksReply::ok(imported))
                 .expect("send import reply");
             imported_batches.push(indexes);
             if imported_batches.len() == 2 {
@@ -121,9 +121,7 @@ async fn download_import_driver_allows_live_height_ahead_of_checkpoint() {
         };
         let indexes = import.blocks.iter().map(Block::index).collect::<Vec<_>>();
         reply
-            .send(neo_blockchain::command::ImportBlocksReply::ok(
-                import.blocks.len(),
-            ))
+            .send(neo_blockchain::ImportBlocksReply::ok(import.blocks.len()))
             .expect("send import reply");
         indexes
     });

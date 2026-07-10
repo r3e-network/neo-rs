@@ -18,12 +18,12 @@
 //!   processing.
 //! - `service_context`: blockchain service context traits.
 
-pub mod command;
-pub mod handle;
-pub mod internal;
+pub(crate) mod command;
+pub(crate) mod handle;
+pub(crate) mod internal;
 mod mempool_facade;
-pub mod service;
-pub mod service_context;
+mod service;
+pub(crate) mod service_context;
 
 pub use mempool_facade::MempoolLike;
 pub use service::BlockchainService;

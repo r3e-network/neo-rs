@@ -2,7 +2,6 @@ use super::*;
 
 #[test]
 fn proposal_resolution_caches_unverified_transactions_like_csharp_prepare_request() {
-    neo_native_contracts::install();
     let settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
     let pool = memory_pool(&settings);
@@ -34,7 +33,6 @@ fn proposal_resolution_caches_unverified_transactions_like_csharp_prepare_reques
 
 #[test]
 fn proposal_resolution_reverifies_unverified_transactions_against_context() {
-    neo_native_contracts::install();
     let settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
     let pool = memory_pool(&settings);
@@ -110,7 +108,6 @@ fn proposal_resolution_reverifies_unverified_transactions_against_context() {
 
 #[test]
 fn proposal_resolution_rejects_unverified_conflicts_against_proposal_hashes() {
-    neo_native_contracts::install();
     let settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
     let pool = memory_pool(&settings);
@@ -163,7 +160,6 @@ fn proposal_resolution_rejects_unverified_conflicts_against_proposal_hashes() {
 
 #[test]
 fn proposal_resolution_rejects_unverified_when_context_conflicts_with_it() {
-    neo_native_contracts::install();
     let settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
     let pool = memory_pool(&settings);
@@ -312,7 +308,6 @@ fn primary_proposal_skips_invalid_transactions_over_f() {
 
 #[test]
 fn proposal_resolution_rejects_full_block_over_dbft_max_block_size() {
-    neo_native_contracts::install();
     let mut settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
     let pool = memory_pool(&settings);
@@ -363,7 +358,6 @@ fn proposal_rejection_reason_matches_csharp_add_transaction_mapping() {
 
 #[tokio::test]
 async fn proposal_resolution_requests_change_view_for_invalid_unverified_transaction() {
-    neo_native_contracts::install();
     let settings = Arc::new(ProtocolSettings::default());
     let snapshot = DataCache::new(false);
     let pool = Arc::new(memory_pool(&settings));
@@ -477,7 +471,6 @@ async fn proposal_resolution_requests_change_view_for_invalid_unverified_transac
 
 #[tokio::test]
 async fn proposal_resolution_requests_block_rejected_without_prepare_response_for_over_fee_block() {
-    neo_native_contracts::install();
     let settings = Arc::new(ProtocolSettings::default());
     let snapshot = DataCache::new(false);
     let pool = Arc::new(memory_pool(&settings));
@@ -600,7 +593,6 @@ async fn proposal_resolution_requests_block_rejected_without_prepare_response_fo
 /// proposal transactions.
 #[tokio::test]
 async fn primary_request_transactions_broadcasts_inv_of_proposal_hashes() {
-    neo_native_contracts::install();
     let settings = Arc::new(ProtocolSettings::default());
     let snapshot = DataCache::new(false);
     let pool = Arc::new(memory_pool(&settings));
@@ -682,7 +674,6 @@ async fn primary_request_transactions_broadcasts_inv_of_proposal_hashes() {
 /// `tx_feed` arm delivers the transaction after it lands in the mempool.
 #[tokio::test]
 async fn tx_feed_resumes_backup_and_caches_transaction() {
-    neo_native_contracts::install();
     let settings = Arc::new(ProtocolSettings::default());
     let snapshot = DataCache::new(false);
     let pool = Arc::new(memory_pool(&settings));

@@ -91,8 +91,10 @@ The script scans production Rust files for:
 - tracked runtime-data risk.
 
 The script is intentionally a heuristic. A match is not automatically a bug:
-for example, `Arc<dyn Store>` can be a legitimate runtime backend boundary, and
-`serde_json::Value` is expected at the JSON-RPC transport edge. Reviewers must
+`serde_json::Value` is expected at the JSON-RPC transport edge, and Rust's
+`catch_unwind` API necessarily exposes `dyn Any` panic payloads. Built-in store
+selection is not such a boundary; it uses the closed `RuntimeStore` enum.
+Reviewers must
 classify each match as one of:
 
 - **keep:** the boundary is real and documented;
@@ -108,6 +110,11 @@ Initial scan coverage: 28 workspace members plus support crates, with roughly
 1,378 Rust files outside ignored build folders.
 
 High-signal clusters found during the first pass:
+
+- The static-dispatch redesign removed service-locator, native-contract, VM,
+  storage, signer, wallet, and pipeline trait objects. Production `dyn` matches
+  are now limited to standard-library panic payload boundaries and comments
+  explaining that invariant.
 
 - `neo-manifest/src/manifest/contract_manifest.rs` has been decomposed into
   root/domain, `json`, `stack`, `wire`, `validation`, and typed `fields`
@@ -298,10 +305,11 @@ High-signal clusters found during the first pass:
   `pool/state.rs` owns the private queue indexes, verification-context
   accounting, conflict helpers, oracle-response tracking, and C# parity rules
   used while the pool lock is held.
-- `neo-state-service` has a few public erased compatibility surfaces such as
-  `Verifier<C = Arc<dyn StateRootCalculator>>` and
-  `StateStore::with_mpt_store(..., Arc<dyn Store>)`. Prefer concrete
-  constructors as the primary surface and name erased constructors explicitly.
+- `neo-state-service` keeps provider-neutral storage through generic `S: Store`
+  backends on `StateStore` and `MptStore`; runtime-selected callers may still
+  instantiate `S = dyn Store`, but concrete composition should keep the backend
+  type visible. Erased compatibility surfaces such as
+  `Verifier<C = Arc<dyn StateRootCalculator>>` should be named explicitly.
   `storage/root_cache.rs` now normalizes zero capacity through a panic-free
   `NonZeroUsize` helper while preserving the one-entry minimum. The MPT
   known-empty continuation test also documents the current provider behavior:

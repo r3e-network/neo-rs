@@ -8,10 +8,14 @@ impl NeoToken {
     /// `state.last_gas_per_vote` and returning the datoshi to mint (or `None`), and
     /// (b) when the account votes, shifts that candidate's vote weight and the global
     /// voters-count by `amount`. The caller writes `state` back and mints the return.
-    pub(super) fn neo_on_balance_changing(
+    pub(super) fn neo_on_balance_changing<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &ApplicationEngine,
-        snapshot: &DataCache,
+        engine: &ApplicationEngine<P, D, B>,
+        snapshot: &DataCache<B>,
         state: &mut NeoAccountStateView,
         amount: &BigInt,
     ) -> CoreResult<Option<BigInt>> {
@@ -48,9 +52,13 @@ impl NeoToken {
     /// C# `FungibleToken.PostTransferAsync` for NEO: emit `Transfer(from, to, amount)`
     /// and, when `to` is a deployed contract, run its `onNEP17Payment` callback
     /// before deferred GAS distributions are minted.
-    pub(super) fn neo_post_transfer(
+    pub(super) fn neo_post_transfer<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         from: &UInt160,
         to: &UInt160,
         amount: &BigInt,
@@ -82,9 +90,13 @@ impl NeoToken {
     /// `OnBalanceChanging` on each side, then `PostTransfer` and mint the collected
     /// GAS distributions. Returns `false` (no fault) on a failed witness / missing
     /// source / insufficient balance, matching C#.
-    pub(super) fn neo_transfer_core(
+    pub(super) fn neo_transfer_core<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         caller: UInt160,
         from: &UInt160,
         to: &UInt160,
@@ -195,9 +207,13 @@ impl NeoToken {
     /// (HF_Faun) clears a blocked account's vote by calling
     /// `NEO.VoteInternal(engine, account, null)` directly, bypassing the witness
     /// check performed by the public `vote` method.
-    pub(crate) fn vote_internal(
+    pub(crate) fn vote_internal<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         account: &UInt160,
         vote_to: Option<&ECPoint>,
     ) -> CoreResult<bool> {
@@ -312,9 +328,13 @@ impl NeoToken {
     /// `onNEP17Payment` when `call_on_payment` and the recipient is a deployed
     /// contract, then mint any GAS distribution collected by `OnBalanceChanging`.
     /// A zero amount is a no-op; a negative amount faults.
-    pub(super) fn neo_mint(
+    pub(super) fn neo_mint<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         account: &UInt160,
         amount: &BigInt,
         call_on_payment: bool,

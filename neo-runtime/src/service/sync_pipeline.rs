@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use neo_payloads::Block;
 use neo_storage::persistence::Store;
+use neo_storage::persistence::providers::memory_store::MemoryStore;
 use parking_lot::RwLock;
 
 use crate::{BlockBatchImportOutcome, BlockOrigin, ImportQueue, ServiceError, ServiceResult};
@@ -288,17 +289,16 @@ where
         let key = checkpoint_key(checkpoint.stage);
         let value = encode_checkpoint(&checkpoint);
 
-        if let Some(raw_overlay) = self.store.as_raw_overlay_store() {
-            let overlay = [(key.clone(), Some(value.clone()))];
-            if raw_overlay
-                .try_commit_raw_overlay(&overlay)
-                .map_err(|err| storage_error("write sync checkpoint", err))?
-            {
-                self.store
-                    .flush()
-                    .map_err(|err| storage_error("flush sync checkpoint", err))?;
-                return Ok(());
-            }
+        let overlay = [(key.clone(), Some(value.clone()))];
+        if self
+            .store
+            .try_commit_raw_overlay(&overlay)
+            .map_err(|err| storage_error("write sync checkpoint", err))?
+        {
+            self.store
+                .flush()
+                .map_err(|err| storage_error("flush sync checkpoint", err))?;
+            return Ok(());
         }
 
         let _guard = self.write_lock.lock();
@@ -312,24 +312,26 @@ where
     }
 }
 
-/// Store-backed checkpoint provider over an erased shared store handle.
+/// Store-backed checkpoint provider over a shared store handle.
 ///
-/// Node composition usually owns storage as `Arc<dyn Store>` so RPC,
-/// blockchain, state-root, and sync services all share one provider-created
-/// backend. This adapter preserves the same durable checkpoint encoding as
-/// [`StoreSyncStageCheckpointStore`] while writing through the object-safe raw
-/// overlay extension exposed by production MDBX/RocksDB stores and the
-/// in-memory provider.
+/// Node composition usually owns storage as an `Arc<S>` shared by RPC,
+/// blockchain, state-root, and sync services. This adapter keeps that concrete
+/// store type instead of forcing an erased `Store` handle at the checkpoint boundary,
+/// while preserving the same durable checkpoint encoding as
+/// [`StoreSyncStageCheckpointStore`].
 #[derive(Debug)]
-pub struct SharedStoreSyncStageCheckpointStore {
-    store: Arc<dyn Store>,
+pub struct SharedStoreSyncStageCheckpointStore<S: Store = MemoryStore> {
+    store: Arc<S>,
     write_lock: parking_lot::Mutex<()>,
 }
 
-impl SharedStoreSyncStageCheckpointStore {
-    /// Create a checkpoint store over a shared erased storage backend.
+impl<S> SharedStoreSyncStageCheckpointStore<S>
+where
+    S: Store,
+{
+    /// Create a checkpoint store over a shared storage backend.
     #[must_use]
-    pub fn new(store: Arc<dyn Store>) -> Self {
+    pub fn new(store: Arc<S>) -> Self {
         Self {
             store,
             write_lock: parking_lot::Mutex::new(()),
@@ -338,12 +340,15 @@ impl SharedStoreSyncStageCheckpointStore {
 
     /// Return the shared store handle.
     #[must_use]
-    pub fn store(&self) -> Arc<dyn Store> {
+    pub fn store(&self) -> Arc<S> {
         Arc::clone(&self.store)
     }
 }
 
-impl SyncStageCheckpointStore for SharedStoreSyncStageCheckpointStore {
+impl<S> SyncStageCheckpointStore for SharedStoreSyncStageCheckpointStore<S>
+where
+    S: Store,
+{
     fn checkpoint(&self, stage: SyncStageKind) -> ServiceResult<Option<SyncStageCheckpoint>> {
         let Some(bytes) = self.store.try_get_bytes(&checkpoint_key(stage)) else {
             return Ok(None);
@@ -354,15 +359,11 @@ impl SyncStageCheckpointStore for SharedStoreSyncStageCheckpointStore {
     fn put_checkpoint(&self, checkpoint: SyncStageCheckpoint) -> ServiceResult<()> {
         let key = checkpoint_key(checkpoint.stage);
         let value = encode_checkpoint(&checkpoint);
-        let Some(raw_overlay) = self.store.as_raw_overlay_store() else {
-            return Err(ServiceError::invalid_state(
-                "shared store does not support raw overlay sync checkpoint writes",
-            ));
-        };
 
         let _guard = self.write_lock.lock();
         let overlay = [(key, Some(value))];
-        if !raw_overlay
+        if !self
+            .store
             .try_commit_raw_overlay(&overlay)
             .map_err(|err| storage_error("write sync checkpoint", err))?
         {
@@ -521,7 +522,7 @@ pub struct SyncPipelineImportOutcome {
 }
 
 /// Runtime sync driver that bridges downloaded batches to block import.
-pub struct SyncPipelineDriver<Q: ImportQueue + ?Sized, C: SyncStageCheckpointStore + ?Sized> {
+pub struct SyncPipelineDriver<Q: ImportQueue, C: SyncStageCheckpointStore> {
     import_queue: Arc<Q>,
     checkpoints: Arc<C>,
     commit_policy: CommitPolicy,
@@ -535,8 +536,8 @@ pub struct SyncPipelineDriver<Q: ImportQueue + ?Sized, C: SyncStageCheckpointSto
 
 impl<Q, C> SyncPipelineDriver<Q, C>
 where
-    Q: ImportQueue + ?Sized,
-    C: SyncStageCheckpointStore + ?Sized,
+    Q: ImportQueue,
+    C: SyncStageCheckpointStore,
 {
     /// Create a driver from the last durable import checkpoint.
     pub fn new(

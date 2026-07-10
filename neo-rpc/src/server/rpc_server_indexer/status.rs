@@ -7,7 +7,6 @@ use super::ledger_provider::{
 };
 use super::params::NoParamsRequest;
 use super::responses::ApplicationLogsStatus;
-use crate::application_logs::ApplicationLogsService;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
 
@@ -43,7 +42,7 @@ impl RpcServerIndexer {
     }
 
     fn application_logs_status(server: &RpcServer) -> ApplicationLogsStatus {
-        match server.system().get_service::<ApplicationLogsService>() {
+        match server.system().application_logs_service() {
             Some(logs) => {
                 let settings = logs.settings();
                 ApplicationLogsStatus {

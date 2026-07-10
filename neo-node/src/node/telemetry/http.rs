@@ -5,6 +5,8 @@ use std::sync::Arc;
 
 use hyper::header::CONTENT_TYPE;
 use hyper::{Body, Request, Response, StatusCode};
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_storage::persistence::Store;
 use prometheus::{Encoder, TextEncoder};
 use serde_json::json;
 use tracing::warn;
@@ -12,11 +14,15 @@ use tracing::warn;
 use super::super::config::{TELEMETRY_HEALTH_PATH, TELEMETRY_READY_PATH};
 use super::exporter::MetricsExporter;
 
-pub(super) async fn serve_metrics_request(
+pub(super) async fn serve_metrics_request<P, S>(
     request: Request<Body>,
     path: String,
-    exporter: Arc<MetricsExporter>,
-) -> Result<Response<Body>, Infallible> {
+    exporter: Arc<MetricsExporter<P, S>>,
+) -> Result<Response<Body>, Infallible>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
     let request_path = request.uri().path();
     if request_path != path
         && request_path != TELEMETRY_HEALTH_PATH

@@ -12,27 +12,39 @@ use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
 
 impl LedgerContract {
-    pub(super) fn invoke_current_index(
+    pub(super) fn invoke_current_index<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
         Ok(BigInt::from(self.current_index(&snapshot)?).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_current_hash(
+    pub(super) fn invoke_current_hash<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
         Ok(self.current_hash(&snapshot)?.to_bytes())
     }
 
-    pub(super) fn invoke_get_transaction_height(
+    pub(super) fn invoke_get_transaction_height<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // All wired methods are read-only queries over persisted ledger state,
@@ -54,9 +66,13 @@ impl LedgerContract {
         Ok(BigInt::from(height).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_get_transaction_vm_state(
+    pub(super) fn invoke_get_transaction_vm_state<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -76,9 +92,13 @@ impl LedgerContract {
         Ok(BigInt::from(vm_state).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_get_transaction(
+    pub(super) fn invoke_get_transaction<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -102,9 +122,13 @@ impl LedgerContract {
         }
     }
 
-    pub(super) fn invoke_get_transaction_signers(
+    pub(super) fn invoke_get_transaction_signers<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -127,9 +151,13 @@ impl LedgerContract {
         }
     }
 
-    pub(super) fn invoke_get_block(
+    pub(super) fn invoke_get_block<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -151,9 +179,13 @@ impl LedgerContract {
         }
     }
 
-    pub(super) fn invoke_get_transaction_from_block(
+    pub(super) fn invoke_get_transaction_from_block<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();

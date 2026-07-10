@@ -28,15 +28,25 @@ fn duration_to_u64_ns(duration: std::time::Duration) -> u64 {
     duration.as_nanos().min(u128::from(u64::MAX)) as u64
 }
 
-fn native_fee_trace_tx(app: &ApplicationEngine) -> String {
+fn native_fee_trace_tx<P, D, B>(app: &ApplicationEngine<P, D, B>) -> String
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     app.get_script_container()
-        .and_then(|container| container.as_any().downcast_ref::<Transaction>())
+        .and_then(|container| container.as_transaction())
         .and_then(|transaction| transaction.try_hash().ok())
         .map(|hash| hash.to_string())
         .unwrap_or_else(|| "none".to_string())
 }
 
-fn native_fee_trace_enabled(app: &ApplicationEngine) -> bool {
+fn native_fee_trace_enabled<P, D, B>(app: &ApplicationEngine<P, D, B>) -> bool
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     if std::env::var_os("NEO_TRACE_NATIVE_FEES").is_some() {
         return true;
     }
@@ -50,7 +60,12 @@ fn native_fee_trace_enabled(app: &ApplicationEngine) -> bool {
     })
 }
 
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     pub(crate) fn add_runtime_fee(&mut self, fee: u64) -> CoreResult<()> {
         self.add_fee_datoshi(
             i64::try_from(fee)
@@ -255,7 +270,7 @@ impl ApplicationEngine {
         let cache_arc = self.native_contract_cache();
         let resolved_method = {
             let mut cache = cache_arc.lock();
-            cache.get_or_build(native.as_ref()).get_method(
+            cache.get_or_build::<P, _>(&native).get_method(
                 method,
                 args.len(),
                 &self.protocol_settings,
@@ -293,18 +308,7 @@ impl ApplicationEngine {
             .protocol_settings
             .is_hardfork_enabled(Hardfork::HfFaun, block_height)
             && self
-                .native_contract_provider()
-                .and_then(|provider| provider.get_native_contract_by_name("PolicyContract"))
-                .map(|policy| {
-                    policy.whitelisted_fee(
-                        self.snapshot_cache.as_ref(),
-                        &contract_hash,
-                        method,
-                        args.len() as u32,
-                    )
-                })
-                .transpose()?
-                .flatten()
+                .whitelisted_fee_for_policy(&contract_hash, method, args.len() as u32)?
                 .is_some()
         {
             is_whitelisted = true;
@@ -364,7 +368,7 @@ impl ApplicationEngine {
             .map(|block| block.header.index())
             .unwrap_or_else(|| self.current_block_index());
 
-        let active_contracts: Vec<Arc<dyn NativeContract>> = self
+        let active_contracts: Vec<P::Contract> = self
             .native_registry
             .contracts()
             .filter(|contract| contract.is_active(&self.protocol_settings, block_height))
@@ -430,7 +434,7 @@ impl ApplicationEngine {
             .map(|block| block.header.index())
             .unwrap_or_else(|| self.current_block_index());
 
-        let active_contracts: Vec<Arc<dyn NativeContract>> = self
+        let active_contracts: Vec<P::Contract> = self
             .native_registry
             .contracts()
             .filter(|contract| contract.is_active(&self.protocol_settings, block_height))
@@ -444,7 +448,7 @@ impl ApplicationEngine {
     }
 
     /// Gets the script container (transaction or block).
-    pub fn get_script_container(&self) -> Option<&Arc<dyn Verifiable>> {
+    pub fn get_script_container(&self) -> Option<&Arc<VerifiableContainer>> {
         self.script_container.as_ref()
     }
 
@@ -455,7 +459,7 @@ impl ApplicationEngine {
         let container = self.script_container.as_ref()?;
 
         // 2. Try to downcast to Transaction
-        if let Some(transaction) = container.as_any().downcast_ref::<Transaction>() {
+        if let Some(transaction) = container.as_transaction() {
             // 3. Get the first signer's script hash (matches C# logic)
             if let Some(first_signer) = transaction.signers().first() {
                 return Some(first_signer.account);

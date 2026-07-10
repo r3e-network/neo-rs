@@ -1,11 +1,11 @@
 use super::*;
-use neo_storage::persistence::store::OnNewSnapshotDelegate;
 use neo_storage::persistence::{
     RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, Store, StoreSnapshot,
     WriteStore,
 };
 use neo_storage::types::{StorageItem, StorageKey};
 use parking_lot::Mutex as ParkingMutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug)]
 struct BorrowOnlySnapshot {
@@ -13,7 +13,12 @@ struct BorrowOnlySnapshot {
     value: Vec<u8>,
 }
 
+#[derive(Debug)]
+struct BorrowOnlyStore;
+
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for BorrowOnlySnapshot {
+    type FindIterator<'a> = std::vec::IntoIter<(Vec<u8>, Vec<u8>)>;
+
     fn try_get(&self, _key: &Vec<u8>) -> Option<Vec<u8>> {
         panic!("MPT backing reads must use try_get_bytes, not owned Vec lookup")
     }
@@ -22,8 +27,8 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for BorrowOnlySnapshot {
         &self,
         _key_prefix: Option<&Vec<u8>>,
         _direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
-        Box::new(std::iter::empty())
+    ) -> Self::FindIterator<'_> {
+        Vec::new().into_iter()
     }
 }
 
@@ -44,7 +49,9 @@ impl WriteStore<Vec<u8>, Vec<u8>> for BorrowOnlySnapshot {
 }
 
 impl StoreSnapshot for BorrowOnlySnapshot {
-    fn store(&self) -> Arc<dyn Store> {
+    type Store = BorrowOnlyStore;
+
+    fn store(&self) -> Arc<Self::Store> {
         panic!("test snapshot is never committed")
     }
 
@@ -53,10 +60,72 @@ impl StoreSnapshot for BorrowOnlySnapshot {
     }
 }
 
+impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for BorrowOnlyStore {
+    type FindIterator<'a> = std::vec::IntoIter<(Vec<u8>, Vec<u8>)>;
+
+    fn try_get(&self, _key: &Vec<u8>) -> Option<Vec<u8>> {
+        None
+    }
+
+    fn find(
+        &self,
+        _key_prefix: Option<&Vec<u8>>,
+        _direction: SeekDirection,
+    ) -> Self::FindIterator<'_> {
+        Vec::new().into_iter()
+    }
+}
+
+impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for BorrowOnlyStore {
+    type FindIterator<'a> = std::vec::IntoIter<(StorageKey, StorageItem)>;
+
+    fn try_get(&self, _key: &StorageKey) -> Option<StorageItem> {
+        None
+    }
+
+    fn find(
+        &self,
+        _key_prefix: Option<&StorageKey>,
+        _direction: SeekDirection,
+    ) -> Self::FindIterator<'_> {
+        Vec::new().into_iter()
+    }
+}
+
+impl RawReadOnlyStore for BorrowOnlyStore {
+    fn try_get_bytes(&self, _key: &[u8]) -> Option<Vec<u8>> {
+        None
+    }
+}
+
+impl WriteStore<Vec<u8>, Vec<u8>> for BorrowOnlyStore {
+    fn delete(&mut self, _key: Vec<u8>) -> neo_storage::StorageResult<()> {
+        Ok(())
+    }
+
+    fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> neo_storage::StorageResult<()> {
+        Ok(())
+    }
+}
+
+impl ReadOnlyStore for BorrowOnlyStore {}
+
+impl Store for BorrowOnlyStore {
+    type Snapshot = BorrowOnlySnapshot;
+
+    fn snapshot(&self) -> Arc<Self::Snapshot> {
+        Arc::new(BorrowOnlySnapshot {
+            key: Vec::new(),
+            value: Vec::new(),
+        })
+    }
+}
+
 struct RecordingRawOverlayStore {
     inner: MemoryStore,
     entries: ParkingMutex<Vec<(Vec<u8>, Option<Vec<u8>>)>>,
     commit_count: ParkingMutex<usize>,
+    snapshot_count: AtomicUsize,
 }
 
 impl std::fmt::Debug for RecordingRawOverlayStore {
@@ -72,6 +141,7 @@ impl RecordingRawOverlayStore {
             inner: MemoryStore::new(),
             entries: ParkingMutex::new(Vec::new()),
             commit_count: ParkingMutex::new(0),
+            snapshot_count: AtomicUsize::new(0),
         }
     }
 
@@ -82,9 +152,20 @@ impl RecordingRawOverlayStore {
     fn commit_count(&self) -> usize {
         *self.commit_count.lock()
     }
+
+    fn snapshot_count(&self) -> usize {
+        self.snapshot_count.load(Ordering::Relaxed)
+    }
+
+    fn reset_snapshot_count(&self) {
+        self.snapshot_count.store(0, Ordering::Relaxed);
+    }
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RecordingRawOverlayStore {
+    type FindIterator<'a> =
+        <MemoryStore as ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>>>::FindIterator<'a>;
+
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
         self.inner.try_get(key)
     }
@@ -93,12 +174,15 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RecordingRawOverlayStore {
         &self,
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+    ) -> Self::FindIterator<'_> {
         self.inner.find(key_prefix, direction)
     }
 }
 
 impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RecordingRawOverlayStore {
+    type FindIterator<'a> =
+        <MemoryStore as ReadOnlyStoreGeneric<StorageKey, StorageItem>>::FindIterator<'a>;
+
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         self.inner.try_get(key)
     }
@@ -107,7 +191,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RecordingRawOverlayStore 
         &self,
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+    ) -> Self::FindIterator<'_> {
         self.inner.find(key_prefix, direction)
     }
 }
@@ -131,24 +215,13 @@ impl WriteStore<Vec<u8>, Vec<u8>> for RecordingRawOverlayStore {
 impl ReadOnlyStore for RecordingRawOverlayStore {}
 
 impl Store for RecordingRawOverlayStore {
-    fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
+    type Snapshot = <MemoryStore as Store>::Snapshot;
+
+    fn snapshot(&self) -> Arc<Self::Snapshot> {
+        self.snapshot_count.fetch_add(1, Ordering::Relaxed);
         self.inner.snapshot()
     }
 
-    fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate) {
-        self.inner.on_new_snapshot(handler);
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_raw_overlay_store(&self) -> Option<&dyn neo_storage::persistence::RawOverlayStore> {
-        Some(self)
-    }
-}
-
-impl neo_storage::persistence::RawOverlayStore for RecordingRawOverlayStore {
     fn try_commit_raw_overlay(
         &self,
         _overlay: &[(Vec<u8>, Option<Vec<u8>>)],
@@ -156,10 +229,13 @@ impl neo_storage::persistence::RawOverlayStore for RecordingRawOverlayStore {
         Ok(false)
     }
 
-    fn try_commit_borrowed_raw_overlay(
+    fn try_commit_borrowed_raw_overlay<O>(
         &self,
-        visit: &mut dyn FnMut(&mut dyn FnMut(&[u8], Option<&[u8]>)),
-    ) -> neo_storage::StorageResult<bool> {
+        overlay_source: &mut O,
+    ) -> neo_storage::StorageResult<bool>
+    where
+        O: neo_storage::persistence::RawOverlaySource + ?Sized,
+    {
         *self.commit_count.lock() += 1;
         let mut batch = std::collections::BTreeMap::new();
         let mut entries = Vec::new();
@@ -167,7 +243,7 @@ impl neo_storage::persistence::RawOverlayStore for RecordingRawOverlayStore {
             batch.insert(key.to_vec(), value.map(<[u8]>::to_vec));
             entries.push((key.to_vec(), value.map(<[u8]>::to_vec)));
         };
-        visit(&mut sink);
+        overlay_source.visit_raw_overlay(&mut sink);
         self.inner.apply_batch(&batch);
         self.entries.lock().extend(entries);
         Ok(true)
@@ -239,7 +315,11 @@ fn mpt_store_durable_constructor_surface_is_provider_neutral() {
 
     assert!(
         !source.contains("fn from_rocksdb_store"),
-        "MptStore should accept durable backends through Arc<dyn Store>, not a RocksDB-specific constructor"
+        "MptStore should accept durable backends through generic S: Store, not a RocksDB-specific constructor"
+    );
+    assert!(
+        source.contains("pub struct MptStore<S: Store = MemoryStore>"),
+        "MptStore must keep its durable backend generic instead of erasing it behind erased Store trait object"
     );
 }
 
@@ -247,7 +327,7 @@ fn mpt_store_durable_constructor_surface_is_provider_neutral() {
 fn write_batch_overlay_is_hash_backed_for_exact_key_staging() {
     let mut base = std::collections::HashMap::new();
     base.insert(vec![0xAA], Some(vec![0x01]));
-    let batch = MptWriteBatch::new(Arc::new(base), None, 0);
+    let batch = MptWriteBatch::<MemoryStore>::new(Arc::new(base), None, 0);
 
     assert!(
         !batch.overlay_contains_entries(),
@@ -281,7 +361,7 @@ fn write_batch_overlay_is_hash_backed_for_exact_key_staging() {
 fn read_snapshot_generation_is_hash_backed_for_exact_key_reads() {
     let mut map = std::collections::HashMap::new();
     map.insert(vec![0xAA], Some(vec![0x01]));
-    let snapshot = MptReadSnapshot {
+    let snapshot = MptReadSnapshot::<MemoryStore> {
         map: Arc::new(map),
         backing_snapshot: None,
         full_state: true,
@@ -303,7 +383,7 @@ fn backing_snapshot_mpt_reads_use_borrowed_key_lookup() {
         key: vec![0xCC],
         value: vec![0xDD],
     });
-    let snapshot = MptReadSnapshot {
+    let snapshot = MptReadSnapshot::<BorrowOnlyStore> {
         map: Arc::new(std::collections::HashMap::new()),
         backing_snapshot: Some(backing.clone()),
         full_state: true,
@@ -313,7 +393,11 @@ fn backing_snapshot_mpt_reads_use_borrowed_key_lookup() {
         Some(vec![0xDD])
     );
 
-    let batch = MptWriteBatch::new(Arc::new(std::collections::HashMap::new()), Some(backing), 0);
+    let batch = MptWriteBatch::<BorrowOnlyStore>::new(
+        Arc::new(std::collections::HashMap::new()),
+        Some(backing),
+        0,
+    );
     assert_eq!(
         MptStoreSnapshot::try_get(&batch, &[0xCC]).expect("read from batch backing"),
         Some(vec![0xDD])
@@ -574,13 +658,8 @@ fn backed_store_reopens_local_state_root_records() {
 
 #[test]
 fn backed_reopen_hydrates_latest_root_cache_for_hot_current_root_reads() {
-    use neo_storage::persistence::Store;
-    use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    let backing = Arc::new(MemoryStore::new());
-    let store =
-        Arc::new(MptStore::from_memory_store(Arc::clone(&backing), true).expect("open store"));
+    let backing = Arc::new(RecordingRawOverlayStore::new());
+    let store = Arc::new(MptStore::from_store(Arc::clone(&backing), true).expect("open store"));
     let root1 = store
         .apply_block_changes(1, None, &[put(5, &[0xAA, 0x01], b"v1")])
         .expect("block 1 applies");
@@ -588,22 +667,18 @@ fn backed_reopen_hydrates_latest_root_cache_for_hot_current_root_reads() {
         .apply_block_changes(2, Some(root1), &[put(5, &[0xAA, 0x02], b"v2")])
         .expect("block 2 applies");
 
-    let snapshots = Arc::new(AtomicUsize::new(0));
-    let seen = Arc::clone(&snapshots);
-    backing.on_new_snapshot(Box::new(move |_, _| {
-        seen.fetch_add(1, Ordering::Relaxed);
-    }));
-    let reopened = MptStore::from_memory_store(Arc::clone(&backing), true).expect("reopen store");
+    backing.reset_snapshot_count();
+    let reopened = MptStore::from_store(Arc::clone(&backing), true).expect("reopen store");
     assert_eq!(
-        snapshots.load(Ordering::Relaxed),
+        backing.snapshot_count(),
         1,
         "reopen should hydrate the latest-root cache from one backing snapshot"
     );
 
-    snapshots.store(0, Ordering::Relaxed);
+    backing.reset_snapshot_count();
     assert_eq!(reopened.current_local_root(), Some((2, root2)));
     assert_eq!(
-        snapshots.load(Ordering::Relaxed),
+        backing.snapshot_count(),
         0,
         "hot current-root reads after reopen should use the hydrated cache"
     );
@@ -1036,15 +1111,7 @@ fn batch_apply_durable_full_state_reopens_all_historical_roots() {
 
 #[test]
 fn all_empty_batch_after_known_root_bypasses_trie_read_snapshot() {
-    use neo_storage::persistence::Store;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
     let backing = Arc::new(RecordingRawOverlayStore::new());
-    let snapshots = Arc::new(AtomicUsize::new(0));
-    let seen = Arc::clone(&snapshots);
-    backing.on_new_snapshot(Box::new(move |_, _| {
-        seen.fetch_add(1, Ordering::Relaxed);
-    }));
 
     let store = MptStore::from_store(backing.clone(), true).expect("open store");
     let root1 = store
@@ -1067,14 +1134,14 @@ fn all_empty_batch_after_known_root_bypasses_trie_read_snapshot() {
         },
     ];
 
-    snapshots.store(0, Ordering::Relaxed);
+    backing.reset_snapshot_count();
     let roots = store
         .apply_block_changes_batch(Some(root1), &blocks)
         .expect("empty batch applies");
 
     assert_eq!(roots, vec![root1, root1, root1]);
     assert_eq!(
-        snapshots.load(Ordering::Relaxed),
+        backing.snapshot_count(),
         0,
         "known-empty continuation batches should not open trie/backing snapshots"
     );
@@ -1192,30 +1259,20 @@ fn empty_change_set_skips_trie_commit_and_publishes_only_root_records() {
 
 #[test]
 fn known_empty_change_set_bypasses_trie_read_snapshot() {
-    use neo_storage::persistence::Store;
-    use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    let backing = Arc::new(MemoryStore::new());
-    let snapshots = Arc::new(AtomicUsize::new(0));
-    let seen = Arc::clone(&snapshots);
-    backing.on_new_snapshot(Box::new(move |_, _| {
-        seen.fetch_add(1, Ordering::Relaxed);
-    }));
-
-    let store = MptStore::from_memory_store(Arc::clone(&backing), true).expect("open store");
+    let backing = Arc::new(RecordingRawOverlayStore::new());
+    let store = MptStore::from_store(Arc::clone(&backing), true).expect("open store");
     let root1 = store
         .apply_block_changes(1, None, &[put(5, &[0xAA, 0x01], b"v1")])
         .expect("block 1 applies");
 
-    snapshots.store(0, Ordering::Relaxed);
+    backing.reset_snapshot_count();
     let root2 = store
         .apply_block_changes(2, Some(root1), &[])
         .expect("empty block applies");
 
     assert_eq!(root2, root1);
     assert_eq!(
-        snapshots.load(Ordering::Relaxed),
+        backing.snapshot_count(),
         0,
         "known-empty continuation blocks should commit local-root records through raw overlay without opening trie/backing snapshots"
     );
@@ -1365,26 +1422,16 @@ fn reopened_backed_store_proof_and_find_use_lazy_snapshot_reads() {
 
 #[test]
 fn backed_publish_refreshes_live_generation_after_commit() {
-    use neo_storage::persistence::Store;
-    use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    let backing = Arc::new(MemoryStore::new());
-    let snapshots = Arc::new(AtomicUsize::new(0));
-    let seen = Arc::clone(&snapshots);
-    backing.on_new_snapshot(Box::new(move |_, _| {
-        seen.fetch_add(1, Ordering::Relaxed);
-    }));
-
-    let store = MptStore::from_memory_store(Arc::clone(&backing), true).expect("open store");
+    let backing = Arc::new(RecordingRawOverlayStore::new());
+    let store = MptStore::from_store(Arc::clone(&backing), true).expect("open store");
     let root = store
         .apply_block_changes(1, None, &[put(5, &[0xAA, 0x01], b"v1")])
         .expect("block 1 applies");
 
-    snapshots.store(0, Ordering::Relaxed);
+    backing.reset_snapshot_count();
     assert_eq!(store.current_local_root(), Some((1, root)));
     assert_eq!(
-        snapshots.load(Ordering::Relaxed),
+        backing.snapshot_count(),
         0,
         "hot current-root reads should use the latest-root cache, not open a backing snapshot"
     );

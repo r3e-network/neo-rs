@@ -10,7 +10,7 @@
 //!
 //! ## Contents
 //!
-//! - `composition`: Composition-root builders, registries, and node assembly
+//! - `composition`: Composition-root builders and node assembly
 //!   helpers.
 //! - `errors`: Typed errors and result aliases for this crate boundary.
 
@@ -21,8 +21,12 @@ mod errors;
 
 // Public re-exports for the crate's public surface.
 pub use composition::{
-    Node, NodeBuilder, ServiceRegistry, SyncDownloadImportDriver, SyncDownloadImportSummary,
+    BlockCommitHooks, BlockchainTask, Node, NodeBuilder, NodeCore, NodeCoreBuilder, NodeCoreLaunch,
+    NodeSystemContext, NoopBlockCommitHooks, SyncDownloadImportDriver, SyncDownloadImportSummary,
     SyncImportPipeline, WalletProvider,
 };
-pub use composition::{builder, node, sync_download_import, sync_import_pipeline, wallet_provider};
+pub use composition::{
+    builder, core, node, sync_download_import, sync_import_pipeline, system_context,
+    wallet_provider,
+};
 pub use errors::{NodeError, NodeResult, error};

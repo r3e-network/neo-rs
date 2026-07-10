@@ -162,6 +162,18 @@ pub trait BlockSource: Send + Sync {
     }
 }
 
+/// Concrete no-source marker for network services that are not wired to a
+/// ledger view. Keeping this as a real type avoids trait-object storage just
+/// to represent "serve no local blocks".
+#[derive(Debug, Default, Clone, Copy)]
+pub struct NoBlockSource;
+
+impl BlockSource for NoBlockSource {
+    fn block_by_index(&self, _index: u32) -> Option<Block> {
+        None
+    }
+}
+
 /// Framed transport driven by the per-peer read/write loop.
 type PeerFramed = Framed<TcpStream, MessageCodec>;
 
@@ -421,7 +433,10 @@ impl RemoteNodeHandle {
 /// Constructed via [`RemoteNodeService::new`], which returns the
 /// `(service, handle)` pair. The service is moved into a
 /// `tokio::spawn`'d task that calls [`RemoteNodeService::run`].
-pub struct RemoteNodeService {
+pub struct RemoteNodeService<B = NoBlockSource>
+where
+    B: BlockSource,
+{
     /// Underlying TCP connection.
     stream: TcpStream,
     /// Peer identifier.
@@ -450,12 +465,15 @@ pub struct RemoteNodeService {
     /// drained by the composition root into the blockchain service.
     inbound_tx: Option<mpsc::Sender<InboundInventory>>,
     /// Optional read-only ledger view for serving block requests.
-    block_source: Option<Arc<dyn BlockSource>>,
+    block_source: Option<Arc<B>>,
     /// Owner of outbound block range requests.
     block_sync_mode: BlockSyncMode,
 }
 
-impl fmt::Debug for RemoteNodeService {
+impl<B> fmt::Debug for RemoteNodeService<B>
+where
+    B: BlockSource,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RemoteNodeService")
             .field("peer_id", &self.peer_id)
@@ -465,7 +483,7 @@ impl fmt::Debug for RemoteNodeService {
     }
 }
 
-impl RemoteNodeService {
+impl RemoteNodeService<NoBlockSource> {
     /// Build a fresh `(service, handle)` pair.
     // Rationale: remote-node construction is the P2P composition boundary, so
     // dependencies stay explicit instead of being pulled from process globals.
@@ -479,6 +497,35 @@ impl RemoteNodeService {
         event_tx: broadcast::Sender<NetworkEvent>,
         initial_state: RemoteNodeState,
         shutdown: CancellationToken,
+    ) -> (Self, RemoteNodeHandle) {
+        Self::new_typed(
+            stream,
+            peer_id,
+            remote_addr,
+            identity,
+            registry,
+            event_tx,
+            initial_state,
+            shutdown,
+            None,
+        )
+    }
+}
+
+impl<B> RemoteNodeService<B>
+where
+    B: BlockSource + 'static,
+{
+    pub(super) fn new_typed(
+        stream: TcpStream,
+        peer_id: PeerId,
+        remote_addr: SocketAddr,
+        identity: Arc<LocalIdentity>,
+        registry: Arc<PeerRegistry>,
+        event_tx: broadcast::Sender<NetworkEvent>,
+        initial_state: RemoteNodeState,
+        shutdown: CancellationToken,
+        block_source: Option<Arc<B>>,
     ) -> (Self, RemoteNodeHandle) {
         let (cmd_tx, cmd_rx) = mpsc::channel(64);
         let handle = RemoteNodeHandle::from_parts(cmd_tx, peer_id, remote_addr);
@@ -494,7 +541,7 @@ impl RemoteNodeService {
             shutdown,
             timeouts: ConnectionTimeouts::default(),
             inbound_tx: None,
-            block_source: None,
+            block_source,
             block_sync_mode: BlockSyncMode::default(),
         };
         (service, handle)
@@ -516,7 +563,7 @@ impl RemoteNodeService {
 
     /// Attach the read-only ledger view used to serve `GetBlockByIndex`
     /// requests from this peer.
-    pub fn with_block_source(mut self, block_source: Arc<dyn BlockSource>) -> Self {
+    pub fn with_block_source(mut self, block_source: Arc<B>) -> Self {
         self.block_source = Some(block_source);
         self
     }

@@ -9,7 +9,6 @@ use crate::version::Version;
 use crate::wallet::{Wallet, WalletError, WalletResult};
 use crate::wallet_account::{StandardWalletAccount, WalletAccount};
 use crate::wallet_helper::WalletAddress;
-use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose};
 use neo_config::ProtocolSettings;
 use neo_payloads::{Transaction, Witness};
@@ -222,8 +221,9 @@ impl Nep6Wallet {
     }
 }
 
-#[async_trait]
 impl Wallet for Nep6Wallet {
+    type Account = Nep6Account;
+
     fn name(&self) -> &str {
         self.name.as_deref().unwrap_or("")
     }
@@ -282,10 +282,7 @@ impl Wallet for Nep6Wallet {
         self.accounts.read().contains_key(script_hash)
     }
 
-    async fn create_account(
-        &self,
-        private_key: &[u8],
-    ) -> WalletResult<Arc<dyn crate::wallet_account::WalletAccount>> {
+    async fn create_account(&self, private_key: &[u8]) -> WalletResult<Arc<Self::Account>> {
         let key_pair = KeyPair::from_private_key(private_key)
             .map_err(|e| WalletError::Other(e.to_string()))?;
         let contract = Contract::create_signature_contract(
@@ -294,7 +291,7 @@ impl Wallet for Nep6Wallet {
                 .map_err(|e| WalletError::Other(e.to_string()))?,
         );
         let account = Nep6Account::with_key(self.clone(), key_pair, contract, None);
-        let account_arc: Arc<dyn crate::wallet_account::WalletAccount> = Arc::new(account.clone());
+        let account_arc = Arc::new(account.clone());
         self.add_account(account);
         Ok(account_arc)
     }
@@ -303,14 +300,14 @@ impl Wallet for Nep6Wallet {
         &self,
         contract: Contract,
         key_pair: Option<KeyPair>,
-    ) -> WalletResult<Arc<dyn crate::wallet_account::WalletAccount>> {
+    ) -> WalletResult<Arc<Self::Account>> {
         let account = if let Some(key_pair) = key_pair {
             Nep6Account::with_key(self.clone(), key_pair, contract, None)
         } else {
             Nep6Account::watch_only(self.clone(), contract.script_hash(), Some(contract))
         };
 
-        let account_arc: Arc<dyn crate::wallet_account::WalletAccount> = Arc::new(account.clone());
+        let account_arc = Arc::new(account.clone());
         self.add_account(account);
         Ok(account_arc)
     }
@@ -318,9 +315,9 @@ impl Wallet for Nep6Wallet {
     async fn create_account_watch_only(
         &self,
         script_hash: UInt160,
-    ) -> WalletResult<Arc<dyn crate::wallet_account::WalletAccount>> {
+    ) -> WalletResult<Arc<Self::Account>> {
         let account = Nep6Account::watch_only(self.clone(), script_hash, None);
-        let account_arc: Arc<dyn crate::wallet_account::WalletAccount> = Arc::new(account.clone());
+        let account_arc = Arc::new(account.clone());
         self.add_account(account);
         Ok(account_arc)
     }
@@ -337,24 +334,12 @@ impl Wallet for Nep6Wallet {
         Ok(())
     }
 
-    fn account(
-        &self,
-        script_hash: &UInt160,
-    ) -> Option<Arc<dyn crate::wallet_account::WalletAccount>> {
-        self.accounts
-            .read()
-            .get(script_hash)
-            .cloned()
-            .map(|account| account as Arc<dyn crate::wallet_account::WalletAccount>)
+    fn account(&self, script_hash: &UInt160) -> Option<Arc<Self::Account>> {
+        self.accounts.read().get(script_hash).cloned()
     }
 
-    fn accounts(&self) -> Vec<Arc<dyn crate::wallet_account::WalletAccount>> {
-        self.accounts
-            .read()
-            .values()
-            .cloned()
-            .map(|account| account as Arc<dyn crate::wallet_account::WalletAccount>)
-            .collect()
+    fn accounts(&self) -> Vec<Arc<Self::Account>> {
+        self.accounts.read().values().cloned().collect()
     }
 
     async fn available_balance(&self, _asset_id: &UInt256) -> WalletResult<i64> {
@@ -365,10 +350,7 @@ impl Wallet for Nep6Wallet {
         Ok(0)
     }
 
-    async fn import_wif(
-        &self,
-        wif: &str,
-    ) -> WalletResult<Arc<dyn crate::wallet_account::WalletAccount>> {
+    async fn import_wif(&self, wif: &str) -> WalletResult<Arc<Self::Account>> {
         let key_pair = KeyPair::from_wif(wif).map_err(|e| WalletError::Other(e.to_string()))?;
         let contract = Contract::create_signature_contract(
             key_pair
@@ -376,7 +358,7 @@ impl Wallet for Nep6Wallet {
                 .map_err(|e| WalletError::Other(e.to_string()))?,
         );
         let account = Nep6Account::with_key(self.clone(), key_pair, contract, None);
-        let account_arc: Arc<dyn crate::wallet_account::WalletAccount> = Arc::new(account.clone());
+        let account_arc = Arc::new(account.clone());
         self.add_account(account);
         Ok(account_arc)
     }
@@ -385,7 +367,7 @@ impl Wallet for Nep6Wallet {
         &self,
         nep2_key: &str,
         password: &str,
-    ) -> WalletResult<Arc<dyn crate::wallet_account::WalletAccount>> {
+    ) -> WalletResult<Arc<Self::Account>> {
         let version = self.protocol_settings.address_version;
         let key_pair = KeyPair::from_nep2_string(nep2_key, password, version)
             .map_err(|e| WalletError::Other(e.to_string()))?;
@@ -396,7 +378,7 @@ impl Wallet for Nep6Wallet {
         );
         let account =
             Nep6Account::with_key(self.clone(), key_pair, contract, Some(nep2_key.to_string()));
-        let account_arc: Arc<dyn crate::wallet_account::WalletAccount> = Arc::new(account.clone());
+        let account_arc = Arc::new(account.clone());
         self.add_account(account);
         Ok(account_arc)
     }
@@ -519,13 +501,12 @@ impl Wallet for Nep6Wallet {
         self.persist()
     }
 
-    fn default_account(&self) -> Option<Arc<dyn crate::wallet_account::WalletAccount>> {
+    fn default_account(&self) -> Option<Arc<Self::Account>> {
         self.accounts
             .read()
             .values()
             .find(|account| account.is_default)
             .cloned()
-            .map(|account| account as Arc<dyn crate::wallet_account::WalletAccount>)
     }
 
     async fn set_default_account(&self, script_hash: &UInt160) -> WalletResult<()> {

@@ -23,8 +23,8 @@ use neo_manifest::{ContractManifest, ContractMethodDescriptor, NefFile};
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
-use neo_payloads::{Block, BlockHeader};
-use neo_primitives::{TriggerType, Verifiable, WitnessScope};
+use neo_payloads::{Block, BlockHeader, VerifiableContainer};
+use neo_primitives::{TriggerType, WitnessScope};
 use neo_storage::StorageItem;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::VmState;
@@ -51,7 +51,7 @@ fn call_policy_engine<F>(
     method: &str,
     argc: i64,
     push_args_reversed: F,
-) -> (VmState, ApplicationEngine)
+) -> (VmState, ApplicationEngine<crate::StandardNativeProvider>)
 where
     F: FnOnce(&mut ScriptBuilder),
 {
@@ -76,14 +76,14 @@ fn call_policy_engine_with_flags<F>(
     argc: i64,
     call_flags: CallFlags,
     push_args_reversed: F,
-) -> (VmState, ApplicationEngine)
+) -> (VmState, ApplicationEngine<crate::StandardNativeProvider>)
 where
     F: FnOnce(&mut ScriptBuilder),
 {
     let mut tx = Transaction::new();
     tx.set_signers(vec![Signer::new(signer, WitnessScope::GLOBAL)]);
     tx.set_witnesses(vec![Witness::empty()]);
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
 
     let mut builder = ScriptBuilder::new();
     push_args_reversed(&mut builder);
@@ -103,7 +103,7 @@ where
         block,
         settings,
         2000_00000000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");

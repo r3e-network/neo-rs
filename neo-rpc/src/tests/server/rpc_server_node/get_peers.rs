@@ -47,7 +47,7 @@ async fn get_peers_folds_connect_and_disconnect_events() {
     // event carrying the dialed endpoint (the peer's listener — the
     // `Remote.Address` / `ListenerTcpPort` pair C# reports).
     events
-        .send(neo_network::event::NetworkEvent::PeerConnected {
+        .send(neo_network::NetworkEvent::PeerConnected {
             peer_id: "peer:11".to_string(),
             address: Some("10.1.2.3:20333".parse().expect("addr")),
         })
@@ -58,7 +58,7 @@ async fn get_peers_folds_connect_and_disconnect_events() {
     // peer's version payload, which the Rust per-peer service does
     // not capture yet).
     events
-        .send(neo_network::event::NetworkEvent::PeerConnected {
+        .send(neo_network::NetworkEvent::PeerConnected {
             peer_id: "peer:12".to_string(),
             address: Some("198.51.100.7:54321".parse().expect("addr")),
         })
@@ -66,7 +66,7 @@ async fn get_peers_folds_connect_and_disconnect_events() {
     // Address-less peer: folds into the connection count but is
     // omitted from the connected array (no address to report).
     events
-        .send(neo_network::event::NetworkEvent::PeerConnected {
+        .send(neo_network::NetworkEvent::PeerConnected {
             peer_id: "peer:13".to_string(),
             address: None,
         })
@@ -112,12 +112,12 @@ async fn get_peers_folds_connect_and_disconnect_events() {
 
     // Disconnects remove the peers from the folded view.
     events
-        .send(neo_network::event::NetworkEvent::PeerDisconnected {
+        .send(neo_network::NetworkEvent::PeerDisconnected {
             peer_id: "peer:11".to_string(),
         })
         .expect("publish disconnect");
     events
-        .send(neo_network::event::NetworkEvent::PeerDisconnected {
+        .send(neo_network::NetworkEvent::PeerDisconnected {
             peer_id: "peer:12".to_string(),
         })
         .expect("publish disconnect");

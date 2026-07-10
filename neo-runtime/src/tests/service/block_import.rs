@@ -1,6 +1,5 @@
 use super::*;
 use crate::{BlockImport, BlockOrigin, Service};
-use async_trait::async_trait;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -40,7 +39,6 @@ struct QueueRecordingImport {
 
 impl Service for QueueRecordingImport {}
 
-#[async_trait]
 impl BlockImport for QueueRecordingImport {
     async fn check(&self, block: &Block) -> Result<(), ServiceError> {
         if self.fail_check_at == Some(block.index()) {

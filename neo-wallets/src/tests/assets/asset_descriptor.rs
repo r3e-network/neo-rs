@@ -2,10 +2,7 @@ use super::*;
 use neo_config::ProtocolSettings;
 use neo_execution::Nep17MetadataReaderImpl;
 use neo_execution::contract_state::ContractState;
-use neo_execution::native_contract::{NativeContract, build_native_contract_state};
-use neo_execution::native_contract_provider::{
-    NativeContractLookup, NativeContractProvider, lock_native_provider,
-};
+use neo_execution::native_contract::build_native_contract_state;
 use neo_native_contracts::{GasToken, NeoToken, StandardNativeProvider};
 use neo_storage::{DataCache, StorageItem, StorageKey};
 
@@ -32,16 +29,8 @@ fn deploy_contract_record(cache: &DataCache, state: &ContractState) {
     );
 }
 
-fn standard_native_provider() -> Arc<dyn NativeContractProvider> {
+fn standard_native_provider() -> Arc<StandardNativeProvider> {
     Arc::new(StandardNativeProvider::new())
-}
-
-struct RestoreNativeProvider(Option<Arc<dyn NativeContractProvider>>);
-
-impl Drop for RestoreNativeProvider {
-    fn drop(&mut self) {
-        NativeContractLookup::replace_provider(self.0.take());
-    }
 }
 
 #[test]
@@ -67,9 +56,6 @@ fn nonexistent_asset_id_is_rejected() {
 
 #[test]
 fn descriptor_reads_gas_metadata() {
-    let _provider_guard = lock_native_provider();
-    let _restore = RestoreNativeProvider(NativeContractLookup::replace_provider(None));
-
     // C# `Check_GAS`: against a snapshot where GAS is deployed, the descriptor
     // exposes name=GasToken, symbol=GAS, decimals=8.
     let cache = DataCache::new(false);
@@ -79,7 +65,7 @@ fn descriptor_reads_gas_metadata() {
     deploy_contract_record(&cache, &gas_state);
 
     let snapshot = Arc::new(cache);
-    let gas_hash = NativeContract::hash(&gas);
+    let gas_hash = gas_state.hash;
     let reader = Nep17MetadataReaderImpl::new_with_native_contract_provider(
         Arc::clone(&snapshot),
         settings,
@@ -98,9 +84,6 @@ fn descriptor_reads_gas_metadata() {
 
 #[test]
 fn descriptor_reads_neo_metadata() {
-    let _provider_guard = lock_native_provider();
-    let _restore = RestoreNativeProvider(NativeContractLookup::replace_provider(None));
-
     // C# `Check_NEO`: name=NeoToken, symbol=NEO, decimals=0 (exercises the
     // zero-decimals extraction path).
     let cache = DataCache::new(false);
@@ -110,7 +93,7 @@ fn descriptor_reads_neo_metadata() {
     deploy_contract_record(&cache, &neo_state);
 
     let snapshot = Arc::new(cache);
-    let neo_hash = NativeContract::hash(&neo);
+    let neo_hash = neo_state.hash;
     let reader = Nep17MetadataReaderImpl::new_with_native_contract_provider(
         Arc::clone(&snapshot),
         settings,

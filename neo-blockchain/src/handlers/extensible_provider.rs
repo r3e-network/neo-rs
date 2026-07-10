@@ -9,39 +9,44 @@ use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
 use neo_crypto::ECPoint;
-use neo_error::{CoreError, CoreResult};
-use neo_execution::NativeContract;
+use neo_error::CoreResult;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::{NeoToken, Role, RoleManagement};
 use neo_primitives::UInt160;
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 /// Native-contract capabilities required to build the extensible witness whitelist.
 pub(super) trait ExtensibleNativeProvider {
     /// Returns the cached committee multisig address.
-    fn committee_address(&self, snapshot: &DataCache) -> CoreResult<Option<UInt160>>;
+    fn committee_address<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+    ) -> CoreResult<Option<UInt160>>;
 
     /// Returns the validators for the next block, in C# whitelist order.
-    fn next_block_validators(
+    fn next_block_validators<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
     ) -> CoreResult<Vec<ECPoint>>;
 
     /// Returns StateValidator designated nodes effective at `height`.
-    fn state_validators(&self, snapshot: &DataCache, height: u32) -> CoreResult<Vec<ECPoint>>;
+    fn state_validators<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        height: u32,
+    ) -> CoreResult<Vec<ECPoint>>;
 }
 
 /// Adapter from the node-composed native-contract provider to the extensible
 /// verifier's narrow whitelist read capability.
 #[derive(Clone)]
-pub(super) struct NativeExtensibleProvider<P: ?Sized> {
+pub(super) struct NativeExtensibleProvider<P> {
     native_contract_provider: Arc<P>,
 }
 
 impl<P> NativeExtensibleProvider<P>
 where
-    P: NativeContractProvider + ?Sized,
+    P: NativeContractProvider,
 {
     /// Creates an adapter over the composition-root native-contract provider.
     #[must_use]
@@ -54,23 +59,11 @@ where
     fn provider(&self) -> &P {
         self.native_contract_provider.as_ref()
     }
-
-    fn neo_token(&self) -> CoreResult<Arc<dyn NativeContract>> {
-        self.provider()
-            .get_native_contract_by_name("NeoToken")
-            .ok_or_else(|| CoreError::invalid_operation("native provider missing NeoToken"))
-    }
-
-    fn role_management(&self) -> CoreResult<Arc<dyn NativeContract>> {
-        self.provider()
-            .get_native_contract_by_name("RoleManagement")
-            .ok_or_else(|| CoreError::invalid_operation("native provider missing RoleManagement"))
-    }
 }
 
 impl<P> std::fmt::Debug for NativeExtensibleProvider<P>
 where
-    P: NativeContractProvider + ?Sized,
+    P: NativeContractProvider,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NativeExtensibleProvider")
@@ -81,38 +74,28 @@ where
 
 impl<P> ExtensibleNativeProvider for NativeExtensibleProvider<P>
 where
-    P: NativeContractProvider + ?Sized,
+    P: NativeContractProvider,
 {
-    fn committee_address(&self, snapshot: &DataCache) -> CoreResult<Option<UInt160>> {
-        self.neo_token()?
-            .as_any()
-            .downcast_ref::<NeoToken>()
-            .ok_or_else(|| CoreError::invalid_operation("native provider returned non-NeoToken"))?
-            .committee_address(snapshot)
+    fn committee_address<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+    ) -> CoreResult<Option<UInt160>> {
+        self.provider().committee_address(snapshot)
     }
 
-    fn next_block_validators(
+    fn next_block_validators<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
     ) -> CoreResult<Vec<ECPoint>> {
-        self.neo_token()?
-            .as_any()
-            .downcast_ref::<NeoToken>()
-            .ok_or_else(|| CoreError::invalid_operation("native provider returned non-NeoToken"))?
-            .next_block_validators(
-                snapshot,
-                usize::try_from(settings.validators_count).unwrap_or(0),
-            )
+        self.provider().next_block_validators(snapshot, settings)
     }
 
-    fn state_validators(&self, snapshot: &DataCache, height: u32) -> CoreResult<Vec<ECPoint>> {
-        self.role_management()?
-            .as_any()
-            .downcast_ref::<RoleManagement>()
-            .ok_or_else(|| {
-                CoreError::invalid_operation("native provider returned non-RoleManagement")
-            })?
-            .get_designated_by_role_at(snapshot, Role::StateValidator, height)
+    fn state_validators<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        height: u32,
+    ) -> CoreResult<Vec<ECPoint>> {
+        self.provider().state_validators(snapshot, height)
     }
 }

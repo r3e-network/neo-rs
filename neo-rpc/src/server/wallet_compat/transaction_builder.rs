@@ -6,14 +6,15 @@ use std::sync::Arc;
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::GasToken;
+use neo_payloads::VerifiableContainer;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
-use neo_primitives::{UInt160, Verifiable, WitnessScope};
-use neo_storage::persistence::DataCache;
+use neo_primitives::{UInt160, WitnessScope};
+use neo_storage::persistence::{CacheRead, DataCache};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::{OpCode, VmState as VMState};
-use neo_wallets::{TransferOutput, Wallet};
+use neo_wallets::{TransferOutput, Wallet, WalletAccount};
 use num_bigint::BigInt;
 use num_traits::Zero;
 use rand::random;
@@ -29,18 +30,20 @@ use crate::server::ledger_queries;
 /// C# `Wallet.MakeTransaction(snapshot, script, sender, cosigners,
 /// attributes, maxGas)` — builds the transaction, test-executes the
 /// script for the system fee, and computes the network fee.
-pub(crate) fn make_transaction<W>(
+pub(crate) fn make_transaction<P, B, W>(
     wallet: &W,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     settings: &ProtocolSettings,
     script: &[u8],
     sender: Option<UInt160>,
     cosigners: &[Signer],
     attributes: &[TransactionAttribute],
-    native_contract_provider: &Arc<dyn NativeContractProvider>,
+    native_contract_provider: &Arc<P>,
     max_gas: i64,
 ) -> WalletCompatResult<Transaction>
 where
+    P: NativeContractProvider + 'static,
+    B: CacheRead,
     W: Wallet + ?Sized,
 {
     let accounts = spendable_wallet_accounts(wallet, sender);
@@ -69,18 +72,20 @@ where
 // Rationale: wallet transaction construction mirrors C# wallet context fields
 // and keeps balances/provider/max-gas inputs explicit for fee correctness.
 #[allow(clippy::too_many_arguments)]
-fn make_transaction_with_balances<W>(
+fn make_transaction_with_balances<P, B, W>(
     wallet: &W,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     settings: &ProtocolSettings,
     script: &[u8],
     cosigners: &[Signer],
     attributes: &[TransactionAttribute],
     balances_gas: Vec<(UInt160, BigInt)>,
-    native_contract_provider: &Arc<dyn NativeContractProvider>,
+    native_contract_provider: &Arc<P>,
     max_gas: i64,
 ) -> WalletCompatResult<Transaction>
 where
+    P: NativeContractProvider + 'static,
+    B: CacheRead,
     W: Wallet + ?Sized,
 {
     let current_index = ledger_queries::current_index(snapshot).map_err(core_err)?;
@@ -95,7 +100,7 @@ where
         tx.set_signers(get_signers(account, cosigners));
         tx.set_attributes(attributes.to_vec());
 
-        let container = Arc::new(tx.clone()) as Arc<dyn Verifiable>;
+        let container = Arc::new(VerifiableContainer::from(tx.clone()));
         let engine = run_test_invocation(
             script.to_vec(),
             snapshot,
@@ -146,17 +151,19 @@ where
 /// C# `Wallet.MakeTransaction(snapshot, outputs, from, cosigners)` —
 /// builds the NEP-17 transfer script from the outputs and the paying
 /// accounts, then delegates to the script-based overload.
-pub(crate) fn make_transfer_transaction<W>(
+pub(crate) fn make_transfer_transaction<P, B, W>(
     wallet: &W,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     settings: &ProtocolSettings,
     outputs: &[TransferOutput],
     from: Option<UInt160>,
     cosigners: Option<&[Signer]>,
-    native_contract_provider: &Arc<dyn NativeContractProvider>,
+    native_contract_provider: &Arc<P>,
     max_gas: i64,
 ) -> WalletCompatResult<Transaction>
 where
+    P: NativeContractProvider + 'static,
+    B: CacheRead,
     W: Wallet + ?Sized,
 {
     let accounts = spendable_wallet_accounts(wallet, from);

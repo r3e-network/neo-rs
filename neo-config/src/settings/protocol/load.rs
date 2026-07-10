@@ -41,7 +41,10 @@ impl ProtocolSettings {
 
     /// Loads the ProtocolSettings from the specified stream.
     /// Matches C# Load(Stream) method
-    pub fn load_from_stream(stream: &mut dyn Read) -> Result<Self, ProtocolConfigError> {
+    pub fn load_from_stream<R>(stream: &mut R) -> Result<Self, ProtocolConfigError>
+    where
+        R: Read + ?Sized,
+    {
         // serde_json::from_reader consumes the stream; seek back to handle reuse over same stream.
         let mut buffered = Vec::new();
         stream.read_to_end(&mut buffered)?;

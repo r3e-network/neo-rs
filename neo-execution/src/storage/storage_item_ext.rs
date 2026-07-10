@@ -7,52 +7,8 @@
 
 use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{IoResult, MemoryReader};
-use neo_storage::StorageItem;
-use neo_storage::types::storage_item::CacheProvider;
+use neo_storage::{StorageItem, StorageItemCache};
 use num_bigint::BigInt;
-use std::any::Any;
-
-// ---------------------------------------------------------------------------
-// StorageCache – internal enum for BigInteger payloads
-// ---------------------------------------------------------------------------
-
-#[derive(Debug)]
-enum StorageCache {
-    BigInteger(BigInt),
-}
-
-impl Clone for StorageCache {
-    fn clone(&self) -> Self {
-        match self {
-            StorageCache::BigInteger(value) => StorageCache::BigInteger(value.clone()),
-        }
-    }
-}
-
-impl CacheProvider for StorageCache {
-    fn to_bytes(&self) -> Vec<u8> {
-        match self {
-            StorageCache::BigInteger(value) => {
-                // C# `BigInteger.ToByteArrayStandard()` stores zero as an
-                // empty byte array, not `[0x00]`. These raw bytes feed state
-                // root calculation when cache-backed items are sealed.
-                if value == &BigInt::ZERO {
-                    Vec::new()
-                } else {
-                    value.to_signed_bytes_le()
-                }
-            }
-        }
-    }
-
-    fn clone_box(&self) -> Box<dyn CacheProvider> {
-        Box::new(self.clone())
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
 
 // ---------------------------------------------------------------------------
 // StorageItemExt – extension trait for cache-aware operations
@@ -85,7 +41,7 @@ pub trait StorageItemExt {
 impl StorageItemExt for StorageItem {
     fn from_bigint(value: BigInt) -> Self {
         let mut item = Self::new();
-        item.set_cache(Box::new(StorageCache::BigInteger(value)));
+        item.set_cache(StorageItemCache::big_integer(value));
         item
     }
 
@@ -95,19 +51,16 @@ impl StorageItemExt for StorageItem {
     }
 
     fn set_bigint(&mut self, integer: BigInt) {
-        self.set_cache(Box::new(StorageCache::BigInteger(integer)));
+        self.set_cache(StorageItemCache::big_integer(integer));
         self.clear_value();
     }
 
     fn to_bigint(&self) -> BigInt {
-        // Try to recover a cached BigInteger.
         if let Some(cache) = self.cache() {
-            if let Some(StorageCache::BigInteger(v)) = cache.as_any().downcast_ref::<StorageCache>()
-            {
-                return v.clone();
+            if let Some(value) = cache.as_big_integer() {
+                return value.clone();
             }
         }
-        // Fallback: decode from bytes.
         let bytes = self.value_bytes();
         if bytes.is_empty() {
             return BigInt::ZERO;

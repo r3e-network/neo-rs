@@ -39,9 +39,9 @@ impl NeoToken {
     /// compressed), votes]` (C# `CachedCommittee.ElementToStackItem`). Errors when
     /// the cache has never been initialized, matching the C# indexer/`GetAndChange`
     /// null deref.
-    pub(in crate::neo_token) fn read_committee_with_votes(
+    pub(in crate::neo_token) fn read_committee_with_votes<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
     ) -> CoreResult<Vec<(ECPoint, BigInt)>> {
         let key = Self::committee_key();
         let item = snapshot.get(&key).ok_or_else(|| {
@@ -80,9 +80,9 @@ impl NeoToken {
     }
 
     /// Reads only the cached committee public keys, in stored order.
-    pub(in crate::neo_token) fn read_committee_points(
+    pub(in crate::neo_token) fn read_committee_points<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
     ) -> CoreResult<Vec<ECPoint>> {
         Ok(self
             .read_committee_with_votes(snapshot)?
@@ -91,9 +91,9 @@ impl NeoToken {
             .collect())
     }
 
-    pub(crate) fn next_block_validator_account(
+    pub(crate) fn next_block_validator_account<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         validators_count: usize,
         primary_index: usize,
     ) -> CoreResult<UInt160> {
@@ -144,9 +144,9 @@ impl NeoToken {
     /// member. Canonical committee bytes are parsed directly to avoid
     /// deserializing and cloning the whole committee vector on every block; any
     /// non-canonical-but-valid historical shape falls back to the generic reader.
-    pub(in crate::neo_token) fn read_committee_member_at(
+    pub(in crate::neo_token) fn read_committee_member_at<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         index: usize,
     ) -> CoreResult<(ECPoint, BigInt)> {
         let key = Self::committee_key();
@@ -278,9 +278,9 @@ impl NeoToken {
     }
 
     /// C# `GetCommittee` = committee public keys sorted ascending (`OrderBy(p => p)`).
-    pub(in crate::neo_token) fn committee_sorted(
+    pub(in crate::neo_token) fn committee_sorted<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
     ) -> CoreResult<Vec<ECPoint>> {
         let mut points = self.read_committee_points(snapshot)?;
         points.sort();
@@ -297,9 +297,9 @@ impl NeoToken {
     /// C# `GetCommitteeAddress` = script hash of the `m`-of-`n` multisig over the
     /// committee public keys, where `m = n - (n - 1) / 2`. The multisig builder sorts
     /// the keys ascending exactly as C# `Contract.CreateMultiSigRedeemScript` does.
-    pub(in crate::neo_token) fn compute_committee_address(
+    pub(in crate::neo_token) fn compute_committee_address<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
     ) -> CoreResult<UInt160> {
         let key = Self::committee_key();
         let item = snapshot.get(&key).ok_or_else(|| {

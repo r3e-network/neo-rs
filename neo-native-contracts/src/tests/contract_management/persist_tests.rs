@@ -18,7 +18,7 @@ fn on_persist_engine(
     settings: &ProtocolSettings,
     index: u32,
     timestamp: u64,
-) -> ApplicationEngine {
+) -> ApplicationEngine<crate::StandardNativeProvider> {
     let mut header = Header::new();
     header.set_index(index);
     header.set_timestamp(timestamp);
@@ -30,7 +30,7 @@ fn on_persist_engine(
         Some(block),
         settings.clone(),
         0,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds")

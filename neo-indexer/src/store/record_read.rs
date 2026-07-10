@@ -6,7 +6,7 @@ use serde::de::DeserializeOwned;
 use super::record_codec::decode_record;
 use crate::error::IndexerResult;
 
-pub(crate) fn get_record<T>(snapshot: &dyn StoreSnapshot, key: Vec<u8>) -> IndexerResult<Option<T>>
+pub(crate) fn get_record<T>(snapshot: &impl StoreSnapshot, key: Vec<u8>) -> IndexerResult<Option<T>>
 where
     T: DeserializeOwned,
 {
@@ -17,7 +17,7 @@ where
 }
 
 pub(crate) fn read_record_page<T>(
-    snapshot: &dyn StoreSnapshot,
+    snapshot: &impl StoreSnapshot,
     prefix: &[u8],
     skip: usize,
     limit: usize,
@@ -29,7 +29,7 @@ where
 }
 
 pub(crate) fn read_record_page_filtered<T>(
-    snapshot: &dyn StoreSnapshot,
+    snapshot: &impl StoreSnapshot,
     prefix: &[u8],
     mut filter: impl FnMut(&T) -> bool,
     skip: usize,
@@ -63,7 +63,7 @@ where
 }
 
 pub(crate) fn read_record_prefix_filtered<T>(
-    snapshot: &dyn StoreSnapshot,
+    snapshot: &impl StoreSnapshot,
     prefix: &[u8],
     mut filter: impl FnMut(&T) -> bool,
 ) -> IndexerResult<Vec<T>>
@@ -82,7 +82,7 @@ where
 }
 
 pub(super) fn read_record_prefix<T>(
-    snapshot: &dyn StoreSnapshot,
+    snapshot: &impl StoreSnapshot,
     prefix: &[u8],
 ) -> IndexerResult<Vec<T>>
 where

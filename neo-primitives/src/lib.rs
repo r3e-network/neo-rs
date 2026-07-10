@@ -32,9 +32,7 @@ mod utils;
 pub use errors::{error, network_error, rpc_exception};
 pub(crate) use numeric::uint_hex;
 pub use numeric::{base58_check, big_decimal, hex_util, uint160, uint256};
-pub use payload::{
-    inventory, log_event_args, serializable_payload, storage, verifiable, verification,
-};
+pub use payload::{inventory, serializable_payload, storage, verifiable};
 pub use protocol::{
     call_flags, contains_transaction_type, contract_basic_method, contract_parameter_type,
     contract_task, find_options, hardfork, inventory_type, log_level, node_capability_type,
@@ -76,7 +74,6 @@ pub use find_options::FindOptions;
 pub use hardfork::{Hardfork, HardforkParseError};
 pub use inventory::Inventory;
 pub use inventory_type::InventoryType;
-pub use log_event_args::LogEventArgs;
 pub use log_level::LogLevel;
 pub use network_error::{NetworkError, NetworkResult};
 pub use node_capability_type::NodeCapabilityType;
@@ -98,6 +95,3 @@ pub use serializable_payload::SerializablePayload;
 pub use storage::{StorageValue, StorageValueError, StorageValueResult};
 pub use time::{TimeProvider, TimeSource};
 pub use unhandled_exception_policy::{UnhandledExceptionPolicy, panic_message};
-pub use verification::{
-    BlockchainSnapshot, VerificationContext, VerificationError, VerificationResult, Witness,
-};

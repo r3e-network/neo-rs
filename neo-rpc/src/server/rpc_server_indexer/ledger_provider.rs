@@ -5,13 +5,13 @@
 //! assembly and keeps raw ledger provider construction in one place.
 
 use crate::server::ledger_queries;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::{CacheRead, DataCache};
 
 /// Ledger capabilities required by indexer RPC handlers.
 pub(super) trait IndexerLedgerProvider {
     /// Returns the current persisted ledger height, or `None` if the ledger tip
     /// is not available yet.
-    fn ledger_height(&self, snapshot: &DataCache) -> Option<u32>;
+    fn ledger_height<B: CacheRead>(&self, snapshot: &DataCache<B>) -> Option<u32>;
 }
 
 /// Factory for indexer RPC ledger providers.
@@ -36,7 +36,7 @@ impl NativeIndexerLedgerProvider {
 }
 
 impl IndexerLedgerProvider for NativeIndexerLedgerProvider {
-    fn ledger_height(&self, snapshot: &DataCache) -> Option<u32> {
+    fn ledger_height<B: CacheRead>(&self, snapshot: &DataCache<B>) -> Option<u32> {
         ledger_queries::current_index(snapshot).ok()
     }
 }

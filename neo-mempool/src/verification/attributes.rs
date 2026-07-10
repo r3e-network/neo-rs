@@ -1,7 +1,7 @@
 //! C# `TransactionAttribute.Verify` dispatch for the admission path.
 
 use neo_payloads::{OracleResponse, Transaction, TransactionAttribute};
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 use neo_vm::script_builder::RedeemScript;
 
 use super::super::native_provider::AdmissionNativeProvider;
@@ -9,15 +9,16 @@ use super::AdmissionLedgerProvider;
 use super::sender;
 
 /// C# `TransactionAttribute.Verify` dispatch.
-pub(super) fn verify_attribute<L, N>(
+pub(super) fn verify_attribute<B, L, N>(
     ledger: &L,
     native: &N,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     tx: &Transaction,
     attribute: &TransactionAttribute,
     height: u32,
 ) -> bool
 where
+    B: CacheRead,
     L: AdmissionLedgerProvider + ?Sized,
     N: AdmissionNativeProvider + ?Sized,
 {
@@ -63,10 +64,10 @@ where
             if tx.script() != fixed_script.as_slice() {
                 return false;
             }
-            let Ok(Some(request)) = native.oracle_request(snapshot, attr.id) else {
+            let Ok(Some(gas_for_response)) = native.oracle_response_gas(snapshot, attr.id) else {
                 return false;
             };
-            if !oracle_response_gas_matches(tx, request.gas_for_response) {
+            if !oracle_response_gas_matches(tx, gas_for_response) {
                 return false;
             }
             let Ok(oracles) = native.designated_oracles(snapshot, height + 1) else {

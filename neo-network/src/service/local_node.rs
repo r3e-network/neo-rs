@@ -50,7 +50,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
@@ -69,7 +68,9 @@ use crate::handle::{DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, NetworkHan
 use crate::local_identity::LocalIdentity;
 use crate::peer_id::PeerId;
 use crate::peer_registry::PeerRegistry;
-use crate::remote_node::{BlockSource, InboundInventory, RemoteNodeService, RemoteNodeState};
+use crate::remote_node::{
+    BlockSource, InboundInventory, NoBlockSource, RemoteNodeService, RemoteNodeState,
+};
 use crate::service::block_sync_mode::BlockSyncMode;
 use crate::spawn::spawn_guarded;
 
@@ -87,7 +88,10 @@ const DISCOVERY_INTERVAL: Duration = Duration::from_secs(5);
 /// defaults) or [`LocalNodeService::with_config`], both returning the
 /// `(service, handle)` pair. The service is moved into a
 /// `tokio::spawn`'d task that calls [`LocalNodeService::run`].
-pub struct LocalNodeService {
+pub struct LocalNodeService<B = NoBlockSource>
+where
+    B: BlockSource,
+{
     /// Protocol settings (network magic, …).
     settings: Arc<ProtocolSettings>,
     /// Channel configuration (connection caps, compression flag).
@@ -119,7 +123,7 @@ pub struct LocalNodeService {
     inbound_tx: Option<mpsc::Sender<InboundInventory>>,
     /// Optional read-only ledger view handed to every per-peer service
     /// so it can serve peers' block requests.
-    block_source: Option<Arc<dyn BlockSource>>,
+    block_source: Option<Arc<B>>,
     /// Owner of outbound block range requests.
     block_sync_mode: BlockSyncMode,
     /// Cadence of the peer-discovery maintenance tick. Defaults to
@@ -128,7 +132,10 @@ pub struct LocalNodeService {
     discovery_interval: Duration,
 }
 
-impl fmt::Debug for LocalNodeService {
+impl<B> fmt::Debug for LocalNodeService<B>
+where
+    B: BlockSource,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("LocalNodeService")
             .field("started", &self.started)
@@ -140,7 +147,7 @@ impl fmt::Debug for LocalNodeService {
     }
 }
 
-impl LocalNodeService {
+impl LocalNodeService<NoBlockSource> {
     /// Build a fresh `(service, handle)` pair with the default
     /// [`ChannelsConfig`] (C# defaults: 40 max connections, 3 per
     /// address, compression enabled).
@@ -202,7 +209,12 @@ impl LocalNodeService {
         };
         (service, handle)
     }
+}
 
+impl<B> LocalNodeService<B>
+where
+    B: BlockSource + 'static,
+{
     /// Override the peer-discovery tick cadence (default
     /// [`DISCOVERY_INTERVAL`]). Intended for integration tests that need
     /// discovery to run faster than the 5 s production interval.
@@ -222,9 +234,26 @@ impl LocalNodeService {
 
     /// Attach a read-only ledger view so every per-peer service can serve
     /// peers' `GetBlockByIndex` requests from the local chain.
-    pub fn with_block_source(mut self, block_source: Arc<dyn BlockSource>) -> Self {
-        self.block_source = Some(block_source);
-        self
+    pub fn with_block_source<S>(self, block_source: Arc<S>) -> LocalNodeService<S>
+    where
+        S: BlockSource + 'static,
+    {
+        LocalNodeService {
+            settings: self.settings,
+            config: self.config,
+            identity: self.identity,
+            cmd_rx: self.cmd_rx,
+            event_tx: self.event_tx,
+            registry: self.registry,
+            shutdown: self.shutdown,
+            started: self.started,
+            bind_addr: self.bind_addr,
+            accept_handle: self.accept_handle,
+            inbound_tx: self.inbound_tx,
+            block_source: Some(block_source),
+            block_sync_mode: self.block_sync_mode,
+            discovery_interval: self.discovery_interval,
+        }
     }
 
     /// Select which component owns outbound block-sync range requests.
@@ -451,7 +480,7 @@ impl LocalNodeService {
                 NetworkError::Protocol(format!("dial timeout after {DIAL_TIMEOUT:?}"))
             })??;
         let peer_id = PeerId::new();
-        let (service, handle) = RemoteNodeService::new(
+        let (service, handle) = RemoteNodeService::<B>::new_typed(
             stream,
             peer_id,
             addr,
@@ -460,14 +489,11 @@ impl LocalNodeService {
             self.event_tx.clone(),
             RemoteNodeState::Connecting,
             self.shutdown.clone(),
+            self.block_source.clone(),
         );
         let service = service.with_block_sync_mode(self.block_sync_mode);
         let service = match &self.inbound_tx {
             Some(tx) => service.with_inventory_sink(tx.clone()),
-            None => service,
-        };
-        let service = match &self.block_source {
-            Some(source) => service.with_block_source(Arc::clone(source)),
             None => service,
         };
         // Admission control applies to dialed peers too: C# routes
@@ -624,14 +650,19 @@ impl LocalNodeService {
 // Trait impls
 // -----------------------------------------------------------------------------
 
-impl Service for LocalNodeService {
+impl<B> Service for LocalNodeService<B>
+where
+    B: BlockSource + 'static,
+{
     fn name(&self) -> &str {
         "LocalNodeService"
     }
 }
 
-#[async_trait]
-impl NetworkService for LocalNodeService {
+impl<B> NetworkService for LocalNodeService<B>
+where
+    B: BlockSource + 'static,
+{
     async fn broadcast_block(&self, block: &Block) -> Result<(), ServiceError> {
         self.handle_broadcast_block(block).await;
         Ok(())
@@ -642,8 +673,8 @@ impl NetworkService for LocalNodeService {
         Ok(())
     }
 
-    async fn peer_count(&self) -> usize {
-        self.registry.len()
+    fn peer_count(&self) -> impl std::future::Future<Output = usize> + Send {
+        std::future::ready(self.registry.len())
     }
 
     fn subscribe_events(&self) -> broadcast::Receiver<NetworkEvent> {
@@ -655,16 +686,18 @@ impl NetworkService for LocalNodeService {
 // Accept loop
 // -----------------------------------------------------------------------------
 
-async fn accept_loop(
+async fn accept_loop<B>(
     listener: TcpListener,
     identity: Arc<LocalIdentity>,
     registry: Arc<PeerRegistry>,
     event_tx: broadcast::Sender<NetworkEvent>,
     shutdown: CancellationToken,
     inbound_tx: Option<mpsc::Sender<InboundInventory>>,
-    block_source: Option<Arc<dyn BlockSource>>,
+    block_source: Option<Arc<B>>,
     block_sync_mode: BlockSyncMode,
-) {
+) where
+    B: BlockSource + 'static,
+{
     info!(target: "neo_network", "accept loop started");
     loop {
         tokio::select! {
@@ -676,7 +709,7 @@ async fn accept_loop(
                 match accept_result {
                     Ok((stream, remote_addr)) => {
                         let peer_id = PeerId::new();
-                        let (service, handle) = RemoteNodeService::new(
+                        let (service, handle) = RemoteNodeService::<B>::new_typed(
                             stream,
                             peer_id,
                             remote_addr,
@@ -685,14 +718,11 @@ async fn accept_loop(
                             event_tx.clone(),
                             RemoteNodeState::Handshake,
                             shutdown.clone(),
+                            block_source.clone(),
                         );
                         let service = service.with_block_sync_mode(block_sync_mode);
                         let service = match &inbound_tx {
                             Some(tx) => service.with_inventory_sink(tx.clone()),
-                            None => service,
-                        };
-                        let service = match &block_source {
-                            Some(source) => service.with_block_source(Arc::clone(source)),
                             None => service,
                         };
                         // C# `Peer.OnTcpConnected` aborts the TCP

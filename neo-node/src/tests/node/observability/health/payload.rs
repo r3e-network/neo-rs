@@ -1,7 +1,7 @@
 use super::super::super::health::node_health_payload;
 use super::support::{
-    indexed_service_at, remote_ledger_node, remote_ledger_node_with_error,
-    remote_ledger_node_with_height, seed_ledger_height, test_node,
+    empty_services, indexed_service_at, remote_ledger_node, remote_ledger_node_with_error,
+    remote_ledger_node_with_height, seed_ledger_height, service_handles, test_node,
 };
 
 #[test]
@@ -21,8 +21,9 @@ fn node_health_payload_uses_observability_ledger_provider() {
 #[test]
 fn node_health_payload_reports_disabled_optional_services() {
     let node = test_node();
+    let services = empty_services();
 
-    let payload = node_health_payload(&node);
+    let payload = node_health_payload(&node, services.as_ref());
 
     assert_eq!(payload["status"], "starting");
     assert_eq!(payload["ready"], false);
@@ -37,9 +38,9 @@ fn node_health_payload_reports_disabled_optional_services() {
 
 #[test]
 fn node_health_payload_reports_remote_ledger_as_ready_without_local_height() {
-    let node = remote_ledger_node(42);
+    let (node, services) = remote_ledger_node(42);
 
-    let payload = node_health_payload(&node);
+    let payload = node_health_payload(&node, services.as_ref());
 
     assert_eq!(payload["status"], "ready");
     assert_eq!(payload["ready"], true);
@@ -50,9 +51,9 @@ fn node_health_payload_reports_remote_ledger_as_ready_without_local_height() {
 
 #[test]
 fn node_health_payload_keeps_remote_ledger_starting_when_upstream_height_is_unknown() {
-    let node = remote_ledger_node_with_height(None);
+    let (node, services) = remote_ledger_node_with_height(None);
 
-    let payload = node_health_payload(&node);
+    let payload = node_health_payload(&node, services.as_ref());
 
     assert_eq!(payload["status"], "starting");
     assert_eq!(payload["ready"], false);
@@ -63,9 +64,9 @@ fn node_health_payload_keeps_remote_ledger_starting_when_upstream_height_is_unkn
 
 #[test]
 fn node_health_payload_reports_remote_ledger_tip_error() {
-    let node = remote_ledger_node_with_error("remote getblockcount failed");
+    let (node, services) = remote_ledger_node_with_error("remote getblockcount failed");
 
-    let payload = node_health_payload(&node);
+    let payload = node_health_payload(&node, services.as_ref());
 
     assert_eq!(payload["status"], "starting");
     assert_eq!(payload["ready"], false);
@@ -82,9 +83,9 @@ fn node_health_payload_reports_remote_ledger_tip_error() {
 fn node_health_payload_reports_indexer_sync_state_for_heartbeats() {
     let node = test_node();
     seed_ledger_height(&node, 5);
-    node.register_service(indexed_service_at(5));
+    let services = service_handles(Some(indexed_service_at(5)), None);
 
-    let payload = node_health_payload(&node);
+    let payload = node_health_payload(&node, services.as_ref());
     let indexer = &payload["services"]["indexer"];
 
     assert_eq!(payload["status"], "ready");
@@ -104,9 +105,9 @@ fn node_health_payload_reports_indexer_sync_state_for_heartbeats() {
 fn node_health_payload_reports_indexer_ahead_of_ledger_as_unsynced() {
     let node = test_node();
     seed_ledger_height(&node, 3);
-    node.register_service(indexed_service_at(5));
+    let services = service_handles(Some(indexed_service_at(5)), None);
 
-    let payload = node_health_payload(&node);
+    let payload = node_health_payload(&node, services.as_ref());
     let indexer = &payload["services"]["indexer"];
 
     assert_eq!(indexer["indexed_height"], 5);

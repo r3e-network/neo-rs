@@ -32,6 +32,7 @@ impl std::fmt::Debug for FailingSecondCommitContext {
 
 impl SystemContext for FailingSecondCommitContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
+    type CacheBacking = neo_storage::EmptyCacheBacking;
 
     fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
         Arc::clone(&self.settings)
@@ -83,6 +84,7 @@ impl std::fmt::Debug for FailingBulkFlushContext {
 
 impl SystemContext for FailingBulkFlushContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
+    type CacheBacking = neo_storage::EmptyCacheBacking;
 
     fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
         Arc::clone(&self.settings)
@@ -131,6 +133,7 @@ impl std::fmt::Debug for StateServiceEmptyFastPathContext {
 
 impl SystemContext for StateServiceEmptyFastPathContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
+    type CacheBacking = neo_storage::EmptyCacheBacking;
 
     fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
         Arc::clone(&self.settings)
@@ -2197,10 +2200,10 @@ async fn handle_implements_runtime_block_import_contract() {
     let block = Block::from_parts(header, vec![]);
     let expected_tip = neo_runtime::ImportedTip::from_block(&block).expect("block hash");
 
-    let importer: &dyn neo_runtime::BlockImport = &handle;
-    importer.check(&block).await.expect("check");
-    let outcome = importer
-        .import(block, neo_runtime::BlockOrigin::Sync)
+    neo_runtime::BlockImport::check(&handle, &block)
+        .await
+        .expect("check");
+    let outcome = neo_runtime::BlockImport::import(&handle, block, neo_runtime::BlockOrigin::Sync)
         .await
         .expect("import through runtime contract");
 

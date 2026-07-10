@@ -18,7 +18,7 @@ use super::write_fast_sync_report_sidecar;
 use crate::node::chain_acc;
 use crate::node::config::NodeConfig;
 use neo_io::{BinaryWriter, Serializable};
-use neo_storage::persistence::store::Store;
+use neo_storage::persistence::providers::memory_store::MemoryStore;
 use serde_json::Value;
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -60,11 +60,10 @@ fn test_package(start: u32, end: u32) -> FastSyncPackage {
     }
 }
 
-fn memory_store_with_ledger_tip(tip: u32) -> Arc<dyn Store> {
-    use neo_storage::persistence::providers::memory_store::MemoryStore;
+fn memory_store_with_ledger_tip(tip: u32) -> Arc<MemoryStore> {
     use neo_storage::{StorageItem, StorageKey};
 
-    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let store = Arc::new(MemoryStore::new());
     let mut cache = neo_storage::persistence::StoreCache::new_from_store(Arc::clone(&store), false);
     let hash = neo_primitives::UInt256::from([tip as u8; 32]);
     let current = neo_native_contracts::LedgerContract::new()
@@ -277,9 +276,7 @@ fn fast_sync_preflight_rejects_full_package_behind_existing_ledger() {
 
 #[test]
 fn fast_sync_preflight_allows_full_package_on_empty_or_genesis_ledger() {
-    use neo_storage::persistence::providers::memory_store::MemoryStore;
-
-    let empty: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let empty = Arc::new(MemoryStore::new());
     validate_fast_sync_preflight(&empty, &test_package(0, 100))
         .expect("empty ledger can import a full fast-sync package");
 

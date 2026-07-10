@@ -3,8 +3,6 @@
 //! This module owns the typed wrapper between JSON-RPC method descriptors and
 //! the handler callbacks registered by each endpoint group.
 
-use std::sync::Arc;
-
 use serde_json::Value;
 
 use crate::server::rpc_exception::RpcException;
@@ -12,19 +10,22 @@ use crate::server::rpc_method_attribute::RpcMethodDescriptor;
 
 use super::RpcServer;
 
-/// Callback signature used by registered RPC handlers.
-pub type RpcCallback =
-    dyn Fn(&RpcServer, &[Value]) -> Result<Value, RpcException> + Send + Sync + 'static;
+/// Function-pointer signature used by registered RPC handlers.
+///
+/// RPC endpoint implementations are stateless function items. Keeping their
+/// concrete function pointer avoids a heap allocation and virtual call on
+/// every request while the descriptor still permits runtime method names.
+pub type RpcCallback = fn(&RpcServer, &[Value]) -> Result<Value, RpcException>;
 
 /// Registered RPC method descriptor and callback.
 pub struct RpcHandler {
     descriptor: RpcMethodDescriptor,
-    callback: Arc<RpcCallback>,
+    callback: RpcCallback,
 }
 
 impl RpcHandler {
     /// Create an RPC handler from a method descriptor and callback.
-    pub fn new(descriptor: RpcMethodDescriptor, callback: Arc<RpcCallback>) -> Self {
+    pub const fn new(descriptor: RpcMethodDescriptor, callback: RpcCallback) -> Self {
         Self {
             descriptor,
             callback,
@@ -37,10 +38,15 @@ impl RpcHandler {
         &self.descriptor
     }
 
-    /// Return a clone of this handler's callback.
+    /// Return this handler's function pointer.
     #[must_use]
-    pub fn callback(&self) -> Arc<RpcCallback> {
-        Arc::clone(&self.callback)
+    pub const fn callback(&self) -> RpcCallback {
+        self.callback
+    }
+
+    /// Invoke this handler without allocating or cloning callback state.
+    pub fn call(&self, server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
+        (self.callback)(server, params)
     }
 }
 
@@ -48,12 +54,12 @@ pub(crate) fn rpc_handler(
     name: &'static str,
     func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
 ) -> RpcHandler {
-    RpcHandler::new(RpcMethodDescriptor::new(name), Arc::new(func))
+    RpcHandler::new(RpcMethodDescriptor::new(name), func)
 }
 
 pub(crate) fn protected_rpc_handler(
     name: &'static str,
     func: fn(&RpcServer, &[Value]) -> Result<Value, RpcException>,
 ) -> RpcHandler {
-    RpcHandler::new(RpcMethodDescriptor::new_protected(name), Arc::new(func))
+    RpcHandler::new(RpcMethodDescriptor::new_protected(name), func)
 }

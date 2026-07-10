@@ -14,7 +14,11 @@ const DEFAULT_ATTRIBUTE_FEE: i64 = 0;
 impl TransactionAttribute {
     /// Calculate the network fee for this attribute.
     /// Matches C# CalculateNetworkFee method.
-    pub fn calculate_network_fee(&self, snapshot: &DataCache, tx: &Transaction) -> i64 {
+    pub fn calculate_network_fee<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        tx: &Transaction,
+    ) -> i64 {
         let base = policy_attribute_fee(snapshot, self.type_id());
         match self {
             Self::Conflicts(_) => tx.signers().len() as i64 * base,
@@ -24,7 +28,10 @@ impl TransactionAttribute {
     }
 }
 
-fn policy_attribute_fee(snapshot: &DataCache, attribute_type: TransactionAttributeType) -> i64 {
+fn policy_attribute_fee<B: neo_storage::CacheRead>(
+    snapshot: &DataCache<B>,
+    attribute_type: TransactionAttributeType,
+) -> i64 {
     let key = StorageKey::new(
         POLICY_CONTRACT_ID,
         vec![POLICY_PREFIX_ATTRIBUTE_FEE, attribute_type.to_byte()],

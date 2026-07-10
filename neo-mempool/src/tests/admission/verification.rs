@@ -205,7 +205,7 @@ fn policy_blocked_reader_uses_native_contract_projection() {
         .expect("next reader exists");
     let reader = &provider[start..end];
 
-    assert!(reader.contains("PolicyContract::is_blocked_snapshot"));
+    assert!(reader.contains(".policy_is_blocked(snapshot, account)"));
     assert!(!reader.contains("POLICY_PREFIX_BLOCKED_ACCOUNT"));
     assert!(!reader.contains("StorageKey::new(POLICY_CONTRACT_ID"));
 }
@@ -222,7 +222,7 @@ fn max_valid_until_block_increment_uses_native_policy_reader() {
         .expect("test module follows the helper");
     let reader = &provider[start..end];
 
-    assert!(reader.contains("get_max_valid_until_block_increment_snapshot"));
+    assert!(reader.contains(".max_valid_until_block_increment(snapshot, settings)"));
     assert!(!reader.contains("StorageKey::new(POLICY_CONTRACT_ID"));
     assert!(!reader.contains("POLICY_PREFIX_MAX_VALID_UNTIL_BLOCK_INCREMENT"));
 }
@@ -239,10 +239,11 @@ fn attribute_network_fee_delegates_to_payload_attribute_formula() {
         .expect("test module follows the helper");
     let helper = &source[start..end];
 
-    assert!(helper.contains("attribute.calculate_network_fee(snapshot, tx)"));
+    assert!(helper.contains("POLICY_PREFIX_ATTRIBUTE_FEE"));
+    assert!(helper.contains("TransactionAttribute::Conflicts"));
+    assert!(helper.contains("TransactionAttribute::NotaryAssisted"));
+    assert!(helper.contains("attribute.type_id().to_byte()"));
     assert!(!helper.contains("saturating_mul"));
-    assert!(!helper.contains("TransactionAttribute::Conflicts"));
-    assert!(!helper.contains("TransactionAttribute::NotaryAssisted"));
 }
 
 #[test]
@@ -258,8 +259,10 @@ fn non_standard_witness_verification_uses_explicit_native_provider() {
     let verifier = &source[start..end];
 
     assert!(verifier.contains("Helper::verify_witness_with_native_provider"));
-    assert!(verifier.contains("let provider: Arc<dyn NativeContractProvider>"));
-    assert!(verifier.contains("native_contract_provider.clone()"));
+    assert!(
+        verifier.contains("native_contract_provider.clone()"),
+        "mempool admission should pass Arc<P> directly into the generic witness helper"
+    );
     assert!(!verifier.contains("NativeProviderDynArc"));
     assert!(!verifier.contains("Helper::verify_witness("));
 }
@@ -288,8 +291,8 @@ fn native_reads_use_admission_provider_boundary() {
     assert!(verifier.contains("AdmissionNativeProvider"));
     assert!(verifier.contains("NativeAdmissionProvider::new(native_contract_provider.clone())"));
     assert!(
-        verifier.contains("pub fn verify_state_dependent_with_native_provider<P>"),
-        "admission verification should stay generic over the composed native provider"
+        verifier.contains("pub fn verify_state_dependent_with_native_provider<B, P>"),
+        "admission verification should stay generic over the cache backing and composed native provider"
     );
     assert!(
         !verifier.contains("StandardNativeProvider"),
@@ -304,17 +307,18 @@ fn native_reads_use_admission_provider_boundary() {
     assert!(provider.contains("trait AdmissionNativeProvider"));
     assert!(!provider.contains("trait AdmissionNativeProviderFactory"));
     assert!(!provider.contains("struct NativeAdmissionProviderFactory"));
-    assert!(provider.contains("struct NativeAdmissionProvider<P: ?Sized>"));
+    assert!(provider.contains("struct NativeAdmissionProvider<P>"));
+    assert!(!provider.contains("NativeAdmissionProvider<P: ?Sized>"));
     assert!(provider.contains("native_contract_provider: Arc<P>"));
-    assert!(!provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"));
-    assert!(provider.contains("get_native_contract_by_name(name)"));
-    assert!(provider.contains("with_contract::<GasToken"));
-    assert!(provider.contains("with_contract::<NeoToken"));
-    assert!(provider.contains("native_contract(\"Notary\")"));
-    assert!(provider.contains("with_contract::<Notary"));
-    assert!(provider.contains("with_contract::<OracleContract"));
-    assert!(provider.contains("with_contract::<PolicyContract"));
-    assert!(provider.contains("with_contract::<RoleManagement"));
+    assert!(!provider.contains("get_native_contract_by_name(name)"));
+    assert!(provider.contains(".gas_balance(snapshot, account)"));
+    assert!(provider.contains(".notary_balance(snapshot, account)"));
+    assert!(provider.contains(".notary_hash()"));
+    assert!(provider.contains(".committee_address(snapshot)"));
+    assert!(provider.contains(".designated_oracles(snapshot, height)"));
+    assert!(provider.contains(".oracle_response_gas(snapshot, request_id)"));
+    assert!(!provider.contains("with_contract::<"));
+    assert!(!provider.contains("downcast_ref::<"));
     assert!(!provider.contains("neo: NeoToken"));
     assert!(!provider.contains("oracle: OracleContract"));
     assert!(!provider.contains("policy: PolicyContract"));

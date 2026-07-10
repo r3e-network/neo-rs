@@ -3,9 +3,9 @@ use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use neo_state_service::{StateStore, commit_handlers::StateServiceCommitHandlers};
 use neo_storage::{
     DataCache, StorageItem, StorageKey,
-    mdbx::MdbxStoreProvider,
+    mdbx::{MdbxStore, MdbxStoreProvider},
     persistence::{Store, storage::StorageConfig},
-    rocksdb::RocksDBStoreProvider,
+    rocksdb::{RocksDBStoreProvider, RocksDbStore},
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -48,9 +48,9 @@ impl Drop for BenchTempDir {
     }
 }
 
-fn make_rocksdb_state_store() -> (StateStore, BenchTempDir) {
+fn make_rocksdb_state_store() -> (StateStore<RocksDbStore>, BenchTempDir) {
     let tempdir = BenchTempDir::new("neo-state-service-rocksdb-bench", &ROCKSDB_BENCH_SEQ);
-    let backing: Arc<dyn Store> = Arc::new(
+    let backing = Arc::new(
         RocksDBStoreProvider::new(StorageConfig {
             path: tempdir.path.clone(),
             ..Default::default()
@@ -65,9 +65,9 @@ fn make_rocksdb_state_store() -> (StateStore, BenchTempDir) {
     )
 }
 
-fn make_mdbx_state_store() -> (StateStore, BenchTempDir) {
+fn make_mdbx_state_store() -> (StateStore<MdbxStore>, BenchTempDir) {
     let tempdir = BenchTempDir::new("neo-state-service-mdbx-bench", &MDBX_BENCH_SEQ);
-    let backing: Arc<dyn Store> = Arc::new(
+    let backing = Arc::new(
         MdbxStoreProvider::new(StorageConfig {
             path: tempdir.path.clone(),
             mdbx_geometry_upper_bytes: Some(8 * 1024 * 1024 * 1024),
@@ -203,8 +203,8 @@ fn bench_state_service_empty_continuation_batches(c: &mut Criterion) {
     mdbx_group.finish();
 }
 
-fn apply_empty_batch(
-    handlers: &StateServiceCommitHandlers,
+fn apply_empty_batch<S: Store>(
+    handlers: &StateServiceCommitHandlers<S>,
     empty: &DataCache,
     start_index: u32,
     batch_len: usize,

@@ -1,23 +1,24 @@
-use super::native_provider::OracleServiceNativeProvider;
+use super::native_provider::{OracleContractReadProvider, OracleServiceNativeProvider};
 use super::utils::{ledger_height, wallet_has_oracle_account};
-use super::{OracleService, OracleStatus};
-use neo_config::ProtocolSettings;
+use super::{OracleRuntimeProvider, OracleService, OracleStatus};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_storage::persistence::DataCache;
-use neo_wallets::Wallet;
+use neo_wallets::Nep6Wallet;
 use std::sync::Arc;
 
-impl neo_payloads::CommittingHandler for OracleService {
-    fn blockchain_committing_handler(
+impl<R, P> neo_payloads::CommittingHandler for OracleService<R, P>
+where
+    R: OracleRuntimeProvider + 'static,
+    P: NativeContractProvider + OracleContractReadProvider + 'static,
+{
+    fn blockchain_committing_handler<B: neo_storage::CacheRead>(
         &self,
-        system: &dyn std::any::Any,
+        network: u32,
         _block: &neo_payloads::Block,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         _application_executed_list: &[neo_payloads::ApplicationExecuted],
     ) {
-        let Some(settings) = system.downcast_ref::<ProtocolSettings>() else {
-            return;
-        };
-        if settings.network != self.settings.network {
+        if network != self.settings.network {
             return;
         }
 
@@ -54,26 +55,22 @@ impl neo_payloads::CommittingHandler for OracleService {
     }
 }
 
-impl neo_payloads::WalletChangedHandler for OracleService {
+impl<R, P> neo_payloads::WalletChangedHandler for OracleService<R, P>
+where
+    R: OracleRuntimeProvider + 'static,
+    P: NativeContractProvider + OracleContractReadProvider + 'static,
+{
+    type Sender = ();
+    type Wallet = Nep6Wallet;
+
     fn wallet_provider_wallet_changed_handler(
         &self,
-        _sender: &dyn std::any::Any,
-        wallet: Option<Arc<dyn std::any::Any + Send + Sync>>,
+        _sender: &Self::Sender,
+        wallet: Option<Arc<Self::Wallet>>,
     ) {
-        // The leaf `WalletChangedHandler` trait is type-erased; the
-        // concrete `Arc<dyn Wallet>` we want to store lives in
-        // `neo_wallets`. Real callers (e.g. `Node`) should hand us a
-        // proper `Arc<dyn Wallet>` downcasted before invoking this
-        // handler. The trait cannot express that without a circular
-        // dep, so the impl just best-effort casts: it tries the
-        // downcast via the `Any` vtable and otherwise drops the
-        // event.
-        let wallet_arc: Option<Arc<dyn Wallet>> = wallet
-            .as_ref()
-            .and_then(|w| w.downcast_ref::<Arc<dyn Wallet>>().cloned());
-        *self.wallet.write() = wallet_arc.clone();
+        *self.wallet.write() = wallet.clone();
         if self.settings.auto_start {
-            if let Some(wallet) = wallet_arc {
+            if let Some(wallet) = wallet {
                 if let Some(service) = self.self_ref.read().upgrade() {
                     service.start(wallet);
                 }

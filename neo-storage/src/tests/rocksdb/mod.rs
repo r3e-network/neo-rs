@@ -13,11 +13,13 @@
 //! - Test modules and fixtures: grouped coverage for the surrounding domain.
 
 use super::*;
+use crate::persistence::RawReadOnlyStore;
 use crate::persistence::StoreCache;
 use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::persistence::seek_direction::SeekDirection;
 use crate::persistence::storage::StorageConfig;
 use crate::persistence::store::Store;
+use crate::persistence::store_snapshot::StoreSnapshot;
 use crate::persistence::write_store::WriteStore;
 use crate::rocksdb::write_batch_buffer::WriteBatchConfig;
 use crate::{StorageItem, StorageKey};
@@ -499,7 +501,7 @@ fn backward_prefix_find_returns_expected_rows_in_store_and_snapshot_views() {
         .collect();
     assert_eq!(store_backward_keys, backward_expected);
 
-    let snapshot_cache = StoreCache::new_from_snapshot(store.snapshot());
+    let snapshot_cache = StoreCache::<RocksDbStore>::new_from_snapshot(store.snapshot());
     let snapshot_forward_keys: Vec<Vec<u8>> = snapshot_cache
         .data_cache()
         .find(Some(&prefix), SeekDirection::Forward)

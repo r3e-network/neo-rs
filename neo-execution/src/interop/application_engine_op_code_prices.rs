@@ -2,7 +2,12 @@
 
 use crate::ApplicationEngine;
 
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     /// The prices of all opcodes (in execution units, before ExecFeeFactor).
     pub const OPCODE_PRICE_TABLE: [i64; 256] = [
         1, 1, 1, 1, 4, 4, 0, 0, 1, 1, 4, 1, 8, 512, 4096, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,

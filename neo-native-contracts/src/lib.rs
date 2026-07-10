@@ -59,7 +59,7 @@ pub mod std_lib;
 pub(crate) mod test_support;
 pub mod treasury;
 
-pub use registry::{catalog, hashes, native_contract, provider, role};
+pub use registry::{catalog, hashes, native_contract, provider, role, standard};
 pub(crate) use support::{args, committee, keys};
 
 pub use catalog::{
@@ -77,9 +77,10 @@ pub use neo_token::NeoToken;
 pub use notary::Notary;
 pub use oracle_contract::{OracleContract, OracleRequest};
 pub use policy_contract::PolicyContract;
-pub use provider::{StandardNativeProvider, install};
+pub use provider::StandardNativeProvider;
 pub use role::Role;
 pub use role_management::RoleManagement;
+pub use standard::StandardNativeContract;
 pub use std_lib::StdLib;
 pub use treasury::Treasury;
 

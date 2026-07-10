@@ -1,17 +1,22 @@
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::Block;
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 use tracing::{debug, error};
 
 use crate::service::{BlockchainService, MempoolLike};
 use crate::service_context::BlockPersistContext;
 
-pub(crate) struct BatchPersistResources {
-    pub(crate) snapshot: Arc<DataCache>,
+pub(crate) struct BatchPersistResources<P, B>
+where
+    P: NativeContractProvider + 'static,
+    B: CacheRead,
+{
+    pub(crate) snapshot: Arc<DataCache<B>>,
     pub(crate) settings: Arc<ProtocolSettings>,
-    pub(crate) native_persist: crate::native_persist::NativePersistResources,
+    pub(crate) native_persist: crate::native_persist::NativePersistResources<P>,
 }
 
 impl<S, M> BlockchainService<S, M>
@@ -59,7 +64,8 @@ where
     pub(crate) fn batch_persist_resources(
         &self,
         index: u32,
-    ) -> neo_error::CoreResult<Option<BatchPersistResources>> {
+    ) -> neo_error::CoreResult<Option<BatchPersistResources<S::NativeProvider, S::CacheBacking>>>
+    {
         let Some(snapshot) = self.system.store_snapshot() else {
             debug!(
                 target: "neo",
@@ -86,7 +92,7 @@ where
         &self,
         block: Arc<Block>,
         options: crate::native_persist::NativePersistOptions,
-        resources: &BatchPersistResources,
+        resources: &BatchPersistResources<S::NativeProvider, S::CacheBacking>,
     ) -> bool {
         let persist_context = if options.capture_replay_artifacts {
             BlockPersistContext::live()

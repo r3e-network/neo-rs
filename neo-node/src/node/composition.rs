@@ -8,6 +8,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
+use neo_storage::persistence::providers::RuntimeStore;
+use neo_storage::persistence::store::Store;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -16,29 +18,94 @@ use super::config::{
     NodeConfig, open_memory_store, open_store, service_store_provider,
     validate_state_service_storage,
 };
-use super::context::DaemonContext;
+use super::context::DaemonCommitHooks;
 use super::indexer_runtime;
 use super::inventory_relay::{
     FAST_SYNC_BLOCK_BATCH_FLUSH_MS, FAST_SYNC_BLOCK_BATCH_SIZE, FAST_SYNC_BURST_CAPACITY,
     flush_inventory_block_batch, handle_inbound_inventory_item,
 };
-use super::ledger_source::{
-    LedgerBlockSource, RpcLedgerBlockSource, snapshot_ledger_index, store_ledger_index,
-};
+use super::ledger_source::{LedgerBlockSource, RpcLedgerBlockSource, store_ledger_index};
 use super::observability;
 use super::remote_ledger::RemoteLedgerStatus;
-use super::services::{self, OperationalServices};
+use super::services::{self, NodeServiceHandles, OperationalServices};
 use super::sync_downloader;
 use super::tasks::{TaskKind, spawn_daemon_task, spawn_daemon_task_result};
+use super::workflow::RunningNode;
 
-/// The composed, running node and the handles that keep it alive.
-pub(in crate::node) struct RunningNode {
-    pub(in crate::node) node: Arc<neo_system::Node>,
-    pub(in crate::node) network: neo_network::NetworkHandle,
-    pub(in crate::node) handles: Vec<tokio::task::JoinHandle<()>>,
-    pub(in crate::node) shutdown: CancellationToken,
-    pub(in crate::node) durable_service_stores:
-        Vec<Arc<dyn neo_storage::persistence::store::Store>>,
+enum NodeLedgerBlockSource {
+    Local(LedgerBlockSource<neo_storage::persistence::StoreCacheBacking<RuntimeStore>>),
+    Remote(RpcLedgerBlockSource),
+}
+
+impl neo_network::BlockSource for NodeLedgerBlockSource {
+    fn block_by_index(&self, index: u32) -> Option<neo_payloads::Block> {
+        match self {
+            Self::Local(source) => source.block_by_index(index),
+            Self::Remote(source) => source.block_by_index(index),
+        }
+    }
+
+    fn header_by_index(&self, index: u32) -> Option<neo_payloads::Header> {
+        match self {
+            Self::Local(source) => source.header_by_index(index),
+            Self::Remote(source) => source.header_by_index(index),
+        }
+    }
+
+    fn block_hash_by_index(&self, index: u32) -> Option<neo_primitives::UInt256> {
+        match self {
+            Self::Local(source) => source.block_hash_by_index(index),
+            Self::Remote(source) => source.block_hash_by_index(index),
+        }
+    }
+
+    fn block_by_hash(&self, hash: &neo_primitives::UInt256) -> Option<neo_payloads::Block> {
+        match self {
+            Self::Local(source) => source.block_by_hash(hash),
+            Self::Remote(source) => source.block_by_hash(hash),
+        }
+    }
+
+    fn block_index_by_hash(&self, hash: &neo_primitives::UInt256) -> Option<u32> {
+        match self {
+            Self::Local(source) => source.block_index_by_hash(hash),
+            Self::Remote(source) => source.block_index_by_hash(hash),
+        }
+    }
+
+    fn transaction_by_hash(
+        &self,
+        hash: &neo_primitives::UInt256,
+    ) -> Option<neo_payloads::Transaction> {
+        match self {
+            Self::Local(source) => source.transaction_by_hash(hash),
+            Self::Remote(source) => source.transaction_by_hash(hash),
+        }
+    }
+
+    fn extensible_by_hash(
+        &self,
+        hash: &neo_primitives::UInt256,
+    ) -> Option<neo_payloads::ExtensiblePayload> {
+        match self {
+            Self::Local(source) => source.extensible_by_hash(hash),
+            Self::Remote(source) => source.extensible_by_hash(hash),
+        }
+    }
+
+    fn contains_transaction(&self, hash: &neo_primitives::UInt256) -> bool {
+        match self {
+            Self::Local(source) => source.contains_transaction(hash),
+            Self::Remote(source) => source.contains_transaction(hash),
+        }
+    }
+
+    fn mempool_transaction_hashes(&self) -> Vec<neo_primitives::UInt256> {
+        match self {
+            Self::Local(source) => source.mempool_transaction_hashes(),
+            Self::Remote(source) => source.mempool_transaction_hashes(),
+        }
+    }
 }
 
 /// Constructs the [`neo_system::Node`] with a live blockchain service
@@ -52,12 +119,8 @@ pub(in crate::node) async fn build_node(
     startup_bulk_import: bool,
     observability: Option<observability::ObservabilityRuntime>,
 ) -> anyhow::Result<RunningNode> {
-    use neo_blockchain::service::BlockchainService;
-    use neo_blockchain::{HeaderCache, LedgerContext};
-    use neo_storage::persistence::StoreCache;
-
     // ----- storage backend -----
-    let store: Arc<dyn neo_storage::persistence::store::Store> = match ledger_mode {
+    let store: Arc<RuntimeStore> = match ledger_mode {
         LedgerMode::Local => open_store(config, storage_override)?,
         LedgerMode::RemoteRpc { .. } => {
             info!(
@@ -89,8 +152,8 @@ pub(in crate::node) async fn build_node(
             durable_tip_height,
             "enabling fast-sync store mode for initial catch-up (WAL disabled, auto-compaction off)"
         );
-        if let Some(fs) = store.as_fast_sync_store() {
-            fs.enable_fast_sync_mode();
+        if store.supports_fast_sync_mode() {
+            store.enable_fast_sync_mode();
         }
     }
 
@@ -98,29 +161,6 @@ pub(in crate::node) async fn build_node(
     // composed Node should expose the same provider object. Build it once here
     // and hand the same Arc to every provider-aware subsystem.
     let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new());
-
-    let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);
-    let snapshot = Arc::new(store_cache.data_cache().clone());
-    // The consensus driver now mints a fresh snapshot from the store at the start
-    // of each round (see ConsensusDriver::fresh_round_snapshot), so it takes the
-    // store handle directly rather than a frozen startup snapshot.
-    // The durable tip at startup, read before the snapshot is moved into the
-    // service contexts; used to seed the advertised height / sync cursor.
-    let durable_tip = snapshot_ledger_index(&snapshot).unwrap_or(0);
-
-    let mempool = Arc::new(neo_mempool::MemoryPool::new_with_native_contract_provider(
-        &settings,
-        native_contract_provider.clone(),
-    ));
-    let header_cache = Arc::new(HeaderCache::default());
-    // Seed the in-memory ledger tip from the durable store so a node restarted
-    // on a populated chain accepts the next block (`index == current_height + 1`)
-    // instead of parking every incoming block as "ahead of tip" (which would
-    // stall sync at the persisted height after a restart).
-    let ledger_ctx = Arc::new(LedgerContext::default());
-    if durable_tip > 0 {
-        ledger_ctx.record_tip(durable_tip);
-    }
 
     let OperationalServices {
         state_store,
@@ -137,12 +177,35 @@ pub(in crate::node) async fn build_node(
         use_fast_sync_store_mode,
     )?;
 
+    let daemon_hooks = Arc::new(DaemonCommitHooks::new(
+        settings.network,
+        state_service.clone(),
+        config.state_service.track_during_catchup,
+        indexer_service.clone(),
+        application_logs_service.clone(),
+    ));
+    let core_launch = neo_system::NodeCoreBuilder::new(
+        Arc::clone(&settings),
+        Arc::clone(&store),
+        Arc::clone(&native_contract_provider),
+        Arc::clone(&daemon_hooks),
+        durable_tip_height,
+    )
+    .with_stop_at_height(stop_at_height)
+    .build();
+    let (core, blockchain_task) = core_launch.into_parts();
+    let durable_tip = core.persisted_height();
+    let snapshot = core.snapshot();
+    let ledger_ctx = core.ledger_context();
+    let mempool = core.mempool();
+    let blockchain = core.blockchain();
+
     // A second handle on the shared snapshot serves peers' block requests, and
     // the shared mempool answers `Inv`/`Mempool`/`GetData` for unconfirmed txs.
     let mut advertised_tip = durable_tip;
     let mut remote_advertised_tip = None;
     let mut remote_tip_error = None;
-    let block_source: Arc<dyn neo_network::BlockSource> = match ledger_mode {
+    let block_source: Arc<NodeLedgerBlockSource> = match ledger_mode {
         LedgerMode::RemoteRpc { endpoint } => {
             let source = RpcLedgerBlockSource::new(endpoint.to_string(), Arc::clone(&mempool))?;
             match source.remote_tip_height() {
@@ -166,32 +229,14 @@ pub(in crate::node) async fn build_node(
                 height = advertised_tip,
                 "using remote RPC endpoint as ledger source"
             );
-            Arc::new(source)
+            Arc::new(NodeLedgerBlockSource::Remote(source))
         }
-        LedgerMode::Local => Arc::new(LedgerBlockSource::new(
+        LedgerMode::Local => Arc::new(NodeLedgerBlockSource::Local(LedgerBlockSource::new(
             Arc::clone(&snapshot),
             Arc::clone(&ledger_ctx),
             Arc::clone(&mempool),
-        )),
+        ))),
     };
-    let daemon_ctx = Arc::new(DaemonContext::new(
-        Arc::clone(&settings),
-        snapshot,
-        store_cache,
-        state_service.clone(),
-        config.state_service.track_during_catchup,
-        indexer_service.clone(),
-        Arc::clone(&native_contract_provider),
-        application_logs_service.clone(),
-    ));
-    let system_ctx = Arc::clone(&daemon_ctx);
-    let (mut service, blockchain) = BlockchainService::with_defaults(
-        system_ctx,
-        Arc::clone(&ledger_ctx),
-        Arc::clone(&header_cache),
-        Arc::clone(&mempool),
-    );
-    service.set_stop_at_height(stop_at_height);
 
     let shutdown = CancellationToken::new();
     let mut handles = Vec::new();
@@ -201,7 +246,7 @@ pub(in crate::node) async fn build_node(
         &shutdown,
         TaskKind::Essential,
         "blockchain_service",
-        service.run(),
+        blockchain_task.run(),
     );
 
     if ledger_mode.uses_local_replay_services() {
@@ -483,45 +528,28 @@ pub(in crate::node) async fn build_node(
         );
     }
 
-    let service_registry = neo_system::ServiceRegistry::new();
-    if let LedgerMode::RemoteRpc { endpoint } = ledger_mode {
+    let remote_ledger = if let LedgerMode::RemoteRpc { endpoint } = ledger_mode {
         let status = match remote_tip_error {
             Some(error) => RemoteLedgerStatus::unavailable(endpoint.to_string(), error),
             None => RemoteLedgerStatus::new(endpoint.to_string(), remote_advertised_tip),
         };
-        service_registry.register(Arc::new(status));
-    }
-    if let Some(state_store) = &state_store {
-        service_registry.register(Arc::clone(state_store));
-    }
-    if let Some(state_service) = &state_service {
-        service_registry.register(Arc::clone(state_service));
-    }
-    if let Some(indexer) = &indexer_service {
-        service_registry.register(Arc::clone(indexer));
-    }
-    if let Some(application_logs) = &application_logs_service {
-        service_registry.register(Arc::clone(application_logs));
-    }
-    if let Some(tokens_tracker) = &tokens_tracker_service {
-        service_registry.register(Arc::clone(tokens_tracker));
-    }
-    service_registry.register(Arc::clone(&peer_registry));
+        Some(Arc::new(status))
+    } else {
+        None
+    };
+    let service_handles = Arc::new(NodeServiceHandles::new(
+        state_store.clone(),
+        state_service.clone(),
+        indexer_service.clone(),
+        application_logs_service.clone(),
+        tokens_tracker_service.clone(),
+        remote_ledger,
+    ));
 
     let node = Arc::new(
-        neo_system::Node::builder()
-            .with_settings(settings)
-            .with_storage(store)
-            .with_blockchain(blockchain.clone())
-            .with_network(network.clone())
-            .with_mempool(mempool)
-            .with_header_cache(header_cache)
-            .with_services(service_registry)
-            .with_native_contract_provider(native_contract_provider)
-            .build()
+        core.into_node(network.clone())
             .map_err(|e| anyhow::anyhow!("node build failed: {e}"))?,
     );
-    daemon_ctx.set_node(Arc::clone(&node));
     if ledger_mode.uses_local_replay_services() {
         spawn_daemon_task_result(
             &mut handles,
@@ -539,12 +567,12 @@ pub(in crate::node) async fn build_node(
         );
     }
     if let Some((tracker_settings, tracker_store)) = tokens_tracker_runtime {
-        daemon_ctx.set_tokens_tracker(Some(Arc::new(
+        daemon_hooks.set_tokens_tracker(Some(Arc::new(
             neo_rpc::plugins::tokens_tracker::TokensTracker::new(
                 tracker_settings,
                 tracker_store,
                 node.settings(),
-                node.native_contract_provider.clone(),
+                node.native_contract_provider(),
             ),
         )));
     }
@@ -570,11 +598,12 @@ pub(in crate::node) async fn build_node(
         );
     }
 
-    Ok(RunningNode {
+    Ok(RunningNode::new(
         node,
         network,
         handles,
         shutdown,
-        durable_service_stores: durable_stores,
-    })
+        service_handles,
+        durable_stores,
+    ))
 }

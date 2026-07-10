@@ -15,19 +15,23 @@ use neo_blockchain::{
     TransactionStateProvider,
 };
 use neo_config::ProtocolSettings;
-use neo_execution::{ApplicationEngine, ContractState, Diagnostic, ExecutionContextState};
+use neo_execution::native::native_contract_provider::NativeContractProvider;
+use neo_execution::{ApplicationEngine, ContractState, Diagnostic};
 use neo_io::Serializable;
 use neo_manifest::CallFlags;
 use neo_native_contracts::{GasToken, StandardNativeProvider};
-use neo_payloads::{Block, Transaction, TransactionState};
-use neo_primitives::{TriggerType, UInt160, UInt256, Verifiable};
+use neo_payloads::{Block, Transaction, TransactionState, VerifiableContainer};
+use neo_primitives::{TriggerType, UInt160, UInt256};
 use neo_serialization::BinarySerializer;
 use neo_state_service::MptStore;
+use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::storage::StorageConfig;
 use neo_storage::persistence::store::Store;
-use neo_storage::persistence::{SeekDirection, StoreCache, StoreFactory};
+use neo_storage::persistence::{
+    ReadOnlyStoreGeneric, SeekDirection, StoreCache, StoreFactory, StoreSnapshot, WriteStore,
+};
 use neo_storage::{DataCache, StorageKey};
-use neo_vm::{ExecutionContext, stack_value_as_bigint};
+use neo_vm::stack_value_as_bigint;
 use neo_vm_rs::{
     ExecutionEngineLimits, Instruction, StackValue, VmState as VMState, stack_value_as_u32,
 };
@@ -186,9 +190,10 @@ impl ReplayInstructionTracer {
         events.push_back(event);
     }
 
-    fn label_context(context: &ExecutionContext) -> TraceContextLabel {
-        let state_arc =
-            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+    fn label_context<B: neo_storage::CacheRead>(
+        context: &neo_execution::ApplicationExecutionContext<B>,
+    ) -> TraceContextLabel {
+        let state_arc = context.state();
         let state = state_arc.lock();
         TraceContextLabel {
             script_hash: state
@@ -201,11 +206,14 @@ impl ReplayInstructionTracer {
 }
 
 impl Diagnostic for ReplayInstructionTracer {
-    fn initialized(&mut self, _engine: &mut ApplicationEngine) {}
+    fn initialized(&mut self) {}
 
     fn disposed(&mut self) {}
 
-    fn context_loaded(&mut self, context: &ExecutionContext) {
+    fn context_loaded<B: neo_storage::CacheRead>(
+        &mut self,
+        context: &neo_execution::ApplicationExecutionContext<B>,
+    ) {
         let label = Self::label_context(context);
         self.contexts.push(label.clone());
         self.push_event(json!({
@@ -216,7 +224,10 @@ impl Diagnostic for ReplayInstructionTracer {
         }));
     }
 
-    fn context_unloaded(&mut self, context: &ExecutionContext) {
+    fn context_unloaded<B: neo_storage::CacheRead>(
+        &mut self,
+        context: &neo_execution::ApplicationExecutionContext<B>,
+    ) {
         let label = Self::label_context(context);
         self.push_event(json!({
             "event": "context_unloaded",
@@ -803,7 +814,7 @@ fn open_store(
     storage_provider: StorageProviderArg,
     db_path: &Path,
     read_only: bool,
-) -> Result<Arc<dyn Store>> {
+) -> Result<Arc<RuntimeStore>> {
     StoreFactory::get_store_with_config(
         storage_provider.as_provider_name(),
         StorageConfig {
@@ -815,9 +826,12 @@ fn open_store(
     .map_err(|err| anyhow!("open {} store: {err}", storage_provider.as_provider_name()))
 }
 
-fn open_store_cache(storage_provider: StorageProviderArg, db_path: &Path) -> Result<StoreCache> {
+fn open_store_cache(
+    storage_provider: StorageProviderArg,
+    db_path: &Path,
+) -> Result<StoreCache<RuntimeStore>> {
     let store = open_store(storage_provider, db_path, true)?;
-    Ok(StoreCache::new_from_store(store, false))
+    Ok(StoreCache::<RuntimeStore>::new_from_store(store, false))
 }
 
 fn replay_transaction(
@@ -833,11 +847,9 @@ fn replay_transaction(
         .filter(|limit| *limit > 0);
     let trace_events = trace_instruction_limit
         .map(|limit| Arc::new(Mutex::new(VecDeque::with_capacity(limit.saturating_add(1)))));
-    let diagnostic = trace_instruction_limit.zip(trace_events.as_ref()).map(
-        |(limit, events)| -> Box<dyn Diagnostic> {
-            Box::new(ReplayInstructionTracer::new(limit, Arc::clone(events)))
-        },
-    );
+    let diagnostic = trace_instruction_limit
+        .zip(trace_events.as_ref())
+        .map(|(limit, events)| ReplayInstructionTracer::new(limit, Arc::clone(events)));
 
     let store_cache = open_store_cache(storage_provider, db_path)?;
     let snapshot = store_cache.data_cache();
@@ -881,11 +893,9 @@ fn replay_raw_transaction(
         .filter(|limit| *limit > 0);
     let trace_events = trace_instruction_limit
         .map(|limit| Arc::new(Mutex::new(VecDeque::with_capacity(limit.saturating_add(1)))));
-    let diagnostic = trace_instruction_limit.zip(trace_events.as_ref()).map(
-        |(limit, events)| -> Box<dyn Diagnostic> {
-            Box::new(ReplayInstructionTracer::new(limit, Arc::clone(events)))
-        },
-    );
+    let diagnostic = trace_instruction_limit
+        .zip(trace_events.as_ref())
+        .map(|(limit, events)| ReplayInstructionTracer::new(limit, Arc::clone(events)));
 
     let transaction = decode_raw_transaction(raw_tx_base64)?;
     let tx_hash = transaction.try_hash()?;
@@ -937,13 +947,13 @@ fn decode_raw_block(block_base64: &str) -> Result<Block> {
     Ok(block)
 }
 
-fn execute_transaction_probe(
+fn execute_transaction_probe<B: neo_storage::CacheRead>(
     db_path: &Path,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     block: Arc<Block>,
     transaction: Transaction,
     stored_vm_state: Option<VMState>,
-    diagnostic: Option<Box<dyn Diagnostic>>,
+    diagnostic: Option<ReplayInstructionTracer>,
     trace_events: Option<Arc<Mutex<VecDeque<Value>>>>,
 ) -> Result<Value> {
     let tx_hash = transaction.try_hash()?;
@@ -952,7 +962,7 @@ fn execute_transaction_probe(
 
     let block_cache = Arc::new(snapshot.clone_cache());
     let tx_cache = Arc::new(block_cache.clone_cache());
-    let container: Arc<dyn Verifiable> = Arc::new(transaction.clone());
+    let container = Arc::new(VerifiableContainer::from(transaction.clone()));
     let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
         TriggerType::Application,
         Some(container),
@@ -1007,14 +1017,18 @@ fn execute_transaction_probe(
     Ok(output)
 }
 
-fn trace_engine_frames(engine: &ApplicationEngine) -> Vec<Value> {
+fn trace_engine_frames<P, D, B>(engine: &ApplicationEngine<P, D, B>) -> Vec<Value>
+where
+    P: NativeContractProvider,
+    D: Diagnostic,
+    B: neo_storage::CacheRead,
+{
     engine
         .invocation_stack()
         .iter()
         .enumerate()
         .map(|(index, context)| {
-            let state_arc = context
-                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let state_arc = context.state();
             let state = state_arc.lock();
             let script_hash = state
                 .script_hash

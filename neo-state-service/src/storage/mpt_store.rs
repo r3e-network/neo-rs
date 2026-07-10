@@ -59,7 +59,9 @@ use neo_crypto::mpt_trie::{MptError, MptResult, MptStoreSnapshot, Node, Trie};
 use neo_io::SerializableExtensions;
 use neo_primitives::{UINT256_SIZE, UInt256};
 use neo_storage::persistence::providers::memory_store::MemoryStore;
-use neo_storage::persistence::{Store, StoreSnapshot};
+use neo_storage::persistence::{
+    RawOverlaySink, RawOverlaySource, RawReadOnlyStore, Store, StoreSnapshot, WriteStore,
+};
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -113,7 +115,7 @@ pub(crate) struct MptBlockChanges<'a> {
 /// which serializes writers behind a dedicated gate (the C# plugin
 /// achieves the same single-writer discipline by running `StateStore`
 /// as an actor).
-pub struct MptStore {
+pub struct MptStore<S: Store = MemoryStore> {
     /// Flat key/value namespace shared by MPT nodes and state-root
     /// records (the C# `IStore` equivalent). The `Arc` is the
     /// copy-on-write generation pointer: readers clone it to freeze a
@@ -134,7 +136,7 @@ pub struct MptStore {
     /// just to confirm the previous block root.
     latest_local_root: RwLock<Option<(u32, UInt256)>>,
     /// Optional durable backend for the same flat C# byte namespace.
-    backing: Option<Arc<dyn Store>>,
+    backing: Option<Arc<S>>,
 }
 
 /// Immutable, point-in-time view of an [`MptStore`] — the analogue of
@@ -148,11 +150,11 @@ pub struct MptStore {
 /// trie-node map and the state-root records are captured together,
 /// making `current_local_root_*` + `open_trie` reads mutually
 /// consistent.
-pub struct MptReadSnapshot {
+pub struct MptReadSnapshot<S: Store = MemoryStore> {
     /// Frozen generation of the key/value namespace.
     map: Arc<HashMap<Vec<u8>, Option<Vec<u8>>>>,
     /// Frozen durable snapshot used for entries not present in `map`.
-    backing_snapshot: Option<Arc<dyn StoreSnapshot>>,
+    backing_snapshot: Option<Arc<S::Snapshot>>,
     /// Copied [`MptStore::full_state`] flag.
     full_state: bool,
 }
@@ -185,7 +187,78 @@ impl OverlayCounts {
     }
 }
 
-impl MptReadSnapshot {
+struct EmptyRootBatchOverlaySource<'a> {
+    blocks: &'a [MptBlockChanges<'a>],
+    root_hash: UInt256,
+    empty_root_record: Option<&'a ([u8; 1 + UINT256_SIZE], Vec<u8>)>,
+    current_index_value: [u8; 4],
+    counts: OverlayCounts,
+}
+
+impl<'a> EmptyRootBatchOverlaySource<'a> {
+    fn new(
+        blocks: &'a [MptBlockChanges<'a>],
+        root_hash: UInt256,
+        empty_root_record: Option<&'a ([u8; 1 + UINT256_SIZE], Vec<u8>)>,
+        current_index: u32,
+    ) -> Self {
+        Self {
+            blocks,
+            root_hash,
+            empty_root_record,
+            current_index_value: current_index.to_le_bytes(),
+            counts: OverlayCounts::default(),
+        }
+    }
+}
+
+impl RawOverlaySource for EmptyRootBatchOverlaySource<'_> {
+    fn visit_raw_overlay<S>(&mut self, sink: &mut S)
+    where
+        S: RawOverlaySink + ?Sized,
+    {
+        for block in self.blocks {
+            let key = MptStore::<MemoryStore>::state_root_key_bytes(block.block_index);
+            let value = MptStore::<MemoryStore>::encode_state_root_fields(
+                block.block_index,
+                self.root_hash,
+            );
+            self.counts.record_put();
+            sink.visit(&key, Some(&value));
+        }
+        self.counts.record_put();
+        sink.visit(
+            Keys::CURRENT_LOCAL_ROOT_INDEX,
+            Some(self.current_index_value.as_slice()),
+        );
+        if let Some((key, value)) = self.empty_root_record {
+            self.counts.record_put();
+            sink.visit(key.as_slice(), Some(value.as_slice()));
+        }
+    }
+}
+
+struct SortedOverlaySource<'a> {
+    entries: &'a [(&'a Vec<u8>, &'a Option<Vec<u8>>)],
+    counts: OverlayCounts,
+}
+
+impl RawOverlaySource for SortedOverlaySource<'_> {
+    fn visit_raw_overlay<S>(&mut self, sink: &mut S)
+    where
+        S: RawOverlaySink + ?Sized,
+    {
+        for (key, value) in self.entries {
+            self.counts.record(value.as_ref());
+            sink.visit(key, value.as_deref());
+        }
+    }
+}
+
+impl<S> MptReadSnapshot<S>
+where
+    S: Store,
+{
     /// Returns whether historical trie versions are retained.
     pub fn full_state(&self) -> bool {
         self.full_state
@@ -202,13 +275,13 @@ impl MptReadSnapshot {
     /// Returns the state-root record persisted for `index`, if any,
     /// as of this snapshot.
     pub fn get_state_root(&self, index: u32) -> Option<StateRoot> {
-        MptStore::read_state_root(&self.map, self.backing_snapshot.as_deref(), index)
+        MptStore::<S>::read_state_root(&self.map, self.backing_snapshot.as_deref(), index)
     }
 
     /// Returns the local root index current as of this snapshot (C#
     /// `StateSnapshot.CurrentLocalRootIndex`).
     pub fn current_local_root_index(&self) -> Option<u32> {
-        MptStore::read_current_local_root_index(&self.map, self.backing_snapshot.as_deref())
+        MptStore::<S>::read_current_local_root_index(&self.map, self.backing_snapshot.as_deref())
     }
 
     /// Returns the local root hash current as of this snapshot (C#
@@ -219,7 +292,10 @@ impl MptReadSnapshot {
     }
 }
 
-impl std::fmt::Debug for MptReadSnapshot {
+impl<S> std::fmt::Debug for MptReadSnapshot<S>
+where
+    S: Store,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MptReadSnapshot")
             .field("entries", &self.map.len())
@@ -228,7 +304,10 @@ impl std::fmt::Debug for MptReadSnapshot {
     }
 }
 
-impl MptStoreSnapshot for MptReadSnapshot {
+impl<S> MptStoreSnapshot for MptReadSnapshot<S>
+where
+    S: Store,
+{
     fn try_get(&self, key: &[u8]) -> MptResult<Option<Vec<u8>>> {
         match self.map.get(key) {
             Some(value) => Ok(value.clone()),
@@ -257,21 +336,24 @@ impl MptStoreSnapshot for MptReadSnapshot {
 /// mutator, so base == live for its whole run), writes are buffered in
 /// an overlay (`None` = staged deletion) and published into the live
 /// map in a single atomic step after the trie commit succeeds.
-pub(crate) struct MptWriteBatch {
+pub(crate) struct MptWriteBatch<S: Store = MemoryStore> {
     /// Generation the block builds on.
     base: Arc<HashMap<Vec<u8>, Option<Vec<u8>>>>,
     /// Durable snapshot taken before this write batch starts.
-    backing_snapshot: Option<Arc<dyn StoreSnapshot>>,
+    backing_snapshot: Option<Arc<S::Snapshot>>,
     /// Staged mutations: `Some(value)` = put, `None` = delete.
     overlay: Mutex<HashMap<Vec<u8>, Option<Vec<u8>>>>,
     /// Fast-path guard for reads before `Trie::commit` stages node writes.
     overlay_has_entries: AtomicBool,
 }
 
-impl MptWriteBatch {
+impl<S> MptWriteBatch<S>
+where
+    S: Store,
+{
     fn new(
         base: Arc<HashMap<Vec<u8>, Option<Vec<u8>>>>,
-        backing_snapshot: Option<Arc<dyn StoreSnapshot>>,
+        backing_snapshot: Option<Arc<S::Snapshot>>,
         overlay_capacity: usize,
     ) -> Self {
         Self {
@@ -291,7 +373,10 @@ impl MptWriteBatch {
     }
 }
 
-impl MptStoreSnapshot for MptWriteBatch {
+impl<S> MptStoreSnapshot for MptWriteBatch<S>
+where
+    S: Store,
+{
     fn try_get(&self, key: &[u8]) -> MptResult<Option<Vec<u8>>> {
         if self.overlay_contains_entries() {
             if let Some(staged) = self.overlay.lock().get(key) {
@@ -334,16 +419,19 @@ impl MptStoreSnapshot for MptWriteBatch {
 
 /// Lazily opens the write trie only when a block has at least one effective
 /// StateService MPT mutation.
-pub(crate) struct LazyMptChangeSink<'a> {
-    store: &'a MptStore,
+pub(crate) struct LazyMptChangeSink<'a, S: Store = MemoryStore> {
+    store: &'a MptStore<S>,
     root_before: Option<UInt256>,
     overlay_capacity: usize,
-    batch: Option<Arc<MptWriteBatch>>,
-    trie: Option<Trie<MptWriteBatch>>,
+    batch: Option<Arc<MptWriteBatch<S>>>,
+    trie: Option<Trie<MptWriteBatch<S>>>,
 }
 
-impl<'a> LazyMptChangeSink<'a> {
-    fn new(store: &'a MptStore, root_before: Option<UInt256>, overlay_capacity: usize) -> Self {
+impl<'a, S> LazyMptChangeSink<'a, S>
+where
+    S: Store,
+{
+    fn new(store: &'a MptStore<S>, root_before: Option<UInt256>, overlay_capacity: usize) -> Self {
         Self {
             store,
             root_before,
@@ -353,9 +441,9 @@ impl<'a> LazyMptChangeSink<'a> {
         }
     }
 
-    fn ensure_trie(&mut self) -> MptResult<&mut Trie<MptWriteBatch>> {
+    fn ensure_trie(&mut self) -> MptResult<&mut Trie<MptWriteBatch<S>>> {
         if self.trie.is_none() {
-            let batch = Arc::new(MptWriteBatch::new(
+            let batch = Arc::new(MptWriteBatch::<S>::new(
                 Arc::clone(&self.store.kv.read()),
                 self.store.backing_snapshot(),
                 self.overlay_capacity,
@@ -393,25 +481,12 @@ impl<'a> LazyMptChangeSink<'a> {
     }
 }
 
-impl MptStore {
-    /// Constructs an empty store.
-    ///
-    /// `full_state` mirrors the C# `FullState` setting: `true` keeps
-    /// every historical trie version resolvable (required for
-    /// `getstate`/`getproof` against old roots), `false` prunes
-    /// superseded nodes on each block.
-    pub fn new(full_state: bool) -> Self {
-        Self {
-            kv: RwLock::new(Arc::new(HashMap::new())),
-            write_gate: Mutex::new(()),
-            full_state,
-            latest_local_root: RwLock::new(None),
-            backing: None,
-        }
-    }
-
+impl<S> MptStore<S>
+where
+    S: Store,
+{
     /// Opens a store over an existing durable byte namespace.
-    pub fn from_store(backing: Arc<dyn Store>, full_state: bool) -> MptResult<Self> {
+    pub fn from_store(backing: Arc<S>, full_state: bool) -> MptResult<Self> {
         let latest_local_root = Self::load_latest_local_root_from_backing(backing.as_ref());
         Ok(Self {
             kv: RwLock::new(Arc::new(HashMap::new())),
@@ -426,21 +501,17 @@ impl MptStore {
     ///
     /// This is primarily for tests and ephemeral nodes that need persistence
     /// across `MptStore` instances without erasing the backend behind
-    /// `dyn Store`.
-    pub fn from_memory_store(backing: Arc<MemoryStore>, full_state: bool) -> MptResult<Self> {
-        Self::from_store(backing, full_state)
-    }
-
+    /// a `Store` trait object.
     /// Returns whether historical trie versions are retained.
     pub fn full_state(&self) -> bool {
         self.full_state
     }
 
-    fn backing_snapshot(&self) -> Option<Arc<dyn StoreSnapshot>> {
+    fn backing_snapshot(&self) -> Option<Arc<S::Snapshot>> {
         self.backing.as_ref().map(|backing| backing.snapshot())
     }
 
-    fn load_latest_local_root_from_backing(backing: &dyn Store) -> Option<(u32, UInt256)> {
+    fn load_latest_local_root_from_backing(backing: &S) -> Option<(u32, UInt256)> {
         let snapshot = backing.snapshot();
         let index = Self::read_current_local_root_index(&HashMap::new(), Some(snapshot.as_ref()))?;
         let root =
@@ -454,7 +525,7 @@ impl MptStore {
     /// [`MptStore::apply_block_changes`] (which prunes superseded
     /// nodes without `full_state`) cannot delete nodes out from under
     /// the walk.
-    pub fn snapshot(&self) -> Arc<MptReadSnapshot> {
+    pub fn snapshot(&self) -> Arc<MptReadSnapshot<S>> {
         Arc::new(MptReadSnapshot {
             map: Arc::clone(&self.kv.read()),
             backing_snapshot: self.backing_snapshot(),
@@ -470,7 +541,7 @@ impl MptStore {
     /// Callers that need the current root *and* the trie to agree
     /// (e.g. RPC handlers) should take one [`MptStore::snapshot`] and
     /// read both from it instead.
-    pub fn open_trie(&self, root: Option<UInt256>) -> Trie<MptReadSnapshot> {
+    pub fn open_trie(&self, root: Option<UInt256>) -> Trie<MptReadSnapshot<S>> {
         self.snapshot().open_trie(root)
     }
 
@@ -530,7 +601,7 @@ impl MptStore {
         mutate: F,
     ) -> MptResult<UInt256>
     where
-        F: FnOnce(&mut Trie<MptWriteBatch>) -> MptResult<usize>,
+        F: FnOnce(&mut Trie<MptWriteBatch<S>>) -> MptResult<usize>,
     {
         let _writer = self.write_gate.lock();
         if change_count == 0
@@ -543,7 +614,7 @@ impl MptStore {
 
         // Stage every mutation against the current generation. The
         // writer gate guarantees the base cannot change underneath us.
-        let batch = Arc::new(MptWriteBatch::new(
+        let batch = Arc::new(MptWriteBatch::<S>::new(
             Arc::clone(&self.kv.read()),
             self.backing_snapshot(),
             change_count.saturating_mul(2) + 2,
@@ -613,7 +684,7 @@ impl MptStore {
         mutate: F,
     ) -> MptResult<UInt256>
     where
-        F: FnOnce(&mut LazyMptChangeSink<'_>) -> MptResult<usize>,
+        F: FnOnce(&mut LazyMptChangeSink<'_, S>) -> MptResult<usize>,
     {
         let _writer = self.write_gate.lock();
         let mut sink = LazyMptChangeSink::new(
@@ -710,7 +781,7 @@ impl MptStore {
             .iter()
             .map(|block| block.changes.len().saturating_mul(2).saturating_add(2))
             .sum();
-        let batch = Arc::new(MptWriteBatch::new(
+        let batch = Arc::new(MptWriteBatch::<S>::new(
             Arc::clone(&self.kv.read()),
             self.backing_snapshot(),
             overlay_capacity,
@@ -980,38 +1051,21 @@ impl MptStore {
                 let current_index =
                     Self::last_block_index(blocks, "state-service empty-root backing commit")?;
                 let current_index_value = current_index.to_le_bytes();
-                let mut counts = OverlayCounts::default();
-                let mut visit = |sink: &mut dyn FnMut(&[u8], Option<&[u8]>)| {
-                    for block in blocks {
-                        let key = Self::state_root_key_bytes(block.block_index);
-                        let value = Self::encode_state_root_fields(block.block_index, root_hash);
-                        counts.record_put();
-                        sink(&key, Some(&value));
-                    }
-                    counts.record_put();
-                    sink(
-                        Keys::CURRENT_LOCAL_ROOT_INDEX,
-                        Some(current_index_value.as_slice()),
-                    );
-                    if let Some((key, value)) = empty_root_record {
-                        counts.record_put();
-                        sink(key.as_slice(), Some(value.as_slice()));
-                    }
-                };
+                let mut source = EmptyRootBatchOverlaySource::new(
+                    blocks,
+                    root_hash,
+                    empty_root_record,
+                    current_index,
+                );
                 let committed = backing
-                    .as_raw_overlay_store()
-                    .map(|ro| {
-                        ro.try_commit_borrowed_raw_overlay(&mut visit)
-                            .map_err(|err| {
-                                MptError::storage(format!(
-                                    "state-service empty-batch backing commit failed: {err}"
-                                ))
-                            })
-                    })
-                    .transpose()?
-                    .unwrap_or(false);
+                    .try_commit_borrowed_raw_overlay(&mut source)
+                    .map_err(|err| {
+                        MptError::storage(format!(
+                            "state-service empty-batch backing commit failed: {err}"
+                        ))
+                    })?;
                 if committed {
-                    return Ok(counts);
+                    return Ok(source.counts);
                 }
 
                 let mut counts = OverlayCounts::default();
@@ -1087,9 +1141,7 @@ impl MptStore {
     fn should_publish_live_overlay(&self) -> bool {
         match self.backing.as_ref() {
             None => true,
-            Some(backing) => backing
-                .as_fast_sync_store()
-                .is_some_and(|fs| fs.has_pending_fast_sync_writes()),
+            Some(backing) => backing.has_pending_fast_sync_writes(),
         }
     }
 
@@ -1263,27 +1315,17 @@ impl MptStore {
             Some(backing) => {
                 let mut entries = overlay.iter().collect::<Vec<_>>();
                 entries.sort_unstable_by(|left, right| left.0.cmp(right.0));
-                let mut counts = OverlayCounts::default();
-                let mut visit = |sink: &mut dyn FnMut(&[u8], Option<&[u8]>)| {
-                    for (key, value) in &entries {
-                        counts.record(value.as_ref());
-                        sink(key, value.as_deref());
-                    }
+                let mut source = SortedOverlaySource {
+                    entries: &entries,
+                    counts: OverlayCounts::default(),
                 };
                 let committed = backing
-                    .as_raw_overlay_store()
-                    .map(|ro| {
-                        ro.try_commit_borrowed_raw_overlay(&mut visit)
-                            .map_err(|err| {
-                                MptError::storage(format!(
-                                    "state-service backing commit failed: {err}"
-                                ))
-                            })
-                    })
-                    .transpose()?
-                    .unwrap_or(false);
+                    .try_commit_borrowed_raw_overlay(&mut source)
+                    .map_err(|err| {
+                        MptError::storage(format!("state-service backing commit failed: {err}"))
+                    })?;
                 if committed {
-                    return Ok(counts);
+                    return Ok(source.counts);
                 }
 
                 let mut counts = OverlayCounts::default();
@@ -1343,16 +1385,19 @@ impl MptStore {
 
     /// Decodes the state-root record for `index` out of a generation
     /// map (shared by the live accessors and [`MptReadSnapshot`]).
-    fn read_state_root(
+    fn read_state_root<B>(
         map: &HashMap<Vec<u8>, Option<Vec<u8>>>,
-        backing_snapshot: Option<&dyn StoreSnapshot>,
+        backing_snapshot: Option<&B>,
         index: u32,
-    ) -> Option<StateRoot> {
+    ) -> Option<StateRoot>
+    where
+        B: RawReadOnlyStore + ?Sized,
+    {
         let key = Keys::state_root(index);
         let bytes = match map.get(&key) {
             Some(Some(bytes)) => bytes.clone(),
             Some(None) => return None,
-            None => backing_snapshot?.try_get(&key)?,
+            None => backing_snapshot?.try_get_bytes(&key)?,
         };
         match Self::decode_state_root(&bytes) {
             Some(root) => Some(root),
@@ -1368,15 +1413,18 @@ impl MptStore {
     }
 
     /// Reads the current local root index out of a generation map.
-    fn read_current_local_root_index(
+    fn read_current_local_root_index<B>(
         map: &HashMap<Vec<u8>, Option<Vec<u8>>>,
-        backing_snapshot: Option<&dyn StoreSnapshot>,
-    ) -> Option<u32> {
+        backing_snapshot: Option<&B>,
+    ) -> Option<u32>
+    where
+        B: RawReadOnlyStore + ?Sized,
+    {
         let key = Keys::CURRENT_LOCAL_ROOT_INDEX.to_vec();
         let bytes = match map.get(&key) {
             Some(Some(bytes)) => bytes.clone(),
             Some(None) => return None,
-            None => backing_snapshot?.try_get(&key)?,
+            None => backing_snapshot?.try_get_bytes(&key)?,
         };
         let arr: [u8; 4] = bytes.as_slice().try_into().ok()?;
         Some(u32::from_le_bytes(arr))
@@ -1404,7 +1452,35 @@ fn elapsed_us(start: Instant) -> u64 {
     start.elapsed().as_micros().min(u64::MAX as u128) as u64
 }
 
-impl std::fmt::Debug for MptStore {
+impl MptStore<MemoryStore> {
+    /// Constructs an empty in-memory store.
+    ///
+    /// `full_state` mirrors the C# `FullState` setting: `true` keeps every
+    /// historical trie version resolvable, `false` prunes superseded nodes on
+    /// each block.
+    pub fn new(full_state: bool) -> Self {
+        Self {
+            kv: RwLock::new(Arc::new(HashMap::new())),
+            write_gate: Mutex::new(()),
+            full_state,
+            latest_local_root: RwLock::new(None),
+            backing: None,
+        }
+    }
+
+    /// Opens a store over a concrete in-memory backend.
+    ///
+    /// This is primarily for tests and ephemeral nodes that need persistence
+    /// across `MptStore` instances without erasing the backend.
+    pub fn from_memory_store(backing: Arc<MemoryStore>, full_state: bool) -> MptResult<Self> {
+        Self::from_store(backing, full_state)
+    }
+}
+
+impl<S> std::fmt::Debug for MptStore<S>
+where
+    S: Store,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Clone the generation pointer once so no lock guard is held
         // across the field reads (parking_lot read locks are not

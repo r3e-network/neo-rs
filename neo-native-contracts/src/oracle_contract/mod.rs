@@ -49,7 +49,10 @@ native_contract_handle!(
     }
 );
 
-impl NativeContract for OracleContract {
+impl<P> NativeContract<P> for OracleContract
+where
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+{
     native_contract_identity!(OracleContract);
 
     fn methods(&self) -> &[NativeMethod] {
@@ -87,25 +90,36 @@ impl NativeContract for OracleContract {
     /// C# `GetRequest(...)` exposed through the native-contract seam so the
     /// engine can resolve oracle-response witnesses without depending on
     /// `neo-native-contracts`.
-    fn oracle_request_url_full(
+    fn oracle_request_url_full<B>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         id: u64,
-    ) -> CoreResult<Option<OracleRequestDetails>> {
+    ) -> CoreResult<Option<OracleRequestDetails>>
+    where
+        B: neo_storage::CacheRead,
+    {
         Ok(self
             .read_request(snapshot, id)?
             .map(|request| OracleRequestDetails::new(request.url, request.original_tx_id)))
     }
 
-    fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    fn initialize<D, B>(&self, engine: &mut ApplicationEngine<P, D, B>) -> CoreResult<()>
+    where
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         self.initialize_native(engine)
     }
 
-    fn post_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    fn post_persist<D, B>(&self, engine: &mut ApplicationEngine<P, D, B>) -> CoreResult<()>
+    where
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         self.post_persist_native(engine)
     }
 
-    native_contract_dispatch!(metadata::ORACLE_CONTRACT_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::oracle_contract_method_bindings);
 }
 
 #[cfg(test)]

@@ -1,6 +1,11 @@
 use super::*;
 
+use crate::{
+    ContractManagement, CryptoLib, GasToken, LedgerContract, NeoToken, Notary, OracleContract,
+    PolicyContract, RoleManagement, StdLib, Treasury,
+};
 use neo_config::Hardfork;
+use neo_execution::NativeContract;
 
 #[test]
 fn descriptors_match_constructed_contract_handles() {

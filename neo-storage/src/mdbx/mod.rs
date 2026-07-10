@@ -20,6 +20,7 @@ mod snapshot;
 mod store;
 
 pub use provider::{MdbxStoreProvider, MdbxTuning};
+pub use snapshot::MdbxSnapshot;
 pub use store::MdbxStore;
 
 #[cfg(test)]

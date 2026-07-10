@@ -8,6 +8,9 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_storage::persistence::Store;
+use neo_storage::persistence::providers::RuntimeStore;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -16,6 +19,7 @@ use super::config::{NodeConfig, default_p2p_port};
 use super::observability::ObservabilityRuntime;
 use super::rpc_runtime::start_rpc_server;
 use super::seeds;
+use super::services::NodeServiceHandles;
 use super::tasks::{TaskKind, spawn_daemon_task_result};
 use super::telemetry;
 
@@ -29,7 +33,8 @@ pub(in crate::node) struct LiveServiceGuards {
 /// before returning the error, matching the daemon entrypoint's old inline
 /// cleanup behavior.
 pub(in crate::node) async fn start_live_services(
-    node: &Arc<neo_system::Node>,
+    node: &Arc<neo_system::Node<neo_native_contracts::StandardNativeProvider, RuntimeStore>>,
+    services: &Arc<NodeServiceHandles<RuntimeStore>>,
     network: &neo_network::NetworkHandle,
     handles: &mut Vec<tokio::task::JoinHandle<()>>,
     shutdown: &CancellationToken,
@@ -38,7 +43,7 @@ pub(in crate::node) async fn start_live_services(
     ledger_mode: LedgerMode<'_>,
     observability: Option<&ObservabilityRuntime>,
 ) -> anyhow::Result<LiveServiceGuards> {
-    start_metrics_endpoint(node, handles, shutdown, config, observability)?;
+    start_metrics_endpoint(node, services, handles, shutdown, config, observability)?;
     start_p2p_listener(network, config, network_magic, observability).await;
     start_seed_dialing(
         network,
@@ -51,6 +56,7 @@ pub(in crate::node) async fn start_live_services(
     );
     let rpc_keepalive = start_rpc(
         node,
+        services,
         config,
         network_magic,
         ledger_mode,
@@ -58,21 +64,30 @@ pub(in crate::node) async fn start_live_services(
         observability,
     )?;
     if let Some(observability) = observability {
-        handles.extend(observability.spawn_heartbeat_tasks(Arc::clone(node)));
+        handles.extend(observability.spawn_heartbeat_tasks(Arc::clone(node), Arc::clone(services)));
     }
     Ok(LiveServiceGuards {
         _rpc_keepalive: rpc_keepalive,
     })
 }
 
-fn start_metrics_endpoint(
-    node: &Arc<neo_system::Node>,
+fn start_metrics_endpoint<P, S>(
+    node: &Arc<neo_system::Node<P, S>>,
+    services: &Arc<NodeServiceHandles<S>>,
     handles: &mut Vec<tokio::task::JoinHandle<()>>,
     shutdown: &CancellationToken,
     config: &NodeConfig,
     observability: Option<&ObservabilityRuntime>,
-) -> anyhow::Result<()> {
-    match telemetry::metrics_server_task(&config.telemetry.metrics, Arc::clone(node)) {
+) -> anyhow::Result<()>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
+    match telemetry::metrics_server_task(
+        &config.telemetry.metrics,
+        Arc::clone(node),
+        Arc::clone(services),
+    ) {
         Ok(Some(task)) => {
             spawn_daemon_task_result(
                 handles,
@@ -123,18 +138,21 @@ async fn start_p2p_listener(
     }
 }
 
-fn start_seed_dialing(
+fn start_seed_dialing<P, S>(
     network: &neo_network::NetworkHandle,
     handles: &mut Vec<tokio::task::JoinHandle<()>>,
     shutdown: &CancellationToken,
     config: &NodeConfig,
     ledger_mode: LedgerMode<'_>,
-    node: &Arc<neo_system::Node>,
+    node: &Arc<neo_system::Node<P, S>>,
     observability: Option<&ObservabilityRuntime>,
-) {
+) where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
     if ledger_mode.uses_local_replay_services() {
         let seed_nodes = if config.p2p.seed_nodes.is_empty() {
-            node.settings.seed_list.clone()
+            node.settings().seed_list.clone()
         } else {
             config.p2p.seed_nodes.clone()
         };
@@ -155,7 +173,8 @@ fn start_seed_dialing(
 }
 
 fn start_rpc(
-    node: &Arc<neo_system::Node>,
+    node: &Arc<neo_system::Node<neo_native_contracts::StandardNativeProvider, RuntimeStore>>,
+    services: &NodeServiceHandles<RuntimeStore>,
     config: &NodeConfig,
     network_magic: u32,
     ledger_mode: LedgerMode<'_>,
@@ -167,7 +186,13 @@ fn start_rpc(
         return Ok(None);
     }
 
-    match start_rpc_server(node, config, network_magic, ledger_mode.remote_endpoint()) {
+    match start_rpc_server(
+        node,
+        services,
+        config,
+        network_magic,
+        ledger_mode.remote_endpoint(),
+    ) {
         Ok(server) => Ok(Some(server)),
         Err(err) => {
             let err = err.context("failed to start RPC server");

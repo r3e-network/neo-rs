@@ -21,27 +21,39 @@ use neo_vm::StackItem;
 use num_bigint::BigInt;
 
 impl PolicyContract {
-    pub(super) fn invoke_get_fee_per_byte(
+    pub(super) fn invoke_get_fee_per_byte<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
         Ok(BigInt::from(self.fee_per_byte(&snapshot)?).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_get_storage_price(
+    pub(super) fn invoke_get_storage_price<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
         Ok(BigInt::from(self.storage_price(&snapshot)?).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_set_fee_per_byte(
+    pub(super) fn invoke_set_fee_per_byte<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# order: validate range, then AssertCommittee, then write.
@@ -52,9 +64,13 @@ impl PolicyContract {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_set_storage_price(
+    pub(super) fn invoke_set_storage_price<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let value = crate::args::raw_i64_arg(args, 0, "PolicyContract::setStoragePrice")?;
@@ -64,9 +80,13 @@ impl PolicyContract {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_get_exec_fee_factor(
+    pub(super) fn invoke_get_exec_fee_factor<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -81,9 +101,13 @@ impl PolicyContract {
         Ok(BigInt::from(value).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_get_exec_pico_fee_factor(
+    pub(super) fn invoke_get_exec_pico_fee_factor<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -91,9 +115,13 @@ impl PolicyContract {
         Ok(BigInt::from(self.exec_fee_factor_raw(&snapshot)?).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_set_exec_fee_factor(
+    pub(super) fn invoke_set_exec_fee_factor<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let value = crate::args::raw_i64_arg(args, 0, "PolicyContract::setExecFeeFactor")?;
@@ -103,9 +131,13 @@ impl PolicyContract {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_get_attribute_fee(
+    pub(super) fn invoke_get_attribute_fee<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -116,9 +148,13 @@ impl PolicyContract {
         Ok(BigInt::from(fee).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_set_attribute_fee(
+    pub(super) fn invoke_set_attribute_fee<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C#: validate type (NotaryAssisted gated by HF_Echidna), then
@@ -137,9 +173,13 @@ impl PolicyContract {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_get_blocked_accounts(
+    pub(super) fn invoke_get_blocked_accounts<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -160,9 +200,13 @@ impl PolicyContract {
         Ok(iterator_id.to_le_bytes().to_vec())
     }
 
-    pub(super) fn invoke_is_blocked(
+    pub(super) fn invoke_is_blocked<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -172,9 +216,13 @@ impl PolicyContract {
         Ok(vec![u8::from(blocked)])
     }
 
-    pub(super) fn invoke_unblock_account(
+    pub(super) fn invoke_unblock_account<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C#: AssertCommittee -> if not blocked return false ->
@@ -190,17 +238,25 @@ impl PolicyContract {
         Ok(vec![u8::from(was_blocked)])
     }
 
-    pub(super) fn invoke_get_milliseconds_per_block(
+    pub(super) fn invoke_get_milliseconds_per_block<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         Ok(BigInt::from(self.read_milliseconds_per_block(engine)?).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_set_milliseconds_per_block(
+    pub(super) fn invoke_set_milliseconds_per_block<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C#: validate range -> AssertCommittee -> read old -> write ->
@@ -222,9 +278,13 @@ impl PolicyContract {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_set_max_valid_until_block_increment(
+    pub(super) fn invoke_set_max_valid_until_block_increment<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C#: range [1, 86400] -> value < MaxTraceableBlocks -> committee.
@@ -242,9 +302,13 @@ impl PolicyContract {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_set_max_traceable_blocks(
+    pub(super) fn invoke_set_max_traceable_blocks<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C#: range [1, 2102400] -> can only decrease -> value >
@@ -268,25 +332,37 @@ impl PolicyContract {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_get_max_valid_until_block_increment(
+    pub(super) fn invoke_get_max_valid_until_block_increment<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         Ok(BigInt::from(self.read_max_valid_until_block_increment(engine)?).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_get_max_traceable_blocks(
+    pub(super) fn invoke_get_max_traceable_blocks<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         Ok(BigInt::from(self.max_traceable_blocks(engine)? as i64).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_block_account(
+    pub(super) fn invoke_block_account<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# BlockAccountV0/V1 (identical bodies; only the manifest call
@@ -298,9 +374,13 @@ impl PolicyContract {
         )])
     }
 
-    pub(super) fn invoke_set_whitelist_fee_contract(
+    pub(super) fn invoke_set_whitelist_fee_contract<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# SetWhitelistFeeContract: ThrowIfNegative(fixedFee) ->
@@ -368,9 +448,13 @@ impl PolicyContract {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_remove_whitelist_fee_contract(
+    pub(super) fn invoke_remove_whitelist_fee_contract<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# RemoveWhitelistFeeContract: CheckCommittee -> GetContract ->
@@ -416,9 +500,13 @@ impl PolicyContract {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_get_whitelist_fee_contracts(
+    pub(super) fn invoke_get_whitelist_fee_contracts<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -443,9 +531,13 @@ impl PolicyContract {
         Ok(iterator_id.to_le_bytes().to_vec())
     }
 
-    pub(super) fn invoke_recover_fund(
+    pub(super) fn invoke_recover_fund<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# RecoverFund: AssertAlmostFullCommittee -> the blocked-account

@@ -1,22 +1,23 @@
 use super::*;
 
-fn supported_standards(
-    contract: &dyn NativeContract,
-    settings: &ProtocolSettings,
-    height: u32,
-) -> Vec<String> {
+fn supported_standards<C>(contract: &C, settings: &ProtocolSettings, height: u32) -> Vec<String>
+where
+    C: NativeContract,
+{
     build_native_contract_state(contract, settings, height)
         .manifest
         .supported_standards
 }
 
-fn assert_initialize_block(
-    contract: &dyn NativeContract,
+fn assert_initialize_block<C>(
+    contract: &C,
     settings: &ProtocolSettings,
     height: u32,
     expected_initialize: bool,
     expected_hits: &[Hardfork],
-) {
+) where
+    C: NativeContract,
+{
     let (is_initialize, hits) = contract.is_initialize_block(settings, height);
     assert_eq!(
         is_initialize,
@@ -32,39 +33,43 @@ fn assert_initialize_block(
     );
 }
 
+fn assert_activation_spec<C>(
+    contract: &C,
+    active_in: Option<Hardfork>,
+    csharp_activations: &[Option<Hardfork>],
+) where
+    C: NativeContract,
+{
+    let spec = standard_native_contract_specs()
+        .into_iter()
+        .find(|spec| spec.name == contract.name())
+        .expect("standard native contract spec");
+
+    assert_eq!(contract.active_in(), active_in, "{}", contract.name());
+    assert_eq!(
+        spec.csharp_activations,
+        csharp_activations,
+        "{} C# activation schedule",
+        contract.name()
+    );
+    assert_eq!(
+        spec.csharp_activations.first().copied().flatten(),
+        contract.active_in(),
+        "{} ActiveIn must match first C# activation entry",
+        contract.name()
+    );
+}
+
 #[test]
 fn csharp_activation_schedules_drive_runtime_activation_and_manifest_refresh() {
     let settings = test_settings();
-    let cases: [(&dyn NativeContract, Option<Hardfork>, &[Option<Hardfork>]); 3] = [
-        (&OracleContract, None, &[None, Some(Hardfork::HfFaun)]),
-        (
-            &Notary,
-            Some(Hardfork::HfEchidna),
-            &[Some(Hardfork::HfEchidna), Some(Hardfork::HfFaun)],
-        ),
-        (&Treasury, Some(Hardfork::HfFaun), &[Some(Hardfork::HfFaun)]),
-    ];
-
-    for (contract, active_in, csharp_activations) in cases {
-        let spec = standard_native_contract_specs()
-            .into_iter()
-            .find(|spec| spec.name == contract.name())
-            .expect("standard native contract spec");
-
-        assert_eq!(contract.active_in(), active_in, "{}", contract.name());
-        assert_eq!(
-            spec.csharp_activations,
-            csharp_activations,
-            "{} C# activation schedule",
-            contract.name()
-        );
-        assert_eq!(
-            spec.csharp_activations.first().copied().flatten(),
-            contract.active_in(),
-            "{} ActiveIn must match first C# activation entry",
-            contract.name()
-        );
-    }
+    assert_activation_spec(&OracleContract, None, &[None, Some(Hardfork::HfFaun)]);
+    assert_activation_spec(
+        &Notary,
+        Some(Hardfork::HfEchidna),
+        &[Some(Hardfork::HfEchidna), Some(Hardfork::HfFaun)],
+    );
+    assert_activation_spec(&Treasury, Some(Hardfork::HfFaun), &[Some(Hardfork::HfFaun)]);
 
     let oracle = OracleContract;
     assert!(oracle.is_active(&settings, GENESIS));
@@ -108,22 +113,25 @@ fn omitted_active_in_hardfork_matches_csharp_is_active_asymmetry() {
     settings.hardforks.remove(&Hardfork::HfEchidna);
     settings.hardforks.remove(&Hardfork::HfFaun);
 
-    for contract in [
-        &Notary as &dyn NativeContract,
-        &Treasury as &dyn NativeContract,
-    ] {
+    fn assert_genesis_active_without_config<C>(contract: &C, settings: &ProtocolSettings)
+    where
+        C: NativeContract,
+    {
         assert!(
-            contract.is_active(&settings, GENESIS),
+            contract.is_active(settings, GENESIS),
             "{} should be genesis-active when ActiveIn is not configured",
             contract.name()
         );
         assert!(
-            contract.contract_state(&settings, GENESIS).is_some(),
+            contract.contract_state(settings, GENESIS).is_some(),
             "{} should expose contract state under C# IsActive fallback",
             contract.name()
         );
-        assert_initialize_block(contract, &settings, GENESIS, false, &[]);
+        assert_initialize_block(contract, settings, GENESIS, false, &[]);
     }
+
+    assert_genesis_active_without_config(&Notary, &settings);
+    assert_genesis_active_without_config(&Treasury, &settings);
 
     let oracle = OracleContract;
     assert!(oracle.is_active(&settings, GENESIS));

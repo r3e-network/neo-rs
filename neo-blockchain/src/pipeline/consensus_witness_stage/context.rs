@@ -7,7 +7,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::Block;
 use neo_primitives::{UInt160, UInt256};
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 /// Parent-header data needed to verify a child block's consensus witness.
 #[derive(Debug, Clone, Copy)]
@@ -25,24 +25,19 @@ pub struct ParentHeaderContext {
 /// Narrow context required by [`super::NeoConsensusWitnessStage`].
 pub trait ConsensusWitnessContext: Send + Sync + fmt::Debug + 'static {
     /// Native-contract provider type captured by this context.
-    type NativeProvider: NativeContractProvider + ?Sized;
+    type NativeProvider: NativeContractProvider;
+
+    /// Concrete cache backing captured by this context.
+    type CacheBacking: CacheRead;
 
     /// Returns the protocol settings used by witness verification.
     fn settings(&self) -> Arc<ProtocolSettings>;
 
     /// Returns the snapshot used for contract lookups during verification.
-    fn snapshot(&self) -> &DataCache;
+    fn snapshot(&self) -> &DataCache<Self::CacheBacking>;
 
     /// Returns the explicit native provider used by NeoVM host calls.
     fn native_contract_provider(&self) -> Option<Arc<Self::NativeProvider>>;
-
-    /// Returns the provider erased for the current VM host boundary.
-    ///
-    /// The blockchain pipeline preserves the concrete provider type through
-    /// [`ConsensusWitnessContext::native_contract_provider`]. This method marks
-    /// the remaining boundary where `neo-execution::ApplicationEngine` still
-    /// stores native contracts behind a trait object.
-    fn native_contract_provider_for_vm(&self) -> Option<Arc<dyn NativeContractProvider>>;
 
     /// Resolves the previous header context for `block`.
     fn parent_header(&self, block: &Block) -> CoreResult<ParentHeaderContext>;
@@ -50,18 +45,20 @@ pub trait ConsensusWitnessContext: Send + Sync + fmt::Debug + 'static {
 
 /// Snapshot-backed consensus-witness context used by service handlers.
 #[derive(Clone)]
-pub struct SnapshotConsensusWitnessContext<P: ?Sized = dyn NativeContractProvider>
+pub struct SnapshotConsensusWitnessContext<P, B>
 where
     P: NativeContractProvider,
+    B: CacheRead,
 {
     settings: Arc<ProtocolSettings>,
-    snapshot: Arc<DataCache>,
+    snapshot: Arc<DataCache<B>>,
     native_contract_provider: Arc<P>,
 }
 
-impl<P> fmt::Debug for SnapshotConsensusWitnessContext<P>
+impl<P, B> fmt::Debug for SnapshotConsensusWitnessContext<P, B>
 where
-    P: NativeContractProvider + ?Sized,
+    P: NativeContractProvider,
+    B: CacheRead,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SnapshotConsensusWitnessContext")
@@ -71,16 +68,17 @@ where
     }
 }
 
-impl<P> SnapshotConsensusWitnessContext<P>
+impl<P, B> SnapshotConsensusWitnessContext<P, B>
 where
-    P: NativeContractProvider + ?Sized,
+    P: NativeContractProvider,
+    B: CacheRead,
 {
     /// Creates a context over an immutable store snapshot and explicit native
     /// provider.
     #[must_use]
     pub fn new(
         settings: Arc<ProtocolSettings>,
-        snapshot: Arc<DataCache>,
+        snapshot: Arc<DataCache<B>>,
         native_contract_provider: Arc<P>,
     ) -> Self {
         Self {
@@ -94,7 +92,7 @@ where
         Arc::clone(&self.settings)
     }
 
-    fn snapshot_ref(&self) -> &DataCache {
+    fn snapshot_ref(&self) -> &DataCache<B> {
         self.snapshot.as_ref()
     }
 
@@ -112,50 +110,23 @@ where
     }
 }
 
-impl<P> ConsensusWitnessContext for SnapshotConsensusWitnessContext<P>
+impl<P, B> ConsensusWitnessContext for SnapshotConsensusWitnessContext<P, B>
 where
     P: NativeContractProvider + 'static,
+    B: CacheRead,
 {
     type NativeProvider = P;
+    type CacheBacking = B;
 
     fn settings(&self) -> Arc<ProtocolSettings> {
         self.settings_arc()
     }
 
-    fn snapshot(&self) -> &DataCache {
+    fn snapshot(&self) -> &DataCache<B> {
         self.snapshot_ref()
     }
 
     fn native_contract_provider(&self) -> Option<Arc<Self::NativeProvider>> {
-        Some(Arc::clone(&self.native_contract_provider))
-    }
-
-    fn native_contract_provider_for_vm(&self) -> Option<Arc<dyn NativeContractProvider>> {
-        let provider: Arc<dyn NativeContractProvider> = self.native_contract_provider.clone();
-        Some(provider)
-    }
-
-    fn parent_header(&self, block: &Block) -> CoreResult<ParentHeaderContext> {
-        self.parent_header_context(block)
-    }
-}
-
-impl ConsensusWitnessContext for SnapshotConsensusWitnessContext<dyn NativeContractProvider> {
-    type NativeProvider = dyn NativeContractProvider;
-
-    fn settings(&self) -> Arc<ProtocolSettings> {
-        self.settings_arc()
-    }
-
-    fn snapshot(&self) -> &DataCache {
-        self.snapshot_ref()
-    }
-
-    fn native_contract_provider(&self) -> Option<Arc<Self::NativeProvider>> {
-        Some(Arc::clone(&self.native_contract_provider))
-    }
-
-    fn native_contract_provider_for_vm(&self) -> Option<Arc<dyn NativeContractProvider>> {
         Some(Arc::clone(&self.native_contract_provider))
     }
 

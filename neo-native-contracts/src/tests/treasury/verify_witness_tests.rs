@@ -6,8 +6,8 @@ use neo_execution::native_contract::build_native_contract_state;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
-use neo_payloads::{Block, Header};
-use neo_primitives::{CallFlags, TriggerType, UInt160, Verifiable, WitnessScope};
+use neo_payloads::{Block, Header, VerifiableContainer};
+use neo_primitives::{CallFlags, TriggerType, UInt160, WitnessScope};
 use neo_storage::persistence::DataCache;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::VmState;
@@ -23,7 +23,7 @@ fn call_verify(
     let mut tx = Transaction::new();
     tx.set_signers(vec![Signer::new(signer, WitnessScope::GLOBAL)]);
     tx.set_witnesses(vec![Witness::empty()]);
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
 
     let mut builder = ScriptBuilder::new();
     builder.emit_push_int(0);
@@ -44,7 +44,7 @@ fn call_verify(
         Some(block),
         settings,
         10_000_000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
@@ -62,7 +62,6 @@ fn call_verify(
 
 #[test]
 fn verify_is_true_only_with_the_committee_witness() {
-    crate::install();
     let cache = DataCache::new(false);
     let committee = sample_committee();
     seed_committee(&cache, &committee);

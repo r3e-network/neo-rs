@@ -2,7 +2,7 @@ use super::*;
 use crate::script::Script;
 
 fn engine() -> ExecutionEngine {
-    let mut engine = ExecutionEngine::new(None);
+    let mut engine = ExecutionEngine::<()>::new(None);
     engine
         .load_script(Script::new_relaxed(vec![OpCode::RET.byte()]), -1, 0)
         .expect("load test script");

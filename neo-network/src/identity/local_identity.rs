@@ -14,7 +14,7 @@ use neo_payloads::p2p_payloads::{NodeCapability, VersionPayload};
 /// version handshake.
 ///
 /// One instance is shared (via `Arc`) between the
-/// [`crate::local_node::LocalNodeService`] and every
+/// [`crate::LocalNodeService`] and every
 /// [`crate::remote_node::RemoteNodeService`] it spawns, so each
 /// per-peer task can assemble the outbound [`VersionPayload`] without
 /// a service round-trip. The nonce and user agent are sourced from

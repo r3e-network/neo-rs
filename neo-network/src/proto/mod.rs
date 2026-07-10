@@ -15,7 +15,6 @@
 //! - `inventory_type`: P2P inventory-type identifiers.
 //! - `message_command`: P2P message command identifiers.
 //! - `message_flags`: P2P message flag records.
-//! - `timeouts`: Network timeout constants and policy helpers.
 
 /// Channel configuration for P2P node bootstrap.
 pub mod channels_config;
@@ -47,9 +46,6 @@ pub mod node_capability_type {
 pub mod oracle_response_code {
     pub use neo_primitives::OracleResponseCode;
 }
-
-/// Shared timeout counters for P2P operations.
-pub mod timeouts;
 
 /// Transaction removal reason enumeration.
 pub mod transaction_removal_reason {

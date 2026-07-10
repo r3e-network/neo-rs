@@ -34,7 +34,6 @@ neo-hsm = { workspace = true, optional = true }
 
 # Async channels
 futures = { workspace = true }
-async-trait = { workspace = true }
 zeroize = { workspace = true }
 
 # CLI and configuration

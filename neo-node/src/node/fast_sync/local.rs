@@ -13,10 +13,13 @@ use neo_storage::persistence::store::Store;
 
 use super::package::FastSyncPackage;
 
-pub(super) fn validate_fast_sync_preflight(
-    store: &Arc<dyn Store>,
+pub(super) fn validate_fast_sync_preflight<S>(
+    store: &Arc<S>,
     package: &FastSyncPackage,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    S: Store,
+{
     let durable_tip = super::super::chain_acc::local_ledger_tip(Some(store))?.map(|tip| tip.height);
     match package.start.checked_sub(1) {
         None => match durable_tip {
@@ -45,11 +48,14 @@ pub(super) fn validate_fast_sync_preflight(
     }
 }
 
-pub(super) fn verify_fast_sync_import_tip(
-    store: &Arc<dyn Store>,
+pub(super) fn verify_fast_sync_import_tip<S>(
+    store: &Arc<S>,
     package: &FastSyncPackage,
     report: &super::super::chain_acc::ChainAccImportReport,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    S: Store,
+{
     let Some(imported_tip) = report.last_imported_tip else {
         if report.imported == 0 {
             return Ok(());
@@ -98,11 +104,14 @@ pub(super) struct LocalStateRootTip {
     pub(super) root_hash: UInt256,
 }
 
-pub(super) fn local_state_root_tip(
-    state_store: Option<&Arc<StateStore>>,
+pub(super) fn local_state_root_tip<S>(
+    state_store: Option<&Arc<StateStore<S>>>,
     package: &FastSyncPackage,
     imported_tip: super::super::chain_acc::LocalLedgerTip,
-) -> anyhow::Result<Option<LocalStateRootTip>> {
+) -> anyhow::Result<Option<LocalStateRootTip>>
+where
+    S: Store,
+{
     let Some(state_store) = state_store else {
         return Ok(None);
     };

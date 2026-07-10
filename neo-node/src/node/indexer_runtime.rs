@@ -10,6 +10,7 @@ use neo_indexer::{IndexerStatus, NotificationIndexRecord};
 use neo_payloads::Block;
 use neo_primitives::UInt256;
 use neo_rpc::application_logs::ApplicationLogsService;
+use neo_storage::persistence::Store;
 use tokio::sync::broadcast::error::RecvError;
 use tracing::{debug, error, info, warn};
 
@@ -70,13 +71,15 @@ fn indexer_should_backfill_on_activation(
     backfill_on_startup || start_mode == IndexerRuntimeStartMode::Deferred
 }
 
-pub(crate) async fn run_live_indexer_when_ready(
+pub(crate) async fn run_live_indexer_when_ready<S>(
     blockchain: BlockchainHandle,
     indexer: Arc<IndexerService>,
-    application_logs: Option<Arc<ApplicationLogsService>>,
+    application_logs: Option<Arc<ApplicationLogsService<S>>>,
     backfill_on_startup: bool,
     startup_height: u64,
-) {
+) where
+    S: Store + 'static,
+{
     let start_mode =
         indexer_runtime_start_mode(startup_height, neo_runtime::sync_metrics::peer_live_tip());
     if !wait_until_indexer_runtime_ready(&blockchain, startup_height, start_mode).await {
@@ -170,12 +173,14 @@ async fn wait_until_indexer_runtime_ready(
 }
 
 /// Background task that follows canonical-chain events.
-pub(crate) async fn run_live_indexer(
+pub(crate) async fn run_live_indexer<S>(
     blockchain: BlockchainHandle,
     indexer: Arc<IndexerService>,
-    application_logs: Option<Arc<ApplicationLogsService>>,
+    application_logs: Option<Arc<ApplicationLogsService<S>>>,
     backfill_on_startup: bool,
-) {
+) where
+    S: Store + 'static,
+{
     let mut events = blockchain.subscribe();
     if backfill_on_startup {
         backfill_indexer(&blockchain, &indexer, application_logs.as_deref()).await;
@@ -264,11 +269,13 @@ pub(crate) async fn run_live_indexer(
     }
 }
 
-async fn backfill_indexer(
+async fn backfill_indexer<S>(
     blockchain: &BlockchainHandle,
     indexer: &IndexerService,
-    application_logs: Option<&ApplicationLogsService>,
-) {
+    application_logs: Option<&ApplicationLogsService<S>>,
+) where
+    S: Store,
+{
     let height = match blockchain.get_height().await {
         Ok(height) => height,
         Err(err) => {
@@ -340,13 +347,15 @@ async fn backfill_indexer(
     );
 }
 
-async fn index_block_by_hash(
+async fn index_block_by_hash<S>(
     blockchain: &BlockchainHandle,
     indexer: &IndexerService,
-    application_logs: Option<&ApplicationLogsService>,
+    application_logs: Option<&ApplicationLogsService<S>>,
     hash: UInt256,
     height: u32,
-) {
+) where
+    S: Store,
+{
     match blockchain.get_block(&hash).await {
         Ok(Some(block)) => {
             let log_notifications =

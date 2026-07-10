@@ -2,8 +2,11 @@ use std::sync::Arc;
 
 use hyper::header::CONTENT_TYPE;
 use hyper::{Body, Request, StatusCode};
+use neo_storage::persistence::Store;
+use neo_storage::persistence::providers::memory_store::MemoryStore;
 
 use super::super::config::{TELEMETRY_HEALTH_PATH, TELEMETRY_READY_PATH};
+use super::super::services::NodeServiceHandles;
 use super::exporter::MetricsExporter;
 use super::http::serve_metrics_request;
 
@@ -29,11 +32,18 @@ fn memory_pool(
     neo_mempool::MemoryPool::new_with_native_contract_provider(settings, native_contract_provider)
 }
 
-fn rocksdb_test_node() -> (Arc<neo_system::Node>, tempfile::TempDir) {
+fn rocksdb_test_node() -> (
+    Arc<
+        neo_system::Node<
+            neo_native_contracts::StandardNativeProvider,
+            neo_storage::rocksdb::RocksDbStore,
+        >,
+    >,
+    tempfile::TempDir,
+) {
     use neo_blockchain::HeaderCache;
     use neo_network::NetworkHandle;
     use neo_storage::persistence::storage::StorageConfig;
-    use neo_storage::persistence::store::Store;
     use neo_storage::rocksdb::{RocksDBStoreProvider, WriteBatchConfig};
 
     let tmp = tempfile::TempDir::new().expect("tempdir");
@@ -41,7 +51,7 @@ fn rocksdb_test_node() -> (Arc<neo_system::Node>, tempfile::TempDir) {
         path: tmp.path().join("telemetry-rocksdb"),
         ..Default::default()
     };
-    let storage: Arc<dyn Store> = Arc::new(
+    let storage: Arc<neo_storage::rocksdb::RocksDbStore> = Arc::new(
         RocksDBStoreProvider::new(cfg)
             .with_batch_config(WriteBatchConfig::balanced())
             .get_rocksdb_store("")
@@ -67,23 +77,33 @@ fn rocksdb_test_node() -> (Arc<neo_system::Node>, tempfile::TempDir) {
     (Arc::new(node), tmp)
 }
 
-fn mdbx_test_node(map_size: isize) -> (Arc<neo_system::Node>, tempfile::TempDir) {
+fn mdbx_test_node(
+    map_size: isize,
+) -> (
+    Arc<
+        neo_system::Node<
+            neo_native_contracts::StandardNativeProvider,
+            neo_storage::mdbx::MdbxStore,
+        >,
+    >,
+    tempfile::TempDir,
+) {
     use neo_blockchain::HeaderCache;
     use neo_network::NetworkHandle;
-    use neo_storage::persistence::StoreFactory;
+    use neo_storage::mdbx::MdbxStoreProvider;
     use neo_storage::persistence::storage::StorageConfig;
 
     let tmp = tempfile::TempDir::new().expect("tempdir");
     let settings = Arc::new(neo_config::ProtocolSettings::testnet());
-    let storage = StoreFactory::get_store_with_config(
-        "mdbx",
-        StorageConfig {
+    let storage: Arc<neo_storage::mdbx::MdbxStore> = Arc::new(
+        MdbxStoreProvider::new(StorageConfig {
             path: tmp.path().join("telemetry-mdbx"),
             mdbx_geometry_upper_bytes: Some(map_size),
             ..Default::default()
-        },
-    )
-    .expect("mdbx store");
+        })
+        .get_mdbx_store(std::path::Path::new(""))
+        .expect("mdbx store"),
+    );
     let native_contract_provider = native_provider();
     let (blockchain, _rx) = neo_blockchain::BlockchainHandle::with_capacity();
     let (network, _nrx, _etx) = NetworkHandle::channel(8, 8);
@@ -103,27 +123,60 @@ fn mdbx_test_node(map_size: isize) -> (Arc<neo_system::Node>, tempfile::TempDir)
     (Arc::new(node), tmp)
 }
 
-fn remote_ledger_node(height: u32) -> Arc<neo_system::Node> {
+fn empty_services<S: Store>() -> Arc<NodeServiceHandles<S>> {
+    Arc::new(NodeServiceHandles::empty())
+}
+
+fn service_handles<S: Store>(
+    indexer: Option<Arc<neo_indexer::IndexerService>>,
+    remote_ledger: Option<Arc<super::super::remote_ledger::RemoteLedgerStatus>>,
+) -> Arc<NodeServiceHandles<S>> {
+    Arc::new(NodeServiceHandles::new(
+        None,
+        None,
+        indexer,
+        None,
+        None,
+        remote_ledger,
+    ))
+}
+
+fn remote_ledger_node(
+    height: u32,
+) -> (Arc<neo_system::Node>, Arc<NodeServiceHandles<MemoryStore>>) {
     remote_ledger_node_with_height(Some(height))
 }
 
-fn remote_ledger_node_with_height(height: Option<u32>) -> Arc<neo_system::Node> {
+fn remote_ledger_node_with_height(
+    height: Option<u32>,
+) -> (Arc<neo_system::Node>, Arc<NodeServiceHandles<MemoryStore>>) {
     let node = test_node();
-    node.register_service(Arc::new(
-        super::super::remote_ledger::RemoteLedgerStatus::new("https://rpc.example.invalid", height),
-    ));
-    node
+    let services = service_handles(
+        None,
+        Some(Arc::new(
+            super::super::remote_ledger::RemoteLedgerStatus::new(
+                "https://rpc.example.invalid",
+                height,
+            ),
+        )),
+    );
+    (node, services)
 }
 
-fn remote_ledger_node_with_error(error: &str) -> Arc<neo_system::Node> {
+fn remote_ledger_node_with_error(
+    error: &str,
+) -> (Arc<neo_system::Node>, Arc<NodeServiceHandles<MemoryStore>>) {
     let node = test_node();
-    node.register_service(Arc::new(
-        super::super::remote_ledger::RemoteLedgerStatus::unavailable(
-            "https://rpc.example.invalid",
-            error,
-        ),
-    ));
-    node
+    let services = service_handles(
+        None,
+        Some(Arc::new(
+            super::super::remote_ledger::RemoteLedgerStatus::unavailable(
+                "https://rpc.example.invalid",
+                error,
+            ),
+        )),
+    );
+    (node, services)
 }
 
 fn seed_ledger_height(node: &neo_system::Node, height: u32) {
@@ -166,7 +219,7 @@ fn metrics_exporter_uses_observability_ledger_provider() {
 fn renders_mdbx_environment_metrics() {
     const MAP_SIZE: isize = 128 * 1024 * 1024;
     let (node, _tmp) = mdbx_test_node(MAP_SIZE);
-    let exporter = MetricsExporter::new(node).expect("metrics exporter");
+    let exporter = MetricsExporter::new(node, empty_services()).expect("metrics exporter");
 
     let payload = exporter.render().expect("metrics payload");
     let text = String::from_utf8(payload).expect("utf8 metrics");
@@ -186,10 +239,11 @@ fn renders_mdbx_environment_metrics() {
 fn renders_rocksdb_fast_sync_batch_metrics() {
     let (node, _tmp) = rocksdb_test_node();
     let storage = node.storage();
-    storage
-        .as_fast_sync_store()
-        .expect("RocksDB store supports fast-sync")
-        .enable_fast_sync_mode();
+    assert!(
+        storage.supports_fast_sync_mode(),
+        "RocksDB store supports fast-sync"
+    );
+    storage.enable_fast_sync_mode();
 
     for index in 0..3 {
         let mut writer = node.store_cache();
@@ -200,7 +254,7 @@ fn renders_rocksdb_fast_sync_batch_metrics() {
         writer.try_commit().expect("buffer fast-sync write");
     }
 
-    let exporter = MetricsExporter::new(node).expect("metrics exporter");
+    let exporter = MetricsExporter::new(node, empty_services()).expect("metrics exporter");
     let payload = exporter.render().expect("metrics payload");
     let text = String::from_utf8(payload).expect("utf8 metrics");
 
@@ -222,7 +276,7 @@ fn renders_rocksdb_fast_sync_batch_metrics() {
 #[test]
 fn renders_node_metrics_payload() {
     let node = test_node();
-    let exporter = MetricsExporter::new(node).expect("metrics exporter");
+    let exporter = MetricsExporter::new(node, empty_services()).expect("metrics exporter");
 
     let payload = exporter.render().expect("metrics payload");
     let text = String::from_utf8(payload).expect("utf8 metrics");
@@ -274,8 +328,8 @@ fn renders_node_metrics_payload() {
 #[test]
 fn renders_indexer_service_metrics_when_registered() {
     let node = test_node();
-    node.register_service(Arc::new(neo_indexer::IndexerService::new()));
-    let exporter = MetricsExporter::new(node).expect("metrics exporter");
+    let services = service_handles(Some(Arc::new(neo_indexer::IndexerService::new())), None);
+    let exporter = MetricsExporter::new(node, services).expect("metrics exporter");
 
     let payload = exporter.render().expect("metrics payload");
     let text = String::from_utf8(payload).expect("utf8 metrics");
@@ -292,8 +346,8 @@ fn renders_indexer_service_metrics_when_registered() {
 fn renders_indexer_lag_metrics_when_registered() {
     let node = test_node();
     seed_ledger_height(&node, 5);
-    node.register_service(indexed_service_at(3));
-    let exporter = MetricsExporter::new(node).expect("metrics exporter");
+    let exporter = MetricsExporter::new(node, service_handles(Some(indexed_service_at(3)), None))
+        .expect("metrics exporter");
 
     let payload = exporter.render().expect("metrics payload");
     let text = String::from_utf8(payload).expect("utf8 metrics");
@@ -309,8 +363,8 @@ fn renders_indexer_lag_metrics_when_registered() {
 fn renders_indexer_ahead_of_ledger_as_unsynced() {
     let node = test_node();
     seed_ledger_height(&node, 3);
-    node.register_service(indexed_service_at(5));
-    let exporter = MetricsExporter::new(node).expect("metrics exporter");
+    let exporter = MetricsExporter::new(node, service_handles(Some(indexed_service_at(5)), None))
+        .expect("metrics exporter");
 
     let payload = exporter.render().expect("metrics payload");
     let text = String::from_utf8(payload).expect("utf8 metrics");
@@ -324,7 +378,8 @@ fn renders_indexer_ahead_of_ledger_as_unsynced() {
 #[tokio::test]
 async fn serves_health_and_readiness_endpoints() {
     let node = test_node();
-    let exporter = Arc::new(MetricsExporter::new(node).expect("metrics exporter"));
+    let exporter =
+        Arc::new(MetricsExporter::new(node, empty_services()).expect("metrics exporter"));
 
     let health = serve_metrics_request(
         Request::builder()
@@ -377,8 +432,8 @@ async fn serves_health_and_readiness_endpoints() {
 
 #[tokio::test]
 async fn remote_ledger_readiness_uses_upstream_height_without_local_ledger() {
-    let node = remote_ledger_node(42);
-    let exporter = Arc::new(MetricsExporter::new(node).expect("metrics exporter"));
+    let (node, services) = remote_ledger_node(42);
+    let exporter = Arc::new(MetricsExporter::new(node, services).expect("metrics exporter"));
 
     let ready = serve_metrics_request(
         Request::builder()
@@ -409,8 +464,8 @@ async fn remote_ledger_readiness_uses_upstream_height_without_local_ledger() {
 
 #[tokio::test]
 async fn remote_ledger_readiness_waits_when_upstream_height_is_unknown() {
-    let node = remote_ledger_node_with_height(None);
-    let exporter = Arc::new(MetricsExporter::new(node).expect("metrics exporter"));
+    let (node, services) = remote_ledger_node_with_height(None);
+    let exporter = Arc::new(MetricsExporter::new(node, services).expect("metrics exporter"));
 
     let ready = serve_metrics_request(
         Request::builder()
@@ -441,8 +496,8 @@ async fn remote_ledger_readiness_waits_when_upstream_height_is_unknown() {
 
 #[tokio::test]
 async fn remote_ledger_readiness_reports_upstream_tip_error() {
-    let node = remote_ledger_node_with_error("remote getblockcount failed");
-    let exporter = Arc::new(MetricsExporter::new(node).expect("metrics exporter"));
+    let (node, services) = remote_ledger_node_with_error("remote getblockcount failed");
+    let exporter = Arc::new(MetricsExporter::new(node, services).expect("metrics exporter"));
 
     let ready = serve_metrics_request(
         Request::builder()
@@ -478,8 +533,8 @@ async fn remote_ledger_readiness_reports_upstream_tip_error() {
 #[tokio::test]
 async fn readiness_reports_registered_indexer_status() {
     let node = test_node();
-    node.register_service(Arc::new(neo_indexer::IndexerService::new()));
-    let exporter = Arc::new(MetricsExporter::new(node).expect("metrics exporter"));
+    let services = service_handles(Some(Arc::new(neo_indexer::IndexerService::new())), None);
+    let exporter = Arc::new(MetricsExporter::new(node, services).expect("metrics exporter"));
 
     let ready = serve_metrics_request(
         Request::builder()
@@ -506,8 +561,10 @@ async fn readiness_reports_registered_indexer_status() {
 async fn readiness_reports_indexer_lag_and_sync_state() {
     let node = test_node();
     seed_ledger_height(&node, 5);
-    node.register_service(indexed_service_at(3));
-    let exporter = Arc::new(MetricsExporter::new(node).expect("metrics exporter"));
+    let exporter = Arc::new(
+        MetricsExporter::new(node, service_handles(Some(indexed_service_at(3)), None))
+            .expect("metrics exporter"),
+    );
 
     let ready = serve_metrics_request(
         Request::builder()
@@ -536,8 +593,10 @@ async fn readiness_reports_indexer_lag_and_sync_state() {
 async fn readiness_reports_indexer_ahead_of_ledger_as_unsynced() {
     let node = test_node();
     seed_ledger_height(&node, 3);
-    node.register_service(indexed_service_at(5));
-    let exporter = Arc::new(MetricsExporter::new(node).expect("metrics exporter"));
+    let exporter = Arc::new(
+        MetricsExporter::new(node, service_handles(Some(indexed_service_at(5)), None))
+            .expect("metrics exporter"),
+    );
 
     let ready = serve_metrics_request(
         Request::builder()
@@ -564,7 +623,8 @@ async fn readiness_reports_indexer_ahead_of_ledger_as_unsynced() {
 #[tokio::test]
 async fn telemetry_routes_reject_unknown_paths_and_non_get_methods() {
     let node = test_node();
-    let exporter = Arc::new(MetricsExporter::new(node).expect("metrics exporter"));
+    let exporter =
+        Arc::new(MetricsExporter::new(node, empty_services()).expect("metrics exporter"));
 
     let missing = serve_metrics_request(
         Request::builder()

@@ -21,10 +21,10 @@ async fn local_node_handle_constructs_and_shuts_down() {
 }
 
 #[tokio::test]
-async fn local_node_service_trait_object_works() {
+async fn local_node_service_concrete_handle_works() {
     let settings = Arc::new(ProtocolSettings::default());
     let (service, _handle) = LocalNodeService::new(settings);
-    let service: Arc<dyn NetworkService> = Arc::new(service);
+    let service = Arc::new(service);
     assert_eq!(service.peer_count().await, 0);
     let mut rx = service.subscribe_events();
     assert!(rx.try_recv().is_err());

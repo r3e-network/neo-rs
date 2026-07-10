@@ -36,6 +36,7 @@
 //!   boundary.
 //! - `rpc_remote_ledger`: Remote-ledger RPC client used by RPC-only node mode.
 //! - `rpc_server`: Core RPC server trait and callback registry.
+//! - `rpc_services`: Named, statically typed optional-service handles.
 //! - `rpc_server_application_logs`: Application-log RPC endpoint handlers.
 //! - `rpc_server_blockchain`: Blockchain RPC endpoint handlers.
 //! - `rpc_server_indexer`: Indexer-backed RPC endpoint handlers.
@@ -85,6 +86,7 @@ mod rpc_server_state;
 mod rpc_server_tokens_tracker;
 mod rpc_server_utilities;
 mod rpc_server_wallet;
+mod rpc_services;
 mod rpc_tls;
 mod rpc_transport;
 mod session;
@@ -114,6 +116,7 @@ pub use rpc_server_state::RpcServerState;
 pub use rpc_server_tokens_tracker::RpcServerTokensTracker;
 pub use rpc_server_utilities::RpcServerUtilities;
 pub use rpc_server_wallet::RpcServerWallet;
+pub use rpc_services::RpcServices;
 pub use rpc_tls::build_tls_config_from_settings;
 pub use session::Session;
 

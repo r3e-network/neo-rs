@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use neo_error::{CoreError, CoreResult};
-use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::block::Block;
 
 use crate::pipeline::consensus_witness_stage::{
@@ -50,8 +49,8 @@ where
         &self,
         block: &Block,
         settings: Arc<neo_config::ProtocolSettings>,
-        snapshot: Arc<neo_storage::DataCache>,
-        native_contract_provider: Arc<dyn NativeContractProvider>,
+        snapshot: Arc<neo_storage::DataCache<S::CacheBacking>>,
+        native_contract_provider: Arc<S::NativeProvider>,
     ) -> CoreResult<()> {
         let stage = NeoConsensusWitnessStage::new(Arc::new(SnapshotConsensusWitnessContext::new(
             settings,
@@ -63,16 +62,16 @@ where
             .map_err(|error| Self::pipeline_error(block, error))
     }
 
-    pub(crate) async fn verify_import_block_with_pipeline(
+    pub(crate) fn verify_import_block_with_pipeline(
         &self,
         block: &Block,
         current_height: u32,
         bulk_sync: bool,
         settings: Arc<neo_config::ProtocolSettings>,
-        snapshot: Arc<neo_storage::DataCache>,
-        native_contract_provider: Arc<dyn NativeContractProvider>,
+        snapshot: Arc<neo_storage::DataCache<S::CacheBacking>>,
+        native_contract_provider: Arc<S::NativeProvider>,
     ) -> CoreResult<()> {
-        VerifiedImportPipeline::verify_block(
+        VerifiedImportPipeline::<S::NativeProvider, S::CacheBacking>::verify_block(
             block,
             current_height,
             bulk_sync,
@@ -80,7 +79,6 @@ where
             snapshot,
             native_contract_provider,
         )
-        .await
         .map_err(|error| Self::pipeline_error(block, error))
     }
 

@@ -32,6 +32,7 @@ fn standard_native_provider() -> NativeProviderArc {
 struct TestContext;
 impl SystemContext for TestContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
+    type CacheBacking = neo_storage::EmptyCacheBacking;
 
     fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
         Arc::new(neo_config::ProtocolSettings::default())
@@ -44,19 +45,19 @@ impl SystemContext for TestContext {
 #[derive(Debug, Default)]
 struct TestMempool;
 impl MempoolLike for TestMempool {
-    fn try_add(
+    fn try_add<B: neo_storage::CacheRead>(
         &self,
         _tx: &Transaction,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _settings: &neo_config::ProtocolSettings,
     ) -> VerifyResult {
         VerifyResult::Succeed
     }
 
-    fn try_add_cached(
+    fn try_add_cached<B: neo_storage::CacheRead>(
         &self,
         _tx: &Transaction,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _settings: &neo_config::ProtocolSettings,
         _cached_state_independent: Option<VerifyResult>,
     ) -> VerifyResult {
@@ -69,19 +70,19 @@ struct FixedResultMempool {
     result: VerifyResult,
 }
 impl MempoolLike for FixedResultMempool {
-    fn try_add(
+    fn try_add<B: neo_storage::CacheRead>(
         &self,
         _tx: &Transaction,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _settings: &neo_config::ProtocolSettings,
     ) -> VerifyResult {
         self.result
     }
 
-    fn try_add_cached(
+    fn try_add_cached<B: neo_storage::CacheRead>(
         &self,
         _tx: &Transaction,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _settings: &neo_config::ProtocolSettings,
         _cached_state_independent: Option<VerifyResult>,
     ) -> VerifyResult {
@@ -96,19 +97,19 @@ struct RecordingMempool {
     block_persisted_calls: Option<Arc<AtomicUsize>>,
 }
 impl MempoolLike for RecordingMempool {
-    fn try_add(
+    fn try_add<B: neo_storage::CacheRead>(
         &self,
         _tx: &Transaction,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _settings: &neo_config::ProtocolSettings,
     ) -> VerifyResult {
         VerifyResult::Succeed
     }
 
-    fn try_add_cached(
+    fn try_add_cached<B: neo_storage::CacheRead>(
         &self,
         _tx: &Transaction,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _settings: &neo_config::ProtocolSettings,
         _cached_state_independent: Option<VerifyResult>,
     ) -> VerifyResult {
@@ -125,9 +126,9 @@ impl MempoolLike for RecordingMempool {
         }
     }
 
-    fn reverify_top_unverified(
+    fn reverify_top_unverified<B: neo_storage::CacheRead>(
         &self,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _max_count: usize,
     ) -> bool {
         self.reverify_calls.fetch_add(1, Ordering::SeqCst);
@@ -148,12 +149,13 @@ fn verified_import_pipeline_uses_explicit_native_providers() {
         .expect("next handler helper follows verified import helper");
     let helper = &source[helper_start..helper_end];
     assert!(
-        helper.contains("VerifiedImportPipeline::verify_block"),
-        "verified imports must route through the high-level verified import pipeline"
+        helper
+            .contains("VerifiedImportPipeline::<S::NativeProvider, S::CacheBacking>::verify_block"),
+        "verified imports must route through the high-level verified import pipeline with the concrete provider type"
     );
 
     let import_start = import_source
-        .find("pub(crate) async fn verify_import_block_for_command")
+        .find("pub(crate) fn verify_import_block_for_command")
         .expect("verified import command helper exists");
     let import_end = import_source[import_start..]
         .find("if let Err(error) = verify_result")
@@ -225,7 +227,7 @@ fn extensible_verification_uses_system_native_provider() {
         .find("pub(crate) async fn handle_extensible_inventory")
         .expect("extensible handler exists");
     let handler_end = source[handler_start..]
-        .find("fn verify_extensible(")
+        .find("fn verify_extensible<")
         .map(|offset| handler_start + offset)
         .expect("extensible verifier follows handler");
     let handler = &source[handler_start..handler_end];
@@ -239,7 +241,7 @@ fn extensible_verification_uses_system_native_provider() {
     );
 
     let verifier_start = source
-        .find("fn verify_extensible(")
+        .find("fn verify_extensible<")
         .expect("extensible verifier exists");
     let verifier = &source[verifier_start..];
     assert!(
@@ -251,8 +253,8 @@ fn extensible_verification_uses_system_native_provider() {
         "extensible payload whitelist reads must depend on a native read capability"
     );
     assert!(
-        verifier.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
-        "extensible payload verification should require an explicit native provider"
+        verifier.contains("native_contract_provider: Arc<S::NativeProvider>"),
+        "extensible payload verification should preserve the SystemContext provider type"
     );
     assert!(
         source.contains("HotColdLedgerProviderFactory"),
@@ -286,16 +288,12 @@ fn extensible_verification_uses_system_native_provider() {
     let provider = include_str!("../../handlers/extensible_provider.rs");
     assert!(provider.contains("trait ExtensibleNativeProvider"));
     assert!(
-        provider.contains("struct NativeExtensibleProvider<P: ?Sized>"),
-        "extensible provider adapter should preserve the caller's provider type"
+        provider.contains("struct NativeExtensibleProvider<P>"),
+        "extensible provider adapter should preserve the caller's concrete provider type"
     );
     assert!(
         provider.contains("native_contract_provider: Arc<P>"),
         "extensible provider adapter should own Arc<P>, not erase to dyn internally"
-    );
-    assert!(
-        !provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
-        "extensible provider adapter must not erase its provider to dyn"
     );
     assert!(
         !provider.contains("trait ExtensibleNativeProviderFactory"),
@@ -310,12 +308,16 @@ fn extensible_verification_uses_system_native_provider() {
         "extensible provider seam must resolve RoleManagement through the explicit native provider"
     );
     assert!(
-        provider.contains("get_native_contract_by_name(\"NeoToken\")"),
-        "extensible provider seam should read NeoToken from the explicit NativeContractProvider"
+        provider.contains(".committee_address(snapshot)"),
+        "extensible provider seam should read the committee address from the explicit NativeContractProvider capability"
     );
     assert!(
-        provider.contains("get_native_contract_by_name(\"RoleManagement\")"),
-        "extensible provider seam should read RoleManagement from the explicit NativeContractProvider"
+        provider.contains(".next_block_validators(snapshot, settings)"),
+        "extensible provider seam should read next-block validators from the explicit NativeContractProvider capability"
+    );
+    assert!(
+        provider.contains(".state_validators(snapshot, height)"),
+        "extensible provider seam should read StateValidator designations from the explicit NativeContractProvider capability"
     );
 }
 
@@ -374,16 +376,12 @@ fn transaction_admission_uses_system_native_provider() {
         .unwrap_or_else(|error| panic!("{}: {error}", provider_path.display()));
     assert!(provider.contains("trait TransactionNativeProvider"));
     assert!(
-        provider.contains("struct NativeTransactionProvider<P: ?Sized>"),
-        "transaction provider adapter should preserve the caller's provider type"
+        provider.contains("struct NativeTransactionProvider<P>"),
+        "transaction provider adapter should preserve the caller's concrete provider type"
     );
     assert!(
         provider.contains("native_contract_provider: Arc<P>"),
         "transaction provider adapter should own Arc<P>, not erase to dyn internally"
-    );
-    assert!(
-        !provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
-        "transaction provider adapter must not erase its provider to dyn"
     );
     assert!(
         !provider.contains("trait TransactionNativeProviderFactory"),
@@ -394,8 +392,8 @@ fn transaction_admission_uses_system_native_provider() {
         "transaction admission provider must resolve PolicyContract through the explicit native provider"
     );
     assert!(
-        provider.contains("get_native_contract_by_name(\"PolicyContract\")"),
-        "transaction admission provider should read PolicyContract from the explicit NativeContractProvider"
+        provider.contains(".max_traceable_blocks(snapshot, settings)"),
+        "transaction admission provider should read MaxTraceableBlocks from the explicit NativeContractProvider capability"
     );
 }
 
@@ -501,6 +499,7 @@ impl std::fmt::Debug for StoreContext {
 }
 impl SystemContext for StoreContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
+    type CacheBacking = neo_storage::EmptyCacheBacking;
 
     fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
         Arc::clone(&self.settings)
@@ -779,7 +778,10 @@ fn transaction_with_nonce(nonce: u32) -> Transaction {
     tx
 }
 
-fn fund_test_signer_gas(snapshot: &neo_storage::DataCache, amount: i64) {
+fn fund_test_signer_gas<B: neo_storage::CacheRead>(
+    snapshot: &neo_storage::DataCache<B>,
+    amount: i64,
+) {
     let signer = neo_primitives::UInt160::from_bytes(&[0x33; 20]).expect("test signer");
     let mut gas_key = vec![20];
     gas_key.extend_from_slice(&signer.to_bytes());
@@ -804,7 +806,10 @@ fn fund_test_signer_gas(snapshot: &neo_storage::DataCache, amount: i64) {
     );
 }
 
-fn seed_current_ledger(snapshot: &neo_storage::DataCache, index: u32) {
+fn seed_current_ledger<B: neo_storage::CacheRead>(
+    snapshot: &neo_storage::DataCache<B>,
+    index: u32,
+) {
     let hash = UInt256::from_bytes(&[0u8; 32]).expect("zero hash");
     let bytes = neo_native_contracts::LedgerContract::new()
         .serialize_hash_index_state(&hash, index)
@@ -815,8 +820,8 @@ fn seed_current_ledger(snapshot: &neo_storage::DataCache, index: u32) {
     );
 }
 
-fn seed_conflict_record(
-    snapshot: &neo_storage::DataCache,
+fn seed_conflict_record<B: neo_storage::CacheRead>(
+    snapshot: &neo_storage::DataCache<B>,
     hash: &UInt256,
     signer: &neo_primitives::UInt160,
     index: u32,

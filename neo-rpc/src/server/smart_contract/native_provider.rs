@@ -8,7 +8,7 @@
 use neo_config::ProtocolSettings;
 use neo_error::CoreResult;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 use std::sync::Arc;
 
 use crate::server::native_provider::NativeProviderAdapter;
@@ -16,9 +16,9 @@ use crate::server::native_provider::NativeProviderAdapter;
 /// Native-contract capabilities required by smart-contract RPC helpers.
 pub(super) trait SmartContractNativeProvider {
     /// Returns the active `MaxValidUntilBlockIncrement` value.
-    fn max_valid_until_block_increment(
+    fn max_valid_until_block_increment<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
     ) -> CoreResult<u32>;
 }
@@ -26,28 +26,36 @@ pub(super) trait SmartContractNativeProvider {
 /// Adapter from the node-composed native-contract provider to the
 /// smart-contract RPC Policy read capability.
 #[derive(Clone, Debug)]
-pub(super) struct NativeSmartContractProvider {
-    adapter: NativeProviderAdapter,
+pub(super) struct NativeSmartContractProvider<P>
+where
+    P: NativeContractProvider,
+{
+    adapter: NativeProviderAdapter<P>,
 }
 
-impl NativeSmartContractProvider {
+impl<P> NativeSmartContractProvider<P>
+where
+    P: NativeContractProvider,
+{
     /// Creates an adapter over the composition-root native-contract provider.
     #[must_use]
-    pub(super) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
+    pub(super) fn new(native_contract_provider: Arc<P>) -> Self {
         Self {
             adapter: NativeProviderAdapter::new(native_contract_provider),
         }
     }
 }
 
-impl SmartContractNativeProvider for NativeSmartContractProvider {
-    fn max_valid_until_block_increment(
+impl<P> SmartContractNativeProvider for NativeSmartContractProvider<P>
+where
+    P: NativeContractProvider,
+{
+    fn max_valid_until_block_increment<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
     ) -> CoreResult<u32> {
-        self.adapter.with_policy(|policy| {
-            policy.get_max_valid_until_block_increment_snapshot(snapshot, settings)
-        })
+        self.adapter
+            .max_valid_until_block_increment(snapshot, settings)
     }
 }

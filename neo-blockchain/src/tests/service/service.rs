@@ -9,19 +9,19 @@ use std::sync::Arc;
 struct TestMempool;
 
 impl MempoolLike for TestMempool {
-    fn try_add(
+    fn try_add<B: neo_storage::CacheRead>(
         &self,
         _tx: &neo_payloads::Transaction,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _settings: &neo_config::ProtocolSettings,
     ) -> VerifyResult {
         VerifyResult::Succeed
     }
 
-    fn try_add_cached(
+    fn try_add_cached<B: neo_storage::CacheRead>(
         &self,
         _tx: &neo_payloads::Transaction,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _settings: &neo_config::ProtocolSettings,
         _cached_state_independent: Option<VerifyResult>,
     ) -> VerifyResult {
@@ -35,6 +35,7 @@ struct TestContext;
 
 impl crate::service_context::SystemContext for TestContext {
     type NativeProvider = neo_native_contracts::StandardNativeProvider;
+    type CacheBacking = neo_storage::EmptyCacheBacking;
 
     fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
         Arc::new(neo_config::ProtocolSettings::default())
@@ -137,9 +138,7 @@ async fn handle_block_import_check_rejects_bad_empty_block_merkle_root() {
     header.set_merkle_root(neo_primitives::UInt256::from([0x42; 32]));
     let block = neo_payloads::Block::from_parts(header, Vec::new());
 
-    let importer: &dyn neo_runtime::BlockImport = &handle;
-    let err = importer
-        .check(&block)
+    let err = neo_runtime::BlockImport::check(&handle, &block)
         .await
         .expect_err("bad empty-block merkle root must fail preverification");
 

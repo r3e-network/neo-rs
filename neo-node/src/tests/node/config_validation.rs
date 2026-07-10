@@ -1,4 +1,5 @@
 use super::*;
+use neo_storage::persistence::{Store, StoreSnapshot, WriteStore};
 
 #[test]
 fn validate_config_rejects_incomplete_rpc_auth() {

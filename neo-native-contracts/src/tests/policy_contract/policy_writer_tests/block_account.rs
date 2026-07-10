@@ -1,7 +1,6 @@
 use super::*;
 #[test]
 fn real_policy_blocked_storage_rejects_system_contract_call_target() {
-    crate::install();
     let settings = ProtocolSettings::default();
     let cache = DataCache::new(false);
     let target_hash = UInt160::parse("0xb1b2c3d4e5f60718293a4b5c6d7e8f0102030405").unwrap();
@@ -14,7 +13,7 @@ fn real_policy_blocked_storage_rejects_system_contract_call_target() {
     let mut tx = Transaction::new();
     tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
     tx.set_witnesses(vec![Witness::empty()]);
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
 
     let mut builder = ScriptBuilder::new();
     builder.emit_push_int(0);
@@ -33,7 +32,7 @@ fn real_policy_blocked_storage_rejects_system_contract_call_target() {
         None,
         settings,
         2000_00000000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
@@ -59,7 +58,6 @@ fn real_policy_blocked_storage_rejects_system_contract_call_target() {
 /// (C# UT_PolicyContract.Check_BlockAccount).
 #[test]
 fn block_account_e2e_pre_faun_blocks_then_double_block_returns_false() {
-    crate::install();
     // Default MainNet schedules Faun at 8,800,000, so block 0 is pre-Faun.
     let settings = ProtocolSettings::default();
     let cache = DataCache::new(false);
@@ -122,7 +120,6 @@ fn block_account_e2e_pre_faun_blocks_then_double_block_returns_false() {
 /// throws) and writes nothing.
 #[test]
 fn block_account_e2e_requires_committee_witness() {
-    crate::install();
     let settings = ProtocolSettings::default();
     let cache = DataCache::new(false);
     seed_committee(&cache, &sample_committee());
@@ -161,7 +158,6 @@ fn block_account_e2e_requires_committee_witness() {
 /// contract.") even with the committee witness.
 #[test]
 fn block_account_e2e_rejects_native_contract_hash() {
-    crate::install();
     let settings = ProtocolSettings::default();
     let cache = DataCache::new(false);
     let committee = sample_committee();
@@ -199,7 +195,6 @@ fn block_account_e2e_rejects_native_contract_hash() {
 #[test]
 fn block_account_e2e_faun_clears_vote_and_stamps_time() {
     const BLOCK_TIME_MS: u64 = 1_234_567_890;
-    crate::install();
     let settings = faun_settings();
     let cache = DataCache::new(false);
     let committee = sample_committee();

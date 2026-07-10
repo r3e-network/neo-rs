@@ -5,6 +5,7 @@
 //! completed.
 
 use neo_execution::ApplicationEngine;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Transaction};
 use neo_primitives::UInt160;
 use neo_vm::StackItem;
@@ -28,11 +29,15 @@ pub struct NativePersistNotification {
 /// `GasConsumed` is the datoshi fee (C# `engine.FeeConsumed`), the stack is the
 /// engine's result stack, and the notifications/logs are the engine's captured
 /// events.
-pub(crate) fn application_executed(
-    engine: &ApplicationEngine,
+pub(crate) fn application_executed<P, B>(
+    engine: &ApplicationEngine<P, neo_execution::NoDiagnostic, B>,
     transaction: Option<Transaction>,
     vm_state: VMState,
-) -> ApplicationExecuted {
+) -> ApplicationExecuted
+where
+    P: NativeContractProvider + 'static,
+    B: neo_storage::CacheRead,
+{
     let mut executed = ApplicationExecuted::new(
         transaction,
         engine.trigger_type(),
@@ -95,7 +100,13 @@ pub(crate) fn stack_value_snapshot(item: &StackItem) -> StackValue {
 }
 
 /// Copies the engine's emitted notifications into the outcome shape.
-pub(crate) fn collect_notifications(engine: &ApplicationEngine) -> Vec<NativePersistNotification> {
+pub(crate) fn collect_notifications<P, B>(
+    engine: &ApplicationEngine<P, neo_execution::NoDiagnostic, B>,
+) -> Vec<NativePersistNotification>
+where
+    P: NativeContractProvider + 'static,
+    B: neo_storage::CacheRead,
+{
     engine
         .notifications()
         .iter()

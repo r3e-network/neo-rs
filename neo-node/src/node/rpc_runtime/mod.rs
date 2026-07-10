@@ -14,15 +14,18 @@
 
 use std::sync::Arc;
 
+use neo_storage::persistence::providers::RuntimeStore;
 use tracing::info;
 
 use super::config::NodeConfig;
+use super::services::NodeServiceHandles;
 
 /// Builds the RPC server over the shared node, registers the full
 /// provider handler set, and starts it on the configured endpoint.
 /// Returns the server handle, kept alive for the node's lifetime.
 pub(super) fn start_rpc_server(
-    node: &Arc<neo_system::Node>,
+    node: &Arc<neo_system::Node<neo_native_contracts::StandardNativeProvider, RuntimeStore>>,
+    services: &NodeServiceHandles<RuntimeStore>,
     config: &NodeConfig,
     network_magic: u32,
     remote_ledger_rpc: Option<&str>,
@@ -37,14 +40,14 @@ pub(super) fn start_rpc_server(
     let bind_address = rpc_config.bind_address;
     let port = rpc_config.port;
     let node_ctx: Arc<NodeContext> = Arc::new(NodeContext::from_parts(
-        Arc::clone(&node.settings),
-        Arc::clone(&node.storage),
-        node.blockchain.clone(),
-        node.network.clone(),
-        Arc::clone(&node.mempool),
-        Arc::clone(&node.header_cache),
-        node.services.clone(),
-        node.native_contract_provider.clone(),
+        node.settings(),
+        node.storage(),
+        node.blockchain(),
+        node.network(),
+        node.mempool(),
+        node.header_cache(),
+        services.rpc_services(),
+        node.native_contract_provider(),
     ));
     let mut server = RpcServer::new(node_ctx, rpc_config);
     if let Some(endpoint) = remote_ledger_rpc {

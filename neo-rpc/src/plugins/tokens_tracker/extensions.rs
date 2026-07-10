@@ -6,7 +6,7 @@ use base64::Engine;
 use neo_error::{CoreError, CoreResult};
 use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{MemoryReader, Serializable};
-use neo_storage::persistence::{SeekDirection, Store};
+use neo_storage::persistence::{ReadOnlyStoreGeneric, SeekDirection, Store};
 use num_bigint::BigInt;
 
 /// Converts a byte slice to a Base64 string (empty slice -> empty string).
@@ -27,7 +27,7 @@ pub fn bigint_var_size(value: &BigInt) -> usize {
 /// Finds entries whose keys start with the given prefix.
 pub fn find_prefix<S, TKey, TValue>(db: &S, prefix: &[u8]) -> CoreResult<Vec<(TKey, TValue)>>
 where
-    S: Store + ?Sized,
+    S: Store,
     TKey: Serializable,
     TValue: Serializable,
 {
@@ -61,7 +61,7 @@ pub fn find_range<S, TKey, TValue>(
     end_key: &[u8],
 ) -> CoreResult<Vec<(TKey, TValue)>>
 where
-    S: Store + ?Sized,
+    S: Store,
     TKey: Serializable,
     TValue: Serializable,
 {

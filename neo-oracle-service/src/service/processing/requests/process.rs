@@ -1,14 +1,22 @@
-use super::super::super::native_provider::OracleServiceNativeProvider;
+use super::super::super::native_provider::{
+    OracleContractReadProvider, OracleServiceNativeProvider,
+};
 use super::super::super::utils::{filter_json, ledger_height, select_oracle_key, sign_transaction};
-use super::super::super::{OracleService, OracleServiceError};
+use super::super::super::{OracleRuntimeProvider, OracleService, OracleServiceError};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{OracleResponse, OracleResponseCode};
 use neo_storage::persistence::DataCache;
+use neo_wallets::{Wallet, WalletAccount};
 use tracing::{debug, warn};
 
-impl OracleService {
-    pub(in super::super::super) async fn process_request(
+impl<R, P> OracleService<R, P>
+where
+    R: OracleRuntimeProvider + 'static,
+    P: NativeContractProvider + OracleContractReadProvider + 'static,
+{
+    pub(in super::super::super) async fn process_request<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         request_id: u64,
         request: neo_native_contracts::OracleRequest,
     ) -> Result<(), OracleServiceError> {
@@ -66,7 +74,7 @@ impl OracleService {
                 &pending_request,
                 &mut response,
                 &oracle_nodes,
-                &self.config.settings(),
+                &self.runtime.settings(),
                 false,
             )?;
 
@@ -80,7 +88,7 @@ impl OracleService {
                 &pending_request,
                 &mut backup_response,
                 &oracle_nodes,
-                &self.config.settings(),
+                &self.runtime.settings(),
                 true,
             )?;
 
@@ -112,9 +120,9 @@ impl OracleService {
                     continue;
                 }
 
-                let tx_sign = sign_transaction(&response_tx, &key, self.config.settings().network);
+                let tx_sign = sign_transaction(&response_tx, &key, self.runtime.settings().network);
                 let backup_sign =
-                    sign_transaction(&backup_tx, &key, self.config.settings().network);
+                    sign_transaction(&backup_tx, &key, self.runtime.settings().network);
 
                 self.add_response_tx_sign(
                     snapshot,

@@ -5,7 +5,9 @@
 //! diagnostic formatting with script, stack, and request utilities.
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_execution::ApplicationEngine;
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_execution::{ApplicationEngine, Diagnostic as ExecutionDiagnostic};
+use neo_storage::CacheRead;
 use serde_json::{Map, Value, json};
 
 use crate::server::diagnostic::{Diagnostic, DiagnosticInvocation};
@@ -31,7 +33,12 @@ pub(super) fn diagnostic_invocation_to_json(diagnostic: &Diagnostic) -> Value {
     }
 }
 
-pub(super) fn diagnostic_storage_changes(engine: &ApplicationEngine) -> Value {
+pub(super) fn diagnostic_storage_changes<P, D, B>(engine: &ApplicationEngine<P, D, B>) -> Value
+where
+    P: NativeContractProvider + 'static,
+    D: ExecutionDiagnostic + 'static,
+    B: CacheRead,
+{
     let changes = engine.snapshot_cache().tracked_items();
     let entries = changes
         .into_iter()

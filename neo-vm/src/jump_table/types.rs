@@ -12,7 +12,7 @@ use neo_vm_rs::StackItemType;
 use neo_vm_rs::{OpCode, StackValue};
 
 /// Registers the type operation handlers.
-pub fn register_handlers(jump_table: &mut JumpTable) {
+pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
     register_jump_handlers![
         jump_table;
         OpCode::CONVERT => convert,
@@ -22,7 +22,7 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 }
 
 /// Implements the CONVERT operation.
-fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn convert<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -92,7 +92,7 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
 }
 
 /// Implements the ISTYPE operation.
-fn is_type(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn is_type<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -139,7 +139,7 @@ fn stack_item_type_probe_value(item_type: StackItemType) -> StackValue {
 }
 
 /// Implements the ISNULL operation.
-fn is_null(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn is_null<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 

@@ -1,9 +1,10 @@
 use super::super::ledger_provider::{NativeOracleLedgerProvider, OracleLedgerProvider};
-use super::super::native_provider::OracleServiceNativeProvider;
+use super::super::native_provider::{OracleContractReadProvider, OracleServiceNativeProvider};
 use super::super::utils::{ledger_height, ledger_height_with_provider, verify_oracle_signature};
-use super::super::{OracleService, OracleServiceError, OracleTask};
+use super::super::{OracleRuntimeProvider, OracleService, OracleServiceError, OracleTask};
 use neo_crypto::ECPoint;
 use neo_execution::Contract;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::Transaction;
 use neo_payloads::VerifiableExt;
 use neo_payloads::helper::get_sign_data_vec;
@@ -18,14 +19,18 @@ const MAX_PENDING_QUEUE_SIZE: usize = 10000;
 /// Maximum time a task can be pending before being considered expired (12 hours).
 const MAX_TASK_PENDING_TIME: std::time::Duration = std::time::Duration::from_secs(12 * 60 * 60);
 
-impl OracleService {
+impl<R, P> OracleService<R, P>
+where
+    R: OracleRuntimeProvider + 'static,
+    P: NativeContractProvider + OracleContractReadProvider + 'static,
+{
     // Rationale: response-transaction signing must carry the request id,
     // oracle key/signature, primary/backup transactions, and their signatures
     // as separate protocol fields.
     #[allow(clippy::too_many_arguments)]
-    pub(in super::super) fn add_response_tx_sign(
+    pub(in super::super) fn add_response_tx_sign<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         request_id: u64,
         oracle_pub: ECPoint,
         sign: Vec<u8>,
@@ -92,7 +97,7 @@ impl OracleService {
             }
 
             task.tx = Some(tx.clone());
-            let data = get_sign_data_vec(&tx, self.config.settings().network)
+            let data = get_sign_data_vec(&tx, self.runtime.settings().network)
                 .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
             task.signs
                 .retain(|key, value| verify_oracle_signature(key, &data, value));
@@ -100,7 +105,7 @@ impl OracleService {
 
         if let Some(tx) = backup_tx {
             task.backup_tx = Some(tx.clone());
-            let data = get_sign_data_vec(&tx, self.config.settings().network)
+            let data = get_sign_data_vec(&tx, self.runtime.settings().network)
                 .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
             task.backup_signs
                 .retain(|key, value| verify_oracle_signature(key, &data, value));
@@ -122,9 +127,9 @@ impl OracleService {
             OracleServiceError::Processing("oracle backup transaction missing".to_string())
         })?;
 
-        let tx_data = get_sign_data_vec(tx, self.config.settings().network)
+        let tx_data = get_sign_data_vec(tx, self.runtime.settings().network)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
-        let backup_data = get_sign_data_vec(backup_tx, self.config.settings().network)
+        let backup_data = get_sign_data_vec(backup_tx, self.runtime.settings().network)
             .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
 
         if verify_oracle_signature(&oracle_pub, &tx_data, &sign) {
@@ -151,9 +156,9 @@ impl OracleService {
         Ok(())
     }
 
-    pub(in super::super) fn check_tx_sign(
+    pub(in super::super) fn check_tx_sign<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         tx: &Transaction,
         signs: &BTreeMap<ECPoint, Vec<u8>>,
     ) -> bool {
@@ -204,7 +209,7 @@ impl OracleService {
         }
         tx_mut.set_witnesses(witnesses);
 
-        if let Err(error) = self.tx.try_enqueue_preverify(tx_mut, true, snapshot) {
+        if let Err(error) = self.runtime.try_enqueue_preverify(tx_mut, true, snapshot) {
             warn!(target: "neo::oracle", %error, "failed to relay oracle response tx");
             return false;
         }

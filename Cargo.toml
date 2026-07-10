@@ -52,6 +52,8 @@ members = [
     "neo-wallets",
     # Read-side block, transaction, account, and notification indexing.
     "neo-indexer",
+    # Off-chain Oracle request fulfilment over HTTPS and NeoFS.
+    "neo-oracle-service",
 
     # === Composition Layer ===
     # Embeddable node composition root.
@@ -60,8 +62,6 @@ members = [
     # === Plugin / RPC Boundary ===
     # JSON-RPC server/client plus ApplicationLogs, TokensTracker, NeoIndexer, and Oracle groups.
     "neo-rpc",
-    # Oracle request fulfilment over HTTPS and NeoFS.
-    "neo-oracle-service",
 
     # === Application Layer ===
     # Node daemon binary.
@@ -114,6 +114,75 @@ readme = "README.md"
 [workspace.metadata]
 # Minimum supported Rust version policy
 msrv = "1.85"
+
+# Canonical crate-layer model consumed by architecture tests. Dependencies must
+# point to a lower layer unless the exact same-layer edge is recorded below.
+[workspace.metadata.architecture]
+allowed-same-layer-dependencies = [
+    # Infrastructure has an internal acyclic order while remaining one
+    # operator-independent mechanical layer.
+    "neo-config -> neo-crypto",
+    "neo-config -> neo-error",
+    "neo-crypto -> neo-error",
+    "neo-crypto -> neo-io",
+    "neo-error -> neo-io",
+    "neo-manifest -> neo-crypto",
+    "neo-manifest -> neo-error",
+    "neo-manifest -> neo-io",
+    "neo-manifest -> neo-serialization",
+    "neo-manifest -> neo-vm",
+    "neo-serialization -> neo-error",
+    "neo-serialization -> neo-io",
+    "neo-serialization -> neo-storage",
+    "neo-serialization -> neo-vm",
+    "neo-storage -> neo-error",
+    "neo-storage -> neo-io",
+    "neo-vm -> neo-crypto",
+    "neo-vm -> neo-error",
+    "neo-vm -> neo-io",
+    # Protocol implementations reuse the canonical payload vocabulary.
+    "neo-consensus -> neo-payloads",
+    "neo-hsm -> neo-consensus",
+    # Domain services have explicit one-way implementation relationships.
+    "neo-execution -> neo-runtime",
+    "neo-mempool -> neo-execution",
+    "neo-mempool -> neo-native-contracts",
+    "neo-native-contracts -> neo-execution",
+    "neo-native-contracts -> neo-runtime",
+    # The off-chain Oracle worker consumes the node-service wallet lifecycle.
+    "neo-oracle-service -> neo-wallets",
+]
+
+[workspace.metadata.architecture.layers]
+foundation = ["neo-primitives"]
+infrastructure = [
+    "neo-io",
+    "neo-error",
+    "neo-crypto",
+    "neo-storage",
+    "neo-config",
+    "neo-vm",
+    "neo-serialization",
+    "neo-manifest",
+]
+protocol = ["neo-payloads", "neo-consensus", "neo-hsm"]
+domain-services = [
+    "neo-runtime",
+    "neo-execution",
+    "neo-native-contracts",
+    "neo-state-service",
+    "neo-mempool",
+]
+node-services = [
+    "neo-blockchain",
+    "neo-network",
+    "neo-wallets",
+    "neo-indexer",
+    "neo-oracle-service",
+]
+composition = ["neo-system"]
+plugin-boundary = ["neo-rpc"]
+application = ["neo-node", "neo-gui", "neo-test-fixtures"]
 
 # Centralized lint policy. Every member opts in with `[lints] workspace = true`
 # in its own Cargo.toml, so the rules live in exactly one place (replacing the
@@ -180,13 +249,13 @@ neo-blockchain = { path = "neo-blockchain", version = "0.10.0" }
 neo-network = { path = "neo-network", version = "0.10.0" }
 neo-wallets = { path = "neo-wallets", version = "0.10.0" }
 neo-indexer = { path = "neo-indexer", version = "0.10.0" }
+neo-oracle-service = { path = "neo-oracle-service", version = "0.10.0" }
 
 # Composition layer
 neo-system = { path = "neo-system", version = "0.10.0" }
 
 # Plugin / RPC boundary
 neo-rpc = { path = "neo-rpc", version = "0.10.0" }
-neo-oracle-service = { path = "neo-oracle-service", version = "0.10.0" }
 
 # Application layer
 neo-node = { path = "neo-node", version = "0.10.0" }
@@ -198,7 +267,6 @@ neo-test-fixtures = { path = "neo-test-fixtures", version = "0.10.0" }
 # Async runtime
 tokio = { version = "1.35", default-features = false }
 tokio-util = "0.7"
-async-trait = "0.1"
 futures = "0.3"
 
 # Serialization

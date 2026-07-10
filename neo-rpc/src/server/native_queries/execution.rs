@@ -10,7 +10,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
 use neo_manifest::CallFlags;
 use neo_primitives::{TriggerType, UInt160};
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::{CacheRead, DataCache};
 use neo_vm::StackItem;
 use neo_vm_rs::VmState as VMState;
 
@@ -23,9 +23,9 @@ use super::script::{NativeArg, build_native_call_script};
 ///
 /// Faults are surfaced as errors because the native reads probed here cannot
 /// fault on healthy state.
-pub(super) fn invoke_native_read(
+pub(super) fn invoke_native_read<B: CacheRead>(
     server: &RpcServer,
-    snapshot: Arc<DataCache>,
+    snapshot: Arc<DataCache<B>>,
     contract: &UInt160,
     method: &str,
     args: &[NativeArg<'_>],
@@ -41,7 +41,7 @@ pub(super) fn invoke_native_read(
         None,
         settings,
         server.settings().max_gas_invoke,
-        None,
+        neo_execution::NoDiagnostic,
         Some(system.native_contract_provider()),
     )
     .map_err(|err| CoreError::other(err.to_string()))?;

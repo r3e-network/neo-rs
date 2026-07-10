@@ -17,8 +17,7 @@
 
 use super::*;
 use futures::{SinkExt, StreamExt};
-use neo_network::MessageCommand;
-use neo_network::wire::{Message, MessageCodec};
+use neo_network::{Message, MessageCodec, MessageCommand};
 use neo_payloads::p2p_payloads::{GetBlockByIndexPayload, NodeCapability, VersionPayload};
 use serde_json::Value;
 use std::io::{Read, Write};
@@ -320,14 +319,19 @@ fn shutdown_flush_reports_failed_state_service_worker() {
     use neo_state_service::{StateStore, commit_handlers::StateServiceCommitHandlers};
     use neo_storage::{DataCache, StorageItem, StorageKey};
 
-    let node = neo_system::Node::new(Arc::new(ProtocolSettings::default()), None, None)
-        .expect("test node");
     let state_store = Arc::new(StateStore::with_mpt(true));
     let state_service = Arc::new(StateServiceCommitHandlers::new_async_with_capacity(
         Arc::clone(&state_store),
         1,
     ));
-    node.register_service(Arc::clone(&state_service));
+    let services = services::NodeServiceHandles::new(
+        None,
+        Some(Arc::clone(&state_service)),
+        None,
+        None,
+        None,
+        None,
+    );
 
     let snapshot = DataCache::new(false);
     snapshot.add(
@@ -339,7 +343,7 @@ fn shutdown_flush_reports_failed_state_service_worker() {
         "enqueue should succeed before the worker observes the non-contiguous block"
     );
 
-    let err = flush_state_service_for_shutdown(&node)
+    let err = flush_state_service_for_shutdown(&services)
         .expect_err("shutdown must fail when StateService worker failed");
     assert!(
         err.to_string().contains("state service MPT worker failed"),
@@ -390,6 +394,8 @@ async fn rpc_post_json(port: u16, request: serde_json::Value) -> serde_json::Val
         .expect("parse RPC response JSON")
 }
 
+#[path = "application.rs"]
+mod application;
 #[path = "config_parsing.rs"]
 mod config_parsing;
 #[path = "config_validation.rs"]

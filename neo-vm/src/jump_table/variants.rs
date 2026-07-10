@@ -1,37 +1,25 @@
 //! Default and hardfork-specific jump-table construction.
 //!
 //! The fixed dispatch table lives in `table`; this module wires opcode-family
-//! registration and cached table variants selected by the execution engine.
-
-use std::sync::OnceLock;
+//! registration and hardfork-specific table variants selected by the execution engine.
 
 use neo_vm_rs::OpCode;
 
 use super::{JumpTable, bitwisee, compound, control, numeric, push, slot, splice, stack, types};
 
-/// The default jump table.
-static DEFAULT: OnceLock<JumpTable> = OnceLock::new();
+impl<S> Default for JumpTable<S> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-/// The pre-`HF_Gorgon` jump table (cached).
-static NOT_GORGON: OnceLock<JumpTable> = OnceLock::new();
-
-neo_io::impl_default_via_new!(JumpTable);
-
-impl JumpTable {
+impl<S> JumpTable<S> {
     /// Creates a new jump table.
     #[must_use]
     pub fn new() -> Self {
         let mut jump_table = Self::empty();
         jump_table.register_default_handlers();
         jump_table
-    }
-
-    /// Gets the default jump table.
-    // Rationale: this inherent method preserves the historical VM API; the
-    // actual `Default` impl can delegate without changing call sites.
-    #[allow(clippy::should_implement_trait)]
-    pub fn default() -> Self {
-        DEFAULT.get_or_init(Self::new).clone()
     }
 
     /// The pre-`HF_Gorgon` compound-opcode table. C#
@@ -47,16 +35,12 @@ impl JumpTable {
     /// shift — but that is a VM-version change, not a hardfork gate; see the
     /// `shift` handler in `numeric.rs`.)
     pub fn not_gorgon() -> Self {
-        NOT_GORGON
-            .get_or_init(|| {
-                let mut table = Self::new();
-                table.set(OpCode::HASKEY, compound::has_key_before543);
-                table.set(OpCode::PICKITEM, compound::pick_item_before543);
-                table.set(OpCode::SETITEM, compound::set_item_before543);
-                table.set(OpCode::REMOVE, compound::remove_before543);
-                table
-            })
-            .clone()
+        let mut table = Self::new();
+        table.set(OpCode::HASKEY, compound::has_key_before543::<S>);
+        table.set(OpCode::PICKITEM, compound::pick_item_before543::<S>);
+        table.set(OpCode::SETITEM, compound::set_item_before543::<S>);
+        table.set(OpCode::REMOVE, compound::remove_before543::<S>);
+        table
     }
 
     /// The pre-`HF_Echidna` jump table. C# v3.10.1 overrides only SUBSTR with

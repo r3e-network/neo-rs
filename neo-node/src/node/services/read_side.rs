@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context;
+use neo_storage::persistence::providers::RuntimeStore;
 use tracing::info;
 
 use crate::node::config::{NodeConfig, network_scoped_path};
@@ -18,9 +19,9 @@ pub(super) type TokensTrackerRuntime = (
 pub(super) struct ReadSideServices {
     pub(super) indexer_service: Option<Arc<neo_indexer::IndexerService>>,
     pub(super) application_logs_service:
-        Option<Arc<neo_rpc::application_logs::ApplicationLogsService>>,
+        Option<Arc<neo_rpc::application_logs::ApplicationLogsService<RuntimeStore>>>,
     pub(super) tokens_tracker_service:
-        Option<Arc<neo_rpc::plugins::tokens_tracker::TokensTrackerService>>,
+        Option<Arc<neo_rpc::plugins::tokens_tracker::TokensTrackerService<RuntimeStore>>>,
     pub(super) tokens_tracker_runtime: Option<TokensTrackerRuntime>,
 }
 
@@ -90,7 +91,7 @@ fn build_application_logs_service(
     config: &NodeConfig,
     network: u32,
     storage_provider: &str,
-) -> anyhow::Result<Option<Arc<neo_rpc::application_logs::ApplicationLogsService>>> {
+) -> anyhow::Result<Option<Arc<neo_rpc::application_logs::ApplicationLogsService<RuntimeStore>>>> {
     if !config.application_logs.enabled {
         return Ok(None);
     }
@@ -122,7 +123,7 @@ fn build_tokens_tracker_services(
     network: u32,
     storage_provider: &str,
 ) -> anyhow::Result<(
-    Option<Arc<neo_rpc::plugins::tokens_tracker::TokensTrackerService>>,
+    Option<Arc<neo_rpc::plugins::tokens_tracker::TokensTrackerService<RuntimeStore>>>,
     Option<TokensTrackerRuntime>,
 )> {
     if !config.tokens_tracker.enabled {

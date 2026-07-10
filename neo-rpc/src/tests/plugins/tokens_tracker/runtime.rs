@@ -17,7 +17,7 @@ fn token_tracker_engine_paths_use_explicit_native_provider() {
     for (name, source) in engine_sources {
         assert!(
             source.contains("new_with_shared_block_and_native_contract_provider"),
-            "{name} should construct ApplicationEngine with an explicit native provider"
+            "{name} should construct ApplicationEngine with the typed native provider"
         );
         assert!(
             source.contains("native_contract_provider"),
@@ -44,6 +44,8 @@ fn tracker_with_policy(exception_policy: UnhandledExceptionPolicy) -> TokensTrac
         },
         trackers: RwLock::new(Vec::new()),
         disabled: AtomicBool::new(false),
+        _provider: std::marker::PhantomData,
+        _store: std::marker::PhantomData,
     }
 }
 

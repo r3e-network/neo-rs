@@ -22,7 +22,12 @@ fn trace_block_range() -> Option<(u32, u32)> {
     })
 }
 
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     pub(crate) fn should_trace_block(block_idx: u32) -> bool {
         trace_block_range()
             .map(|(start, end)| block_idx >= start && block_idx <= end)
@@ -82,36 +87,29 @@ impl ApplicationEngine {
                 "PolicyContract lookup requires a native contract provider",
             )
         })?;
-        let policy = provider
-            .get_native_contract_by_name("PolicyContract")
-            .ok_or_else(|| {
-                CoreError::invalid_operation(
-                    "PolicyContract lookup requires the Policy native contract",
-                )
-            })?;
-        policy.is_contract_blocked(self.snapshot_cache.as_ref(), contract_hash)
+        provider.policy_is_blocked(self.snapshot_cache.as_ref(), contract_hash)
     }
 
     fn lookup_contract_management_state(
         &self,
         hash: &UInt160,
     ) -> CoreResult<Option<ContractState>> {
-        let Some(contract_management) = self.native_contract_by_name("ContractManagement") else {
+        let Some(provider) = self.native_contract_provider() else {
             return Ok(None);
         };
-        contract_management.lookup_contract_state(self.snapshot_cache.as_ref(), hash)
+        provider.contract_state(self.snapshot_cache.as_ref(), hash)
     }
 
-    fn whitelisted_fee_for_policy(
+    pub(super) fn whitelisted_fee_for_policy(
         &self,
         contract_hash: &UInt160,
         method: &str,
         param_count: u32,
     ) -> CoreResult<Option<i64>> {
-        let Some(policy) = self.native_contract_by_name("PolicyContract") else {
+        let Some(provider) = self.native_contract_provider() else {
             return Ok(None);
         };
-        policy.whitelisted_fee(
+        provider.policy_whitelisted_fee(
             self.snapshot_cache.as_ref(),
             contract_hash,
             method,
@@ -136,10 +134,10 @@ impl ApplicationEngine {
         method: ContractMethodDescriptor,
         flags: CallFlags,
         argument_count: usize,
-        previous_context: Option<ExecutionContext>,
+        previous_context: Option<ExecutionContext<B>>,
         previous_hash: Option<UInt160>,
         has_return_value: bool,
-    ) -> CoreResult<ExecutionContext> {
+    ) -> CoreResult<ExecutionContext<B>> {
         if method.offset < 0 {
             return Err(CoreError::invalid_operation(
                 "Method offset cannot be negative".to_string(),
@@ -202,7 +200,7 @@ impl ApplicationEngine {
         mut flags: CallFlags,
         has_return_value: bool,
         args: &[StackItem],
-    ) -> CoreResult<ExecutionContext> {
+    ) -> CoreResult<ExecutionContext<B>> {
         if self.is_contract_blocked(&contract.hash)? {
             return Err(CoreError::invalid_operation(format!(
                 "The contract {} has been blocked.",
@@ -232,8 +230,7 @@ impl ApplicationEngine {
             .cloned()
             .ok_or_else(|| CoreError::invalid_operation("No current execution context"))?;
 
-        let state_arc = previous_context
-            .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        let state_arc = previous_context.state();
         let (calling_flags, executing_contract, previous_hash_from_state) = {
             let state = state_arc.lock();
             (state.call_flags, state.contract.clone(), state.script_hash)
@@ -298,8 +295,7 @@ impl ApplicationEngine {
 
         if let Some(fixed_fee) = whitelisted_fixed_fee {
             self.add_fee_datoshi(fixed_fee)?;
-            let state_arc = new_context
-                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let state_arc = new_context.state();
             state_arc.lock().whitelisted = true;
         }
 
@@ -382,8 +378,7 @@ impl ApplicationEngine {
             &args,
         )?;
 
-        let state_arc =
-            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        let state_arc = context.state();
         state_arc.lock().is_dynamic_call = true;
 
         Ok(())
@@ -429,8 +424,7 @@ impl ApplicationEngine {
             &args,
         )?;
 
-        let state_arc =
-            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        let state_arc = context.state();
         state_arc.lock().native_calling_script_hash = Some(*calling_script_hash);
         let boundary_id = Arc::as_ptr(&state_arc) as usize;
         self.native_call_boundary_contexts.push(boundary_id);
@@ -520,8 +514,7 @@ impl ApplicationEngine {
             &args,
         )?;
 
-        let state_arc =
-            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        let state_arc = context.state();
         state_arc.lock().native_calling_script_hash = Some(*calling_script_hash);
         // Refresh cached hashes so the callee observes the native caller.
         self.refresh_context_tracking()?;
@@ -631,8 +624,7 @@ impl ApplicationEngine {
             &args,
         )?;
 
-        let state_arc =
-            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        let state_arc = context.state();
         state_arc.lock().native_calling_script_hash = Some(*calling_script_hash);
         self.refresh_context_tracking()?;
 

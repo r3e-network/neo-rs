@@ -43,9 +43,9 @@ impl Notary {
     /// Reads field `index` of the C# `Deposit` struct (`[Amount, Till]`) stored under
     /// `Prefix_Deposit ++ account`, returning 0 when the account has no deposit.
     /// `balanceOf` reads `Amount` (index 0); `expirationOf` reads `Till` (index 1).
-    pub(in crate::notary) fn read_deposit_field(
+    pub(in crate::notary) fn read_deposit_field<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         account: &UInt160,
         index: usize,
     ) -> CoreResult<BigInt> {
@@ -82,9 +82,9 @@ impl Notary {
 
     /// Reads the full `Deposit` `(Amount, Till)` for `account`, or `None` when the
     /// account has no deposit (C# `GetDepositFor` returning null).
-    pub(in crate::notary) fn read_deposit(
+    pub(in crate::notary) fn read_deposit<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         account: &UInt160,
     ) -> CoreResult<Option<(BigInt, u32)>> {
         let Some(item) = snapshot.get(&Self::deposit_key(account)) else {
@@ -96,7 +96,10 @@ impl Notary {
 
     /// C# `Notary.BalanceOf(snapshot, account)`: returns the deposit `Amount`,
     /// or zero when the account has no Notary deposit.
-    pub fn balance_of(snapshot: &DataCache, account: &UInt160) -> CoreResult<BigInt> {
+    pub fn balance_of<B: neo_storage::CacheRead>(
+        snapshot: &DataCache<B>,
+        account: &UInt160,
+    ) -> CoreResult<BigInt> {
         let Some(item) = snapshot.get(&Self::deposit_key(account)) else {
             return Ok(BigInt::from(0));
         };
@@ -106,15 +109,19 @@ impl Notary {
     }
 
     /// Deletes the deposit entry for `account` (C# `RemoveDepositFor`).
-    pub(in crate::notary) fn delete_deposit(&self, snapshot: &DataCache, account: &UInt160) {
+    pub(in crate::notary) fn delete_deposit<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        account: &UInt160,
+    ) {
         snapshot.delete(&Self::deposit_key(account));
     }
 
     /// Writes the `Deposit` `(Amount, Till)` struct for `account` (C# `PutDepositFor`):
     /// the BinarySerialized `Struct[Amount, Till]`.
-    pub(in crate::notary) fn write_deposit(
+    pub(in crate::notary) fn write_deposit<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         account: &UInt160,
         amount: &BigInt,
         till: u32,
@@ -232,9 +239,9 @@ impl Notary {
     /// `Prefix_MaxNotValidBeforeDelta` (`GetAndChange(...).Set(value)`). The key is
     /// genesis-initialised (`OnPersist` Add), so `update` (= C# GetAndChange) is the
     /// correct primitive.
-    pub(in crate::notary) fn put_max_not_valid_before_delta(
+    pub(in crate::notary) fn put_max_not_valid_before_delta<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         value: i64,
     ) {
         snapshot.update(
@@ -245,9 +252,9 @@ impl Notary {
 
     /// C# `GetMaxNotValidBeforeDelta` directly indexes the initialized setting
     /// storage item; a missing key faults instead of silently using the default.
-    pub(in crate::notary) fn read_max_not_valid_before_delta(
+    pub(in crate::notary) fn read_max_not_valid_before_delta<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
     ) -> CoreResult<i64> {
         crate::support::settings::read_required_i64_setting_key(
             snapshot,

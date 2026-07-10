@@ -14,10 +14,9 @@
 
 mod invocation_tree;
 
-use neo_execution::ApplicationEngine;
+use neo_execution::ApplicationExecutionContext as ExecutionContext;
 use neo_execution::diagnostic::Diagnostic as DiagnosticTrait;
-use neo_execution::execution_context_state::ExecutionContextState;
-use neo_vm::execution_context::ExecutionContext;
+use neo_storage::CacheRead;
 use neo_vm_rs::Instruction;
 use parking_lot::Mutex;
 use std::fmt;
@@ -51,15 +50,13 @@ impl fmt::Debug for Diagnostic {
 }
 
 impl DiagnosticTrait for Diagnostic {
-    fn initialized(&mut self, _engine: &mut ApplicationEngine) {}
+    fn initialized(&mut self) {}
 
     fn disposed(&mut self) {}
 
-    fn context_loaded(&mut self, context: &ExecutionContext) {
+    fn context_loaded<B: CacheRead>(&mut self, context: &ExecutionContext<B>) {
         let script_hash = {
-            let state_arc = context
-                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-
+            let state_arc = context.state();
             state_arc.lock().script_hash
         };
 
@@ -68,7 +65,7 @@ impl DiagnosticTrait for Diagnostic {
         }
     }
 
-    fn context_unloaded(&mut self, _context: &ExecutionContext) {
+    fn context_unloaded<B: CacheRead>(&mut self, _context: &ExecutionContext<B>) {
         self.inner.lock().unload_context();
     }
 

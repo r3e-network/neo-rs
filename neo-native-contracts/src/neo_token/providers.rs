@@ -17,9 +17,9 @@ impl NeoToken {
     /// network fees are minted to (C# GasToken.cs:55) and the blockchain service
     /// can build the extensible-witness whitelist (C# `Blockchain.
     /// UpdateExtensibleWitnessWhiteList`).
-    pub fn next_block_validators(
+    pub fn next_block_validators<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         validators_count: usize,
     ) -> CoreResult<Vec<ECPoint>> {
         let mut points = self.read_committee_points(snapshot)?;
@@ -30,9 +30,9 @@ impl NeoToken {
 
     /// C# `NEO.ComputeNextBlockValidators(snapshot, settings)`: recompute the next
     /// committee from live votes, take `ValidatorsCount`, then sort ascending.
-    pub fn compute_next_block_validators(
+    pub fn compute_next_block_validators<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
     ) -> CoreResult<Vec<ECPoint>> {
         let validators_count = usize::try_from(settings.validators_count).unwrap_or(0);
@@ -52,9 +52,9 @@ impl NeoToken {
     /// `ComputeNextBlockValidators`; otherwise it signs over the cached
     /// `GetNextBlockValidators` set. The active validators for the current round are
     /// still `GetNextBlockValidators`.
-    pub fn next_consensus_address_for_block(
+    pub fn next_consensus_address_for_block<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
         block_index: u32,
     ) -> CoreResult<UInt160> {

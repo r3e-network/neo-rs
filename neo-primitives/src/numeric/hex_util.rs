@@ -65,7 +65,7 @@ pub fn encode_hex(bytes: &[u8]) -> String {
 /// # Example
 /// ```
 /// # use neo_primitives::hex_util;
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # fn main() -> neo_primitives::PrimitiveResult<()> {
 /// assert_eq!(hex_util::decode_hex("deadbeef")?, vec![0xDE, 0xAD, 0xBE, 0xEF]);
 /// assert_eq!(hex_util::decode_hex("0xDEADBEEF")?, vec![0xDE, 0xAD, 0xBE, 0xEF]);
 /// # Ok(())

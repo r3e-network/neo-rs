@@ -1,6 +1,6 @@
 use super::models::RpcTransaction;
 use crate::client::native_hashes::{gas_hash, neo_hash};
-use crate::{Nep17Api, RpcClient, RpcClientError, RpcUtility};
+use crate::{Nep17Api, RpcClient, RpcClientError, RpcObserver, RpcUtility, TracingRpcObserver};
 use neo_crypto::ECPoint;
 use neo_execution::Contract;
 use neo_payloads::Transaction;
@@ -14,18 +14,21 @@ use std::sync::Arc;
 
 /// Wallet Common APIs
 /// Matches C# `WalletAPI`
-pub struct WalletApi {
+pub struct WalletApi<O = TracingRpcObserver> {
     /// The RPC client instance
-    rpc_client: Arc<RpcClient>,
+    rpc_client: Arc<RpcClient<O>>,
     /// NEP17 API for token operations
-    nep17_api: Nep17Api,
+    nep17_api: Nep17Api<O>,
 }
 
-impl WalletApi {
+impl<O> WalletApi<O>
+where
+    O: RpcObserver,
+{
     /// `WalletAPI` Constructor
     /// Matches C# constructor
     #[must_use]
-    pub fn new(rpc_client: Arc<RpcClient>) -> Self {
+    pub fn new(rpc_client: Arc<RpcClient<O>>) -> Self {
         Self {
             nep17_api: Nep17Api::new(rpc_client.clone()),
             rpc_client,

@@ -1,10 +1,8 @@
 use super::memory_snapshot::MemorySnapshot;
 use crate::persistence::{
-    raw_overlay_store::RawOverlayStore,
     read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric},
     seek_direction::SeekDirection,
-    store::{OnNewSnapshotDelegate, Store},
-    store_snapshot::StoreSnapshot,
+    store::{RawOverlaySource, Store, StoreBackendKind},
     write_store::WriteStore,
 };
 use crate::types::{StorageItem, storage_key::StorageKey};
@@ -15,7 +13,6 @@ use std::sync::Arc;
 /// An in-memory Store implementation that uses BTreeMap as the underlying storage.
 pub struct MemoryStore {
     inner_data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>,
-    on_new_snapshot: Arc<RwLock<Vec<OnNewSnapshotDelegate>>>,
 }
 
 impl std::fmt::Debug for MemoryStore {
@@ -29,7 +26,6 @@ impl MemoryStore {
     pub fn new() -> Self {
         Self {
             inner_data: Arc::new(RwLock::new(BTreeMap::new())),
-            on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -42,6 +38,8 @@ impl MemoryStore {
 neo_io::impl_default_via_new!(MemoryStore);
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
+    type FindIterator<'a> = std::vec::IntoIter<(Vec<u8>, Vec<u8>)>;
+
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
         self.inner_data.read().get(key).cloned()
     }
@@ -50,9 +48,9 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
         &self,
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+    ) -> Self::FindIterator<'_> {
         let data = self.inner_data.read();
-        let iter: Vec<_> = data
+        let mut entries: Vec<_> = data
             .iter()
             .filter(|(key, _)| {
                 key_prefix
@@ -63,10 +61,9 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
             .collect();
 
         if direction == SeekDirection::Backward {
-            Box::new(iter.into_iter().rev()) as Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)>>
-        } else {
-            Box::new(iter.into_iter()) as Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)>>
+            entries.reverse();
         }
+        entries.into_iter()
     }
 }
 
@@ -77,6 +74,8 @@ impl RawReadOnlyStore for MemoryStore {
 }
 
 impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for MemoryStore {
+    type FindIterator<'a> = std::vec::IntoIter<(StorageKey, StorageItem)>;
+
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         let raw_key = key.to_array();
         self.inner_data
@@ -90,7 +89,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for MemoryStore {
         &self,
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+    ) -> Self::FindIterator<'_> {
         let data = self.inner_data.read();
         let prefix_bytes = key_prefix.map(|k| k.to_array());
 
@@ -115,7 +114,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for MemoryStore {
             entries.reverse();
         }
 
-        Box::new(entries.into_iter())
+        entries.into_iter()
     }
 }
 
@@ -134,35 +133,19 @@ impl WriteStore<Vec<u8>, Vec<u8>> for MemoryStore {
 impl ReadOnlyStore for MemoryStore {}
 
 impl Store for MemoryStore {
-    fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
-        let snapshot = Arc::new(MemorySnapshot::new(
+    type Snapshot = MemorySnapshot;
+
+    fn snapshot(&self) -> Arc<Self::Snapshot> {
+        Arc::new(MemorySnapshot::new(
             Arc::new(self.clone()),
             self.inner_data.clone(),
-        ));
-
-        // Trigger event
-        let handlers = self.on_new_snapshot.read();
-        for handler in handlers.iter() {
-            handler(self, snapshot.clone());
-        }
-
-        snapshot
+        ))
     }
 
-    fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate) {
-        self.on_new_snapshot.write().push(handler);
+    fn backend_kind(&self) -> StoreBackendKind {
+        StoreBackendKind::Memory
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_raw_overlay_store(&self) -> Option<&dyn RawOverlayStore> {
-        Some(self)
-    }
-}
-
-impl RawOverlayStore for MemoryStore {
     fn try_commit_raw_overlay(
         &self,
         overlay: &[(Vec<u8>, Option<Vec<u8>>)],
@@ -181,14 +164,18 @@ impl RawOverlayStore for MemoryStore {
         Ok(true)
     }
 
-    fn try_commit_borrowed_raw_overlay(
+    fn try_commit_borrowed_raw_overlay<O>(
         &self,
-        visit: &mut dyn FnMut(&mut dyn FnMut(&[u8], Option<&[u8]>)),
-    ) -> crate::error::StorageResult<bool> {
+        overlay_source: &mut O,
+    ) -> crate::error::StorageResult<bool>
+    where
+        O: RawOverlaySource + ?Sized,
+    {
         let mut overlay = Vec::new();
-        visit(&mut |key, value| {
+        let mut sink = |key: &[u8], value: Option<&[u8]>| {
             overlay.push((key.to_vec(), value.map(<[u8]>::to_vec)));
-        });
+        };
+        overlay_source.visit_raw_overlay(&mut sink);
         self.try_commit_raw_overlay(&overlay)
     }
 }
@@ -197,7 +184,6 @@ impl Clone for MemoryStore {
     fn clone(&self) -> Self {
         Self {
             inner_data: self.inner_data.clone(),
-            on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
         }
     }
 }

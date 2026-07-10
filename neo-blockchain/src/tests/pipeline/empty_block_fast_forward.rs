@@ -10,7 +10,10 @@ use crate::empty_block_fast_forward::EmptyBlockFastForwardRequest;
 use crate::native_persist::{NativePersistOptions, NativePersistResources};
 use crate::service_context::BlockPersistContext;
 
-fn standard_resources() -> NativePersistResources {
+type StandardNativePersistResources =
+    NativePersistResources<neo_native_contracts::StandardNativeProvider>;
+
+fn standard_resources() -> StandardNativePersistResources {
     NativePersistResources::from_provider(Arc::new(
         neo_native_contracts::StandardNativeProvider::new(),
     ))
@@ -58,7 +61,7 @@ fn persist_block_with_resources(
     snapshot: Arc<neo_storage::DataCache>,
     block: Arc<Block>,
     settings: &ProtocolSettings,
-    resources: &NativePersistResources,
+    resources: &StandardNativePersistResources,
 ) -> neo_error::CoreResult<crate::native_persist::NativePersistOutcome> {
     crate::native_persist::persist_block_natives_with_resources(
         snapshot,
@@ -407,16 +410,12 @@ fn stage_empty_block_fast_forward_uses_composed_native_provider() {
         .unwrap_or_else(|error| panic!("{}: {error}", provider_path.display()));
     assert!(provider.contains("trait EmptyBlockFastForwardNativeProvider"));
     assert!(
-        provider.contains("struct NativeEmptyBlockFastForwardProvider<P: ?Sized>"),
-        "empty-block fast-forward provider adapter should preserve the caller's provider type"
+        provider.contains("struct NativeEmptyBlockFastForwardProvider<P>"),
+        "empty-block fast-forward provider adapter should preserve the caller's concrete provider type"
     );
     assert!(
         provider.contains("native_contract_provider: Arc<P>"),
         "empty-block fast-forward provider adapter should own Arc<P>, not erase to dyn internally"
-    );
-    assert!(
-        !provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
-        "empty-block fast-forward provider adapter must not erase its provider to dyn"
     );
     assert!(
         !provider.contains("trait EmptyBlockFastForwardNativeProviderFactory"),
@@ -427,8 +426,8 @@ fn stage_empty_block_fast_forward_uses_composed_native_provider() {
         "empty-block fast-forward provider must resolve NeoToken through the explicit native provider"
     );
     assert!(
-        provider.contains("get_native_contract_by_name(\"NeoToken\")"),
-        "empty-block fast-forward provider should read NeoToken from the explicit NativeContractProvider"
+        provider.contains(".fast_forward_empty_block_rewards(snapshot, settings, start, end)"),
+        "empty-block fast-forward provider should use the explicit NativeContractProvider reward capability"
     );
 }
 

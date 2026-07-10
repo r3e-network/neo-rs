@@ -1,10 +1,16 @@
-use super::super::native_provider::OracleServiceNativeProvider;
-use super::super::{OracleService, OracleStatus, REFRESH_INTERVAL};
+use super::super::native_provider::{OracleContractReadProvider, OracleServiceNativeProvider};
+use super::super::{OracleRuntimeProvider, OracleService, OracleStatus, REFRESH_INTERVAL};
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_wallets::{Wallet, WalletAccount};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime};
 
-impl OracleService {
+impl<R, P> OracleService<R, P>
+where
+    R: OracleRuntimeProvider + 'static,
+    P: NativeContractProvider + OracleContractReadProvider + 'static,
+{
     pub(in super::super) async fn process_requests_loop(self: Arc<Self>) {
         while !self.cancel.load(Ordering::SeqCst) {
             let snapshot = self.snapshot_cache();

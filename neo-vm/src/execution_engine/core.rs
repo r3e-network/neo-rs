@@ -8,10 +8,10 @@ use super::{
     VmError,
 };
 
-impl ExecutionEngine {
+impl<S: Default> ExecutionEngine<S> {
     /// Creates a new execution engine with the specified jump table.
     #[must_use]
-    pub fn new(jump_table: Option<JumpTable>) -> Self {
+    pub fn new(jump_table: Option<JumpTable<S>>) -> Self {
         let reference_counter = ReferenceCounter::new();
         Self::new_with_limits(
             jump_table,
@@ -22,14 +22,14 @@ impl ExecutionEngine {
 
     /// Creates a new execution engine with the specified reference counter and limits.
     pub fn new_with_limits(
-        jump_table: Option<JumpTable>,
+        jump_table: Option<JumpTable<S>>,
         reference_counter: ReferenceCounter,
         limits: ExecutionEngineLimits,
     ) -> Self {
         Self {
             state: VMState::BREAK,
             is_jumping: false,
-            jump_table: jump_table.unwrap_or_else(JumpTable::default),
+            jump_table: jump_table.unwrap_or_default(),
             limits,
             interop_service: Some(InteropService::new()),
             interop_host: None,
@@ -43,7 +43,9 @@ impl ExecutionEngine {
             gas_limit: DEFAULT_GAS_LIMIT,
         }
     }
+}
 
+impl<S> ExecutionEngine<S> {
     /// Returns the current state of the VM.
     #[inline]
     #[must_use]
@@ -122,33 +124,33 @@ impl ExecutionEngine {
     /// Returns the invocation stack.
     #[inline]
     #[must_use]
-    pub fn invocation_stack(&self) -> &[ExecutionContext] {
+    pub fn invocation_stack(&self) -> &[ExecutionContext<S>] {
         &self.invocation_stack
     }
 
     /// Returns a mutable handle to the invocation stack.
     #[inline]
-    pub(crate) fn invocation_stack_mut(&mut self) -> &mut Vec<ExecutionContext> {
+    pub(crate) fn invocation_stack_mut(&mut self) -> &mut Vec<ExecutionContext<S>> {
         &mut self.invocation_stack
     }
 
     /// Returns the current context, if any.
     #[inline]
     #[must_use]
-    pub fn current_context(&self) -> Option<&ExecutionContext> {
+    pub fn current_context(&self) -> Option<&ExecutionContext<S>> {
         self.invocation_stack.last()
     }
 
     /// Returns the current context (mutable), if any.
     #[inline]
-    pub fn current_context_mut(&mut self) -> Option<&mut ExecutionContext> {
+    pub fn current_context_mut(&mut self) -> Option<&mut ExecutionContext<S>> {
         self.invocation_stack.last_mut()
     }
 
     /// Returns the entry context, if any.
     #[inline]
     #[must_use]
-    pub fn entry_context(&self) -> Option<&ExecutionContext> {
+    pub fn entry_context(&self) -> Option<&ExecutionContext<S>> {
         self.invocation_stack.first()
     }
 
@@ -216,17 +218,17 @@ impl ExecutionEngine {
 
     /// Returns the jump table.
     #[must_use]
-    pub const fn jump_table(&self) -> &JumpTable {
+    pub const fn jump_table(&self) -> &JumpTable<S> {
         &self.jump_table
     }
 
     /// Returns the jump table (mutable).
-    pub fn jump_table_mut(&mut self) -> &mut JumpTable {
+    pub fn jump_table_mut(&mut self) -> &mut JumpTable<S> {
         &mut self.jump_table
     }
 
     /// Sets the jump table.
-    pub fn set_jump_table(&mut self, jump_table: JumpTable) {
+    pub fn set_jump_table(&mut self, jump_table: JumpTable<S>) {
         self.jump_table = jump_table;
     }
 }

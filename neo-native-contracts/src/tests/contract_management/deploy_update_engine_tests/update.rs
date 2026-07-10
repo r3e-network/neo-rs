@@ -52,7 +52,6 @@ fn callback_contract(name: &str, marker: u8) -> (NefFile, neo_manifest::Contract
 
 #[test]
 fn update_bumps_counter_swaps_payloads_and_notifies() {
-    crate::install();
     let cache = DataCache::new(false);
     put_contract_record(
         &cache,
@@ -125,7 +124,6 @@ fn update_bumps_counter_swaps_payloads_and_notifies() {
 
 #[test]
 fn update_with_null_nef_keeps_the_old_nef() {
-    crate::install();
     let cache = DataCache::new(false);
     put_contract_record(
         &cache,
@@ -164,7 +162,6 @@ fn update_with_null_nef_keeps_the_old_nef() {
 
 #[test]
 fn update_refreshes_contract_cache_before_deploy_callback() {
-    crate::install();
     let cache = DataCache::new(false);
     put_contract_record(
         &cache,
@@ -209,8 +206,6 @@ fn update_refreshes_contract_cache_before_deploy_callback() {
 
 #[test]
 fn update_validation_failures_fault() {
-    crate::install();
-
     // Both args null.
     {
         let cache = DataCache::new(false);

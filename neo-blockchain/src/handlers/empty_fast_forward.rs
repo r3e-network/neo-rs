@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use neo_error::{CoreError, CoreResult};
+use neo_execution::NativeContract;
 use neo_payloads::Block;
 use tracing::debug;
 
@@ -22,7 +23,7 @@ where
         start_position: usize,
         current_height: u32,
         settings: &neo_config::ProtocolSettings,
-        resources: &crate::native_persist::NativePersistResources,
+        resources: &crate::native_persist::NativePersistResources<S::NativeProvider>,
     ) -> Vec<&'a Block> {
         let committee_count = settings.committee_members_count();
         if committee_count == 0 {
@@ -62,7 +63,7 @@ where
         &self,
         block: &Block,
         current_height: u32,
-        resources: &BatchPersistResources,
+        resources: &BatchPersistResources<S::NativeProvider, S::CacheBacking>,
         persist_options: NativePersistOptions,
         persist_context: BlockPersistContext,
     ) -> CoreResult<bool> {

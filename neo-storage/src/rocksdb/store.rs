@@ -5,7 +5,7 @@ use crate::persistence::{
     read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
     seek_direction::SeekDirection,
     storage::StorageConfig,
-    store::{OnNewSnapshotDelegate, Store},
+    store::{RawOverlaySource, RocksDbBatchMetrics, Store, StoreBackendKind},
     store_snapshot::StoreSnapshot,
     write_store::WriteStore,
 };
@@ -26,12 +26,12 @@ use std::{
 };
 use tracing::{debug, error, warn};
 
+use super::find_iterator::{RocksDbRawFindIterator, RocksDbStorageFindIterator};
 use super::provider::{self, BatchCommitter, ReadAheadConfig};
 
 /// Persistent RocksDB implementation of the Neo storage traits.
 pub struct RocksDbStore {
     pub(crate) db: Arc<DB>,
-    pub(crate) on_new_snapshot: Arc<RwLock<Vec<OnNewSnapshotDelegate>>>,
     pub(crate) batch_committer: Arc<BatchCommitter>,
     pub(crate) batch_config: RwLock<WriteBatchConfig>,
     pub(crate) fast_sync_buffering: Arc<AtomicBool>,
@@ -81,7 +81,6 @@ impl RocksDbStore {
 
         Ok(Self {
             db,
-            on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
             batch_committer,
             batch_config: RwLock::new(batch_config),
             fast_sync_buffering: Arc::new(AtomicBool::new(false)),
@@ -242,6 +241,8 @@ impl RocksDbStore {
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
+    type FindIterator<'a> = RocksDbRawFindIterator<'a>;
+
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
         if let Some(value) = self.pending_fast_sync_value(key) {
             return value;
@@ -259,7 +260,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
         &self,
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+    ) -> Self::FindIterator<'_> {
         let prefix_bytes = key_prefix.cloned();
         if self.has_pending_fast_sync_overlay() {
             let entries = self.merge_pending_fast_sync_overlay(
@@ -267,7 +268,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
                 direction,
                 self.collect_raw_db_entries(prefix_bytes.as_deref()),
             );
-            return Box::new(entries.into_iter());
+            return RocksDbRawFindIterator::overlay(entries);
         }
 
         if direction == SeekDirection::Backward {
@@ -278,41 +279,15 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
                     prefix.as_slice(),
                     &self.read_ahead_config,
                 );
-                return Box::new(iterator.filter_map(|res| match res {
-                    Ok((key, value)) => Some((key.to_vec(), value.to_vec())),
-                    Err(err) => {
-                        warn!(target: "neo", error = %err, "rocksdb iterator error");
-                        None
-                    }
-                }));
+                return RocksDbRawFindIterator::cursor(iterator, Some(prefix.clone()));
             }
         }
 
         let start = prefix_bytes.as_deref().unwrap_or(&[]);
         let iterator = self.iterator_from(start, direction);
-        Box::new(
-            iterator
-                .filter_map(|res| match res {
-                    Ok(entry) => Some(entry),
-                    Err(err) => {
-                        warn!(target: "neo", error = %err, "rocksdb iterator error");
-                        None
-                    }
-                })
-                // Stop as soon as the scan leaves the prefix range. Keys are
-                // stored sorted, so the prefix-matching keys are contiguous from
-                // the seek position; the previous `filter_map` only *skipped*
-                // non-matching keys and kept advancing the unbounded iterator to
-                // the END OF THE DB, turning every forward prefix scan (e.g. the
-                // every-21-block committee candidate enumeration) into a full-DB
-                // scan whose cost grew with chain height.
-                .take_while(move |(key, _value)| {
-                    prefix_bytes
-                        .as_ref()
-                        .is_none_or(|prefix| key.starts_with(prefix.as_slice()))
-                })
-                .map(|(key, value)| (key.to_vec(), value.to_vec())),
-        )
+        // Stop as soon as the scan leaves the prefix range. Keys are stored
+        // sorted, so prefix-matching keys are contiguous from the seek point.
+        RocksDbRawFindIterator::cursor(iterator, prefix_bytes)
     }
 }
 
@@ -332,6 +307,8 @@ impl RawReadOnlyStore for RocksDbStore {
 }
 
 impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
+    type FindIterator<'a> = RocksDbStorageFindIterator<'a>;
+
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         let raw = key.to_array();
         if let Some(value) = self.pending_fast_sync_value(&raw) {
@@ -350,7 +327,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
         &self,
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+    ) -> Self::FindIterator<'_> {
         let prefix_bytes = key_prefix.map(|k| k.to_array());
         if self.has_pending_fast_sync_overlay() {
             let entries = self.merge_pending_fast_sync_overlay(
@@ -358,9 +335,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
                 direction,
                 self.collect_raw_db_entries(prefix_bytes.as_deref()),
             );
-            return Box::new(entries.into_iter().map(|(key, value)| {
-                (StorageKey::from_bytes(&key), StorageItem::from_bytes(value))
-            }));
+            return RocksDbStorageFindIterator::new(RocksDbRawFindIterator::overlay(entries));
         }
 
         if direction == SeekDirection::Backward {
@@ -371,45 +346,17 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbStore {
                     prefix.as_slice(),
                     &self.read_ahead_config,
                 );
-                return Box::new(iter.filter_map(move |res| {
-                    let (key, value) = match res {
-                        Ok(entry) => entry,
-                        Err(err) => {
-                            warn!(target: "neo", error = %err, "rocksdb iterator error");
-                            return None;
-                        }
-                    };
-                    let key_vec: Vec<u8> = key.into();
-                    let storage_key = StorageKey::from_bytes(&key_vec);
-                    let storage_item = StorageItem::from_bytes(value.into());
-                    Some((storage_key, storage_item))
-                }));
+                return RocksDbStorageFindIterator::new(RocksDbRawFindIterator::cursor(
+                    iter,
+                    Some(prefix.clone()),
+                ));
             }
         }
 
         let start = prefix_bytes.as_deref().unwrap_or(&[]);
         let iter = self.iterator_from(start, direction);
 
-        Box::new(
-            iter.filter_map(|res| match res {
-                Ok(entry) => Some(entry),
-                Err(err) => {
-                    warn!(target: "neo", error = %err, "rocksdb iterator error");
-                    None
-                }
-            })
-            .take_while(move |(key, _value)| {
-                prefix_bytes
-                    .as_ref()
-                    .is_none_or(|prefix| key.as_ref().starts_with(prefix.as_slice()))
-            })
-            .map(|(key, value)| {
-                let key_vec: Vec<u8> = key.into();
-                let storage_key = StorageKey::from_bytes(&key_vec);
-                let storage_item = StorageItem::from_bytes(value.into());
-                (storage_key, storage_item)
-            }),
-        )
+        RocksDbStorageFindIterator::new(RocksDbRawFindIterator::cursor(iter, prefix_bytes))
     }
 }
 
@@ -450,24 +397,15 @@ impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
 }
 
 impl Store for RocksDbStore {
-    fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
+    type Snapshot = RocksDbSnapshot;
+
+    fn snapshot(&self) -> Arc<Self::Snapshot> {
         let store_arc = Arc::new(self.clone());
-        let snapshot = Arc::new(RocksDbSnapshot::new(
+        Arc::new(RocksDbSnapshot::new(
             self.db.clone(),
             store_arc,
             self.read_ahead_config,
-        ));
-
-        let handlers = self.on_new_snapshot.read();
-        for handler in handlers.iter() {
-            handler(self, snapshot.clone());
-        }
-
-        snapshot
-    }
-
-    fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate) {
-        self.on_new_snapshot.write().push(handler);
+        ))
     }
 
     fn flush(&self) -> StorageResult<()> {
@@ -478,20 +416,32 @@ impl Store for RocksDbStore {
         Ok(())
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn backend_kind(&self) -> StoreBackendKind {
+        StoreBackendKind::RocksDb
     }
 
-    fn as_fast_sync_store(&self) -> Option<&dyn crate::persistence::FastSyncStore> {
-        Some(self)
+    fn rocksdb_batch_metrics(&self) -> Option<RocksDbBatchMetrics> {
+        let stats = self.batch_commit_stats();
+        let config = self.write_batch_config();
+        Some(RocksDbBatchMetrics {
+            pending_operations: stats.pending_operations as u64,
+            batches_flushed: stats.batches_flushed,
+            operations_written: stats.operations_written,
+            bytes_written: stats.bytes_written,
+            flush_timeouts: stats.flush_timeouts,
+            avg_ops_per_flush: stats.avg_ops_per_flush() as u64,
+            avg_bytes_per_flush: stats.avg_bytes_per_flush() as u64,
+            avg_flush_duration_ms: stats.avg_flush_duration_ms() as u64,
+            max_batch_size: config.max_batch_size as u64,
+            max_batch_bytes: config.max_batch_bytes as u64,
+            disable_wal: config.disable_wal,
+        })
     }
 
-    fn as_raw_overlay_store(&self) -> Option<&dyn crate::persistence::RawOverlayStore> {
-        Some(self)
+    fn supports_fast_sync_mode(&self) -> bool {
+        true
     }
-}
 
-impl crate::persistence::FastSyncStore for RocksDbStore {
     fn enable_fast_sync_mode(&self) {
         RocksDbStore::enable_fast_sync_mode(self);
     }
@@ -507,9 +457,7 @@ impl crate::persistence::FastSyncStore for RocksDbStore {
     fn has_pending_fast_sync_writes(&self) -> bool {
         RocksDbStore::has_pending_fast_sync_writes(self)
     }
-}
 
-impl crate::persistence::RawOverlayStore for RocksDbStore {
     fn try_commit_raw_overlay(
         &self,
         overlay: &[(Vec<u8>, Option<Vec<u8>>)],
@@ -522,15 +470,16 @@ impl crate::persistence::RawOverlayStore for RocksDbStore {
         Ok(true)
     }
 
-    fn try_commit_borrowed_raw_overlay(
-        &self,
-        visit: &mut dyn FnMut(&mut dyn FnMut(&[u8], Option<&[u8]>)),
-    ) -> StorageResult<bool> {
+    fn try_commit_borrowed_raw_overlay<O>(&self, overlay: &mut O) -> StorageResult<bool>
+    where
+        O: RawOverlaySource + ?Sized,
+    {
         if self.fast_sync_buffering.load(Ordering::Relaxed) {
             let mut entries = Vec::new();
-            visit(&mut |key, value| {
+            let mut sink = |key: &[u8], value: Option<&[u8]>| {
                 entries.push((key.to_vec(), value.map(Vec::from)));
-            });
+            };
+            overlay.visit_raw_overlay(&mut sink);
             self.buffer_fast_sync_overlay_entries(&entries);
             return Ok(true);
         }
@@ -544,7 +493,7 @@ impl crate::persistence::RawOverlayStore for RocksDbStore {
                 None => batch.delete(key),
             }
         };
-        visit(&mut sink);
+        overlay.visit_raw_overlay(&mut sink);
 
         if !has_entries {
             return Ok(true);
@@ -572,7 +521,6 @@ impl Clone for RocksDbStore {
     fn clone(&self) -> Self {
         Self {
             db: self.db.clone(),
-            on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
             batch_committer: Arc::clone(&self.batch_committer),
             batch_config: RwLock::new(*self.batch_config.read()),
             fast_sync_buffering: Arc::clone(&self.fast_sync_buffering),
@@ -665,6 +613,8 @@ impl RocksDbSnapshot {
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
+    type FindIterator<'a> = RocksDbRawFindIterator<'a>;
+
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
         match self.db.get_opt(key, &self.read_options()) {
             Ok(value) => value,
@@ -679,7 +629,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
         &self,
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+    ) -> Self::FindIterator<'_> {
         let prefix_bytes = key_prefix.cloned();
 
         if direction == SeekDirection::Backward {
@@ -690,13 +640,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
                     prefix.as_slice(),
                     &self.read_ahead_config,
                 );
-                return Box::new(iterator.filter_map(|res| match res {
-                    Ok((key, value)) => Some((key.to_vec(), value.to_vec())),
-                    Err(err) => {
-                        warn!(target: "neo", error = %err, "rocksdb iterator error");
-                        None
-                    }
-                }));
+                return RocksDbRawFindIterator::cursor(iterator, Some(prefix.clone()));
             }
         }
 
@@ -708,22 +652,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
             direction,
             &self.read_ahead_config,
         );
-        Box::new(
-            iterator
-                .filter_map(|res| match res {
-                    Ok(entry) => Some(entry),
-                    Err(err) => {
-                        warn!(target: "neo", error = %err, "rocksdb iterator error");
-                        None
-                    }
-                })
-                .take_while(move |(key, _value)| {
-                    prefix_bytes
-                        .as_ref()
-                        .is_none_or(|prefix| key.as_ref().starts_with(prefix.as_slice()))
-                })
-                .map(|(key, value)| (key.to_vec(), value.to_vec())),
-        )
+        RocksDbRawFindIterator::cursor(iterator, prefix_bytes)
     }
 }
 
@@ -740,6 +669,8 @@ impl RawReadOnlyStore for RocksDbSnapshot {
 }
 
 impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
+    type FindIterator<'a> = RocksDbStorageFindIterator<'a>;
+
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         let raw = key.to_array();
 
@@ -754,7 +685,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
         &self,
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+    ) -> Self::FindIterator<'_> {
         let prefix_bytes = key_prefix.map(|k| k.to_array());
 
         if direction == SeekDirection::Backward {
@@ -765,45 +696,17 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RocksDbSnapshot {
                     prefix.as_slice(),
                     &self.read_ahead_config,
                 );
-                return Box::new(iter.filter_map(move |res| {
-                    let (key, value) = match res {
-                        Ok(entry) => entry,
-                        Err(err) => {
-                            warn!(target: "neo", error = %err, "rocksdb iterator error");
-                            return None;
-                        }
-                    };
-                    let key_vec: Vec<u8> = key.into();
-                    let storage_key = StorageKey::from_bytes(&key_vec);
-                    let storage_item = StorageItem::from_bytes(value.into());
-                    Some((storage_key, storage_item))
-                }));
+                return RocksDbStorageFindIterator::new(RocksDbRawFindIterator::cursor(
+                    iter,
+                    Some(prefix.clone()),
+                ));
             }
         }
 
         let start = prefix_bytes.as_deref().unwrap_or(&[]);
         let iter = self.iterator_from(start, direction);
 
-        Box::new(
-            iter.filter_map(|res| match res {
-                Ok(entry) => Some(entry),
-                Err(err) => {
-                    warn!(target: "neo", error = %err, "rocksdb iterator error");
-                    None
-                }
-            })
-            .take_while(move |(key, _value)| {
-                prefix_bytes
-                    .as_ref()
-                    .is_none_or(|prefix| key.as_ref().starts_with(prefix.as_slice()))
-            })
-            .map(|(key, value)| {
-                let key_vec: Vec<u8> = key.into();
-                let storage_key = StorageKey::from_bytes(&key_vec);
-                let storage_item = StorageItem::from_bytes(value.into());
-                (storage_key, storage_item)
-            }),
-        )
+        RocksDbStorageFindIterator::new(RocksDbRawFindIterator::cursor(iter, prefix_bytes))
     }
 }
 
@@ -824,8 +727,10 @@ impl WriteStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
 }
 
 impl StoreSnapshot for RocksDbSnapshot {
-    fn store(&self) -> Arc<dyn Store> {
-        self.store.clone() as Arc<dyn Store>
+    type Store = RocksDbStore;
+
+    fn store(&self) -> Arc<Self::Store> {
+        self.store.clone()
     }
 
     fn try_commit(&mut self) -> crate::persistence::store_snapshot::SnapshotCommitResult {

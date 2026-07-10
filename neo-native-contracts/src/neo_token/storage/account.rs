@@ -25,9 +25,9 @@ impl NeoToken {
     /// balanceHeight, voteTo, lastGasPerVote), which is exactly the Array/Struct
     /// return shape, so it is returned as-is (the same pattern as
     /// `getDesignatedByRole` / `getContract`).
-    pub(in crate::neo_token) fn read_account_state(
+    pub(in crate::neo_token) fn read_account_state<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         account: &UInt160,
     ) -> Option<Vec<u8>> {
         let key = Self::account_key(account);
@@ -37,7 +37,11 @@ impl NeoToken {
     }
 
     /// Reads the NEO balance from the NEO-specific account state.
-    pub(crate) fn balance_of(&self, snapshot: &DataCache, account: &UInt160) -> CoreResult<BigInt> {
+    pub(crate) fn balance_of<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        account: &UInt160,
+    ) -> CoreResult<BigInt> {
         let Some(bytes) = self.read_account_state(snapshot, account) else {
             return Ok(BigInt::from(0));
         };

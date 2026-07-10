@@ -21,8 +21,9 @@ use neo_network::NetworkHandle;
 use neo_payloads::ExtensiblePayload;
 use neo_primitives::time::now_millis;
 use neo_state_service::{MessageType, StateRoot, StateStore, StateStoreLookup, Vote};
-use neo_storage::DataCache;
-use neo_storage::persistence::{Store, StoreCache};
+use neo_storage::persistence::providers::memory_store::MemoryStore;
+use neo_storage::persistence::{Store, StoreCache, StoreDataCache};
+use neo_storage::{CacheRead, DataCache};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
@@ -50,29 +51,31 @@ struct ActiveRound {
 
 /// Single-task driver: owns the vote collector and per-round state, routes
 /// inbound `StateService` payloads, and persists finalized signed roots.
-pub(super) struct StateRootDriver<P> {
+pub(super) struct StateRootDriver<P, C: Store = MemoryStore, S: Store = MemoryStore> {
     setup: StateRootSetup,
     blockchain: BlockchainHandle,
     network: NetworkHandle,
     settings: Arc<ProtocolSettings>,
     /// Chain store: StateValidator designations are read from a fresh snapshot.
-    store: Arc<dyn Store>,
+    store: Arc<C>,
     /// Native contract provider captured at node startup for witness verification.
     native_contract_provider: Arc<P>,
     /// Local computed roots + persisted signed roots.
-    state_store: Arc<StateStore>,
+    state_store: Arc<StateStore<S>>,
     inbound_rx: mpsc::Receiver<ExtensiblePayload>,
     collector: StateRootVoteCollector,
     active: HashMap<u32, ActiveRound>,
 }
 
-impl<P> StateRootDriver<P>
+impl<P, C, S> StateRootDriver<P, C, S>
 where
     P: NativeContractProvider + 'static,
+    C: Store + 'static,
+    S: Store + 'static,
 {
     /// A fresh read snapshot of the current persisted chain state, for
     /// StateValidator designation lookups (C# reads `NeoSystem.StoreView`).
-    fn fresh_chain_snapshot(&self) -> Arc<DataCache> {
+    fn fresh_chain_snapshot(&self) -> Arc<StoreDataCache<C>> {
         Arc::new(
             StoreCache::new_from_store(Arc::clone(&self.store), false)
                 .data_cache()
@@ -82,7 +85,7 @@ where
 
     /// The StateValidators designated at `index`, in designation order (the
     /// order vote `validator_index` and multisig aggregation both index into).
-    fn verifiers_at(&self, snapshot: &DataCache, index: u32) -> Vec<ECPoint> {
+    fn verifiers_at<B: CacheRead>(&self, snapshot: &DataCache<B>, index: u32) -> Vec<ECPoint> {
         state_root_verifiers_with_native_provider(
             snapshot,
             index,
@@ -392,18 +395,20 @@ where
 // Rationale: the state-root driver is the node composition seam and must
 // receive every provider/handle explicitly instead of capturing globals.
 #[allow(clippy::too_many_arguments)]
-pub fn state_root_driver_task<P>(
+pub fn state_root_driver_task<P, C, S>(
     setup: StateRootSetup,
     blockchain: BlockchainHandle,
     network: NetworkHandle,
     settings: Arc<ProtocolSettings>,
-    store: Arc<dyn Store>,
+    store: Arc<C>,
     native_contract_provider: Arc<P>,
-    state_store: Arc<StateStore>,
+    state_store: Arc<StateStore<S>>,
     inbound_rx: mpsc::Receiver<ExtensiblePayload>,
 ) -> impl std::future::Future<Output = ()> + Send + 'static
 where
     P: NativeContractProvider + 'static,
+    C: Store + 'static,
+    S: Store + 'static,
 {
     let driver = StateRootDriver {
         setup,

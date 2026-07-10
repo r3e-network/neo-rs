@@ -218,7 +218,10 @@ impl Inventory for Block {
 impl crate::VerifiableExt for Block {
     /// C# `Block.GetScriptHashesForVerifying`: the single hash to verify is
     /// `Header.NextConsensus` — the address of the committee that must sign the block.
-    fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
+    fn script_hashes_for_verifying<B: neo_storage::CacheRead>(
+        &self,
+        _snapshot: &DataCache<B>,
+    ) -> Vec<UInt160> {
         vec![*self.header.next_consensus()]
     }
 
@@ -230,8 +233,10 @@ impl crate::VerifiableExt for Block {
         vec![&mut self.header.witness]
     }
 
-    fn to_verifiable_container(&self) -> Option<std::sync::Arc<dyn neo_primitives::Verifiable>> {
-        Some(std::sync::Arc::new(self.clone()))
+    fn to_verifiable_container(&self) -> Option<std::sync::Arc<crate::VerifiableContainer>> {
+        Some(std::sync::Arc::new(crate::VerifiableContainer::from(
+            self.clone(),
+        )))
     }
 }
 
@@ -304,10 +309,6 @@ impl neo_primitives::Verifiable for Block {
             return Vec::new();
         }
         writer.into_bytes()
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 
     fn verify(&self) -> bool {

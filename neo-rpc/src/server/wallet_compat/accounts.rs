@@ -2,7 +2,7 @@
 
 use neo_payloads::signer::Signer;
 use neo_primitives::{UInt160, WitnessScope};
-use neo_wallets::Wallet;
+use neo_wallets::{Wallet, WalletAccount};
 use num_bigint::BigInt;
 use num_traits::Zero;
 

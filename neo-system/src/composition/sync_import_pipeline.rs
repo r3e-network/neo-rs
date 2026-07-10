@@ -36,14 +36,20 @@ pub const DEFAULT_SYNC_IMPORT_CHECKPOINT_BLOCKS: u64 = 512;
 /// integration can create short-lived [`SyncPipelineDriver`] values from this
 /// handle without reaching into `neo-blockchain` command internals.
 #[derive(Clone)]
-pub struct SyncImportPipeline {
+pub struct SyncImportPipeline<C = SharedStoreSyncStageCheckpointStore>
+where
+    C: SyncStageCheckpointStore,
+{
     import_queue: Arc<BlockImportQueue<BlockchainHandle>>,
-    checkpoints: Arc<dyn SyncStageCheckpointStore>,
+    checkpoints: Arc<C>,
     commit_policy: CommitPolicy,
     origin: BlockOrigin,
 }
 
-impl std::fmt::Debug for SyncImportPipeline {
+impl<C> std::fmt::Debug for SyncImportPipeline<C>
+where
+    C: SyncStageCheckpointStore,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SyncImportPipeline")
             .field("import_queue", &"BlockImportQueue<BlockchainHandle>")
@@ -54,11 +60,14 @@ impl std::fmt::Debug for SyncImportPipeline {
     }
 }
 
-impl SyncImportPipeline {
+impl<S> SyncImportPipeline<SharedStoreSyncStageCheckpointStore<S>>
+where
+    S: Store + 'static,
+{
     /// Compose the sync import pipeline from the canonical blockchain handle
     /// and shared node storage.
     #[must_use]
-    pub fn new(blockchain: BlockchainHandle, storage: Arc<dyn Store>) -> Self {
+    pub fn new(blockchain: BlockchainHandle, storage: Arc<S>) -> Self {
         let checkpoints = Arc::new(SharedStoreSyncStageCheckpointStore::new(storage));
         Self::with_parts(
             Arc::new(BlockImportQueue::new(
@@ -70,12 +79,17 @@ impl SyncImportPipeline {
             BlockOrigin::Sync,
         )
     }
+}
 
+impl<C> SyncImportPipeline<C>
+where
+    C: SyncStageCheckpointStore,
+{
     /// Compose from explicit parts for tests and specialized node profiles.
     #[must_use]
     pub fn with_parts(
         import_queue: Arc<BlockImportQueue<BlockchainHandle>>,
-        checkpoints: Arc<dyn SyncStageCheckpointStore>,
+        checkpoints: Arc<C>,
         commit_policy: CommitPolicy,
         origin: BlockOrigin,
     ) -> Self {
@@ -95,7 +109,7 @@ impl SyncImportPipeline {
 
     /// Returns the durable checkpoint provider used by import-stage drivers.
     #[must_use]
-    pub fn checkpoint_store(&self) -> Arc<dyn SyncStageCheckpointStore> {
+    pub fn checkpoint_store(&self) -> Arc<C> {
         Arc::clone(&self.checkpoints)
     }
 
@@ -114,9 +128,7 @@ impl SyncImportPipeline {
     /// Create an ordered sync import driver from the latest durable checkpoint.
     pub fn driver(
         &self,
-    ) -> neo_runtime::ServiceResult<
-        SyncPipelineDriver<BlockImportQueue<BlockchainHandle>, dyn SyncStageCheckpointStore>,
-    > {
+    ) -> neo_runtime::ServiceResult<SyncPipelineDriver<BlockImportQueue<BlockchainHandle>, C>> {
         SyncPipelineDriver::new(
             Arc::clone(&self.import_queue),
             Arc::clone(&self.checkpoints),

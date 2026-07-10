@@ -8,15 +8,16 @@ use super::{RoleManagement, node_list, storage};
 use crate::role::Role;
 use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
+use neo_storage::CacheRead;
 use neo_storage::persistence::DataCache;
 use neo_vm::StackItem;
 
 impl RoleManagement {
     /// Looks up the public keys designated for `role`, effective at block
     /// `height` (the most recent designation with index <= `height`).
-    pub fn get_designated_by_role_at(
+    pub fn get_designated_by_role_at<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         role: Role,
         height: u32,
     ) -> CoreResult<Vec<ECPoint>> {

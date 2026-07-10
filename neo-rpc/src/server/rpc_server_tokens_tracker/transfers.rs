@@ -28,7 +28,8 @@ impl RpcServerTokensTracker {
         let address_version = server.system().settings().address_version;
         let request = TransferHistoryRequest::parse(params, "getnep11transfers", address_version)?;
 
-        let (_, sent_prefix, received_prefix) = Nep11Tracker::rpc_prefixes();
+        let (_, sent_prefix, received_prefix) =
+            Nep11Tracker::<neo_native_contracts::StandardNativeProvider>::rpc_prefixes();
         let max_results = service.settings().max_results_limit();
 
         let sent = collect_nep11_transfers(
@@ -70,7 +71,8 @@ impl RpcServerTokensTracker {
         let address_version = server.system().settings().address_version;
         let request = TransferHistoryRequest::parse(params, "getnep17transfers", address_version)?;
 
-        let (_, sent_prefix, received_prefix) = Nep17Tracker::rpc_prefixes();
+        let (_, sent_prefix, received_prefix) =
+            Nep17Tracker::<neo_native_contracts::StandardNativeProvider>::rpc_prefixes();
         let max_results = service.settings().max_results_limit();
 
         let sent = collect_transfers(

@@ -2256,7 +2256,6 @@ dependencies = [
 name = "neo-blockchain"
 version = "0.10.0"
 dependencies = [
- "async-trait",
  "lru",
  "neo-config",
  "neo-crypto",
@@ -2300,7 +2299,6 @@ dependencies = [
 name = "neo-consensus"
 version = "0.10.0"
 dependencies = [
- "async-trait",
  "bincode",
  "lru",
  "neo-crypto",
@@ -2367,7 +2365,6 @@ dependencies = [
 name = "neo-execution"
 version = "0.10.0"
 dependencies = [
- "async-trait",
  "base64 0.22.1",
  "bip39",
  "bitflags 2.13.0",
@@ -2411,7 +2408,6 @@ dependencies = [
 name = "neo-hsm"
 version = "0.10.0"
 dependencies = [
- "async-trait",
  "base64 0.22.1",
  "cryptoki",
  "neo-consensus",
@@ -2452,7 +2448,6 @@ dependencies = [
 name = "neo-io"
 version = "0.10.0"
 dependencies = [
- "async-trait",
  "bytes",
  "futures",
  "hex",
@@ -2533,7 +2528,6 @@ dependencies = [
 name = "neo-network"
 version = "0.10.0"
 dependencies = [
- "async-trait",
  "bytes",
  "futures",
  "neo-config",
@@ -2556,7 +2550,6 @@ name = "neo-node"
 version = "0.10.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "base64 0.22.1",
  "chrono",
  "clap",
@@ -2613,7 +2606,6 @@ dependencies = [
 name = "neo-oracle-service"
 version = "0.10.0"
 dependencies = [
- "async-trait",
  "base64 0.22.1",
  "bs58",
  "futures",
@@ -2702,7 +2694,6 @@ dependencies = [
 name = "neo-rpc"
 version = "0.10.0"
 dependencies = [
- "async-trait",
  "base64 0.22.1",
  "bytes",
  "dashmap",
@@ -2762,7 +2753,6 @@ dependencies = [
 name = "neo-runtime"
 version = "0.10.0"
 dependencies = [
- "async-trait",
  "neo-config",
  "neo-payloads",
  "neo-primitives",
@@ -2842,7 +2832,6 @@ dependencies = [
 name = "neo-system"
 version = "0.10.0"
 dependencies = [
- "async-trait",
  "neo-blockchain",
  "neo-config",
  "neo-error",
@@ -2853,13 +2842,11 @@ dependencies = [
  "neo-payloads",
  "neo-primitives",
  "neo-runtime",
- "neo-state-service",
  "neo-storage",
  "neo-wallets",
  "parking_lot",
  "thiserror 2.0.18",
  "tokio",
- "tokio-util",
  "tracing",
 ]
 
@@ -2938,7 +2925,6 @@ name = "neo-wallets"
 version = "0.10.0"
 dependencies = [
  "aes",
- "async-trait",
  "base64 0.22.1",
  "bip39",
  "cbc",

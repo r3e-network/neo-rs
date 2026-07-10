@@ -17,7 +17,6 @@
 #![doc(html_root_url = "https://docs.rs/neo-mempool/0.10.0")]
 
 mod admission;
-mod events;
 mod pool;
 
 pub use admission::{
@@ -26,12 +25,6 @@ pub use admission::{
     verify_state_independent, verify_transaction_dependent_only_with_native_provider,
     verify_transaction_with_native_provider,
 };
-pub use events::{
-    NewTransactionEventArgs, TransactionRemovedEventArgs, new_transaction_event_args,
-    transaction_removed_event_args,
-};
 pub use pool::{
-    MemoryPool, NewTransactionCallback, PoolIndex, PoolItem, SharedMemoryPool,
-    TransactionAddedCallback, TransactionRelayCallback, TransactionRemovedCallback, memory_pool,
-    pool_index, pool_item,
+    MemoryPool, PoolIndex, PoolItem, SharedMemoryPool, memory_pool, pool_index, pool_item,
 };

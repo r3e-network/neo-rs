@@ -285,7 +285,10 @@ impl JToken {
     ///
     /// Uses C#-compatible escaping (`JavaScriptEncoder.Default`); see
     /// [`to_byte_array`](Self::to_byte_array).
-    pub fn write(&self, writer: &mut dyn Write, indented: bool) -> Result<(), JsonError> {
+    pub fn write<W>(&self, writer: &mut W, indented: bool) -> Result<(), JsonError>
+    where
+        W: Write + ?Sized,
+    {
         Ok(escape::to_writer(writer, self, indented)?)
     }
 

@@ -4,6 +4,7 @@ use super::RpcClient;
 use super::helpers::{
     parse_i64_object_field, parse_uint256_object_field, token_as_object, token_as_string,
 };
+use super::hooks::RpcObserver;
 use crate::serialization;
 use neo_io::Serializable;
 use neo_payloads::Transaction;
@@ -16,7 +17,10 @@ fn serialize_to_base64<T: Serializable>(value: &T) -> Result<String, ClientRpcEr
         .map_err(|err| ClientRpcError::new(-32603, format!("serialization failed: {err}")))
 }
 
-impl RpcClient {
+impl<O> RpcClient<O>
+where
+    O: RpcObserver,
+{
     /// Retrieves a transaction by hash.
     pub async fn get_transaction(&self, hash: &str) -> Result<RpcTransaction, ClientRpcError> {
         let result = self

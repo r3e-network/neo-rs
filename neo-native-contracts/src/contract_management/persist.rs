@@ -4,12 +4,14 @@
 //! sequencing out of the contract root while preserving C# notification order.
 
 use super::{CONTRACT_DEPLOY_EVENT, CONTRACT_UPDATE_EVENT, ContractManagement};
+use crate::StandardNativeContract;
 use crate::catalog::standard_native_contracts;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, ContractState, NativeContract};
 use neo_storage::StorageItem;
 use neo_vm::StackItem;
-use std::sync::{Arc, LazyLock};
+#[cfg(test)]
+use std::sync::LazyLock;
 
 /// The canonical native-contract registration list (C#
 /// `NativeContract.Contracts` order: ContractManagement, StdLib, CryptoLib,
@@ -18,7 +20,8 @@ use std::sync::{Arc, LazyLock};
 /// the same canonical catalog the provider registers, so the deployment records
 /// and `Deploy`/`Update` notifications follow C#'s contract order without
 /// making ContractManagement depend on provider lookup plumbing.
-pub(in crate::contract_management) static NATIVE_CONTRACTS: LazyLock<Vec<Arc<dyn NativeContract>>> =
+#[cfg(test)]
+pub(in crate::contract_management) static NATIVE_CONTRACTS: LazyLock<Vec<StandardNativeContract>> =
     LazyLock::new(standard_native_contracts);
 
 impl ContractManagement {
@@ -40,7 +43,14 @@ impl ContractManagement {
     ///   the C# `hardfork == ActiveIn` branch; `initialize_native_for_hardfork`
     ///   models the non-`ActiveIn` refresh branches such as Policy's
     ///   Echidna/Faun updates.
-    pub(super) fn on_persist_native(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    pub(super) fn on_persist_native<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        &self,
+        engine: &mut ApplicationEngine<P, D, B>,
+    ) -> CoreResult<()> {
         let settings = engine.protocol_settings().clone();
         let block_index = engine
             .persisting_block()
@@ -51,15 +61,21 @@ impl ContractManagement {
                 )
             })?;
 
-        for contract in NATIVE_CONTRACTS.iter() {
-            let (hit, hardforks) = contract.is_initialize_block(&settings, block_index);
+        let native_contracts = standard_native_contracts();
+        for contract in native_contracts.iter() {
+            let (hit, hardforks) =
+                <StandardNativeContract as NativeContract<P>>::is_initialize_block(
+                    contract,
+                    &settings,
+                    block_index,
+                );
             if !hit {
                 continue;
             }
             // C# `contract.GetContractState(settings, index)`: the NEF +
             // manifest composed for this block height.
-            let composed = neo_execution::native_contract::build_native_contract_state(
-                contract.as_ref(),
+            let composed = neo_execution::native_contract::build_native_contract_state_for::<P, _>(
+                contract,
                 &settings,
                 block_index,
             );
@@ -82,8 +98,9 @@ impl ContractManagement {
                     // C# create branch: if the native is genesis-active,
                     // `InitializeAsync(engine, null)` runs before the Deploy
                     // notification for this contract.
-                    if contract.active_in().is_none() {
-                        contract.initialize(engine).map_err(|e| {
+                    if <StandardNativeContract as NativeContract<P>>::active_in(contract).is_none()
+                    {
+                        <StandardNativeContract as NativeContract<P>>::initialize(contract, engine).map_err(|e| {
                             CoreError::invalid_operation(format!(
                                 "ContractManagement::on_persist: initialize {} at block {block_index}: {e}",
                                 contract.name()
@@ -118,15 +135,17 @@ impl ContractManagement {
             // The `hf == ActiveIn` branch is represented by `initialize()`;
             // other hardfork refresh branches are dispatched explicitly.
             for hardfork in &hardforks {
-                if Some(*hardfork) == contract.active_in() {
-                    contract.initialize(engine).map_err(|e| {
+                if Some(*hardfork)
+                    == <StandardNativeContract as NativeContract<P>>::active_in(contract)
+                {
+                    <StandardNativeContract as NativeContract<P>>::initialize(contract, engine).map_err(|e| {
                         CoreError::invalid_operation(format!(
                             "ContractManagement::on_persist: initialize {} for {hardfork:?} at block {block_index}: {e}",
                             contract.name()
                         ))
                     })?;
                 } else {
-                    self.initialize_native_for_hardfork(engine, contract.as_ref(), *hardfork)?;
+                    self.initialize_native_for_hardfork(engine, contract, *hardfork)?;
                 }
             }
 

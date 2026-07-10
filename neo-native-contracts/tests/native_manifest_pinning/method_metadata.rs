@@ -37,16 +37,11 @@ fn native_method_safe_flags_follow_csharp_derivation() {
 #[test]
 fn fungible_token_transfer_fees_match_csharp_attribute() {
     let required = (CallFlags::STATES | CallFlags::ALLOW_CALL | CallFlags::ALLOW_NOTIFY).bits();
-    for (name, contract) in [
-        (
-            "NeoToken",
-            Box::new(NeoToken::new()) as Box<dyn NativeContract>,
-        ),
-        (
-            "GasToken",
-            Box::new(GasToken::new()) as Box<dyn NativeContract>,
-        ),
-    ] {
+
+    fn assert_transfer_metadata<C>(name: &str, contract: &C, required: u8)
+    where
+        C: NativeContract,
+    {
         let transfer = contract
             .methods()
             .iter()
@@ -59,6 +54,9 @@ fn fungible_token_transfer_fees_match_csharp_attribute() {
             "{name} transfer RequiredCallFlags"
         );
     }
+
+    assert_transfer_metadata("NeoToken", &NeoToken::new(), required);
+    assert_transfer_metadata("GasToken", &GasToken::new(), required);
 }
 
 /// C# v3.10.1 `PolicyContract.RecoverFund` is

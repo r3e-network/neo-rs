@@ -3,22 +3,21 @@
 use crate::NativeRegistry;
 use crate::application_engine::ApplicationEngine;
 use crate::contract::Contract;
+use crate::diagnostic::NoDiagnostic;
 use crate::native_contract_provider::NativeContractProvider;
+use crate::native_contract_provider::NoNativeContractProvider;
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
-use neo_payloads::VerifiableExt;
-use neo_payloads::Witness;
+use neo_payloads::{VerifiableContainer, VerifiableExt, Witness};
 use neo_primitives::ContractBasicMethod;
 use neo_primitives::ContractParameterType;
 use neo_primitives::TriggerType;
-use neo_primitives::Verifiable;
 use neo_primitives::{UInt160, UInt256};
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
-use std::any::Any;
 use std::sync::Arc;
 
 /// Helper functions for smart contracts (matches C# Helper)
@@ -30,14 +29,19 @@ impl Helper {
 
     /// Calculates the verification cost for a single-signature contract (in datoshi).
     pub fn signature_contract_cost() -> i64 {
-        let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte());
-        let syscall_cost = ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte());
+        let push_cost = ApplicationEngine::<NoNativeContractProvider>::get_opcode_price(
+            OpCode::PUSHDATA1.byte(),
+        );
+        let syscall_cost =
+            ApplicationEngine::<NoNativeContractProvider>::get_opcode_price(OpCode::SYSCALL.byte());
         push_cost * 2 + syscall_cost + crate::application_engine::CHECK_SIG_PRICE
     }
 
     /// Calculates the verification cost for a multi-signature contract (in datoshi).
     pub fn multi_signature_contract_cost(m: i32, n: i32) -> i64 {
-        let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1.byte());
+        let push_cost = ApplicationEngine::<NoNativeContractProvider>::get_opcode_price(
+            OpCode::PUSHDATA1.byte(),
+        );
         let mut fee = push_cost * (m as i64 + n as i64);
 
         let mut builder = ScriptBuilder::new();
@@ -47,7 +51,7 @@ impl Helper {
             .first()
             .copied()
             .unwrap_or(OpCode::PUSH0.byte());
-        fee += ApplicationEngine::get_opcode_price(m_opcode);
+        fee += ApplicationEngine::<NoNativeContractProvider>::get_opcode_price(m_opcode);
 
         let mut builder_n = ScriptBuilder::new();
         builder_n.emit_push_int(n as i64);
@@ -56,9 +60,10 @@ impl Helper {
             .first()
             .copied()
             .unwrap_or(OpCode::PUSH0.byte());
-        fee += ApplicationEngine::get_opcode_price(n_opcode);
+        fee += ApplicationEngine::<NoNativeContractProvider>::get_opcode_price(n_opcode);
 
-        fee += ApplicationEngine::get_opcode_price(OpCode::SYSCALL.byte());
+        fee +=
+            ApplicationEngine::<NoNativeContractProvider>::get_opcode_price(OpCode::SYSCALL.byte());
         fee += crate::application_engine::CHECK_SIG_PRICE * n as i64;
         fee
     }
@@ -144,13 +149,18 @@ impl Helper {
     /// native-contract provider captured by their composition root. This keeps
     /// verification deterministic under tests and long-running services instead
     /// of reading the process-global compatibility bridge.
-    pub fn verify_witnesses_with_native_provider<V: VerifiableExt>(
+    pub fn verify_witnesses_with_native_provider<V, P, B>(
         verifiable: &V,
         settings: &ProtocolSettings,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         max_gas: i64,
-        native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
-    ) -> bool {
+        native_contract_provider: Option<Arc<P>>,
+    ) -> bool
+    where
+        V: VerifiableExt,
+        P: NativeContractProvider + 'static,
+        B: CacheRead,
+    {
         if max_gas < 0 {
             return false;
         }
@@ -161,14 +171,18 @@ impl Helper {
         // the execution-layer provider so Header/Block can mirror C#'s
         // Ledger-backed `GetScriptHashesForVerifying` without making
         // `neo-payloads` depend on native contracts.
-        let hashes = match known_script_hashes_for_verifying_with_native_provider(
-            verifiable,
-            snapshot,
-            native_contract_provider.clone(),
-        ) {
-            Ok(Some(hashes)) => hashes,
-            Ok(None) => verifiable.script_hashes_for_verifying(snapshot),
-            Err(_) => return false,
+        let hashes = if let Some(container) = verifiable.to_verifiable_container() {
+            match known_script_hashes_for_verifying_with_native_provider(
+                container.as_ref(),
+                snapshot,
+                native_contract_provider.as_deref(),
+            ) {
+                Ok(Some(hashes)) => hashes,
+                Ok(None) => verifiable.script_hashes_for_verifying(snapshot),
+                Err(_) => return false,
+            }
+        } else {
+            verifiable.script_hashes_for_verifying(snapshot)
         };
 
         // Get witnesses
@@ -209,15 +223,20 @@ impl Helper {
     /// Matches C# `Helper.VerifyWitness`, but the provider is explicit so
     /// contract verification and native syscalls observe the same contract set
     /// as the caller's engine.
-    pub fn verify_witness_with_native_provider<V: VerifiableExt>(
+    pub fn verify_witness_with_native_provider<V, P, B>(
         verifiable: &V,
         settings: &ProtocolSettings,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         hash: &UInt160,
         witness: &Witness,
         max_gas: i64,
-        native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
-    ) -> CoreResult<i64> {
+        native_contract_provider: Option<Arc<P>>,
+    ) -> CoreResult<i64>
+    where
+        V: VerifiableExt,
+        P: NativeContractProvider + 'static,
+        B: CacheRead,
+    {
         // Validate invocation script (check for bad opcodes)
         if !Self::is_valid_script(&witness.invocation_script) {
             return Err(CoreError::invalid_operation(
@@ -230,12 +249,12 @@ impl Helper {
         let container_hash = verifiable
             .hash()
             .map_err(|e| CoreError::invalid_operation(e.to_string()))?;
-        let container: Arc<dyn Verifiable> =
+        let container: Arc<VerifiableContainer> =
             verifiable.to_verifiable_container().unwrap_or_else(|| {
-                Arc::new(VerifiableHashContainer {
-                    hash: container_hash,
-                    hash_data: verifiable.hash_data(),
-                })
+                Arc::new(VerifiableContainer::hash_only(
+                    container_hash,
+                    verifiable.hash_data(),
+                ))
             });
         let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
             TriggerType::Verification,
@@ -244,7 +263,7 @@ impl Helper {
             None,
             settings.clone(),
             max_gas,
-            None,
+            NoDiagnostic,
             native_contract_provider.clone(),
         )?;
 
@@ -253,10 +272,7 @@ impl Helper {
             // Contract verification: load the contract's Verify method
             let mut contract = native_contract_provider
                 .as_ref()
-                .and_then(|provider| provider.get_native_contract_by_name("ContractManagement"))
-                .map(|contract_management| {
-                    contract_management.lookup_contract_state(snapshot, hash)
-                })
+                .map(|provider| provider.contract_state(snapshot, hash))
                 .transpose()?
                 .flatten()
                 .ok_or_else(|| {
@@ -291,7 +307,7 @@ impl Helper {
             // Script verification: verify the witness script directly
 
             // Cannot use native contract hashes as verification scripts
-            let native_registry = NativeRegistry::new();
+            let native_registry: NativeRegistry<NoNativeContractProvider> = NativeRegistry::new();
             if native_registry.is_native(hash) {
                 return Err(CoreError::invalid_operation(
                     "Cannot verify native contract".to_string(),
@@ -362,102 +378,50 @@ impl Helper {
     }
 }
 
-pub(crate) fn known_script_hashes_for_verifying_with_native_provider(
-    verifiable: &dyn Verifiable,
-    snapshot: &DataCache,
-    native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
-) -> CoreResult<Option<Vec<UInt160>>> {
-    if let Some(tx) = verifiable
-        .as_any()
-        .downcast_ref::<neo_payloads::Transaction>()
-    {
+pub(crate) fn known_script_hashes_for_verifying_with_native_provider<P, B>(
+    container: &VerifiableContainer,
+    snapshot: &DataCache<B>,
+    native_contract_provider: Option<&P>,
+) -> CoreResult<Option<Vec<UInt160>>>
+where
+    P: NativeContractProvider,
+    B: CacheRead,
+{
+    if let Some(tx) = container.as_transaction() {
         return Ok(Some(tx.script_hashes_for_verifying(snapshot)));
     }
-    if let Some(payload) = verifiable
-        .as_any()
-        .downcast_ref::<neo_payloads::ExtensiblePayload>()
-    {
+    if let Some(payload) = container.as_extensible_payload() {
         return Ok(Some(payload.script_hashes_for_verifying(snapshot)));
     }
-    if let Some(header) = verifiable.as_any().downcast_ref::<neo_payloads::Header>() {
+    if let Some(header) = container.as_header() {
         return header_script_hashes_for_verifying(header, snapshot, native_contract_provider)
             .map(Some);
-    }
-    if let Some(block) = verifiable.as_any().downcast_ref::<neo_payloads::Block>() {
-        return header_script_hashes_for_verifying(
-            &block.header,
-            snapshot,
-            native_contract_provider,
-        )
-        .map(Some);
     }
     Ok(None)
 }
 
-fn header_script_hashes_for_verifying(
+fn header_script_hashes_for_verifying<P, B>(
     header: &neo_payloads::Header,
-    snapshot: &DataCache,
-    native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
-) -> CoreResult<Vec<UInt160>> {
+    snapshot: &DataCache<B>,
+    native_contract_provider: Option<&P>,
+) -> CoreResult<Vec<UInt160>>
+where
+    P: NativeContractProvider,
+    B: CacheRead,
+{
     if *header.prev_hash() == UInt256::zero() {
         return Ok(vec![header.witness.script_hash()]);
     }
 
-    let ledger = native_contract_provider
-        .and_then(|provider| provider.get_native_contract_by_name("LedgerContract"))
-        .ok_or_else(|| {
-            CoreError::invalid_operation(
-                "Header witness verification requires the Ledger native contract",
-            )
-        })?;
-    let previous = ledger
+    let provider = native_contract_provider.ok_or_else(|| {
+        CoreError::invalid_operation("Header witness verification requires a native provider")
+    })?;
+    let previous = provider
         .trimmed_block(snapshot, header.prev_hash())?
         .ok_or_else(|| {
             CoreError::invalid_operation(format!("Block {} was not found", header.prev_hash()))
         })?;
     Ok(vec![*previous.header.next_consensus()])
-}
-
-/// Minimal script container wrapper used during witness verification.
-///
-/// This enables crypto syscalls like `System.Crypto.CheckSig` to resolve the
-/// signable message (`network || container_hash`) without requiring the caller
-/// to clone arbitrary `Verifiable` implementations into an `Arc`.
-struct VerifiableHashContainer {
-    hash: UInt256,
-    hash_data: Vec<u8>,
-}
-
-impl Verifiable for VerifiableHashContainer {
-    fn verify(&self) -> bool {
-        true
-    }
-
-    fn hash(&self) -> neo_primitives::error::PrimitiveResult<UInt256> {
-        Ok(self.hash)
-    }
-
-    fn hash_data(&self) -> Vec<u8> {
-        self.hash_data.clone()
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
-impl VerifiableExt for VerifiableHashContainer {
-    fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
-        Vec::new()
-    }
-
-    fn witnesses(&self) -> Vec<&Witness> {
-        Vec::new()
-    }
-
-    fn witnesses_mut(&mut self) -> Vec<&mut Witness> {
-        Vec::new()
-    }
 }
 
 #[cfg(test)]

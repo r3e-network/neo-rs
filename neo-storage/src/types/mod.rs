@@ -25,6 +25,6 @@ pub mod storage_key;
 pub mod track;
 
 pub use seek::SeekDirection;
-pub use storage_item::StorageItem;
+pub use storage_item::{StorageItem, StorageItemCache};
 pub use storage_key::StorageKey;
 pub use track::TrackState;

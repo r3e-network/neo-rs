@@ -26,8 +26,8 @@ pub mod ledger;
 pub mod messages;
 /// Block import, validation, handler, and native-persistence pipeline.
 pub mod pipeline;
-/// Command-loop service, handle, and context traits.
-pub mod service;
+/// Command-loop implementation hidden behind typed root-level capabilities.
+mod service;
 /// Active signed-StateRoot consensus: StateValidator vote signing + aggregation.
 pub mod state_root_consensus;
 /// Signed StateRoot witness verification against the StateValidators multisig.
@@ -46,7 +46,7 @@ pub use pipeline::{
     block_processing, block_validation, empty_block_fast_forward, handlers, native_persist,
     validate_stage,
 };
-pub use service::{command, handle, internal, service_context};
+pub(crate) use service::{command, handle, internal, service_context};
 
 pub use messages::{
     fill_completed, fill_memory_pool, import, import_completed, inventory_payload,
@@ -69,13 +69,15 @@ pub mod blockchain {
     };
 }
 
-pub use command::BlockchainCommand;
+pub use command::{
+    AddTransactionReply, BlockReply, BlockchainCommand, HeightReply, ImportBlocksReply,
+    ImportBlocksStats,
+};
 pub use fill_completed::FillCompleted;
 pub use fill_memory_pool::FillMemoryPool;
 pub use handle::BlockchainHandle;
 pub use import::Import;
 pub use import_completed::ImportCompleted;
-pub use internal::{ImportDisposition, UnverifiedBlocksList};
 pub use inventory_payload::InventoryPayload;
 pub use native_persist::{
     NativePersistNotification, NativePersistOptions, NativePersistOutcome, NativePersistResources,
@@ -87,11 +89,11 @@ pub use persist_completed::PersistCompleted;
 // `PreverifyCompleted` is produced by `neo-mempool`'s transaction router and
 // only consumed here; re-export the single canonical definition rather than
 // duplicating the record. (neo-blockchain depends on neo-mempool.)
-pub use command::AddTransactionReply;
 pub use neo_mempool::PreverifyCompleted;
 pub use relay_result::RelayResult;
 pub use reverify::{Reverify, ReverifyItem};
-pub use service::service::BlockchainService;
+pub use service::{BlockchainService, MempoolLike};
+pub use service_context::{BlockPersistContext, SystemContext};
 
 pub use neo_runtime::{BlockchainEvent as RuntimeEvent, ServiceError};
 

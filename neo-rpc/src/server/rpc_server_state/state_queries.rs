@@ -9,6 +9,7 @@ use neo_crypto::mpt_trie::{MptError, Trie};
 use neo_execution::contract_state::ContractState;
 use neo_primitives::{UInt160, UInt256};
 use neo_state_service::mpt_store::MptReadSnapshot;
+use neo_storage::persistence::Store;
 use serde_json::Value;
 
 use crate::server::rpc_error::RpcError;
@@ -120,10 +121,13 @@ impl RpcServerState {
     /// reads the live `CurrentLocalRootHash` just before opening the
     /// snapshot; gating on the snapshot's value closes that race
     /// window without changing the accepted set).
-    pub(super) fn check_root_hash(
-        snapshot: &MptReadSnapshot,
+    pub(super) fn check_root_hash<S>(
+        snapshot: &MptReadSnapshot<S>,
         root_hash: &UInt256,
-    ) -> Result<(), RpcException> {
+    ) -> Result<(), RpcException>
+    where
+        S: Store,
+    {
         let full_state = snapshot.full_state();
         let current = snapshot.current_local_root_hash();
         if !full_state && current.as_ref() != Some(root_hash) {
@@ -141,10 +145,13 @@ impl RpcServerState {
     /// (`KeyBuilder(-1, 8).Add(scriptHash)`) out of the historical
     /// trie and decodes the interoperable `ContractState` to obtain
     /// the contract id (`UnknownContract` when absent).
-    pub(super) fn historical_contract_id(
-        trie: &mut Trie<MptReadSnapshot>,
+    pub(super) fn historical_contract_id<S>(
+        trie: &mut Trie<MptReadSnapshot<S>>,
         script_hash: &UInt160,
-    ) -> Result<i32, RpcException> {
+    ) -> Result<i32, RpcException>
+    where
+        S: Store,
+    {
         // Build the raw storage key bytes: id (LE) + prefix + script_hash.
         // Uses StorageKey::create_with_uint160 (ADR-025) instead of hand-rolling
         // the Vec to ensure byte-layout consistency with the rest of the workspace.

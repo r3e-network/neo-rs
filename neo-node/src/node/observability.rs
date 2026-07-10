@@ -25,6 +25,7 @@ use self::payloads::{
 use super::config::{
     ObservabilityErrorEndpoint, ObservabilityHeartbeatEndpoint, ObservabilitySection,
 };
+use super::services::NodeServiceHandles;
 
 mod config_validation;
 mod endpoints;
@@ -222,7 +223,15 @@ impl ObservabilityRuntime {
         })
     }
 
-    pub(super) fn spawn_heartbeat_tasks(&self, node: Arc<neo_system::Node>) -> Vec<JoinHandle<()>> {
+    pub(super) fn spawn_heartbeat_tasks<P, S>(
+        &self,
+        node: Arc<neo_system::Node<P, S>>,
+        services: Arc<NodeServiceHandles<S>>,
+    ) -> Vec<JoinHandle<()>>
+    where
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        S: neo_storage::persistence::Store + 'static,
+    {
         self.inner
             .config
             .heartbeat_endpoints
@@ -232,6 +241,7 @@ impl ObservabilityRuntime {
             .map(|endpoint| {
                 let inner = Arc::clone(&self.inner);
                 let node = Arc::clone(&node);
+                let services = Arc::clone(&services);
                 let runtime = self.clone();
                 runtime.spawn_monitored("observability_heartbeat", async move {
                     let interval_seconds = endpoint
@@ -240,7 +250,10 @@ impl ObservabilityRuntime {
                     let mut interval = tokio::time::interval(Duration::from_secs(interval_seconds));
                     loop {
                         interval.tick().await;
-                        if let Err(err) = inner.send_heartbeat_async(&endpoint, &node).await {
+                        if let Err(err) = inner
+                            .send_heartbeat_async(&endpoint, &node, &services)
+                            .await
+                        {
                             let endpoint_name = heartbeat_endpoint_name(&endpoint);
                             warn!(
                                 target: "neo::observability",
@@ -352,11 +365,16 @@ impl ObservabilityInner {
         Ok(())
     }
 
-    async fn send_heartbeat_async(
+    async fn send_heartbeat_async<P, S>(
         &self,
         endpoint: &ObservabilityHeartbeatEndpoint,
-        node: &neo_system::Node,
-    ) -> anyhow::Result<()> {
+        node: &neo_system::Node<P, S>,
+        services: &NodeServiceHandles<S>,
+    ) -> anyhow::Result<()>
+    where
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        S: neo_storage::persistence::Store + 'static,
+    {
         let url = heartbeat_endpoint_url(endpoint)?;
         let method = endpoint
             .method
@@ -366,13 +384,17 @@ impl ObservabilityInner {
         let request = match method.as_str() {
             "GET" => self.async_client.get(url),
             "POST" => {
-                let payload =
-                    build_heartbeat_payload(&self.metadata, Some(node_health_payload(node)));
+                let payload = build_heartbeat_payload(
+                    &self.metadata,
+                    Some(node_health_payload(node, services)),
+                );
                 self.async_client.post(url).json(&payload)
             }
             "PUT" => {
-                let payload =
-                    build_heartbeat_payload(&self.metadata, Some(node_health_payload(node)));
+                let payload = build_heartbeat_payload(
+                    &self.metadata,
+                    Some(node_health_payload(node, services)),
+                );
                 self.async_client.put(url).json(&payload)
             }
             _ => anyhow::bail!("unsupported heartbeat method {method:?}"),

@@ -12,8 +12,6 @@ use super::{
 };
 use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
-use neo_execution::application_engine_contract::NativeArgNullMask;
-use neo_payloads::Transaction;
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_vm::StackItem;
@@ -21,9 +19,13 @@ use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 
 impl OracleContract {
-    pub(super) fn invoke_get_price(
+    pub(super) fn invoke_get_price<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -31,9 +33,13 @@ impl OracleContract {
         Ok(BigInt::from(price).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_set_price(
+    pub(super) fn invoke_set_price<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C#: validate price > 0 -> AssertCommittee -> overwrite Prefix_Price.
@@ -51,9 +57,13 @@ impl OracleContract {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_request(
+    pub(super) fn invoke_request<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -70,9 +80,7 @@ impl OracleContract {
 
         // `filter` is a nullable String: a Null arg (bit 1 of the
         // native arg null-mask) means "no filter".
-        let filter_is_null = engine
-            .get_state::<NativeArgNullMask>()
-            .is_some_and(|mask| mask.0 & (1 << 1) != 0);
+        let filter_is_null = engine.native_arg_is_null(1);
         let filter = if filter_is_null {
             None
         } else {
@@ -223,9 +231,13 @@ impl OracleContract {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_finish(
+    pub(super) fn invoke_finish<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -250,14 +262,11 @@ impl OracleContract {
                     "OracleContract::finish requires a transaction container",
                 )
             })?;
-            let tx = container
-                .as_any()
-                .downcast_ref::<Transaction>()
-                .ok_or_else(|| {
-                    CoreError::invalid_operation(
-                        "OracleContract::finish: script container is not a transaction",
-                    )
-                })?;
+            let tx = container.as_transaction().ok_or_else(|| {
+                CoreError::invalid_operation(
+                    "OracleContract::finish: script container is not a transaction",
+                )
+            })?;
             let response = Self::oracle_response_attribute(tx)
                 .ok_or_else(|| CoreError::invalid_operation("Oracle response not found"))?;
             (response.id, response.code as u8, response.result.clone())
@@ -300,9 +309,13 @@ impl OracleContract {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_verify(
+    pub(super) fn invoke_verify<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C#: `(Transaction?)engine.ScriptContainer` - a null
@@ -312,14 +325,11 @@ impl OracleContract {
         let Some(container) = engine.script_container() else {
             return Ok(vec![0]);
         };
-        let tx = container
-            .as_any()
-            .downcast_ref::<Transaction>()
-            .ok_or_else(|| {
-                CoreError::invalid_operation(
-                    "OracleContract::verify: script container is not a transaction",
-                )
-            })?;
+        let tx = container.as_transaction().ok_or_else(|| {
+            CoreError::invalid_operation(
+                "OracleContract::verify: script container is not a transaction",
+            )
+        })?;
         Ok(vec![u8::from(
             Self::oracle_response_attribute(tx).is_some(),
         )])

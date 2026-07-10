@@ -33,7 +33,10 @@ pub(super) fn wallet_account_to_json(account: &(impl WalletAccount + ?Sized)) ->
     Value::Object(map)
 }
 
-pub(super) fn wallet_accounts_to_json(accounts: Vec<Arc<dyn WalletAccount>>) -> Value {
+pub(super) fn wallet_accounts_to_json<A>(accounts: Vec<Arc<A>>) -> Value
+where
+    A: WalletAccount,
+{
     Value::Array(
         accounts
             .into_iter()

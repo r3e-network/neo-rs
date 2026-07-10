@@ -14,8 +14,8 @@ use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
 use neo_payloads::witness::Witness;
 use neo_primitives::UInt160;
-use neo_storage::persistence::StoreCache;
-use neo_wallets::{Wallet, WalletAccount, WalletError};
+use neo_storage::persistence::{CacheRead, DataCache};
+use neo_wallets::{Nep6Account, Nep6Wallet, Wallet, WalletAccount, WalletError};
 use num_bigint::BigInt;
 use rand::random;
 use serde_json::{Map, Number as JsonNumber, Value, json};
@@ -40,12 +40,12 @@ struct PendingSignatureItem {
     parameter_types: Vec<neo_primitives::ContractParameterType>,
 }
 
-pub(super) fn process_invoke_with_wallet(
+pub(super) fn process_invoke_with_wallet<B: CacheRead>(
     server: &RpcServer,
     result: &mut Map<String, Value>,
     script: &[u8],
     signers: Option<&[Signer]>,
-    snapshot: &StoreCache,
+    snapshot: &DataCache<B>,
     system_fee: i64,
 ) {
     let signers = match signers {
@@ -73,13 +73,13 @@ pub(super) fn process_invoke_with_wallet(
     }
 }
 
-fn build_and_sign_transaction(
+fn build_and_sign_transaction<B: CacheRead>(
     server: &RpcServer,
     script: &[u8],
     signers: &[Signer],
-    snapshot: &StoreCache,
+    snapshot: &DataCache<B>,
     system_fee: i64,
-    wallet: Arc<dyn Wallet>,
+    wallet: Arc<Nep6Wallet>,
 ) -> CoreResult<WalletInvocationOutcome> {
     let rpc_settings = server.settings().clone();
     let system = server.system();
@@ -102,15 +102,14 @@ fn build_and_sign_transaction(
     let smart_contract_native_provider =
         NativeSmartContractProvider::new(Arc::clone(&native_contract_provider));
     let max_valid_until_block_increment = smart_contract_native_provider
-        .max_valid_until_block_increment(snapshot.data_cache(), &protocol_settings)
+        .max_valid_until_block_increment(snapshot, &protocol_settings)
         .unwrap_or_else(|_| system.max_valid_until_block_increment());
-    let valid_until = ledger_queries::current_index(snapshot.data_cache())
+    let valid_until = ledger_queries::current_index(snapshot)
         .map_err(|err| CoreError::other(err.to_string()))?
         .saturating_add(max_valid_until_block_increment);
     tx.set_valid_until_block(valid_until);
     tx.set_system_fee(system_fee);
 
-    let data_cache = snapshot.data_cache();
     let account_script = |hash: &neo_primitives::UInt160| -> Option<Vec<u8>> {
         wallet
             .account(hash)
@@ -118,7 +117,7 @@ fn build_and_sign_transaction(
     };
     let network_fee = wallet_compat::calculate_network_fee(
         &tx,
-        data_cache,
+        snapshot,
         &protocol_settings,
         &native_contract_provider,
         &account_script,
@@ -130,7 +129,7 @@ fn build_and_sign_transaction(
     let required_fee = BigInt::from(tx.system_fee()) + BigInt::from(tx.network_fee());
     let sender = signers[0].account;
     let available = wallet_compat::gas_balance_of(
-        data_cache,
+        snapshot,
         &protocol_settings,
         &native_contract_provider,
         &sender,
@@ -160,7 +159,7 @@ fn build_and_sign_transaction(
 fn sign_transaction_with_wallet(
     tx: &mut Transaction,
     signers: &[Signer],
-    wallet: &(impl Wallet + ?Sized),
+    wallet: &Nep6Wallet,
     network: u32,
 ) -> Vec<PendingSignatureItem> {
     let mut pending = Vec::new();
@@ -254,7 +253,7 @@ fn build_pending_context(
 
 fn build_pending_item(
     account: UInt160,
-    wallet_account: Option<Arc<dyn WalletAccount>>,
+    wallet_account: Option<Arc<Nep6Account>>,
 ) -> PendingSignatureItem {
     if let Some(account_ref) = wallet_account {
         if let Some(contract) = account_ref.contract() {

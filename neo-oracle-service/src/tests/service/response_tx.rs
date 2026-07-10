@@ -1,8 +1,7 @@
 use super::super::{OracleService, OracleServiceSettings};
 use neo_crypto::{ECCurve, ECPoint, Secp256r1Crypto};
-use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{OracleResponse, OracleResponseCode, Signer, Transaction, Witness};
-use neo_storage::{DataCache, StorageKey};
+use neo_storage::{CacheRead, DataCache, StorageKey};
 
 use neo_config::ProtocolSettings;
 use neo_io::Serializable;
@@ -19,8 +18,8 @@ fn sample_point(byte: u8) -> ECPoint {
         .expect("static test key")
 }
 
-fn seed_transaction_state(
-    snapshot: &DataCache,
+fn seed_transaction_state<B: CacheRead>(
+    snapshot: &DataCache<B>,
     tx_hash: &UInt256,
     tx: &Transaction,
     block_index: u32,
@@ -42,7 +41,7 @@ fn seed_transaction_state(
 /// Seed the persisted native Oracle contract record into the snapshot so
 /// `verify` executes through `System.Contract.CallNative`, including the
 /// C# `[ContractMethod(CpuFee = 1 << 15)]` charge.
-fn seed_oracle_contract(snapshot: &DataCache, settings: &ProtocolSettings) {
+fn seed_oracle_contract<B: CacheRead>(snapshot: &DataCache<B>, settings: &ProtocolSettings) {
     use neo_execution::native_contract::build_native_contract_state;
     use neo_native_contracts::{ContractManagement, OracleContract};
 
@@ -93,10 +92,7 @@ fn create_response_tx_matches_csharp_fee_math() {
     let service = OracleService::new(
         oracle_settings,
         system.clone(),
-        system.clone(),
-        system.clone(),
-        std::sync::Arc::new(StandardNativeProvider::new())
-            as std::sync::Arc<dyn NativeContractProvider>,
+        std::sync::Arc::new(StandardNativeProvider::new()),
     )
     .expect("oracle service");
     let snapshot = service.snapshot_cache();
@@ -200,11 +196,18 @@ fn oracle_service_native_reads_use_provider_boundary() {
     assert!(provider.contains("trait OracleServiceNativeProvider"));
     assert!(!provider.contains("trait OracleServiceNativeProviderFactory"));
     assert!(!provider.contains("struct NativeOracleServiceProviderFactory"));
-    assert!(provider.contains("native_contract_provider: Arc<dyn NativeContractProvider>"));
-    assert!(provider.contains("get_native_contract_by_name(name)"));
-    assert!(provider.contains("with_contract::<OracleContract"));
-    assert!(provider.contains("with_contract::<ContractManagement"));
-    assert!(provider.contains("with_contract::<RoleManagement"));
-    assert!(provider.contains("with_contract::<PolicyContract"));
-    assert!(provider.contains("fn native_provider(&self) -> NativeOracleServiceProvider"));
+    assert!(provider.contains("native_contract_provider: Arc<P>"));
+    assert!(!provider.contains("get_native_contract_by_name(name)"));
+    assert!(provider.contains("trait OracleContractReadProvider"));
+    assert!(provider.contains(".oracle_request(snapshot, request_id)"));
+    assert!(provider.contains(".oracle_requests(snapshot)"));
+    assert!(provider.contains(".oracle_requests_by_url(snapshot, url)"));
+    assert!(provider.contains(".oracle_contract_state(snapshot)"));
+    assert!(provider.contains(".designated_oracles(snapshot, height)"));
+    assert!(provider.contains(".max_valid_until_block_increment(snapshot, settings)"));
+    assert!(provider.contains(".exec_fee_factor(snapshot, settings, height)"));
+    assert!(provider.contains(".fee_per_byte(snapshot)"));
+    assert!(!provider.contains("with_contract::<"));
+    assert!(!provider.contains("downcast_ref::<"));
+    assert!(provider.contains("fn native_provider(&self) -> NativeOracleServiceProvider<P>"));
 }

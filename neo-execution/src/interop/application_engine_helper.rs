@@ -18,7 +18,12 @@ use num_traits::ToPrimitive;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     /// Provides detailed stack information when the engine faults.
     pub fn get_engine_stack_info_on_fault(
         &self,
@@ -204,7 +209,7 @@ impl ApplicationEngine {
     }
 
     /// Helper to emit log event
-    pub fn emit_log_event(&mut self, event: neo_primitives::LogEventArgs) {
+    pub fn emit_log_event(&mut self, event: neo_payloads::LogEventArgs) {
         self.push_log(event);
     }
 

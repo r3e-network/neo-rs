@@ -3,7 +3,7 @@
 use std::env;
 use std::path::PathBuf;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), String> {
     if env::var("CARGO_FEATURE_NEOFS_GRPC").is_err() {
         return Ok(());
     }
@@ -19,7 +19,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tonic_build::configure()
         .build_server(false)
-        .compile(&[object_proto], &[proto_root])?;
+        .compile(&[object_proto], &[proto_root])
+        .map_err(|err| format!("compile NeoFS protobufs: {err}"))?;
 
     println!("cargo:rerun-if-changed=proto/neofs/object/service.proto");
     println!("cargo:rerun-if-changed=proto/neofs/object/types.proto");

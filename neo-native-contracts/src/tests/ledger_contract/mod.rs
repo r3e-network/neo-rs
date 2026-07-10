@@ -125,14 +125,14 @@ fn block_lookup_args_use_shared_raw_integer_helpers() {
     let invoke_source = include_str!("../../ledger_contract/invoke.rs");
     let get_block = slice_between(
         invoke_source,
-        "fn invoke_get_block(",
-        "fn invoke_get_transaction_from_block(",
+        "fn invoke_get_block",
+        "fn invoke_get_transaction_from_block",
     );
     assert!(get_block.contains("crate::args::raw_arg"));
     assert!(!get_block.contains("args.first()"));
 
     let from_block_start = invoke_source
-        .find("fn invoke_get_transaction_from_block(")
+        .find("fn invoke_get_transaction_from_block")
         .expect("getTransactionFromBlock handler exists");
     let from_block = &invoke_source[from_block_start..];
     assert!(from_block.contains("crate::args::raw_arg"));

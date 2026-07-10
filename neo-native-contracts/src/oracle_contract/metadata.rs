@@ -6,9 +6,13 @@ use neo_primitives::{CallFlags, ContractParameterType};
 use super::{ORACLE_REQUEST_EVENT, ORACLE_RESPONSE_EVENT, OracleContract};
 use crate::support::invoke::{NativeMethodBinding, method_metadata};
 
-pub(super) static ORACLE_CONTRACT_METHOD_BINDINGS: LazyLock<
-    Vec<NativeMethodBinding<OracleContract>>,
-> = LazyLock::new(|| {
+pub(super) fn oracle_contract_method_bindings<P, D, B>()
+-> Vec<NativeMethodBinding<OracleContract, P, D, B>>
+where
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+    D: neo_execution::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     vec![
         NativeMethodBinding::new(
             NativeMethod::new(
@@ -85,10 +89,15 @@ pub(super) static ORACLE_CONTRACT_METHOD_BINDINGS: LazyLock<
             OracleContract::invoke_verify,
         ),
     ]
-});
+}
 
-pub(super) static ORACLE_CONTRACT_METHODS: LazyLock<Vec<NativeMethod>> =
-    LazyLock::new(|| method_metadata(&ORACLE_CONTRACT_METHOD_BINDINGS));
+pub(super) static ORACLE_CONTRACT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
+    method_metadata(&oracle_contract_method_bindings::<
+        neo_execution::native_contract_provider::NoNativeContractProvider,
+        neo_execution::NoDiagnostic,
+        neo_storage::EmptyCacheBacking,
+    >())
+});
 
 /// Oracle's `[ContractEvent]` declarations (OracleContract.cs:46-53), both
 /// ungated: `OracleRequest` at order 0, `OracleResponse` at order 1.

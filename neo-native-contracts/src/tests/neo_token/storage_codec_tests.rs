@@ -622,10 +622,12 @@ fn committee_address_trait_override_feeds_the_engine_seam() {
     seed_committee(&cache, &sample_committee());
     let neo = NeoToken::new();
     assert_eq!(
-        NativeContract::committee_address(&neo, &cache).unwrap(),
+        NativeContract::<neo_execution::native_contract_provider::NoNativeContractProvider>::committee_address(&neo, &cache).unwrap(),
         Some(NeoToken::new().compute_committee_address(&cache).unwrap())
     );
-    assert!(NativeContract::committee_address(&neo, &DataCache::new(false)).is_err());
+    assert!(
+        NativeContract::<neo_execution::native_contract_provider::NoNativeContractProvider>::committee_address(&neo, &DataCache::new(false)).is_err()
+    );
 }
 
 #[test]
@@ -654,7 +656,7 @@ fn total_supply_returns_constant_not_storage_slot() {
         None,
         ProtocolSettings::default(),
         10_000_000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");

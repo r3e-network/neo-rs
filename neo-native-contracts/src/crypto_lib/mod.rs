@@ -36,7 +36,10 @@ native_contract_handle!(
     }
 );
 
-impl NativeContract for CryptoLib {
+impl<P> NativeContract<P> for CryptoLib
+where
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+{
     native_contract_identity!(CryptoLib);
 
     fn methods(&self) -> &[NativeMethod] {
@@ -47,7 +50,7 @@ impl NativeContract for CryptoLib {
         true
     }
 
-    native_contract_dispatch!(metadata::CRYPTO_LIB_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::crypto_lib_method_bindings);
 }
 
 #[cfg(test)]

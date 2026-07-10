@@ -168,12 +168,16 @@ fn consensus_ledger_reads_use_provider_boundaries() {
         "consensus provider must resolve PolicyContract through the explicit native provider"
     );
     assert!(
-        provider.contains("get_native_contract_by_name(\"NeoToken\")"),
-        "consensus provider should read NeoToken from the explicit NativeContractProvider"
+        provider.contains(".next_block_validators(snapshot, settings)"),
+        "consensus provider should read validators from the explicit NativeContractProvider capability"
     );
     assert!(
-        provider.contains("get_native_contract_by_name(\"PolicyContract\")"),
-        "consensus provider should read PolicyContract from the explicit NativeContractProvider"
+        provider.contains(".milliseconds_per_block(snapshot, settings)"),
+        "consensus provider should read block timing from the explicit NativeContractProvider capability"
+    );
+    assert!(
+        provider.contains(".max_traceable_blocks(snapshot, settings)"),
+        "consensus provider should read traceability limits from the explicit NativeContractProvider capability"
     );
     assert!(
         provider.contains("HotColdLedgerProviderFactory"),
@@ -199,7 +203,6 @@ fn consensus_ledger_reads_use_provider_boundaries() {
 
 #[test]
 fn prepare_request_ledger_guard_rejects_already_persisted_transaction_hash() {
-    neo_native_contracts::install();
     let settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
     let pool = memory_pool(&settings);
@@ -216,7 +219,6 @@ fn prepare_request_ledger_guard_rejects_already_persisted_transaction_hash() {
 
 #[test]
 fn prepare_request_ledger_guard_rejects_available_transaction_with_onchain_conflict() {
-    neo_native_contracts::install();
     let settings = ProtocolSettings::default();
     let snapshot = DataCache::new(false);
     let pool = memory_pool(&settings);
@@ -241,7 +243,6 @@ fn prepare_request_ledger_guard_rejects_available_transaction_with_onchain_confl
 
 #[test]
 fn prepare_request_ledger_guard_uses_dynamic_max_traceable_blocks() {
-    neo_native_contracts::install();
     let mut settings = ProtocolSettings::default();
     settings
         .hardforks
@@ -302,7 +303,6 @@ fn effective_block_time_after_configure_round(
 /// construction-time ProtocolSettings value.
 #[test]
 fn configure_round_picks_up_policy_milliseconds_per_block_after_echidna() {
-    neo_native_contracts::install();
     let mut settings = ProtocolSettings::default();
     settings
         .hardforks
@@ -325,7 +325,6 @@ fn configure_round_picks_up_policy_milliseconds_per_block_after_echidna() {
 /// value happens to sit in Policy storage (the reader is Echidna-gated).
 #[test]
 fn configure_round_uses_settings_default_before_echidna() {
-    neo_native_contracts::install();
     let mut settings = ProtocolSettings::default();
     // Echidna not active until far in the future.
     settings

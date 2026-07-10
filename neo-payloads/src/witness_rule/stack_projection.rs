@@ -62,10 +62,6 @@ impl Interoperable for WitnessCondition {
     fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
         Ok(self.to_stack_value())
     }
-
-    fn clone_box(&self) -> Box<dyn Interoperable> {
-        Box::new(self.clone())
-    }
 }
 
 impl Interoperable for WitnessRule {
@@ -77,9 +73,5 @@ impl Interoperable for WitnessRule {
 
     fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
         Ok(self.to_stack_value())
-    }
-
-    fn clone_box(&self) -> Box<dyn Interoperable> {
-        Box::new(self.clone())
     }
 }

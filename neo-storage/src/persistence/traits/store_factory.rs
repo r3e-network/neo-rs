@@ -1,60 +1,108 @@
 use super::{
-    providers::memory_store_provider::MemoryStoreProvider, storage::StorageConfig, store::Store,
-    store_provider::StoreProvider,
+    providers::{MemoryStore, RuntimeStore},
+    storage::StorageConfig,
 };
 use crate::error::{StorageError, StorageResult};
 use crate::mdbx::MdbxStoreProvider;
 use crate::rocksdb::RocksDBStoreProvider;
-use hashbrown::HashMap;
-use parking_lot::RwLock;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::LazyLock;
 
 const MEMORY_PROVIDER: &str = "memory";
 const ROCKSDB_PROVIDER: &str = "rocksdb";
 const MDBX_PROVIDER: &str = "mdbx";
 
-/// Global registry of store providers.
-static PROVIDERS: LazyLock<RwLock<HashMap<String, Arc<dyn StoreProvider>>>> = LazyLock::new(|| {
-    let mut providers = HashMap::new();
+/// Built-in storage providers supported by production node configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreProviderKind {
+    /// Process-local in-memory store for tests and ephemeral nodes.
+    Memory,
+    /// RocksDB-backed store retained as a supported compatibility backend.
+    RocksDb,
+    /// MDBX-backed store used by production nodes.
+    Mdbx,
+}
 
-    let mem_provider = Arc::new(MemoryStoreProvider::new()) as Arc<dyn StoreProvider>;
-    register_builtin_provider(&mut providers, MEMORY_PROVIDER, mem_provider);
+impl StoreProviderKind {
+    /// Canonical configuration name for the provider.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Memory => MEMORY_PROVIDER,
+            Self::RocksDb => ROCKSDB_PROVIDER,
+            Self::Mdbx => MDBX_PROVIDER,
+        }
+    }
 
-    let rocksdb_provider =
-        Arc::new(RocksDBStoreProvider::new(StorageConfig::default())) as Arc<dyn StoreProvider>;
-    register_builtin_provider(&mut providers, ROCKSDB_PROVIDER, rocksdb_provider);
+    fn from_name(name: &str) -> Option<Self> {
+        match provider_key(name).as_str() {
+            MEMORY_PROVIDER => Some(Self::Memory),
+            ROCKSDB_PROVIDER => Some(Self::RocksDb),
+            MDBX_PROVIDER => Some(Self::Mdbx),
+            _ => None,
+        }
+    }
 
-    let mdbx_provider =
-        Arc::new(MdbxStoreProvider::new(StorageConfig::default())) as Arc<dyn StoreProvider>;
-    register_builtin_provider(&mut providers, MDBX_PROVIDER, mdbx_provider);
+    fn get_store<P>(self, path: P) -> StorageResult<Arc<RuntimeStore>>
+    where
+        P: AsRef<Path>,
+    {
+        match self {
+            Self::Memory => Ok(Arc::new(RuntimeStore::Memory(MemoryStore::new()))),
+            Self::RocksDb => RocksDBStoreProvider::new(StorageConfig::default())
+                .get_rocksdb_store(path)
+                .map(RuntimeStore::RocksDb)
+                .map(Arc::new),
+            Self::Mdbx => MdbxStoreProvider::new(StorageConfig::default())
+                .get_mdbx_store(path)
+                .map(RuntimeStore::Mdbx)
+                .map(Arc::new),
+        }
+    }
 
-    RwLock::new(providers)
-});
+    fn get_store_with_config(self, config: StorageConfig) -> StorageResult<Arc<RuntimeStore>> {
+        match self {
+            Self::Memory => Ok(Arc::new(RuntimeStore::Memory(MemoryStore::new()))),
+            Self::RocksDb => RocksDBStoreProvider::new(config)
+                .get_rocksdb_store(Path::new(""))
+                .map(RuntimeStore::RocksDb)
+                .map(Arc::new),
+            Self::Mdbx => MdbxStoreProvider::new(config)
+                .get_mdbx_store(Path::new(""))
+                .map(RuntimeStore::Mdbx)
+                .map(Arc::new),
+        }
+    }
 
-/// Registry-backed facade for creating stores from named providers.
+    fn get_runtime_store<P>(self, path: P) -> StorageResult<Arc<RuntimeStore>>
+    where
+        P: AsRef<Path>,
+    {
+        self.get_store(path)
+    }
+
+    fn get_runtime_store_with_config(
+        self,
+        config: StorageConfig,
+    ) -> StorageResult<Arc<RuntimeStore>> {
+        self.get_store_with_config(config)
+    }
+}
+
+/// Facade for creating stores from named built-in providers.
 ///
 /// This is the only production entry point for opening storage backends by
-/// name. Concrete backends implement [`StoreProvider`]; callers ask this facade
-/// for `memory`, `mdbx`, or `rocksdb` stores instead of constructing backend
-/// adapters directly.
+/// name. The provider choice is a small static enum, not a plugin registry,
+/// because neo-rs production nodes support a fixed backend set:
+/// `memory`, `mdbx`, and `rocksdb`.
 pub struct StoreFactory;
 
 impl StoreFactory {
-    /// Register a store provider.
-    pub fn register_provider(provider: Arc<dyn StoreProvider>) {
-        let mut providers = PROVIDERS.write();
-        providers.insert(provider_key(provider.name()), provider);
-    }
-
     /// Get store provider by name.
-    pub fn get_store_provider(name: &str) -> Option<Arc<dyn StoreProvider>> {
+    pub fn get_store_provider(name: &str) -> Option<StoreProviderKind> {
         if provider_key(name).is_empty() {
             return None;
         }
-        let providers = PROVIDERS.read();
-        providers.get(&provider_key(name)).cloned()
+        StoreProviderKind::from_name(name)
     }
 
     /// Creates a store through an explicitly named provider.
@@ -64,11 +112,11 @@ impl StoreFactory {
     ///   Empty names are rejected so production callers cannot accidentally
     ///   fall back to an ephemeral in-memory store.
     /// * `path` - The path used by persistent stores. In-memory stores ignore it.
-    pub fn get_store<P>(storage_provider: &str, path: P) -> StorageResult<Arc<dyn Store>>
+    pub fn get_store<P>(storage_provider: &str, path: P) -> StorageResult<Arc<RuntimeStore>>
     where
         P: AsRef<Path>,
     {
-        provider_for(storage_provider)?.get_store(path.as_ref())
+        provider_for(storage_provider)?.get_store(path)
     }
 
     /// Get store from a named provider and full storage configuration.
@@ -78,8 +126,30 @@ impl StoreFactory {
     pub fn get_store_with_config(
         storage_provider: &str,
         config: StorageConfig,
-    ) -> StorageResult<Arc<dyn Store>> {
+    ) -> StorageResult<Arc<RuntimeStore>> {
         provider_for(storage_provider)?.get_store_with_config(config)
+    }
+
+    /// Creates a concrete runtime-selected store through an explicitly named
+    /// provider.
+    ///
+    /// Use this in composition roots after configuration has selected the
+    /// backend. It keeps downstream code generic over the concrete
+    /// [`RuntimeStore`] enum instead of spreading an erased `Store` handle.
+    pub fn get_runtime_store<P>(storage_provider: &str, path: P) -> StorageResult<Arc<RuntimeStore>>
+    where
+        P: AsRef<Path>,
+    {
+        provider_for(storage_provider)?.get_runtime_store(path)
+    }
+
+    /// Creates a concrete runtime-selected store from a full storage
+    /// configuration.
+    pub fn get_runtime_store_with_config(
+        storage_provider: &str,
+        config: StorageConfig,
+    ) -> StorageResult<Arc<RuntimeStore>> {
+        provider_for(storage_provider)?.get_runtime_store_with_config(config)
     }
 }
 
@@ -93,41 +163,19 @@ fn provider_key(name: &str) -> String {
     name.trim().to_ascii_lowercase()
 }
 
-fn register_builtin_provider(
-    providers: &mut HashMap<String, Arc<dyn StoreProvider>>,
-    name: &str,
-    provider: Arc<dyn StoreProvider>,
-) {
-    providers.insert(provider_key(name), provider);
-}
-
-fn provider_for(storage_provider: &str) -> StorageResult<Arc<dyn StoreProvider>> {
+fn provider_for(storage_provider: &str) -> StorageResult<StoreProviderKind> {
     let key = provider_key(storage_provider);
     if key.is_empty() {
         return Err(empty_provider_error());
     }
-    let providers = PROVIDERS.read();
-    providers
-        .get(&key)
-        .cloned()
-        .ok_or_else(|| unknown_provider_error(storage_provider, &providers))
+    StoreProviderKind::from_name(storage_provider)
+        .ok_or_else(|| unknown_provider_error(storage_provider))
 }
 
-fn unknown_provider_error(
-    requested: &str,
-    providers: &HashMap<String, Arc<dyn StoreProvider>>,
-) -> StorageError {
-    let mut available = providers
-        .keys()
-        .filter(|name| !name.is_empty())
-        .cloned()
-        .collect::<Vec<_>>();
-    available.sort_unstable();
-    available.dedup();
-
+fn unknown_provider_error(requested: &str) -> StorageError {
     StorageError::invalid_operation(format!(
         "Store provider {requested:?} not found; available providers: {}",
-        available.join(", ")
+        [MEMORY_PROVIDER, MDBX_PROVIDER, ROCKSDB_PROVIDER].join(", ")
     ))
 }
 

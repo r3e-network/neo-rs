@@ -255,16 +255,17 @@ fn oracle_response_id(tx: &Transaction) -> Option<u64> {
         })
 }
 
-fn verify_unverified_proposal_transaction<P>(
+fn verify_unverified_proposal_transaction<P, B>(
     tx: &Transaction,
     proposal_hashes: &HashSet<UInt256>,
     context: &ProposalVerificationContext,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     settings: &ProtocolSettings,
     native_contract_provider: Arc<P>,
 ) -> VerifyResult
 where
     P: NativeContractProvider + 'static,
+    B: neo_storage::CacheRead,
 {
     if conflict_hashes(tx).any(|hash| proposal_hashes.contains(&hash)) {
         return VerifyResult::HasConflicts;
@@ -304,16 +305,17 @@ pub(super) fn proposal_rejection_reason(result: VerifyResult) -> ChangeViewReaso
 /// `TransactionVerificationContext` (`AddTransaction(tx, true)`). That context
 /// catches proposal-internal conflicts, duplicated oracle responses, and sender
 /// fee exhaustion across transactions before the backup reports availability.
-pub(super) fn cache_available_proposal_transactions<P>(
+pub(super) fn cache_available_proposal_transactions<P, B>(
     hashes: &[UInt256],
     cache: &mut HashMap<UInt256, Arc<Transaction>>,
     mempool: &MemoryPool<P>,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     settings: &ProtocolSettings,
     validators: &[ValidatorInfo],
 ) -> ProposalTransactionAvailability
 where
     P: NativeContractProvider + 'static,
+    B: neo_storage::CacheRead,
 {
     let proposal_hashes: HashSet<UInt256> = hashes.iter().copied().collect();
     let mut context = ProposalVerificationContext::default();
@@ -371,14 +373,15 @@ where
 /// C# DBFT `OnPrepareRequestReceived` rejects proposals that name a transaction
 /// already persisted in Ledger, and rejects available local transactions whose
 /// hash has a traceable on-chain conflict record.
-pub(super) fn prepare_request_passes_ledger_guards<P>(
+pub(super) fn prepare_request_passes_ledger_guards<P, B>(
     payload: &ConsensusPayload,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     mempool: &MemoryPool<P>,
     settings: &ProtocolSettings,
 ) -> bool
 where
     P: NativeContractProvider + 'static,
+    B: neo_storage::CacheRead,
 {
     if payload.message_type != ConsensusMessageType::PrepareRequest {
         return true;

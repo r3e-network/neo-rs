@@ -3,7 +3,6 @@ use neo_config::Hardfork;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::helper::Helper;
 use neo_execution::{ApplicationEngine, ContractState, NativeContract};
-use neo_payloads::transaction::Transaction;
 use neo_primitives::ContractBasicMethod;
 use neo_storage::StorageItem;
 use neo_vm::StackItem;
@@ -21,9 +20,13 @@ impl ContractManagement {
     /// the NEP-17 `onNEP17Payment` path): it executes after the native method
     /// returns, against the record this method has already written, and a fault
     /// inside `_deploy` still faults the whole transaction as in C#.
-    pub(super) fn on_deploy(
+    pub(super) fn on_deploy<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         contract: &ContractState,
         data: StackItem,
         update: bool,
@@ -62,9 +65,13 @@ impl ContractManagement {
     /// contract hash from `(tx.Sender, nef.CheckSum, manifest.Name)`, allocates
     /// the next contract id, writes the record + big-endian id index, runs the
     /// `_deploy` callback, emits `Deploy`, and returns the new `ContractState`.
-    pub(super) fn deploy(
+    pub(super) fn deploy<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // Post-Aspidochelone the caller must hold CallFlags.All.
@@ -73,7 +80,7 @@ impl ContractManagement {
         // is the transaction's first signer.
         let sender = engine
             .script_container()
-            .and_then(|container| container.as_any().downcast_ref::<Transaction>())
+            .and_then(|container| container.as_transaction())
             .ok_or_else(|| {
                 CoreError::invalid_operation(
                     "ContractManagement::deploy requires a transaction container",
@@ -178,9 +185,13 @@ impl ContractManagement {
     /// (`Helper.Check` over the final NEF + manifest, name immutable,
     /// `UpdateCounter` capped at u16::MAX and bumped), `Policy.CleanWhitelist`
     /// run, then the `_deploy(data, true)` callback and the `Update` event.
-    pub(super) fn update(
+    pub(super) fn update<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // Post-Aspidochelone the caller must hold CallFlags.All.
@@ -292,12 +303,18 @@ impl ContractManagement {
     /// `ActiveIn` (the HF_Echidna and HF_Faun re-initializations) — every other
     /// initializer is `if (hardfork == ActiveIn)`-gated, making the non-`ActiveIn`
     /// calls no-ops.
-    pub(super) fn initialize_native_for_hardfork(
+    pub(super) fn initialize_native_for_hardfork<P, D, B, C>(
         &self,
-        engine: &mut ApplicationEngine,
-        contract: &dyn NativeContract,
+        engine: &mut ApplicationEngine<P, D, B>,
+        contract: &C,
         hardfork: Hardfork,
-    ) -> CoreResult<()> {
+    ) -> CoreResult<()>
+    where
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+        C: NativeContract<P>,
+    {
         if contract.id() == crate::PolicyContract::ID {
             return crate::PolicyContract::new().initialize_for_hardfork(engine, hardfork);
         }

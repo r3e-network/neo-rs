@@ -1,6 +1,9 @@
 use super::contract_script::{build_dynamic_call_script, emit_contract_call};
 use super::models::{RpcContractState, RpcNep17TokenInfo, RpcNep17Transfers};
-use crate::{ContractClient, RpcClient, RpcClientError, RpcUtility, TransactionManagerFactory};
+use crate::{
+    ContractClient, RpcClient, RpcClientError, RpcObserver, RpcUtility, TracingRpcObserver,
+    TransactionManagerFactory,
+};
 use neo_crypto::ECPoint;
 use neo_execution::Contract;
 use neo_manifest::CallFlags;
@@ -16,18 +19,21 @@ use std::sync::Arc;
 
 /// Call NEP17 methods with RPC API
 /// Matches C# `Nep17API`
-pub struct Nep17Api {
+pub struct Nep17Api<O = TracingRpcObserver> {
     /// Base contract client functionality
-    contract_client: ContractClient,
+    contract_client: ContractClient<O>,
     /// Direct access to RPC client
-    rpc_client: Arc<RpcClient>,
+    rpc_client: Arc<RpcClient<O>>,
 }
 
-impl Nep17Api {
+impl<O> Nep17Api<O>
+where
+    O: RpcObserver,
+{
     /// `Nep17API` Constructor
     /// Matches C# constructor
     #[must_use]
-    pub fn new(rpc_client: Arc<RpcClient>) -> Self {
+    pub fn new(rpc_client: Arc<RpcClient<O>>) -> Self {
         Self {
             contract_client: ContractClient::new(rpc_client.clone()),
             rpc_client,
@@ -36,7 +42,7 @@ impl Nep17Api {
 
     /// Exposes the underlying contract client for advanced scenarios.
     #[must_use]
-    pub const fn contract_client(&self) -> &ContractClient {
+    pub const fn contract_client(&self) -> &ContractClient<O> {
         &self.contract_client
     }
 

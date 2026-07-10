@@ -4,13 +4,13 @@
 //! Plugins (ApplicationLogs, TokensTracker, OracleService) need to consume
 //! the notification and log events emitted by contract execution, so this
 //! type uses the rich [`crate::NotifyEventArgs`] and
-//! [`neo_primitives::LogEventArgs`] structs directly (rather than
+//! [`crate::LogEventArgs`] structs directly (rather than
 //! `serde_json::Value`) so callers can access typed fields like `event_name`,
 //! `state`, `script_hash`,
 //! `script_container`, etc.
 
-use crate::{NotifyEventArgs, Transaction};
-use neo_primitives::{LogEventArgs, TriggerType, UInt160};
+use crate::{LogEventArgs, NotifyEventArgs, Transaction};
+use neo_primitives::{TriggerType, UInt160};
 use neo_vm_rs::StackValue;
 use neo_vm_rs::VmState as VMState;
 

@@ -11,7 +11,6 @@
 
 use std::fmt;
 
-use async_trait::async_trait;
 use neo_error::CoreError;
 use neo_payloads::Block;
 use neo_runtime::BlockOrigin;
@@ -209,28 +208,24 @@ impl StageOutput {
 /// Each stage receives a block and a context, and produces an output
 /// describing what it did. Stages should be idempotent where possible —
 /// re-running a stage on an already-processed block should be a no-op.
-#[async_trait]
 pub trait PipelineStage: Send + Sync + std::fmt::Debug + 'static {
     /// The stage identifier.
     fn id(&self) -> StageId;
 
     /// Execute this stage for the given block.
-    async fn execute(&self, ctx: &StageContext, block: &Block) -> EngineResult<StageOutput>;
+    fn execute(&self, ctx: &StageContext, block: &Block) -> EngineResult<StageOutput>;
 }
 
 /// Validate stage: checks block structure, timestamps, merkle root,
 /// witness scripts, and consensus rules before execution.
-#[async_trait]
 pub trait ValidateStage: PipelineStage {
     /// Validate the block. Returns `Ok` if the block passes all checks.
-    async fn validate(&self, ctx: &StageContext, block: &Block) -> EngineResult<()>;
+    fn validate(&self, ctx: &StageContext, block: &Block) -> EngineResult<()>;
 }
 
 /// Consensus witness stage: verifies that a block header is authorized by the
 /// previous block's `NextConsensus` account.
-#[async_trait]
 pub trait ConsensusWitnessStage: PipelineStage {
     /// Verify the block header's consensus witness.
-    async fn verify_consensus_witness(&self, ctx: &StageContext, block: &Block)
-    -> EngineResult<()>;
+    fn verify_consensus_witness(&self, ctx: &StageContext, block: &Block) -> EngineResult<()>;
 }

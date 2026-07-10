@@ -10,6 +10,7 @@ use neo_manifest::{
     ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
 };
 use neo_native_contracts::{ContractManagement, CryptoLib, NeoToken};
+use neo_payloads::VerifiableContainer;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
@@ -17,12 +18,10 @@ use neo_primitives::{CallFlags, ContractParameterType, FindOptions};
 use neo_primitives::{UInt160, WitnessScope};
 use neo_serialization::BinarySerializer;
 use neo_storage::{StorageItem, StorageKey};
-use neo_wallets::wallet::{Wallet, WalletError, WalletResult};
 use neo_wallets::wallet_helper::WalletAddress as address_helper;
-use neo_wallets::{KeyPair, StandardWalletAccount, WalletAccount};
+use neo_wallets::{KeyPair, Nep6Wallet, Wallet, WalletAccount};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_vm::stack_item::InteropInterface as VmInteropInterface;
 use neo_vm_rs::{ExecutionEngineLimits, OpCode};
 use num_bigint::BigInt;
 use serde_json::{Value, json};
@@ -49,127 +48,6 @@ fn assert_invalid_params_data(err: &crate::server::rpc_exception::RpcException, 
     assert_eq!(err.code(), -32602);
     assert_eq!(err.message(), "Invalid params");
     assert_eq!(err.data(), Some(data));
-}
-
-struct TestWallet {
-    name: String,
-    account: Arc<dyn WalletAccount>,
-}
-
-#[async_trait::async_trait]
-impl Wallet for TestWallet {
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn path(&self) -> Option<&str> {
-        None
-    }
-
-    fn version(&self) -> &neo_wallets::Version {
-        static VERSION: neo_wallets::Version = neo_wallets::Version::new(1, 0, 0);
-        &VERSION
-    }
-
-    async fn change_password(&self, _old: &str, _new: &str) -> WalletResult<bool> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
-
-    fn contains(&self, script_hash: &UInt160) -> bool {
-        &self.account.script_hash() == script_hash
-    }
-
-    async fn create_account(&self, _private_key: &[u8]) -> WalletResult<Arc<dyn WalletAccount>> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
-
-    async fn create_account_with_contract(
-        &self,
-        _contract: Contract,
-        _key_pair: Option<KeyPair>,
-    ) -> WalletResult<Arc<dyn WalletAccount>> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
-
-    async fn create_account_watch_only(
-        &self,
-        _script_hash: UInt160,
-    ) -> WalletResult<Arc<dyn WalletAccount>> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
-
-    async fn delete_account(&self, _script_hash: &UInt160) -> WalletResult<bool> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
-
-    async fn export(&self, _path: &str, _password: &str) -> WalletResult<()> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
-
-    fn account(&self, script_hash: &UInt160) -> Option<Arc<dyn WalletAccount>> {
-        if &self.account.script_hash() == script_hash {
-            Some(Arc::clone(&self.account))
-        } else {
-            None
-        }
-    }
-
-    fn accounts(&self) -> Vec<Arc<dyn WalletAccount>> {
-        vec![Arc::clone(&self.account)]
-    }
-
-    async fn available_balance(&self, _asset_id: &neo_primitives::UInt256) -> WalletResult<i64> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
-
-    async fn unclaimed_gas(&self) -> WalletResult<i64> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
-
-    async fn import_wif(&self, _wif: &str) -> WalletResult<Arc<dyn WalletAccount>> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
-
-    async fn import_nep2(
-        &self,
-        _nep2: &str,
-        _password: &str,
-    ) -> WalletResult<Arc<dyn WalletAccount>> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
-
-    async fn sign(&self, _data: &[u8], _script_hash: &UInt160) -> WalletResult<Vec<u8>> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
-
-    async fn sign_transaction(
-        &self,
-        _transaction: &mut neo_payloads::Transaction,
-    ) -> WalletResult<()> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
-
-    async fn unlock(&self, _password: &str) -> WalletResult<bool> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
-
-    fn lock(&self) {}
-
-    async fn verify_password(&self, _password: &str) -> WalletResult<bool> {
-        Ok(false)
-    }
-
-    async fn save(&self) -> WalletResult<()> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
-
-    fn default_account(&self) -> Option<Arc<dyn WalletAccount>> {
-        Some(Arc::clone(&self.account))
-    }
-
-    async fn set_default_account(&self, _script_hash: &UInt160) -> WalletResult<()> {
-        Err(WalletError::Other("not supported".to_string()))
-    }
 }
 
 fn signature_contract_for_keypair(key_pair: &KeyPair) -> Contract {
@@ -214,12 +92,12 @@ fn deploy_verify_contract(system: &Arc<crate::server::NodeContext>) -> UInt160 {
 
     let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
-        Some(Arc::new(tx)),
+        Some(Arc::new(VerifiableContainer::from(tx))),
         Arc::clone(&snapshot),
         None,
         system.settings().as_ref().clone(),
         50_000_000_000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(system.native_contract_provider()),
     )
     .expect("engine");

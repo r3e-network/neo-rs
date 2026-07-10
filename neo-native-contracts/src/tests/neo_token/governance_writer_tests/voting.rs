@@ -6,8 +6,6 @@ fn vote_assigns_weight_distributes_gas_and_records_target() {
 
     let candidate = candidate_pubkey();
     let voter = UInt160::from_bytes(&[0x07; 20]).unwrap();
-
-    crate::install();
     let cache = DataCache::new(false);
     deploy_native(
         &cache,
@@ -33,7 +31,7 @@ fn vote_assigns_weight_distributes_gas_and_records_target() {
     let mut tx = Transaction::new();
     tx.set_signers(vec![Signer::new(voter, WitnessScope::GLOBAL)]);
     tx.set_witnesses(vec![Witness::empty()]);
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
     let mut builder = ScriptBuilder::new();
     builder.emit_push(&candidate.to_bytes());
     builder.emit_push(&voter.to_array());
@@ -53,7 +51,7 @@ fn vote_assigns_weight_distributes_gas_and_records_target() {
         Some(Block::from_parts(header, vec![])),
         ProtocolSettings::default(),
         2000_00000000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");

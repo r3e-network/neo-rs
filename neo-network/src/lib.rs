@@ -25,10 +25,10 @@ mod download;
 mod errors;
 mod identity;
 mod peers;
-pub mod proto;
+mod proto;
 mod service;
 mod spawn;
-pub mod wire;
+mod wire;
 
 // -----------------------------------------------------------------------------
 // Public re-exports
@@ -45,12 +45,13 @@ pub use peers::{
     ConnectionTimeouts, PeerId, PeerRegistry, connection_timeouts, peer_id, peer_registry,
 };
 pub use service::{
-    BlockSource, BlockSyncMode, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, InboundInventory,
-    InventoryItem, LocalNodeService, NetworkCommand, NetworkEvent, NetworkHandle,
-    RemoteNodeCommand, RemoteNodeHandle, RemoteNodeService, RemoteNodeState, SharedNetworkHandle,
-    SyncTask, SyncTaskKind, TaskId, TaskManagerCommand, TaskManagerHandle, TaskManagerService,
-    block_sync_mode, command, event, handle, local_node, remote_node, task_manager,
+    BlockSource, BlockSyncMode, ConnectedPeer, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY,
+    InboundInventory, InventoryItem, LocalNodeInfo, LocalNodeService, NetworkCommand, NetworkEvent,
+    NetworkHandle, RemoteNodeCommand, RemoteNodeHandle, RemoteNodeService, RemoteNodeState,
+    SharedNetworkHandle, SyncTask, SyncTaskKind, TaskId, TaskManagerCommand, TaskManagerHandle,
+    TaskManagerService,
 };
+pub(crate) use service::{command, event, handle, remote_node};
 pub use wire::{
     Message, MessageCodec, MessageHeader, NetworkMessage, PAYLOAD_MAX_SIZE, ProtocolMessage,
     WireError, WireResult,

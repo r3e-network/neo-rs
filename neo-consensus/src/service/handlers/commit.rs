@@ -6,7 +6,10 @@ use crate::{ConsensusError, ConsensusResult};
 use neo_primitives::UInt256;
 use tracing::{debug, info, warn};
 
-impl ConsensusService {
+impl<S> ConsensusService<S>
+where
+    S: crate::ConsensusSigner,
+{
     /// Handles Commit message.
     ///
     /// This method is `async` for consistency with the other handlers (it is

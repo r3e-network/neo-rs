@@ -8,7 +8,7 @@ use neo_vm_rs::Instruction;
 use neo_vm_rs::OpCode;
 
 /// Registers the slot operation handlers.
-pub fn register_handlers(jump_table: &mut JumpTable) {
+pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
     register_jump_handlers![
         jump_table;
         OpCode::INITSSLOT => init_static_slot,
@@ -68,7 +68,7 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 // Initialization Operations
 // ============================================================================
 
-fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn init_slot<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
 
     if ctx.local_variables().is_some() || ctx.arguments().is_some() {
@@ -110,7 +110,7 @@ fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     Ok(())
 }
 
-fn init_static_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn init_static_slot<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
 
     let static_count = *instruction
@@ -145,20 +145,23 @@ fn init_static_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> 
 // ============================================================================
 
 #[inline]
-fn load_static_field_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
+fn load_static_field_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = ctx.load_static_field(index)?;
     ctx.push(value)
 }
 
 #[inline]
-fn store_static_field_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
+fn store_static_field_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = ctx.pop()?;
     ctx.store_static_field(index, value)
 }
 
-fn load_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn load_static_field<S>(
+    engine: &mut ExecutionEngine<S>,
+    instruction: &Instruction,
+) -> VmResult<()> {
     let index = *instruction
         .operand()
         .first()
@@ -166,7 +169,10 @@ fn load_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) ->
     load_static_field_n(engine, index)
 }
 
-fn store_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn store_static_field<S>(
+    engine: &mut ExecutionEngine<S>,
+    instruction: &Instruction,
+) -> VmResult<()> {
     let index = *instruction
         .operand()
         .first()
@@ -179,20 +185,20 @@ fn store_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) -
 // ============================================================================
 
 #[inline]
-fn load_local_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
+fn load_local_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = ctx.load_local(index)?;
     ctx.push(value)
 }
 
 #[inline]
-fn store_local_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
+fn store_local_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = ctx.pop()?;
     ctx.store_local(index, value)
 }
 
-fn load_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn load_local<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let index = *instruction
         .operand()
         .first()
@@ -200,7 +206,7 @@ fn load_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
     load_local_n(engine, index)
 }
 
-fn store_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn store_local<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let index = *instruction
         .operand()
         .first()
@@ -213,20 +219,20 @@ fn store_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 // ============================================================================
 
 #[inline]
-fn load_argument_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
+fn load_argument_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = ctx.load_argument(index)?;
     ctx.push(value)
 }
 
 #[inline]
-fn store_argument_n(engine: &mut ExecutionEngine, index: usize) -> VmResult<()> {
+fn store_argument_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = ctx.pop()?;
     ctx.store_argument(index, value)
 }
 
-fn load_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn load_argument<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let index = *instruction
         .operand()
         .first()
@@ -234,7 +240,7 @@ fn load_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmR
     load_argument_n(engine, index)
 }
 
-fn store_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn store_argument<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let index = *instruction
         .operand()
         .first()

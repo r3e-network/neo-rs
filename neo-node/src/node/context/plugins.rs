@@ -6,19 +6,24 @@
 
 use std::sync::Arc;
 
-use neo_blockchain::service_context::BlockPersistContext;
+use neo_blockchain::BlockPersistContext;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Block, CommittedHandler, CommittingHandler};
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::store::Store;
+use neo_storage::{CacheRead, DataCache};
+use neo_system::BlockCommitHooks;
 use tracing::warn;
 
-use super::DaemonContext;
+use super::DaemonCommitHooks;
 
-impl<P> DaemonContext<P>
+impl<P, S, L, T> DaemonCommitHooks<P, S, L, T>
 where
     P: NativeContractProvider + 'static,
+    S: Store + 'static,
+    L: Store + 'static,
+    T: Store + 'static,
 {
-    pub(in crate::node) fn block_committed_with_live_tip_and_context(
+    fn block_committed_with_live_tip_and_context(
         &self,
         block: &Block,
         live_tip: u64,
@@ -47,17 +52,18 @@ where
         }
 
         if let Some(application_logs) = application_logs {
-            application_logs.blockchain_committed_handler(self.settings.as_ref(), block);
+            application_logs.blockchain_committed_handler(self.network, block);
         }
         if let Some(tokens_tracker) = tokens_tracker {
-            tokens_tracker.blockchain_committed_handler(self.settings.as_ref(), block);
+            tokens_tracker.blockchain_committed_handler(self.network, block);
         }
     }
 
-    pub(in crate::node) fn block_committing_with_live_tip(
+    #[cfg(test)]
+    pub(in crate::node) fn block_committing_with_live_tip<B: CacheRead>(
         &self,
         block: &Block,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         application_executed_list: &[ApplicationExecuted],
         live_tip: u64,
     ) -> bool {
@@ -70,10 +76,10 @@ where
         )
     }
 
-    pub(in crate::node) fn block_committing_with_live_tip_and_context(
+    fn block_committing_with_live_tip_and_context<B: CacheRead>(
         &self,
         block: &Block,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         application_executed_list: &[ApplicationExecuted],
         live_tip: u64,
         context: BlockPersistContext,
@@ -123,10 +129,10 @@ where
         true
     }
 
-    fn commit_plugin_committing_handlers(
+    fn commit_plugin_committing_handlers<B: CacheRead>(
         &self,
         block: &Block,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         application_executed_list: &[ApplicationExecuted],
     ) {
         let application_logs = self.application_logs_service.as_ref().map(Arc::clone);
@@ -137,7 +143,7 @@ where
 
         if let Some(application_logs) = application_logs {
             application_logs.blockchain_committing_handler(
-                self.settings.as_ref(),
+                self.network,
                 block,
                 snapshot,
                 application_executed_list,
@@ -145,11 +151,64 @@ where
         }
         if let Some(tokens_tracker) = tokens_tracker {
             tokens_tracker.blockchain_committing_handler(
-                self.settings.as_ref(),
+                self.network,
                 block,
                 snapshot,
                 application_executed_list,
             );
         }
+    }
+}
+
+impl<P, S, L, T, B> BlockCommitHooks<B> for DaemonCommitHooks<P, S, L, T>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+    L: Store + 'static,
+    T: Store + 'static,
+    B: CacheRead,
+{
+    fn block_committing(
+        &self,
+        block: &Block,
+        snapshot: &DataCache<B>,
+        application_executed: &[ApplicationExecuted],
+        live_tip: u64,
+        context: BlockPersistContext,
+    ) -> bool {
+        self.block_committing_with_live_tip_and_context(
+            block,
+            snapshot,
+            application_executed,
+            live_tip,
+            context,
+        )
+    }
+
+    fn block_committed(&self, block: &Block, live_tip: u64, context: BlockPersistContext) {
+        self.block_committed_with_live_tip_and_context(block, live_tip, context);
+    }
+
+    fn flush_bulk_sync(&self) -> Result<(), String> {
+        if let Some(state_service) = &self.state_service {
+            state_service
+                .flush_result()
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+
+    fn allows_empty_block_fast_forward(&self) -> bool {
+        self.state_service.is_none()
+            && self.indexer_service.is_none()
+            && self.application_logs_service.is_none()
+            && self.tokens_tracker().is_none()
+    }
+
+    fn allows_empty_block_committing_fast_forward(&self) -> bool {
+        self.state_service.is_some()
+            && self.indexer_service.is_none()
+            && self.application_logs_service.is_none()
+            && self.tokens_tracker().is_none()
     }
 }

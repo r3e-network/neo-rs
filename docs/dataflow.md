@@ -7,46 +7,51 @@ reads it back. Each section pairs a diagram with a short explanation. The
 focus is conceptual; it does not document private functions.
 
 The node is a set of independent async services connected by typed channels.
-There is no actor framework: each service owns a command/event loop, and the
-composition root (`neo-system` / the `neo-node` daemon) wires the channels
-together. The diagrams below name the crate that owns each step.
+There is no actor framework: each service owns a command/event loop.
+`neo-system` owns reusable provider-neutral core composition; the `neo-node`
+process host selects configuration, optional services, networking policy, and
+task supervision. The diagrams below name the crate that owns each step.
 
 ## 1. Node startup and composition
 
-The daemon (`neo-node`) is the composition root. It loads TOML configuration,
-opens storage, builds the blockchain service over a shared store snapshot,
-bootstraps genesis on an empty store, then spawns the P2P, consensus (optional),
-and RPC services and connects them with channels.
+The daemon enters through a staged application lifecycle. `neo-node` loads TOML
+configuration and opens storage; `neo-system::NodeCoreBuilder` constructs the
+canonical core graph; the process host supervises the returned blockchain task,
+adds network/consensus/state-root policy, and finalizes the `Node`. After
+composition, `RunningNode` owns startup imports, live services, and shutdown.
 
 ```mermaid
 flowchart TD
-    A["neo-node: parse CLI + load TOML config"] --> B["derive ProtocolSettings<br/>(MainNet / TestNet preset + overrides)"]
-    B --> C["open Store<br/>MDBX / RocksDB / in-memory (neo-storage)"]
-    C --> D["StoreCache + shared DataCache snapshot"]
-    D --> E["read durable tip:<br/>LedgerContract.current_index"]
-    E --> F["build BlockchainService<br/>(neo-blockchain) + spawn run loop"]
-    F --> G["BlockchainHandle::initialize:<br/>persist genesis if store empty"]
-    G --> H["spawn LocalNodeService (neo-network)<br/>+ inventory sink + BlockSource"]
+    A["NodeCommand: parse CLI + load TOML config"] --> B["derive ProtocolSettings<br/>(MainNet / TestNet preset + overrides)"]
+    B --> C["open Store + optional services<br/>(neo-node policy)"]
+    C --> D["NodeCoreBuilder&lt;P,S,H&gt;<br/>(neo-system)"]
+    D --> E["canonical StoreCache/snapshot<br/>mempool + caches + ledger context"]
+    E --> F["NodeCoreLaunch:<br/>NodeCore + BlockchainTask"]
+    F --> G["supervise BlockchainTask<br/>initialize genesis when local"]
+    G --> H["build LocalNodeService (neo-network)<br/>+ inventory sink + BlockSource"]
     H --> I{"[consensus].enabled<br/>and key in validator set?"}
     I -- yes --> J["spawn dBFT driver (neo-consensus)"]
     I -- no --> K["relay-only"]
-    J --> L["advertise durable tip to peers<br/>(sync cursor = tip + 1)"]
+    J --> L["NodeCore::into_node(network)<br/>advertise durable tip"]
     K --> L
-    L --> M{"[rpc].enabled?"}
-    M -- yes --> N["start jsonrpsee RPC server (neo-rpc)<br/>over Arc<Node>"]
-    M -- no --> O["run until Ctrl-C"]
-    N --> O
+    L --> M["RunningNode: startup import<br/>then live services"]
+    M --> N{"[rpc].enabled?"}
+    N -- yes --> P["project RpcServices into NodeContext<br/>start jsonrpsee RPC server (neo-rpc)"]
+    N -- no --> O["run until shutdown trigger"]
+    P --> O
 ```
 
 Two startup details matter for correctness:
 
-- **Shared snapshot.** A single `DataCache` over the `StoreCache` is shared by
-  the blockchain service (which writes blocks), the RPC `BlockSource`, and the
-  mempool's verification view, so reads observe the live chain state.
+- **Coherent core graph.** `NodeCoreBuilder` creates one `StoreCache` snapshot,
+  mempool, header cache, ledger context, native provider, and blockchain
+  service. The blockchain context and local P2P `BlockSource` share that
+  canonical snapshot; state-dependent mempool admission goes through the same
+  blockchain/provider boundaries.
 - **Restart resume.** The durable tip is read from the store before P2P starts.
   The in-memory ledger tip and the advertised height are seeded from it, so a
   restarted node requests blocks from `tip + 1` instead of re-syncing from
-  genesis (`neo-node/src/node.rs`).
+  genesis (`neo-system::NodeCoreBuilder`).
 
 ## 2. Block ingestion
 
@@ -75,7 +80,7 @@ import-stage checkpoints through
 `neo_runtime::sync_pipeline::{CommitPolicy, SyncStageCheckpointStore}`. The
 node-level `neo_system::SyncImportPipeline` now composes the queue and durable
 checkpoint provider over the same blockchain and storage handles used by the
-rest of the node and is registered in the node `ServiceRegistry`.
+rest of the node and is owned directly by `neo_system::Node`.
 `neo_system::SyncDownloadImportDriver` drains any `BlockDownloader` stream into
 that handle and stops on downloader, contiguity, partial-import, or checkpoint
 errors. Production local-ledger node startup now feeds it from the
@@ -239,7 +244,7 @@ sequenceDiagram
     participant JR as jsonrpsee transport (neo-rpc)
     participant D as dispatch (resolve handler)
     participant H as handler group
-    participant N as Arc<Node> (neo-system)
+    participant N as Arc<NodeContext> (neo-rpc)
 
     Client->>JR: HTTP/WS JSON-RPC request
     JR->>D: method + params
@@ -256,13 +261,14 @@ sequenceDiagram
 ```
 
 Handlers are grouped by domain and registered at startup
-(`neo-node/src/node.rs` calls `register_handlers` for blockchain, node, state,
+(`neo-node::node::rpc_runtime` calls `register_handlers` for blockchain, node, state,
 wallet, utilities, smart-contract, plus the optional application-logs,
 tokens-tracker, and oracle groups). The dispatcher catches handler panics and
 applies the configured `UnhandledExceptionPolicy`
-(`neo-rpc/src/server/dispatch.rs`). Read handlers query the shared store
-snapshot via the native `LedgerContract` reader and the mempool; relay handlers
-forward to the blockchain service over its command channel.
+(`neo-rpc::server::dispatch`). `NodeContext` carries core typed handles plus an
+immutable `RpcServices<S>` bundle with named optional state, indexer,
+application-log, and token-tracker services. Read handlers query those handles;
+relay handlers forward to the blockchain service over its command channel.
 
 | Handler group | Example methods | Reads from |
 |---------------|-----------------|------------|

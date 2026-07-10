@@ -1,5 +1,5 @@
 use super::store::MdbxStore;
-use crate::persistence::{storage::StorageConfig, store::Store, store_provider::StoreProvider};
+use crate::persistence::{storage::StorageConfig, store_provider::StoreProvider};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -103,7 +103,7 @@ impl MdbxStoreProvider {
         )
     }
 
-    /// Opens a store without erasing it behind `dyn Store`.
+    /// Opens a store without erasing it behind a `Store` trait object.
     pub fn get_mdbx_store<P>(&self, path: P) -> crate::StorageResult<MdbxStore>
     where
         P: AsRef<Path>,
@@ -111,31 +111,27 @@ impl MdbxStoreProvider {
         self.build_store(path.as_ref())
     }
 
-    /// Opens a store erased behind the common store trait.
-    pub fn get_store<P>(&self, path: P) -> crate::StorageResult<Arc<dyn Store>>
+    /// Opens a shared MDBX store.
+    pub fn get_store<P>(&self, path: P) -> crate::StorageResult<Arc<MdbxStore>>
     where
         P: AsRef<Path>,
     {
-        self.build_store(path.as_ref())
-            .map(|store| Arc::new(store) as Arc<dyn Store>)
+        self.build_store(path.as_ref()).map(Arc::new)
     }
 }
 
 impl StoreProvider for MdbxStoreProvider {
+    type Store = MdbxStore;
+
     fn name(&self) -> &str {
         "mdbx"
     }
 
-    fn get_store(&self, path: &Path) -> crate::StorageResult<Arc<dyn Store>> {
-        self.build_store(path)
-            .map(|store| Arc::new(store) as Arc<dyn Store>)
+    fn get_store(&self, path: &Path) -> crate::StorageResult<Arc<MdbxStore>> {
+        self.build_store(path).map(Arc::new)
     }
 
-    fn get_store_with_config(&self, config: StorageConfig) -> crate::StorageResult<Arc<dyn Store>> {
+    fn get_store_with_config(&self, config: StorageConfig) -> crate::StorageResult<Arc<MdbxStore>> {
         Self::new(config).get_store(Path::new(""))
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }

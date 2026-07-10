@@ -516,7 +516,7 @@ fn echidna_policy_settings_require_initialized_storage() {
         None,
         settings.clone(),
         0,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");

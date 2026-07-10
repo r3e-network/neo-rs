@@ -182,7 +182,10 @@ impl Inventory for ExtensiblePayload {
 impl crate::VerifiableExt for ExtensiblePayload {
     /// C# `ExtensiblePayload.GetScriptHashesForVerifying`: the single hash to
     /// verify is the payload's `Sender`.
-    fn script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
+    fn script_hashes_for_verifying<B: neo_storage::CacheRead>(
+        &self,
+        _snapshot: &DataCache<B>,
+    ) -> Vec<UInt160> {
         vec![self.sender]
     }
 
@@ -194,8 +197,10 @@ impl crate::VerifiableExt for ExtensiblePayload {
         vec![&mut self.witness]
     }
 
-    fn to_verifiable_container(&self) -> Option<std::sync::Arc<dyn neo_primitives::Verifiable>> {
-        Some(std::sync::Arc::new(self.clone()))
+    fn to_verifiable_container(&self) -> Option<std::sync::Arc<crate::VerifiableContainer>> {
+        Some(std::sync::Arc::new(crate::VerifiableContainer::from(
+            self.clone(),
+        )))
     }
 }
 
@@ -259,10 +264,6 @@ impl neo_primitives::Verifiable for ExtensiblePayload {
             return Vec::new();
         }
         writer.into_bytes()
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 
     fn verify(&self) -> bool {

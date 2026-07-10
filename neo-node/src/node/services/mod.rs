@@ -11,19 +11,23 @@
 //! ## Contents
 //!
 //! - `read_side`: indexer, application logs, and token-tracker construction.
+//! - `handles`: Typed optional-service ownership passed to daemon consumers.
 //! - `state`: StateService MPT store and commit-handler construction.
 //! - `store`: service-store opening and fast-sync backend mode.
 
 use std::sync::Arc;
 
+use neo_storage::persistence::providers::RuntimeStore;
 use tracing::info;
 
 use super::config::{NodeConfig, service_store_provider};
 
+mod handles;
 mod read_side;
 mod state;
 mod store;
 
+pub(super) use handles::NodeServiceHandles;
 use read_side::{ReadSideServices, TokensTrackerRuntime};
 use state::StateServiceRuntime;
 use store::ServiceStore;
@@ -31,14 +35,14 @@ use store::ServiceStore;
 pub(in crate::node) use store::open_service_store_with_storage_config;
 
 pub(super) struct OperationalServices {
-    pub(super) state_store: Option<Arc<neo_state_service::StateStore>>,
+    pub(super) state_store: Option<Arc<neo_state_service::StateStore<RuntimeStore>>>,
     pub(super) state_service:
-        Option<Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers>>,
+        Option<Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers<RuntimeStore>>>,
     pub(super) indexer_service: Option<Arc<neo_indexer::IndexerService>>,
     pub(super) application_logs_service:
-        Option<Arc<neo_rpc::application_logs::ApplicationLogsService>>,
+        Option<Arc<neo_rpc::application_logs::ApplicationLogsService<RuntimeStore>>>,
     pub(super) tokens_tracker_service:
-        Option<Arc<neo_rpc::plugins::tokens_tracker::TokensTrackerService>>,
+        Option<Arc<neo_rpc::plugins::tokens_tracker::TokensTrackerService<RuntimeStore>>>,
     pub(super) tokens_tracker_runtime: Option<TokensTrackerRuntime>,
     pub(super) durable_stores: Vec<ServiceStore>,
 }

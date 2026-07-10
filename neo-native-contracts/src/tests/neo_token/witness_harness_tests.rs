@@ -1,9 +1,10 @@
 use neo_config::ProtocolSettings;
 use neo_execution::ApplicationEngine;
+use neo_payloads::VerifiableContainer;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
-use neo_primitives::{CallFlags, TriggerType, UInt160, Verifiable, WitnessScope};
+use neo_primitives::{CallFlags, TriggerType, UInt160, WitnessScope};
 use neo_storage::DataCache;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::VmState;
@@ -31,7 +32,7 @@ fn run_signed(script: Vec<u8>, signers: &[UInt160]) -> (VmState, bool) {
             .collect(),
     );
     tx.set_witnesses(signers.iter().map(|_| Witness::empty()).collect());
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
 
     let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
@@ -40,7 +41,7 @@ fn run_signed(script: Vec<u8>, signers: &[UInt160]) -> (VmState, bool) {
         None,
         ProtocolSettings::default(),
         10_000_000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");

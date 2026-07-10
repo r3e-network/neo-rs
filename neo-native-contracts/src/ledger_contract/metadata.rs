@@ -6,9 +6,13 @@ use neo_primitives::{CallFlags, ContractParameterType};
 use super::LedgerContract;
 use crate::support::invoke::{NativeMethodBinding, method_metadata};
 
-pub(super) static LEDGER_CONTRACT_METHOD_BINDINGS: LazyLock<
-    Vec<NativeMethodBinding<LedgerContract>>,
-> = LazyLock::new(|| {
+pub(super) fn ledger_contract_method_bindings<P, D, B>()
+-> Vec<NativeMethodBinding<LedgerContract, P, D, B>>
+where
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+    D: neo_execution::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let read_states = CallFlags::READ_STATES.bits();
     vec![
         NativeMethodBinding::new(
@@ -113,7 +117,12 @@ pub(super) static LEDGER_CONTRACT_METHOD_BINDINGS: LazyLock<
             LedgerContract::invoke_get_transaction_from_block,
         ),
     ]
-});
+}
 
-pub(super) static LEDGER_CONTRACT_METHODS: LazyLock<Vec<NativeMethod>> =
-    LazyLock::new(|| method_metadata(&LEDGER_CONTRACT_METHOD_BINDINGS));
+pub(super) static LEDGER_CONTRACT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
+    method_metadata(&ledger_contract_method_bindings::<
+        neo_execution::native_contract_provider::NoNativeContractProvider,
+        neo_execution::NoDiagnostic,
+        neo_storage::EmptyCacheBacking,
+    >())
+});

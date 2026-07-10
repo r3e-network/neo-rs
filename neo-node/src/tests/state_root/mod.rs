@@ -120,12 +120,20 @@ fn sender_rotates_backward_with_each_retry() {
 fn driver_verifies_signed_roots_with_explicit_native_provider() {
     let source = include_str!("../../state_root/driver.rs");
     assert!(
-        source.contains("pub(super) struct StateRootDriver<P>"),
-        "StateRootDriver must stay generic over the native provider captured at node startup"
+        source.contains("pub(super) struct StateRootDriver<"),
+        "StateRootDriver must stay generic over node-composed dependencies"
+    );
+    assert!(
+        source.contains("C: Store"),
+        "StateRootDriver must keep the chain store generic instead of hardcoding erased Store trait object"
     );
     assert!(
         source.contains("native_contract_provider: Arc<P>"),
         "StateRootDriver must own the concrete provider type instead of erasing it behind dyn"
+    );
+    assert!(
+        source.contains("store: Arc<C>"),
+        "StateRootDriver must own the concrete chain store type instead of erasing it behind dyn"
     );
     assert!(
         source.contains("verify_state_root_with_native_provider"),
@@ -158,8 +166,8 @@ fn driver_verifies_signed_roots_with_explicit_native_provider() {
         "state-root verification should adapt the node-composed native provider"
     );
     assert!(
-        verifier.contains("get_native_contract_by_name(\"RoleManagement\")"),
-        "state-root verification should resolve RoleManagement through the explicit native provider"
+        verifier.contains(".state_validators(snapshot, index)"),
+        "state-root verification should read StateValidator designations through the explicit native provider capability"
     );
     assert!(!verifier.contains("trait StateRootNativeProviderFactory"));
     assert!(!verifier.contains("struct NativeStateRootProviderFactory"));

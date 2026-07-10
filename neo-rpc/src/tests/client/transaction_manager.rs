@@ -2,9 +2,6 @@ use super::*;
 use mockito::{Matcher, Server};
 use neo_config::ProtocolSettings;
 use neo_primitives::WitnessScope;
-// `invocation_script`/`verification_script` on `Witness` resolve through
-// the `neo_primitives::Witness` trait.
-use neo_primitives::Witness as _;
 use neo_serialization::json::{JArray, JObject, JToken};
 use reqwest::Url;
 use std::net::TcpListener;

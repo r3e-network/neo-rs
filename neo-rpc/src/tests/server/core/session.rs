@@ -3,9 +3,8 @@ use neo_config::ProtocolSettings;
 use neo_execution::iterators::{IteratorInterop, StorageIterator};
 use neo_primitives::FindOptions;
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm::stack_item::{InteropInterface as VmInteropInterface, StackItem};
+use neo_vm::stack_item::StackItem;
 use neo_vm_rs::{OpCode, VmState};
-use std::sync::Arc;
 
 #[test]
 fn server_context_engine_paths_use_explicit_native_provider() {
@@ -47,7 +46,7 @@ fn server_context_engine_paths_use_explicit_native_provider() {
     for (name, source) in sources {
         assert!(
             source.contains("new_with_shared_block_and_native_contract_provider"),
-            "{name} should construct ApplicationEngine with an explicit native provider"
+            "{name} should construct ApplicationEngine with the typed native provider"
         );
         assert!(
             source.contains("native_contract_provider"),
@@ -295,8 +294,8 @@ fn rpc_policy_native_providers_share_adapter_helper() {
             "{name} Policy provider should use the shared native-provider adapter"
         );
         assert!(
-            source.contains(".with_policy("),
-            "{name} Policy provider should use the shared Policy adapter method"
+            !source.contains(".with_policy("),
+            "{name} Policy provider should use explicit NativeContractProvider capability methods"
         );
         assert!(
             !source.contains("PolicyContract"),
@@ -308,7 +307,7 @@ fn rpc_policy_native_providers_share_adapter_helper() {
         );
         assert!(
             !source.contains("downcast_ref::<"),
-            "{name} Policy provider should not duplicate native-contract downcasting"
+            "{name} Policy provider should not downcast native contracts for Policy reads"
         );
     }
 }
@@ -323,8 +322,9 @@ fn rpc_session_policy_reads_use_composed_native_provider() {
         "session native provider should adapt the composition-root provider through the shared adapter"
     );
     assert!(
-        provider.contains(".with_policy("),
-        "session native provider should downcast through the shared native provider adapter"
+        provider.contains(".max_valid_until_block_increment(")
+            && provider.contains(".milliseconds_per_block("),
+        "session native provider should call explicit Policy capabilities on the shared adapter"
     );
     assert!(
         !provider.contains("PolicyContract::new()"),
@@ -380,8 +380,8 @@ fn smart_contract_wallet_policy_reads_use_composed_native_provider() {
         "smart-contract native provider should adapt the composition-root provider through the shared adapter"
     );
     assert!(
-        provider.contains(".with_policy("),
-        "smart-contract native provider should downcast through the shared native provider adapter"
+        provider.contains(".max_valid_until_block_increment("),
+        "smart-contract native provider should call explicit Policy capabilities on the shared adapter"
     );
     assert!(
         !provider.contains("PolicyContract::new()"),
@@ -418,8 +418,8 @@ fn wallet_compat_policy_reads_use_composed_native_provider() {
         "wallet-compat native provider should adapt the composition-root provider through the shared adapter"
     );
     assert!(
-        provider.contains(".with_policy("),
-        "wallet-compat native provider should downcast through the shared native provider adapter"
+        provider.contains(".exec_fee_factor(") && provider.contains(".fee_per_byte("),
+        "wallet-compat native provider should call explicit Policy capabilities on the shared adapter"
     );
     assert!(
         !provider.contains("PolicyContract::new()"),
@@ -456,8 +456,8 @@ fn rpc_wallet_policy_reads_use_composed_native_provider() {
         "wallet native provider should adapt the composition-root provider through the shared adapter"
     );
     assert!(
-        provider.contains(".with_policy("),
-        "wallet native provider should downcast through the shared native provider adapter"
+        provider.contains(".fee_per_byte("),
+        "wallet native provider should call explicit Policy capabilities on the shared adapter"
     );
     assert!(
         !provider.contains("PolicyContract::new()"),
@@ -698,8 +698,7 @@ async fn session_valid_until_block_uses_policy_aware_increment() {
     let engine = session.engine();
     let container = engine.script_container().expect("tx container present");
     let tx = container
-        .as_any()
-        .downcast_ref::<neo_payloads::transaction::Transaction>()
+        .as_transaction()
         .expect("container is a transaction");
 
     // current height (genesis) = 0, so ValidUntilBlock = 0 + increment.
@@ -711,8 +710,8 @@ async fn session_registers_and_traverses_storage_iterator() {
     let settings = ProtocolSettings::default();
     let system = crate::server::test_support::test_system(settings);
     let session = Session::new(
-        system.clone(), // Arc<NodeContext> coerced to Arc<dyn StoreProvider>
-        system.clone(), // Arc<NodeContext> coerced to Arc<dyn ConfigProvider>
+        system.clone(),
+        system.clone(),
         system.native_contract_provider(),
         vec![OpCode::RET.byte()],
         None,
@@ -740,7 +739,7 @@ async fn session_registers_and_traverses_storage_iterator() {
             .expect("store iterator")
     };
 
-    let interop = Arc::new(IteratorInterop::new(iterator_id)) as Arc<dyn VmInteropInterface>;
+    let interop = IteratorInterop::iterator(iterator_id);
     let uuid_first = session
         .register_iterator_interface(&interop)
         .expect("iterator registered");

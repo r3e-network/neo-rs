@@ -10,18 +10,16 @@
 
 use std::sync::Arc;
 
-use neo_blockchain::service::{BlockchainService, MempoolLike};
-use neo_blockchain::service_context::SystemContext;
+use neo_blockchain::{BlockchainService, MempoolLike, SystemContext};
 use neo_blockchain::{HeaderCache, LedgerContext};
 use neo_config::ProtocolSettings;
-use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
 use neo_primitives::UInt160;
 use neo_primitives::verify_result::VerifyResult;
-use neo_storage::persistence::StoreCache;
-use neo_storage::persistence::providers::memory_store::MemoryStore;
+use neo_storage::persistence::providers::{MemoryStore, RuntimeStore};
 use neo_storage::persistence::store::Store;
+use neo_storage::persistence::{StoreCache, StoreCacheBacking};
 use neo_storage::{StorageItem, StorageKey};
 use neo_system::Node;
 use num_bigint::BigInt;
@@ -30,9 +28,9 @@ use parking_lot::Mutex;
 /// Minimal [`SystemContext`] for the fixture blockchain service.
 struct FixtureContext {
     settings: Arc<ProtocolSettings>,
-    snapshot: Arc<neo_storage::persistence::DataCache>,
-    store_cache: Mutex<StoreCache>,
-    native_contract_provider: Arc<dyn NativeContractProvider>,
+    snapshot: Arc<neo_storage::persistence::StoreDataCache<MemoryStore>>,
+    store_cache: Mutex<StoreCache<MemoryStore>>,
+    native_contract_provider: Arc<neo_native_contracts::StandardNativeProvider>,
 }
 
 impl std::fmt::Debug for FixtureContext {
@@ -44,6 +42,9 @@ impl std::fmt::Debug for FixtureContext {
 }
 
 impl SystemContext for FixtureContext {
+    type NativeProvider = neo_native_contracts::StandardNativeProvider;
+    type CacheBacking = StoreCacheBacking<MemoryStore>;
+
     fn settings(&self) -> Arc<ProtocolSettings> {
         Arc::clone(&self.settings)
     }
@@ -54,11 +55,13 @@ impl SystemContext for FixtureContext {
             .unwrap_or(0)
     }
 
-    fn store_snapshot(&self) -> Option<Arc<neo_storage::persistence::DataCache>> {
+    fn store_snapshot(
+        &self,
+    ) -> Option<Arc<neo_storage::persistence::DataCache<Self::CacheBacking>>> {
         Some(Arc::clone(&self.snapshot))
     }
 
-    fn native_contract_provider(&self) -> Option<Arc<dyn NativeContractProvider>> {
+    fn native_contract_provider(&self) -> Option<Arc<Self::NativeProvider>> {
         Some(Arc::clone(&self.native_contract_provider))
     }
 
@@ -81,7 +84,7 @@ impl SystemContext for FixtureContext {
 /// local to the node's shared pool/store view.
 struct NodeMempoolAdapter {
     pool: Arc<MemoryPool>,
-    store: Arc<dyn Store>,
+    store: Arc<MemoryStore>,
 }
 
 impl std::fmt::Debug for NodeMempoolAdapter {
@@ -93,10 +96,10 @@ impl std::fmt::Debug for NodeMempoolAdapter {
 }
 
 impl MempoolLike for NodeMempoolAdapter {
-    fn try_add(
+    fn try_add<B: neo_storage::CacheRead>(
         &self,
         tx: &neo_payloads::Transaction,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _settings: &ProtocolSettings,
     ) -> VerifyResult {
         let hash = tx.hash();
@@ -105,7 +108,7 @@ impl MempoolLike for NodeMempoolAdapter {
         if self.pool.contains(&hash) {
             return VerifyResult::AlreadyInPool;
         }
-        let store = StoreCache::new_from_store(Arc::clone(&self.store), true);
+        let store = StoreCache::<MemoryStore>::new_from_store(Arc::clone(&self.store), true);
         match neo_native_contracts::LedgerContract::new()
             .contains_transaction(store.data_cache(), &hash)
         {
@@ -116,10 +119,10 @@ impl MempoolLike for NodeMempoolAdapter {
         self.pool.try_add(tx.clone(), store.data_cache())
     }
 
-    fn try_add_cached(
+    fn try_add_cached<B: neo_storage::CacheRead>(
         &self,
         tx: &neo_payloads::Transaction,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _settings: &ProtocolSettings,
         cached_state_independent: Option<VerifyResult>,
     ) -> VerifyResult {
@@ -127,7 +130,7 @@ impl MempoolLike for NodeMempoolAdapter {
         if self.pool.contains(&hash) {
             return VerifyResult::AlreadyInPool;
         }
-        let store = StoreCache::new_from_store(Arc::clone(&self.store), true);
+        let store = StoreCache::<MemoryStore>::new_from_store(Arc::clone(&self.store), true);
         match neo_native_contracts::LedgerContract::new()
             .contains_transaction(store.data_cache(), &hash)
         {
@@ -147,17 +150,20 @@ impl MempoolLike for NodeMempoolAdapter {
 /// round-trips resolve; outside a runtime the service is dropped,
 /// which makes handle sends fail fast instead of hanging — the
 /// synchronous tests never exercise the relay path.
-pub(crate) fn test_system(settings: ProtocolSettings) -> Arc<crate::server::NodeContext> {
+pub(crate) fn test_system_with_services(
+    settings: ProtocolSettings,
+    services: crate::server::RpcServices<RuntimeStore>,
+) -> Arc<crate::server::NodeContext> {
     let settings = Arc::new(settings);
-    let storage: Arc<dyn Store> = Arc::new(MemoryStore::new());
-    let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new())
-        as Arc<dyn NativeContractProvider>;
+    let memory_store: Arc<MemoryStore> = Arc::new(MemoryStore::new());
+    let storage: Arc<RuntimeStore> = Arc::new(RuntimeStore::Memory(memory_store.as_ref().clone()));
+    let native_contract_provider = Arc::new(neo_native_contracts::StandardNativeProvider::new());
     let mempool = Arc::new(MemoryPool::new_with_native_contract_provider(
         &settings,
         Arc::clone(&native_contract_provider),
     ));
     let header_cache = Arc::new(HeaderCache::default());
-    let store_cache = StoreCache::new_from_store(Arc::clone(&storage), false);
+    let store_cache = StoreCache::<MemoryStore>::new_from_store(Arc::clone(&memory_store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
 
     let system_ctx = Arc::new(FixtureContext {
@@ -168,7 +174,7 @@ pub(crate) fn test_system(settings: ProtocolSettings) -> Arc<crate::server::Node
     });
     let mempool_like = Arc::new(NodeMempoolAdapter {
         pool: Arc::clone(&mempool),
-        store: Arc::clone(&storage),
+        store: Arc::clone(&memory_store),
     });
     let (service, blockchain) = BlockchainService::with_defaults(
         system_ctx,
@@ -196,15 +202,19 @@ pub(crate) fn test_system(settings: ProtocolSettings) -> Arc<crate::server::Node
     seed_native_contract_records(&node);
     seed_genesis_state(&node);
     Arc::new(crate::server::NodeContext::from_parts(
-        Arc::clone(&node.settings),
-        Arc::clone(&node.storage),
-        node.blockchain.clone(),
-        node.network.clone(),
-        Arc::clone(&node.mempool),
-        Arc::clone(&node.header_cache),
-        node.services.clone(),
-        Arc::clone(&node.native_contract_provider),
+        node.settings(),
+        node.storage(),
+        node.blockchain(),
+        node.network(),
+        node.mempool(),
+        node.header_cache(),
+        services,
+        node.native_contract_provider(),
     ))
+}
+
+pub(crate) fn test_system(settings: ProtocolSettings) -> Arc<crate::server::NodeContext> {
+    test_system_with_services(settings, crate::server::RpcServices::new())
 }
 
 /// `ContractManagement.PREFIX_CONTRACT` — the per-contract record
@@ -241,7 +251,10 @@ const POLICY_DEFAULT_STORAGE_PRICE: i64 = 100_000;
 /// `System.Contract.Call` probes and `getcontractstate` queries can
 /// resolve the natives (genesis performs these deployments on a real
 /// chain).
-fn seed_native_contract_records(node: &Node) {
+fn seed_native_contract_records<S>(node: &Node<neo_native_contracts::StandardNativeProvider, S>)
+where
+    S: Store + 'static,
+{
     let settings = node.settings();
     let mut store = node.store_cache();
     for contract in neo_native_contracts::standard_native_contracts() {
@@ -353,7 +366,10 @@ fn genesis_header(settings: &ProtocolSettings) -> neo_payloads::Header {
 /// test observe post-genesis chain state. Every record format is the
 /// byte-exact write counterpart of the corresponding
 /// `neo-native-contracts` reader.
-fn seed_genesis_state(node: &Node) {
+fn seed_genesis_state<S>(node: &Node<neo_native_contracts::StandardNativeProvider, S>)
+where
+    S: Store + 'static,
+{
     use neo_io::Serializable;
     use neo_vm::StackItem;
 
@@ -530,7 +546,10 @@ fn seed_genesis_state(node: &Node) {
 /// the byte-exact NEP-17 account-state record the native `balanceOf`
 /// reads: a `BinarySerializer`-encoded `Struct { Integer(balance) }`
 /// under `GasToken::ID` / `[PREFIX_ACCOUNT | account]`.
-pub(crate) fn seed_gas_balance(store: &mut StoreCache, account: &UInt160, amount: BigInt) {
+pub(crate) fn seed_gas_balance<S>(store: &mut StoreCache<S>, account: &UInt160, amount: BigInt)
+where
+    S: Store,
+{
     let state = neo_vm::StackItem::from_struct(vec![neo_vm::StackItem::from_int(amount)]);
     let bytes = neo_serialization::BinarySerializer::serialize(
         &state,

@@ -4,7 +4,6 @@
 //! This module owns the narrow domain trait that higher layers should depend
 //! on when they only need to submit blocks to the canonical import path.
 
-use async_trait::async_trait;
 use neo_payloads::Block;
 use neo_primitives::UInt256;
 use serde::{Deserialize, Serialize};
@@ -97,33 +96,38 @@ impl BlockBatchImportOutcome {
 /// validation, execution, native-persist, state-root, and durable-store path.
 /// This keeps consensus, P2P sync, fast-sync replay, and RPC submission from
 /// growing separate block acceptance rules.
-#[async_trait]
 pub trait BlockImport: Service {
     /// Cheap preflight for a block before committing to the full import path.
-    async fn check(&self, block: &Block) -> Result<(), ServiceError>;
+    fn check(
+        &self,
+        block: &Block,
+    ) -> impl std::future::Future<Output = Result<(), ServiceError>> + Send;
 
     /// Submit one block to the canonical import path.
-    async fn import(
+    fn import(
         &self,
         block: Block,
         origin: BlockOrigin,
-    ) -> Result<BlockImportOutcome, ServiceError>;
+    ) -> impl std::future::Future<Output = Result<BlockImportOutcome, ServiceError>> + Send;
 
     /// Submit a consecutive batch to the canonical import path.
-    async fn import_many(
+    fn import_many(
         &self,
         blocks: Vec<Block>,
         origin: BlockOrigin,
-    ) -> Result<BlockBatchImportOutcome, ServiceError> {
-        let mut processed = 0;
-        for block in blocks {
-            match self.import(block, origin).await? {
-                BlockImportOutcome::Imported(_) | BlockImportOutcome::NotImported { .. } => {
-                    processed += 1;
+    ) -> impl std::future::Future<Output = Result<BlockBatchImportOutcome, ServiceError>> + Send
+    {
+        async move {
+            let mut processed = 0;
+            for block in blocks {
+                match self.import(block, origin).await? {
+                    BlockImportOutcome::Imported(_) | BlockImportOutcome::NotImported { .. } => {
+                        processed += 1;
+                    }
                 }
             }
+            Ok(BlockBatchImportOutcome::new(processed))
         }
-        Ok(BlockBatchImportOutcome::new(processed))
     }
 }
 
@@ -133,14 +137,13 @@ pub trait BlockImport: Service {
 /// preverification before forwarding to the canonical [`BlockImport`] chain.
 /// They must preserve the input block order when they call the import path and
 /// must skip import entirely if preflight fails.
-#[async_trait]
 pub trait ImportQueue: Service {
     /// Push a batch of candidate blocks toward the canonical import path.
-    async fn push_blocks(
+    fn push_blocks(
         &self,
         blocks: Vec<Block>,
         origin: BlockOrigin,
-    ) -> ServiceResult<BlockBatchImportOutcome>;
+    ) -> impl std::future::Future<Output = ServiceResult<BlockBatchImportOutcome>> + Send;
 }
 
 /// Bounded preverification queue in front of the canonical block-import path.
@@ -150,14 +153,14 @@ pub trait ImportQueue: Service {
 /// concurrent [`BlockImport::check`] calls and then hands the original
 /// canonical-order batch to [`BlockImport::import_many`].
 #[derive(Debug)]
-pub struct BlockImportQueue<I: BlockImport + ?Sized> {
+pub struct BlockImportQueue<I: BlockImport> {
     importer: Arc<I>,
     max_concurrency: usize,
 }
 
 impl<I> BlockImportQueue<I>
 where
-    I: BlockImport + ?Sized,
+    I: BlockImport,
 {
     /// Create an import queue over `importer`.
     ///
@@ -255,17 +258,16 @@ where
 
 impl<I> Service for BlockImportQueue<I>
 where
-    I: BlockImport + ?Sized,
+    I: BlockImport,
 {
     fn name(&self) -> &str {
         "BlockImportQueue"
     }
 }
 
-#[async_trait]
 impl<I> ImportQueue for BlockImportQueue<I>
 where
-    I: BlockImport + ?Sized,
+    I: BlockImport,
 {
     /// Validate every block, then import the original ordered batch.
     ///
@@ -273,12 +275,12 @@ where
     /// canonical persistence separated: out-of-order downloader work can be
     /// parallel, while state mutation still occurs through one deterministic
     /// ordered path.
-    async fn push_blocks(
+    fn push_blocks(
         &self,
         blocks: Vec<Block>,
         origin: BlockOrigin,
-    ) -> ServiceResult<BlockBatchImportOutcome> {
-        self.preverify_and_import(blocks, origin).await
+    ) -> impl std::future::Future<Output = ServiceResult<BlockBatchImportOutcome>> + Send {
+        self.preverify_and_import(blocks, origin)
     }
 }
 

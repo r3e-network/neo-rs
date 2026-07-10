@@ -4,7 +4,7 @@
 
 use super::{ExecutionEngine, VmError, VmResult};
 
-impl ExecutionEngine {
+impl<S> ExecutionEngine<S> {
     /// Executes a jump to the specified absolute position in the current script.
     ///
     /// # Arguments
@@ -47,7 +47,7 @@ impl ExecutionEngine {
 
         let new_position = (current_ip as i64)
             .checked_add(i64::from(offset))
-            .ok_or_else(|| VmError::InvalidJump(offset))?;
+            .ok_or(VmError::InvalidJump(offset))?;
 
         if new_position < 0 || new_position > i64::from(i32::MAX) {
             return Err(VmError::InvalidJump(offset));

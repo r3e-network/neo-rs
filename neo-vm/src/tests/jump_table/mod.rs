@@ -16,7 +16,7 @@ use super::*;
 
 #[test]
 fn test_jump_table_creation() {
-    let jump_table = JumpTable::new();
+    let jump_table = JumpTable::<()>::new();
 
     // Check that all opcodes have handlers
     for opcode in OpCode::ALL {
@@ -29,8 +29,8 @@ fn test_jump_table_creation() {
 }
 
 #[test]
-fn test_jump_table_register() -> Result<(), Box<dyn std::error::Error>> {
-    let mut jump_table = JumpTable::new();
+fn test_jump_table_register() -> Result<(), String> {
+    let mut jump_table = JumpTable::<()>::new();
 
     // Define a custom handler
     fn custom_handler(_engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
@@ -49,16 +49,16 @@ fn test_jump_table_register() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn test_jump_table_index() -> Result<(), Box<dyn std::error::Error>> {
-    let mut jump_table = JumpTable::new();
+fn test_jump_table_set() -> Result<(), String> {
+    let mut jump_table = JumpTable::<()>::new();
 
     // Define a custom handler
     fn custom_handler(_engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
         Ok(())
     }
 
-    // Set the handler using the index operator
-    jump_table[OpCode::NOP] = custom_handler;
+    // Set the handler using the table setter.
+    jump_table.set(OpCode::NOP, custom_handler);
 
     // Check that the handler was set
     assert_eq!(
@@ -71,7 +71,7 @@ fn test_jump_table_index() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_jump_table_default() {
     // Get the default jump table
-    let jump_table = JumpTable::default();
+    let jump_table = JumpTable::<()>::default();
 
     // Check that all opcodes have handlers
     for opcode in OpCode::ALL {
@@ -88,8 +88,8 @@ fn test_jump_table_default() {
 /// overridden: the C# VM has a single SHL/SHR behavior (no `HF_Gorgon` split).
 #[test]
 fn not_gorgon_table_overrides_pre_fork_opcodes() {
-    let default = JumpTable::default();
-    let not_gorgon = JumpTable::not_gorgon();
+    let default = JumpTable::<()>::default();
+    let not_gorgon = JumpTable::<()>::not_gorgon();
     let overridden = [
         OpCode::HASKEY,
         OpCode::PICKITEM,
@@ -112,7 +112,7 @@ fn not_gorgon_table_overrides_pre_fork_opcodes() {
     // C# v3.10.1 `ComposeNotEchidnaJumpTable` only changes SUBSTR. Rust does
     // not reproduce the memory-unsafe SUBSTR distinction, so NotEchidna must
     // not inherit the unrelated pre-Gorgon overrides.
-    let not_echidna = JumpTable::not_echidna();
+    let not_echidna = JumpTable::<()>::not_echidna();
     for opcode in OpCode::ALL {
         assert_eq!(
             not_echidna.get(opcode).map(|h| h as usize),
@@ -124,7 +124,7 @@ fn not_gorgon_table_overrides_pre_fork_opcodes() {
 
 fn engine_with_items(items: Vec<StackItem>) -> ExecutionEngine {
     use crate::script::Script;
-    let mut engine = ExecutionEngine::new(None);
+    let mut engine = ExecutionEngine::<()>::new(None);
     engine
         .load_script(Script::new_relaxed(vec![OpCode::RET.byte()]), -1, 0)
         .expect("load test script");
@@ -158,7 +158,7 @@ fn count_opcodes_fault_on_buffer_operand_like_csharp() {
     // size/index/count operand via GetInteger, which faults on a Buffer in the
     // reference VM. Rust previously coerced a <=32-byte Buffer to an integer and
     // proceeded, diverging from C#.
-    let jt = JumpTable::default();
+    let jt = JumpTable::<()>::default();
     let buf = || StackItem::from_buffer(vec![0x01]);
 
     let mut e = engine_with_items(vec![buf()]);
@@ -189,7 +189,7 @@ fn collection_key_opcodes_fault_on_buffer_key_like_csharp() {
     // PrimitiveType, so PICKITEM/SETITEM/HASKEY/REMOVE and the PACKMAP entries
     // fault on a Buffer key. The gate runs right after the key is popped (before
     // the collection), so the dummy beneath the key is never examined.
-    let jt = JumpTable::default();
+    let jt = JumpTable::<()>::default();
     let buf_key = || StackItem::from_buffer(vec![0x01]);
     let dummy = || StackItem::from_i64(0);
 
@@ -221,10 +221,10 @@ fn collection_key_opcodes_fault_on_buffer_key_like_csharp() {
 
 #[test]
 fn test_jump_table_invalid_opcode() {
-    let jump_table = JumpTable::new();
+    let jump_table = JumpTable::<()>::new();
 
     // Create a mock engine and instruction
-    let mut engine = ExecutionEngine::new(None);
+    let mut engine = ExecutionEngine::<()>::new(None);
     let instruction = Instruction::new(OpCode::NOP, &[]);
 
     let mut jump_table = jump_table.clone();

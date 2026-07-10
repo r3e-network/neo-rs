@@ -5,12 +5,11 @@ use neo_config::{Hardfork, ProtocolSettings};
 use neo_execution::native_contract::build_native_contract_state;
 use neo_execution::{ApplicationEngine, ContractState};
 use neo_manifest::{ContractManifest, ContractMethodDescriptor, NefFile};
+use neo_payloads::VerifiableContainer;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
-use neo_primitives::{
-    CallFlags, ContractParameterType, TriggerType, UInt160, Verifiable, WitnessScope,
-};
+use neo_primitives::{CallFlags, ContractParameterType, TriggerType, UInt160, WitnessScope};
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
 use neo_vm::script_builder::ScriptBuilder;
@@ -49,7 +48,6 @@ fn seed_contract_management_settings(cache: &DataCache) {
 /// Snapshot seeded with the ContractManagement native record so
 /// `System.Contract.Call` resolves the callee.
 pub(super) fn seeded_snapshot() -> Arc<DataCache> {
-    crate::install();
     let cache = DataCache::new(false);
     seed_contract_management_settings(&cache);
     put_contract_record(
@@ -100,11 +98,11 @@ pub(super) fn engine_for(
     snapshot: Arc<DataCache>,
     settings: ProtocolSettings,
     sender: UInt160,
-) -> ApplicationEngine {
+) -> ApplicationEngine<crate::StandardNativeProvider> {
     let mut tx = Transaction::new();
     tx.set_signers(vec![Signer::new(sender, WitnessScope::GLOBAL)]);
     tx.set_witnesses(vec![Witness::empty()]);
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
     ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
@@ -112,7 +110,7 @@ pub(super) fn engine_for(
         None,
         settings,
         1000_00000000, // covers the 10-GAS minimum deployment fee
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds")
@@ -129,7 +127,7 @@ pub(super) fn run_deploy(
     manifest_bytes: &[u8],
     data: Option<&[u8]>,
     flags: CallFlags,
-) -> (VmState, ApplicationEngine) {
+) -> (VmState, ApplicationEngine<crate::StandardNativeProvider>) {
     let mut builder = ScriptBuilder::new();
     // Args are pushed deepest-first (argN-1 .. arg0) before PACK.
     let argc = if let Some(data) = data {
@@ -236,7 +234,7 @@ pub(super) fn run_update(
     snapshot: &Arc<DataCache>,
     script: Vec<u8>,
     self_hash: UInt160,
-) -> (VmState, ApplicationEngine) {
+) -> (VmState, ApplicationEngine<crate::StandardNativeProvider>) {
     let sender = UInt160::from_bytes(&SENDER).unwrap();
     let mut engine = engine_for(Arc::clone(snapshot), ProtocolSettings::default(), sender);
     engine

@@ -1,7 +1,12 @@
 use super::*;
 
-impl InteropHost for ApplicationEngine {
-    fn invoke_syscall(&mut self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()> {
+impl<P, D, B> InteropHost<ExecutionContextState<B>> for ApplicationEngine<P, D, B>
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
+    fn invoke_syscall(&mut self, engine: &mut ExecutionEngine<B>, hash: u32) -> VmResult<()> {
         if let Some(entry) = self.interop_handlers.get(&hash).copied() {
             // C# `ApplicationEngine.System_Contract_Call` equivalent: check that
             // the current execution context has the required call flags before
@@ -31,35 +36,30 @@ impl InteropHost for ApplicationEngine {
 
     fn on_context_loaded(
         &mut self,
-        engine: &mut ExecutionEngine,
-        context: &ExecutionContext,
+        engine: &mut ExecutionEngine<B>,
+        context: &ExecutionContext<B>,
     ) -> VmResult<()> {
-        let state_arc =
-            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        let state_arc = context.state();
         let call_flags = state_arc.lock().call_flags;
         engine.set_call_flags(call_flags);
 
-        if let Some(diagnostic) = self.diagnostic.as_mut() {
-            diagnostic.context_loaded(context);
-        }
+        self.diagnostic.context_loaded(context);
         Ok(())
     }
 
     fn on_context_unloaded(
         &mut self,
-        engine: &mut ExecutionEngine,
-        context: &ExecutionContext,
+        engine: &mut ExecutionEngine<B>,
+        context: &ExecutionContext<B>,
     ) -> VmResult<()> {
-        // DEADLOCK FIX: When CALL creates a callee context via clone_with_position,
-        // caller and callee share the same `states: Arc<RwLock<HashMap>>`. Looking up
-        // the same TypeId (ExecutionContextState) returns the same Arc<Mutex<T>>.
+        // When CALL creates a callee context via clone_with_position, caller and
+        // callee share the same typed `Arc<Mutex<ExecutionContextState>>`.
         // Holding the callee's lock while trying to lock the caller's state is a
         // same-thread reentrant lock on a non-reentrant parking_lot::Mutex → deadlock.
         //
         // Fix: extract all needed values from the callee state, drop the lock, THEN
         // acquire the caller state lock.
-        let state_arc =
-            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        let state_arc = context.state();
 
         // Phase 1: Extract values under a short-lived lock. Do not reset the
         // shared state yet: same-script unloads (for example `_initialize`
@@ -106,10 +106,7 @@ impl InteropHost for ApplicationEngine {
                 }
 
                 if let Some(current_ctx) = engine.current_context() {
-                    let current_state_arc = current_ctx
-                        .get_state_with_factory::<ExecutionContextState, _>(
-                            ExecutionContextState::new,
-                        );
+                    let current_state_arc = current_ctx.state();
                     let mut current_state = current_state_arc.lock();
                     current_state.notification_count = current_state
                         .notification_count
@@ -146,13 +143,10 @@ impl InteropHost for ApplicationEngine {
         self.refresh_context_tracking()
             .map_err(|e| VmError::invalid_operation_msg(e.to_string()))?;
 
-        if let Some(diagnostic) = self.diagnostic.as_mut() {
-            diagnostic.context_unloaded(context);
-        }
+        self.diagnostic.context_unloaded(context);
 
         if let Some(current_context) = engine.current_context() {
-            let current_state_arc = current_context
-                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let current_state_arc = current_context.state();
             engine.set_call_flags(current_state_arc.lock().call_flags);
         } else {
             engine.set_call_flags(CallFlags::ALL);
@@ -182,7 +176,7 @@ impl InteropHost for ApplicationEngine {
 
     fn pre_execute_instruction(
         &mut self,
-        _engine: &mut ExecutionEngine,
+        _engine: &mut ExecutionEngine<B>,
         instruction: &Instruction,
     ) -> VmResult<()> {
         let opcode_price = Self::get_opcode_price(instruction.opcode.byte());
@@ -191,20 +185,16 @@ impl InteropHost for ApplicationEngine {
                 .map_err(map_core_error_to_vm_error)?;
         }
 
-        if let Some(diagnostic) = self.diagnostic.as_mut() {
-            diagnostic.pre_execute_instruction(instruction);
-        }
+        self.diagnostic.pre_execute_instruction(instruction);
         Ok(())
     }
 
     fn post_execute_instruction(
         &mut self,
-        _engine: &mut ExecutionEngine,
+        _engine: &mut ExecutionEngine<B>,
         instruction: &Instruction,
     ) -> VmResult<()> {
-        if let Some(diagnostic) = self.diagnostic.as_mut() {
-            diagnostic.post_execute_instruction(instruction);
-        }
+        self.diagnostic.post_execute_instruction(instruction);
         Ok(())
     }
 
@@ -216,7 +206,7 @@ impl InteropHost for ApplicationEngine {
     /// 3. Looks up the method token by index
     /// 4. Pops the required arguments from the stack
     /// 5. Performs the cross-contract call
-    fn on_callt(&mut self, engine: &mut ExecutionEngine, token_id: u16) -> VmResult<()> {
+    fn on_callt(&mut self, engine: &mut ExecutionEngine<B>, token_id: u16) -> VmResult<()> {
         // 1. Validate call flags - need ReadStates | AllowCall
         let required_flags = CallFlags::READ_STATES | CallFlags::ALLOW_CALL;
         let current_flags = self.get_current_call_flags().map_err(|e| {
@@ -235,8 +225,7 @@ impl InteropHost for ApplicationEngine {
             .current_context()
             .ok_or_else(|| VmError::invalid_operation_msg("No current execution context"))?;
 
-        let state_arc =
-            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+        let state_arc = context.state();
         // Clone only the (small) method-token vector instead of the whole
         // ContractState, which carries the full NEF bytecode and manifest.
         let tokens = {

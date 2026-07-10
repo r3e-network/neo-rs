@@ -15,7 +15,7 @@ impl PolicyContract {
     /// indexer throw.
     pub(in crate::policy_contract) fn read_neo_committee_sorted(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
     ) -> CoreResult<Vec<ECPoint>> {
         let key = crate::NeoToken::committee_key();
         let item = snapshot.get(&key).ok_or_else(|| {
@@ -37,9 +37,13 @@ impl PolicyContract {
     /// `max(max(1, n - (n - 1) / 2), n - 2)`-of-`n` multisig over the committee
     /// public keys ("signed by maximum of (half committee + 1) and
     /// (committee - 2)") and returns that multisig address. Used by `recoverFund`.
-    pub(in crate::policy_contract) fn assert_almost_full_committee(
+    pub(in crate::policy_contract) fn assert_almost_full_committee<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &ApplicationEngine,
+        engine: &ApplicationEngine<P, D, B>,
     ) -> CoreResult<UInt160> {
         let snapshot = engine.snapshot_cache();
         let committees = self.read_neo_committee_sorted(&snapshot)?;

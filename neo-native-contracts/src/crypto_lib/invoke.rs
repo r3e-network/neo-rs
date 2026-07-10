@@ -18,9 +18,13 @@ impl CryptoLib {
         })
     }
 
-    pub(super) fn invoke_sha256(
+    pub(super) fn invoke_sha256<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         Ok(Self::sha256_method(Self::single_byte_array_arg(
@@ -28,9 +32,13 @@ impl CryptoLib {
         )?))
     }
 
-    pub(super) fn invoke_ripemd160(
+    pub(super) fn invoke_ripemd160<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         Ok(Self::ripemd160_method(Self::single_byte_array_arg(
@@ -39,9 +47,13 @@ impl CryptoLib {
         )?))
     }
 
-    pub(super) fn invoke_keccak256(
+    pub(super) fn invoke_keccak256<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         Ok(Self::keccak256_method(Self::single_byte_array_arg(
@@ -50,9 +62,13 @@ impl CryptoLib {
         )?))
     }
 
-    pub(super) fn invoke_murmur32(
+    pub(super) fn invoke_murmur32<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // murmur32 takes (ByteArray data, Integer seed) and returns the 32-bit
@@ -66,9 +82,13 @@ impl CryptoLib {
         Self::murmur32_method(data, seed_bytes)
     }
 
-    pub(super) fn invoke_verify_with_ed25519(
+    pub(super) fn invoke_verify_with_ed25519<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# VerifyWithEd25519(message, pubkey, signature): V0
@@ -90,9 +110,13 @@ impl CryptoLib {
         Ok(vec![u8::from(verified)])
     }
 
-    pub(super) fn invoke_verify_with_ecdsa(
+    pub(super) fn invoke_verify_with_ecdsa<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# VerifyWithECDsa(message, pubkey, signature, curveHash): the
@@ -126,9 +150,13 @@ impl CryptoLib {
         )?)])
     }
 
-    pub(super) fn invoke_recover_secp256k1(
+    pub(super) fn invoke_recover_secp256k1<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# RecoverSecp256K1(messageHash, signature): the compressed pubkey,
@@ -151,49 +179,73 @@ impl CryptoLib {
         }
     }
 
-    pub(super) fn invoke_bls12381_serialize(
+    pub(super) fn invoke_bls12381_serialize<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         Self::bls12381_serialize_method(args)
     }
 
-    pub(super) fn invoke_bls12381_deserialize(
+    pub(super) fn invoke_bls12381_deserialize<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         Self::bls12381_deserialize_method(args)
     }
 
-    pub(super) fn invoke_bls12381_equal(
+    pub(super) fn invoke_bls12381_equal<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         Self::bls12381_equal_method(args)
     }
 
-    pub(super) fn invoke_bls12381_add(
+    pub(super) fn invoke_bls12381_add<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         Self::bls12381_add_method(args)
     }
 
-    pub(super) fn invoke_bls12381_mul(
+    pub(super) fn invoke_bls12381_mul<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         Self::bls12381_mul_method(args)
     }
 
-    pub(super) fn invoke_bls12381_pairing(
+    pub(super) fn invoke_bls12381_pairing<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         Self::bls12381_pairing_method(args)

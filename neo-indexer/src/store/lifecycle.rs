@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
-use neo_storage::persistence::{SeekDirection, Store, StoreSnapshot};
+use neo_storage::persistence::{
+    ReadOnlyStoreGeneric, SeekDirection, Store, StoreSnapshot, WriteStore,
+};
 
 use super::keys::{
     BLOCK_BY_HEIGHT_PREFIX, LEGACY_STORE_SNAPSHOT_KEY, NOTIFICATION_BY_CHAIN_PREFIX, STORE_PREFIX,
@@ -14,7 +16,10 @@ use crate::error::{IndexerError, IndexerResult};
 use crate::indexer::Indexer;
 use crate::model::IndexerSnapshot;
 
-pub(crate) fn read_indexer(store: &Arc<dyn Store>) -> IndexerResult<Indexer> {
+pub(crate) fn read_indexer<S>(store: &Arc<S>) -> IndexerResult<Indexer>
+where
+    S: Store + 'static,
+{
     let snapshot = store.snapshot();
     if has_v3_records(snapshot.as_ref()) {
         return read_records(snapshot.as_ref());
@@ -30,10 +35,13 @@ pub(crate) fn read_indexer(store: &Arc<dyn Store>) -> IndexerResult<Indexer> {
     Ok(indexer)
 }
 
-pub(crate) fn write_indexer(
-    store: &Arc<dyn Store>,
+pub(crate) fn write_indexer<S>(
+    store: &Arc<S>,
     indexer_snapshot: &IndexerSnapshot,
-) -> IndexerResult<()> {
+) -> IndexerResult<()>
+where
+    S: Store + 'static,
+{
     let records = encode_records(indexer_snapshot)?;
     let mut snapshot = store.snapshot();
     let snapshot = Arc::get_mut(&mut snapshot).ok_or(IndexerError::StoreSnapshotShared)?;
@@ -44,11 +52,14 @@ pub(crate) fn write_indexer(
         .map_err(|source| IndexerError::StoreRecordWrite { source })
 }
 
-pub(crate) fn write_indexer_delta(
-    store: &Arc<dyn Store>,
+pub(crate) fn write_indexer_delta<S>(
+    store: &Arc<S>,
     previous: &IndexerSnapshot,
     current: &IndexerSnapshot,
-) -> IndexerResult<()> {
+) -> IndexerResult<()>
+where
+    S: Store + 'static,
+{
     let previous_records = encode_records(previous)?;
     let current_records = encode_records(current)?;
     let mut snapshot = store.snapshot();
@@ -79,7 +90,7 @@ pub(crate) fn write_indexer_delta(
         .map_err(|source| IndexerError::StoreRecordWrite { source })
 }
 
-fn has_v3_records(snapshot: &dyn StoreSnapshot) -> bool {
+fn has_v3_records(snapshot: &impl StoreSnapshot) -> bool {
     if snapshot
         .try_get(&STORE_SCHEMA_VERSION_KEY.to_vec())
         .is_some()
@@ -93,7 +104,7 @@ fn has_v3_records(snapshot: &dyn StoreSnapshot) -> bool {
         .is_some()
 }
 
-fn read_records(snapshot: &dyn StoreSnapshot) -> IndexerResult<Indexer> {
+fn read_records(snapshot: &impl StoreSnapshot) -> IndexerResult<Indexer> {
     let version = snapshot
         .try_get(&STORE_SCHEMA_VERSION_KEY.to_vec())
         .unwrap_or_default();
@@ -113,7 +124,7 @@ fn read_records(snapshot: &dyn StoreSnapshot) -> IndexerResult<Indexer> {
     ))
 }
 
-fn clear_indexer_store(snapshot: &mut dyn StoreSnapshot) -> IndexerResult<()> {
+fn clear_indexer_store(snapshot: &mut impl StoreSnapshot) -> IndexerResult<()> {
     let prefix = STORE_PREFIX.to_vec();
     let keys = snapshot
         .find(Some(&prefix), SeekDirection::Forward)

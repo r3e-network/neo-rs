@@ -14,7 +14,6 @@ mod context;
 
 pub use context::{ConsensusWitnessContext, ParentHeaderContext, SnapshotConsensusWitnessContext};
 
-use async_trait::async_trait;
 use neo_payloads::Block;
 
 use super::stage_traits::{
@@ -28,7 +27,7 @@ use super::stage_traits::{
 pub const CONSENSUS_WITNESS_MAX_GAS: i64 = 300_000_000;
 
 /// Concrete consensus-witness verification stage.
-pub struct NeoConsensusWitnessStage<C = SnapshotConsensusWitnessContext>
+pub struct NeoConsensusWitnessStage<C>
 where
     C: ConsensusWitnessContext,
 {
@@ -57,21 +56,15 @@ where
     }
 }
 
-#[async_trait]
 impl<C> ConsensusWitnessStage for NeoConsensusWitnessStage<C>
 where
     C: ConsensusWitnessContext,
 {
-    async fn verify_consensus_witness(
-        &self,
-        _ctx: &StageContext,
-        block: &Block,
-    ) -> EngineResult<()> {
+    fn verify_consensus_witness(&self, _ctx: &StageContext, block: &Block) -> EngineResult<()> {
         self.verify_block(block)
     }
 }
 
-#[async_trait]
 impl<C> PipelineStage for NeoConsensusWitnessStage<C>
 where
     C: ConsensusWitnessContext,
@@ -80,10 +73,10 @@ where
         StageId::ConsensusWitness
     }
 
-    async fn execute(&self, ctx: &StageContext, block: &Block) -> EngineResult<StageOutput> {
+    fn execute(&self, ctx: &StageContext, block: &Block) -> EngineResult<StageOutput> {
         let start = std::time::Instant::now();
 
-        self.verify_consensus_witness(ctx, block).await?;
+        self.verify_consensus_witness(ctx, block)?;
 
         Ok(StageOutput::performed(neo_runtime::time::elapsed_us(
             start.elapsed(),

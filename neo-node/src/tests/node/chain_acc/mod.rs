@@ -14,11 +14,11 @@ use super::range::{
     count_only_stop_height_reached,
 };
 use super::*;
-use neo_blockchain::{BlockchainCommand, command::ImportBlocksReply, handle::BlockchainHandle};
+use neo_blockchain::{BlockchainCommand, BlockchainHandle, ImportBlocksReply};
 use neo_payloads::block::Block;
 use neo_payloads::{Signer, Transaction, Witness};
 use neo_primitives::{UInt160, WitnessScope};
-use neo_storage::persistence::store::Store;
+use neo_storage::persistence::providers::memory_store::MemoryStore;
 use std::sync::Arc;
 
 fn signed_test_transaction(nonce: u32) -> Transaction {
@@ -46,11 +46,10 @@ fn non_empty_block_with_prev_hash(
     block
 }
 
-fn memory_store_with_ledger_tip(tip: u32, hash: neo_primitives::UInt256) -> Arc<dyn Store> {
-    use neo_storage::persistence::providers::memory_store::MemoryStore;
+fn memory_store_with_ledger_tip(tip: u32, hash: neo_primitives::UInt256) -> Arc<MemoryStore> {
     use neo_storage::{StorageItem, StorageKey};
 
-    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let store: Arc<MemoryStore> = Arc::new(MemoryStore::new());
     let mut cache = neo_storage::persistence::StoreCache::new_from_store(Arc::clone(&store), false);
     let current = neo_native_contracts::LedgerContract::new()
         .serialize_hash_index_state(&hash, tip)
@@ -73,7 +72,7 @@ async fn import_chain_acc_from_reader<R>(
     path: Option<&std::path::Path>,
     verify: bool,
     expected_range: Option<ChainAccExpectedRange>,
-    storage: Option<Arc<dyn Store>>,
+    storage: Option<Arc<MemoryStore>>,
 ) -> anyhow::Result<u64>
 where
     R: std::io::Read + std::io::Seek,
@@ -91,7 +90,7 @@ async fn import_chain_acc_from_reader_report<R>(
     path: Option<&std::path::Path>,
     verify: bool,
     expected_range: Option<ChainAccExpectedRange>,
-    storage: Option<Arc<dyn Store>>,
+    storage: Option<Arc<MemoryStore>>,
 ) -> anyhow::Result<ChainAccImportReport>
 where
     R: std::io::Read + std::io::Seek,
@@ -256,7 +255,7 @@ async fn import_chain_acc_can_stop_count_only_file_before_full_end() {
         false,
         None,
         Some(2),
-        None,
+        None::<Arc<neo_storage::persistence::providers::memory_store::MemoryStore>>,
     )
     .await
     .expect("count-only import should stop at requested height");
@@ -286,9 +285,15 @@ async fn import_chain_acc_until_height_public_wrapper_bounds_count_only_file() {
             .expect("reply import");
     });
 
-    let imported = import_chain_acc_until_height(&handle, temp.path(), false, Some(2), None)
-        .await
-        .expect("bounded public import should stop at requested height");
+    let imported = import_chain_acc_until_height(
+        &handle,
+        temp.path(),
+        false,
+        Some(2),
+        None::<Arc<neo_storage::persistence::providers::memory_store::MemoryStore>>,
+    )
+    .await
+    .expect("bounded public import should stop at requested height");
 
     service.await.expect("service task");
     assert_eq!(imported, 3);
@@ -645,7 +650,7 @@ async fn import_chain_acc_can_stop_before_full_expected_range_end() {
             end_height: 4,
         }),
         Some(2),
-        None,
+        None::<Arc<neo_storage::persistence::providers::memory_store::MemoryStore>>,
     )
     .await
     .expect("bounded expected-range import should stop at requested height");
@@ -794,7 +799,7 @@ async fn import_chain_acc_report_tracks_empty_and_transaction_bearing_blocks() {
         reply
             .send(ImportBlocksReply::ok_with_stats(
                 import.blocks.len(),
-                neo_blockchain::command::ImportBlocksStats {
+                neo_blockchain::ImportBlocksStats {
                     empty_blocks: 2,
                     empty_elapsed: std::time::Duration::from_millis(2),
                     transaction_blocks: 1,
@@ -870,7 +875,7 @@ async fn import_chain_acc_report_times_only_transaction_bearing_batches_for_tran
         reply
             .send(ImportBlocksReply::ok_with_stats(
                 import.blocks.len(),
-                neo_blockchain::command::ImportBlocksStats {
+                neo_blockchain::ImportBlocksStats {
                     empty_blocks: empty_run,
                     empty_elapsed: std::time::Duration::from_millis(20),
                     transaction_blocks: 1,
@@ -952,7 +957,7 @@ async fn import_chain_acc_uses_fast_forward_sized_batches_for_empty_runs() {
         reply
             .send(ImportBlocksReply::ok_with_stats(
                 import.blocks.len(),
-                neo_blockchain::command::ImportBlocksStats {
+                neo_blockchain::ImportBlocksStats {
                     empty_blocks: empty_run,
                     empty_elapsed: std::time::Duration::from_millis(20),
                     transaction_blocks: 1,
@@ -1010,7 +1015,7 @@ async fn import_chain_acc_keeps_short_empty_prefix_with_transaction_block() {
         reply
             .send(ImportBlocksReply::ok_with_stats(
                 import.blocks.len(),
-                neo_blockchain::command::ImportBlocksStats {
+                neo_blockchain::ImportBlocksStats {
                     empty_blocks: empty_run,
                     empty_elapsed: std::time::Duration::from_millis(20),
                     transaction_blocks: 1,
@@ -1077,7 +1082,7 @@ async fn import_chain_acc_keeps_short_empty_suffix_after_transaction_block() {
         reply
             .send(ImportBlocksReply::ok_with_stats(
                 import.blocks.len(),
-                neo_blockchain::command::ImportBlocksStats {
+                neo_blockchain::ImportBlocksStats {
                     empty_blocks: 25,
                     empty_elapsed: std::time::Duration::from_millis(20),
                     transaction_blocks: 1,
@@ -1147,7 +1152,7 @@ async fn import_chain_acc_uses_service_timing_without_splitting_mixed_batches() 
         reply
             .send(ImportBlocksReply::ok_with_stats(
                 import.blocks.len(),
-                neo_blockchain::command::ImportBlocksStats {
+                neo_blockchain::ImportBlocksStats {
                     empty_blocks: 25,
                     empty_elapsed: std::time::Duration::from_millis(20),
                     transaction_blocks: 1,

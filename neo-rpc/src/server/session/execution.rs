@@ -7,14 +7,15 @@
 
 use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
-use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_manifest::CallFlags;
+use neo_payloads::VerifiableContainer;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
 use neo_payloads::witness::Witness;
-use neo_primitives::{TriggerType, Verifiable};
+use neo_primitives::TriggerType;
 use neo_runtime::{ConfigProvider, StoreProvider};
+use neo_storage::persistence::{Store, StoreCacheBacking};
 use parking_lot::Mutex;
 use rand::random;
 use std::collections::HashMap;
@@ -24,11 +25,11 @@ use std::time::Instant;
 use crate::server::diagnostic::Diagnostic;
 use crate::server::ledger_queries;
 
-use super::Session;
+use super::SessionRecord;
 use super::dummy_block::create_dummy_block;
 use super::native_provider::{NativeSessionProvider, SessionNativeProvider};
 
-impl Session {
+impl<T: Store> SessionRecord<StoreCacheBacking<T>> {
     /// Create and execute a new invocation session.
     ///
     /// The session owns the executed engine, a storage snapshot, any diagnostic
@@ -36,16 +37,20 @@ impl Session {
     // Rationale: invocation sessions are the RPC execution composition seam and
     // must receive providers, script, signers, witnesses, gas, and diagnostics explicitly.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        store_provider: Arc<dyn StoreProvider>,
-        config_provider: Arc<dyn ConfigProvider>,
-        native_contract_provider: Arc<dyn NativeContractProvider>,
+    pub fn new<S, C>(
+        store_provider: Arc<S>,
+        config_provider: Arc<C>,
+        native_contract_provider: Arc<neo_native_contracts::StandardNativeProvider>,
         script: Vec<u8>,
         signers: Option<Vec<Signer>>,
         witnesses: Option<Vec<Witness>>,
         gas_limit: i64,
         diagnostic: Option<Diagnostic>,
-    ) -> CoreResult<Self> {
+    ) -> CoreResult<Self>
+    where
+        S: StoreProvider<Store = T> + ?Sized,
+        C: ConfigProvider + ?Sized,
+    {
         let store_cache = store_provider.store_cache();
         let snapshot_cache = Arc::new(store_cache.data_cache().clone());
 
@@ -79,7 +84,7 @@ impl Session {
             } else {
                 tx.set_witnesses(vec![Witness::new(); signer_list.len()]);
             }
-            Arc::new(tx) as Arc<dyn Verifiable>
+            Arc::new(VerifiableContainer::from(tx))
         });
 
         // C# `ApplicationEngine.Run` (invoked by the RPC invoke* methods) has no
@@ -96,10 +101,6 @@ impl Session {
         )
         .map(Arc::new);
 
-        let diagnostic_box = diagnostic
-            .clone()
-            .map(|diag| Box::new(diag) as Box<dyn neo_execution::diagnostic::Diagnostic>);
-
         let mut engine = ApplicationEngine::new_with_shared_block_and_native_contract_provider(
             TriggerType::Application,
             tx_container,
@@ -107,7 +108,7 @@ impl Session {
             persisting_block,
             settings.as_ref().clone(),
             gas_limit,
-            diagnostic_box,
+            diagnostic.clone(),
             Some(native_contract_provider),
         )
         .map_err(|err| CoreError::other(err.to_string()))?;
@@ -119,7 +120,7 @@ impl Session {
 
         Ok(Self {
             script,
-            snapshot: store_cache,
+            snapshot: snapshot_cache,
             engine: Mutex::new(engine),
             diagnostic: Mutex::new(diagnostic),
             iterators: Mutex::new(HashMap::new()),

@@ -401,7 +401,7 @@ fn has_method_rejects_invalid_utf8_method_name_like_csharp() {
         None,
         neo_config::ProtocolSettings::default(),
         0,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
@@ -434,13 +434,13 @@ fn invoke_argument_parsing_uses_shared_raw_helpers() {
     let source = include_str!("../../contract_management/invoke.rs");
     let by_id = handler_between(
         source,
-        "fn invoke_get_contract_by_id(",
-        "fn invoke_get_minimum_deployment_fee(",
+        "fn invoke_get_contract_by_id",
+        "fn invoke_get_minimum_deployment_fee",
     );
     assert!(by_id.contains("crate::args::raw_i32_arg"));
     assert!(!by_id.contains("BigInt::from_signed_bytes_le(args"));
 
-    let has_method = handler_between(source, "fn invoke_has_method(", "fn invoke_deploy(");
+    let has_method = handler_between(source, "fn invoke_has_method", "fn invoke_deploy");
     assert!(has_method.contains("crate::args::raw_string_arg"));
     assert!(has_method.contains("crate::args::raw_i32_arg"));
     assert!(!has_method.contains("String::from_utf8("));
@@ -590,7 +590,7 @@ fn minimum_deployment_fee_requires_initialized_storage() {
         None,
         neo_config::ProtocolSettings::default(),
         0,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");

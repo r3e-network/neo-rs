@@ -9,7 +9,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_execution::{ApplicationEngine, ContractState};
 use neo_primitives::UInt160;
 use neo_storage::persistence::{DataCache, SeekDirection};
-use neo_storage::{StorageItem, StorageKey};
+use neo_storage::{CacheRead, StorageItem, StorageKey};
 use neo_vm::StackItem;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
@@ -20,8 +20,8 @@ impl ContractManagement {
     /// Reads the per-contract record (`prefix 8` + `hash.to_bytes()`)
     /// previously written by `ContractManagement.Deploy` /
     /// `ContractManagement.Update` in the blockchain service.
-    pub fn get_contract_from_snapshot(
-        snapshot: &DataCache,
+    pub fn get_contract_from_snapshot<B: CacheRead>(
+        snapshot: &DataCache<B>,
         hash: &UInt160,
     ) -> CoreResult<Option<ContractState>> {
         let key = Self::contract_storage_key(hash);
@@ -44,8 +44,8 @@ impl ContractManagement {
     ///
     /// Reads the contract-id -> hash index (`prefix 12` + `id_be_bytes`)
     /// then dereferences the resulting hash via `get_contract_from_snapshot`.
-    pub fn get_contract_by_id_from_snapshot(
-        snapshot: &DataCache,
+    pub fn get_contract_by_id_from_snapshot<B: CacheRead>(
+        snapshot: &DataCache<B>,
         id: i32,
     ) -> CoreResult<Option<ContractState>> {
         let id_key = Self::contract_id_storage_key(id);
@@ -64,7 +64,7 @@ impl ContractManagement {
     }
 
     /// Checks whether a contract is deployed in the given snapshot.
-    pub fn is_contract(snapshot: &DataCache, hash: &UInt160) -> bool {
+    pub fn is_contract<B: CacheRead>(snapshot: &DataCache<B>, hash: &UInt160) -> bool {
         let key = Self::contract_storage_key(hash);
         snapshot.get(&key).is_some()
     }
@@ -143,9 +143,9 @@ impl ContractManagement {
     /// (`ReadInt32BigEndian(key.Key[1..])`) and keeps only `id >= 0`, which
     /// excludes the native contracts (negative ids; their big-endian
     /// two's-complement keys sort after every non-negative id).
-    pub(in crate::contract_management) fn contract_hash_entries(
+    pub(in crate::contract_management) fn contract_hash_entries<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
     ) -> Vec<(StorageKey, StorageItem)> {
         let prefix_key = Self::contract_id_prefix_key();
         snapshot
@@ -164,9 +164,13 @@ impl ContractManagement {
     /// `WhitelistFeeChanged` event (`[hash, method, argCount, null]`) per removal.
     /// Entries decode as the C# `WhitelistedContract` interoperable
     /// `Struct[ContractHash, Method, ArgCount, FixedFee]`.
-    pub(in crate::contract_management) fn policy_clean_whitelist(
+    pub(in crate::contract_management) fn policy_clean_whitelist<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         contract: &ContractState,
     ) -> CoreResult<()> {
         let snapshot = engine.snapshot_cache();
@@ -211,8 +215,8 @@ impl ContractManagement {
         Ok(())
     }
 
-    pub(in crate::contract_management) fn read_required_i64_setting(
-        snapshot: &DataCache,
+    pub(in crate::contract_management) fn read_required_i64_setting<B: CacheRead>(
+        snapshot: &DataCache<B>,
         key: StorageKey,
         setting: &str,
     ) -> CoreResult<i64> {
@@ -228,9 +232,9 @@ impl ContractManagement {
             })
     }
 
-    pub(in crate::contract_management) fn read_minimum_deployment_fee(
+    pub(in crate::contract_management) fn read_minimum_deployment_fee<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
     ) -> CoreResult<i64> {
         Self::read_required_i64_setting(
             snapshot,
@@ -239,9 +243,9 @@ impl ContractManagement {
         )
     }
 
-    pub(in crate::contract_management) fn read_next_available_id(
+    pub(in crate::contract_management) fn read_next_available_id<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
     ) -> CoreResult<i64> {
         Self::read_required_i64_setting(snapshot, Self::next_available_id_key(), "NextAvailableId")
     }
@@ -250,9 +254,9 @@ impl ContractManagement {
     /// `Prefix_MinimumDeploymentFee` (`GetAndChange(...).Set(value)`). The key is
     /// genesis-initialised, so absence faults; the value is stored as the full
     /// signed-LE BigInteger (the C# parameter is `BigInteger`, not `long`).
-    pub(in crate::contract_management) fn put_minimum_deployment_fee(
+    pub(in crate::contract_management) fn put_minimum_deployment_fee<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         value: &BigInt,
     ) -> CoreResult<()> {
         let key = Self::minimum_deployment_fee_key();
@@ -271,9 +275,9 @@ impl ContractManagement {
     /// C# `ContractManagement.GetNextAvailableId`: returns the current
     /// `Prefix_NextAvailableId` value and stores `value + 1`
     /// (`item.Add(1)`). The key is genesis-initialised to 1; absence faults.
-    pub(in crate::contract_management) fn get_next_available_id(
+    pub(in crate::contract_management) fn get_next_available_id<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
     ) -> CoreResult<i32> {
         let value = self.read_next_available_id(snapshot)?;
         let id = i32::try_from(value).map_err(|_| {

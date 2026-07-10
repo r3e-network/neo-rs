@@ -12,7 +12,10 @@ use neo_io::{MemoryReader, Serializable};
 use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
 use neo_primitives::{LogLevel, UInt160};
-use neo_storage::persistence::{DataCache, SeekDirection, Store, StoreSnapshot};
+use neo_storage::persistence::providers::MemoryStore;
+use neo_storage::persistence::{
+    CacheRead, DataCache, ReadOnlyStoreGeneric, SeekDirection, Store, StoreSnapshot, WriteStore,
+};
 use neo_vm::StackItem;
 use num_bigint::BigInt;
 use serde_json::{Value, json};
@@ -73,10 +76,10 @@ pub trait Tracker: Send + Sync {
     fn track_name(&self) -> &str;
 
     /// Called when a block is being persisted.
-    fn on_persist(
+    fn on_persist<B: CacheRead>(
         &mut self,
         block: &Block,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         executed_list: &[ApplicationExecuted],
     );
 
@@ -88,29 +91,36 @@ pub trait Tracker: Send + Sync {
 }
 
 /// Base tracker state shared by NEP-11 and NEP-17 trackers.
-pub struct TrackerBase {
+pub struct TrackerBase<P, S: Store = MemoryStore>
+where
+    P: NativeContractProvider,
+{
     /// Whether to track transfer history.
     pub should_track_history: bool,
     /// Maximum results for queries.
     pub max_results: u32,
     /// Database store.
-    pub db: Arc<dyn Store>,
+    pub db: Arc<S>,
     /// Current snapshot for batch operations.
-    snapshot: Option<Arc<dyn StoreSnapshot>>,
+    snapshot: Option<Arc<S::Snapshot>>,
     /// Protocol settings (for VM execution).
     pub settings: Arc<ProtocolSettings>,
     /// Native-contract provider captured from the node composition root.
-    pub native_contract_provider: Arc<dyn NativeContractProvider>,
+    pub native_contract_provider: Arc<P>,
 }
 
-impl TrackerBase {
+impl<P, S> TrackerBase<P, S>
+where
+    P: NativeContractProvider,
+    S: Store,
+{
     /// Creates a new TrackerBase.
     pub fn new(
-        db: Arc<dyn Store>,
+        db: Arc<S>,
         max_results: u32,
         should_track_history: bool,
         settings: Arc<ProtocolSettings>,
-        native_contract_provider: Arc<dyn NativeContractProvider>,
+        native_contract_provider: Arc<P>,
     ) -> Self {
         Self {
             should_track_history,

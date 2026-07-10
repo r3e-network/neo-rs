@@ -14,15 +14,13 @@
 //! pool is full, the lowest-priority item is evicted to make room
 //! for a higher-priority one.
 
-use crate::new_transaction_event_args::NewTransactionEventArgs;
 use crate::pool_item::PoolItem;
-use crate::transaction_removed_event_args::TransactionRemovedEventArgs;
 use crate::transaction_verification_context::TransactionVerificationContext;
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::Transaction;
 use neo_primitives::{TransactionRemovalReason, UInt160, UInt256, VerifyResult};
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -35,40 +33,11 @@ use super::state::{
 static BLOCK_PERSISTED_TX_SCAN_COUNT: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
-/// Callback invoked after a new transaction has been accepted into
-/// the pool.
-pub type TransactionAddedCallback<P = neo_native_contracts::StandardNativeProvider> =
-    dyn Fn(&MemoryPool<P>, &Transaction) + Send + Sync;
-/// Callback invoked after a transaction (or set of transactions) is
-/// removed from the pool.
-pub type TransactionRemovedCallback<P = neo_native_contracts::StandardNativeProvider> =
-    dyn Fn(&MemoryPool<P>, &TransactionRemovedEventArgs) + Send + Sync;
-/// Callback invoked when a transaction should be rebroadcast to the
-/// network.
-pub type TransactionRelayCallback = dyn Fn(&Transaction) + Send + Sync;
-/// Callback invoked for every freshly-admitted transaction; subscribers
-/// may veto the admission by setting `cancel = true` on the event args.
-pub type NewTransactionCallback<P = neo_native_contracts::StandardNativeProvider> =
-    dyn Fn(&MemoryPool<P>, &mut NewTransactionEventArgs) + Send + Sync;
-
 /// Neo transaction memory pool.
 pub struct MemoryPool<P = neo_native_contracts::StandardNativeProvider>
 where
     P: NativeContractProvider,
 {
-    /// Optional subscriber callback invoked to validate a new
-    /// transaction before it is admitted.
-    pub new_transaction: Option<Box<NewTransactionCallback<P>>>,
-    /// Optional subscriber callback invoked after a transaction has
-    /// been added to the pool.
-    pub transaction_added: Option<Box<TransactionAddedCallback<P>>>,
-    /// Optional subscriber callback invoked after a transaction has
-    /// been removed from the pool.
-    pub transaction_removed: Option<Box<TransactionRemovedCallback<P>>>,
-    /// Optional subscriber callback invoked when a transaction should
-    /// be rebroadcast to the network.
-    pub transaction_relay: Option<Box<TransactionRelayCallback>>,
-
     /// Protocol settings used by transaction verification (network
     /// magic for signature checks, hardfork schedule, expiry window).
     settings: ProtocolSettings,
@@ -93,10 +62,6 @@ where
     ) -> Self {
         let capacity = settings.memory_pool_max_transactions as usize;
         Self {
-            new_transaction: None,
-            transaction_added: None,
-            transaction_removed: None,
-            transaction_relay: None,
             settings: settings.clone(),
             native_contract_provider,
             inner: RwLock::new(MemoryPoolInner::with_capacity(capacity)),
@@ -303,13 +268,14 @@ where
     /// Promotes a batch of unverified transactions to verified,
     /// running each through the supplied closure. Returns the
     /// list of removals encountered.
-    pub fn reverify<F>(
+    pub fn reverify<B, F>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         verifier: F,
     ) -> Vec<(Transaction, TransactionRemovalReason)>
     where
-        F: Fn(&Transaction, &DataCache) -> VerifyResult,
+        B: CacheRead,
+        F: Fn(&Transaction, &DataCache<B>) -> VerifyResult,
     {
         let mut guard = self.inner.write();
         let mut removals = Vec::new();
@@ -339,7 +305,11 @@ where
     /// the highest-priority still-valid transactions back into the verified pool,
     /// rebuilding the per-block fee/conflict/oracle bookkeeping as it goes.
     /// Returns whether unverified transactions remain after this pass.
-    pub fn reverify_top_unverified(&self, snapshot: &DataCache, max_count: usize) -> bool {
+    pub fn reverify_top_unverified<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        max_count: usize,
+    ) -> bool {
         if max_count == 0 {
             return self.unverified_count() > 0;
         }
@@ -417,37 +387,23 @@ where
                 }
 
                 // C# `ReverifyTransactions` calls `RelayDirectly` for each
-                // transaction that survives re-verification after block persist.
-                // Collect the clones so we can fire the callback outside the
-                // write lock — the relay subscriber may touch the pool itself.
+                // transaction that survives re-verification after block
+                // persist. neo-rs performs network announcement outside the
+                // pool; keep the promoted transactions local to this method.
                 rebroadcast_transactions.push(tx);
             }
 
             !guard.unverified.is_empty()
         };
 
-        if !invalid_transactions.is_empty() {
-            if let Some(callback) = &self.transaction_removed {
-                let args = TransactionRemovedEventArgs::new(
-                    invalid_transactions,
-                    TransactionRemovalReason::NoLongerValid,
-                );
-                callback(self, &args);
-            }
-        }
+        drop(invalid_transactions);
 
         // C# `MemoryPool.ReverifyTransactions` → `RelayDirectly`: rebroadcast
         // every surviving transaction that the block-persist cycle re-verified
         // and promoted back into the verified pool. This is a best-effort relay;
         // a dropped broadcast is harmless — the tx stays in the pool and will
         // be announced via inventory on the next gossip cycle.
-        if !rebroadcast_transactions.is_empty() {
-            if let Some(relay) = &self.transaction_relay {
-                for tx in &rebroadcast_transactions {
-                    relay(tx);
-                }
-            }
-        }
+        drop(rebroadcast_transactions);
 
         more_unverified
     }
@@ -472,17 +428,12 @@ where
     /// transaction's own `Conflicts` attributes are tracked for future
     /// admissions. On-chain conflict records are checked separately via the
     /// `Conflicts` attribute verification.
-    pub fn try_add(&self, transaction: Transaction, snapshot: &DataCache) -> VerifyResult {
+    pub fn try_add<B: CacheRead>(
+        &self,
+        transaction: Transaction,
+        snapshot: &DataCache<B>,
+    ) -> VerifyResult {
         let hash = transaction.hash();
-
-        // Subscriber veto gate.
-        if let Some(callback) = &self.new_transaction {
-            let mut args = NewTransactionEventArgs::new(transaction.clone(), snapshot.clone());
-            callback(self, &mut args);
-            if args.cancel {
-                return VerifyResult::PolicyFail;
-            }
-        }
 
         // C# TryAdd holds the write lock across the containment check, the
         // fee-payer-context read, verification, and admission, so two
@@ -574,18 +525,7 @@ where
             (removed_transactions, new_tx_evicted)
         };
 
-        if let Some(callback) = &self.transaction_added {
-            callback(self, &transaction);
-        }
-        if !removed_transactions.is_empty() {
-            if let Some(callback) = &self.transaction_removed {
-                let args = TransactionRemovedEventArgs::new(
-                    removed_transactions,
-                    TransactionRemovalReason::CapacityExceeded,
-                );
-                callback(self, &args);
-            }
-        }
+        drop(removed_transactions);
         if new_tx_evicted {
             return VerifyResult::OutOfMemory;
         }
@@ -606,22 +546,13 @@ where
     /// skipped. Any other cached value causes an early rejection. When `None`
     /// is passed, the full `verify_transaction` (state-independent +
     /// state-dependent) is performed — identical to [`Self::try_add`].
-    pub fn try_add_cached(
+    pub fn try_add_cached<B: CacheRead>(
         &self,
         transaction: Transaction,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         cached_state_independent: Option<VerifyResult>,
     ) -> VerifyResult {
         let hash = transaction.hash();
-
-        // Subscriber veto gate.
-        if let Some(callback) = &self.new_transaction {
-            let mut args = NewTransactionEventArgs::new(transaction.clone(), snapshot.clone());
-            callback(self, &mut args);
-            if args.cancel {
-                return VerifyResult::PolicyFail;
-            }
-        }
 
         let (removed_transactions, new_tx_evicted) = {
             let mut guard = self.inner.write();
@@ -707,28 +638,17 @@ where
             (removed_transactions, new_tx_evicted)
         };
 
-        if let Some(callback) = &self.transaction_added {
-            callback(self, &transaction);
-        }
-        if !removed_transactions.is_empty() {
-            if let Some(callback) = &self.transaction_removed {
-                let args = TransactionRemovedEventArgs::new(
-                    removed_transactions,
-                    TransactionRemovalReason::CapacityExceeded,
-                );
-                callback(self, &args);
-            }
-        }
+        drop(removed_transactions);
         if new_tx_evicted {
             return VerifyResult::OutOfMemory;
         }
         VerifyResult::Succeed
     }
 
-    /// Removes the transaction with the given hash from the pool
-    /// and emits the `transaction_removed` event.
+    /// Removes the transaction with the given hash from the pool.
     pub fn remove(&self, hash: &UInt256, reason: TransactionRemovalReason) {
-        let tx_opt = {
+        let _ = reason;
+        let _tx_opt = {
             let mut guard = self.inner.write();
             let removed = guard
                 .verified
@@ -747,12 +667,6 @@ where
             }
             removed
         };
-        if let Some(tx) = tx_opt {
-            if let Some(callback) = &self.transaction_removed {
-                let args = TransactionRemovedEventArgs::new(vec![tx], reason);
-                callback(self, &args);
-            }
-        }
     }
 
     /// Returns whether the pool holds a `verify_state_independent`-

@@ -29,7 +29,6 @@ neo-runtime = { workspace = true }
 # Async runtime
 tokio = { workspace = true, features = ["macros", "net", "rt", "rt-multi-thread", "sync", "time"] }
 tokio-util = { workspace = true, features = ["codec"] }
-async-trait = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
 parking_lot = { workspace = true }

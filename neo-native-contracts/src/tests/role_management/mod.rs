@@ -119,10 +119,10 @@ fn parse_role_arg_uses_shared_role_mapping() {
 fn invoke_role_integer_args_use_shared_raw_parser() {
     let source = include_str!("../../role_management/invoke.rs");
     let get_start = source
-        .find("fn invoke_get_designated_by_role(")
+        .find("fn invoke_get_designated_by_role")
         .expect("RoleManagement getter handler exists");
     let designate_start = source
-        .find("fn invoke_designate_as_role(")
+        .find("fn invoke_designate_as_role")
         .expect("RoleManagement writer handler exists");
     let getter = &source[get_start..designate_start];
     let writer = &source[designate_start..];

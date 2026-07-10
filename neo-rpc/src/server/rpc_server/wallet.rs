@@ -2,20 +2,16 @@
 //!
 //! The RPC server keeps one optional wallet handle for wallet RPC endpoints
 //! such as `openwallet`, `closewallet`, and transfer construction. This module
-//! owns that state and its change callback so the root server module stays a
-//! structural facade.
+//! owns that state so the root server module stays a structural facade.
 
-use neo_wallets::Wallet;
+use neo_wallets::Nep6Wallet;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
 use super::RpcServer;
 
 /// Shared active-wallet slot exposed to wallet RPC handlers.
-pub(super) type WalletHandle = Arc<RwLock<Option<Arc<dyn Wallet>>>>;
-
-/// Callback invoked after the active wallet changes.
-pub type WalletChangeCallback = Arc<dyn Fn(Option<Arc<dyn Wallet>>) + Send + Sync>;
+pub(super) type WalletHandle = Arc<RwLock<Option<Arc<Nep6Wallet>>>>;
 
 /// Create an empty active-wallet slot.
 pub(super) fn new_wallet_handle() -> WalletHandle {
@@ -24,21 +20,13 @@ pub(super) fn new_wallet_handle() -> WalletHandle {
 
 impl RpcServer {
     /// Set or clear the wallet exposed to wallet RPC methods.
-    pub fn set_wallet(&self, wallet: Option<Arc<dyn Wallet>>) {
+    pub fn set_wallet(&self, wallet: Option<Arc<Nep6Wallet>>) {
         *self.wallet.write() = wallet;
-        if let Some(callback) = &self.wallet_change_callback {
-            callback(self.wallet.read().clone());
-        }
     }
 
     /// Return the wallet currently exposed to wallet RPC methods.
     #[must_use]
-    pub fn wallet(&self) -> Option<Arc<dyn Wallet>> {
+    pub fn wallet(&self) -> Option<Arc<Nep6Wallet>> {
         self.wallet.read().clone()
-    }
-
-    /// Install a callback invoked whenever the active wallet changes.
-    pub fn set_wallet_change_callback(&mut self, callback: Option<WalletChangeCallback>) {
-        self.wallet_change_callback = callback;
     }
 }

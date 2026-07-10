@@ -1,6 +1,6 @@
 use super::contract_script::{build_dynamic_call_script, emit_contract_call};
 use super::models::RpcInvokeResult;
-use crate::{RpcClient, RpcClientError};
+use crate::{RpcClient, RpcClientError, RpcObserver, TracingRpcObserver};
 use neo_manifest::ContractManifest;
 use neo_native_contracts::ContractManagement;
 use neo_payloads::{Signer, Transaction};
@@ -10,18 +10,44 @@ use neo_vm::script_builder::ScriptBuilder;
 use neo_wallets::KeyPair;
 use std::sync::Arc;
 
-/// Contract related operations through RPC API
-/// Matches C# `ContractClient`
-pub struct ContractClient {
-    /// The RPC client instance
-    rpc_client: Arc<RpcClient>,
+fn build_deploy_contract_script_impl(
+    nef_file: &[u8],
+    manifest: &ContractManifest,
+    call_flags: CallFlags,
+) -> Result<Vec<u8>, RpcClientError> {
+    let manifest_json = manifest.to_json()?.to_string();
+
+    let mut sb = ScriptBuilder::new();
+    // C# parity: ScriptBuilderExtensions.EmitDynamicCall(ContractManagement.Hash, "deploy", nef, manifestJson)
+    sb.emit_push(manifest_json.as_bytes());
+    sb.emit_push(nef_file);
+    sb.emit_push_int(2);
+    sb.emit_pack();
+    emit_contract_call(
+        &mut sb,
+        &ContractManagement::script_hash(),
+        "deploy",
+        call_flags,
+    )?;
+
+    Ok(sb.to_array())
 }
 
-impl ContractClient {
+/// Contract related operations through RPC API
+/// Matches C# `ContractClient`
+pub struct ContractClient<O = TracingRpcObserver> {
+    /// The RPC client instance
+    rpc_client: Arc<RpcClient<O>>,
+}
+
+impl<O> ContractClient<O>
+where
+    O: RpcObserver,
+{
     /// `ContractClient` Constructor
     /// Matches C# constructor
     #[must_use]
-    pub const fn new(rpc_client: Arc<RpcClient>) -> Self {
+    pub const fn new(rpc_client: Arc<RpcClient<O>>) -> Self {
         Self { rpc_client }
     }
 
@@ -51,7 +77,7 @@ impl ContractClient {
         manifest: &ContractManifest,
         key: &KeyPair,
     ) -> Result<Transaction, RpcClientError> {
-        let script = Self::build_deploy_contract_script(nef_file, manifest, CallFlags::ALL)?;
+        let script = build_deploy_contract_script_impl(nef_file, manifest, CallFlags::ALL)?;
 
         let sender = key.script_hash();
         let signers = vec![Signer::new(sender, WitnessScope::CALLED_BY_ENTRY)];
@@ -62,8 +88,10 @@ impl ContractClient {
         manager.add_signature(key)?;
         manager.sign().await
     }
+}
 
-    #[cfg(test)]
+#[cfg(test)]
+impl ContractClient<TracingRpcObserver> {
     fn build_dynamic_call_script(
         script_hash: &UInt160,
         method: &str,
@@ -78,22 +106,7 @@ impl ContractClient {
         manifest: &ContractManifest,
         call_flags: CallFlags,
     ) -> Result<Vec<u8>, RpcClientError> {
-        let manifest_json = manifest.to_json()?.to_string();
-
-        let mut sb = ScriptBuilder::new();
-        // C# parity: ScriptBuilderExtensions.EmitDynamicCall(ContractManagement.Hash, "deploy", nef, manifestJson)
-        sb.emit_push(manifest_json.as_bytes());
-        sb.emit_push(nef_file);
-        sb.emit_push_int(2);
-        sb.emit_pack();
-        emit_contract_call(
-            &mut sb,
-            &ContractManagement::script_hash(),
-            "deploy",
-            call_flags,
-        )?;
-
-        Ok(sb.to_array())
+        build_deploy_contract_script_impl(nef_file, manifest, call_flags)
     }
 }
 

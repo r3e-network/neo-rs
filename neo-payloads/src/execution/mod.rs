@@ -12,11 +12,14 @@
 //!
 //! - `application_executed`: application execution event records.
 //! - `event_handlers`: execution event handler records.
+//! - `log_event_args`: contract log event arguments.
 //! - `notify_event_args`: contract notification event records.
 
 /// Per-transaction execution record emitted when a block is processed.
 pub mod application_executed;
 /// Event payloads and handler traits used by Neo plugins and services.
 pub mod event_handlers;
+/// Contract log event arguments.
+pub mod log_event_args;
 /// Contract notification event arguments.
 pub mod notify_event_args;

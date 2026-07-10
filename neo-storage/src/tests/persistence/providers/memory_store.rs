@@ -1,5 +1,6 @@
 use super::*;
 use crate::persistence::store_cache::StoreCache;
+use crate::persistence::store_snapshot::StoreSnapshot;
 
 #[test]
 fn raw_prefix_find_returns_only_matching_rows_in_both_directions() {
@@ -126,7 +127,7 @@ fn snapshot_backed_store_cache_backward_find_matches_prefix_rows() {
     }
 
     let prefix = StorageKey::create(-5, 0x1d);
-    let cache = StoreCache::new_from_snapshot(store.snapshot());
+    let cache = StoreCache::<MemoryStore>::new_from_snapshot(store.snapshot());
     let keys: Vec<_> = cache
         .data_cache()
         .find(Some(&prefix), SeekDirection::Backward)

@@ -32,7 +32,10 @@ native_contract_handle!(
     }
 );
 
-impl NativeContract for Treasury {
+impl<P> NativeContract<P> for Treasury
+where
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+{
     native_contract_identity!(Treasury);
 
     // C# `Treasury.Activations => [Hardfork.HF_Faun]` (Treasury.cs:29): the
@@ -67,7 +70,7 @@ impl NativeContract for Treasury {
         true
     }
 
-    native_contract_dispatch!(metadata::TREASURY_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::treasury_method_bindings);
 }
 
 #[cfg(test)]

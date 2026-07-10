@@ -9,13 +9,14 @@ async fn invokefunction_with_wallet_returns_signed_tx() {
     let settings = Arc::new(ProtocolSettings::default());
     let key_pair = KeyPair::generate().expect("key pair");
     let contract = signature_contract_for_keypair(&key_pair);
-    let account = StandardWalletAccount::new_with_key(key_pair, Some(contract), settings, None);
+    let wallet = Nep6Wallet::new(Some("test".to_string()), None, settings);
+    let account = wallet
+        .create_account_with_contract(contract, Some(key_pair))
+        .await
+        .expect("wallet account");
     let account_hash = account.script_hash();
     fund_gas(&server.system(), account_hash, 100_000_000);
-    server.set_wallet(Some(Arc::new(TestWallet {
-        name: "test".to_string(),
-        account: Arc::new(account),
-    })));
+    server.set_wallet(Some(Arc::new(wallet)));
 
     let signers = json!([{
          "signer": {
@@ -44,12 +45,13 @@ async fn invokefunction_with_watch_only_wallet_returns_pending_signature() {
     let key_pair = KeyPair::generate().expect("key pair");
     let contract = signature_contract_for_keypair(&key_pair);
     let account_hash = contract.script_hash();
-    let account = StandardWalletAccount::new_watch_only(account_hash, Some(contract), settings);
+    let wallet = Nep6Wallet::new(Some("test".to_string()), None, settings);
+    wallet
+        .create_account_with_contract(contract, None)
+        .await
+        .expect("watch-only account");
     fund_gas(&server.system(), account_hash, 100_000_000);
-    server.set_wallet(Some(Arc::new(TestWallet {
-        name: "test".to_string(),
-        account: Arc::new(account),
-    })));
+    server.set_wallet(Some(Arc::new(wallet)));
 
     let signers = json!([{
          "signer": {
@@ -85,11 +87,12 @@ async fn invokefunction_with_missing_wallet_account_sets_exception() {
     let settings = Arc::new(ProtocolSettings::default());
     let key_pair = KeyPair::generate().expect("key pair");
     let contract = signature_contract_for_keypair(&key_pair);
-    let account = StandardWalletAccount::new_with_key(key_pair, Some(contract), settings, None);
-    server.set_wallet(Some(Arc::new(TestWallet {
-        name: "test".to_string(),
-        account: Arc::new(account),
-    })));
+    let wallet = Nep6Wallet::new(Some("test".to_string()), None, settings);
+    wallet
+        .create_account_with_contract(contract, Some(key_pair))
+        .await
+        .expect("wallet account");
+    server.set_wallet(Some(Arc::new(wallet)));
 
     let missing_account = UInt160::from_bytes(&[0x42; 20]).expect("missing account hash");
     let missing_address =

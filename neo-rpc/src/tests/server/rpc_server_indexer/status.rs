@@ -5,8 +5,8 @@ use crate::server::rpc_server::RpcServer;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_config::ProtocolSettings;
 use neo_indexer::IndexerService;
-use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::persistence::providers::memory_store_provider::MemoryStoreProvider;
+use neo_storage::persistence::providers::{RuntimeStore, memory_store::MemoryStore};
 
 use super::super::RpcServerIndexer;
 use super::support::{block, find_handler};
@@ -48,12 +48,14 @@ fn indexer_status_ledger_height_uses_indexer_provider_boundary() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn indexer_status_does_not_sync_when_indexer_is_ahead_of_ledger() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let service = Arc::new(IndexerService::new());
     service
         .index_block(&block(7, Vec::new()))
         .expect("index block ahead of ledger");
-    system.register_service(service);
+    let system = crate::server::test_support::test_system_with_services(
+        ProtocolSettings::default(),
+        crate::server::RpcServices::new().with_indexer(service),
+    );
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerIndexer::register_handlers();
@@ -68,16 +70,18 @@ async fn indexer_status_does_not_sync_when_indexer_is_ahead_of_ledger() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn indexer_status_reports_sync_lag_and_application_logs_availability() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
-    system.register_service(Arc::new(IndexerService::new()));
-
     let mut logs_settings = ApplicationLogsSettings::default();
     logs_settings.enabled = true;
     logs_settings.path = "ApplicationLogs_004F454E".to_string();
-    system.register_service(Arc::new(ApplicationLogsService::new(
-        logs_settings.clone(),
-        Arc::new(MemoryStore::new()),
-    )));
+    let system = crate::server::test_support::test_system_with_services(
+        ProtocolSettings::default(),
+        crate::server::RpcServices::new()
+            .with_indexer(Arc::new(IndexerService::new()))
+            .with_application_logs(Arc::new(ApplicationLogsService::new(
+                logs_settings.clone(),
+                Arc::new(RuntimeStore::Memory(MemoryStore::new())),
+            ))),
+    );
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerIndexer::register_handlers();
@@ -101,14 +105,16 @@ async fn indexer_status_reports_sync_lag_and_application_logs_availability() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn indexer_status_reports_persistent_snapshot_path() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let path = std::env::temp_dir().join(format!(
         "neo-rpc-indexer-status-{}-{}.json",
         std::process::id(),
         line!()
     ));
     let service = Arc::new(IndexerService::open(&path).expect("persistent indexer"));
-    system.register_service(service);
+    let system = crate::server::test_support::test_system_with_services(
+        ProtocolSettings::default(),
+        crate::server::RpcServices::new().with_indexer(service),
+    );
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerIndexer::register_handlers();
@@ -126,7 +132,6 @@ async fn indexer_status_reports_persistent_snapshot_path() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn indexer_status_reports_service_store_path() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
     let store = MemoryStoreProvider::new()
         .get_store("")
         .expect("memory store");
@@ -134,7 +139,10 @@ async fn indexer_status_reports_service_store_path() {
     let service = Arc::new(
         IndexerService::open_store_with_path(store, Some(path.clone())).expect("store indexer"),
     );
-    system.register_service(service);
+    let system = crate::server::test_support::test_system_with_services(
+        ProtocolSettings::default(),
+        crate::server::RpcServices::new().with_indexer(service),
+    );
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerIndexer::register_handlers();

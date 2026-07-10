@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn debug_does_not_leak_system_reference() {
     let event = PluginEvent::NodeStarted {
-        system: Arc::new(()) as Arc<dyn Any + Send + Sync>,
+        system: Arc::new(()),
     };
     let formatted = format!("{:?}", event);
     assert!(formatted.contains("NodeStarted"));
@@ -12,7 +12,7 @@ fn debug_does_not_leak_system_reference() {
 
 #[test]
 fn plugin_event_display_includes_block_context() {
-    let event = PluginEvent::BlockReceived {
+    let event: PluginEvent = PluginEvent::BlockReceived {
         block_hash: "0xabcd".to_string(),
         block_height: 42,
     };
@@ -24,22 +24,28 @@ fn plugin_event_display_includes_block_context() {
 
 struct NoopCommitted;
 impl CommittedHandler for NoopCommitted {
-    fn blockchain_committed_handler(&self, _system: &dyn Any, _block: &Block) {}
+    fn blockchain_committed_handler(&self, _network: u32, _block: &Block) {}
 }
 struct NoopWalletChanged;
 impl WalletChangedHandler for NoopWalletChanged {
+    type Sender = ();
+    type Wallet = ();
+
     fn wallet_provider_wallet_changed_handler(
         &self,
-        _sender: &dyn Any,
-        _wallet: Option<Arc<dyn Any + Send + Sync>>,
+        _sender: &Self::Sender,
+        _wallet: Option<Arc<Self::Wallet>>,
     ) {
     }
 }
 
 #[test]
-fn lifecycle_handler_traits_are_object_safe() {
-    // Constructing the trait objects confirms object-safety (these are used
-    // as `dyn` handlers by plugins/services).
-    let _committed: Arc<dyn CommittedHandler> = Arc::new(NoopCommitted);
-    let _wallet_changed: Arc<dyn WalletChangedHandler> = Arc::new(NoopWalletChanged);
+fn lifecycle_handler_traits_accept_concrete_handlers() {
+    fn accept_committed<H: CommittedHandler>(_handler: &H) {}
+    fn accept_wallet_changed<H: WalletChangedHandler<Sender = (), Wallet = ()>>(_handler: &H) {}
+
+    let committed = NoopCommitted;
+    let wallet_changed = NoopWalletChanged;
+    accept_committed(&committed);
+    accept_wallet_changed(&wallet_changed);
 }

@@ -1,7 +1,7 @@
-use std::future::Future;
+use std::future::{Future, Ready, ready};
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, ready as poll_ready};
 
 use tower::{BoxError, Layer, Service};
 
@@ -81,7 +81,7 @@ impl RpcCorsConfig {
 }
 
 #[derive(Clone)]
-struct RpcCorsHeaders {
+pub(super) struct RpcCorsHeaders {
     allow_origin: String,
     allow_headers: String,
 }
@@ -154,7 +154,7 @@ where
 {
     type Response = jsonrpsee::server::HttpResponse;
     type Error = BoxError;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+    type Future = RpcHttpFuture<S::Future>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.inner.poll_ready(cx)
@@ -167,7 +167,7 @@ where
             .and_then(|cors| cors.headers_for(&request));
 
         if request.method().as_str().eq_ignore_ascii_case("OPTIONS") && self.cors.is_some() {
-            return Box::pin(async move { Ok(preflight_response(cors_headers)) });
+            return RpcHttpFuture::ready(Ok(preflight_response(cors_headers)));
         }
 
         if let Some(credentials) = self.auth_credentials.as_ref() {
@@ -178,7 +178,7 @@ where
             if !verify_basic_auth_header(header, &credentials.user, &credentials.password) {
                 let mut response = unauthorized_response();
                 apply_cors_headers(&mut response, cors_headers.as_ref());
-                return Box::pin(async { Ok(response) });
+                return RpcHttpFuture::ready(Ok(response));
             }
             request
                 .extensions_mut()
@@ -186,11 +186,50 @@ where
         }
 
         let future = self.inner.call(request);
-        Box::pin(async move {
-            let mut response = future.await?;
-            apply_cors_headers(&mut response, cors_headers.as_ref());
-            Ok(response)
-        })
+        RpcHttpFuture::inner(future, cors_headers)
+    }
+}
+
+pub(super) enum RpcHttpFuture<F> {
+    Ready(Ready<Result<jsonrpsee::server::HttpResponse, BoxError>>),
+    Inner {
+        future: Pin<Box<F>>,
+        cors_headers: Option<RpcCorsHeaders>,
+    },
+}
+
+impl<F> RpcHttpFuture<F> {
+    fn ready(result: Result<jsonrpsee::server::HttpResponse, BoxError>) -> Self {
+        Self::Ready(ready(result))
+    }
+
+    fn inner(future: F, cors_headers: Option<RpcCorsHeaders>) -> Self {
+        Self::Inner {
+            future: Box::pin(future),
+            cors_headers,
+        }
+    }
+}
+
+impl<F> Future for RpcHttpFuture<F>
+where
+    F: Future<Output = Result<jsonrpsee::server::HttpResponse, BoxError>>,
+{
+    type Output = Result<jsonrpsee::server::HttpResponse, BoxError>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        match this {
+            Self::Ready(future) => Pin::new(future).poll(cx),
+            Self::Inner {
+                future,
+                cors_headers,
+            } => {
+                let mut response = poll_ready!(future.as_mut().poll(cx))?;
+                apply_cors_headers(&mut response, cors_headers.as_ref());
+                Poll::Ready(Ok(response))
+            }
+        }
     }
 }
 

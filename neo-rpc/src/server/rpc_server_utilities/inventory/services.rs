@@ -1,5 +1,3 @@
-use crate::application_logs::ApplicationLogsService;
-use crate::plugins::tokens_tracker::TokensTrackerService;
 use crate::server::rpc_server::{RpcHandler, RpcServer};
 use crate::server::rpc_server_application_logs::RpcServerApplicationLogs;
 use crate::server::rpc_server_indexer::RpcServerIndexer;
@@ -8,8 +6,6 @@ use crate::server::rpc_server_state::RpcServerState;
 use crate::server::rpc_server_tokens_tracker::RpcServerTokensTracker;
 use crate::server::rpc_server_utilities::RpcServerUtilities;
 use crate::server::rpc_server_utilities::response::{service_entry_to_json, services_to_json};
-use neo_indexer::IndexerService;
-use neo_oracle_service::OracleService;
 use serde_json::{Value, json};
 
 impl RpcServer {
@@ -53,7 +49,7 @@ impl RpcServer {
     }
 
     fn application_logs_entry(&self, interfaces: &[&str]) -> Value {
-        let application_logs = self.system().get_service::<ApplicationLogsService>();
+        let application_logs = self.system().application_logs_service();
         service_entry_to_json(
             "ApplicationLogs",
             interfaces,
@@ -73,7 +69,7 @@ impl RpcServer {
     }
 
     fn tokens_tracker_entry(&self, interfaces: &[&str]) -> Value {
-        let tokens_tracker = self.system().get_service::<TokensTrackerService>();
+        let tokens_tracker = self.system().tokens_tracker_service();
         service_entry_to_json(
             "TokensTracker",
             interfaces,
@@ -94,7 +90,7 @@ impl RpcServer {
     }
 
     fn indexer_entry(&self, interfaces: &[&str]) -> Value {
-        let indexer = self.system().get_service::<IndexerService>();
+        let indexer = self.system().indexer_service();
         let (enabled, ready, status) = match indexer {
             Some(indexer) => match RpcServerIndexer::indexer_status_json(self, &indexer) {
                 Ok(status) => (true, true, status),
@@ -113,7 +109,7 @@ impl RpcServer {
     }
 
     fn oracle_entry(&self) -> Value {
-        let oracle = self.system().get_service::<OracleService>();
+        let oracle = self.oracle_service();
         service_entry_to_json(
             "OracleService",
             &[],

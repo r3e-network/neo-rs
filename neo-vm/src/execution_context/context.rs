@@ -24,9 +24,9 @@ pub type Slot = crate::slot::Slot;
 
 /// Represents an execution context in the Neo Virtual Machine.
 /// This matches the C# implementation's `ExecutionContext` class.
-pub struct ExecutionContext {
+pub struct ExecutionContext<S = ()> {
     /// The shared states (script, evaluation stack, static fields)
-    shared_states: SharedStates,
+    shared_states: SharedStates<S>,
 
     /// The current instruction pointer
     instruction_pointer: usize,
@@ -44,13 +44,41 @@ pub struct ExecutionContext {
     try_stack: Option<Vec<ExceptionHandlingContext>>,
 }
 
-impl ExecutionContext {
+impl<S: Default> ExecutionContext<S> {
     /// Creates a new execution context.
     /// This matches the C# implementation's constructor pattern.
     #[must_use]
     pub fn new(script: Script, rvcount: i32, reference_counter: &ReferenceCounter) -> Self {
+        Self::new_with_state_factory(script, rvcount, reference_counter, S::default)
+    }
+}
+
+impl<S> ExecutionContext<S> {
+    /// Creates a new execution context with an explicit typed state value.
+    #[must_use]
+    pub fn new_with_state(
+        script: Script,
+        rvcount: i32,
+        reference_counter: &ReferenceCounter,
+        state: S,
+    ) -> Self {
+        Self::new_with_state_factory(script, rvcount, reference_counter, || state)
+    }
+
+    /// Creates a new execution context with a typed-state factory.
+    #[must_use]
+    pub fn new_with_state_factory<F: FnOnce() -> S>(
+        script: Script,
+        rvcount: i32,
+        reference_counter: &ReferenceCounter,
+        factory: F,
+    ) -> Self {
         Self {
-            shared_states: SharedStates::new(script, reference_counter.clone()),
+            shared_states: SharedStates::new_with_state_factory(
+                script,
+                reference_counter.clone(),
+                factory,
+            ),
             instruction_pointer: 0,
             rvcount,
             local_variables: None,
@@ -180,6 +208,12 @@ impl ExecutionContext {
             .static_fields_ptr_eq(&other.shared_states)
     }
 
+    /// Returns true when both contexts share the same typed state.
+    #[must_use]
+    pub fn shares_state_with(&self, other: &Self) -> bool {
+        self.shared_states.state_ptr_eq(&other.shared_states)
+    }
+
     /// Clears static field references for this context.
     pub fn clear_static_fields_references(&self) {
         self.with_static_fields_mut(|static_fields| {
@@ -299,26 +333,20 @@ impl ExecutionContext {
         self.instruction_pointer += instruction_size;
     }
 
-    /// Gets a state value for the specified type, creating it if it doesn't exist.
-    /// Mirrors the C# ExecutionContext.GetState\<T>() helper.
+    /// Returns the shared typed state for this execution context.
     #[must_use]
-    pub fn get_state<T: 'static + Default + Send + Sync>(&self) -> Arc<Mutex<T>> {
-        self.shared_states.get_state::<T>()
+    pub fn state(&self) -> Arc<Mutex<S>> {
+        self.shared_states.state()
     }
 
-    /// Gets a state value for the specified type using the provided factory when absent.
-    /// Mirrors the C# ExecutionContext.GetState\<T>(Func\<T>) helper.
-    pub fn get_state_with_factory<T: 'static + Send + Sync, F: FnOnce() -> T>(
-        &self,
-        factory: F,
-    ) -> Arc<Mutex<T>> {
-        self.shared_states.get_state_with_factory(factory)
+    /// Executes a closure with mutable access to the shared typed state.
+    pub fn with_state<R, F: FnOnce(&mut S) -> R>(&self, f: F) -> R {
+        self.shared_states.with_state(f)
     }
 
-    /// Sets a state value by key.
-    /// This matches the C# implementation's state setting behavior.
-    pub fn set_state<T: 'static + Send + Sync>(&self, value: T) {
-        self.shared_states.set_state(value);
+    /// Replaces the shared typed state value and returns the previous state.
+    pub fn replace_state(&self, state: S) -> S {
+        self.shared_states.replace_state(state)
     }
 
     /// Push an item onto the evaluation stack
@@ -356,7 +384,10 @@ impl ExecutionContext {
     pub fn clone_for_reference_counter(
         &self,
         reference_counter: &ReferenceCounter,
-    ) -> VmResult<Self> {
+    ) -> VmResult<Self>
+    where
+        S: Default,
+    {
         // Create a new shared states with the new reference counter
         let shared_states = SharedStates::new(self.script().clone(), reference_counter.clone());
 
@@ -395,21 +426,6 @@ impl ExecutionContext {
             arguments: None,
             try_stack: None,
         }
-    }
-
-    /// Gets a shared state by type, creating it if it doesn't exist.
-    /// Mirrors the C# ExecutionContext.GetState\<T>() helper for shared state access.
-    #[must_use]
-    pub fn get_shared_state<T: 'static + Default + Send + Sync>(&self) -> Arc<Mutex<T>> {
-        self.shared_states.get_state::<T>()
-    }
-
-    /// Gets a shared state by type, creating it with the provided factory if it doesn't exist.
-    pub fn get_shared_state_with_factory<T: 'static + Send + Sync, F: FnOnce() -> T>(
-        &self,
-        factory: F,
-    ) -> Arc<Mutex<T>> {
-        self.shared_states.get_state_with_factory(factory)
     }
 
     /// Initializes the slots for local variables and arguments.
@@ -519,7 +535,7 @@ impl ExecutionContext {
     }
 }
 
-impl Clone for ExecutionContext {
+impl<S> Clone for ExecutionContext<S> {
     fn clone(&self) -> Self {
         self.clone_with_position(self.instruction_pointer)
     }

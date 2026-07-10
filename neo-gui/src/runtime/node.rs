@@ -167,15 +167,21 @@ enum Capture {
 
 impl Capture {
     fn pump(self, logs: &Arc<Mutex<VecDeque<String>>>) {
-        let reader: Box<dyn BufRead> = match self {
-            Capture::Out(s) => Box::new(BufReader::new(s)),
-            Capture::Err(s) => Box::new(BufReader::new(s)),
-        };
+        match self {
+            Capture::Out(stream) => Self::pump_reader(BufReader::new(stream), logs),
+            Capture::Err(stream) => Self::pump_reader(BufReader::new(stream), logs),
+        }
+    }
+
+    fn pump_reader<R>(reader: R, logs: &Arc<Mutex<VecDeque<String>>>)
+    where
+        R: BufRead,
+    {
         for line in reader.lines().map_while(Result::ok) {
-            let mut l = lock(logs, "LocalNode logs");
-            l.push_back(line);
-            while l.len() > 2000 {
-                l.pop_front();
+            let mut lines = lock(logs, "LocalNode logs");
+            lines.push_back(line);
+            while lines.len() > 2000 {
+                lines.pop_front();
             }
         }
     }

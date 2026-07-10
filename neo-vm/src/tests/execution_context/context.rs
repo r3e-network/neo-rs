@@ -10,6 +10,12 @@ struct TestFlag {
     flag: bool,
 }
 
+#[derive(Default)]
+struct TestState {
+    flag: bool,
+    values: Vec<i32>,
+}
+
 #[test]
 fn test_execution_context_creation() {
     let script_bytes = vec![
@@ -20,7 +26,7 @@ fn test_execution_context_creation() {
     let script = Script::new_relaxed(script_bytes);
     let reference_counter = ReferenceCounter::new();
 
-    let context = ExecutionContext::new(script, -1, &reference_counter);
+    let context = ExecutionContext::<()>::new(script, -1, &reference_counter);
 
     assert_eq!(context.instruction_pointer(), 0);
     assert_eq!(context.rvcount(), -1);
@@ -45,7 +51,7 @@ fn test_move_next() {
     let script = Script::new_relaxed(script_bytes);
     let reference_counter = ReferenceCounter::new();
 
-    let mut context = ExecutionContext::new(script, -1, &reference_counter);
+    let mut context = ExecutionContext::<()>::new(script, -1, &reference_counter);
 
     assert_eq!(
         context
@@ -86,7 +92,7 @@ fn test_try_stack() {
     let script = Script::new_relaxed(script_bytes);
     let reference_counter = ReferenceCounter::new();
 
-    let mut context = ExecutionContext::new(script, -1, &reference_counter);
+    let mut context = ExecutionContext::<()>::new(script, -1, &reference_counter);
 
     // Initially, try_stack is None
     assert!(context.try_stack().is_none());
@@ -195,7 +201,7 @@ fn test_next_instruction() {
     let script = Script::new_relaxed(script_bytes);
     let reference_counter = ReferenceCounter::new();
 
-    let context = ExecutionContext::new(script, -1, &reference_counter);
+    let context = ExecutionContext::<()>::new(script, -1, &reference_counter);
 
     // Test current instruction
     let current = context
@@ -222,7 +228,7 @@ fn test_clone() {
     let script = Script::new_relaxed(script_bytes);
     let reference_counter = ReferenceCounter::new();
 
-    let mut context = ExecutionContext::new(script, -1, &reference_counter);
+    let mut context = ExecutionContext::<()>::new(script, -1, &reference_counter);
 
     // Push a value onto the stack
     context
@@ -251,94 +257,78 @@ fn test_clone() {
 }
 
 #[test]
-fn test_get_state() -> Result<(), Box<dyn std::error::Error>> {
+fn test_typed_state_is_shared_across_clones() {
     let script_bytes = vec![OpCode::NOP.byte()];
     let script = Script::new_relaxed(script_bytes);
     let reference_counter = ReferenceCounter::new();
 
-    let context = ExecutionContext::new(script, -1, &reference_counter);
+    let context = ExecutionContext::<TestState>::new(script, -1, &reference_counter);
 
-    let flag_state = context.get_state_with_factory::<TestFlag, _>(|| TestFlag { flag: true });
+    let flag_state = context.state();
     {
-        let mut flag = flag_state.lock();
-        assert!(flag.flag);
-        flag.flag = false;
-    }
-
-    let flag_state_again = context.get_state::<TestFlag>();
-    {
-        let flag = flag_state_again.lock();
-        assert!(!flag.flag);
-    }
-
-    let stack_state = context.get_state_with_factory::<Vec<i32>, _>(Vec::new);
-    {
-        let mut stack = stack_state.lock();
-        stack.push(100);
+        let mut state = flag_state.lock();
+        assert!(!state.flag);
+        state.flag = true;
+        state.values.push(100);
     }
 
     let clone = context.clone();
-    let cloned_stack_state = clone.get_state::<Vec<i32>>();
+    assert!(context.shares_state_with(&clone));
+    let cloned_stack_state = clone.state();
     {
-        let mut stack = cloned_stack_state.lock();
-        assert_eq!(stack.pop(), Some(100));
-        stack.push(200);
+        let mut state = cloned_stack_state.lock();
+        assert!(state.flag);
+        assert_eq!(state.values.pop(), Some(100));
+        state.values.push(200);
     }
 
-    let original_stack_state = context.get_state::<Vec<i32>>();
+    let original_stack_state = context.state();
     {
-        let mut stack = original_stack_state.lock();
-        assert_eq!(stack.pop(), Some(200));
+        let mut state = original_stack_state.lock();
+        assert!(state.flag);
+        assert_eq!(state.values.pop(), Some(200));
     }
-    Ok(())
 }
 
 #[test]
-fn test_get_shared_state() -> Result<(), Box<dyn std::error::Error>> {
+fn test_typed_state_replacement_and_reference_counter_clone_reset() {
     let script_bytes = vec![OpCode::NOP.byte()];
     let script = Script::new_relaxed(script_bytes);
     let reference_counter = ReferenceCounter::new();
 
-    let context = ExecutionContext::new(script, -1, &reference_counter);
-
-    let shared_vec = context.get_shared_state::<Vec<i32>>();
-    {
-        let mut vec = shared_vec.lock();
-        vec.push(100);
-    }
-
-    let shared_vec_again = context.get_shared_state::<Vec<i32>>();
-    {
-        let vec = shared_vec_again.lock();
-        assert_eq!(*vec, vec![100]);
-    }
-
-    let shared_with_factory = context.get_shared_state_with_factory::<Vec<i32>, _>(|| vec![200]);
-    {
-        let vec = shared_with_factory.lock();
-        assert_eq!(*vec, vec![100]);
-    }
+    let context = ExecutionContext::new_with_state(
+        script,
+        -1,
+        &reference_counter,
+        TestState {
+            flag: true,
+            values: vec![100],
+        },
+    );
 
     let clone = context.clone();
-    let clone_shared_vec = clone.get_shared_state::<Vec<i32>>();
+    let previous = context.replace_state(TestState {
+        flag: false,
+        values: vec![1, 2, 3],
+    });
+    assert!(previous.flag);
+    assert_eq!(previous.values, vec![100]);
+
+    let shared_state = clone.state();
     {
-        let mut vec = clone_shared_vec.lock();
-        vec.push(300);
+        let state = shared_state.lock();
+        assert!(!state.flag);
+        assert_eq!(state.values, vec![1, 2, 3]);
     }
 
-    let context_shared_vec = context.get_shared_state::<Vec<i32>>();
-    {
-        let vec = context_shared_vec.lock();
-        assert_eq!(*vec, vec![100, 300]);
-    }
+    let fresh_counter = ReferenceCounter::new();
+    let fresh_clone = context
+        .clone_for_reference_counter(&fresh_counter)
+        .expect("clone with a fresh reference counter");
+    assert!(!fresh_clone.shares_state_with(&context));
 
-    context.set_state(vec![1, 2, 3]);
-    let context_shared_vec_after = context.get_shared_state::<Vec<i32>>();
-
-    {
-        let vec = context_shared_vec_after.lock();
-        assert_eq!(*vec, vec![1, 2, 3]);
-    }
-
-    Ok(())
+    let fresh_state = fresh_clone.state();
+    let fresh_state = fresh_state.lock();
+    assert!(!fresh_state.flag);
+    assert!(fresh_state.values.is_empty());
 }

@@ -35,8 +35,8 @@ fn before543_checked_index(type_name: &str, key: &StackItem, length: usize) -> V
 
 /// REMOVE, pre-543 (C# `Remove_Before543`): array/struct out-of-range is an
 /// uncatchable `InvalidOperationException`.
-pub(crate) fn remove_before543(
-    engine: &mut ExecutionEngine,
+pub(crate) fn remove_before543<S>(
+    engine: &mut ExecutionEngine<S>,
     _instruction: &Instruction,
 ) -> VmResult<()> {
     let context = require_context(engine)?;
@@ -77,8 +77,8 @@ pub(crate) fn remove_before543(
 
 /// HASKEY, pre-543 (C# `HasKey_Before543`): a negative index is an uncatchable
 /// `InvalidOperationException`; an in-range index pushes the membership bool.
-pub(crate) fn has_key_before543(
-    engine: &mut ExecutionEngine,
+pub(crate) fn has_key_before543<S>(
+    engine: &mut ExecutionEngine<S>,
     instruction: &Instruction,
 ) -> VmResult<()> {
     let context = require_context(engine)?;
@@ -133,8 +133,8 @@ pub(crate) fn has_key_before543(
 
 /// PICKITEM, pre-543 (C# `PickItem_Before543`): out-of-range is a
 /// `CatchableException`, but an `i32`-overflowing index faults uncatchably.
-pub(crate) fn pick_item_before543(
-    engine: &mut ExecutionEngine,
+pub(crate) fn pick_item_before543<S>(
+    engine: &mut ExecutionEngine<S>,
     _instruction: &Instruction,
 ) -> VmResult<()> {
     let context = require_context(engine)?;
@@ -182,8 +182,8 @@ pub(crate) fn pick_item_before543(
 
 /// SETITEM, pre-543 (C# `SetItem_Before543`): out-of-range is a
 /// `CatchableException`, but an `i32`-overflowing index faults uncatchably.
-pub(crate) fn set_item_before543(
-    engine: &mut ExecutionEngine,
+pub(crate) fn set_item_before543<S>(
+    engine: &mut ExecutionEngine<S>,
     instruction: &Instruction,
 ) -> VmResult<()> {
     let context = require_context(engine)?;

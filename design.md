@@ -1,7 +1,7 @@
 # neo-rs Architecture Design Document
 
-**Version**: 4.0
-**Date**: 2026-07-05
+**Version**: 5.1
+**Date**: 2026-07-10
 **Author**: Software Architect
 **Status**: Active
 
@@ -10,25 +10,26 @@
 ## Executive Summary
 
 This document captures the architecture decisions for the neo-rs Neo N3 Rust
-node implementation. It covers the current state (26 crates, 7 layers), the
+node implementation. It covers the current state (26 crates, 8 ordered layers), the
 identified issues, and the ADRs that resolve them. The goal is a codebase
 that is professional, consistent, and ready for long-term evolution.
 
 **Architecture health score**: 9.5/10 (up from 9.4 after ADR-027 dead code excision)
 
-The ADR log now spans ADR-001 through ADR-032. Beyond the early trait-design,
+The ADR log now spans ADR-001 through ADR-035. Beyond the early trait-design,
 duplication, and async/concurrency audits (ADR-016 through ADR-019), later ADRs
 cover store-surface reduction and trait sealing (ADR-020, ADR-021), dead-code
 excision (ADR-022, ADR-027, ADR-028, ADR-032), hex/KeyBuilder consolidation
 (ADR-024, ADR-025), cross-crate helpers and test fixtures (ADR-029), the
 neo-hsm default flip and ConsensusApi rename (ADR-030), and the async
-ConsensusSigner deadlock fix (ADR-031).
+ConsensusSigner deadlock fix (ADR-031), static composition (ADR-034), and the
+staged core/application lifecycle with private service layouts (ADR-035).
 
 ---
 
 ## Current Architecture
 
-### Layer Hierarchy (26 crates, 7 layers)
+### Layer Hierarchy (26 crates, 8 ordered layers)
 
 | Layer | Crates | Role |
 |-------|--------|------|
@@ -38,20 +39,21 @@ ConsensusSigner deadlock fix (ADR-031).
 | L1c Cross-cutting | neo-config | Configuration |
 | L2 Protocol | neo-payloads, neo-consensus, neo-hsm | Block/tx types, dBFT, HSM signing |
 | L3 Domain Services | neo-runtime, neo-execution, neo-native-contracts, neo-state-service, neo-mempool | Service traits, VM execution, native contracts, state, mempool |
-| L4 Node Services | neo-blockchain, neo-network, neo-wallets, neo-indexer, neo-tee | Block import, P2P, wallets, indexer, TEE |
+| L4 Node Services | neo-blockchain, neo-network, neo-wallets, neo-indexer, neo-oracle-service | Block import, P2P, wallets, indexer, off-chain Oracle worker |
 | L5 Composition | neo-system | Node composition root |
-| L6 Plugin/RPC | neo-rpc, neo-oracle-service | JSON-RPC server/client, oracle |
+| L6 Plugin/RPC | neo-rpc | JSON-RPC server/client and adapter method groups |
 | L7 Application | neo-node, neo-gui | Binary entry points |
 
 ### Key Patterns
 
 1. **Provider traits** (`neo-runtime`): `ConfigProvider`, `StoreProvider`,
-   `TxAdmission` — decouple L6 from L5 (`BlockchainProvider` was removed in
+   `TxAdmission` — decouple service and adapter code from L5 (`BlockchainProvider` was removed in
    ADR-032)
 2. **NodeTypes** (`neo-runtime`): the surviving sealed single-impl seam
    (ADR-021). The `NodeComponents` / `FullNode` type-state composition was
    removed in ADR-032; the builder validates concrete fields at `build()`
-3. **EnginePipeline** (`neo-engine`): stage-based block processing abstraction
+3. **Canonical block import** (`neo-runtime` + `neo-blockchain`): typed
+   `BlockImport`, bounded import queue, validation pipeline, and ordered persist
 4. **Unified error handling**: all library crates use `CoreError` with `From`
    impls; application crates use `anyhow::Result`
 
@@ -61,13 +63,14 @@ ConsensusSigner deadlock fix (ADR-031).
 
 ### V1: neo-oracle-service → neo-system layer violation (FIXED)
 
-**Problem**: `neo-oracle-service` (L6) held `Arc<neo_system::Node>` (L5),
-creating an upward dependency.
+**Problem**: `neo-oracle-service` (then classified as L6, now L4) held
+`Arc<neo_system::Node>` (L5), creating an upward dependency.
 
-**Fix**: Created `OracleNodeProvider` combined trait (`ConfigProvider +
-StoreProvider + TxAdmission`) in neo-oracle-service. Added `TxAdmission`
-trait to neo-runtime. `Node` implements all three. Production code uses
-`Arc<dyn OracleNodeProvider>`, tests still use `Arc<Node>` via dev-dep.
+**Fix**: Created the static `OracleRuntimeProvider` capability bound
+(`ConfigProvider + StoreProvider + TxAdmission`) in `neo-oracle-service` and
+added `TxAdmission` to `neo-runtime`. `OracleService<R, P>` remains generic over
+its concrete runtime and native-contract providers; tests use `Node` via a dev
+dependency.
 
 ### Error handling gaps (FIXED)
 
@@ -128,8 +131,7 @@ neo-rpc-client (L6) — HTTP client implementation
 
 **Trade-offs**:
 - **Gained (now)**: No L6 → L5 layer violation. `neo-system` no longer in
-  required deps. All 20 layer boundary tests pass. Full workspace (3,354+
-  tests) passes.
+  required deps. All 28 layer boundary tests and the full workspace suite pass.
 - **Gaining (future)**: Client-only builds compile in seconds. Clean
   separation between API contracts and implementations.
 - **Giving up**: 3 crates instead of 1 (future). Slightly more workspace
@@ -340,36 +342,36 @@ collision with the `neo-engine` crate.
   it has a different shape (synchronous RPC use) and its name does not
   collide with any crate
 
-### ADR-008: L6 lateral dependency (neo-rpc → neo-oracle-service)
+### ADR-008: Oracle service layer ownership
 
-**Status**: Accepted
+**Status**: Superseded by the 2026-07-10 layer audit
 
 **Context**: `neo-rpc` (L6) has a feature-gated dependency on
-`neo-oracle-service` (L6) behind the `server` feature. This is a
-same-layer lateral dependency. The RPC server imports `OracleService`
+`neo-oracle-service` behind the `server` feature. The RPC server imports `OracleService`
 and `OracleServiceError` to:
-1. Look up `OracleService` from the system service registry by type
+1. Access the explicitly configured `OracleService` handle
 2. Map `OracleServiceError` variants to JSON-RPC error codes
 
-**Decision**: Accept the lateral dependency as intentional. The
-alternative — routing the oracle RPC methods through `neo-node` (L7) —
-would split the RPC surface across crates and require `neo-node` to
-implement RPC handler logic that belongs in `neo-rpc`.
+The original type-map lookup described by this ADR was superseded by ADR-034.
+
+**Decision**: Classify `neo-oracle-service` as a Node Service (L4). It is a
+long-running off-chain worker with wallet, retry, signing, and request lifecycle
+ownership. `neo-rpc` (L6) therefore consumes it through a normal downward
+dependency while Oracle JSON-RPC methods remain in the RPC adapter crate.
 
 **Trade-offs**:
-- **Gaining**: RPC server code stays cohesive in `neo-rpc`. The service
-  registry pattern (`get_service::<OracleService>()`) is the standard
-  type-based lookup — it requires the type to be in scope.
-- **Giving up**: `neo-rpc` with `server` feature cannot build without
-  pulling `neo-oracle-service`. This is acceptable because the server
-  feature already pulls in the full node stack.
+- **Gaining**: RPC server code stays cohesive in `neo-rpc`; the oracle handle is
+  a named typed field on `RpcServer`.
+- **Giving up**: server builds pull in the Oracle node-service API even when the
+  runtime service is disabled; client-only builds remain unaffected.
 - **Reversibility**: Medium — moving oracle RPC handlers to `neo-node`
   is possible but would require significant refactoring.
 
 **Consequences**:
-- The L6 lateral is documented and accepted
+- The former L6 lateral edge is removed from the architecture exception list
 - `neo-rpc` client-only builds are unaffected (dependency is `optional`)
-- The service-registry pattern is established for future L6 plugins
+- Optional Oracle composition uses the named typed field on `RpcServer`; no
+  service registry or type-map is reintroduced
 
 ### ADR-009: neo-engine pipeline overlap with neo-blockchain
 
@@ -952,48 +954,49 @@ Added manual `Debug` impls to all concrete implementations: `MemoryStore`,
 
 ---
 
-### ADR-020: Store god trait split (FastSyncStore + RawOverlayStore)
+### ADR-020: Store capabilities without dynamic extension traits
 
 **Status**: Accepted (implemented)
 
-**Context**: The `Store` trait had grown to 19 methods across 6 concerns (read,
-write, snapshot, fast-sync, overlay, downcast). The fast-sync concern (4
-methods) had only 2 non-test callers (`neo-node` startup, `neo-state-service`
-MptStore). The overlay concern (3 methods, including the
-`supports_raw_overlay_commit` capability flag) had only 2 non-test callers
-(`neo-storage::StoreCache`, `neo-state-service::MptStore`). Backends that
-didn't support fast-sync (`MemoryStore`, `MdbxStore`) carried 4 useless no-op
-default methods.
+**Context**: The earlier ADR-020 split fast-sync and raw-overlay behavior into
+`FastSyncStore` / `RawOverlayStore` extension traits exposed through
+`as_*() -> Option<&dyn ...>` accessors. That reduced the original store surface,
+but it also reintroduced dynamic dispatch and downcast-like capability probing
+on a hot storage boundary. The storage backends are a fixed production set
+(`memory`, `mdbx`, `rocksdb`) behind `StoreFactory`, so dynamic extension
+objects were unnecessary.
 
-**Decision**: Extract two extension traits:
-- `FastSyncStore: Store` — 4 fast-sync methods. Only `RocksDbStore`
-  implements it.
-- `RawOverlayStore: Store` — 3 overlay methods. `RocksDbStore` and
-  `MdbxStore` implement it.
-- `Store` gains two accessor methods with default `None`:
-  `as_fast_sync_store() -> Option<&dyn FastSyncStore>` and
-  `as_raw_overlay_store() -> Option<&dyn RawOverlayStore>`.
-- The `supports_raw_overlay_commit()` boolean is deleted — trait existence
-  (via the accessor) IS the capability check.
-- `Store` drops from 19 → 14 methods and 6 → 4 concerns.
+**Decision**: Keep one generic `Store` boundary and expose optional backend
+capabilities as direct default methods:
+- `backend_kind()`, `mdbx_environment_info()`, and `rocksdb_batch_metrics()`
+  replace concrete-store downcasts for diagnostics.
+- `supports_fast_sync_mode()`, `enable_fast_sync_mode()`,
+  `disable_fast_sync_mode()`, `discard_pending_fast_sync_writes()`, and
+  `has_pending_fast_sync_writes()` replace `FastSyncStore`.
+- `try_commit_raw_overlay()` and `try_commit_borrowed_raw_overlay()` replace
+  `RawOverlayStore`.
+- Unsupported backends keep no-op/`Ok(false)` defaults; concrete stores
+  override the methods they actually support.
+- The `Store::as_any`, `StoreProvider::as_any`, `FastSyncStore`, and
+  `RawOverlayStore` APIs are deleted.
 
 **Trade-offs**:
-- **Gaining**: `Store` trait surface reduced by 26%. `MemoryStore` no longer
-  carries 4 useless no-op methods. `supports_raw_overlay_commit` boolean
-  eliminated. Clear capability model: implement the trait = support the
-  feature.
-- **Giving up**: Callers must use `if let Some(fs) = store.as_fast_sync_store()`
-  instead of calling methods directly. Slightly more verbose at call sites.
-  Test structs that implement overlay behavior must implement a separate
-  `RawOverlayStore` impl block.
-- **Reversibility**: High — merging the traits back is additive.
+- **Gaining**: Callers remain generic over `S: Store` and no longer ask for
+  `&dyn` extension handles. Backend metrics and fast-sync/overlay behavior use
+  one consistent provider/capability pattern.
+- **Giving up**: The `Store` trait is larger than the temporary extension-trait
+  split, but the methods are all no-op defaults and remove runtime capability
+  object plumbing.
+- **Reversibility**: Medium — reintroducing extension traits would be
+  mechanical, but it would deliberately re-add dynamic dispatch at the storage
+  boundary.
 
 **Consequences**:
-- `Store`: 14 methods, 4 concerns (read, write, snapshot, downcast)
-- `FastSyncStore`: 4 methods, 1 impl (`RocksDbStore`)
-- `RawOverlayStore`: 2 methods, 2 impls (`RocksDbStore`, `MdbxStore`)
-- All callers updated to use accessor pattern
-- 3 test structs updated with separate `RawOverlayStore` impls
+- Storage callers use direct generic methods instead of `as_*()` accessors.
+- MDBX and RocksDB telemetry no longer downcast concrete stores.
+- `RuntimeStore` forwards capabilities through enum dispatch.
+- Test and benchmark stores implement the same `Store` methods as production
+  stores.
 
 ### ADR-021: Trait sealing (NodeTypes, NodeComponents, EngineApi)
 
@@ -1275,13 +1278,13 @@ Validation is split into:
 | doc(html_root_url) versions | All 11 crates at 0.10.0 (ADR-013) |
 | Redundant inline lints | Removed (tokens_tracker module) |
 | reth/polkadot comparison | Documented (8 patterns adopted, 4 deferred) |
-| Evolution roadmap | 4 phases, full ADR log (ADR-001 through ADR-032) |
+| Evolution roadmap | 4 phases, full ADR log (ADR-001 through ADR-035) |
 | Debug trait bounds | Consistent across all service traits (ADR-019) |
 | HSM redeem script | Delegates to canonical neo-vm impl (ADR-016) |
 | Async/concurrency safety | Excellent — 0 Critical/Major issues (ADR audit) |
 | Backpressure handling | Bounded channels + try_send slow-peer isolation |
 | Mempool TOCTOU safety | Atomic check-verify-act under write lock |
-| Store trait surface | Reduced 19→14 methods via FastSyncStore/RawOverlayStore split (ADR-020) |
+| Store trait surface | Direct generic capability methods; no Store downcast or dynamic extension traits (ADR-020) |
 | Trait sealing | NodeTypes, NodeComponents, EngineApi sealed (ADR-021) |
 | Dead KeyBuilder wrapper | Removed (ADR-022) |
 | NodeComponents type-state | Documented as scaffolded, not functional (ADR-023) |
@@ -1836,5 +1839,130 @@ only.
 - The surviving `ConsensusService` name in the tree is the `neo-consensus`
   STRUCT (the real dBFT machine), not a trait — the ADR-030 collision stays
   resolved.
-- `cargo check --workspace --tests` clean; neo-runtime + neo-system tests pass.
+- `cargo check --workspace --all-targets`, the full workspace suite, and
+  workspace Clippy are clean.
 - Architecture health score: 9.6 → 9.6 (honesty; removes dead scaffolding).
+
+### ADR-034: Static runtime composition and allocation-free async trait calls
+
+**Status**: Accepted (implemented)
+
+**Context**: The remaining runtime service locator stored optional services in
+`HashMap<TypeId, Arc<dyn Any + Send + Sync>>`. Besides dynamic dispatch and
+locking on every request, the erased key made storage backing mismatches look
+like a disabled service: registering `StateStore<RuntimeStore>` and requesting
+the default `StateStore<MemoryStore>` compiled and returned `None`. The
+registry also duplicated `SyncImportPipeline`, which was already an explicit
+`Node` field. Separately, the surviving generic network, import, signer, wallet,
+and block-validation traits used `async_trait`; that macro returned a boxed
+trait-object future for every statically dispatched call.
+
+**Decision**:
+
+- Delete `neo_runtime::ServiceRegistry`, all `register_service` /
+  `get_service<T>` APIs, and the duplicate sync-pipeline registration.
+- Keep `neo_system::Node<P, S>` limited to explicit core handles, including its
+  concrete `Arc<SyncImportPipeline<...>>` field.
+- Let `neo-node::NodeServiceHandles<S>` own daemon-only state, state-commit,
+  indexer, application-log, token-tracker, and remote-ledger handles.
+- Pass an immutable `neo_rpc::RpcServices<S>` projection into `NodeContext`.
+  Every supported RPC service has a named typed field; the backing `S` is part
+  of the compile-time contract.
+- Keep `OracleService<NodeContext>` beside the context in `RpcServer`, not
+  inside `NodeContext`, because the oracle itself owns an `Arc<NodeContext>` and
+  nesting it there would create a strong-reference cycle.
+- Replace `async_trait` with return-position `impl Future + Send` for genuinely
+  asynchronous static traits. Make validation and consensus-witness pipeline
+  stages synchronous because they perform no awaited I/O.
+- Remove `?Sized` from the core import queue, sync driver, consensus signer,
+  and native-contract ABI where all supported implementations are concrete.
+
+**Trade-offs**:
+
+- **Gaining**: storage-backing mismatches are compile errors; RPC optional
+  service lookup is a branch plus `Arc` clone with no map lock or downcast;
+  import/network/signer/wallet calls no longer allocate boxed futures; node
+  ownership is visible from fields and function signatures.
+- **Giving up**: arbitrary third-party service registration by `TypeId` and
+  unsized core service implementations. The project has no production consumer
+  requiring either capability. A future open-ended plugin API must define an
+  explicit capability boundary instead of reintroducing an `Any` map.
+- **Reversibility**: Typed fields are straightforward to extend. Reintroducing
+  erased lookup is intentionally not considered a compatible extension.
+
+**Consequences**:
+
+- Production Rust contains no structural `dyn` service, VM, storage, native,
+  signer, wallet, or pipeline boundary. Remaining `dyn Any` occurrences are
+  only Rust's standard panic payload ABI at `catch_unwind` boundaries.
+- Runtime-selected built-in implementations use closed enums such as
+  `RuntimeStore` rather than trait objects.
+- `async-trait` is absent from first-party manifests and production service
+  traits. Some third-party crates still pull it transitively.
+- ADR-032 statements describing runtime `Option<Arc<dyn Trait>>` wiring are
+  historical and superseded by this decision.
+
+### ADR-035: Staged core composition and private service layouts
+
+**Status**: Accepted (implemented)
+
+**Context**: The manifest graph enforced downward dependencies, but ownership
+still leaked upward. `neo-node::composition` directly created the canonical
+store cache, snapshot, mempool, header cache, ledger context,
+`NodeSystemContext`, and `BlockchainService`, then manually rebuilt the same
+component graph through `NodeBuilder`. The application runtime destructured a
+`RunningNode` field bag to assemble startup-import, live-service, and shutdown
+contexts. `neo-blockchain` and `neo-network` also publicly exposed command-loop,
+pending-block, wire, and protocol source module trees even though ordinary
+callers used typed handles.
+
+**Decision**:
+
+- Add generic `neo_system::NodeCoreBuilder<P, S, H>`, where `P` is the native
+  provider, `S` is the concrete store, and `H` is the static block-commit hook.
+- Construct the canonical `StoreCache`/snapshot, mempool, header cache, ledger
+  context, `NodeSystemContext`, and `BlockchainService` in `neo-system`.
+- Return `NodeCoreLaunch`, which separates an owned `BlockchainTask` from the
+  shareable `NodeCore`. Consume `NodeCore` through `into_node(network)` so final
+  composition cannot substitute a different store, provider, mempool, cache,
+  or blockchain handle.
+- Keep config parsing, optional daemon services, network policy, consensus/HSM
+  setup, observability, and task supervision in `neo-node`.
+- Make `RunningNode` private state with one `run_requested_mode` operation. It
+  orders existing startup-import, live-service, and shutdown stages while
+  preserving their named contexts, outcomes, and independent tests.
+- Keep process cancellation and graceful shutdown in `RunningNode`; the
+  reusable `neo_system::Node` does not manufacture a second cancellation token
+  or expose a competing process lifecycle.
+- Make blockchain service internals and network wire/protocol module layouts
+  private. Re-export stable handles, services, outcomes, protocol values, and
+  codecs at crate roots. Keep command enums public only where public typed
+  channel constructors expose them.
+- Delete the unused network capability-constructor wrapper and timeout-counter
+  modules after closing their compatibility module paths.
+
+**Trade-offs**:
+
+- **Gaining**: one reusable owner for provider-neutral core construction;
+  compile-time identity of core collaborators; a short application lifecycle;
+  stable capability APIs independent of source-file layout; less dead code.
+- **Giving up**: external imports through implementation paths such as
+  `neo_blockchain::service::*`, `neo_network::wire::*`, and
+  `neo_network::proto::*`. The project does not preserve intermediate APIs.
+- **Reversibility**: New root-level capabilities can be added deliberately.
+  Reopening entire module trees is intentionally not a compatibility goal.
+
+**Consequences**:
+
+- The active daemon path is
+  `NodeCommand -> OpenNodeRuntime -> NodeRuntime -> RunningNode`.
+- Architecture tests reject direct provider-neutral constructors in
+  `neo-node::composition`, application-level `RunningNode` destructuring, new
+  unapproved same-layer dependencies, and public node-service implementation
+  module layouts.
+- The manifest architecture guard covers production and build dependencies;
+  test-only `dev-dependencies` are intentionally outside the runtime graph.
+- All 28 layer-boundary tests, workspace unit/integration/doctests,
+  `cargo check --workspace --all-targets`, and workspace Clippy pass.
+- Neo N3 v3.10.1 wire bytes, execution, native contracts, state roots,
+  persistence ordering, and task-failure policy are unchanged.

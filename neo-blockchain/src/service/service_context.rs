@@ -51,6 +51,9 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
     /// Native-contract provider captured by the composition root.
     type NativeProvider: NativeContractProvider + 'static;
 
+    /// Concrete cache backing captured by the composition root.
+    type CacheBacking: neo_storage::CacheRead;
+
     /// Returns the effective protocol settings.
     fn settings(&self) -> Arc<ProtocolSettings>;
 
@@ -65,7 +68,7 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
     /// ([`crate::native_persist::persist_block_natives_with_resources`]) against
     /// it for every persisted block; committing the snapshot to the backing
     /// store remains the implementation's responsibility.
-    fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache>> {
+    fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache<Self::CacheBacking>>> {
         None
     }
 
@@ -90,7 +93,7 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
     fn block_committing(
         &self,
         _block: &Block,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<Self::CacheBacking>,
         _application_executed_list: &[ApplicationExecuted],
     ) -> bool {
         true
@@ -103,7 +106,7 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
     fn block_committing_with_context(
         &self,
         block: &Block,
-        snapshot: &neo_storage::DataCache,
+        snapshot: &neo_storage::DataCache<Self::CacheBacking>,
         application_executed_list: &[ApplicationExecuted],
         _context: BlockPersistContext,
     ) -> bool {

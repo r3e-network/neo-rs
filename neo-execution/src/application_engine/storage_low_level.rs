@@ -1,6 +1,11 @@
 use super::*;
 
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     /// Reads a raw storage item from the snapshot using a storage context and key.
     pub fn get_storage_item(&self, context: &StorageContext, key: &[u8]) -> Option<Vec<u8>> {
         let storage_key = StorageKey::new(context.id, key.to_vec());
@@ -135,7 +140,10 @@ impl ApplicationEngine {
     }
 
     /// Pushes an interop container placeholder onto the VM stack.
-    pub fn push_interop_container(&mut self, _container: Arc<dyn Verifiable>) -> CoreResult<()> {
+    pub fn push_interop_container(
+        &mut self,
+        _container: Arc<VerifiableContainer>,
+    ) -> CoreResult<()> {
         // Iterator/interop handles are carried as integer stack items; the
         // concrete object lives in the engine-side `storage_iterators` table.
         self.push(StackItem::from_i64(0))
@@ -152,8 +160,10 @@ impl ApplicationEngine {
         // `IteratorInterop` interop handle, so the id must be read back from the
         // interop. Falling through to `into_int` keeps any bare-integer handle
         // path working.
-        if let Ok(iterator) = item.as_interface::<crate::iterators::IteratorInterop>() {
-            return Ok(iterator.id());
+        if let Ok(interface) = item.as_interface() {
+            if let Some(iterator_id) = interface.iterator_id() {
+                return Ok(iterator_id);
+            }
         }
         let identifier = item
             .into_int()
@@ -187,9 +197,9 @@ impl ApplicationEngine {
         rvcount: i32,
         initial_position: usize,
         configure: F,
-    ) -> CoreResult<ExecutionContext>
+    ) -> CoreResult<ExecutionContext<B>>
     where
-        F: FnOnce(&mut ExecutionContextState),
+        F: FnOnce(&mut ExecutionContextState<B>),
     {
         // Ensure the VM has a valid host pointer in case the engine has moved since creation.
         self.attach_host();
@@ -203,8 +213,7 @@ impl ApplicationEngine {
 
             let script_hash = UInt160::from_bytes(&context.script_hash())
                 .map_err(|e| CoreError::invalid_operation(format!("Invalid script hash: {e}")))?;
-            let state_arc = context
-                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let state_arc = context.state();
             let (call_flags, invocation_counter_hash) = {
                 let mut state = state_arc.lock();
                 // Match Neo C#: each loaded context receives an isolated clone of

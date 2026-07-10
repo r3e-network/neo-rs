@@ -15,9 +15,11 @@
 //! - `native_contract`: native contract trait and base behavior.
 //! - `provider`: Provider adapter for the surrounding trait boundary.
 //! - `role`: native role identifiers.
+//! - `standard`: Typed enum over the closed standard native-contract set.
 
 pub mod catalog;
 pub mod hashes;
 pub mod native_contract;
 pub mod provider;
 pub mod role;
+pub mod standard;

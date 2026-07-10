@@ -11,7 +11,6 @@ use crate::ledger_provider::{
 use crate::service::{BlockchainService, MempoolLike};
 
 use super::extensible_provider::{ExtensibleNativeProvider, NativeExtensibleProvider};
-use neo_execution::native_contract_provider::NativeContractProvider;
 
 const EXTENSIBLE_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
     HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
@@ -63,11 +62,11 @@ where
     /// each validator's signature hash, state-validators BFT address, each state
     /// validator's signature hash}, and the witness must verify under the 0.06-GAS
     /// cap.
-    fn verify_extensible(
+    fn verify_extensible<B: neo_storage::CacheRead>(
         payload: &ExtensiblePayload,
         settings: &neo_config::ProtocolSettings,
-        snapshot: &neo_storage::DataCache,
-        native_contract_provider: Arc<dyn NativeContractProvider>,
+        snapshot: &neo_storage::DataCache<B>,
+        native_contract_provider: Arc<S::NativeProvider>,
         extensible_native_provider: &impl ExtensibleNativeProvider,
     ) -> CoreResult<()> {
         let provider = EXTENSIBLE_LEDGER_PROVIDER_FACTORY.provider(snapshot);

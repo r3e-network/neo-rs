@@ -55,7 +55,7 @@ fn test_server_with_handler(method: &'static str) -> Arc<RwLock<RpcServer>> {
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     server.register_method(RpcHandler::new(
         crate::server::RpcMethodDescriptor::new(method),
-        Arc::new(|_, _| Ok(Value::String("local".to_string()))),
+        |_, _| Ok(Value::String("local".to_string())),
     ));
     Arc::new(RwLock::new(server))
 }

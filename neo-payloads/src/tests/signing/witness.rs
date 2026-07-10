@@ -26,6 +26,14 @@ fn test_witness_new_with_scripts() {
 }
 
 #[test]
+fn witness_exposes_scripts_without_a_cross_crate_trait() {
+    let witness = Witness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
+
+    assert_eq!(witness.invocation_script(), &[1, 2, 3]);
+    assert_eq!(witness.verification_script(), &[4, 5, 6]);
+}
+
+#[test]
 fn test_witness_size() {
     let witness = Witness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
     let size = witness.size();

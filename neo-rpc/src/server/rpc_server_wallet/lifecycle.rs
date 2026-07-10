@@ -4,7 +4,7 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::Arc;
 
-use neo_wallets::{KeyPair, Nep6Wallet, Wallet as CoreWallet, WalletError};
+use neo_wallets::{KeyPair, Nep6Wallet, Wallet as CoreWallet, WalletAccount, WalletError};
 use serde_json::Value;
 use zeroize::Zeroizing;
 
@@ -124,7 +124,7 @@ impl RpcServerWallet {
                 ));
             }
         };
-        let wallet_arc: Arc<dyn CoreWallet> = Arc::new(wallet);
+        let wallet_arc = Arc::new(wallet);
         server.set_wallet(Some(wallet_arc));
         Ok(wallet_success_to_json())
     }

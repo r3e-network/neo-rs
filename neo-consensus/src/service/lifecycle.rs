@@ -5,7 +5,10 @@ use crate::{ChangeViewReason, ConsensusError, ConsensusMessageType, ConsensusRes
 use neo_primitives::{UInt160, UInt256};
 use tracing::{debug, info};
 
-impl ConsensusService {
+impl<S> ConsensusService<S>
+where
+    S: crate::ConsensusSigner,
+{
     /// Starts consensus for a new block
     pub fn start(
         &mut self,

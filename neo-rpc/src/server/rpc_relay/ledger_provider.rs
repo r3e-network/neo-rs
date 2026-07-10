@@ -5,7 +5,7 @@
 //! C#-compatible block classification and blockchain-service submission.
 
 use crate::server::ledger_queries;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::{CacheRead, DataCache};
 
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
@@ -13,7 +13,7 @@ use crate::server::rpc_helpers::internal_error;
 /// Ledger capabilities required by RPC relay preflight.
 pub(super) trait RelayLedgerProvider {
     /// Returns the current persisted ledger height.
-    fn current_height(&self, snapshot: &DataCache) -> Result<u32, RpcException>;
+    fn current_height<B: CacheRead>(&self, snapshot: &DataCache<B>) -> Result<u32, RpcException>;
 }
 
 /// Factory for relay ledger providers.
@@ -38,7 +38,7 @@ impl NativeRelayLedgerProvider {
 }
 
 impl RelayLedgerProvider for NativeRelayLedgerProvider {
-    fn current_height(&self, snapshot: &DataCache) -> Result<u32, RpcException> {
+    fn current_height<B: CacheRead>(&self, snapshot: &DataCache<B>) -> Result<u32, RpcException> {
         ledger_queries::current_index(snapshot).map_err(|err| internal_error(err.to_string()))
     }
 }

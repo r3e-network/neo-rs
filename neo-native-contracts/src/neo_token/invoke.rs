@@ -9,7 +9,6 @@
 use neo_config::Hardfork;
 use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::application_engine_contract::NativeArgNullMask;
 use neo_execution::{ApplicationEngine, Contract};
 use neo_primitives::{FindOptions, UInt160};
 use neo_vm::StackItem;
@@ -21,25 +20,37 @@ use crate::LedgerContract;
 use super::{NEO_CANDIDATE_STATE_CHANGED_EVENT, NEO_TOTAL_AMOUNT, NeoToken};
 
 impl NeoToken {
-    pub(super) fn invoke_symbol(
+    pub(super) fn invoke_symbol<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         Ok(Self::SYMBOL.as_bytes().to_vec())
     }
 
-    pub(super) fn invoke_decimals(
+    pub(super) fn invoke_decimals<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         Ok(BigInt::from(Self::DECIMALS).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_total_supply(
+    pub(super) fn invoke_total_supply<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# `NeoToken.TotalSupply` overrides the fungible-token storage
@@ -47,9 +58,13 @@ impl NeoToken {
         Ok(BigInt::from(NEO_TOTAL_AMOUNT).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_balance_of(
+    pub(super) fn invoke_balance_of<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let account = crate::args::raw_account(args, "NeoToken::balanceOf")?;
@@ -57,9 +72,13 @@ impl NeoToken {
         Ok(self.balance_of(&snapshot, &account)?.to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_transfer(
+    pub(super) fn invoke_transfer<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# FungibleToken.Transfer(from, to, amount, data) with NEO's
@@ -77,9 +96,13 @@ impl NeoToken {
         )?)])
     }
 
-    pub(super) fn invoke_get_gas_per_block(
+    pub(super) fn invoke_get_gas_per_block<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -89,18 +112,26 @@ impl NeoToken {
         Ok(self.gas_per_block_at(&snapshot, index).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_get_register_price(
+    pub(super) fn invoke_get_register_price<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
         Ok(BigInt::from(self.register_price(&snapshot)?).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_set_register_price(
+    pub(super) fn invoke_set_register_price<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C#: validate registerPrice > 0 -> AssertCommittee -> overwrite
@@ -122,9 +153,13 @@ impl NeoToken {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_set_gas_per_block(
+    pub(super) fn invoke_set_gas_per_block<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C#: validate 0 <= gasPerBlock <= 10*GAS.Factor -> AssertCommittee
@@ -160,9 +195,13 @@ impl NeoToken {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_get_committee(
+    pub(super) fn invoke_get_committee<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# returns ECPoint[] sorted ascending; marshaled as an Array of
@@ -171,9 +210,13 @@ impl NeoToken {
         Self::points_to_array_bytes(&self.committee_sorted(&snapshot)?)
     }
 
-    pub(super) fn invoke_get_next_block_validators(
+    pub(super) fn invoke_get_next_block_validators<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // First ValidatorsCount committee members (stored order), sorted.
@@ -182,9 +225,13 @@ impl NeoToken {
         Self::points_to_array_bytes(&self.next_block_validators(&snapshot, count)?)
     }
 
-    pub(super) fn invoke_get_candidates(
+    pub(super) fn invoke_get_candidates<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -195,9 +242,13 @@ impl NeoToken {
         Self::candidates_to_array_bytes(&candidates)
     }
 
-    pub(super) fn invoke_get_candidate_vote(
+    pub(super) fn invoke_get_candidate_vote<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let pubkey_bytes = args.first().ok_or_else(|| {
@@ -213,9 +264,13 @@ impl NeoToken {
             .to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_register_candidate(
+    pub(super) fn invoke_register_candidate<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# RegisterCandidate: pre-HF_Echidna a failed witness returns
@@ -258,9 +313,13 @@ impl NeoToken {
         )?)])
     }
 
-    pub(super) fn invoke_get_all_candidates(
+    pub(super) fn invoke_get_all_candidates<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# GetAllCandidates (NeoToken.cs:537-545): a StorageIterator
@@ -288,9 +347,13 @@ impl NeoToken {
         Ok(iterator_id.to_le_bytes().to_vec())
     }
 
-    pub(super) fn invoke_on_nep17_payment(
+    pub(super) fn invoke_on_nep17_payment<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# NeoToken.OnNEP17Payment (NeoToken.cs:374-389, HF_Echidna):
@@ -338,9 +401,13 @@ impl NeoToken {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_unregister_candidate(
+    pub(super) fn invoke_unregister_candidate<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# UnregisterCandidate: witness on the candidate account, flip the
@@ -397,9 +464,13 @@ impl NeoToken {
         Ok(vec![1u8])
     }
 
-    pub(super) fn invoke_vote(
+    pub(super) fn invoke_vote<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# Vote -> VoteInternal: witness on the voter, then the vote
@@ -408,9 +479,7 @@ impl NeoToken {
         // calls `NEO.VoteInternal` directly).
         let account = crate::args::raw_account(args, "NeoToken::vote")?;
         // voteTo is a nullable PublicKey (bit 1 of the arg null-mask).
-        let vote_to_is_null = engine
-            .get_state::<NativeArgNullMask>()
-            .is_some_and(|mask| mask.0 & (1 << 1) != 0);
+        let vote_to_is_null = engine.native_arg_is_null(1);
         let vote_to: Option<ECPoint> = if vote_to_is_null {
             None
         } else {
@@ -434,18 +503,26 @@ impl NeoToken {
         )?)])
     }
 
-    pub(super) fn invoke_get_committee_address(
+    pub(super) fn invoke_get_committee_address<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
         Ok(self.compute_committee_address(&snapshot)?.to_bytes())
     }
 
-    pub(super) fn invoke_get_account_state(
+    pub(super) fn invoke_get_account_state<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let account = crate::args::raw_account(args, "NeoToken::getAccountState")?;
@@ -457,9 +534,13 @@ impl NeoToken {
             .unwrap_or_default())
     }
 
-    pub(super) fn invoke_unclaimed_gas(
+    pub(super) fn invoke_unclaimed_gas<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# UnclaimedGas(account, end): `end` must equal the persisting

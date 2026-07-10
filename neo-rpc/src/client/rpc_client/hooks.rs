@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 /// Outcome and timing for a single RPC call.
@@ -16,43 +15,66 @@ pub struct RpcRequestOutcome {
     pub error_code: Option<i32>,
 }
 
-/// Hooks that can be used to observe RPC requests for logging/metrics.
-type RpcObserverFn = dyn Fn(&RpcRequestOutcome) + Send + Sync;
+/// Observer for RPC request outcomes.
+pub trait RpcObserver: Clone + Send + Sync + 'static {
+    /// Called after an RPC request completes.
+    fn observe(&self, outcome: &RpcRequestOutcome);
+}
+
+/// Default observer that emits tracing debug events for completed requests.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TracingRpcObserver;
+
+impl RpcObserver for TracingRpcObserver {
+    fn observe(&self, outcome: &RpcRequestOutcome) {
+        tracing::debug!(
+            method = %outcome.method,
+            elapsed_ms = outcome.elapsed.as_millis() as u64,
+            success = outcome.success,
+            timeout_ms = outcome.timeout.as_millis() as u64,
+            error_code = outcome.error_code,
+            "rpc request finished"
+        );
+    }
+}
+
+impl<F> RpcObserver for F
+where
+    F: Fn(&RpcRequestOutcome) + Clone + Send + Sync + 'static,
+{
+    fn observe(&self, outcome: &RpcRequestOutcome) {
+        self(outcome);
+    }
+}
 
 /// Observability hooks for RPC client requests.
 #[derive(Clone, Default)]
-pub struct RpcClientHooks {
-    observer: Option<Arc<RpcObserverFn>>,
+pub struct RpcClientHooks<O = TracingRpcObserver> {
+    observer: O,
 }
 
-impl RpcClientHooks {
-    /// Returns a hook collection without observers (falls back to tracing debug logs).
+impl RpcClientHooks<TracingRpcObserver> {
+    /// Returns a hook collection using the default tracing observer.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
+}
 
+impl<O> RpcClientHooks<O>
+where
+    O: RpcObserver,
+{
     /// Registers an observer called after each RPC request completes.
-    pub fn with_observer<F>(mut self, observer: F) -> Self
+    pub fn with_observer<T>(self, observer: T) -> RpcClientHooks<T>
     where
-        F: Fn(&RpcRequestOutcome) + Send + Sync + 'static,
+        T: RpcObserver,
     {
-        self.observer = Some(Arc::new(observer));
-        self
+        let _ = self;
+        RpcClientHooks { observer }
     }
 
     pub(crate) fn notify(&self, outcome: RpcRequestOutcome) {
-        if let Some(observer) = &self.observer {
-            observer(&outcome);
-        } else {
-            tracing::debug!(
-                method = %outcome.method,
-                elapsed_ms = outcome.elapsed.as_millis() as u64,
-                success = outcome.success,
-                timeout_ms = outcome.timeout.as_millis() as u64,
-                error_code = outcome.error_code,
-                "rpc request finished"
-            );
-        }
+        self.observer.observe(&outcome);
     }
 }

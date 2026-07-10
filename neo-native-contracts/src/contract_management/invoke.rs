@@ -16,9 +16,13 @@ use neo_vm::StackItem;
 use num_bigint::BigInt;
 
 impl ContractManagement {
-    pub(super) fn invoke_get_contract(
+    pub(super) fn invoke_get_contract<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -32,9 +36,13 @@ impl ContractManagement {
         }
     }
 
-    pub(super) fn invoke_get_contract_by_id(
+    pub(super) fn invoke_get_contract_by_id<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -47,9 +55,13 @@ impl ContractManagement {
         }
     }
 
-    pub(super) fn invoke_get_minimum_deployment_fee(
+    pub(super) fn invoke_get_minimum_deployment_fee<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -57,9 +69,13 @@ impl ContractManagement {
         Ok(BigInt::from(fee).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_set_minimum_deployment_fee(
+    pub(super) fn invoke_set_minimum_deployment_fee<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C#: validate value >= 0 -> AssertCommittee -> overwrite
@@ -82,9 +98,13 @@ impl ContractManagement {
         Ok(Vec::new())
     }
 
-    pub(super) fn invoke_get_contract_hashes(
+    pub(super) fn invoke_get_contract_hashes<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -101,9 +121,13 @@ impl ContractManagement {
         Ok(iterator_id.to_le_bytes().to_vec())
     }
 
-    pub(super) fn invoke_is_contract(
+    pub(super) fn invoke_is_contract<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -112,9 +136,13 @@ impl ContractManagement {
         Ok(vec![u8::from(Self::is_contract(&snapshot, &hash))])
     }
 
-    pub(super) fn invoke_has_method(
+    pub(super) fn invoke_has_method<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -131,9 +159,13 @@ impl ContractManagement {
         Ok(vec![u8::from(has)])
     }
 
-    pub(super) fn invoke_deploy(
+    pub(super) fn invoke_deploy<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // Both deploy overloads land here; args.len() (2 vs 3) selects
@@ -141,18 +173,26 @@ impl ContractManagement {
         self.deploy(engine, args)
     }
 
-    pub(super) fn invoke_update(
+    pub(super) fn invoke_update<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // Both update overloads land here, same overload convention.
         self.update(engine, args)
     }
 
-    pub(super) fn invoke_destroy(
+    pub(super) fn invoke_destroy<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();

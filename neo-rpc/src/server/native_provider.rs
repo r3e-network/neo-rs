@@ -1,61 +1,89 @@
 //! Shared native-contract provider adapter for RPC handlers.
 //!
-//! RPC handlers expose narrow, feature-local provider traits, but each of those
-//! traits adapts the same composition-root native-contract registry. This helper
-//! centralizes registry lookup, type downcasting, and redacted debug output so
-//! individual RPC modules only describe the capabilities they need.
+//! RPC handlers expose narrow, feature-local provider traits, and each of those
+//! traits adapts the same composition-root native-contract provider. This helper
+//! centralizes typed capability reads and redacted debug output so individual
+//! RPC modules only describe the facts they need.
 
-use neo_error::{CoreError, CoreResult};
+use neo_config::ProtocolSettings;
+use neo_error::CoreResult;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::PolicyContract;
+use neo_storage::{CacheRead, DataCache};
 use std::sync::Arc;
 
 /// Adapter over the node-composed native-contract provider.
 #[derive(Clone)]
-pub(crate) struct NativeProviderAdapter {
-    native_contract_provider: Arc<dyn NativeContractProvider>,
+pub(crate) struct NativeProviderAdapter<P>
+where
+    P: NativeContractProvider,
+{
+    native_contract_provider: Arc<P>,
 }
 
-impl NativeProviderAdapter {
+impl<P> NativeProviderAdapter<P>
+where
+    P: NativeContractProvider,
+{
     /// Creates an adapter over the composition-root native-contract provider.
     #[must_use]
-    pub(crate) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
+    pub(crate) fn new(native_contract_provider: Arc<P>) -> Self {
         Self {
             native_contract_provider,
         }
     }
 
-    /// Resolves `name`, downcasts it to `T`, and invokes `f`.
-    pub(crate) fn with_contract<T, R>(
+    /// Returns Policy.MaxValidUntilBlockIncrement through the provider
+    /// capability surface.
+    pub(crate) fn max_valid_until_block_increment<B: CacheRead>(
         &self,
-        name: &'static str,
-        f: impl FnOnce(&T) -> CoreResult<R>,
-    ) -> CoreResult<R>
-    where
-        T: 'static,
-    {
-        let contract = self
-            .native_contract_provider
-            .get_native_contract_by_name(name)
-            .ok_or_else(|| {
-                CoreError::invalid_operation(format!("native provider missing {name}"))
-            })?;
-        let typed = contract.as_any().downcast_ref::<T>().ok_or_else(|| {
-            CoreError::invalid_operation(format!("native provider returned non-{name}"))
-        })?;
-        f(typed)
+        snapshot: &DataCache<B>,
+        settings: &ProtocolSettings,
+    ) -> CoreResult<u32> {
+        self.native_contract_provider
+            .max_valid_until_block_increment(snapshot, settings)
     }
 
-    /// Resolves the canonical Policy native contract and invokes `f`.
-    pub(crate) fn with_policy<R>(
+    /// Returns Policy.MillisecondsPerBlock through the provider capability surface.
+    pub(crate) fn milliseconds_per_block<B: CacheRead>(
         &self,
-        f: impl FnOnce(&PolicyContract) -> CoreResult<R>,
-    ) -> CoreResult<R> {
-        self.with_contract("PolicyContract", f)
+        snapshot: &DataCache<B>,
+        settings: &ProtocolSettings,
+    ) -> CoreResult<u32> {
+        self.native_contract_provider
+            .milliseconds_per_block(snapshot, settings)
+    }
+
+    /// Returns Policy.FeePerByte through the provider capability surface.
+    pub(crate) fn fee_per_byte<B: CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<u32> {
+        self.native_contract_provider.fee_per_byte(snapshot)
+    }
+
+    /// Returns Policy.ExecFeeFactor through the provider capability surface.
+    pub(crate) fn exec_fee_factor<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        settings: &ProtocolSettings,
+        block_index: u32,
+    ) -> CoreResult<u32> {
+        self.native_contract_provider
+            .exec_fee_factor(snapshot, settings, block_index)
+    }
+
+    /// Returns Policy.MaxTraceableBlocks through the provider capability surface.
+    pub(crate) fn max_traceable_blocks<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        settings: &ProtocolSettings,
+    ) -> CoreResult<u32> {
+        self.native_contract_provider
+            .max_traceable_blocks(snapshot, settings)
     }
 }
 
-impl std::fmt::Debug for NativeProviderAdapter {
+impl<P> std::fmt::Debug for NativeProviderAdapter<P>
+where
+    P: NativeContractProvider,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NativeProviderAdapter")
             .field("native_contract_provider", &"NativeContractProvider")

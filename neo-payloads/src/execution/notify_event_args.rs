@@ -6,18 +6,20 @@
 //! smart-contract engine crate. The execution crate re-exports this type for
 //! back-compat with code that still imports it from there.
 
-use neo_primitives::{UInt160, Verifiable};
+use neo_primitives::UInt160;
 use neo_vm::{Interoperable, InteroperableError, StackItem, VmError};
 use neo_vm_rs::StackValue;
 use std::fmt;
 use std::sync::Arc;
+
+use crate::VerifiableContainer;
 
 /// The EventArgs of ApplicationEngine.Notify (matches C# NotifyEventArgs)
 #[derive(Clone)]
 pub struct NotifyEventArgs {
     /// The container that containing the executed script.
     /// This can be None when the contract is invoked by system (e.g., OnPersist/PostPersist).
-    pub script_container: Option<Arc<dyn Verifiable>>,
+    pub script_container: Option<Arc<VerifiableContainer>>,
 
     /// The script hash of the contract that sends the log
     pub script_hash: UInt160,
@@ -32,7 +34,7 @@ pub struct NotifyEventArgs {
 impl NotifyEventArgs {
     /// Initializes a new instance with a container
     pub fn new(
-        container: Arc<dyn Verifiable>,
+        container: Arc<VerifiableContainer>,
         script_hash: UInt160,
         event_name: String,
         state: Vec<StackItem>,
@@ -47,7 +49,7 @@ impl NotifyEventArgs {
 
     /// Initializes a new instance with an optional container (for system invocations)
     pub fn new_with_optional_container(
-        container: Option<Arc<dyn Verifiable>>,
+        container: Option<Arc<VerifiableContainer>>,
         script_hash: UInt160,
         event_name: String,
         state: Vec<StackItem>,
@@ -133,10 +135,6 @@ impl Interoperable for NotifyEventArgs {
     fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
         self.to_stack_value()
             .map_err(|e| InteroperableError::InvalidData(e.to_string()))
-    }
-
-    fn clone_box(&self) -> Box<dyn Interoperable> {
-        Box::new(self.clone())
     }
 }
 

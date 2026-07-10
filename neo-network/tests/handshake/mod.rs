@@ -27,12 +27,12 @@ use tokio_util::sync::CancellationToken;
 
 use neo_config::ProtocolSettings;
 use neo_network::MessageCommand;
-use neo_network::wire::{Message, MessageCodec};
 use neo_network::{
     BlockDownloadPeer, BlockRangeAssignment, BlockRequest, BlockSyncMode, ChannelsConfig,
     ConnectionTimeouts, InboundInventory, LocalIdentity, LocalNodeService, NetworkEvent,
     NetworkHandle, PeerId, PeerRegistry, RemoteNodeService, RemoteNodeState,
 };
+use neo_network::{Message, MessageCodec};
 use neo_payloads::p2p_payloads::{
     GetBlockByIndexPayload, InvPayload, NodeCapability, PingPayload, VersionPayload,
 };
@@ -122,7 +122,7 @@ where
 /// timeout. Used for assertions on the handle-side `getpeers` fold.
 async fn await_info<F>(handle: &NetworkHandle, mut pred: F)
 where
-    F: FnMut(&neo_network::handle::LocalNodeInfo) -> bool,
+    F: FnMut(&neo_network::LocalNodeInfo) -> bool,
 {
     let deadline = tokio::time::Instant::now() + TEST_TIMEOUT;
     loop {

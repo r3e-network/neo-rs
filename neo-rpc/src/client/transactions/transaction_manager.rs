@@ -1,5 +1,7 @@
 use crate::client::native_hashes::gas_hash;
-use crate::{Nep17Api, RpcClient, RpcClientError, TransactionManagerFactory};
+use crate::{
+    Nep17Api, RpcClient, RpcClientError, RpcObserver, TracingRpcObserver, TransactionManagerFactory,
+};
 use neo_crypto::ECPoint;
 use neo_execution::{Contract, ContractParametersContext};
 use neo_payloads::{
@@ -23,9 +25,9 @@ struct SignItem {
 
 /// This class helps to create transaction with RPC API
 /// Matches C# `TransactionManager`
-pub struct TransactionManager {
+pub struct TransactionManager<O = TracingRpcObserver> {
     /// The RPC client instance
-    _rpc_client: Arc<RpcClient>,
+    _rpc_client: Arc<RpcClient<O>>,
 
     /// The Transaction context to manage the witnesses
     context: ContractParametersContext,
@@ -37,10 +39,13 @@ pub struct TransactionManager {
     tx: Transaction,
 }
 
-impl TransactionManager {
+impl<O> TransactionManager<O>
+where
+    O: RpcObserver,
+{
     /// `TransactionManager` Constructor
     /// Matches C# constructor
-    pub fn new(tx: Transaction, rpc_client: Arc<RpcClient>) -> Self {
+    pub fn new(tx: Transaction, rpc_client: Arc<RpcClient<O>>) -> Self {
         let snapshot = std::sync::Arc::new(neo_storage::persistence::DataCache::new(true));
         let context = ContractParametersContext::new(
             snapshot,
@@ -64,7 +69,7 @@ impl TransactionManager {
     /// Helper function for one-off `TransactionManager` creation
     /// Matches C# `MakeTransactionAsync`
     pub async fn make_transaction(
-        rpc_client: Arc<RpcClient>,
+        rpc_client: Arc<RpcClient<O>>,
         script: &[u8],
         signers: Option<Vec<Signer>>,
         _attributes: Option<Vec<TransactionAttribute>>,
@@ -78,7 +83,7 @@ impl TransactionManager {
     /// Helper function for one-off `TransactionManager` creation with system fee
     /// Matches C# `MakeTransactionAsync` with systemFee parameter
     pub async fn make_transaction_with_fee(
-        rpc_client: Arc<RpcClient>,
+        rpc_client: Arc<RpcClient<O>>,
         script: &[u8],
         system_fee: i64,
         signers: Option<Vec<Signer>>,

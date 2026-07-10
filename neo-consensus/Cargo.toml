@@ -22,7 +22,6 @@ neo-io = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }
-async-trait = { workspace = true }
 
 # Serialization
 serde = { workspace = true }

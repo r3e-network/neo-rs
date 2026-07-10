@@ -9,8 +9,10 @@ use super::NativeQueries;
 impl NativeQueries {
     /// Builds a [`neo_execution::NativeRegistry`] populated with the standard
     /// native contracts.
-    pub(crate) fn native_registry() -> neo_execution::NativeRegistry {
-        let mut registry = neo_execution::NativeRegistry::new();
+    pub(crate) fn native_registry()
+    -> neo_execution::NativeRegistry<neo_native_contracts::StandardNativeProvider> {
+        let mut registry =
+            neo_execution::NativeRegistry::<neo_native_contracts::StandardNativeProvider>::new();
         for contract in neo_native_contracts::standard_native_contracts() {
             registry.register(contract);
         }

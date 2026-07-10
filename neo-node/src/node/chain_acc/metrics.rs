@@ -170,32 +170,26 @@ pub(super) struct RocksDbBatchImportMetrics {
 }
 
 impl RocksDbBatchImportMetrics {
-    pub(super) fn from_store(store: &dyn Store) -> Option<Self> {
-        let rocksdb = store
-            .as_any()
-            .downcast_ref::<neo_storage::rocksdb::RocksDbStore>()?;
-        Some(Self::from_parts(
-            rocksdb.batch_commit_stats(),
-            rocksdb.write_batch_config(),
-        ))
+    pub(super) fn from_store<S>(store: &S) -> Option<Self>
+    where
+        S: Store,
+    {
+        store.rocksdb_batch_metrics().map(Self::from_metrics)
     }
 
-    pub(super) fn from_parts(
-        stats: neo_storage::rocksdb::WriteBatchStatsSnapshot,
-        config: neo_storage::rocksdb::WriteBatchConfig,
-    ) -> Self {
+    pub(super) fn from_metrics(metrics: neo_storage::persistence::RocksDbBatchMetrics) -> Self {
         Self {
-            pending_operations: stats.pending_operations as u64,
-            batches_flushed: stats.batches_flushed,
-            operations_written: stats.operations_written,
-            bytes_written: stats.bytes_written,
-            flush_timeouts: stats.flush_timeouts,
-            avg_ops_per_flush: stats.avg_ops_per_flush() as u64,
-            avg_bytes_per_flush: stats.avg_bytes_per_flush() as u64,
-            avg_flush_duration_ms: stats.avg_flush_duration_ms() as u64,
-            max_batch_size: config.max_batch_size as u64,
-            max_batch_bytes: config.max_batch_bytes as u64,
-            disable_wal: config.disable_wal,
+            pending_operations: metrics.pending_operations,
+            batches_flushed: metrics.batches_flushed,
+            operations_written: metrics.operations_written,
+            bytes_written: metrics.bytes_written,
+            flush_timeouts: metrics.flush_timeouts,
+            avg_ops_per_flush: metrics.avg_ops_per_flush,
+            avg_bytes_per_flush: metrics.avg_bytes_per_flush,
+            avg_flush_duration_ms: metrics.avg_flush_duration_ms,
+            max_batch_size: metrics.max_batch_size,
+            max_batch_bytes: metrics.max_batch_bytes,
+            disable_wal: metrics.disable_wal,
         }
     }
 }

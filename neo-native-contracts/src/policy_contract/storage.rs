@@ -51,7 +51,7 @@ impl PolicyContract {
     }
 
     pub(super) fn read_required_i64_setting_key(
-        snapshot: &DataCache,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
         key: StorageKey,
         setting: &str,
     ) -> CoreResult<i64> {
@@ -59,7 +59,7 @@ impl PolicyContract {
     }
 
     pub(super) fn put_required_i64_setting_key(
-        snapshot: &DataCache,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
         key: StorageKey,
         setting: &str,
         value: i64,
@@ -78,7 +78,7 @@ impl PolicyContract {
     /// to `ProtocolSettings`.
     pub fn get_milliseconds_per_block_snapshot(
         &self,
-        snapshot: &neo_storage::persistence::DataCache,
+        snapshot: &neo_storage::persistence::DataCache<impl neo_storage::CacheRead>,
         settings: &neo_config::ProtocolSettings,
     ) -> neo_error::CoreResult<u32> {
         crate::support::settings::read_hardfork_gated_u32_setting(
@@ -97,7 +97,7 @@ impl PolicyContract {
     /// the C# pre-genesis missing-key fallback to `ProtocolSettings`.
     pub fn get_max_valid_until_block_increment_snapshot(
         &self,
-        snapshot: &neo_storage::persistence::DataCache,
+        snapshot: &neo_storage::persistence::DataCache<impl neo_storage::CacheRead>,
         settings: &neo_config::ProtocolSettings,
     ) -> neo_error::CoreResult<u32> {
         crate::support::settings::read_hardfork_gated_u32_setting(
@@ -118,7 +118,7 @@ impl PolicyContract {
     /// pre-genesis missing-key fallback to `ProtocolSettings`.
     pub fn get_max_traceable_blocks_snapshot(
         &self,
-        snapshot: &neo_storage::persistence::DataCache,
+        snapshot: &neo_storage::persistence::DataCache<impl neo_storage::CacheRead>,
         settings: &neo_config::ProtocolSettings,
     ) -> neo_error::CoreResult<u32> {
         crate::support::settings::read_hardfork_gated_u32_setting(
@@ -137,7 +137,7 @@ impl PolicyContract {
     /// receive the legacy factor by dividing by `ApplicationEngine.FeeFactor`.
     pub fn get_exec_fee_factor_snapshot(
         &self,
-        snapshot: &neo_storage::persistence::DataCache,
+        snapshot: &neo_storage::persistence::DataCache<impl neo_storage::CacheRead>,
         settings: &neo_config::ProtocolSettings,
         height: u32,
     ) -> neo_error::CoreResult<u32> {
@@ -152,21 +152,54 @@ impl PolicyContract {
             .map_err(|_| CoreError::invalid_operation("ExecFeeFactor out of u32 range"))
     }
 
+    /// Reads the raw stored execution fee factor without hardfork scaling.
+    ///
+    /// Before HF_Faun this value is the legacy execution fee factor. After the
+    /// Faun migration it is the pico-GAS factor. `ApplicationEngine` needs the
+    /// raw value so it can mirror C# constructor-time boundary handling on the
+    /// activation block.
+    pub fn get_exec_fee_factor_raw_snapshot(
+        &self,
+        snapshot: &neo_storage::persistence::DataCache<impl neo_storage::CacheRead>,
+    ) -> neo_error::CoreResult<u32> {
+        let raw = Self::read_required_i64_setting_key(
+            snapshot,
+            Self::exec_fee_factor_key(),
+            "ExecFeeFactor",
+        )?;
+        u32::try_from(raw)
+            .map_err(|_| CoreError::invalid_operation("ExecFeeFactor out of u32 range"))
+    }
+
     /// Reads the fee-per-byte from the snapshot.
     pub fn get_fee_per_byte_snapshot(
         &self,
-        snapshot: &neo_storage::persistence::DataCache,
+        snapshot: &neo_storage::persistence::DataCache<impl neo_storage::CacheRead>,
     ) -> neo_error::CoreResult<u32> {
         Ok(self.fee_per_byte(snapshot)? as u32)
     }
 
+    /// Reads the storage price from the snapshot.
+    pub fn get_storage_price_snapshot(
+        &self,
+        snapshot: &neo_storage::persistence::DataCache<impl neo_storage::CacheRead>,
+    ) -> neo_error::CoreResult<u32> {
+        Ok(self.storage_price(snapshot)? as u32)
+    }
+
     /// C# `GetFeePerByte` = `(long)(BigInteger)snapshot[_feePerByte]`.
-    pub(super) fn fee_per_byte(&self, snapshot: &DataCache) -> CoreResult<i64> {
+    pub(super) fn fee_per_byte(
+        &self,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
+    ) -> CoreResult<i64> {
         Self::read_required_i64_setting_key(snapshot, Self::fee_per_byte_key(), "FeePerByte")
     }
 
     /// C# `GetStoragePrice` = `(uint)(BigInteger)snapshot[_storagePrice]`.
-    pub(super) fn storage_price(&self, snapshot: &DataCache) -> CoreResult<i64> {
+    pub(super) fn storage_price(
+        &self,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
+    ) -> CoreResult<i64> {
         Self::read_required_i64_setting_key(snapshot, Self::storage_price_key(), "StoragePrice")
     }
 
@@ -182,7 +215,11 @@ impl PolicyContract {
 
     /// Writes the fee-per-byte to `Prefix_FeePerByte` as a `BigInteger`, mirroring
     /// C# `GetAndChange(_feePerByte).Set(value)` (overwrite-as-Changed semantics).
-    pub(super) fn put_fee_per_byte(&self, snapshot: &DataCache, value: i64) -> CoreResult<()> {
+    pub(super) fn put_fee_per_byte(
+        &self,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
+        value: i64,
+    ) -> CoreResult<()> {
         Self::put_required_i64_setting_key(snapshot, Self::fee_per_byte_key(), "FeePerByte", value)
     }
 
@@ -199,7 +236,11 @@ impl PolicyContract {
 
     /// Writes the storage price to `Prefix_StoragePrice` as a `BigInteger`
     /// (C# `GetAndChange(_storagePrice).Set(value)`).
-    pub(super) fn put_storage_price(&self, snapshot: &DataCache, value: i64) -> CoreResult<()> {
+    pub(super) fn put_storage_price(
+        &self,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
+        value: i64,
+    ) -> CoreResult<()> {
         Self::put_required_i64_setting_key(
             snapshot,
             Self::storage_price_key(),
@@ -210,7 +251,10 @@ impl PolicyContract {
 
     /// Reads the raw stored exec fee factor (`Prefix_ExecFeeFactor`). The value is
     /// the on-disk `BigInteger`; callers apply the HF_Faun pico-GAS scaling.
-    pub(super) fn exec_fee_factor_raw(&self, snapshot: &DataCache) -> CoreResult<i64> {
+    pub(super) fn exec_fee_factor_raw(
+        &self,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
+    ) -> CoreResult<i64> {
         Self::read_required_i64_setting_key(snapshot, Self::exec_fee_factor_key(), "ExecFeeFactor")
     }
 
@@ -218,9 +262,13 @@ impl PolicyContract {
     /// before HF_Faun and `FeeFactor * MaxExecFeeFactor` from HF_Faun onward; the
     /// value must be at least 1 (the C# parameter is `ulong`, so a non-positive value
     /// is rejected exactly like the `value == 0` check plus the unsigned binding).
-    pub(super) fn validate_exec_fee_factor(
+    pub(super) fn validate_exec_fee_factor<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &ApplicationEngine,
+        engine: &ApplicationEngine<P, D, B>,
         value: i64,
     ) -> CoreResult<()> {
         let max_value = if engine.is_hardfork_enabled(Hardfork::HfFaun) {
@@ -238,7 +286,11 @@ impl PolicyContract {
 
     /// Writes the exec fee factor to `Prefix_ExecFeeFactor` as a `BigInteger`
     /// (C# `GetAndChange(_execFeeFactor).Set(value)`).
-    pub(super) fn put_exec_fee_factor(&self, snapshot: &DataCache, value: i64) -> CoreResult<()> {
+    pub(super) fn put_exec_fee_factor(
+        &self,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
+        value: i64,
+    ) -> CoreResult<()> {
         Self::put_required_i64_setting_key(
             snapshot,
             Self::exec_fee_factor_key(),
@@ -277,7 +329,7 @@ impl PolicyContract {
     /// attribute fee (C# `Policy.GetAttributeFeeV1`).
     pub(crate) fn attribute_fee(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
         attribute_type: u8,
         allow_notary_assisted: bool,
     ) -> CoreResult<i64> {
@@ -294,7 +346,12 @@ impl PolicyContract {
 
     /// C# `SetAttributeFee` storage effect: overwrite `Prefix_AttributeFee+type`
     /// (`GetAndChange(key, () => 0).Set(value)`).
-    pub(super) fn put_attribute_fee(&self, snapshot: &DataCache, attribute_type: u8, value: i64) {
+    pub(super) fn put_attribute_fee(
+        &self,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
+        attribute_type: u8,
+        value: i64,
+    ) {
         snapshot.update(
             Self::attribute_fee_key(attribute_type),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(&BigInt::from(value))),
@@ -317,9 +374,13 @@ impl PolicyContract {
     /// The `hardfork == ActiveIn` (genesis) branch lives in
     /// [`NativeContract::initialize`], which the persist pipeline runs at the
     /// activation block.
-    pub(crate) fn initialize_for_hardfork(
+    pub(crate) fn initialize_for_hardfork<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         hardfork: Hardfork,
     ) -> CoreResult<()> {
         if hardfork == Hardfork::HfEchidna {
@@ -392,13 +453,18 @@ impl PolicyContract {
     ///
     /// Exposed for transaction verification so mempool admission uses the same
     /// storage layout as the native contract rather than duplicating the prefix.
-    pub fn is_blocked_snapshot(snapshot: &DataCache, account: &UInt160) -> bool {
+    pub fn is_blocked_snapshot(
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
+        account: &UInt160,
+    ) -> bool {
         snapshot.get(&Self::blocked_account_key(account)).is_some()
     }
 
     /// Collects the blocked account hashes from the current snapshot once, for
     /// hot paths that need many blocked-account membership checks.
-    pub(crate) fn blocked_accounts_snapshot(snapshot: &DataCache) -> HashSet<UInt160> {
+    pub(crate) fn blocked_accounts_snapshot(
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
+    ) -> HashSet<UInt160> {
         let prefix_key = Self::blocked_account_prefix_key();
         snapshot
             .find(Some(&prefix_key), SeekDirection::Forward)
@@ -417,7 +483,7 @@ impl PolicyContract {
     /// the backing set for the `getBlockedAccounts` iterator (C# `GetBlockedAccounts`).
     pub(super) fn blocked_account_entries(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
     ) -> Vec<(StorageKey, StorageItem)> {
         let prefix_key = Self::blocked_account_prefix_key();
         snapshot
@@ -432,9 +498,13 @@ impl PolicyContract {
     /// then store `Prefix_BlockedAccount ++ account` with the persisting block's
     /// millisecond timestamp (`engine.GetTime()`, HF_Faun — the recoverFund
     /// request time) or empty bytes (pre-Faun).
-    pub(crate) fn block_account_internal(
+    pub(crate) fn block_account_internal<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         account: &UInt160,
     ) -> CoreResult<bool> {
         if crate::is_standard_native_contract_hash(account) {
@@ -482,9 +552,13 @@ impl PolicyContract {
     /// C# `GetMillisecondsPerBlock`: direct indexed read of stored
     /// `Prefix_MillisecondsPerBlock`. Shared by the getter and setter (which reads
     /// the old value for its change event).
-    pub(super) fn read_milliseconds_per_block(
+    pub(super) fn read_milliseconds_per_block<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &ApplicationEngine,
+        engine: &ApplicationEngine<P, D, B>,
     ) -> CoreResult<i64> {
         let snapshot = engine.snapshot_cache();
         Self::read_required_i64_setting_key(
@@ -498,7 +572,7 @@ impl PolicyContract {
     /// (C# `GetAndChange(_millisecondsPerBlock).Set(value)`).
     pub(super) fn put_milliseconds_per_block(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
         value: i64,
     ) -> CoreResult<()> {
         Self::put_required_i64_setting_key(
@@ -535,9 +609,13 @@ impl PolicyContract {
     ///
     /// Exposed `pub(crate)` for native Policy call paths that mirror
     /// `PolicyContract.GetMaxValidUntilBlockIncrement` from `HF_Echidna` onward.
-    pub(crate) fn read_max_valid_until_block_increment(
+    pub(crate) fn read_max_valid_until_block_increment<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &ApplicationEngine,
+        engine: &ApplicationEngine<P, D, B>,
     ) -> CoreResult<i64> {
         let default = i64::from(engine.protocol_settings().max_valid_until_block_increment);
         if !engine.is_hardfork_enabled(Hardfork::HfEchidna) {
@@ -554,9 +632,13 @@ impl PolicyContract {
     /// C# `IReadOnlyStore.GetMaxValidUntilBlockIncrement(ProtocolSettings)`:
     /// protocol setting before `HF_Echidna`, Policy storage after it, and the
     /// extension's pre-genesis missing-key fallback to protocol settings.
-    pub(crate) fn system_max_valid_until_block_increment(
+    pub(crate) fn system_max_valid_until_block_increment<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &ApplicationEngine,
+        engine: &ApplicationEngine<P, D, B>,
     ) -> CoreResult<i64> {
         let snapshot = engine.snapshot_cache();
         Ok(i64::from(
@@ -570,7 +652,7 @@ impl PolicyContract {
     /// Writes `Prefix_MaxValidUntilBlockIncrement` (C# `GetAndChange(...).Set(value)`).
     pub(super) fn put_max_valid_until_block_increment(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
         value: i64,
     ) -> CoreResult<()> {
         Self::put_required_i64_setting_key(
@@ -584,7 +666,7 @@ impl PolicyContract {
     /// Writes `Prefix_MaxTraceableBlocks` (C# `GetAndChange(_maxTraceableBlocks).Set(value)`).
     pub(super) fn put_max_traceable_blocks(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
         value: i64,
     ) -> CoreResult<()> {
         Self::put_required_i64_setting_key(
@@ -604,7 +686,14 @@ impl PolicyContract {
     /// Lives in PolicyContract because C# reads it via `Policy.GetMaxTraceableBlocks`;
     /// keeping the prefix/default here is the single source of truth shared with the
     /// `getMaxTraceableBlocks` getter.
-    pub(crate) fn max_traceable_blocks(&self, engine: &ApplicationEngine) -> CoreResult<u32> {
+    pub(crate) fn max_traceable_blocks<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        &self,
+        engine: &ApplicationEngine<P, D, B>,
+    ) -> CoreResult<u32> {
         let default = engine.protocol_settings().max_traceable_blocks;
         if !engine.is_hardfork_enabled(Hardfork::HfEchidna) {
             return Ok(default);

@@ -1,4 +1,5 @@
 use super::*;
+use neo_wallets::WalletAccount;
 
 #[test]
 fn signature_contract_pubkey_roundtrip() {

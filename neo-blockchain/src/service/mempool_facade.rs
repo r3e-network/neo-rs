@@ -17,10 +17,10 @@ use neo_primitives::verify_result::VerifyResult;
 /// exposed to the service through [`crate::service_context::SystemContext`].
 pub trait MempoolLike: std::fmt::Debug + Send + Sync {
     /// Try to add a transaction to the mempool. Returns the verify result.
-    fn try_add(
+    fn try_add<B: neo_storage::CacheRead>(
         &self,
         tx: &neo_payloads::Transaction,
-        snapshot: &neo_storage::DataCache,
+        snapshot: &neo_storage::DataCache<B>,
         settings: &neo_config::ProtocolSettings,
     ) -> VerifyResult;
 
@@ -31,10 +31,10 @@ pub trait MempoolLike: std::fmt::Debug + Send + Sync {
     /// mempool skips redundant signature verification and only performs
     /// state-dependent checks. Use this only when the caller already verified
     /// the transaction signatures, for example via `TransactionRouter::preverify`.
-    fn try_add_cached(
+    fn try_add_cached<B: neo_storage::CacheRead>(
         &self,
         tx: &neo_payloads::Transaction,
-        snapshot: &neo_storage::DataCache,
+        snapshot: &neo_storage::DataCache<B>,
         settings: &neo_config::ProtocolSettings,
         cached_state_independent: Option<VerifyResult>,
     ) -> VerifyResult;
@@ -54,9 +54,9 @@ pub trait MempoolLike: std::fmt::Debug + Send + Sync {
 
     /// Reverify the highest-priority unverified transactions against the live
     /// post-persist snapshot. Returns `true` when unverified transactions remain.
-    fn reverify_top_unverified(
+    fn reverify_top_unverified<B: neo_storage::CacheRead>(
         &self,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _max_count: usize,
     ) -> bool {
         false
@@ -67,19 +67,19 @@ impl<P> MempoolLike for neo_mempool::MemoryPool<P>
 where
     P: NativeContractProvider + 'static,
 {
-    fn try_add(
+    fn try_add<B: neo_storage::CacheRead>(
         &self,
         tx: &neo_payloads::Transaction,
-        snapshot: &neo_storage::DataCache,
+        snapshot: &neo_storage::DataCache<B>,
         _settings: &neo_config::ProtocolSettings,
     ) -> VerifyResult {
         neo_mempool::MemoryPool::try_add(self, tx.clone(), snapshot)
     }
 
-    fn try_add_cached(
+    fn try_add_cached<B: neo_storage::CacheRead>(
         &self,
         tx: &neo_payloads::Transaction,
-        snapshot: &neo_storage::DataCache,
+        snapshot: &neo_storage::DataCache<B>,
         _settings: &neo_config::ProtocolSettings,
         cached_state_independent: Option<VerifyResult>,
     ) -> VerifyResult {
@@ -99,7 +99,11 @@ where
         self.unverified_count() > 0
     }
 
-    fn reverify_top_unverified(&self, snapshot: &neo_storage::DataCache, max_count: usize) -> bool {
+    fn reverify_top_unverified<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &neo_storage::DataCache<B>,
+        max_count: usize,
+    ) -> bool {
         neo_mempool::MemoryPool::reverify_top_unverified(self, snapshot, max_count)
     }
 }

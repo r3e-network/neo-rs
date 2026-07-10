@@ -5,8 +5,8 @@ use neo_payloads::{
 };
 use neo_primitives::{TriggerType, UInt160, WitnessScope};
 use neo_rpc::application_logs::ApplicationLogsSettings;
+use neo_storage::persistence::StoreCache;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
-use neo_storage::persistence::{StoreCache, store::Store};
 use neo_vm::StackItem;
 use neo_vm_rs::VmState as VMState;
 
@@ -304,7 +304,7 @@ fn backfill_repairs_partially_indexed_notifications() {
 fn application_logs_recover_indexer_notifications_for_backfill() {
     let settings = Arc::new(ProtocolSettings::default());
     let _node = neo_system::Node::new(Arc::clone(&settings), None, None).expect("node");
-    let chain_store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let chain_store = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(Arc::clone(&chain_store), false);
     let snapshot = Arc::new(store_cache.data_cache().clone());
     let mut logs_settings = ApplicationLogsSettings::default();
@@ -347,8 +347,8 @@ fn application_logs_recover_indexer_notifications_for_backfill() {
             ],
         ));
 
-    logs.blockchain_committing_handler(settings.as_ref(), &block, snapshot.as_ref(), &[executed]);
-    logs.blockchain_committed_handler(settings.as_ref(), &block);
+    logs.blockchain_committing_handler(settings.network, &block, snapshot.as_ref(), &[executed]);
+    logs.blockchain_committed_handler(settings.network, &block);
 
     let records =
         application_log_notification_records(&logs, &block).expect("recover notifications");

@@ -13,7 +13,14 @@ impl GasToken {
     /// (GasToken.cs:29-37; GAS is genesis-active, so this runs while persisting
     /// block 0): mint `ProtocolSettings.InitialGasDistribution` GAS to the BFT
     /// address of the standby validators, with `callOnPayment: false`.
-    pub(super) fn initialize_native(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    pub(super) fn initialize_native<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        &self,
+        engine: &mut ApplicationEngine<P, D, B>,
+    ) -> CoreResult<()> {
         let standby_validators = engine.protocol_settings().standby_validators();
         let initial = BigInt::from(engine.protocol_settings().initial_gas_distribution);
         let account = crate::NeoToken::bft_address(&standby_validators)?;

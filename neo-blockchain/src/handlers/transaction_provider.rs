@@ -8,18 +8,16 @@
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
-use neo_error::{CoreError, CoreResult};
-use neo_execution::NativeContract;
+use neo_error::CoreResult;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::PolicyContract;
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 /// Native-contract capabilities required by transaction admission.
 pub(super) trait TransactionNativeProvider {
     /// Returns the active `MaxTraceableBlocks` value.
-    fn max_traceable_blocks(
+    fn max_traceable_blocks<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
     ) -> CoreResult<u32>;
 }
@@ -27,13 +25,13 @@ pub(super) trait TransactionNativeProvider {
 /// Adapter from the node-composed native-contract provider to the transaction
 /// admission Policy read capability.
 #[derive(Clone)]
-pub(super) struct NativeTransactionProvider<P: ?Sized> {
+pub(super) struct NativeTransactionProvider<P> {
     native_contract_provider: Arc<P>,
 }
 
 impl<P> NativeTransactionProvider<P>
 where
-    P: NativeContractProvider + ?Sized,
+    P: NativeContractProvider,
 {
     /// Creates an adapter over the composition-root native-contract provider.
     #[must_use]
@@ -46,17 +44,11 @@ where
     fn provider(&self) -> &P {
         self.native_contract_provider.as_ref()
     }
-
-    fn policy_contract(&self) -> CoreResult<Arc<dyn NativeContract>> {
-        self.provider()
-            .get_native_contract_by_name("PolicyContract")
-            .ok_or_else(|| CoreError::invalid_operation("native provider missing PolicyContract"))
-    }
 }
 
 impl<P> std::fmt::Debug for NativeTransactionProvider<P>
 where
-    P: NativeContractProvider + ?Sized,
+    P: NativeContractProvider,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NativeTransactionProvider")
@@ -67,19 +59,13 @@ where
 
 impl<P> TransactionNativeProvider for NativeTransactionProvider<P>
 where
-    P: NativeContractProvider + ?Sized,
+    P: NativeContractProvider,
 {
-    fn max_traceable_blocks(
+    fn max_traceable_blocks<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
     ) -> CoreResult<u32> {
-        self.policy_contract()?
-            .as_any()
-            .downcast_ref::<PolicyContract>()
-            .ok_or_else(|| {
-                CoreError::invalid_operation("native provider returned non-PolicyContract")
-            })?
-            .get_max_traceable_blocks_snapshot(snapshot, settings)
+        self.provider().max_traceable_blocks(snapshot, settings)
     }
 }

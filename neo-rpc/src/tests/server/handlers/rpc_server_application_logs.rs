@@ -5,8 +5,8 @@ use crate::server::rpc_server::RpcServer;
 use crate::server::rpc_server_settings::RpcServerConfig;
 use neo_config::ProtocolSettings;
 use neo_primitives::UInt256;
-use neo_storage::persistence::Store;
-use neo_storage::persistence::providers::MemoryStore;
+use neo_storage::persistence::providers::{MemoryStore, RuntimeStore};
+use neo_storage::persistence::{Store, StoreSnapshot, WriteStore};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -20,16 +20,21 @@ fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
         .expect("handler present")
 }
 
-fn server_with_logs(store: Arc<dyn Store>) -> RpcServer {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
-    system.register_service(Arc::new(ApplicationLogsService::new(
-        ApplicationLogsSettings::default(),
-        store,
-    )));
+fn server_with_logs(store: Arc<MemoryStore>) -> RpcServer {
+    let service_store = Arc::new(RuntimeStore::Memory(store.as_ref().clone()));
+    let system = crate::server::test_support::test_system_with_services(
+        ProtocolSettings::default(),
+        crate::server::RpcServices::new().with_application_logs(Arc::new(
+            ApplicationLogsService::new(ApplicationLogsSettings::default(), service_store),
+        )),
+    );
     RpcServer::new(system, RpcServerConfig::default())
 }
 
-fn persist_log(store: &Arc<dyn Store>, prefix: u8, hash: &UInt256, value: serde_json::Value) {
+fn persist_log<S>(store: &Arc<S>, prefix: u8, hash: &UInt256, value: serde_json::Value)
+where
+    S: Store,
+{
     let mut snapshot_arc = store.snapshot();
     let snapshot = Arc::get_mut(&mut snapshot_arc).expect("unique snapshot");
     let mut key = Vec::with_capacity(1 + 32);
@@ -67,7 +72,7 @@ fn sample_log(hash: &UInt256) -> serde_json::Value {
 
 #[test]
 fn get_application_log_returns_transaction_log() {
-    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let store = Arc::new(MemoryStore::new());
     let tx_hash = UInt256::from([0x11; 32]);
     let expected = sample_log(&tx_hash);
     persist_log(&store, PREFIX_TX, &tx_hash, expected.clone());
@@ -84,7 +89,7 @@ fn get_application_log_returns_transaction_log() {
 
 #[test]
 fn get_application_log_filters_known_trigger_case_insensitively() {
-    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let store = Arc::new(MemoryStore::new());
     let block_hash = UInt256::from([0x22; 32]);
     persist_log(&store, PREFIX_BLOCK, &block_hash, sample_log(&block_hash));
 
@@ -113,7 +118,7 @@ fn get_application_log_filters_known_trigger_case_insensitively() {
 
 #[test]
 fn get_application_log_rejects_unknown_hash() {
-    let store: Arc<dyn Store> = Arc::new(MemoryStore::new());
+    let store = Arc::new(MemoryStore::new());
     let server = server_with_logs(store);
     let handlers = RpcServerApplicationLogs::register_handlers();
     let handler = find_handler(&handlers, "getapplicationlog");

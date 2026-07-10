@@ -43,7 +43,10 @@ native_contract_handle!(
     }
 );
 
-impl NativeContract for StdLib {
+impl<P> NativeContract<P> for StdLib
+where
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+{
     native_contract_identity!(StdLib);
 
     fn methods(&self) -> &[NativeMethod] {
@@ -54,7 +57,7 @@ impl NativeContract for StdLib {
         true
     }
 
-    native_contract_dispatch!(metadata::STD_LIB_METHOD_BINDINGS, by_name_and_arity);
+    native_contract_dispatch!(metadata::std_lib_method_bindings, by_name_and_arity);
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@
 //! - the typed network handle from `neo-network`,
 //! - the typed sync import pipeline handle used by downloader composition,
 //! - a [`WalletProvider`] for the optional node wallet,
-//! - the storage backend, mempool, header cache, and service registry,
+//! - the storage backend, mempool, and header cache,
 //! - and the native contract provider owned for NeoVM host calls.
 //!
 //! Construction goes through [`crate::NodeBuilder`], whose `build()`
@@ -19,18 +19,18 @@
 
 use std::sync::Arc;
 use std::time::Duration;
-use tokio_util::sync::CancellationToken;
-use tracing::info;
 
-use async_trait::async_trait;
 use neo_blockchain::{BlockchainHandle, HeaderCache};
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
 use neo_payloads::{Transaction, VerifyResult};
-use neo_runtime::{ConfigProvider, StoreProvider, TxAdmission};
+use neo_runtime::{
+    ConfigProvider, SharedStoreSyncStageCheckpointStore, StoreProvider, TxAdmission,
+};
 use neo_storage::DataCache;
+use neo_storage::persistence::providers::MemoryStore;
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_cache::StoreCache;
 
@@ -38,82 +38,73 @@ use super::tx_admission_provider::{
     NativeTxAdmissionLedgerProviderFactory, NativeTxAdmissionProvider, TxAdmissionLedgerProvider,
     TxAdmissionLedgerProviderFactory, TxAdmissionNativeProvider,
 };
-use crate::error::NodeResult;
 use crate::sync_import_pipeline::SyncImportPipeline;
 use crate::wallet_provider::WalletProvider;
 use neo_error::{CoreError, CoreResult};
-use neo_runtime::ServiceRegistry;
 
 /// The composed Neo node runtime.
 ///
 /// Cheap to clone — every field is either `Clone` (handles) or
 /// `Arc<T>` (shared state).
 #[derive(Clone)]
-pub struct Node<P = neo_native_contracts::StandardNativeProvider>
+pub struct Node<P = neo_native_contracts::StandardNativeProvider, S = MemoryStore>
 where
     P: NativeContractProvider,
+    S: Store,
 {
     /// Protocol settings the node is running with.
-    pub settings: Arc<ProtocolSettings>,
+    pub(super) settings: Arc<ProtocolSettings>,
 
-    /// Storage backend. Stored as an `Arc<dyn Store>` so the
-    /// executor, the state service, and the native-contracts cache
-    /// can all share it without re-opening the database.
-    pub storage: Arc<dyn Store>,
+    /// Shared storage backend.
+    ///
+    /// The node keeps the concrete `S: Store` type throughout composition.
+    /// Runtime-selected startup uses `RuntimeStore`, a concrete enum over the
+    /// supported backends.
+    pub(super) storage: Arc<S>,
 
     /// Wallet provider (current wallet, if any).
-    pub wallets: WalletProvider,
+    pub(super) wallets: WalletProvider,
 
     /// Blockchain service handle. The [`Node`] clones this and hands
     /// it to RPC handlers, consensus, plugins, etc.
-    pub blockchain: BlockchainHandle,
+    pub(super) blockchain: BlockchainHandle,
 
     /// Network service handle. Other subsystems call methods on
     /// this to broadcast blocks / transactions.
-    pub network: NetworkHandle,
+    pub(super) network: NetworkHandle,
 
     /// Shared sync import pipeline entry point.
     ///
     /// The handle owns the bounded preverification queue and durable
     /// import-stage checkpoint provider over the same blockchain/storage
-    /// handles as the rest of the node. It is also registered in
-    /// [`Self::services`] as `SyncImportPipeline` so service consumers can use
-    /// the same provider lookup pattern as optional services. Live inventory
-    /// still uses the inventory-aware blockchain handle directly until
-    /// downloader integration is widened.
-    pub sync_import_pipeline: Arc<SyncImportPipeline>,
+    /// handles as the rest of the node. Live inventory still uses the
+    /// inventory-aware blockchain handle directly until downloader
+    /// integration is widened.
+    pub(super) sync_import_pipeline:
+        Arc<SyncImportPipeline<SharedStoreSyncStageCheckpointStore<S>>>,
 
     /// Shared memory pool. The same instance the blockchain service /
     /// transaction router admit into; RPC handlers read it for
     /// `getrawmempool` / conflict checks.
-    pub mempool: Arc<MemoryPool<P>>,
+    pub(super) mempool: Arc<MemoryPool<P>>,
 
     /// Shared header cache: headers that are ahead of the persisted
     /// tip. The node binary hands the same instance to the blockchain
     /// service so RPC `getblockheadercount` sees the live cache.
-    pub header_cache: Arc<HeaderCache>,
-
-    /// Registry of optional services (application logs, tokens
-    /// tracker, oracle, state service, …) registered by the
-    /// composition root and looked up by type at request time.
-    pub services: ServiceRegistry,
+    pub(super) header_cache: Arc<HeaderCache>,
 
     /// Native-contract provider captured for NeoVM host calls.
     ///
     /// Stored on the node so the composition-root dependency remains visible
     /// after `NodeBuilder::build()` instead of disappearing into the global
     /// `neo-execution` lookup seam.
-    pub native_contract_provider: Arc<P>,
-
-    /// Cancellation token the node monitors for shutdown. A clone
-    /// of this is also handed to every service task so they can
-    /// observe the same shutdown signal.
-    pub shutdown: CancellationToken,
+    pub(super) native_contract_provider: Arc<P>,
 }
 
-impl<P> std::fmt::Debug for Node<P>
+impl<P, S> std::fmt::Debug for Node<P, S>
 where
     P: NativeContractProvider + 'static,
+    S: Store + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
@@ -125,7 +116,6 @@ where
             .field("sync_import_pipeline", &self.sync_import_pipeline)
             .field("mempool", &self.mempool.total_count())
             .field("header_cache", &self.header_cache.count())
-            .field("services", &self.services)
             .field(
                 "native_contract_provider_contracts",
                 &self.native_contract_provider.all_native_contracts().len(),
@@ -134,35 +124,20 @@ where
     }
 }
 
-impl<P> Node<P>
+impl<P, S> Node<P, S>
 where
     P: NativeContractProvider + 'static,
+    S: Store + 'static,
 {
     /// Returns a fresh [`crate::NodeBuilder`].
-    pub fn builder() -> crate::NodeBuilder<P> {
+    pub fn builder() -> crate::NodeBuilder<P, S> {
         crate::NodeBuilder::default()
-    }
-
-    /// Run the node until the cancellation token is fired.
-    pub async fn run(self) -> NodeResult<()> {
-        info!("Neo node starting up");
-        self.shutdown.cancelled().await;
-        info!("Neo node shutting down");
-        Ok(())
-    }
-
-    /// Returns a fresh cancellation token, separated from the
-    /// node's own so the caller can use it independently.
-    pub fn cancellation_token(&self) -> CancellationToken {
-        self.shutdown.clone()
     }
 
     /// Returns the protocol settings the node is running with.
     ///
-    /// Convenience accessor for plugins/services that received a
-    /// `&Node` reference (typically from a `CommittingHandler` /
-    /// `CommittedHandler` system downcast) and need to inspect
-    /// the network magic, hardfork schedule, etc.
+    /// Convenience accessor for services that received the typed node handle
+    /// and need to inspect the network magic, hardfork schedule, etc.
     pub fn settings(&self) -> Arc<ProtocolSettings> {
         Arc::clone(&self.settings)
     }
@@ -178,15 +153,14 @@ where
     }
 
     /// Returns the composed sync import pipeline handle.
-    ///
-    /// This is the same `Arc` returned by
-    /// `get_service::<SyncImportPipeline>()`.
-    pub fn sync_import_pipeline(&self) -> Arc<SyncImportPipeline> {
+    pub fn sync_import_pipeline(
+        &self,
+    ) -> Arc<SyncImportPipeline<SharedStoreSyncStageCheckpointStore<S>>> {
         Arc::clone(&self.sync_import_pipeline)
     }
 
     /// Returns the storage backend.
-    pub fn storage(&self) -> Arc<dyn Store> {
+    pub fn storage(&self) -> Arc<S> {
         Arc::clone(&self.storage)
     }
 
@@ -197,8 +171,8 @@ where
     /// changes back into the shared store. Each call returns an
     /// independent cache over the *same* underlying store, so reads
     /// observe everything previously committed through any other view.
-    pub fn store_cache(&self) -> StoreCache {
-        StoreCache::new_from_store(Arc::clone(&self.storage), false)
+    pub fn store_cache(&self) -> StoreCache<S> {
+        StoreCache::<S>::new_from_store(Arc::clone(&self.storage), false)
     }
 
     /// Returns the shared memory pool.
@@ -210,6 +184,12 @@ where
     /// tip).
     pub fn header_cache(&self) -> Arc<HeaderCache> {
         Arc::clone(&self.header_cache)
+    }
+
+    /// Returns the native-contract provider shared by execution-facing
+    /// services composed into this node.
+    pub fn native_contract_provider(&self) -> Arc<P> {
+        Arc::clone(&self.native_contract_provider)
     }
 
     /// Maximum increment of `valid_until_block` over the current
@@ -229,28 +209,6 @@ where
     /// (C# `ProtocolSettings.MaxTraceableBlocks`).
     pub fn max_traceable_blocks(&self) -> u32 {
         self.settings.max_traceable_blocks
-    }
-
-    /// Registers `service` as *the* instance of type `T` in the node's
-    /// service registry, replacing (and returning) any previous
-    /// instance. The reth-style replacement for the legacy
-    /// `NeoSystem::add_service`.
-    pub fn register_service<T: Send + Sync + 'static>(&self, service: Arc<T>) -> Option<Arc<T>> {
-        self.services.register(service)
-    }
-
-    /// Looks up the registered instance of type `T`, if any. The
-    /// reth-style replacement for the legacy
-    /// `NeoSystem::get_service::<T>()`.
-    pub fn get_service<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
-        self.services.get::<T>()
-    }
-
-    /// Returns the registered state-service store, if the composition
-    /// root started one. Sugar over
-    /// [`Self::get_service::<neo_state_service::StateStore>`].
-    pub fn state_store(&self) -> Option<Arc<neo_state_service::StateStore>> {
-        self.get_service::<neo_state_service::StateStore>()
     }
 
     /// Returns the wallet provider.
@@ -273,7 +231,7 @@ where
     }
 }
 
-impl Node<neo_native_contracts::StandardNativeProvider> {
+impl Node<neo_native_contracts::StandardNativeProvider, MemoryStore> {
     /// Construct a `Node` with the given protocol settings and an
     /// in-memory storage backend. Used by tests and by the
     /// orchestrator's headless mode (no P2P, no consensus, no
@@ -283,9 +241,7 @@ impl Node<neo_native_contracts::StandardNativeProvider> {
         _blockchain: Option<()>,
         _network: Option<()>,
     ) -> Result<Self, crate::error::NodeError> {
-        let storage: Arc<dyn neo_storage::persistence::store::Store> =
-            neo_storage::persistence::StoreFactory::get_store("memory", "")
-                .map_err(crate::error::NodeError::storage)?;
+        let storage = Arc::new(MemoryStore::new());
         let native_contract_provider =
             Arc::new(neo_native_contracts::StandardNativeProvider::new());
         let (blockchain, _rx) = neo_blockchain::BlockchainHandle::with_capacity();
@@ -337,11 +293,11 @@ where
     /// holding a non-async lock. Returns `Ok(())` only when the mempool accepts
     /// the transaction (`VerifyResult::Succeed`); any other verdict is surfaced
     /// as `Err(verdict)` so the caller can log and retain the work.
-    pub fn try_enqueue_preverify(
+    pub fn try_enqueue_preverify<B: neo_storage::CacheRead>(
         &self,
         tx: Transaction,
         relay: bool,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
     ) -> CoreResult<()> {
         let hash = tx
             .try_hash()
@@ -387,23 +343,26 @@ where
     }
 }
 
-#[async_trait]
-impl<P> StoreProvider for Node<P>
+impl<P, S> StoreProvider for Node<P, S>
 where
     P: NativeContractProvider + 'static,
+    S: Store + 'static,
 {
-    fn store(&self) -> Arc<dyn Store> {
-        self.storage.clone()
+    type Store = S;
+
+    fn store(&self) -> Arc<S> {
+        Arc::clone(&self.storage)
     }
 
-    fn store_cache(&self) -> StoreCache {
-        StoreCache::new_from_store(self.storage.clone(), false)
+    fn store_cache(&self) -> StoreCache<S> {
+        StoreCache::<S>::new_from_store(Arc::clone(&self.storage), false)
     }
 }
 
-impl<P> ConfigProvider for Node<P>
+impl<P, S> ConfigProvider for Node<P, S>
 where
     P: NativeContractProvider + 'static,
+    S: Store + 'static,
 {
     fn settings(&self) -> Arc<ProtocolSettings> {
         Arc::clone(&self.settings)
@@ -414,15 +373,16 @@ where
     }
 }
 
-impl<P> TxAdmission for Node<P>
+impl<P, S> TxAdmission for Node<P, S>
 where
     P: NativeContractProvider + 'static,
+    S: Store + 'static,
 {
-    fn try_enqueue_preverify(
+    fn try_enqueue_preverify<B: neo_storage::CacheRead>(
         &self,
         tx: neo_payloads::Transaction,
         relay: bool,
-        snapshot: &neo_storage::persistence::DataCache,
+        snapshot: &neo_storage::persistence::DataCache<B>,
     ) -> Result<(), neo_runtime::ServiceError> {
         self.tx_router_actor()
             .try_enqueue_preverify(tx, relay, snapshot)

@@ -130,23 +130,27 @@ impl BlockchainHandle {
     }
 }
 
-#[async_trait::async_trait]
 impl BlockImport for BlockchainHandle {
-    async fn check(&self, block: &Block) -> Result<(), ServiceError> {
-        block.try_hash().map_err(|error| {
-            ServiceError::invalid_input(format!("block hash serialization failed: {error}"))
-        })?;
-        crate::block_validation::BlockValidator::validate_import_integrity(block)
-            .map_err(|error| ServiceError::invalid_input(error.to_string()))?;
-        Ok(())
+    fn check(
+        &self,
+        block: &Block,
+    ) -> impl std::future::Future<Output = Result<(), ServiceError>> + Send {
+        std::future::ready((|| {
+            block.try_hash().map_err(|error| {
+                ServiceError::invalid_input(format!("block hash serialization failed: {error}"))
+            })?;
+            crate::block_validation::BlockValidator::validate_import_integrity(block)
+                .map_err(|error| ServiceError::invalid_input(error.to_string()))?;
+            Ok(())
+        })())
     }
 
-    async fn import(
+    fn import(
         &self,
         block: Block,
         _origin: BlockOrigin,
-    ) -> Result<BlockImportOutcome, ServiceError> {
-        self.import_block(block).await
+    ) -> impl std::future::Future<Output = Result<BlockImportOutcome, ServiceError>> + Send {
+        self.import_block(block)
     }
 
     async fn import_many(

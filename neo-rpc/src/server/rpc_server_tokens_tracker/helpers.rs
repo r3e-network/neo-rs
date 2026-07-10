@@ -10,6 +10,8 @@ use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::Serializable;
 use neo_manifest::CallFlags;
 use neo_primitives::UInt160;
+use neo_storage::CacheRead;
+use neo_storage::persistence::providers::RuntimeStore;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
 use neo_vm_rs::VmState as VMState;
@@ -21,15 +23,15 @@ use super::response::{nep11_transfer_entry, transfer_entries, transfer_entry};
 
 pub(super) fn tracker_service(
     server: &RpcServer,
-) -> Result<Arc<TokensTrackerService>, RpcException> {
+) -> Result<Arc<TokensTrackerService<RuntimeStore>>, RpcException> {
     server
         .system()
-        .get_service::<TokensTrackerService>()
+        .tokens_tracker_service()
         .ok_or_else(|| internal_error("TokensTracker service not available"))
 }
 
 pub(super) fn collect_transfers(
-    store: &(impl neo_storage::persistence::Store + ?Sized),
+    store: &impl neo_storage::persistence::Store,
     prefix: u8,
     script_hash: &UInt160,
     start: u64,
@@ -49,7 +51,7 @@ pub(super) fn collect_transfers(
 }
 
 pub(super) fn collect_nep11_transfers(
-    store: &(impl neo_storage::persistence::Store + ?Sized),
+    store: &impl neo_storage::persistence::Store,
     prefix: u8,
     script_hash: &UInt160,
     start: u64,
@@ -79,7 +81,7 @@ fn collect_transfer_entries<K, S, F>(
 ) -> Result<Value, RpcException>
 where
     K: Serializable + TokenTransferKeyView,
-    S: neo_storage::persistence::Store + ?Sized,
+    S: neo_storage::persistence::Store,
     F: Fn(&K, &TokenTransfer) -> Value,
 {
     let mut prefix_bytes = Vec::with_capacity(1 + UInt160::LENGTH);
@@ -113,12 +115,16 @@ where
     Ok(transfer_entries(entries))
 }
 
-pub(super) fn query_asset_metadata(
-    snapshot: &neo_storage::persistence::DataCache,
+pub(super) fn query_asset_metadata<P, B>(
+    snapshot: &neo_storage::persistence::DataCache<B>,
     settings: &neo_config::ProtocolSettings,
-    native_contract_provider: Arc<dyn NativeContractProvider>,
+    native_contract_provider: Arc<P>,
     asset: &UInt160,
-) -> Option<(String, u32)> {
+) -> Option<(String, u32)>
+where
+    P: NativeContractProvider + 'static,
+    B: CacheRead,
+{
     let mut script = ScriptBuilder::new();
     emit_contract_call(&mut script, asset, "decimals").ok()?;
     emit_contract_call(&mut script, asset, "symbol").ok()?;
@@ -131,7 +137,7 @@ pub(super) fn query_asset_metadata(
             None,
             settings.clone(),
             TEST_MODE_GAS,
-            None,
+            neo_execution::NoDiagnostic,
             Some(native_contract_provider),
         )
         .ok()?;

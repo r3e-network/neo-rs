@@ -137,8 +137,8 @@ fn native_contract_surface() {
 fn invoke_uint_args_use_shared_raw_parser() {
     let source = include_str!("../../notary/invoke.rs");
 
-    assert!(source.contains("fn invoke_lock_deposit_until("));
-    assert!(source.contains("fn invoke_set_max_not_valid_before_delta("));
+    assert!(source.contains("fn invoke_lock_deposit_until"));
+    assert!(source.contains("fn invoke_set_max_not_valid_before_delta"));
     assert!(source.contains("crate::args::raw_u32_arg"));
     assert!(!source.contains("BigInt::from_signed_bytes_le(args"));
     assert!(!source.contains("BigInt::from_signed_bytes_le(b)"));
@@ -255,7 +255,7 @@ fn deposit_storage_uses_stack_value_projection() {
     }
 
     let source = include_str!("../../notary/storage.rs");
-    let writer = slice_between(source, "fn write_deposit(", "fn lock_deposit_decision");
+    let writer = slice_between(source, "fn write_deposit<", "fn lock_deposit_decision");
     assert!(writer.contains("encode_storage_struct"));
     assert!(writer.contains("DepositState::new"));
     assert!(!writer.contains("StackValue::Struct"));
@@ -420,7 +420,7 @@ fn max_not_valid_before_delta_requires_initialized_storage() {
         None,
         ProtocolSettings::default(),
         0,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");

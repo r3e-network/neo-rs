@@ -2,8 +2,6 @@ use base64::{Engine as _, engine::general_purpose};
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::Witness;
 use neo_payloads::witness::Witness as PayloadWitness;
-// `invocation_script`/`verification_script` accessors come from this trait.
-use neo_primitives::Witness as _;
 use neo_serialization::json::JObject;
 
 use super::parsing::parse_base64_token;

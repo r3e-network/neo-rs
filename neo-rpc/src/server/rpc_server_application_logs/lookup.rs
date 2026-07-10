@@ -4,7 +4,6 @@
 //! `getapplicationlog`; request parsing and response filtering stay in the
 //! sibling request/response modules.
 
-use crate::application_logs::ApplicationLogsService;
 use crate::server::rpc_error::RpcError;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
@@ -22,7 +21,7 @@ impl RpcServerApplicationLogs {
         let request = ApplicationLogRequest::parse(params)?;
         let service = server
             .system()
-            .get_service::<ApplicationLogsService>()
+            .application_logs_service()
             .ok_or_else(|| internal_error("ApplicationLogs service not available"))?;
 
         let raw = service

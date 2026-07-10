@@ -18,10 +18,6 @@ impl Interoperable for ContractManifest {
     fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
         Ok(ContractManifest::to_stack_value(self))
     }
-
-    fn clone_box(&self) -> Box<dyn Interoperable> {
-        Box::new(self.clone())
-    }
 }
 
 impl ContractManifest {

@@ -164,12 +164,14 @@ fn wallet_positive_amount_parser_preserves_error_messages() {
     assert_eq!(non_positive.data(), Some("non-positive amount"));
 }
 
-fn mint_gas(
-    store: &mut neo_storage::persistence::StoreCache,
+fn mint_gas<S>(
+    store: &mut neo_storage::persistence::StoreCache<S>,
     _settings: &ProtocolSettings,
     account: UInt160,
     amount: BigInt,
-) {
+) where
+    S: neo_storage::persistence::Store,
+{
     // Seeds the byte-exact NEP-17 account-state record the native
     // `balanceOf` reads; the legacy fixture invoked `GAS.Mint` through
     // an engine, which produces the same storage record.
@@ -209,7 +211,12 @@ fn build_signed_transaction_custom(
     tx
 }
 
-fn persist_transaction_record(store: &mut neo_storage::persistence::StoreCache, tx: &Transaction) {
+fn persist_transaction_record<S>(
+    store: &mut neo_storage::persistence::StoreCache<S>,
+    tx: &Transaction,
+) where
+    S: neo_storage::persistence::Store,
+{
     const PREFIX_TRANSACTION: u8 = 0x0b;
 
     // `Prefix_Transaction` value: the C# `TransactionState` interoperable

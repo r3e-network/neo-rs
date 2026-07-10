@@ -20,9 +20,6 @@ pub mod pool_index;
 pub mod pool_item;
 mod state;
 
-pub use memory_pool::{
-    MemoryPool, NewTransactionCallback, SharedMemoryPool, TransactionAddedCallback,
-    TransactionRelayCallback, TransactionRemovedCallback,
-};
+pub use memory_pool::{MemoryPool, SharedMemoryPool};
 pub use pool_index::PoolIndex;
 pub use pool_item::PoolItem;

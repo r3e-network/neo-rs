@@ -8,7 +8,6 @@ use neo_config::ProtocolSettings;
 use neo_execution::Contract;
 use neo_io::SerializableExtensions;
 use neo_native_contracts::LedgerContract;
-use neo_native_contracts::NativeContract;
 use neo_native_contracts::PolicyContract;
 use neo_payloads::OracleResponseCode;
 use neo_payloads::VerifyResult;
@@ -134,12 +133,15 @@ fn single_validator_settings(keypair: &KeyPair) -> ProtocolSettings {
     settings
 }
 
-fn build_signed_block(
+fn build_signed_block<S>(
     settings: &ProtocolSettings,
-    store: &StoreCache,
+    store: &StoreCache<S>,
     validator: &KeyPair,
     transactions: Vec<Transaction>,
-) -> Block {
+) -> Block
+where
+    S: neo_storage::persistence::Store,
+{
     let snapshot = store.data_cache();
     let ledger = LedgerContract::new();
     let prev_hash = ledger.current_hash(snapshot).expect("current hash");
@@ -183,19 +185,24 @@ fn build_signed_block(
     block
 }
 
-fn mint_gas(
-    store: &mut neo_storage::persistence::StoreCache,
+fn mint_gas<S>(
+    store: &mut neo_storage::persistence::StoreCache<S>,
     _settings: &ProtocolSettings,
     account: UInt160,
     amount: BigInt,
-) {
+) where
+    S: neo_storage::persistence::Store,
+{
     // Seeds the byte-exact NEP-17 account-state record the native
     // `balanceOf` reads; the legacy fixture invoked `GAS.Mint` through
     // an engine, which produces the same storage record.
     crate::server::test_support::seed_gas_balance(store, &account, amount);
 }
 
-fn persist_transaction_record(store: &mut StoreCache, tx: &Transaction, block_index: u32) {
+fn persist_transaction_record<S>(store: &mut StoreCache<S>, tx: &Transaction, block_index: u32)
+where
+    S: neo_storage::persistence::Store,
+{
     const PREFIX_TRANSACTION: u8 = 0x0b;
 
     // `Prefix_Transaction` value: the C# `TransactionState` interoperable

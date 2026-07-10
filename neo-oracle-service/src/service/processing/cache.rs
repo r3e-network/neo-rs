@@ -1,12 +1,18 @@
-use super::super::OracleService;
 use super::super::cache::ExpiryBoundary;
-use super::super::native_provider::OracleServiceNativeProvider;
-use neo_storage::persistence::{DataCache, StoreCache};
+use super::super::native_provider::{OracleContractReadProvider, OracleServiceNativeProvider};
+use super::super::{OracleRuntimeProvider, OracleService};
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_storage::persistence::Store;
+use neo_storage::persistence::{CacheRead, DataCache, StoreCache, StoreDataCache};
 use std::collections::HashSet;
 use std::time::SystemTime;
 
-impl OracleService {
-    pub(in super::super) fn sync_pending_queue(&self, snapshot: &DataCache) {
+impl<R, P> OracleService<R, P>
+where
+    R: OracleRuntimeProvider + 'static,
+    P: NativeContractProvider + OracleContractReadProvider + 'static,
+{
+    pub(in super::super) fn sync_pending_queue<B: CacheRead>(&self, snapshot: &DataCache<B>) {
         let native = self.native_provider();
         let Ok(requests) = native.oracle_requests(snapshot) else {
             return;
@@ -27,9 +33,9 @@ impl OracleService {
             .prune_expired(now, ExpiryBoundary::Inclusive);
     }
 
-    pub(in super::super) fn snapshot_cache(&self) -> DataCache {
-        let snapshot = self.store.store().snapshot();
-        let store_cache = StoreCache::new_from_snapshot(snapshot);
+    pub(in super::super) fn snapshot_cache(&self) -> StoreDataCache<R::Store> {
+        let snapshot = self.runtime.store().snapshot();
+        let store_cache = StoreCache::<R::Store>::new_from_snapshot(snapshot);
         store_cache.data_cache().clone()
     }
 }

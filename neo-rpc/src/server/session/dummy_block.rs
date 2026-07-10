@@ -28,8 +28,8 @@ use super::native_provider::SessionNativeProvider;
 /// when the ledger has no current block yet, for example a store without a
 /// persisted genesis, matching the C# pre-genesis `KeyNotFoundException` corner
 /// where a dummy block cannot be constructed.
-pub(super) fn create_dummy_block(
-    snapshot: &neo_storage::persistence::DataCache,
+pub(super) fn create_dummy_block<B: neo_storage::CacheRead>(
+    snapshot: &neo_storage::persistence::DataCache<B>,
     settings: &neo_config::ProtocolSettings,
     native_provider: &impl SessionNativeProvider,
 ) -> Option<Block> {

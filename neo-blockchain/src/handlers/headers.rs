@@ -1,8 +1,5 @@
 use neo_payloads::header::Header;
 
-use neo_execution::native_contract_provider::NativeContractProvider;
-use std::sync::Arc;
-
 use crate::ledger_provider::{
     BlockProvider, ChainTipProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory,
     LedgerProviderFactory,
@@ -75,11 +72,6 @@ where
                     break;
                 }
                 let next_consensus = *prev_header.next_consensus();
-                let native_contract_provider_for_vm =
-                    native_contract_provider.as_ref().map(|provider| {
-                        let provider: Arc<dyn NativeContractProvider> = provider.clone();
-                        provider
-                    });
                 if neo_execution::Helper::verify_witness_with_native_provider(
                     &header,
                     settings.as_ref(),
@@ -87,7 +79,7 @@ where
                     &next_consensus,
                     &header.witness,
                     300_000_000,
-                    native_contract_provider_for_vm,
+                    native_contract_provider.clone(),
                 )
                 .is_err()
                 {

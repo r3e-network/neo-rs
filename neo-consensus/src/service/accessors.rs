@@ -5,7 +5,10 @@ use std::sync::Arc;
 
 use super::ConsensusService;
 
-impl ConsensusService {
+impl<S> ConsensusService<S>
+where
+    S: ConsensusSigner,
+{
     /// Returns our validator index, or an error if we're not a validator.
     /// This is a safe alternative to directly unwrapping `my_index` in
     /// production code.
@@ -72,7 +75,7 @@ impl ConsensusService {
     }
 
     /// Updates the signer used for consensus messages.
-    pub fn set_signer(&mut self, signer: Option<Arc<dyn ConsensusSigner>>) {
+    pub fn set_signer(&mut self, signer: Option<Arc<S>>) {
         self.signer = signer;
     }
 

@@ -26,7 +26,14 @@ impl GasToken {
     /// the gate is implicit), and `GetAttributeFeeV1` is the plain
     /// `Prefix_AttributeFee` storage read with the NotaryAssisted type allowed
     /// (PolicyContract.cs:278-301).
-    pub(super) fn on_persist_native(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    pub(super) fn on_persist_native<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        &self,
+        engine: &mut ApplicationEngine<P, D, B>,
+    ) -> CoreResult<()> {
         // Collect the per-transaction data under the shared block borrow; the
         // burns below need `&mut engine`.
         let (primary_index, tx_data) = {

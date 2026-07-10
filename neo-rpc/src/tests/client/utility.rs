@@ -5,9 +5,6 @@ use neo_payloads::OracleResponseCode;
 use neo_payloads::WitnessCondition;
 use neo_payloads::{Signer, TransactionAttribute};
 use neo_primitives::{ADDRESS_SIZE, UInt256, WitnessScope};
-// Brings the `Witness` trait's `invocation_script`/`verification_script`
-// accessors into scope (the concrete type is `neo_payloads::Witness`).
-use neo_primitives::Witness as _;
 use neo_serialization::json::JArray;
 
 #[test]

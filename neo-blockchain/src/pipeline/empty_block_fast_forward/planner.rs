@@ -2,6 +2,8 @@ use std::borrow::Borrow;
 use std::fmt;
 
 use neo_config::ProtocolSettings;
+use neo_execution::NativeContract;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::Block;
 use neo_primitives::UInt256;
 
@@ -115,7 +117,10 @@ impl fmt::Display for EmptyBlockFastForwardRejection {
 impl std::error::Error for EmptyBlockFastForwardRejection {}
 
 /// Inputs for [`plan_empty_block_fast_forward`].
-pub struct EmptyBlockFastForwardRequest<'a, B> {
+pub struct EmptyBlockFastForwardRequest<'a, B, P>
+where
+    P: NativeContractProvider + 'static,
+{
     /// Current canonical chain height before the interval.
     pub current_height: u32,
     /// Candidate blocks, expected to start at `current_height + 1`.
@@ -123,7 +128,7 @@ pub struct EmptyBlockFastForwardRequest<'a, B> {
     /// Protocol settings used for native activation checks.
     pub settings: &'a ProtocolSettings,
     /// Reusable native persistence resources for this import batch.
-    pub resources: &'a NativePersistResources,
+    pub resources: &'a NativePersistResources<P>,
     /// Replay artifact policy of the caller.
     pub persist_options: NativePersistOptions,
     /// Persistence context of the caller.
@@ -132,11 +137,12 @@ pub struct EmptyBlockFastForwardRequest<'a, B> {
 
 /// Validates whether `blocks` may be persisted by a state-equivalent
 /// empty-block fast-forward writer.
-pub fn plan_empty_block_fast_forward<B>(
-    request: EmptyBlockFastForwardRequest<'_, B>,
+pub fn plan_empty_block_fast_forward<B, P>(
+    request: EmptyBlockFastForwardRequest<'_, B, P>,
 ) -> Result<EmptyBlockFastForwardPlan, EmptyBlockFastForwardRejection>
 where
     B: Borrow<Block>,
+    P: NativeContractProvider + 'static,
 {
     let EmptyBlockFastForwardRequest {
         current_height,

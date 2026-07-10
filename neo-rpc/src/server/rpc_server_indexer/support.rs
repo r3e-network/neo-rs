@@ -30,7 +30,7 @@ impl RpcServerIndexer {
     pub(super) fn service(server: &RpcServer) -> Result<Arc<IndexerService>, RpcException> {
         server
             .system()
-            .get_service::<IndexerService>()
+            .indexer_service()
             .ok_or_else(|| internal_error("NeoIndexer service not available"))
     }
 

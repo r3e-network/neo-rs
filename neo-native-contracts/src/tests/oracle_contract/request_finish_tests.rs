@@ -10,10 +10,12 @@ use neo_manifest::{
 };
 use neo_payloads::signer::Signer;
 use neo_payloads::witness::Witness;
-use neo_payloads::{Block, BlockHeader, OracleResponse, Transaction, TransactionAttribute};
+use neo_payloads::{
+    Block, BlockHeader, OracleResponse, Transaction, TransactionAttribute, VerifiableContainer,
+};
 use neo_primitives::{
     CallFlags, ContractParameterType, OracleResponseCode, TriggerType, UInt160, UInt256,
-    Verifiable, WitnessScope,
+    WitnessScope,
 };
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
@@ -121,8 +123,7 @@ fn signed_tx(signer: UInt160) -> Transaction {
 }
 
 fn run(script: Vec<u8>, tx: Transaction, snapshot: Arc<DataCache>) -> (VmState, Vec<u8>) {
-    crate::install();
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
     let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
@@ -130,7 +131,7 @@ fn run(script: Vec<u8>, tx: Transaction, snapshot: Arc<DataCache>) -> (VmState, 
         None,
         ProtocolSettings::default(),
         2000_00000000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
@@ -155,7 +156,6 @@ fn seed_initialized_oracle_storage(cache: &DataCache) {
 
 /// Seeds a snapshot with the Oracle native contract record installed.
 fn oracle_snapshot() -> Arc<DataCache> {
-    crate::install();
     let cache = DataCache::new(false);
     deploy_contract(
         &cache,
@@ -178,9 +178,7 @@ fn request_writes_record_id_list_counter_and_mints_response_gas() {
 
     let tx = signed_tx(UInt160::from_bytes(&[0x42; 20]).unwrap());
     let expected_txid = tx.hash();
-
-    crate::install();
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
     let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
@@ -188,7 +186,7 @@ fn request_writes_record_id_list_counter_and_mints_response_gas() {
         None,
         ProtocolSettings::default(),
         2000_00000000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
@@ -398,9 +396,7 @@ fn oracle_response_tx(id: u64, result: &[u8]) -> Transaction {
 fn finish_notifies_and_queues_the_callback() {
     let (snapshot, request, _) = seeded_finish_snapshot(7);
     let tx = oracle_response_tx(7, b"\"abc\"");
-
-    crate::install();
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
     let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
@@ -408,7 +404,7 @@ fn finish_notifies_and_queues_the_callback() {
         None,
         ProtocolSettings::default(),
         2000_00000000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
@@ -470,9 +466,8 @@ fn finish_with_unknown_request_id_faults() {
 
 #[test]
 fn verify_accepts_only_oracle_response_transactions() {
-    crate::install();
     let make_engine = |tx: Transaction| {
-        let container: Arc<dyn Verifiable> = Arc::new(tx);
+        let container = Arc::new(VerifiableContainer::from(tx));
         ApplicationEngine::new_with_native_contract_provider(
             TriggerType::Application,
             Some(container),
@@ -480,7 +475,7 @@ fn verify_accepts_only_oracle_response_transactions() {
             None,
             ProtocolSettings::default(),
             10_00000000,
-            None,
+            neo_execution::NoDiagnostic,
             Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
         )
         .expect("engine builds")
@@ -504,8 +499,7 @@ fn post_persist_engine(
     snapshot: Arc<DataCache>,
     block_index: u32,
     txs: Vec<Transaction>,
-) -> ApplicationEngine {
-    crate::install();
+) -> ApplicationEngine<crate::StandardNativeProvider> {
     let mut header = BlockHeader::default();
     header.set_index(block_index);
     ApplicationEngine::new_with_native_contract_provider(
@@ -515,7 +509,7 @@ fn post_persist_engine(
         Some(Block::from_parts(header, txs)),
         ProtocolSettings::default(),
         2000_00000000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds")

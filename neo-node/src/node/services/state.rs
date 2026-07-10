@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
+use neo_storage::persistence::providers::{MemoryStore, RuntimeStore};
 use tracing::info;
 
 use crate::node::config::{NodeConfig, network_scoped_path};
@@ -11,9 +12,9 @@ use crate::node::inventory_relay::FAST_SYNC_BURST_CAPACITY;
 use super::store::{ServiceStore, open_service_store_with_storage_config};
 
 pub(super) struct StateServiceRuntime {
-    pub(super) state_store: Option<Arc<neo_state_service::StateStore>>,
+    pub(super) state_store: Option<Arc<neo_state_service::StateStore<RuntimeStore>>>,
     pub(super) state_service:
-        Option<Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers>>,
+        Option<Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers<RuntimeStore>>>,
     pub(super) durable_store: Option<ServiceStore>,
 }
 
@@ -57,7 +58,7 @@ fn build_state_store(
     storage_provider: &str,
     fast_sync: bool,
 ) -> anyhow::Result<(
-    Option<Arc<neo_state_service::StateStore>>,
+    Option<Arc<neo_state_service::StateStore<RuntimeStore>>>,
     Option<ServiceStore>,
 )> {
     if !config.state_service.enabled {
@@ -74,7 +75,7 @@ fn build_state_store(
             network,
             fast_sync,
         )?;
-        durable_store = Some(Arc::clone(&backing) as ServiceStore);
+        durable_store = Some(Arc::clone(&backing));
         Arc::new(
             neo_state_service::StateStore::with_mpt_store(config.state_service.full_state, backing)
                 .with_context(|| {
@@ -85,9 +86,11 @@ fn build_state_store(
                 })?,
         )
     } else {
-        Arc::new(neo_state_service::StateStore::with_mpt(
-            config.state_service.full_state,
-        ))
+        let backing: ServiceStore = Arc::new(RuntimeStore::Memory(MemoryStore::new()));
+        Arc::new(
+            neo_state_service::StateStore::with_mpt_store(config.state_service.full_state, backing)
+                .context("opening in-memory StateService MPT store")?,
+        )
     };
     info!(
         target: "neo",

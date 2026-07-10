@@ -8,7 +8,10 @@ use crate::{ConsensusMessageType, ConsensusResult};
 use neo_primitives::UInt256;
 use tracing::info;
 
-impl ConsensusService {
+impl<S> ConsensusService<S>
+where
+    S: crate::ConsensusSigner,
+{
     /// Asks the node/mempool for the transactions to include in the primary's
     /// delayed `PrepareRequest`.
     pub(super) fn initiate_proposal(&mut self, timestamp: u64) -> ConsensusResult<()> {

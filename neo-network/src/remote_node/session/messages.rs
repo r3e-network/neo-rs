@@ -3,7 +3,7 @@ use std::sync::Arc;
 use futures::SinkExt;
 use tracing::trace;
 
-use super::super::{InboundInventory, PeerFramed};
+use super::super::{BlockSource, InboundInventory, PeerFramed};
 use super::{CloseReason, PeerSession};
 use crate::MessageCommand;
 use crate::wire::Message;
@@ -15,7 +15,10 @@ use neo_payloads::p2p_payloads::{
 use neo_payloads::{Block, ExtensiblePayload, HeadersPayload, Transaction};
 use neo_primitives::{InventoryType, UInt256};
 
-impl PeerSession {
+impl<B> PeerSession<B>
+where
+    B: BlockSource,
+{
     /// Dispatch one inbound frame, enforcing the C#
     /// `RemoteNode.ProtocolHandler.OnMessage` handshake ordering.
     pub(super) async fn on_message(

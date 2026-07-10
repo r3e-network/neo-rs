@@ -3,6 +3,8 @@ use neo_consensus::ValidatorInfo;
 use serde::Deserialize;
 
 use super::setup::ConsensusSetup;
+#[cfg(feature = "hsm")]
+use super::setup::NodeConsensusSigner;
 
 #[cfg(feature = "hsm")]
 use super::setup::resolve_public_key_index;
@@ -122,7 +124,7 @@ pub(super) fn build_hsm_consensus_setup(
         private_key: [0u8; 32],
         network: settings.network,
         ms_per_block: u64::from(settings.milliseconds_per_block),
-        signer: Some(Arc::new(signer)),
+        signer: Some(Arc::new(NodeConsensusSigner::Pkcs11(signer))),
     }))
 }
 

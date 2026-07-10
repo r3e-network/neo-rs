@@ -1,4 +1,6 @@
 use super::*;
+use crate::NoDiagnostic;
+use crate::native_contract_provider::NoNativeContractProvider;
 use neo_config::ProtocolSettings;
 use neo_primitives::{TriggerType, UInt256};
 use neo_storage::persistence::DataCache;
@@ -6,14 +8,14 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 fn test_engine() -> ApplicationEngine {
-    ApplicationEngine::new_with_native_contract_provider(
+    ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
         TriggerType::Application,
         None,
         Arc::new(DataCache::new(false)),
         None,
         ProtocolSettings::default(),
         1_000_000,
-        None,
+        NoDiagnostic,
         None,
     )
     .expect("engine builds")
@@ -78,6 +80,25 @@ fn native_call_trace_filter_matches_exact_transaction_hash() {
     ));
     assert!(native_call_trace_filter_matches(None, true, Some(other)));
     assert!(!native_call_trace_filter_matches(None, false, Some(other)));
+}
+
+#[test]
+fn native_call_flags_are_typed_scoped_and_one_shot() {
+    let mut engine = test_engine();
+
+    engine.begin_native_call(0b0101);
+    assert!(engine.native_arg_is_null(0));
+    assert!(!engine.native_arg_is_null(1));
+    assert!(engine.native_arg_is_null(2));
+    assert!(!engine.native_arg_is_null(32));
+
+    engine.set_native_return_null();
+    assert!(engine.finish_native_call());
+    assert!(!engine.native_arg_is_null(0));
+    assert!(
+        !engine.finish_native_call(),
+        "the nullable-return marker must be consumed exactly once"
+    );
 }
 
 #[test]
@@ -173,7 +194,12 @@ fn decode_native_result_interop_wraps_bls_point_lengths() {
     let iter = decode_native_result(ContractParameterType::InteropInterface, vec![1, 0, 0, 0])
         .expect("decode")
         .expect("stack item");
-    assert!(iter.as_interface::<IteratorInterop>().is_ok());
+    assert!(
+        iter.as_interface()
+            .expect("interop")
+            .iterator_id()
+            .is_some()
+    );
 
     // 48 / 96 / 576-byte payloads are BLS12-381 points → Bls12381Interop.
     for len in [G1_COMPRESSED_SIZE, G2_COMPRESSED_SIZE, GT_SIZE] {
@@ -181,12 +207,15 @@ fn decode_native_result_interop_wraps_bls_point_lengths() {
         let item = decode_native_result(ContractParameterType::InteropInterface, bytes.clone())
             .expect("decode")
             .expect("stack item");
-        let point = item
-            .as_interface::<Bls12381Interop>()
-            .expect("BLS interop wrapper");
-        assert_eq!(point.bytes(), bytes.as_slice());
+        let point = item.as_interface().expect("BLS interop wrapper");
+        assert_eq!(point.bls12381_bytes(), Some(bytes.as_slice()));
         // It is NOT an iterator (the two interop kinds are distinct).
-        assert!(item.as_interface::<IteratorInterop>().is_err());
+        assert!(
+            item.as_interface()
+                .expect("interop")
+                .iterator_id()
+                .is_none()
+        );
     }
 }
 
@@ -194,11 +223,11 @@ fn decode_native_result_interop_wraps_bls_point_lengths() {
 fn interop_bytes_round_trips_typed_objects_and_rejects_plain_bytestring() {
     // A Bls12381Interop operand unwraps back to its canonical bytes.
     let bytes = vec![7u8; GT_SIZE];
-    let item = StackItem::from_interface(Bls12381Interop::new(bytes.clone()));
+    let item = StackItem::from_interface(Bls12381Interop::bls12381(bytes.clone()));
     assert_eq!(stack_item_to_interop_bytes(item).expect("bls bytes"), bytes);
 
     // An IteratorInterop operand encodes its handle id as 4 LE bytes.
-    let iter = StackItem::from_interface(IteratorInterop::new(5));
+    let iter = StackItem::from_interface(IteratorInterop::iterator(5));
     assert_eq!(
         stack_item_to_interop_bytes(iter).expect("iter id"),
         5u32.to_le_bytes()

@@ -1,20 +1,23 @@
-use crate::{RpcClient, RpcClientError, TransactionManager};
+use crate::{RpcClient, RpcClientError, RpcObserver, TracingRpcObserver, TransactionManager};
 use neo_payloads::{Signer, Transaction, TransactionAttribute};
 use rand::Rng;
 use std::sync::Arc;
 
 /// Factory for creating `TransactionManager` instances
 /// Matches C# `TransactionManagerFactory`
-pub struct TransactionManagerFactory {
+pub struct TransactionManagerFactory<O = TracingRpcObserver> {
     /// The RPC client instance
-    rpc_client: Arc<RpcClient>,
+    rpc_client: Arc<RpcClient<O>>,
 }
 
-impl TransactionManagerFactory {
+impl<O> TransactionManagerFactory<O>
+where
+    O: RpcObserver,
+{
     /// `TransactionManagerFactory` Constructor
     /// Matches C# constructor
     #[must_use]
-    pub const fn new(rpc_client: Arc<RpcClient>) -> Self {
+    pub const fn new(rpc_client: Arc<RpcClient<O>>) -> Self {
         Self { rpc_client }
     }
 
@@ -24,7 +27,7 @@ impl TransactionManagerFactory {
         &self,
         script: &[u8],
         signers: &[Signer],
-    ) -> Result<TransactionManager, RpcClientError> {
+    ) -> Result<TransactionManager<O>, RpcClientError> {
         // Invoke script to get gas consumption
         let invoke_result = self
             .rpc_client
@@ -42,7 +45,7 @@ impl TransactionManagerFactory {
         script: &[u8],
         signers: &[Signer],
         attributes: &[TransactionAttribute],
-    ) -> Result<TransactionManager, RpcClientError> {
+    ) -> Result<TransactionManager<O>, RpcClientError> {
         // Invoke script to get gas consumption
         let invoke_result = self
             .rpc_client
@@ -61,7 +64,7 @@ impl TransactionManagerFactory {
         system_fee: i64,
         signers: &[Signer],
         attributes: &[TransactionAttribute],
-    ) -> Result<TransactionManager, RpcClientError> {
+    ) -> Result<TransactionManager<O>, RpcClientError> {
         // Get current block count (RPC returns height + 1)
         let block_count = self.rpc_client.get_block_count().await?;
         let current_height = block_count.saturating_sub(1);

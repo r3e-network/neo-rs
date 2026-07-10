@@ -50,7 +50,7 @@ use neo_config::ProtocolSettings;
 use neo_crypto::{ECCurve, ECPoint};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::Contract;
-use neo_native_contracts::NativeRegistry;
+use neo_native_contracts::{NativeRegistry, StandardNativeProvider};
 use neo_payloads::{Block, BlockHeader, Transaction, Witness};
 use neo_primitives::{UInt160, UInt256, strip_hex_prefix};
 use neo_serialization::json::{JObject, JToken};
@@ -65,12 +65,12 @@ use std::sync::OnceLock;
 pub struct RpcUtility;
 
 impl RpcUtility {
-    fn native_registry() -> &'static NativeRegistry {
-        static REGISTRY: OnceLock<NativeRegistry> = OnceLock::new();
+    fn native_registry() -> &'static NativeRegistry<StandardNativeProvider> {
+        static REGISTRY: OnceLock<NativeRegistry<StandardNativeProvider>> = OnceLock::new();
         REGISTRY.get_or_init(|| {
             // `NativeRegistry::new()` is empty by design; populate it
             // with the canonical standard native-contract set.
-            let mut registry = NativeRegistry::new();
+            let mut registry = NativeRegistry::<StandardNativeProvider>::new();
             for contract in neo_native_contracts::standard_native_contracts() {
                 registry.register(contract);
             }

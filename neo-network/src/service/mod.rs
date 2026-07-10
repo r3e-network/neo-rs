@@ -18,19 +18,20 @@
 //! - `remote_node`: Remote peer state and connection behavior.
 //! - `task_manager`: Network task coordination and lifecycle helpers.
 
-pub mod block_sync_mode;
-pub mod command;
-pub mod event;
-pub mod handle;
-pub mod local_node;
-pub mod remote_node;
-pub mod task_manager;
+pub(crate) mod block_sync_mode;
+pub(crate) mod command;
+pub(crate) mod event;
+pub(crate) mod handle;
+pub(crate) mod local_node;
+pub(crate) mod remote_node;
+pub(crate) mod task_manager;
 
 pub use block_sync_mode::BlockSyncMode;
 pub use command::NetworkCommand;
 pub use event::NetworkEvent;
 pub use handle::{
-    DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, NetworkHandle, SharedNetworkHandle,
+    ConnectedPeer, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, LocalNodeInfo, NetworkHandle,
+    SharedNetworkHandle,
 };
 pub use local_node::LocalNodeService;
 pub use remote_node::{

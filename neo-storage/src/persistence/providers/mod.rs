@@ -20,7 +20,10 @@ pub mod memory_snapshot;
 pub mod memory_store;
 /// Provider that creates in-memory stores.
 pub mod memory_store_provider;
+/// Concrete enum for runtime-selected store backends.
+pub mod runtime_store;
 
 pub use memory_snapshot::MemorySnapshot;
 pub use memory_store::MemoryStore;
 pub use memory_store_provider::MemoryStoreProvider;
+pub use runtime_store::RuntimeStore;

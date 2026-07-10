@@ -20,6 +20,7 @@ use crate::state_root::StateRoot;
 use neo_crypto::mpt_trie::{MptError, MptResult};
 use neo_primitives::UInt256;
 use neo_storage::persistence::Store;
+use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::{DataCache, TrackState};
 use parking_lot::RwLock;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -41,14 +42,14 @@ pub enum StateStoreLookup {
 }
 
 /// In-memory state store for state roots.
-#[derive(Debug, Default)]
-pub struct StateStore {
+#[derive(Debug)]
+pub struct StateStore<S: Store = MemoryStore> {
     inner: Arc<RwLock<StateStoreInner>>,
     /// Optional persisted MPT backend (trie nodes + local-root
     /// records). `None` reproduces the verification-cache-only
     /// behaviour; composition roots that persist the trie construct
     /// the store via [`StateStore::with_mpt`].
-    mpt: Option<Arc<MptStore>>,
+    mpt: Option<Arc<MptStore<S>>>,
 }
 
 #[derive(Debug, Default)]
@@ -72,12 +73,15 @@ pub(crate) struct ProjectedMptBlock<'a> {
 ///
 /// Holds a shared handle to the underlying store and a snapshot of the
 /// candidate set captured at the time the transaction was opened.
-pub struct StateStoreTransaction {
-    store: StateStore,
+pub struct StateStoreTransaction<S: Store = MemoryStore> {
+    store: StateStore<S>,
     candidates_at_open: HashSet<UInt256>,
 }
 
-impl StateStoreTransaction {
+impl<S> StateStoreTransaction<S>
+where
+    S: Store,
+{
     /// Returns the state roots that were in the candidate set when
     /// this transaction was opened.
     pub fn candidates(&self) -> &HashSet<UInt256> {
@@ -97,13 +101,25 @@ impl StateStoreTransaction {
     }
 }
 
-impl StateStore {
+impl<S> Default for StateStore<S>
+where
+    S: Store,
+{
+    fn default() -> Self {
+        Self {
+            inner: Arc::new(RwLock::default()),
+            mpt: None,
+        }
+    }
+}
+
+impl StateStore<MemoryStore> {
     /// Constructs a new, empty state store without an MPT backend.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Constructs a state store with a persisted MPT backend.
+    /// Constructs a state store with an in-memory persisted MPT backend.
     ///
     /// `full_state` mirrors the C# `StateServiceSettings.FullState`
     /// flag: `true` retains every historical trie version (so
@@ -116,14 +132,20 @@ impl StateStore {
             mpt: Some(Arc::new(MptStore::new(full_state))),
         }
     }
+}
 
-    /// Constructs a state store with an MPT backend loaded from a durable store.
+impl<S> StateStore<S>
+where
+    S: Store,
+{
+    /// Constructs a state store with an MPT backend loaded from a backing store.
     ///
-    /// Composition roots should create storage through `StoreFactory` or a
-    /// backend provider, then pass the erased [`Store`] here. Keeping this seam
-    /// provider-neutral prevents the state service from depending on a concrete
-    /// RocksDB/MDBX/memory backend.
-    pub fn with_mpt_store(full_state: bool, backing: Arc<dyn Store>) -> MptResult<Self> {
+    /// Composition roots should pass the concrete backend type they already
+    /// own when it is known (`MdbxStore`, `RocksDbStore`, `MemoryStore`, ...).
+    /// Runtime-selected startup code should pass the concrete [`RuntimeStore`]
+    /// enum, so the state service stays provider-neutral through the generic
+    /// `S` parameter rather than depending on RocksDB/MDBX/memory directly.
+    pub fn with_mpt_store(full_state: bool, backing: Arc<S>) -> MptResult<Self> {
         Ok(Self {
             inner: Arc::new(RwLock::default()),
             mpt: Some(Arc::new(MptStore::from_store(backing, full_state)?)),
@@ -131,7 +153,7 @@ impl StateStore {
     }
 
     /// Returns the persisted MPT backend, if this store maintains one.
-    pub fn mpt(&self) -> Option<Arc<MptStore>> {
+    pub fn mpt(&self) -> Option<Arc<MptStore<S>>> {
         self.mpt.clone()
     }
 
@@ -142,10 +164,10 @@ impl StateStore {
     /// mirrors C# `StateService.StatePlugin.Blockchain_Committing_Handler`:
     /// skip Ledger native-contract records, ignore `TrackState.None`, write
     /// added/changed items, and delete removed items.
-    pub fn apply_snapshot_changes(
+    pub fn apply_snapshot_changes<B: neo_storage::CacheRead>(
         &self,
         block_index: u32,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
     ) -> MptResult<Option<UInt256>> {
         let total_start = std::time::Instant::now();
         let Some(mpt) = self.mpt.as_ref() else {
@@ -176,7 +198,10 @@ impl StateStore {
         )
     }
 
-    pub(crate) fn project_mpt_changes_into(snapshot: &DataCache, changes: &mut Vec<MptChange>) {
+    pub(crate) fn project_mpt_changes_into<B: neo_storage::CacheRead>(
+        snapshot: &DataCache<B>,
+        changes: &mut Vec<MptChange>,
+    ) {
         changes.clear();
         changes.reserve(snapshot.pending_change_count());
         Self::push_mpt_changes_from_snapshot(snapshot, changes);
@@ -339,7 +364,7 @@ impl StateStore {
         }
     }
 
-    fn contiguous_root_before(mpt: &MptStore, block_index: u32) -> MptResult<Option<UInt256>> {
+    fn contiguous_root_before(mpt: &MptStore<S>, block_index: u32) -> MptResult<Option<UInt256>> {
         match mpt.current_local_root() {
             None if block_index == 0 => Ok(None),
             None => Err(MptError::invalid(format!(
@@ -356,11 +381,11 @@ impl StateStore {
         }
     }
 
-    fn apply_snapshot_mpt_changes_with_root(
+    fn apply_snapshot_mpt_changes_with_root<B: neo_storage::CacheRead>(
         &self,
         block_index: u32,
         root_before: Option<UInt256>,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         project_us: u64,
         total_start: std::time::Instant,
     ) -> MptResult<Option<UInt256>> {
@@ -430,13 +455,18 @@ impl StateStore {
     }
 
     #[cfg(test)]
-    fn mpt_changes_from_snapshot(snapshot: &DataCache) -> Vec<MptChange> {
+    fn mpt_changes_from_snapshot<B: neo_storage::CacheRead>(
+        snapshot: &DataCache<B>,
+    ) -> Vec<MptChange> {
         let mut changes = Vec::with_capacity(snapshot.pending_change_count());
         Self::push_mpt_changes_from_snapshot(snapshot, &mut changes);
         changes
     }
 
-    fn push_mpt_changes_from_snapshot(snapshot: &DataCache, changes: &mut Vec<MptChange>) {
+    fn push_mpt_changes_from_snapshot<B: neo_storage::CacheRead>(
+        snapshot: &DataCache<B>,
+        changes: &mut Vec<MptChange>,
+    ) {
         snapshot.visit_tracked_items(|key, trackable| {
             if key.id() == LEDGER_CONTRACT_ID {
                 return;
@@ -471,10 +501,10 @@ impl StateStore {
 
     /// Begins a new transaction, returning a view that captures the
     /// current candidate set.
-    pub fn begin_transaction(&self) -> StateStoreTransaction {
+    pub fn begin_transaction(&self) -> StateStoreTransaction<S> {
         let candidates = self.inner.read().candidates.clone();
         StateStoreTransaction {
-            store: StateStore::clone(self),
+            store: self.clone(),
             candidates_at_open: candidates,
         }
     }
@@ -555,7 +585,10 @@ fn elapsed_us(start: std::time::Instant) -> u64 {
     start.elapsed().as_micros().min(u64::MAX as u128) as u64
 }
 
-impl Clone for StateStore {
+impl<S> Clone for StateStore<S>
+where
+    S: Store,
+{
     fn clone(&self) -> Self {
         Self {
             // Clones share the same in-memory root indexes/candidate set:

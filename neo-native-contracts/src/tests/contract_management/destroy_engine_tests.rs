@@ -4,8 +4,8 @@ use neo_execution::native_contract::build_native_contract_state;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
-use neo_payloads::{Block, BlockHeader};
-use neo_primitives::{CallFlags, TriggerType, Verifiable, WitnessScope};
+use neo_payloads::{Block, BlockHeader, VerifiableContainer};
+use neo_primitives::{CallFlags, TriggerType, WitnessScope};
 use neo_vm::StackItem;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::VmState;
@@ -37,11 +37,11 @@ fn engine_for(
     snapshot: Arc<DataCache>,
     persisting_block: Option<Block>,
     settings: ProtocolSettings,
-) -> ApplicationEngine {
+) -> ApplicationEngine<crate::StandardNativeProvider> {
     let mut tx = Transaction::new();
     tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::GLOBAL)]);
     tx.set_witnesses(vec![Witness::empty()]);
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
     ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
@@ -49,7 +49,7 @@ fn engine_for(
         persisting_block,
         settings,
         100_00000000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds")
@@ -57,7 +57,6 @@ fn engine_for(
 
 #[test]
 fn destroy_removes_record_index_storage_and_blocks_hash() {
-    crate::install();
     let cache = DataCache::new(false);
     // Seed the ContractManagement native record so System.Contract.Call
     // resolves the callee.
@@ -189,7 +188,6 @@ fn settings_with_gorgon() -> ProtocolSettings {
 
 #[test]
 fn destroy_under_gorgon_blocks_before_erase_and_reaches_the_same_final_state() {
-    crate::install();
     let settings = settings_with_gorgon();
     let cache = DataCache::new(false);
     put_contract_record(
@@ -267,7 +265,6 @@ fn destroy_under_gorgon_blocks_before_erase_and_reaches_the_same_final_state() {
 
 #[test]
 fn destroy_is_a_noop_for_a_non_contract_caller() {
-    crate::install();
     let cache = DataCache::new(false);
     put_contract_record(
         &cache,
@@ -305,7 +302,6 @@ fn destroy_is_a_noop_for_a_non_contract_caller() {
 
 #[test]
 fn block_account_internal_faun_writes_timestamp_and_is_idempotent() {
-    crate::install();
     let mut settings = ProtocolSettings::default();
     settings.hardforks.insert(Hardfork::HfFaun, 0);
     let mut header = BlockHeader::default();
@@ -343,7 +339,6 @@ fn block_account_internal_faun_writes_timestamp_and_is_idempotent() {
 
 #[test]
 fn block_account_internal_rejects_native_hashes() {
-    crate::install();
     let snapshot = Arc::new(DataCache::new(false));
     let mut engine = engine_for(Arc::clone(&snapshot), None, ProtocolSettings::default());
     // C#: "Cannot block a native contract."
@@ -365,7 +360,6 @@ fn block_account_internal_faun_runs_vote_transition_for_neo_holders() {
     // null): for a NEO-holding account the full vote transition executes
     // (here a no-op un-vote — the account votes for nobody), then the
     // blocked entry is written with the persisting block's timestamp.
-    crate::install();
     let mut settings = ProtocolSettings::default();
     settings.hardforks.insert(Hardfork::HfFaun, 0);
     let mut header = BlockHeader::default();

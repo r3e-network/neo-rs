@@ -39,7 +39,10 @@ native_contract_handle!(
     }
 );
 
-impl NativeContract for RoleManagement {
+impl<P> NativeContract<P> for RoleManagement
+where
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+{
     native_contract_identity!(RoleManagement);
 
     fn methods(&self) -> &[NativeMethod] {
@@ -54,7 +57,7 @@ impl NativeContract for RoleManagement {
         &metadata::ROLE_MANAGEMENT_EVENTS
     }
 
-    native_contract_dispatch!(metadata::ROLE_MANAGEMENT_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::role_management_method_bindings);
 }
 
 #[cfg(test)]

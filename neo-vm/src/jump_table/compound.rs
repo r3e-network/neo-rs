@@ -102,7 +102,7 @@ pub(crate) use before543::{
 };
 
 /// Registers the compound operation handlers.
-pub fn register_handlers(jump_table: &mut JumpTable) {
+pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
     register_jump_handlers![
         jump_table;
         OpCode::NEWARRAY0 => new_array0,
@@ -130,7 +130,7 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 }
 
 /// Implements the NEWARRAY0 operation.
-fn new_array0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn new_array0<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -141,7 +141,7 @@ fn new_array0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
 }
 
 /// Implements the NEWARRAY operation.
-fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn new_array<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     let max_stack_size = engine.limits().max_stack_size;
     let context = require_context(engine)?;
 
@@ -155,7 +155,7 @@ fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 }
 
 /// Implements the `NewarrayT` operation.
-fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn new_array_t<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let max_stack_size = engine.limits().max_stack_size;
     let context = require_context(engine)?;
 
@@ -184,7 +184,7 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 }
 
 /// Implements the NEWSTRUCT0 operation.
-fn new_struct0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn new_struct0<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -195,7 +195,7 @@ fn new_struct0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
 }
 
 /// Implements the NEWSTRUCT operation.
-fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn new_struct<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     let max_stack_size = engine.limits().max_stack_size;
     let context = require_context(engine)?;
 
@@ -213,7 +213,7 @@ fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
 }
 
 /// Implements the NEWMAP operation.
-fn new_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn new_map<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -225,7 +225,7 @@ fn new_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
 }
 
 /// Implements the APPEND operation.
-fn append(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn append<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     let context = require_context(engine)?;
 
     let mut item = context.pop()?;
@@ -254,7 +254,7 @@ fn append(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 }
 
 /// Implements the REVERSE operation.
-fn reverse(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn reverse<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -283,7 +283,7 @@ fn reverse(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
 }
 
 /// Implements the REMOVE operation.
-fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn remove<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -331,7 +331,7 @@ fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 }
 
 /// Implements the CLEARITEMS operation.
-fn clear_items(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn clear_items<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -360,7 +360,7 @@ fn clear_items(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
 }
 
 /// Implements the POPITEM operation.
-fn pop_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn pop_item<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -383,7 +383,7 @@ fn pop_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
 }
 
 /// Implements the HASKEY operation.
-fn has_key(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn has_key<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     // C# HasKey faults when the index is out of `[0, MaxItemSize)` BEFORE
     // comparing against the collection's actual length (VMArray/Buffer/ByteString).
     let max_item_size = engine.limits().max_item_size as usize;
@@ -442,7 +442,7 @@ fn has_key(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
 }
 
 /// Implements the KEYS operation.
-fn keys(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn keys<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -471,7 +471,7 @@ fn keys(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 /// per-clone subitem limit), and adds every other element by reference. The Rust
 /// handler previously accepted only a Map and shallow-cloned its values, so a
 /// VALUES over an Array/Struct faulted and the result aliased the source Structs.
-fn values(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn values<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     let limits = *engine.limits();
     let context = require_context(engine)?;
 
@@ -505,7 +505,7 @@ fn values(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 }
 
 /// Implements the PACKMAP operation.
-fn pack_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn pack_map<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -529,7 +529,7 @@ fn pack_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
 }
 
 /// Implements the PACKSTRUCT operation.
-fn pack_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn pack_struct<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -550,7 +550,7 @@ fn pack_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
 }
 
 /// Implements the PACK operation.
-fn pack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn pack<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -572,7 +572,7 @@ fn pack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 }
 
 /// Implements the UNPACK operation.
-fn unpack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn unpack<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -621,7 +621,7 @@ fn unpack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 }
 
 /// Implements the PICKITEM operation.
-fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn pick_item<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     let context = require_context(engine)?;
 
     let key = context.pop()?;
@@ -670,7 +670,7 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 }
 
 /// Implements the SETITEM operation.
-fn set_item(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+fn set_item<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let context = require_context(engine)?;
 
     let mut value = context.pop()?;
@@ -736,7 +736,7 @@ fn set_item(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
 }
 
 /// Implements the SIZE operation.
-fn size(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn size<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 

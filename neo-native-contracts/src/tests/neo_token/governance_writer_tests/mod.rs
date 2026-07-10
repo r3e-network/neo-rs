@@ -20,10 +20,11 @@ use super::*;
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract::build_native_contract_state;
 use neo_execution::{ApplicationEngine, Contract};
+use neo_payloads::VerifiableContainer;
 use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
-use neo_primitives::{CallFlags, TriggerType, Verifiable, WitnessScope};
+use neo_primitives::{CallFlags, TriggerType, WitnessScope};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::VmState;
 use std::sync::Arc;
@@ -50,7 +51,7 @@ fn call(snapshot: Arc<DataCache>, signer: UInt160, pubkey: &[u8], method: &str) 
     let mut tx = Transaction::new();
     tx.set_signers(vec![Signer::new(signer, WitnessScope::GLOBAL)]);
     tx.set_witnesses(vec![Witness::empty()]);
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
 
     let mut builder = ScriptBuilder::new();
     builder.emit_push(pubkey);
@@ -70,7 +71,7 @@ fn call(snapshot: Arc<DataCache>, signer: UInt160, pubkey: &[u8], method: &str) 
         None,
         ProtocolSettings::default(),
         2000_00000000, // > the 1000-GAS register price
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
@@ -81,7 +82,6 @@ fn call(snapshot: Arc<DataCache>, signer: UInt160, pubkey: &[u8], method: &str) 
 }
 
 fn seeded_snapshot() -> Arc<DataCache> {
-    crate::install();
     let cache = DataCache::new(false);
     let neo_state = build_native_contract_state(&NeoToken, &ProtocolSettings::default(), 0);
     deploy_native(&cache, &neo_state);

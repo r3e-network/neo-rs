@@ -4,21 +4,21 @@ use neo_error::{CoreError, CoreResult};
 use neo_native_contracts::LedgerContract;
 use neo_payloads::{Block, Header, Transaction, TransactionState};
 use neo_primitives::{UInt160, UInt256};
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 use super::{
     BlockProvider, ChainTipProvider, LedgerProviderFactory, TransactionStateProvider, TxProvider,
 };
 
 /// Storage-backed provider over Neo ledger native-contract records.
-pub struct StorageLedgerProvider<'a> {
-    snapshot: &'a DataCache,
+pub struct StorageLedgerProvider<'a, B: CacheRead> {
+    snapshot: &'a DataCache<B>,
     ledger: LedgerContract,
 }
 
-impl<'a> StorageLedgerProvider<'a> {
+impl<'a, B: CacheRead> StorageLedgerProvider<'a, B> {
     /// Creates a provider over `snapshot`.
-    pub const fn new(snapshot: &'a DataCache) -> Self {
+    pub const fn new(snapshot: &'a DataCache<B>) -> Self {
         Self {
             snapshot,
             ledger: LedgerContract::new(),
@@ -26,7 +26,7 @@ impl<'a> StorageLedgerProvider<'a> {
     }
 }
 
-impl BlockProvider for StorageLedgerProvider<'_> {
+impl<B: CacheRead> BlockProvider for StorageLedgerProvider<'_, B> {
     fn block_hash_by_index(&self, index: u32) -> CoreResult<Option<UInt256>> {
         self.ledger.get_block_hash(self.snapshot, index)
     }
@@ -61,7 +61,7 @@ impl BlockProvider for StorageLedgerProvider<'_> {
     }
 }
 
-impl ChainTipProvider for StorageLedgerProvider<'_> {
+impl<B: CacheRead> ChainTipProvider for StorageLedgerProvider<'_, B> {
     fn current_hash(&self) -> CoreResult<UInt256> {
         self.ledger.current_hash(self.snapshot)
     }
@@ -71,7 +71,7 @@ impl ChainTipProvider for StorageLedgerProvider<'_> {
     }
 }
 
-impl TxProvider for StorageLedgerProvider<'_> {
+impl<B: CacheRead> TxProvider for StorageLedgerProvider<'_, B> {
     fn transaction_by_hash(&self, hash: &UInt256) -> CoreResult<Option<Transaction>> {
         Ok(self
             .ledger
@@ -80,7 +80,7 @@ impl TxProvider for StorageLedgerProvider<'_> {
     }
 }
 
-impl TransactionStateProvider for StorageLedgerProvider<'_> {
+impl<B: CacheRead> TransactionStateProvider for StorageLedgerProvider<'_, B> {
     fn transaction_state_by_hash(&self, hash: &UInt256) -> CoreResult<Option<TransactionState>> {
         self.ledger.get_transaction_state(self.snapshot, hash)
     }
@@ -101,9 +101,12 @@ impl TransactionStateProvider for StorageLedgerProvider<'_> {
 pub struct StorageLedgerProviderFactory;
 
 impl LedgerProviderFactory for StorageLedgerProviderFactory {
-    type Provider<'a> = StorageLedgerProvider<'a>;
+    type Provider<'a, B>
+        = StorageLedgerProvider<'a, B>
+    where
+        B: CacheRead;
 
-    fn provider<'a>(&'a self, snapshot: &'a DataCache) -> Self::Provider<'a> {
+    fn provider<'a, B: CacheRead>(&'a self, snapshot: &'a DataCache<B>) -> Self::Provider<'a, B> {
         StorageLedgerProvider::new(snapshot)
     }
 }

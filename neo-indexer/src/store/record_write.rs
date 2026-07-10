@@ -88,7 +88,7 @@ pub(super) fn encode_records(
 }
 
 pub(super) fn put_records(
-    snapshot: &mut dyn StoreSnapshot,
+    snapshot: &mut impl StoreSnapshot,
     records: BTreeMap<Vec<u8>, Vec<u8>>,
 ) -> IndexerResult<()> {
     for (key, value) in records {

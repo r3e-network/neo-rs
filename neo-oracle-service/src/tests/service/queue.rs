@@ -1,7 +1,6 @@
 use super::super::{OracleService, OracleServiceError, OracleServiceSettings, OracleTask};
 use neo_config::ProtocolSettings;
 use neo_crypto::{ECCurve, ECPoint, Secp256r1Crypto};
-use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_native_contracts::StandardNativeProvider;
 use neo_payloads::Transaction;
 use std::collections::BTreeMap;
@@ -16,7 +15,7 @@ fn sample_point(byte: u8) -> ECPoint {
         .expect("static test key")
 }
 
-fn oracle_service() -> OracleService {
+fn oracle_service() -> OracleService<neo_system::Node> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -33,9 +32,7 @@ fn oracle_service() -> OracleService {
     OracleService::new(
         oracle_settings,
         system.clone(),
-        system.clone(),
-        system.clone(),
-        Arc::new(StandardNativeProvider::new()) as Arc<dyn NativeContractProvider>,
+        Arc::new(StandardNativeProvider::new()),
     )
     .expect("oracle service")
 }

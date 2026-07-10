@@ -5,8 +5,6 @@ fn transfer_moves_balance_and_follows_vote_weight() {
     let candidate = candidate_pubkey();
     let from = UInt160::from_bytes(&[0x0A; 20]).unwrap();
     let to = UInt160::from_bytes(&[0x0B; 20]).unwrap();
-
-    crate::install();
     let cache = DataCache::new(false);
     deploy_native(
         &cache,
@@ -33,7 +31,7 @@ fn transfer_moves_balance_and_follows_vote_weight() {
     let mut tx = Transaction::new();
     tx.set_signers(vec![Signer::new(from, WitnessScope::GLOBAL)]);
     tx.set_witnesses(vec![Witness::empty()]);
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
     let mut b = ScriptBuilder::new();
     b.emit_push(&[]);
     b.emit_push_int(30);
@@ -53,7 +51,7 @@ fn transfer_moves_balance_and_follows_vote_weight() {
         None,
         ProtocolSettings::default(),
         2000_00000000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");

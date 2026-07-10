@@ -6,19 +6,6 @@ use neo_vm_rs::VmOrderedDictionary;
 use serde_json::json;
 use std::sync::Arc;
 
-#[derive(Debug)]
-struct DummyInterop;
-
-impl InteropInterface for DummyInterop {
-    fn interface_type(&self) -> &str {
-        "Dummy"
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
 #[test]
 fn renders_rpc_stack_item_type_matrix() {
     let mut map = VmOrderedDictionary::new();
@@ -69,7 +56,7 @@ fn renders_rpc_stack_item_type_matrix() {
             }]}),
         ),
         (
-            StackItem::from_interface(DummyInterop),
+            StackItem::from_interface(InteropInterface::iterator(1)),
             json!({"type": "InteropInterface"}),
         ),
     ];

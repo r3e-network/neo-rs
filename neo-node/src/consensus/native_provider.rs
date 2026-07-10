@@ -12,11 +12,9 @@ use neo_blockchain::{
 };
 use neo_config::ProtocolSettings;
 use neo_crypto::ECPoint;
-use neo_execution::NativeContract;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::{NeoToken, PolicyContract};
 use neo_primitives::{UInt160, UInt256};
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::{CacheRead, DataCache};
 use std::sync::Arc;
 
 const CONSENSUS_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
@@ -36,45 +34,49 @@ pub(super) struct ConsensusLedgerTip {
 /// Native-contract capabilities required by consensus orchestration.
 pub(super) trait ConsensusNativeProvider {
     /// Returns the current ledger tip context for the next consensus round.
-    fn ledger_tip(&self, snapshot: &DataCache) -> ConsensusLedgerTip;
+    fn ledger_tip<B: CacheRead>(&self, snapshot: &DataCache<B>) -> ConsensusLedgerTip;
 
     /// Returns the validators for the next block, in C# consensus order.
-    fn next_block_validators(
+    fn next_block_validators<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
-        validators_count: usize,
+        snapshot: &DataCache<B>,
+        settings: &ProtocolSettings,
     ) -> anyhow::Result<Vec<ECPoint>>;
 
     /// Returns the `NextConsensus` account for `block_index`.
-    fn next_consensus_address_for_block(
+    fn next_consensus_address_for_block<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
         block_index: u32,
     ) -> anyhow::Result<UInt160>;
 
     /// Returns the live milliseconds-per-block policy for the round.
-    fn milliseconds_per_block(
+    fn milliseconds_per_block<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
     ) -> anyhow::Result<u32>;
 
     /// Returns the active `MaxTraceableBlocks` value.
-    fn max_traceable_blocks(
+    fn max_traceable_blocks<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
     ) -> anyhow::Result<u32>;
 
     /// Returns whether the transaction hash is already persisted on-chain.
-    fn contains_transaction(&self, snapshot: &DataCache, hash: &UInt256) -> anyhow::Result<bool>;
+    fn contains_transaction<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        hash: &UInt256,
+    ) -> anyhow::Result<bool>;
 
     /// Returns whether the transaction hash has a traceable on-chain conflict
     /// for one of the supplied signers.
-    fn contains_conflict_hash(
+    fn contains_conflict_hash<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         hash: &UInt256,
         signers: &[UInt160],
         max_traceable_blocks: u32,
@@ -106,18 +108,6 @@ where
     fn provider(&self) -> &P {
         self.native_contract_provider.as_ref()
     }
-
-    fn neo_token(&self) -> anyhow::Result<Arc<dyn NativeContract>> {
-        self.provider()
-            .get_native_contract_by_name("NeoToken")
-            .ok_or_else(|| anyhow::anyhow!("native provider missing NeoToken"))
-    }
-
-    fn policy_contract(&self) -> anyhow::Result<Arc<dyn NativeContract>> {
-        self.provider()
-            .get_native_contract_by_name("PolicyContract")
-            .ok_or_else(|| anyhow::anyhow!("native provider missing PolicyContract"))
-    }
 }
 
 impl<P> std::fmt::Debug for NativeConsensusProvider<P>
@@ -135,7 +125,7 @@ impl<P> ConsensusNativeProvider for NativeConsensusProvider<P>
 where
     P: NativeContractProvider,
 {
-    fn ledger_tip(&self, snapshot: &DataCache) -> ConsensusLedgerTip {
+    fn ledger_tip<B: CacheRead>(&self, snapshot: &DataCache<B>) -> ConsensusLedgerTip {
         let ledger = CONSENSUS_LEDGER_PROVIDER_FACTORY.provider(snapshot);
         let height = ledger.current_index().unwrap_or(0);
         let prev_hash = ledger.current_hash().unwrap_or_default();
@@ -152,67 +142,53 @@ where
         }
     }
 
-    fn next_block_validators(
+    fn next_block_validators<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
-        validators_count: usize,
+        snapshot: &DataCache<B>,
+        settings: &ProtocolSettings,
     ) -> anyhow::Result<Vec<ECPoint>> {
-        Ok(self
-            .neo_token()?
-            .as_any()
-            .downcast_ref::<NeoToken>()
-            .ok_or_else(|| anyhow::anyhow!("native provider returned non-NeoToken"))?
-            .next_block_validators(snapshot, validators_count)?)
+        Ok(self.provider().next_block_validators(snapshot, settings)?)
     }
 
-    fn next_consensus_address_for_block(
+    fn next_consensus_address_for_block<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
         block_index: u32,
     ) -> anyhow::Result<UInt160> {
         Ok(self
-            .neo_token()?
-            .as_any()
-            .downcast_ref::<NeoToken>()
-            .ok_or_else(|| anyhow::anyhow!("native provider returned non-NeoToken"))?
+            .provider()
             .next_consensus_address_for_block(snapshot, settings, block_index)?)
     }
 
-    fn milliseconds_per_block(
+    fn milliseconds_per_block<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
     ) -> anyhow::Result<u32> {
-        Ok(self
-            .policy_contract()?
-            .as_any()
-            .downcast_ref::<PolicyContract>()
-            .ok_or_else(|| anyhow::anyhow!("native provider returned non-PolicyContract"))?
-            .get_milliseconds_per_block_snapshot(snapshot, settings)?)
+        Ok(self.provider().milliseconds_per_block(snapshot, settings)?)
     }
 
-    fn max_traceable_blocks(
+    fn max_traceable_blocks<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
     ) -> anyhow::Result<u32> {
-        Ok(self
-            .policy_contract()?
-            .as_any()
-            .downcast_ref::<PolicyContract>()
-            .ok_or_else(|| anyhow::anyhow!("native provider returned non-PolicyContract"))?
-            .get_max_traceable_blocks_snapshot(snapshot, settings)?)
+        Ok(self.provider().max_traceable_blocks(snapshot, settings)?)
     }
 
-    fn contains_transaction(&self, snapshot: &DataCache, hash: &UInt256) -> anyhow::Result<bool> {
+    fn contains_transaction<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        hash: &UInt256,
+    ) -> anyhow::Result<bool> {
         let ledger = CONSENSUS_LEDGER_PROVIDER_FACTORY.provider(snapshot);
         Ok(ledger.contains_transaction(hash)?)
     }
 
-    fn contains_conflict_hash(
+    fn contains_conflict_hash<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         hash: &UInt256,
         signers: &[UInt160],
         max_traceable_blocks: u32,

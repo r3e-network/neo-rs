@@ -5,7 +5,7 @@
 use super::{ExecutionEngine, StackItem, VMState, VmError, VmResult};
 use neo_vm_rs::Instruction;
 
-impl ExecutionEngine {
+impl<S> ExecutionEngine<S> {
     /// Starts execution of the VM.
     pub fn execute(&mut self) -> VMState {
         if self.state == VMState::BREAK {

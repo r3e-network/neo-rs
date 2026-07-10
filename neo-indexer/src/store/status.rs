@@ -13,7 +13,7 @@ use super::record_codec::decode_record;
 use crate::error::IndexerResult;
 use crate::model::{BlockIndexRecord, IndexerStatus};
 
-pub(crate) fn status(snapshot: &dyn StoreSnapshot) -> IndexerResult<IndexerStatus> {
+pub(crate) fn status(snapshot: &impl StoreSnapshot) -> IndexerResult<IndexerStatus> {
     let indexed_tip = latest_block(snapshot)?;
     Ok(IndexerStatus {
         indexed_height: indexed_tip.as_ref().map(|block| block.height),
@@ -36,7 +36,7 @@ pub(crate) fn status(snapshot: &dyn StoreSnapshot) -> IndexerResult<IndexerStatu
     })
 }
 
-fn latest_block(snapshot: &dyn StoreSnapshot) -> IndexerResult<Option<BlockIndexRecord>> {
+fn latest_block(snapshot: &impl StoreSnapshot) -> IndexerResult<Option<BlockIndexRecord>> {
     let prefix = BLOCK_BY_HEIGHT_PREFIX.to_vec();
     snapshot
         .find(Some(&prefix), SeekDirection::Backward)
@@ -45,13 +45,13 @@ fn latest_block(snapshot: &dyn StoreSnapshot) -> IndexerResult<Option<BlockIndex
         .transpose()
 }
 
-fn count_prefix_rows(snapshot: &dyn StoreSnapshot, prefix: &[u8]) -> usize {
+fn count_prefix_rows(snapshot: &impl StoreSnapshot, prefix: &[u8]) -> usize {
     let prefix = prefix.to_vec();
     snapshot.find(Some(&prefix), SeekDirection::Forward).count()
 }
 
 fn count_unique_key_segments(
-    snapshot: &dyn StoreSnapshot,
+    snapshot: &impl StoreSnapshot,
     prefix: &[u8],
     offset: usize,
     length: usize,

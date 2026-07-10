@@ -355,7 +355,7 @@ fn native_contract_style_sources_follow_canonical_catalog_order() {
 #[test]
 fn native_contract_handles_use_uniform_macros() {
     for (name, source) in standard_contract_sources() {
-        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        let production = source;
         assert!(
             production.contains("native_contract_handle!("),
             "{name} should declare its handle via native_contract_handle!"
@@ -386,7 +386,7 @@ fn native_contract_handles_use_uniform_macros() {
 #[test]
 fn native_contract_invocation_boundaries_use_invoke_modules() {
     for (name, source) in standard_contract_sources() {
-        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        let production = source;
         assert!(
             production.contains("mod invoke;"),
             "{name} should keep native method handlers in an invoke module"
@@ -408,6 +408,35 @@ fn native_contract_invocation_boundaries_use_invoke_modules() {
             "{name} should not use a second dispatch module name"
         );
     }
+}
+
+#[test]
+fn native_contract_provider_uses_typed_catalog_not_trait_objects() {
+    let catalog = include_str!("../../registry/catalog.rs");
+    let provider = include_str!("../../registry/provider.rs");
+    let standard = include_str!("../../registry/standard.rs");
+    let macros = include_str!("../../macros.rs");
+
+    assert!(
+        !catalog.contains("dyn NativeContract"),
+        "standard native catalog should use typed handles, not NativeContract trait objects"
+    );
+    assert!(
+        !provider.contains("dyn NativeContract"),
+        "standard native provider should use typed handles, not NativeContract trait objects"
+    );
+    assert!(
+        standard.contains("pub enum StandardNativeContract"),
+        "standard native dispatch should stay on the closed typed enum"
+    );
+    assert!(
+        !standard.contains("dyn NativeContract"),
+        "standard native enum should delegate typed handles, not erased trait objects"
+    );
+    assert!(
+        macros.contains("ApplicationEngine<P, D, B>"),
+        "native dispatch bindings should stay generic over diagnostics and cache backing"
+    );
 }
 
 #[test]

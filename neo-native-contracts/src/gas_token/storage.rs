@@ -21,7 +21,7 @@ impl GasToken {
         crate::nep17_total_supply_key(Self::ID)
     }
 
-    pub(crate) fn total_supply(snapshot: &DataCache) -> BigInt {
+    pub(crate) fn total_supply<B: neo_storage::CacheRead>(snapshot: &DataCache<B>) -> BigInt {
         crate::read_nep17_total_supply(snapshot, Self::ID)
     }
 
@@ -32,9 +32,9 @@ impl GasToken {
     /// that explicitly skip replay artifacts/events and have already proven that
     /// no deployed contract callback can run. A zero amount is a no-op, matching
     /// `FungibleToken.Mint`.
-    pub fn fast_forward_mint_state(
+    pub fn fast_forward_mint_state<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         account: &UInt160,
         amount: &BigInt,
     ) -> CoreResult<()> {
@@ -63,9 +63,9 @@ impl GasToken {
     /// Reads the GAS account balance, or `None` when the account has no entry. The
     /// GAS account state is the base `FungibleToken.AccountState` = `Struct[Balance]`
     /// (a single field), so `read_nep17_balance`'s field 0 is the balance.
-    pub(crate) fn read_gas_account(
+    pub(crate) fn read_gas_account<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         account: &UInt160,
     ) -> CoreResult<Option<BigInt>> {
         let Some(item) = snapshot.get(&Self::account_key(account)) else {
@@ -76,9 +76,9 @@ impl GasToken {
     }
 
     /// Writes the GAS account state `Struct[Balance]` (C# `GetAndChange(...).Set`).
-    pub(crate) fn write_gas_account(
+    pub(crate) fn write_gas_account<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         account: &UInt160,
         balance: &BigInt,
     ) -> CoreResult<()> {
@@ -89,7 +89,11 @@ impl GasToken {
     }
 
     /// Deletes the GAS account entry (C# `Delete(keyFrom)` when a balance reaches 0).
-    pub(crate) fn delete_gas_account(&self, snapshot: &DataCache, account: &UInt160) {
+    pub(crate) fn delete_gas_account<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        account: &UInt160,
+    ) {
         snapshot.delete(&Self::account_key(account));
     }
 
@@ -97,7 +101,10 @@ impl GasToken {
     /// field of the NEP-17 `AccountState` stored under `Prefix_Account + account`
     /// (zero when absent). The single canonical GAS-balance decode, shared by
     /// the mempool fee check and RPC wallet helpers.
-    pub fn balance_of(snapshot: &DataCache, account: &UInt160) -> CoreResult<BigInt> {
+    pub fn balance_of<B: neo_storage::CacheRead>(
+        snapshot: &DataCache<B>,
+        account: &UInt160,
+    ) -> CoreResult<BigInt> {
         crate::read_nep17_balance(snapshot, Self::ID, account)
     }
 }

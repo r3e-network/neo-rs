@@ -1,15 +1,5 @@
 use super::*;
 use crate::NodeBuilder;
-use neo_execution::native_contract_provider::NativeContractLookup;
-use neo_storage::persistence::providers::memory_store::MemoryStore;
-
-fn memory_store() -> Arc<dyn Store> {
-    Arc::new(MemoryStore::new())
-}
-
-fn native_provider() -> Arc<neo_native_contracts::StandardNativeProvider> {
-    Arc::new(neo_native_contracts::StandardNativeProvider::new())
-}
 
 #[test]
 fn builder_returns_node_builder() {
@@ -78,38 +68,13 @@ fn tx_admission_uses_ledger_provider_boundary() {
         "tx admission native provider must resolve PolicyContract through the explicit native provider"
     );
     assert!(
-        provider.contains("get_native_contract_by_name(\"PolicyContract\")"),
-        "tx admission native provider should read PolicyContract from the explicit NativeContractProvider"
+        provider.contains(".max_traceable_blocks(snapshot, settings)"),
+        "tx admission native provider should read MaxTraceableBlocks from the explicit NativeContractProvider capability"
     );
-}
-
-#[tokio::test]
-async fn cancellation_token_clone_is_independent() {
-    let storage = memory_store();
-    let settings = Arc::new(ProtocolSettings::default());
-    let (bc, _rx) = BlockchainHandle::with_capacity();
-    let (net, _nrx, _etx) = NetworkHandle::channel(8, 8);
-    let provider = native_provider();
-
-    let node = NodeBuilder::default()
-        .with_settings(settings)
-        .with_storage(storage)
-        .with_blockchain(bc)
-        .with_network(net)
-        .with_native_contract_provider(provider)
-        .build()
-        .expect("builder should succeed");
-
-    let token = node.cancellation_token();
-    token.cancel();
-    assert!(node.shutdown.is_cancelled());
 }
 
 #[test]
 fn direct_constructor_uses_builder_defaults() {
-    let _guard = crate::composition::native_provider_test_guard();
-    NativeContractLookup::replace_provider(None);
-
     let node = Node::new(Arc::new(ProtocolSettings::default()), None, None)
         .expect("headless node should use explicit standard provider defaults");
 
@@ -120,9 +85,5 @@ fn direct_constructor_uses_builder_defaults() {
             .native_contract_provider
             .all_native_contracts()
             .is_empty()
-    );
-    assert!(
-        NativeContractLookup::native_contract_provider().is_none(),
-        "Node::new should pass a local provider into NodeBuilder without installing it globally"
     );
 }

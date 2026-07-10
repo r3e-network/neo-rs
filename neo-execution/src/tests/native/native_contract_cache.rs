@@ -1,6 +1,8 @@
 use super::*;
 use crate::ApplicationEngine;
+use crate::Diagnostic;
 use crate::native_contract::NativeContract;
+use crate::native_contract_provider::{NativeContractProvider, NoNativeContractProvider};
 use neo_config::{Hardfork, ProtocolSettings};
 use neo_error::CoreResult;
 use neo_primitives::{ContractParameterType, UInt160};
@@ -11,7 +13,10 @@ struct IndexedContract {
     methods: Vec<NativeMethod>,
 }
 
-impl NativeContract for IndexedContract {
+impl<P> NativeContract<P> for IndexedContract
+where
+    P: NativeContractProvider + 'static,
+{
     fn id(&self) -> i32 {
         self.id
     }
@@ -28,17 +33,17 @@ impl NativeContract for IndexedContract {
         &self.methods
     }
 
-    fn invoke(
+    fn invoke<D, B>(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         _method: &str,
         _args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
+    ) -> CoreResult<Vec<u8>>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         Ok(Vec::new())
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 
@@ -69,7 +74,7 @@ fn resolved_method_preserves_contract_method_index() {
             .with_active_in(Hardfork::HfEchidna),
         ],
     };
-    let entry = NativeContractsCacheEntry::from_contract(&contract);
+    let entry = NativeContractsCacheEntry::from_contract::<NoNativeContractProvider, _>(&contract);
     let mut settings = ProtocolSettings::default();
     settings.hardforks.insert(Hardfork::HfEchidna, 10);
 
@@ -118,7 +123,7 @@ fn cache_key_includes_hash_to_avoid_stale_provider_metadata() {
     };
 
     {
-        let entry = cache.get_or_build(&first);
+        let entry = cache.get_or_build::<NoNativeContractProvider, _>(&first);
         assert!(
             entry
                 .get_method("first", 0, &settings, 0)
@@ -127,7 +132,7 @@ fn cache_key_includes_hash_to_avoid_stale_provider_metadata() {
         );
     }
 
-    let entry = cache.get_or_build(&second);
+    let entry = cache.get_or_build::<NoNativeContractProvider, _>(&second);
     assert!(
         entry
             .get_method("second", 0, &settings, 0)

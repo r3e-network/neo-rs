@@ -1,7 +1,7 @@
 //! Network-level command enum.
 //!
 //! The single command stream that feeds the
-//! [`crate::local_node::LocalNodeService`] command loop. The
+//! [`crate::LocalNodeService`] command loop. The
 //! variants cover the *user-facing* surface (start, connect, broadcast,
 //! disconnect, shutdown); per-peer commands live in
 //! [`crate::remote_node::RemoteNodeCommand`] and are routed by the
@@ -17,7 +17,7 @@ use tokio::sync::oneshot;
 use crate::error::NetworkResult;
 use crate::peer_id::PeerId;
 
-/// Top-level command accepted by [`crate::local_node::LocalNodeService`].
+/// Top-level command accepted by [`crate::LocalNodeService`].
 ///
 /// Each variant is a single, self-contained request; the service
 /// loop dispatches each one to a private `async fn` handler.

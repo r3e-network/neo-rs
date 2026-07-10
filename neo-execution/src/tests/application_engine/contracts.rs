@@ -1,29 +1,30 @@
 use super::*;
+use crate::Diagnostic;
 use crate::native_contract::OracleRequestDetails;
-use crate::native_contract_provider::lock_native_provider;
-use crate::native_contract_provider::{NativeContractLookup, NativeContractProvider};
+use crate::native_contract_provider::{NativeContractProvider, NoNativeContract};
 use neo_config::Hardfork;
 use neo_crypto::{ECCurve, ECPoint};
 use neo_manifest::{
     ContractAbi, ContractGroup, ContractManifest, ContractMethodDescriptor,
     ContractParameterDefinition, ContractPermission, ManifestFeatures, NefFile, WildCardContainer,
 };
-use neo_payloads::{OracleResponse, Signer, Transaction, TransactionAttribute};
+use neo_payloads::{
+    OracleResponse, Signer, Transaction, TransactionAttribute, VerifiableContainer,
+};
 use neo_primitives::{ContractParameterType, OracleResponseCode, WitnessScope};
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
 use parking_lot::Mutex as PlMutex;
 use std::collections::HashMap;
 
-fn lock_provider() -> crate::native_contract_provider::NativeProviderTestGuard {
-    lock_native_provider()
-}
-
 struct BlockingPolicy {
     blocked_hash: UInt160,
 }
 
-impl NativeContract for BlockingPolicy {
+impl<P> NativeContract<P> for BlockingPolicy
+where
+    P: NativeContractProvider + 'static,
+{
     fn id(&self) -> i32 {
         -7
     }
@@ -40,25 +41,25 @@ impl NativeContract for BlockingPolicy {
         &[]
     }
 
-    fn invoke(
+    fn invoke<D, B>(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         _method: &str,
         _args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
+    ) -> CoreResult<Vec<u8>>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         Err(CoreError::invalid_operation("test policy is metadata-only"))
     }
 
-    fn is_contract_blocked(
+    fn is_contract_blocked<B: neo_storage::CacheRead>(
         &self,
-        _snapshot: &DataCache,
+        _snapshot: &DataCache<B>,
         contract_hash: &UInt160,
     ) -> CoreResult<bool> {
         Ok(contract_hash == &self.blocked_hash)
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 
@@ -67,55 +68,49 @@ struct BlockingProvider {
 }
 
 impl NativeContractProvider for BlockingProvider {
-    fn get_native_contract(&self, hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
-        (&self.policy.hash() == hash).then(|| self.policy.clone() as Arc<dyn NativeContract>)
-    }
+    type Contract = NoNativeContract;
 
-    fn get_native_contract_by_name(&self, name: &str) -> Option<Arc<dyn NativeContract>> {
-        name.eq_ignore_ascii_case("PolicyContract")
-            .then(|| self.policy.clone() as Arc<dyn NativeContract>)
-    }
-
-    fn all_native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
-        vec![self.policy.clone() as Arc<dyn NativeContract>]
-    }
-
-    fn all_native_contract_hashes(&self) -> Vec<UInt160> {
-        vec![self.policy.hash()]
+    fn policy_is_blocked<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        account: &UInt160,
+    ) -> CoreResult<bool> {
+        <BlockingPolicy as NativeContract<Self>>::is_contract_blocked::<B>(
+            self.policy.as_ref(),
+            snapshot,
+            account,
+        )
     }
 }
 
-fn install_blocking_policy(blocked_hash: UInt160) {
-    NativeContractLookup::install_provider(Arc::new(BlockingProvider {
+fn blocking_policy_provider(blocked_hash: UInt160) -> Arc<BlockingProvider> {
+    Arc::new(BlockingProvider {
         policy: Arc::new(BlockingPolicy { blocked_hash }),
-    }));
+    })
 }
 
-fn install_allowing_policy() {
+fn allowing_policy_provider() -> Arc<BlockingProvider> {
     let never_blocked = UInt160::from_bytes(&[0xEE; 20]).expect("non-target hash");
-    install_blocking_policy(never_blocked);
+    blocking_policy_provider(never_blocked)
 }
 
 struct EmptyProvider;
 
 impl NativeContractProvider for EmptyProvider {
-    fn get_native_contract(&self, _hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
-        None
-    }
+    type Contract = NoNativeContract;
 
-    fn get_native_contract_by_name(&self, _name: &str) -> Option<Arc<dyn NativeContract>> {
-        None
-    }
-
-    fn all_native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
-        Vec::new()
-    }
-
-    fn all_native_contract_hashes(&self) -> Vec<UInt160> {
-        Vec::new()
+    fn policy_is_blocked<B: neo_storage::CacheRead>(
+        &self,
+        _snapshot: &DataCache<B>,
+        _account: &UInt160,
+    ) -> CoreResult<bool> {
+        Err(CoreError::invalid_operation(
+            "PolicyContract lookup requires a native contract provider",
+        ))
     }
 }
 
+#[derive(Clone)]
 struct MeteredNativeContract {
     hash: UInt160,
     methods: Vec<crate::NativeMethod>,
@@ -144,7 +139,10 @@ impl MeteredNativeContract {
     }
 }
 
-impl NativeContract for MeteredNativeContract {
+impl<P> NativeContract<P> for MeteredNativeContract
+where
+    P: NativeContractProvider + 'static,
+{
     fn id(&self) -> i32 {
         -99
     }
@@ -161,12 +159,16 @@ impl NativeContract for MeteredNativeContract {
         &self.methods
     }
 
-    fn invoke(
+    fn invoke<D, B>(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         method: &str,
         _args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
+    ) -> CoreResult<Vec<u8>>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         if method == "metered" {
             Ok(Vec::new())
         } else {
@@ -175,12 +177,9 @@ impl NativeContract for MeteredNativeContract {
             )))
         }
     }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
 }
 
+#[derive(Clone)]
 struct ResolvedOnlyNativeContract {
     hash: UInt160,
     methods: Vec<crate::NativeMethod>,
@@ -214,7 +213,10 @@ impl ResolvedOnlyNativeContract {
     }
 }
 
-impl NativeContract for ResolvedOnlyNativeContract {
+impl<P> NativeContract<P> for ResolvedOnlyNativeContract
+where
+    P: NativeContractProvider + 'static,
+{
     fn id(&self) -> i32 {
         -98
     }
@@ -231,91 +233,338 @@ impl NativeContract for ResolvedOnlyNativeContract {
         &self.methods
     }
 
-    fn invoke(
+    fn invoke<D, B>(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         method: &str,
         _args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
+    ) -> CoreResult<Vec<u8>>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         Err(CoreError::invalid_operation(format!(
             "name dispatch should not be used for {method}"
         )))
     }
 
-    fn invoke_resolved(
+    fn invoke_resolved<D, B>(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         method_index: usize,
         method: &crate::NativeMethod,
         _args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
+    ) -> CoreResult<Vec<u8>>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         Ok(vec![
             u8::try_from(method_index).expect("test method index fits in u8"),
             method.name.as_bytes()[0],
         ])
     }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
 }
 
 struct SingleNativeProvider {
-    native: Arc<dyn NativeContract>,
+    native: SingleNative,
 }
 
 impl NativeContractProvider for SingleNativeProvider {
-    fn get_native_contract(&self, hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
+    type Contract = SingleNative;
+
+    fn get_native_contract(&self, hash: &UInt160) -> Option<SingleNative> {
         (&self.native.hash() == hash).then(|| self.native.clone())
     }
 
-    fn get_native_contract_by_name(&self, name: &str) -> Option<Arc<dyn NativeContract>> {
-        name.eq_ignore_ascii_case(self.native.name())
-            .then(|| self.native.clone())
-    }
-
-    fn all_native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
+    fn all_native_contracts(&self) -> Vec<SingleNative> {
         vec![self.native.clone()]
     }
 
     fn all_native_contract_hashes(&self) -> Vec<UInt160> {
         vec![self.native.hash()]
     }
+
+    fn policy_is_blocked<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        account: &UInt160,
+    ) -> CoreResult<bool> {
+        self.native.is_contract_blocked(snapshot, account)
+    }
+
+    fn policy_whitelisted_fee<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        contract_hash: &UInt160,
+        method: &str,
+        param_count: u32,
+    ) -> CoreResult<Option<i64>> {
+        self.native
+            .whitelisted_fee(snapshot, contract_hash, method, param_count)
+    }
+
+    fn committee_address<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+    ) -> CoreResult<Option<UInt160>> {
+        self.native.committee_address(snapshot)
+    }
+
+    fn contract_state<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        hash: &UInt160,
+    ) -> CoreResult<Option<ContractState>> {
+        self.native.lookup_contract_state(snapshot, hash)
+    }
+
+    fn oracle_request_details<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        request_id: u64,
+    ) -> CoreResult<Option<OracleRequestDetails>> {
+        self.native.oracle_request_url_full(snapshot, request_id)
+    }
+
+    fn transaction_state<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        tx_hash: &UInt256,
+    ) -> CoreResult<Option<neo_payloads::TransactionState>> {
+        self.native.transaction_state(snapshot, tx_hash)
+    }
+
+    fn trimmed_block<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        block_hash: &UInt256,
+    ) -> CoreResult<Option<neo_payloads::TrimmedBlock>> {
+        self.native.trimmed_block(snapshot, block_hash)
+    }
 }
 
-struct NativeSetProvider {
-    natives: Vec<Arc<dyn NativeContract>>,
+#[derive(Clone)]
+enum SingleNative {
+    Metered(MeteredNativeContract),
+    ResolvedOnly(ResolvedOnlyNativeContract),
+    ContractManagement(ContractManagementNative),
+    FailingCommittee(FailingCommitteeNative),
 }
 
-impl NativeContractProvider for NativeSetProvider {
-    fn get_native_contract(&self, hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
-        self.natives
-            .iter()
-            .find(|native| native.hash() == *hash)
-            .cloned()
+macro_rules! with_single_native {
+    ($self:expr, $contract:ident => $body:expr) => {
+        match $self {
+            SingleNative::Metered($contract) => $body,
+            SingleNative::ResolvedOnly($contract) => $body,
+            SingleNative::ContractManagement($contract) => $body,
+            SingleNative::FailingCommittee($contract) => $body,
+        }
+    };
+}
+
+impl NativeContract<SingleNativeProvider> for SingleNative {
+    fn id(&self) -> i32 {
+        with_single_native!(self, contract => {
+            <_ as NativeContract<SingleNativeProvider>>::id(contract)
+        })
     }
 
-    fn get_native_contract_by_name(&self, name: &str) -> Option<Arc<dyn NativeContract>> {
-        self.natives
-            .iter()
-            .find(|native| name.eq_ignore_ascii_case(native.name()))
-            .cloned()
+    fn hash(&self) -> UInt160 {
+        with_single_native!(self, contract => {
+            <_ as NativeContract<SingleNativeProvider>>::hash(contract)
+        })
     }
 
-    fn all_native_contracts(&self) -> Vec<Arc<dyn NativeContract>> {
-        self.natives.clone()
+    fn name(&self) -> &str {
+        with_single_native!(self, contract => {
+            <_ as NativeContract<SingleNativeProvider>>::name(contract)
+        })
     }
 
-    fn all_native_contract_hashes(&self) -> Vec<UInt160> {
-        self.natives.iter().map(|native| native.hash()).collect()
+    fn methods(&self) -> &[crate::NativeMethod] {
+        with_single_native!(self, contract => {
+            <_ as NativeContract<SingleNativeProvider>>::methods(contract)
+        })
+    }
+
+    fn invoke<D, B>(
+        &self,
+        engine: &mut ApplicationEngine<SingleNativeProvider, D, B>,
+        method: &str,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
+        with_single_native!(self, contract => {
+            <_ as NativeContract<SingleNativeProvider>>::invoke::<D, B>(
+                contract, engine, method, args,
+            )
+        })
+    }
+
+    fn invoke_resolved<D, B>(
+        &self,
+        engine: &mut ApplicationEngine<SingleNativeProvider, D, B>,
+        method_index: usize,
+        method: &crate::NativeMethod,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
+        with_single_native!(self, contract => {
+            <_ as NativeContract<SingleNativeProvider>>::invoke_resolved::<D, B>(
+                contract,
+                engine,
+                method_index,
+                method,
+                args,
+            )
+        })
+    }
+
+    fn lookup_contract_state<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        hash: &UInt160,
+    ) -> CoreResult<Option<ContractState>> {
+        with_single_native!(self, contract => {
+            <_ as NativeContract<SingleNativeProvider>>::lookup_contract_state(
+                contract,
+                snapshot,
+                hash,
+            )
+        })
+    }
+
+    fn is_contract_blocked<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        contract_hash: &UInt160,
+    ) -> CoreResult<bool> {
+        with_single_native!(self, contract => {
+            <_ as NativeContract<SingleNativeProvider>>::is_contract_blocked(
+                contract,
+                snapshot,
+                contract_hash,
+            )
+        })
+    }
+
+    fn committee_address<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+    ) -> CoreResult<Option<UInt160>> {
+        with_single_native!(self, contract => {
+            <_ as NativeContract<SingleNativeProvider>>::committee_address(contract, snapshot)
+        })
+    }
+
+    fn whitelisted_fee<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        contract_hash: &UInt160,
+        method: &str,
+        param_count: u32,
+    ) -> CoreResult<Option<i64>> {
+        with_single_native!(self, contract => {
+            <_ as NativeContract<SingleNativeProvider>>::whitelisted_fee(
+                contract,
+                snapshot,
+                contract_hash,
+                method,
+                param_count,
+            )
+        })
+    }
+
+    fn oracle_request_url_full<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        id: u64,
+    ) -> CoreResult<Option<OracleRequestDetails>> {
+        with_single_native!(self, contract => {
+            <_ as NativeContract<SingleNativeProvider>>::oracle_request_url_full(
+                contract,
+                snapshot,
+                id,
+            )
+        })
+    }
+
+    fn transaction_state<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        tx_hash: &UInt256,
+    ) -> CoreResult<Option<neo_payloads::TransactionState>> {
+        with_single_native!(self, contract => {
+            <_ as NativeContract<SingleNativeProvider>>::transaction_state(
+                contract,
+                snapshot,
+                tx_hash,
+            )
+        })
+    }
+
+    fn trimmed_block<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        block_hash: &UInt256,
+    ) -> CoreResult<Option<neo_payloads::TrimmedBlock>> {
+        with_single_native!(self, contract => {
+            <_ as NativeContract<SingleNativeProvider>>::trimmed_block(
+                contract,
+                snapshot,
+                block_hash,
+            )
+        })
     }
 }
 
+struct OracleLedgerProvider {
+    original_tx_id: UInt256,
+}
+
+impl NativeContractProvider for OracleLedgerProvider {
+    type Contract = NoNativeContract;
+
+    fn oracle_request_details<B: neo_storage::CacheRead>(
+        &self,
+        _snapshot: &DataCache<B>,
+        request_id: u64,
+    ) -> CoreResult<Option<OracleRequestDetails>> {
+        let _ = request_id;
+        Ok(Some(OracleRequestDetails::new(
+            "https://neo.org",
+            self.original_tx_id,
+        )))
+    }
+
+    fn transaction_state<B: neo_storage::CacheRead>(
+        &self,
+        _snapshot: &DataCache<B>,
+        tx_hash: &UInt256,
+    ) -> CoreResult<Option<neo_payloads::TransactionState>> {
+        let _ = tx_hash;
+        Err(CoreError::invalid_operation(
+            "captured ledger provider used",
+        ))
+    }
+}
+
+#[derive(Clone)]
 struct ContractManagementNative {
     contract: ContractState,
 }
 
-impl NativeContract for ContractManagementNative {
+impl<P> NativeContract<P> for ContractManagementNative
+where
+    P: NativeContractProvider + 'static,
+{
     fn id(&self) -> i32 {
         -1
     }
@@ -332,33 +581,37 @@ impl NativeContract for ContractManagementNative {
         &[]
     }
 
-    fn invoke(
+    fn invoke<D, B>(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         _method: &str,
         _args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
+    ) -> CoreResult<Vec<u8>>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         Err(CoreError::invalid_operation(
             "test contract management is metadata-only",
         ))
     }
 
-    fn lookup_contract_state(
+    fn lookup_contract_state<B: neo_storage::CacheRead>(
         &self,
-        _snapshot: &DataCache,
+        _snapshot: &DataCache<B>,
         hash: &UInt160,
     ) -> CoreResult<Option<ContractState>> {
         Ok((hash == &self.contract.hash).then(|| self.contract.clone()))
     }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
 }
 
+#[derive(Clone, Copy)]
 struct FailingCommitteeNative;
 
-impl NativeContract for FailingCommitteeNative {
+impl<P> NativeContract<P> for FailingCommitteeNative
+where
+    P: NativeContractProvider + 'static,
+{
     fn id(&self) -> i32 {
         -5
     }
@@ -375,118 +628,28 @@ impl NativeContract for FailingCommitteeNative {
         &[]
     }
 
-    fn invoke(
+    fn invoke<D, B>(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         _method: &str,
         _args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
+    ) -> CoreResult<Vec<u8>>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         Err(CoreError::invalid_operation(
             "test neo token is metadata-only",
         ))
     }
 
-    fn committee_address(&self, _snapshot: &DataCache) -> CoreResult<Option<UInt160>> {
+    fn committee_address<B: neo_storage::CacheRead>(
+        &self,
+        _snapshot: &DataCache<B>,
+    ) -> CoreResult<Option<UInt160>> {
         Err(CoreError::invalid_operation(
             "captured committee provider used",
         ))
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
-struct OracleNative {
-    original_tx_id: UInt256,
-}
-
-impl NativeContract for OracleNative {
-    fn id(&self) -> i32 {
-        -9
-    }
-
-    fn hash(&self) -> UInt160 {
-        UInt160::from_bytes(&[0xC9; 20]).expect("oracle hash")
-    }
-
-    fn name(&self) -> &str {
-        "OracleContract"
-    }
-
-    fn methods(&self) -> &[crate::NativeMethod] {
-        &[]
-    }
-
-    fn invoke(
-        &self,
-        _engine: &mut ApplicationEngine,
-        _method: &str,
-        _args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        Err(CoreError::invalid_operation(
-            "test oracle contract is metadata-only",
-        ))
-    }
-
-    fn oracle_request_url_full(
-        &self,
-        _snapshot: &DataCache,
-        _id: u64,
-    ) -> CoreResult<Option<OracleRequestDetails>> {
-        Ok(Some(OracleRequestDetails::new(
-            "https://neo.org",
-            self.original_tx_id,
-        )))
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
-struct FailingLedgerNative;
-
-impl NativeContract for FailingLedgerNative {
-    fn id(&self) -> i32 {
-        -4
-    }
-
-    fn hash(&self) -> UInt160 {
-        UInt160::from_bytes(&[0xC4; 20]).expect("ledger hash")
-    }
-
-    fn name(&self) -> &str {
-        "LedgerContract"
-    }
-
-    fn methods(&self) -> &[crate::NativeMethod] {
-        &[]
-    }
-
-    fn invoke(
-        &self,
-        _engine: &mut ApplicationEngine,
-        _method: &str,
-        _args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
-        Err(CoreError::invalid_operation(
-            "test ledger contract is metadata-only",
-        ))
-    }
-
-    fn transaction_state(
-        &self,
-        _snapshot: &DataCache,
-        _tx_hash: &UInt256,
-    ) -> CoreResult<Option<neo_payloads::TransactionState>> {
-        Err(CoreError::invalid_operation(
-            "captured ledger provider used",
-        ))
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 
@@ -529,10 +692,11 @@ fn build_mock_contract(hash: UInt160) -> ContractState {
 
 #[test]
 fn native_method_storage_fee_is_charged_in_datoshi() {
-    let _provider_guard = lock_provider();
-    let native = Arc::new(MeteredNativeContract::new(50));
-    let native_hash = native.hash();
-    NativeContractLookup::install_provider(Arc::new(SingleNativeProvider { native }));
+    let native = MeteredNativeContract::new(50);
+    let native_hash = native.hash;
+    let provider = Arc::new(SingleNativeProvider {
+        native: SingleNative::Metered(native),
+    });
 
     let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
@@ -541,8 +705,8 @@ fn native_method_storage_fee_is_charged_in_datoshi() {
         None,
         ProtocolSettings::default(),
         TEST_MODE_GAS,
-        None,
-        NativeContractLookup::native_contract_provider(),
+        NoDiagnostic,
+        Some(provider),
     )
     .expect("engine");
 
@@ -559,10 +723,11 @@ fn native_method_storage_fee_is_charged_in_datoshi() {
 
 #[test]
 fn native_method_fee_overflow_does_not_partially_charge_cpu_fee() {
-    let _provider_guard = lock_provider();
-    let native = Arc::new(MeteredNativeContract::with_fees(1, i64::MAX));
-    let native_hash = native.hash();
-    NativeContractLookup::install_provider(Arc::new(SingleNativeProvider { native }));
+    let native = MeteredNativeContract::with_fees(1, i64::MAX);
+    let native_hash = native.hash;
+    let provider = Arc::new(SingleNativeProvider {
+        native: SingleNative::Metered(native),
+    });
 
     let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
@@ -571,8 +736,8 @@ fn native_method_fee_overflow_does_not_partially_charge_cpu_fee() {
         None,
         ProtocolSettings::default(),
         TEST_MODE_GAS,
-        None,
-        NativeContractLookup::native_contract_provider(),
+        NoDiagnostic,
+        Some(provider),
     )
     .expect("engine");
 
@@ -593,26 +758,23 @@ fn native_method_fee_overflow_does_not_partially_charge_cpu_fee() {
 
 #[test]
 fn native_call_uses_provider_captured_at_engine_creation() {
-    let _provider_guard = lock_provider();
-    let native = Arc::new(MeteredNativeContract::new(50));
-    let native_hash = native.hash();
-    let provider = Arc::new(SingleNativeProvider { native }) as Arc<dyn NativeContractProvider>;
+    let native = MeteredNativeContract::new(50);
+    let native_hash = native.hash;
+    let provider = Arc::new(SingleNativeProvider {
+        native: SingleNative::Metered(native),
+    });
 
-    let mut engine = NativeContractLookup::with_scoped_provider(provider, || {
-        ApplicationEngine::new_with_native_contract_provider(
-            TriggerType::Application,
-            None,
-            Arc::new(DataCache::new(false)),
-            None,
-            ProtocolSettings::default(),
-            TEST_MODE_GAS,
-            None,
-            NativeContractLookup::native_contract_provider(),
-        )
-    })
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        NoDiagnostic,
+        Some(provider),
+    )
     .expect("engine");
-
-    NativeContractLookup::install_provider(Arc::new(EmptyProvider));
 
     engine
         .call_native_contract(native_hash, "metered", &[])
@@ -623,10 +785,11 @@ fn native_call_uses_provider_captured_at_engine_creation() {
 
 #[test]
 fn native_call_uses_resolved_method_index_after_hardfork_selection() {
-    let _provider_guard = lock_provider();
-    let native = Arc::new(ResolvedOnlyNativeContract::new());
-    let native_hash = native.hash();
-    NativeContractLookup::install_provider(Arc::new(SingleNativeProvider { native }));
+    let native = ResolvedOnlyNativeContract::new();
+    let native_hash = native.hash;
+    let provider = Arc::new(SingleNativeProvider {
+        native: SingleNative::ResolvedOnly(native),
+    });
 
     let mut settings = ProtocolSettings::default();
     settings.hardforks.insert(Hardfork::HfEchidna, 0);
@@ -637,8 +800,8 @@ fn native_call_uses_resolved_method_index_after_hardfork_selection() {
         None,
         settings,
         TEST_MODE_GAS,
-        None,
-        NativeContractLookup::native_contract_provider(),
+        NoDiagnostic,
+        Some(provider),
     )
     .expect("engine");
 
@@ -651,26 +814,21 @@ fn native_call_uses_resolved_method_index_after_hardfork_selection() {
 
 #[test]
 fn committee_witness_uses_provider_captured_at_engine_creation() {
-    let _provider_guard = lock_provider();
     let provider = Arc::new(SingleNativeProvider {
-        native: Arc::new(FailingCommitteeNative),
-    }) as Arc<dyn NativeContractProvider>;
+        native: SingleNative::FailingCommittee(FailingCommitteeNative),
+    });
 
-    let engine = NativeContractLookup::with_scoped_provider(provider, || {
-        ApplicationEngine::new_with_native_contract_provider(
-            TriggerType::Application,
-            None,
-            Arc::new(DataCache::new(false)),
-            None,
-            ProtocolSettings::default(),
-            TEST_MODE_GAS,
-            None,
-            NativeContractLookup::native_contract_provider(),
-        )
-    })
+    let engine = ApplicationEngine::new_with_native_contract_provider(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        NoDiagnostic,
+        Some(provider),
+    )
     .expect("engine");
-
-    NativeContractLookup::install_provider(Arc::new(EmptyProvider));
 
     let err = engine
         .check_committee_witness()
@@ -683,31 +841,26 @@ fn committee_witness_uses_provider_captured_at_engine_creation() {
 
 #[test]
 fn storage_context_uses_provider_captured_at_engine_creation() {
-    let _provider_guard = lock_provider();
     let contract_hash =
         UInt160::parse("0xa1b2c3d4e5f60718293a4b5c6d7e8f0102030416").expect("contract hash");
     let contract = build_mock_contract(contract_hash);
     let provider = Arc::new(SingleNativeProvider {
-        native: Arc::new(ContractManagementNative {
+        native: SingleNative::ContractManagement(ContractManagementNative {
             contract: contract.clone(),
         }),
-    }) as Arc<dyn NativeContractProvider>;
+    });
 
-    let mut engine = NativeContractLookup::with_scoped_provider(provider, || {
-        ApplicationEngine::new_with_native_contract_provider(
-            TriggerType::Application,
-            None,
-            Arc::new(DataCache::new(false)),
-            None,
-            ProtocolSettings::default(),
-            TEST_MODE_GAS,
-            None,
-            NativeContractLookup::native_contract_provider(),
-        )
-    })
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        NoDiagnostic,
+        Some(provider),
+    )
     .expect("engine");
-
-    NativeContractLookup::install_provider(Arc::new(EmptyProvider));
 
     engine
         .load_script(
@@ -726,14 +879,8 @@ fn storage_context_uses_provider_captured_at_engine_creation() {
 
 #[test]
 fn oracle_response_witness_uses_provider_captured_at_engine_creation() {
-    let _provider_guard = lock_provider();
     let original_tx_id = UInt256::from_bytes(&[0x42; 32]).expect("original tx hash");
-    let provider = Arc::new(NativeSetProvider {
-        natives: vec![
-            Arc::new(OracleNative { original_tx_id }) as Arc<dyn NativeContract>,
-            Arc::new(FailingLedgerNative) as Arc<dyn NativeContract>,
-        ],
-    }) as Arc<dyn NativeContractProvider>;
+    let provider = Arc::new(OracleLedgerProvider { original_tx_id });
 
     let delegated_signer =
         UInt160::parse("0x0102030405060708090a0b0c0d0e0f1011121324").expect("signer");
@@ -743,21 +890,17 @@ fn oracle_response_witness_uses_provider_captured_at_engine_creation() {
     )]);
     tx.set_signers(vec![Signer::new(delegated_signer, WitnessScope::NONE)]);
 
-    let engine = NativeContractLookup::with_scoped_provider(provider, || {
-        ApplicationEngine::new_with_native_contract_provider(
-            TriggerType::Application,
-            Some(Arc::new(tx)),
-            Arc::new(DataCache::new(false)),
-            None,
-            ProtocolSettings::default(),
-            TEST_MODE_GAS,
-            None,
-            NativeContractLookup::native_contract_provider(),
-        )
-    })
+    let engine = ApplicationEngine::new_with_native_contract_provider(
+        TriggerType::Application,
+        Some(Arc::new(VerifiableContainer::from(tx))),
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        NoDiagnostic,
+        Some(provider),
+    )
     .expect("engine");
-
-    NativeContractLookup::install_provider(Arc::new(EmptyProvider));
 
     let err = engine
         .check_witness_hash(&delegated_signer)
@@ -770,7 +913,6 @@ fn oracle_response_witness_uses_provider_captured_at_engine_creation() {
 
 #[test]
 fn group_witness_uses_provider_captured_at_engine_creation() {
-    let _provider_guard = lock_provider();
     let group_bytes =
         hex::decode("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c")
             .expect("group public key");
@@ -784,8 +926,8 @@ fn group_witness_uses_provider_captured_at_engine_creation() {
         .groups
         .push(ContractGroup::new(group_point.clone(), vec![0; 64]));
     let provider = Arc::new(SingleNativeProvider {
-        native: Arc::new(ContractManagementNative { contract }),
-    }) as Arc<dyn NativeContractProvider>;
+        native: SingleNative::ContractManagement(ContractManagementNative { contract }),
+    });
 
     let witness_account =
         UInt160::parse("0x0102030405060708090a0b0c0d0e0f1011121325").expect("signer");
@@ -794,21 +936,17 @@ fn group_witness_uses_provider_captured_at_engine_creation() {
     let mut tx = Transaction::new();
     tx.set_signers(vec![signer]);
 
-    let mut engine = NativeContractLookup::with_scoped_provider(provider, || {
-        ApplicationEngine::new_with_native_contract_provider(
-            TriggerType::Application,
-            Some(Arc::new(tx)),
-            Arc::new(DataCache::new(false)),
-            None,
-            ProtocolSettings::default(),
-            TEST_MODE_GAS,
-            None,
-            NativeContractLookup::native_contract_provider(),
-        )
-    })
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
+        TriggerType::Application,
+        Some(Arc::new(VerifiableContainer::from(tx))),
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        NoDiagnostic,
+        Some(provider),
+    )
     .expect("engine");
-
-    NativeContractLookup::install_provider(Arc::new(EmptyProvider));
 
     engine
         .load_script(
@@ -828,8 +966,7 @@ fn group_witness_uses_provider_captured_at_engine_creation() {
 
 #[test]
 fn call_contract_uses_execution_state_script_hash_for_caller() {
-    let _provider_guard = lock_provider();
-    install_allowing_policy();
+    let provider = allowing_policy_provider();
 
     let snapshot = Arc::new(DataCache::new(false));
 
@@ -850,8 +987,8 @@ fn call_contract_uses_execution_state_script_hash_for_caller() {
         TEST_MODE_GAS,
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
-        None,
-        NativeContractLookup::native_contract_provider(),
+        NoDiagnostic,
+        Some(provider),
     )
     .expect("engine");
 
@@ -866,8 +1003,7 @@ fn call_contract_uses_execution_state_script_hash_for_caller() {
         UInt160::parse("0xc198d687cc67e244662c3b9c1325f095f8e663b1").expect("hash");
     assert_ne!(logical_contract_hash, vm_script_hash);
 
-    let state_arc = entry_context
-        .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+    let state_arc = entry_context.state();
     state_arc.lock().script_hash = Some(logical_contract_hash);
     engine
         .refresh_context_tracking()
@@ -883,8 +1019,7 @@ fn call_contract_uses_execution_state_script_hash_for_caller() {
         .expect("load mock balanceOf call");
 
     let called_context = engine.current_context().cloned().expect("called context");
-    let called_state_arc = called_context
-        .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+    let called_state_arc = called_context.state();
     let called_state = called_state_arc.lock();
 
     assert_eq!(
@@ -899,11 +1034,9 @@ fn call_contract_uses_execution_state_script_hash_for_caller() {
 
 #[test]
 fn call_contract_dynamic_rejects_policy_blocked_target() {
-    let _provider_guard = lock_provider();
-
     let target_hash =
         UInt160::parse("0xb1b2c3d4e5f60718293a4b5c6d7e8f0102030405").expect("target hash");
-    install_blocking_policy(target_hash);
+    let provider = blocking_policy_provider(target_hash);
 
     let mut contracts: HashMap<UInt160, ContractState> = HashMap::new();
     contracts.insert(target_hash, build_mock_contract(target_hash));
@@ -917,8 +1050,8 @@ fn call_contract_dynamic_rejects_policy_blocked_target() {
         TEST_MODE_GAS,
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
-        None,
-        NativeContractLookup::native_contract_provider(),
+        NoDiagnostic,
+        Some(provider),
     )
     .expect("engine");
 
@@ -949,36 +1082,26 @@ fn call_contract_dynamic_rejects_policy_blocked_target() {
 
 #[test]
 fn dynamic_contract_policy_uses_provider_captured_at_engine_creation() {
-    let _provider_guard = lock_provider();
-
     let target_hash =
         UInt160::parse("0xb1b2c3d4e5f60718293a4b5c6d7e8f0102030415").expect("target hash");
-    let provider = Arc::new(BlockingProvider {
-        policy: Arc::new(BlockingPolicy {
-            blocked_hash: target_hash,
-        }),
-    }) as Arc<dyn NativeContractProvider>;
+    let provider = blocking_policy_provider(target_hash);
 
     let mut contracts: HashMap<UInt160, ContractState> = HashMap::new();
     contracts.insert(target_hash, build_mock_contract(target_hash));
 
-    let mut engine = NativeContractLookup::with_scoped_provider(provider, || {
-        ApplicationEngine::new_with_preloaded_native_and_native_contract_provider(
-            TriggerType::Application,
-            None,
-            Arc::new(DataCache::new(false)),
-            None,
-            ProtocolSettings::default(),
-            TEST_MODE_GAS,
-            contracts,
-            Arc::new(PlMutex::new(NativeContractsCache::default())),
-            None,
-            NativeContractLookup::native_contract_provider(),
-        )
-    })
+    let mut engine = ApplicationEngine::new_with_preloaded_native_and_native_contract_provider(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        contracts,
+        Arc::new(PlMutex::new(NativeContractsCache::default())),
+        NoDiagnostic,
+        Some(provider),
+    )
     .expect("engine");
-
-    NativeContractLookup::install_provider(Arc::new(EmptyProvider));
 
     engine
         .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
@@ -1002,11 +1125,9 @@ fn dynamic_contract_policy_uses_provider_captured_at_engine_creation() {
 
 #[test]
 fn call_contract_internal_checks_policy_before_return_type_mismatch() {
-    let _provider_guard = lock_provider();
-
     let target_hash =
         UInt160::parse("0xb1b2c3d4e5f60718293a4b5c6d7e8f0102030407").expect("target hash");
-    install_blocking_policy(target_hash);
+    let provider = blocking_policy_provider(target_hash);
 
     let contract = build_mock_contract(target_hash);
     let method = contract
@@ -1025,8 +1146,8 @@ fn call_contract_internal_checks_policy_before_return_type_mismatch() {
         TEST_MODE_GAS,
         HashMap::new(),
         Arc::new(PlMutex::new(NativeContractsCache::default())),
-        None,
-        NativeContractLookup::native_contract_provider(),
+        NoDiagnostic,
+        Some(provider),
     )
     .expect("engine");
 
@@ -1051,8 +1172,7 @@ fn call_contract_internal_checks_policy_before_return_type_mismatch() {
 
 #[test]
 fn call_contract_dynamic_faults_when_policy_provider_is_missing() {
-    let _provider_guard = lock_provider();
-    NativeContractLookup::install_provider(Arc::new(EmptyProvider));
+    let provider = Arc::new(EmptyProvider);
 
     let target_hash =
         UInt160::parse("0xb1b2c3d4e5f60718293a4b5c6d7e8f0102030406").expect("target hash");
@@ -1068,8 +1188,8 @@ fn call_contract_dynamic_faults_when_policy_provider_is_missing() {
         TEST_MODE_GAS,
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
-        None,
-        NativeContractLookup::native_contract_provider(),
+        NoDiagnostic,
+        Some(provider),
     )
     .expect("engine");
 
@@ -1126,7 +1246,10 @@ fn build_returning_mock(
 /// Builds an engine preloaded with `contracts` and an entry context (a bare
 /// RET script) standing in for the native frame the primitive is called
 /// from.
-fn engine_with_entry(contracts: HashMap<UInt160, ContractState>) -> ApplicationEngine {
+fn engine_with_entry(
+    contracts: HashMap<UInt160, ContractState>,
+    provider: Arc<BlockingProvider>,
+) -> ApplicationEngine<BlockingProvider> {
     let snapshot = Arc::new(DataCache::new(false));
     let mut engine = ApplicationEngine::new_with_preloaded_native_and_native_contract_provider(
         TriggerType::Application,
@@ -1137,8 +1260,8 @@ fn engine_with_entry(contracts: HashMap<UInt160, ContractState>) -> ApplicationE
         TEST_MODE_GAS,
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
-        None,
-        NativeContractLookup::native_contract_provider(),
+        NoDiagnostic,
+        Some(provider),
     )
     .expect("engine");
     engine
@@ -1152,8 +1275,7 @@ fn engine_with_entry(contracts: HashMap<UInt160, ContractState>) -> ApplicationE
 /// callee script returns `System.Runtime.GetCallingScriptHash`.
 #[test]
 fn returning_call_yields_result_and_native_calling_hash() {
-    let _provider_guard = lock_provider();
-    install_allowing_policy();
+    let provider = allowing_policy_provider();
 
     let target_hash = UInt160::from_bytes(&[0xCD; 20]).expect("hash");
     let calling_hash = UInt160::from_bytes(&[0xAB; 20]).expect("hash");
@@ -1174,7 +1296,7 @@ fn returning_call_yields_result_and_native_calling_hash() {
             script,
         ),
     );
-    let mut engine = engine_with_entry(contracts);
+    let mut engine = engine_with_entry(contracts, provider);
 
     let result = engine
         .call_from_native_contract_returning(&calling_hash, &target_hash, "whoCalls", vec![])
@@ -1200,8 +1322,7 @@ fn returning_call_yields_result_and_native_calling_hash() {
 
 #[test]
 fn queued_native_calls_run_in_enqueue_order() {
-    let _provider_guard = lock_provider();
-    install_allowing_policy();
+    let provider = allowing_policy_provider();
 
     let calling_hash = UInt160::from_bytes(&[0xAB; 20]).expect("hash");
     let first_hash = UInt160::from_bytes(&[0xD1; 20]).expect("hash");
@@ -1240,7 +1361,7 @@ fn queued_native_calls_run_in_enqueue_order() {
             second_script.to_array(),
         ),
     );
-    let mut engine = engine_with_entry(contracts);
+    let mut engine = engine_with_entry(contracts, provider);
 
     engine.queue_contract_call_from_native(calling_hash, first_hash, "marker", vec![]);
     engine.queue_contract_call_from_native(calling_hash, second_hash, "marker", vec![]);
@@ -1262,8 +1383,7 @@ fn queued_native_calls_run_in_enqueue_order() {
 /// `Void` callee is rejected with "The return value type does not match."
 #[test]
 fn returning_call_rejects_void_method() {
-    let _provider_guard = lock_provider();
-    install_allowing_policy();
+    let provider = allowing_policy_provider();
 
     let target_hash = UInt160::from_bytes(&[0xCE; 20]).expect("hash");
     let mut contracts = HashMap::new();
@@ -1276,7 +1396,7 @@ fn returning_call_rejects_void_method() {
             vec![OpCode::RET.byte()],
         ),
     );
-    let mut engine = engine_with_entry(contracts);
+    let mut engine = engine_with_entry(contracts, provider);
 
     let err = engine
         .call_from_native_contract_returning(&UInt160::zero(), &target_hash, "voidMethod", vec![])
@@ -1292,8 +1412,7 @@ fn returning_call_rejects_void_method() {
 /// callee context has returned.
 #[test]
 fn void_call_accepts_void_method_and_runs_to_completion() {
-    let _provider_guard = lock_provider();
-    install_allowing_policy();
+    let provider = allowing_policy_provider();
 
     let target_hash = UInt160::from_bytes(&[0xD0; 20]).expect("hash");
     let mut contracts = HashMap::new();
@@ -1306,7 +1425,7 @@ fn void_call_accepts_void_method_and_runs_to_completion() {
             vec![OpCode::RET.byte()],
         ),
     );
-    let mut engine = engine_with_entry(contracts);
+    let mut engine = engine_with_entry(contracts, provider);
 
     engine
         .call_from_native_contract_void(&UInt160::zero(), &target_hash, "accept", vec![])
@@ -1329,13 +1448,11 @@ fn void_call_accepts_void_method_and_runs_to_completion() {
 /// native-to-contract calls before the callee context is loaded.
 #[test]
 fn returning_call_rejects_policy_blocked_target() {
-    let _provider_guard = lock_provider();
-
     // Share the dynamic-call blocked hash so the global test provider
     // remains compatible when Rust runs these tests in parallel.
     let target_hash =
         UInt160::parse("0xb1b2c3d4e5f60718293a4b5c6d7e8f0102030405").expect("target hash");
-    install_blocking_policy(target_hash);
+    let provider = blocking_policy_provider(target_hash);
 
     let mut contracts = HashMap::new();
     contracts.insert(
@@ -1347,7 +1464,7 @@ fn returning_call_rejects_policy_blocked_target() {
             vec![OpCode::PUSH1.byte(), OpCode::RET.byte()],
         ),
     );
-    let mut engine = engine_with_entry(contracts);
+    let mut engine = engine_with_entry(contracts, provider);
 
     let err = engine
         .call_from_native_contract_returning(&UInt160::zero(), &target_hash, "answer", vec![])
@@ -1370,8 +1487,7 @@ fn returning_call_rejects_policy_blocked_target() {
 /// mirroring C#'s `VMUnhandledException` for `contractTasks` contexts.
 #[test]
 fn returning_call_propagates_callee_throw_as_engine_fault() {
-    let _provider_guard = lock_provider();
-    install_allowing_policy();
+    let provider = allowing_policy_provider();
 
     let target_hash = UInt160::from_bytes(&[0xCF; 20]).expect("hash");
     let mut contracts = HashMap::new();
@@ -1384,7 +1500,7 @@ fn returning_call_propagates_callee_throw_as_engine_fault() {
             vec![OpCode::PUSH1.byte(), OpCode::THROW.byte()],
         ),
     );
-    let mut engine = engine_with_entry(contracts);
+    let mut engine = engine_with_entry(contracts, provider);
 
     let result = engine.call_from_native_contract_returning(
         &UInt160::zero(),
@@ -1401,10 +1517,15 @@ fn returning_call_propagates_callee_throw_as_engine_fault() {
 const BOUNDARY_TEST_SYSCALL: &str = "Test.NativeCallReturning";
 const QUEUED_BOUNDARY_TEST_SYSCALL: &str = "Test.QueueNativeCall";
 
-fn boundary_test_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut neo_vm::ExecutionEngine,
-) -> neo_vm::VmResult<()> {
+fn boundary_test_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut crate::ApplicationExecutionEngine,
+) -> neo_vm::VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let target_hash = UInt160::from_bytes(&[0xDF; 20]).expect("hash");
     match app.call_from_native_contract_returning(&UInt160::zero(), &target_hash, "explode", vec![])
     {
@@ -1415,10 +1536,15 @@ fn boundary_test_handler(
     }
 }
 
-fn queued_boundary_test_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut neo_vm::ExecutionEngine,
-) -> neo_vm::VmResult<()> {
+fn queued_boundary_test_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut crate::ApplicationExecutionEngine,
+) -> neo_vm::VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let calling_hash = UInt160::from_bytes(&[0xAB; 20]).expect("hash");
     let target_hash = UInt160::from_bytes(&[0xDF; 20]).expect("hash");
     app.queue_contract_call_from_native(calling_hash, target_hash, "explode", vec![]);
@@ -1433,8 +1559,7 @@ fn queued_boundary_test_handler(
 /// boundary would run the CATCH and HALT with `2` on the result stack).
 #[test]
 fn returning_call_exception_cannot_be_caught_below_native_frame() {
-    let _provider_guard = lock_provider();
-    install_allowing_policy();
+    let provider = allowing_policy_provider();
 
     let target_hash = UInt160::from_bytes(&[0xDF; 20]).expect("hash");
     let mut contracts = HashMap::new();
@@ -1458,8 +1583,8 @@ fn returning_call_exception_cannot_be_caught_below_native_frame() {
         TEST_MODE_GAS,
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
-        None,
-        NativeContractLookup::native_contract_provider(),
+        NoDiagnostic,
+        Some(provider),
     )
     .expect("engine");
     engine
@@ -1511,8 +1636,7 @@ fn returning_call_exception_cannot_be_caught_below_native_frame() {
 /// be caught by a TRY in the caller below `System.Contract.CallNative`.
 #[test]
 fn queued_native_call_exception_cannot_be_caught_below_native_frame() {
-    let _provider_guard = lock_provider();
-    install_allowing_policy();
+    let provider = allowing_policy_provider();
 
     let target_hash = UInt160::from_bytes(&[0xDF; 20]).expect("hash");
     let mut contracts = HashMap::new();
@@ -1536,8 +1660,8 @@ fn queued_native_call_exception_cannot_be_caught_below_native_frame() {
         TEST_MODE_GAS,
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
-        None,
-        NativeContractLookup::native_contract_provider(),
+        NoDiagnostic,
+        Some(provider),
     )
     .expect("engine");
     engine

@@ -7,7 +7,10 @@ use crate::messages::{
 use crate::{ChangeViewReason, ConsensusError, ConsensusMessageType, ConsensusResult};
 use tracing::{debug, info, warn};
 
-impl ConsensusService {
+impl<S> ConsensusService<S>
+where
+    S: crate::ConsensusSigner,
+{
     /// Handles `PrepareRequest` message
     pub(in crate::service) async fn on_prepare_request(
         &mut self,

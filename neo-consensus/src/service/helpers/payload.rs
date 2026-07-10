@@ -4,7 +4,10 @@ use crate::messages::ConsensusPayload;
 use crate::{ConsensusError, ConsensusMessageType, ConsensusResult};
 use tracing::debug;
 
-impl ConsensusService {
+impl<S> ConsensusService<S>
+where
+    S: crate::ConsensusSigner,
+{
     /// Creates a consensus payload.
     ///
     /// This method is `async` because it calls `self.sign()` which may perform
@@ -46,6 +49,6 @@ impl ConsensusService {
     pub(in crate::service) fn send_event(&self, event: ConsensusEvent) -> ConsensusResult<()> {
         self.event_tx
             .try_send(event)
-            .map_err(|e| ConsensusError::ChannelSendError(Box::new(e)))
+            .map_err(ConsensusError::ChannelSendError)
     }
 }

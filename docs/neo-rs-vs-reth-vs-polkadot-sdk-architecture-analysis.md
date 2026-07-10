@@ -55,15 +55,17 @@ table boundary over those same bytes, but that boundary is on no live storage
 access path today — it is a defined seam, not a live encoding.
 
 ```rust
-pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync + Any {
-    fn snapshot(&self) -> Arc<dyn StoreSnapshot>;
+pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync {
+    type Snapshot: StoreSnapshot;
+
+    fn snapshot(&self) -> Arc<Self::Snapshot>;
     fn try_commit_raw_overlay(&self, overlay: &[(Vec<u8>, Option<Vec<u8>>)]) -> ...;
 }
 ```
 
 | Aspect | neo-rs | Reth | Polkadot SDK |
 |--------|--------|------|-------------|
-| Abstraction | Single `Store` trait | `Database` trait with GATs | `kvdb` trait, 3-level stack |
+| Abstraction | `Store` with an associated concrete snapshot; `RuntimeStore` enum for config selection | `Database` trait with GATs | `kvdb` trait, 3-level stack |
 | Table encoding | Live: `StorageKey` / `KeyBuilder` over raw C#-compatible bytes; `Table`/`TableCodec` boundary exists but on no live access path | Per-table `Encode`/`Decode` + `Compact` derive | Per-column encoding (parity-scale-codec) |
 | Tiering | Hot DB today; hot/cold provider factory exists, while static-file archive writing/format is still unwired | Hot (MDBX) / Cold (RocksDB) / Static (NippyJar) | Single DB (parity-db or RocksDB) |
 | Overlay | `DataCache` with `Arc<RwLock<HashMap>>` | MDBX transaction | `OverlayedChanges` |
@@ -117,16 +119,18 @@ Drain batch size = 500, cache max = 50K. Eviction drops top 25% (O(n log n)).
 `max_duration`), a provider-neutral `SyncStageCheckpointStore` seam,
 `InMemorySyncStageCheckpointStore` for tests/scaffolding,
 `StoreSyncStageCheckpointStore` for store-backed durable checkpoints, and
-`SharedStoreSyncStageCheckpointStore` for node-composed `Arc<dyn Store>`
-backends. `neo_system::SyncImportPipeline` binds `BlockchainHandle`,
+`SharedStoreSyncStageCheckpointStore<S>` for node-composed `Arc<S>` shared
+stores, preserving concrete backend types when composition knows them and using
+the concrete `RuntimeStore` enum at runtime-selected backend boundaries.
+`neo_system::SyncImportPipeline` binds `BlockchainHandle`,
 `BlockImportQueue`, durable checkpoint storage, and the import-stage
-`CommitPolicy` at node construction time, and `NodeBuilder` registers the same
-handle in `ServiceRegistry`. `SyncPipelineDriver`, which imports
+`CommitPolicy` at node construction time. `Node` owns that handle as an
+explicit typed field. `SyncPipelineDriver`, which imports
 contiguous `SyncBlockBatch` values through
 the shared `ImportQueue` and checkpoints the import stage when policy fires,
 can be created from that handle.
-The queue/checkpoint handle is now part of production node composition and
-service lookup. Production node startup runs a coordinator-backed P2P
+The queue/checkpoint handle is now part of production node composition.
+Production node startup runs a coordinator-backed P2P
 `BlockDownloader` over the live `PeerRegistry` and feeds it through
 `SyncDownloadImportDriver` into the composed import pipeline. The concrete
 multi-stage headers/bodies/execute/index/prune loop remains the next large
@@ -219,13 +223,17 @@ checks to avoid duplicating merkle/hash work on the hot replay path.
 height gaps, calls the import queue, and writes import-stage checkpoints
 according to `CommitPolicy`. `neo_system::SyncImportPipeline` now composes the
 bounded import queue and durable checkpoint provider from the node's
-`BlockchainHandle` and shared storage handle, then registers the same handle in
-`ServiceRegistry`; production P2P range sync now creates a coordinator-backed
+`BlockchainHandle` and shared storage handle as one explicit node field;
+production P2P range sync now creates a coordinator-backed
 downloader over live peer handles and drives that runtime driver. The live
 inventory path still calls
 `BlockImport` directly via
 `BlockchainHandle::import_many`, driven by neo-blockchain's
 `handle_block_inventory`.
+`BlockImport`, `ImportQueue`, and `NetworkService` return concrete
+`impl Future + Send` values. Validation and consensus-witness stages are
+synchronous. The hot import path therefore has neither trait-object dispatch
+nor `async_trait` future boxing.
 Execution, native persistence, state-root updates, and durable commits still
 happen only inside `neo-blockchain`.
 

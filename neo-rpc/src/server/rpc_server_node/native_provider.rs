@@ -7,7 +7,7 @@
 
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::{CacheRead, DataCache};
 use std::sync::Arc;
 
 use crate::server::native_provider::NativeProviderAdapter;
@@ -29,9 +29,9 @@ pub(super) struct VersionPolicyValues {
 pub(super) trait NodeNativeProvider {
     /// Returns the C# `NeoSystemExtensions` dynamic Policy values used by
     /// `getversion`.
-    fn version_policy_values(
+    fn version_policy_values<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
     ) -> Result<VersionPolicyValues, RpcException>;
 }
@@ -39,37 +39,48 @@ pub(super) trait NodeNativeProvider {
 /// Adapter from the node-composed native-contract provider to node RPC Policy
 /// read capabilities.
 #[derive(Clone, Debug)]
-pub(super) struct NativeNodeProvider {
-    adapter: NativeProviderAdapter,
+pub(super) struct NativeNodeProvider<P>
+where
+    P: NativeContractProvider,
+{
+    adapter: NativeProviderAdapter<P>,
 }
 
-impl NativeNodeProvider {
+impl<P> NativeNodeProvider<P>
+where
+    P: NativeContractProvider,
+{
     /// Creates an adapter over the composition-root native-contract provider.
     #[must_use]
-    pub(super) fn new(native_contract_provider: Arc<dyn NativeContractProvider>) -> Self {
+    pub(super) fn new(native_contract_provider: Arc<P>) -> Self {
         Self {
             adapter: NativeProviderAdapter::new(native_contract_provider),
         }
     }
 }
 
-impl NodeNativeProvider for NativeNodeProvider {
-    fn version_policy_values(
+impl<P> NodeNativeProvider for NativeNodeProvider<P>
+where
+    P: NativeContractProvider,
+{
+    fn version_policy_values<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
     ) -> Result<VersionPolicyValues, RpcException> {
-        self.adapter
-            .with_policy(|policy| {
-                Ok(VersionPolicyValues {
-                    milliseconds_per_block: policy
-                        .get_milliseconds_per_block_snapshot(snapshot, settings)?,
-                    max_traceable_blocks: policy
-                        .get_max_traceable_blocks_snapshot(snapshot, settings)?,
-                    max_valid_until_block_increment: policy
-                        .get_max_valid_until_block_increment_snapshot(snapshot, settings)?,
-                })
-            })
-            .map_err(internal_error)
+        Ok(VersionPolicyValues {
+            milliseconds_per_block: self
+                .adapter
+                .milliseconds_per_block(snapshot, settings)
+                .map_err(internal_error)?,
+            max_traceable_blocks: self
+                .adapter
+                .max_traceable_blocks(snapshot, settings)
+                .map_err(internal_error)?,
+            max_valid_until_block_increment: self
+                .adapter
+                .max_valid_until_block_increment(snapshot, settings)
+                .map_err(internal_error)?,
+        })
     }
 }

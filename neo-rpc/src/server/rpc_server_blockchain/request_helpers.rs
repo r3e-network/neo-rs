@@ -228,10 +228,13 @@ impl RpcServerBlockchain {
         }
     }
 
-    pub(super) fn fetch_payload_block(
-        store: &neo_storage::persistence::StoreCache,
+    pub(super) fn fetch_payload_block<S>(
+        store: &neo_storage::persistence::StoreCache<S>,
         identifier: &RpcBlockHashOrIndex,
-    ) -> Result<Block, RpcException> {
+    ) -> Result<Block, RpcException>
+    where
+        S: neo_storage::persistence::Store,
+    {
         ledger_queries::get_full_block(store.data_cache(), identifier)
             .map_err(internal_error)?
             .ok_or_else(|| RpcException::from(RpcError::unknown_block()))
@@ -298,10 +301,13 @@ impl RpcServerBlockchain {
         }
     }
 
-    pub(super) fn load_contract_state(
-        store: &neo_storage::persistence::StoreCache,
+    pub(super) fn load_contract_state<S>(
+        store: &neo_storage::persistence::StoreCache<S>,
         identifier: &ContractNameOrHashOrId,
-    ) -> Result<Option<ContractState>, RpcException> {
+    ) -> Result<Option<ContractState>, RpcException>
+    where
+        S: neo_storage::persistence::Store,
+    {
         let provider = NativeDeployedContractProviderFactory.provider();
         let snapshot = store.data_cache();
         match identifier {
@@ -320,10 +326,13 @@ impl RpcServerBlockchain {
         }
     }
 
-    pub(super) fn resolve_contract_id(
-        store: &neo_storage::persistence::StoreCache,
+    pub(super) fn resolve_contract_id<S>(
+        store: &neo_storage::persistence::StoreCache<S>,
         identifier: &ContractNameOrHashOrId,
-    ) -> Result<i32, RpcException> {
+    ) -> Result<i32, RpcException>
+    where
+        S: neo_storage::persistence::Store,
+    {
         if let ContractNameOrHashOrId::Id(id) = identifier {
             let state = NativeDeployedContractProviderFactory
                 .provider()

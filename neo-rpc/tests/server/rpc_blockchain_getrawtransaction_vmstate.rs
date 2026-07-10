@@ -6,20 +6,21 @@ use neo_io::{MemoryReader, Serializable};
 use neo_payloads::transaction::Transaction;
 use neo_primitives::{UInt160, WitnessScope};
 use neo_rpc::server::{RpcHandler, RpcServer, RpcServerBlockchain, RpcServerConfig};
+use neo_storage::persistence::providers::RuntimeStore;
 use neo_test_fixtures::{TestTransactionBuilder, try_make_ledger_block, try_store_block};
 use serde_json::Value;
 use std::sync::Arc;
 
 fn node_to_context(node: &neo_system::Node) -> neo_rpc::server::NodeContext {
     neo_rpc::server::NodeContext::from_parts(
-        Arc::clone(&node.settings),
-        Arc::clone(&node.storage),
-        node.blockchain.clone(),
-        node.network.clone(),
-        Arc::clone(&node.mempool),
-        Arc::clone(&node.header_cache),
-        node.services.clone(),
-        Arc::clone(&node.native_contract_provider),
+        node.settings(),
+        Arc::new(RuntimeStore::Memory(node.storage().as_ref().clone())),
+        node.blockchain(),
+        node.network(),
+        node.mempool(),
+        node.header_cache(),
+        neo_rpc::server::RpcServices::default(),
+        node.native_contract_provider(),
     )
 }
 

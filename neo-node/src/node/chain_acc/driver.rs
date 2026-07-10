@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
-use neo_blockchain::handle::BlockchainHandle;
+use neo_blockchain::BlockchainHandle;
 use neo_payloads::block::Block;
 use neo_storage::persistence::store::Store;
 use tracing::info;
@@ -34,13 +34,16 @@ use super::range::{
 use super::{ChainAccExpectedRange, ChainAccImportReport, IMPORT_BATCH_SIZE, ImportHotMetrics};
 
 /// Import blocks from a `chain.acc` file and stop once `stop_at_height` is imported.
-pub async fn import_chain_acc_until_height(
+pub async fn import_chain_acc_until_height<S>(
     handle: &BlockchainHandle,
     path: &Path,
     verify: bool,
     stop_at_height: Option<u32>,
-    storage: Option<Arc<dyn Store>>,
-) -> anyhow::Result<u64> {
+    storage: Option<Arc<S>>,
+) -> anyhow::Result<u64>
+where
+    S: Store,
+{
     let file = std::fs::File::open(path)
         .map_err(|e| anyhow::anyhow!("opening chain.acc {}: {e}", path.display()))?;
     let mut reader = BufReader::with_capacity(1 << 20, file);
@@ -56,14 +59,17 @@ pub async fn import_chain_acc_until_height(
     .await
 }
 
-pub(in crate::node) async fn import_chain_acc_report_with_expected_range(
+pub(in crate::node) async fn import_chain_acc_report_with_expected_range<S>(
     handle: &BlockchainHandle,
     path: &Path,
     verify: bool,
     expected_range: ChainAccExpectedRange,
     stop_at_height: Option<u32>,
-    storage: Option<Arc<dyn Store>>,
-) -> anyhow::Result<ChainAccImportReport> {
+    storage: Option<Arc<S>>,
+) -> anyhow::Result<ChainAccImportReport>
+where
+    S: Store,
+{
     let file = std::fs::File::open(path)
         .map_err(|e| anyhow::anyhow!("opening chain.acc {}: {e}", path.display()))?;
     let mut reader = BufReader::with_capacity(1 << 20, file);
@@ -79,17 +85,18 @@ pub(in crate::node) async fn import_chain_acc_report_with_expected_range(
     .await
 }
 
-pub(super) async fn import_chain_acc_from_reader_until_height<R>(
+pub(super) async fn import_chain_acc_from_reader_until_height<R, S>(
     handle: &BlockchainHandle,
     reader: &mut R,
     path: Option<&Path>,
     verify: bool,
     expected_range: Option<ChainAccExpectedRange>,
     stop_at_height: Option<u32>,
-    storage: Option<Arc<dyn Store>>,
+    storage: Option<Arc<S>>,
 ) -> anyhow::Result<u64>
 where
     R: Read + Seek,
+    S: Store,
 {
     Ok(import_chain_acc_report_from_reader_until_height(
         handle,
@@ -104,17 +111,18 @@ where
     .imported)
 }
 
-pub(in crate::node::chain_acc) async fn import_chain_acc_report_from_reader_until_height<R>(
+pub(in crate::node::chain_acc) async fn import_chain_acc_report_from_reader_until_height<R, S>(
     handle: &BlockchainHandle,
     reader: &mut R,
     path: Option<&Path>,
     verify: bool,
     expected_range: Option<ChainAccExpectedRange>,
     stop_at_height: Option<u32>,
-    storage: Option<Arc<dyn Store>>,
+    storage: Option<Arc<S>>,
 ) -> anyhow::Result<ChainAccImportReport>
 where
     R: Read + Seek,
+    S: Store,
 {
     let driver_start = Instant::now();
     let mut chain_acc_read_elapsed = std::time::Duration::ZERO;

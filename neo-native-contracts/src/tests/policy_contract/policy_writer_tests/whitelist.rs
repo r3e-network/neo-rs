@@ -6,7 +6,6 @@ use super::*;
 /// back, and the remove writer deletes it again.
 #[test]
 fn whitelist_fee_contract_e2e_set_then_remove() {
-    crate::install();
     let settings = faun_settings();
     let cache = DataCache::new(false);
     let committee = sample_committee();
@@ -57,7 +56,7 @@ fn whitelist_fee_contract_e2e_set_then_remove() {
 
     // The engine-facing seam (C# IsWhitelistFeeContract) resolves the fee.
     assert_eq!(
-        NativeContract::whitelisted_fee(
+        NativeContract::<neo_execution::native_contract_provider::NoNativeContractProvider>::whitelisted_fee(
             &PolicyContract::new(),
             &snapshot,
             &neo_hash,
@@ -69,7 +68,7 @@ fn whitelist_fee_contract_e2e_set_then_remove() {
     );
     // A different method / a missing contract resolve to no whitelist.
     assert_eq!(
-        NativeContract::whitelisted_fee(
+        NativeContract::<neo_execution::native_contract_provider::NoNativeContractProvider>::whitelisted_fee(
             &PolicyContract::new(),
             &snapshot,
             &neo_hash,
@@ -81,7 +80,7 @@ fn whitelist_fee_contract_e2e_set_then_remove() {
     );
     let unknown = UInt160::from_bytes(&[0x55; 20]).unwrap();
     assert_eq!(
-        NativeContract::whitelisted_fee(
+        NativeContract::<neo_execution::native_contract_provider::NoNativeContractProvider>::whitelisted_fee(
             &PolicyContract::new(),
             &snapshot,
             &unknown,
@@ -139,7 +138,6 @@ fn whitelist_fee_contract_e2e_set_then_remove() {
 /// unknown method (C# "Method ... was not found").
 #[test]
 fn whitelist_fee_contract_e2e_validation_faults() {
-    crate::install();
     let settings = faun_settings();
     let cache = DataCache::new(false);
     let committee = sample_committee();

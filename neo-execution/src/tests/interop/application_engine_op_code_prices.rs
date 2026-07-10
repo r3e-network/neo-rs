@@ -1,4 +1,5 @@
 use super::*;
+use crate::native_contract_provider::NoNativeContractProvider;
 use neo_vm_rs::OpCode;
 
 #[test]
@@ -207,5 +208,8 @@ fn opcode_price_table_matches_csharp_v3101_dictionary() {
         expected_table[opcode.byte() as usize] = *price;
     }
 
-    assert_eq!(ApplicationEngine::OPCODE_PRICE_TABLE, expected_table);
+    assert_eq!(
+        ApplicationEngine::<NoNativeContractProvider>::OPCODE_PRICE_TABLE,
+        expected_table
+    );
 }

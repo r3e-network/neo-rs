@@ -70,9 +70,9 @@ impl CandidateScanCounts {
 impl NeoToken {
     /// C# `NeoToken.CheckCandidate`: when a candidate is unregistered and has no
     /// remaining votes, delete its candidate + voter-reward entries.
-    pub(in crate::neo_token) fn check_candidate(
+    pub(in crate::neo_token) fn check_candidate<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         pubkey: &ECPoint,
         registered: bool,
         votes: &BigInt,
@@ -102,9 +102,9 @@ impl NeoToken {
     /// operands are integers and `TotalAmount = 1e8`, so the decimal quotient is
     /// exact and the comparison is equivalent to the integer-safe
     /// `votersCount * 5 < TotalAmount`.
-    pub(in crate::neo_token) fn compute_committee_members(
+    pub(in crate::neo_token) fn compute_committee_members<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &neo_config::ProtocolSettings,
     ) -> CoreResult<Vec<(ECPoint, BigInt)>> {
         let stage_start = Instant::now();
@@ -134,9 +134,9 @@ impl NeoToken {
         Ok(top_candidates)
     }
 
-    fn standby_committee_with_registered_votes(
+    fn standby_committee_with_registered_votes<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         standby_committee: &[ECPoint],
     ) -> CoreResult<Vec<(ECPoint, BigInt)>> {
         let stage_start = Instant::now();
@@ -165,9 +165,9 @@ impl NeoToken {
         members
     }
 
-    fn top_registered_candidates(
+    fn top_registered_candidates<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         limit: usize,
     ) -> CoreResult<(usize, Vec<(ECPoint, BigInt)>)> {
         let total_start = Instant::now();
@@ -327,9 +327,9 @@ impl NeoToken {
     /// the raw `(key, value)` storage entries of the registered candidates in
     /// storage-scan order, excluding candidates whose signature-contract address is
     /// blocked by `PolicyContract` (`!Policy.IsBlocked(snapshot, sigScriptHash)`).
-    pub(in crate::neo_token) fn registered_candidate_entries(
+    pub(in crate::neo_token) fn registered_candidate_entries<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
     ) -> CoreResult<Vec<(ECPoint, BigInt, StorageKey, StorageItem)>> {
         let prefix = Self::candidate_prefix_key();
         let mut out = Vec::new();
@@ -366,9 +366,9 @@ impl NeoToken {
 
     /// [`registered_candidate_entries`] projected to `(pubkey, votes)` pairs - the
     /// shape consumed by `getCandidates` and the committee recompute.
-    pub(in crate::neo_token) fn read_registered_candidates(
+    pub(in crate::neo_token) fn read_registered_candidates<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
     ) -> CoreResult<Vec<(ECPoint, BigInt)>> {
         Ok(self
             .registered_candidate_entries(snapshot)?
@@ -385,9 +385,13 @@ impl NeoToken {
     /// `RegisterInternal` calls `SendNotification` with no hardfork guard, and
     /// native `SendNotification` ignores the method's AllowNotify call flag.
     /// `method` labels errors with the invoking ABI method.
-    pub(in crate::neo_token) fn register_internal(
+    pub(in crate::neo_token) fn register_internal<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         pubkey: &ECPoint,
         method: &str,
     ) -> CoreResult<bool> {
@@ -430,9 +434,9 @@ impl NeoToken {
 
     /// C# `GetCandidateVote`: the votes for `pubkey` if it is a registered candidate,
     /// else -1 (also -1 when there is no candidate entry at all).
-    pub(in crate::neo_token) fn candidate_vote(
+    pub(in crate::neo_token) fn candidate_vote<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         pubkey: &ECPoint,
     ) -> CoreResult<BigInt> {
         match snapshot.get(&Self::candidate_key(pubkey)) {
@@ -465,7 +469,10 @@ impl NeoToken {
     }
 }
 
-pub(super) fn candidate_is_blocked(snapshot: &DataCache, pubkey: &ECPoint) -> bool {
+pub(super) fn candidate_is_blocked<B: neo_storage::CacheRead>(
+    snapshot: &DataCache<B>,
+    pubkey: &ECPoint,
+) -> bool {
     let account = candidate_signature_account(pubkey);
     snapshot
         .get(&crate::PolicyContract::blocked_account_key(&account))

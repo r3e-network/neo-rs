@@ -14,7 +14,7 @@ use neo_blockchain::{
 };
 use neo_payloads::TransactionState;
 use neo_primitives::UInt256;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::{CacheRead, DataCache};
 
 const BLOCKCHAIN_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
     HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
@@ -22,13 +22,13 @@ const BLOCKCHAIN_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedg
 /// Ledger capabilities required by blockchain RPC handlers.
 pub(super) trait BlockchainLedgerProvider {
     /// Returns the current persisted ledger height.
-    fn current_height(&self, snapshot: &DataCache) -> Result<u32, RpcException>;
+    fn current_height<B: CacheRead>(&self, snapshot: &DataCache<B>) -> Result<u32, RpcException>;
 
     /// Returns the persisted transaction-state record for `hash`, including
     /// conflict stubs.
-    fn transaction_state_by_hash(
+    fn transaction_state_by_hash<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         hash: &UInt256,
     ) -> Result<Option<TransactionState>, RpcException>;
 }
@@ -55,13 +55,13 @@ impl NativeBlockchainLedgerProvider {
 }
 
 impl BlockchainLedgerProvider for NativeBlockchainLedgerProvider {
-    fn current_height(&self, snapshot: &DataCache) -> Result<u32, RpcException> {
+    fn current_height<B: CacheRead>(&self, snapshot: &DataCache<B>) -> Result<u32, RpcException> {
         ledger_queries::current_index(snapshot).map_err(|err| internal_error(err.to_string()))
     }
 
-    fn transaction_state_by_hash(
+    fn transaction_state_by_hash<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         hash: &UInt256,
     ) -> Result<Option<TransactionState>, RpcException> {
         BLOCKCHAIN_LEDGER_PROVIDER_FACTORY

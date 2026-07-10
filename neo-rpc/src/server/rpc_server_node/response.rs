@@ -2,7 +2,7 @@
 
 use crate::server::RpcServerConfig;
 use neo_config::ProtocolSettings;
-use neo_network::handle::LocalNodeInfo;
+use neo_network::LocalNodeInfo;
 use neo_primitives::hardfork::Hardfork;
 use neo_primitives::hex_util;
 use serde_json::{Value, json};

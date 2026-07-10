@@ -21,7 +21,8 @@ use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
 use neo_payloads::{CommittedHandler, CommittingHandler};
 use neo_storage::DataCache;
-use std::any::Any;
+use neo_storage::persistence::Store;
+use neo_storage::persistence::providers::memory_store::MemoryStore;
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -34,14 +35,17 @@ const DEFAULT_ASYNC_QUEUE_CAPACITY: usize = 256;
 const ASYNC_BATCH_COALESCE_WAIT: Duration = Duration::from_millis(10);
 
 /// Handlers for wiring state-root MPT persistence into block persistence.
-pub struct StateServiceCommitHandlers {
-    state_store: Arc<StateStore>,
+pub struct StateServiceCommitHandlers<S: Store = MemoryStore> {
+    state_store: Arc<StateStore<S>>,
     worker: Option<AsyncStateRootWorker>,
 }
 
-impl StateServiceCommitHandlers {
+impl<S> StateServiceCommitHandlers<S>
+where
+    S: Store + 'static,
+{
     /// Constructs a new pipeline backed by the supplied state store.
-    pub fn new(state_store: Arc<StateStore>) -> Self {
+    pub fn new(state_store: Arc<StateStore<S>>) -> Self {
         Self {
             state_store,
             worker: None,
@@ -54,18 +58,18 @@ impl StateServiceCommitHandlers {
     /// The worker preserves block order and applies backpressure once the queue
     /// is full, so a sync burst can overlap native persistence with MPT writes
     /// without allowing unbounded memory growth.
-    pub fn new_async(state_store: Arc<StateStore>) -> Self {
+    pub fn new_async(state_store: Arc<StateStore<S>>) -> Self {
         Self::new_async_with_capacity(state_store, DEFAULT_ASYNC_QUEUE_CAPACITY)
     }
 
     /// Constructs an async pipeline, returning the worker spawn failure instead
     /// of falling back to synchronous mode.
-    pub fn try_new_async(state_store: Arc<StateStore>) -> io::Result<Self> {
+    pub fn try_new_async(state_store: Arc<StateStore<S>>) -> io::Result<Self> {
         Self::try_new_async_with_capacity(state_store, DEFAULT_ASYNC_QUEUE_CAPACITY)
     }
 
     /// Constructs an async pipeline with an explicit queue capacity.
-    pub fn new_async_with_capacity(state_store: Arc<StateStore>, queue_capacity: usize) -> Self {
+    pub fn new_async_with_capacity(state_store: Arc<StateStore<S>>, queue_capacity: usize) -> Self {
         match Self::try_new_async_with_capacity(Arc::clone(&state_store), queue_capacity) {
             Ok(handlers) => handlers,
             Err(err) => {
@@ -82,7 +86,7 @@ impl StateServiceCommitHandlers {
     /// Constructs an async pipeline with an explicit queue capacity, returning
     /// the worker spawn failure instead of falling back to synchronous mode.
     pub fn try_new_async_with_capacity(
-        state_store: Arc<StateStore>,
+        state_store: Arc<StateStore<S>>,
         queue_capacity: usize,
     ) -> io::Result<Self> {
         let worker = AsyncStateRootWorker::spawn(Arc::clone(&state_store), queue_capacity)?;
@@ -93,7 +97,7 @@ impl StateServiceCommitHandlers {
     }
 
     /// Returns a clone of the inner state store.
-    pub fn state_store(&self) -> Arc<StateStore> {
+    pub fn state_store(&self) -> Arc<StateStore<S>> {
         Arc::clone(&self.state_store)
     }
 
@@ -143,7 +147,11 @@ impl StateServiceCommitHandlers {
 
     /// Applies the block snapshot's storage changes to the local MPT state
     /// root store.
-    pub fn on_committing(&self, block_index: u32, snapshot: &DataCache) -> bool {
+    pub fn on_committing<B: neo_storage::CacheRead>(
+        &self,
+        block_index: u32,
+        snapshot: &DataCache<B>,
+    ) -> bool {
         if let Some(worker) = &self.worker {
             return self.on_committing_async(worker, block_index, snapshot)
                 && worker.flush_result().is_ok();
@@ -153,14 +161,22 @@ impl StateServiceCommitHandlers {
 
     /// Queues the block snapshot's storage changes for trusted bulk-sync
     /// callers that will fence the worker at the batch boundary.
-    pub fn on_committing_deferred(&self, block_index: u32, snapshot: &DataCache) -> bool {
+    pub fn on_committing_deferred<B: neo_storage::CacheRead>(
+        &self,
+        block_index: u32,
+        snapshot: &DataCache<B>,
+    ) -> bool {
         if let Some(worker) = &self.worker {
             return self.on_committing_async(worker, block_index, snapshot);
         }
         self.apply_committing(block_index, snapshot)
     }
 
-    fn apply_committing(&self, block_index: u32, snapshot: &DataCache) -> bool {
+    fn apply_committing<B: neo_storage::CacheRead>(
+        &self,
+        block_index: u32,
+        snapshot: &DataCache<B>,
+    ) -> bool {
         match self
             .state_store
             .apply_snapshot_changes(block_index, snapshot)
@@ -171,11 +187,11 @@ impl StateServiceCommitHandlers {
         }
     }
 
-    fn on_committing_async(
+    fn on_committing_async<B: neo_storage::CacheRead>(
         &self,
         worker: &AsyncStateRootWorker,
         block_index: u32,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
     ) -> bool {
         if !worker.is_healthy() {
             warn!(
@@ -188,7 +204,7 @@ impl StateServiceCommitHandlers {
         let total_start = std::time::Instant::now();
         let project_start = std::time::Instant::now();
         let mut changes = worker.take_change_buffer(snapshot.pending_change_count());
-        StateStore::project_mpt_changes_into(snapshot, &mut changes);
+        StateStore::<neo_storage::persistence::providers::memory_store::MemoryStore>::project_mpt_changes_into(snapshot, &mut changes);
         let project_us = elapsed_us(project_start);
         worker.enqueue(AsyncApplyRequest {
             block_index,
@@ -233,7 +249,10 @@ impl StateServiceCommitHandlers {
     }
 }
 
-fn apply_reverting(state_store: &StateStore, from_index: u32, to_index: u32) -> MptResult<()> {
+fn apply_reverting<S>(state_store: &StateStore<S>, from_index: u32, to_index: u32) -> MptResult<()>
+where
+    S: Store,
+{
     for index in from_index..=to_index {
         if let Some(root) =
             state_store.get_state_root(crate::state_store::StateStoreLookup::ByBlockIndex(index))
@@ -306,7 +325,10 @@ struct AsyncStateRootWorker {
 }
 
 impl AsyncStateRootWorker {
-    fn spawn(state_store: Arc<StateStore>, queue_capacity: usize) -> io::Result<Self> {
+    fn spawn<S>(state_store: Arc<StateStore<S>>, queue_capacity: usize) -> io::Result<Self>
+    where
+        S: Store + 'static,
+    {
         let capacity = queue_capacity.max(1);
         let (tx, rx) = std::sync::mpsc::sync_channel(capacity);
         let failed = Arc::new(AtomicBool::new(false));
@@ -448,14 +470,16 @@ impl Drop for AsyncStateRootWorker {
     }
 }
 
-fn worker_loop(
-    state_store: Arc<StateStore>,
+fn worker_loop<S>(
+    state_store: Arc<StateStore<S>>,
     rx: Receiver<AsyncCommand>,
     max_batch_blocks: usize,
     failed: Arc<AtomicBool>,
     recycled_change_buffers: Arc<parking_lot::Mutex<Vec<Vec<crate::mpt_store::MptChange>>>>,
     #[cfg(test)] applied_batch_sizes: Arc<parking_lot::Mutex<Vec<usize>>>,
-) {
+) where
+    S: Store,
+{
     let mut pending_command = None;
     loop {
         let command = match pending_command.take() {
@@ -529,13 +553,15 @@ fn collect_apply_batch(
     }
 }
 
-fn apply_request_batch(
-    state_store: &StateStore,
+fn apply_request_batch<S>(
+    state_store: &StateStore<S>,
     mut batch: Vec<AsyncApplyRequest>,
     failed: &AtomicBool,
     recycled_change_buffers: &parking_lot::Mutex<Vec<Vec<crate::mpt_store::MptChange>>>,
     #[cfg(test)] applied_batch_sizes: &parking_lot::Mutex<Vec<usize>>,
-) {
+) where
+    S: Store,
+{
     StateRootApplyMetrics::record_count(StateRootApplyCountKind::BatchBlocks, batch.len() as u64);
     #[cfg(test)]
     applied_batch_sizes.lock().push(batch.len());
@@ -584,8 +610,11 @@ fn apply_request_batch(
     }
 }
 
-impl CommittedHandler for StateServiceCommitHandlers {
-    fn blockchain_committed_handler(&self, _system: &dyn Any, block: &Block) {
+impl<S> CommittedHandler for StateServiceCommitHandlers<S>
+where
+    S: Store + 'static,
+{
+    fn blockchain_committed_handler(&self, _network: u32, block: &Block) {
         debug!(
             target: "neo.state_service",
             block_index = block.index(),
@@ -594,12 +623,15 @@ impl CommittedHandler for StateServiceCommitHandlers {
     }
 }
 
-impl CommittingHandler for StateServiceCommitHandlers {
-    fn blockchain_committing_handler(
+impl<S> CommittingHandler for StateServiceCommitHandlers<S>
+where
+    S: Store + 'static,
+{
+    fn blockchain_committing_handler<B: neo_storage::CacheRead>(
         &self,
-        _system: &dyn Any,
+        _network: u32,
         block: &Block,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         _application_executed_list: &[ApplicationExecuted],
     ) {
         let _ = self.on_committing(block.index(), snapshot);

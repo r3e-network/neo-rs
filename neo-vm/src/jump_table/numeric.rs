@@ -25,8 +25,8 @@ fn shift_operand_to_i32(item: StackItem) -> VmResult<i32> {
         .ok_or_else(|| VmError::invalid_operation_msg("Shift amount out of Int32 range"))
 }
 
-fn unary_numeric(
-    engine: &mut ExecutionEngine,
+fn unary_numeric<S>(
+    engine: &mut ExecutionEngine<S>,
     op: fn(StackValue) -> Result<StackValue, String>,
 ) -> VmResult<()> {
     let ctx = require_context(engine)?;
@@ -35,8 +35,8 @@ fn unary_numeric(
     push_stack_value(ctx, result)
 }
 
-fn binary_numeric(
-    engine: &mut ExecutionEngine,
+fn binary_numeric<S>(
+    engine: &mut ExecutionEngine<S>,
     op: fn(StackValue, StackValue) -> Result<StackValue, String>,
 ) -> VmResult<()> {
     let ctx = require_context(engine)?;
@@ -46,8 +46,8 @@ fn binary_numeric(
     push_stack_value(ctx, result)
 }
 
-fn ternary_numeric(
-    engine: &mut ExecutionEngine,
+fn ternary_numeric<S>(
+    engine: &mut ExecutionEngine<S>,
     op: fn(StackValue, StackValue, StackValue) -> Result<StackValue, String>,
 ) -> VmResult<()> {
     let ctx = require_context(engine)?;
@@ -59,7 +59,7 @@ fn ternary_numeric(
 }
 
 /// Registers the numeric operation handlers.
-pub fn register_handlers(jump_table: &mut JumpTable) {
+pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
     register_jump_handlers![
         jump_table;
         OpCode::INC => inc,
@@ -95,32 +95,32 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 }
 
 #[inline]
-fn inc(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn inc<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     unary_numeric(engine, arithmetic::inc_value)
 }
 
 #[inline]
-fn dec(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn dec<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     unary_numeric(engine, arithmetic::dec_value)
 }
 
-fn sign(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn sign<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     unary_numeric(engine, arithmetic::sign_value)
 }
 
-fn negate(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn negate<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     unary_numeric(engine, arithmetic::negate_value)
 }
 
-fn abs(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn abs<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     unary_numeric(engine, arithmetic::abs_value)
 }
 
-fn sqrt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn sqrt<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     unary_numeric(engine, arithmetic::sqrt_value)
 }
 
-fn not(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn not<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     // C# `Not` reads the operand via `GetBoolean()` (JumpTable.Numeric.cs:271-274),
     // which never faults on type: Null=>false, Buffer/Array/Struct/Map/Pointer/
     // Interop=>true, ByteString size-checked. Do NOT route through `numeric_operand`
@@ -130,7 +130,7 @@ fn not(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     ctx.push(StackItem::from_bool(!value))
 }
 
-fn nz(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn nz<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = numeric_operand(ctx.pop()?)?;
     let result = comparison::nz_value(&value).map_err(semantics_error)?;
@@ -138,29 +138,29 @@ fn nz(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 }
 
 #[inline]
-fn add(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn add<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     binary_numeric(engine, arithmetic::add_values)
 }
 
 #[inline]
-fn sub(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn sub<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     binary_numeric(engine, arithmetic::sub_values)
 }
 
 #[inline]
-fn mul(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn mul<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     binary_numeric(engine, arithmetic::mul_values)
 }
 
-fn div(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn div<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     binary_numeric(engine, arithmetic::div_values)
 }
 
-fn modulo(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn modulo<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     binary_numeric(engine, arithmetic::modulo_values)
 }
 
-fn pow(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn pow<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     let limits = *engine.limits();
     let ctx = require_context(engine)?;
     // C# Pow: `var exponent = (int)Pop().GetInteger(); AssertShift(exponent);
@@ -177,11 +177,11 @@ fn pow(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     push_stack_value(ctx, result)
 }
 
-fn shl(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn shl<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     shift(engine, arithmetic::shl_value)
 }
 
-fn shr(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn shr<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     shift(engine, arithmetic::shr_value)
 }
 
@@ -194,8 +194,8 @@ fn shr(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 /// `if (num != 0) { … }`, leaving the operand untouched on a zero shift) — verified
 /// by decompiling both `Neo.VM.dll` versions — and is NOT hardfork-gated, so the
 /// early-return must not be reintroduced for any protocol height.
-fn shift(
-    engine: &mut ExecutionEngine,
+fn shift<S>(
+    engine: &mut ExecutionEngine<S>,
     op: fn(StackValue, i64) -> Result<StackValue, String>,
 ) -> VmResult<()> {
     let limits = *engine.limits();
@@ -216,15 +216,15 @@ fn shift(
     push_stack_value(ctx, result)
 }
 
-fn min(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn min<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     binary_numeric(engine, arithmetic::min_values)
 }
 
-fn max(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn max<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     binary_numeric(engine, arithmetic::max_values)
 }
 
-fn within(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn within<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let upper = numeric_operand(ctx.pop()?)?;
     let lower = numeric_operand(ctx.pop()?)?;
@@ -236,8 +236,8 @@ fn within(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
 /// C# `JumpTable.Numeric` Lt/Le/Gt/Ge: `if (x1.IsNull || x2.IsNull) Push(false)`
 /// — ANY null operand pushes false; otherwise compare `GetInteger()` of each
 /// (which faults on Buffer / non-numeric via `numeric_operand`).
-fn compare(
-    engine: &mut ExecutionEngine,
+fn compare<S>(
+    engine: &mut ExecutionEngine<S>,
     op: fn(&StackValue, &StackValue) -> Result<bool, String>,
 ) -> VmResult<()> {
     let ctx = require_context(engine)?;
@@ -258,37 +258,37 @@ fn compare(
 }
 
 #[inline]
-fn lt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn lt<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     compare(engine, comparison::less_than_values)
 }
 
 #[inline]
-fn le(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn le<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     compare(engine, comparison::less_or_equal_values)
 }
 
 #[inline]
-fn gt(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn gt<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     compare(engine, comparison::greater_than_values)
 }
 
 #[inline]
-fn ge(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn ge<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     compare(engine, comparison::greater_or_equal_values)
 }
 
-fn numequal(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn numequal<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     numeric_equality(engine, comparison::num_equal_values)
 }
 
-fn numnotequal(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn numnotequal<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     numeric_equality(engine, comparison::num_not_equal_values)
 }
 
 /// C# `JumpTable.Numeric` NumEqual/NumNotEqual: `Pop().GetInteger()` on each with
 /// NO null check — a Null (or Buffer) operand FAULTS via `GetInteger`.
-fn numeric_equality(
-    engine: &mut ExecutionEngine,
+fn numeric_equality<S>(
+    engine: &mut ExecutionEngine<S>,
     op: fn(&StackValue, &StackValue) -> Result<bool, String>,
 ) -> VmResult<()> {
     let ctx = require_context(engine)?;
@@ -304,25 +304,25 @@ fn numeric_equality(
     ctx.push(StackItem::from_bool(result))
 }
 
-fn booland(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn booland<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let right = ctx.pop()?.as_bool()?;
     let left = ctx.pop()?.as_bool()?;
     ctx.push(StackItem::from_bool(comparison::bool_and(left, right)))
 }
 
-fn boolor(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn boolor<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let right = ctx.pop()?.as_bool()?;
     let left = ctx.pop()?.as_bool()?;
     ctx.push(StackItem::from_bool(comparison::bool_or(left, right)))
 }
 
-fn modmul(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn modmul<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     ternary_numeric(engine, arithmetic::modmul_values)
 }
 
-fn modpow(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn modpow<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     ternary_numeric(engine, arithmetic::modpow_values)
 }
 

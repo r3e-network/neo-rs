@@ -12,6 +12,7 @@
 //!
 //! - `helper`: shared helper functions.
 //! - `signer`: signer configuration and signing helpers.
+//! - `verifiable_container`: concrete script containers used by execution.
 //! - `verifiable_ext`: verifiable payload extension helpers.
 //! - `witness`: witness records and serialization helpers.
 //! - `witness_rule`: witness rule records and evaluation helpers.
@@ -20,6 +21,8 @@
 pub mod helper;
 /// Transaction signer structure.
 pub mod signer;
+/// Concrete script containers for witness verification and runtime syscalls.
+pub mod verifiable_container;
 /// Extension of [`neo_primitives::Verifiable`] with payload-level helpers.
 pub mod verifiable_ext;
 /// Witness attached to verifiable payloads.

@@ -22,7 +22,6 @@ neo-config = { workspace = true }
 
 # External
 tokio = { workspace = true, features = ["macros", "rt", "sync"] }
-async-trait = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 parking_lot = { workspace = true }

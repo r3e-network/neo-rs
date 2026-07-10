@@ -66,7 +66,7 @@ impl fmt::Display for CloseReason {
 /// Split from [`RemoteNodeService`] so the read loop can borrow the
 /// framed transport and the command receiver independently of the
 /// protocol state.
-pub(super) struct PeerSession {
+pub(super) struct PeerSession<B: BlockSource> {
     pub(super) peer_id: PeerId,
     pub(super) remote_addr: SocketAddr,
     pub(super) identity: Arc<LocalIdentity>,
@@ -113,7 +113,7 @@ pub(super) struct PeerSession {
     /// Optional sink for blocks/transactions decoded from this peer.
     pub(super) inbound_tx: Option<mpsc::Sender<InboundInventory>>,
     /// Optional read-only ledger view for serving block requests.
-    pub(super) block_source: Option<Arc<dyn BlockSource>>,
+    pub(super) block_source: Option<Arc<B>>,
     /// Explicit block range fetch currently awaiting `block` responses.
     pub(super) pending_block_fetch: Option<PendingBlockFetch>,
 }
@@ -125,7 +125,10 @@ pub(super) struct PendingBlockFetch {
     reply: oneshot::Sender<crate::NetworkResult<BlockDownloadBatch>>,
 }
 
-impl PeerSession {
+impl<B> PeerSession<B>
+where
+    B: BlockSource,
+{
     /// Run the connection: send our version, then loop over inbound
     /// frames, outbound commands, the inactivity deadline, and the
     /// local shutdown token.

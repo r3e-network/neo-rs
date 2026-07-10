@@ -1,6 +1,5 @@
 use crate::persistence::{
     storage::{CompactionStrategy, CompressionAlgorithm, StorageConfig},
-    store::Store,
     store_provider::StoreProvider,
 };
 use crate::rocksdb::write_batch_buffer::{WriteBatchBuffer, WriteBatchConfig};
@@ -108,7 +107,7 @@ impl RocksDBStoreProvider {
         })
     }
 
-    /// Opens a store without erasing it behind `dyn Store`.
+    /// Opens a store without erasing it behind a `Store` trait object.
     pub fn get_rocksdb_store<P>(&self, path: P) -> crate::StorageResult<RocksDbStore>
     where
         P: AsRef<Path>,
@@ -116,27 +115,30 @@ impl RocksDBStoreProvider {
         self.build_store(path.as_ref())
     }
 
-    /// Opens a store erased behind the common store trait.
-    pub fn get_store<P>(&self, path: P) -> crate::StorageResult<Arc<dyn Store>>
+    /// Opens a shared RocksDB store.
+    pub fn get_store<P>(&self, path: P) -> crate::StorageResult<Arc<RocksDbStore>>
     where
         P: AsRef<Path>,
     {
-        self.build_store(path.as_ref())
-            .map(|store| Arc::new(store) as Arc<dyn Store>)
+        self.build_store(path.as_ref()).map(Arc::new)
     }
 }
 
 impl StoreProvider for RocksDBStoreProvider {
+    type Store = RocksDbStore;
+
     fn name(&self) -> &str {
         "rocksdb"
     }
 
-    fn get_store(&self, path: &Path) -> crate::StorageResult<Arc<dyn Store>> {
-        self.build_store(path)
-            .map(|store| Arc::new(store) as Arc<dyn Store>)
+    fn get_store(&self, path: &Path) -> crate::StorageResult<Arc<RocksDbStore>> {
+        self.build_store(path).map(Arc::new)
     }
 
-    fn get_store_with_config(&self, config: StorageConfig) -> crate::StorageResult<Arc<dyn Store>> {
+    fn get_store_with_config(
+        &self,
+        config: StorageConfig,
+    ) -> crate::StorageResult<Arc<RocksDbStore>> {
         let provider = Self {
             base_config: config,
             batch_config: self.batch_config,
@@ -145,10 +147,6 @@ impl StoreProvider for RocksDBStoreProvider {
             enable_read_ahead: self.enable_read_ahead,
         };
         provider.get_store(Path::new(""))
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 

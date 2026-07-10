@@ -87,7 +87,7 @@ fn write_batch_buffer_extend_buffers_multiple_operations_with_one_flush_check() 
 }
 
 #[test]
-fn write_batch_buffer_extend_from_visits_operations_with_one_flush_check() {
+fn write_batch_buffer_extend_visits_operations_with_one_flush_check() {
     let (db, _tmp) = create_test_db();
     let config = WriteBatchConfig {
         max_batch_size: 10,
@@ -99,11 +99,11 @@ fn write_batch_buffer_extend_from_visits_operations_with_one_flush_check() {
     };
     let buffer = WriteBatchBuffer::new(db.clone(), config);
 
-    buffer.extend_from(|sink| {
-        sink(b"delete-me", Some(b"before"));
-        sink(b"delete-me", None);
-        sink(b"keep", Some(b"after"));
-    });
+    buffer.extend([
+        (b"delete-me".as_slice(), Some(b"before".as_slice())),
+        (b"delete-me".as_slice(), None),
+        (b"keep".as_slice(), Some(b"after".as_slice())),
+    ]);
 
     let stats_before_flush = buffer.stats_snapshot();
     assert_eq!(stats_before_flush.pending_operations, 3);

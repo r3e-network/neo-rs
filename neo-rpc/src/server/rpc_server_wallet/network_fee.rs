@@ -1,6 +1,7 @@
 //! Wallet transaction network-fee estimation handler.
 
 use neo_primitives::UInt160;
+use neo_wallets::{Wallet, WalletAccount};
 use serde_json::Value;
 
 use super::RpcServerWallet;

@@ -1,29 +1,69 @@
-use std::any::Any;
 use std::borrow::Cow;
 use std::fmt;
 
 use neo_io::serializable::helper::SerializeHelper;
 use neo_primitives::{StorageValue, StorageValueResult};
+use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
 
-/// Trait for opaque cache values stored in `StorageItem`.
+/// Lazily materialized value cached by [`StorageItem`].
 ///
-/// This allows higher-level crates (e.g. neo-core) to store type-specific
-/// caches (BigInteger, Interoperable) without neo-storage depending on
-/// those types directly.
-pub trait CacheProvider: Send + Sync + fmt::Debug {
-    /// Serialize the cached value to bytes.
-    fn to_bytes(&self) -> Vec<u8>;
-    /// Clone into a new boxed trait object.
-    fn clone_box(&self) -> Box<dyn CacheProvider>;
-    /// Upcast to `&dyn Any` so callers can `downcast_ref` to a concrete type.
-    fn as_any(&self) -> &dyn Any;
+/// The cache is a closed enum instead of a trait object because storage items
+/// have a small, protocol-defined materialization surface. Keeping the variants
+/// explicit avoids `dyn Any` downcasts in hot storage paths.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StorageItemCache {
+    /// Cached raw bytes.
+    Bytes(Vec<u8>),
+    /// Cached Neo `BigInteger` value.
+    BigInteger(BigInt),
+}
+
+impl StorageItemCache {
+    /// Creates a raw byte cache.
+    #[must_use]
+    pub fn bytes(value: Vec<u8>) -> Self {
+        Self::Bytes(value)
+    }
+
+    /// Creates a Neo `BigInteger` cache.
+    #[must_use]
+    pub fn big_integer(value: BigInt) -> Self {
+        Self::BigInteger(value)
+    }
+
+    /// Materializes the cached value using Neo's storage byte representation.
+    #[must_use]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            Self::Bytes(value) => value.clone(),
+            Self::BigInteger(value) => {
+                // C# `BigInteger.ToByteArrayStandard()` stores zero as an
+                // empty byte array, not `[0x00]`. These bytes feed state-root
+                // calculation when cache-backed items are sealed.
+                if value == &BigInt::ZERO {
+                    Vec::new()
+                } else {
+                    value.to_signed_bytes_le()
+                }
+            }
+        }
+    }
+
+    /// Returns the cached integer when this cache stores one.
+    #[must_use]
+    pub fn as_big_integer(&self) -> Option<&BigInt> {
+        match self {
+            Self::BigInteger(value) => Some(value),
+            Self::Bytes(_) => None,
+        }
+    }
 }
 
 /// Storage item for Neo blockchain.
 ///
 /// Represents a value stored in contract storage, optionally backed by a typed
-/// cache (BigInteger / Interoperable) for lazy materialisation.
+/// cache for lazy materialisation.
 ///
 /// Mirrors C# `Neo.SmartContract.StorageItem` (v3.10): a plain value with no
 /// `IsConstant` flag. Its only serialized form is the raw value bytes
@@ -34,7 +74,7 @@ pub struct StorageItem {
     value: Vec<u8>,
     /// Optional typed cache for lazy materialisation.
     #[serde(skip)]
-    cache: Option<Box<dyn CacheProvider>>,
+    cache: Option<StorageItemCache>,
 }
 
 impl StorageItem {
@@ -90,14 +130,14 @@ impl StorageItem {
     }
 
     /// Sets the opaque cache value.
-    pub fn set_cache(&mut self, cache: Box<dyn CacheProvider>) {
+    pub fn set_cache(&mut self, cache: StorageItemCache) {
         self.cache = Some(cache);
     }
 
     /// Returns a reference to the cache, if present.
     #[must_use]
-    pub fn cache(&self) -> Option<&dyn CacheProvider> {
-        self.cache.as_deref()
+    pub fn cache(&self) -> Option<&StorageItemCache> {
+        self.cache.as_ref()
     }
 
     /// Returns `true` when a cache is present.
@@ -130,7 +170,7 @@ impl StorageItem {
     /// Copies value and cache from another instance.
     pub fn from_replica(&mut self, replica: &StorageItem) {
         self.value = replica.value.clone();
-        self.cache = replica.cache.as_ref().map(|c| c.clone_box());
+        self.cache.clone_from(&replica.cache);
     }
 
     /// Convenience helper to populate the value from raw bytes.
@@ -140,14 +180,13 @@ impl StorageItem {
     }
 }
 
-// Manual impls needed because `dyn CacheProvider` does not satisfy
-// the derive requirements for Clone / PartialEq / Debug / Default.
+// Manual impls keep equality/debug focused on the serialized storage value.
 
 impl Clone for StorageItem {
     fn clone(&self) -> Self {
         Self {
             value: self.value.clone(),
-            cache: self.cache.as_ref().map(|c| c.clone_box()),
+            cache: self.cache.clone(),
         }
     }
 }

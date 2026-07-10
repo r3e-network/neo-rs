@@ -54,11 +54,14 @@ const GENESIS: u32 = 0;
 
 /// The composed manifest's methods as `(name, [parameter names])`, in
 /// manifest order (sorted by name then parameter count, like C#).
-fn manifest_methods(
-    contract: &dyn NativeContract,
+fn manifest_methods<C>(
+    contract: &C,
     settings: &ProtocolSettings,
     height: u32,
-) -> Vec<(String, Vec<String>)> {
+) -> Vec<(String, Vec<String>)>
+where
+    C: NativeContract,
+{
     build_native_contract_state(contract, settings, height)
         .manifest
         .abi
@@ -79,11 +82,14 @@ fn manifest_methods(
 
 /// The composed manifest's events as `(name, [(param name, param type)])`,
 /// in manifest order (the C# attribute order index).
-fn manifest_events(
-    contract: &dyn NativeContract,
+fn manifest_events<C>(
+    contract: &C,
     settings: &ProtocolSettings,
     height: u32,
-) -> Vec<(String, Vec<(String, ContractParameterType)>)> {
+) -> Vec<(String, Vec<(String, ContractParameterType)>)>
+where
+    C: NativeContract,
+{
     build_native_contract_state(contract, settings, height)
         .manifest
         .abi
@@ -108,11 +114,14 @@ fn manifest_events(
 /// `deploy`/`memorySearch`). The complement of this set against the full
 /// method lists pinned per contract above is the not-safe set, so this pins
 /// every method's safe flag.
-fn manifest_safe_methods(
-    contract: &dyn NativeContract,
+fn manifest_safe_methods<C>(
+    contract: &C,
     settings: &ProtocolSettings,
     height: u32,
-) -> Vec<(String, usize)> {
+) -> Vec<(String, usize)>
+where
+    C: NativeContract,
+{
     build_native_contract_state(contract, settings, height)
         .manifest
         .abi

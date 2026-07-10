@@ -55,7 +55,9 @@ pub use contract_client::ContractClient;
 pub use error::{ClientRpcError, RpcException};
 pub use nep17_api::Nep17Api;
 pub use policy_api::PolicyApi;
-pub use rpc_client::{RpcClient, RpcClientBuilder, RpcClientHooks, RpcRequestOutcome};
+pub use rpc_client::{
+    RpcClient, RpcClientBuilder, RpcClientHooks, RpcObserver, RpcRequestOutcome, TracingRpcObserver,
+};
 pub use state_api::StateApi;
 pub use transaction_manager::TransactionManager;
 pub use transaction_manager_factory::TransactionManagerFactory;

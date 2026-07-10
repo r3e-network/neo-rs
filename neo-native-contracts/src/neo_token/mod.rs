@@ -74,7 +74,10 @@ impl NeoToken {
     pub const DECIMALS: u8 = 0;
 }
 
-impl NativeContract for NeoToken {
+impl<P> NativeContract<P> for NeoToken
+where
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+{
     native_contract_identity!(NeoToken);
 
     fn methods(&self) -> &[NativeMethod] {
@@ -99,24 +102,39 @@ impl NativeContract for NeoToken {
         &metadata::NEO_TOKEN_EVENTS
     }
 
-    fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    fn initialize<D, B>(&self, engine: &mut ApplicationEngine<P, D, B>) -> CoreResult<()>
+    where
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         self.initialize_native(engine)
     }
 
-    fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    fn on_persist<D, B>(&self, engine: &mut ApplicationEngine<P, D, B>) -> CoreResult<()>
+    where
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         self.on_persist_native(engine)
     }
 
-    fn post_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    fn post_persist<D, B>(&self, engine: &mut ApplicationEngine<P, D, B>) -> CoreResult<()>
+    where
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         self.post_persist_native(engine)
     }
 
-    native_contract_dispatch!(metadata::NEO_TOKEN_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::neo_token_method_bindings);
 
     /// C# `NEO.GetCommitteeAddress`, exposed through the native-contract seam so
     /// the engine's `check_committee_witness` can verify committee-gated writers
     /// without depending on `neo-native-contracts`.
-    fn committee_address(&self, snapshot: &DataCache) -> CoreResult<Option<UInt160>> {
+    fn committee_address<B>(&self, snapshot: &DataCache<B>) -> CoreResult<Option<UInt160>>
+    where
+        B: neo_storage::CacheRead,
+    {
         Ok(Some(self.compute_committee_address(snapshot)?))
     }
 }

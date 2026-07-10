@@ -30,7 +30,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_native_contracts::ContractManagement;
 use neo_primitives::UInt160;
 use neo_runtime::Nep17MetadataReader;
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 /// Describes a NEP-17 asset: its id, human-readable name, ticker symbol, and
 /// decimal precision. Mirrors C# `Neo.Wallets.AssetDescriptor`.
@@ -57,11 +57,11 @@ impl AssetDescriptor {
     /// matching the two `ArgumentException` cases C# throws. Returns
     /// [`CoreError::invalid_format`] when the reported `symbol`/`decimals` are
     /// not a valid UTF-8 string / in-range byte.
-    pub fn new(
-        snapshot: Arc<DataCache>,
-        reader: &dyn Nep17MetadataReader,
-        asset_id: UInt160,
-    ) -> CoreResult<Self> {
+    pub fn new<B, R>(snapshot: Arc<DataCache<B>>, reader: &R, asset_id: UInt160) -> CoreResult<Self>
+    where
+        B: CacheRead,
+        R: Nep17MetadataReader + ?Sized,
+    {
         let contract = ContractManagement::get_contract_from_snapshot(&snapshot, &asset_id)?
             .ok_or_else(|| {
                 CoreError::invalid_argument(format!(

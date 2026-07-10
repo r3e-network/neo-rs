@@ -1,5 +1,8 @@
 # neo-rs whole-codebase review — action plan & status (2026-06-13)
 
+> Historical review snapshot. Current composition uses typed service fields;
+> references below to a `ServiceRegistry` describe the pre-ADR-034 tree.
+
 Source: a 26-crate deep review across 9 quality dimensions (style, Rust best
 practice, blockchain-node best practice, duplication, over-engineering, clarity,
 correctness, efficiency, reinvented-wheels). Full per-crate findings +

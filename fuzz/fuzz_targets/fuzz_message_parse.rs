@@ -13,7 +13,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use neo_network::wire::NetworkMessage;
+use neo_network::NetworkMessage;
 
 fuzz_target!(|data: &[u8]| {
     // `NetworkMessage::from_bytes` exercises the full inbound parse:

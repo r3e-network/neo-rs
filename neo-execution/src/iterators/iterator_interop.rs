@@ -1,30 +1,23 @@
-use neo_vm::stack_item::InteropInterface as VmInteropInterface;
-use std::any::Any;
+use neo_vm::stack_item::InteropInterface;
 
-#[derive(Debug)]
 /// VM interop handle that points to an engine-managed storage iterator.
-pub struct IteratorInterop {
-    id: u32,
-}
+pub type IteratorInterop = InteropInterface;
 
-impl IteratorInterop {
+/// Constructors for storage iterator VM interop handles.
+pub trait IteratorInteropExt {
     /// Creates an interop handle for a storage iterator id.
-    pub fn new(id: u32) -> Self {
-        Self { id }
-    }
+    fn new(id: u32) -> Self;
 
     /// Returns the engine-managed storage iterator id.
-    pub fn id(&self) -> u32 {
-        self.id
-    }
+    fn id(&self) -> u32;
 }
 
-impl VmInteropInterface for IteratorInterop {
-    fn interface_type(&self) -> &str {
-        "StorageIterator"
+impl IteratorInteropExt for InteropInterface {
+    fn new(id: u32) -> Self {
+        InteropInterface::iterator(id)
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
+    fn id(&self) -> u32 {
+        self.iterator_id().unwrap_or(0)
     }
 }

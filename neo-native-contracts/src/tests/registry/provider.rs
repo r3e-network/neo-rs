@@ -23,15 +23,6 @@ fn provider_registers_exact_standard_catalog() {
             "{} hash lookup",
             spec.name
         );
-        assert_eq!(
-            provider
-                .get_native_contract_by_name(spec.name)
-                .expect("name lookup")
-                .hash(),
-            spec.hash,
-            "{} name lookup",
-            spec.name
-        );
     }
 
     let expected_hashes = specs.iter().map(|spec| spec.hash).collect::<Vec<_>>();
@@ -39,35 +30,14 @@ fn provider_registers_exact_standard_catalog() {
 }
 
 #[test]
-fn provider_resolves_cryptolib_by_name_and_hash() {
+fn provider_resolves_cryptolib_by_hash() {
     let provider = StandardNativeProvider::new();
-
-    let by_name = provider
-        .get_native_contract_by_name("CryptoLib")
-        .expect("CryptoLib registered");
-    assert_eq!(by_name.hash(), *CRYPTO_LIB_HASH);
-    assert_eq!(by_name.id(), -3);
 
     let by_hash = provider
         .get_native_contract(&CRYPTO_LIB_HASH)
         .expect("CryptoLib resolvable by hash");
     assert_eq!(by_hash.name(), "CryptoLib");
-
-    assert!(provider.get_native_contract_by_name("crypTOlib").is_some());
-}
-
-#[test]
-fn install_wires_global_provider() {
-    install();
-    let provider =
-        neo_execution::native_contract_provider::NativeContractLookup::native_contract_provider()
-            .expect("global provider installed");
-    let resolved = provider.get_native_contract(&CRYPTO_LIB_HASH);
-    assert!(
-        resolved.is_some(),
-        "global provider resolves CryptoLib after install()"
-    );
-    assert_eq!(resolved.unwrap().name(), "CryptoLib");
+    assert_eq!(by_hash.id(), -3);
 }
 
 #[test]
@@ -81,7 +51,6 @@ fn provider_current_block_index_feeds_engine_without_persisting_block() {
     use neo_storage::persistence::DataCache;
     use std::sync::Arc;
 
-    install();
     let cache = Arc::new(DataCache::new(false));
     let current_hash = UInt256::from_bytes(&[0x34; 32]).unwrap();
     cache.add(
@@ -100,7 +69,7 @@ fn provider_current_block_index_feeds_engine_without_persisting_block() {
         None::<Block>,
         ProtocolSettings::default(),
         1_000_000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");

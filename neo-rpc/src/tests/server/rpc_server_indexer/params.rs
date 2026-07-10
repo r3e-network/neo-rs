@@ -48,8 +48,10 @@ fn pagination_parser_defaults_caps_and_rejects_invalid_values() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn indexer_status_rejects_unexpected_parameters() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
-    system.register_service(Arc::new(IndexerService::new()));
+    let system = crate::server::test_support::test_system_with_services(
+        ProtocolSettings::default(),
+        crate::server::RpcServices::new().with_indexer(Arc::new(IndexerService::new())),
+    );
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerIndexer::register_handlers();
@@ -70,8 +72,10 @@ async fn indexer_status_rejects_unexpected_parameters() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn indexer_methods_reject_extra_parameters() {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
-    system.register_service(Arc::new(IndexerService::new()));
+    let system = crate::server::test_support::test_system_with_services(
+        ProtocolSettings::default(),
+        crate::server::RpcServices::new().with_indexer(Arc::new(IndexerService::new())),
+    );
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerIndexer::register_handlers();

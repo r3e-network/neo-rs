@@ -11,7 +11,7 @@ use neo_vm_rs::{Instruction, OpCode, semantics::splice as splice_rules};
 use num_traits::ToPrimitive;
 
 /// Registers the splice operation handlers.
-pub fn register_handlers(jump_table: &mut JumpTable) {
+pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
     register_jump_handlers![
         jump_table;
         OpCode::NEWBUFFER => new_buffer,
@@ -24,7 +24,7 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 }
 
 /// Implements the NEWBUFFER operation.
-fn new_buffer(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn new_buffer<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -45,7 +45,7 @@ fn new_buffer(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
 }
 
 /// Implements the MEMCPY operation.
-fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn memcpy<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -90,7 +90,7 @@ fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 /// # Security Note
 /// This operation enforces `MaxItemSize` limits after concatenation to prevent
 /// memory exhaustion attacks via incremental `ByteString` building.
-fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn cat<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     let max_item_size = engine.limits().max_item_size as usize;
     let context = require_context(engine)?;
 
@@ -116,7 +116,7 @@ fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 }
 
 /// Implements the SUBSTR operation.
-fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn substr<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -138,7 +138,7 @@ fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 }
 
 /// Implements the LEFT operation.
-fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn left<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 
@@ -156,7 +156,7 @@ fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 }
 
 /// Implements the RIGHT operation.
-fn right(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+fn right<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = require_context(engine)?;
 

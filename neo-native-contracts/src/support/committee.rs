@@ -15,7 +15,14 @@ use neo_execution::ApplicationEngine;
 /// needs the boolean result directly. Centralizing the
 /// [`ApplicationEngine::check_committee_witness`] call keeps the diagnostic
 /// error wording identical across every committee-gated native method.
-pub(crate) fn is_committee_witness(engine: &ApplicationEngine, method: &str) -> CoreResult<bool> {
+pub(crate) fn is_committee_witness<
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+    D: neo_execution::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+>(
+    engine: &ApplicationEngine<P, D, B>,
+    method: &str,
+) -> CoreResult<bool> {
     engine
         .check_committee_witness()
         .map_err(|e| CoreError::invalid_operation(format!("{method} committee check: {e}")))
@@ -26,7 +33,14 @@ pub(crate) fn is_committee_witness(engine: &ApplicationEngine, method: &str) -> 
 /// On failure returns `CoreError::invalid_operation` with the supplied
 /// `method` name for diagnostics. Equivalent to the C# static helper used by
 /// every `OnlyCommittee` setter.
-pub(crate) fn assert_committee(engine: &ApplicationEngine, method: &str) -> CoreResult<()> {
+pub(crate) fn assert_committee<
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+    D: neo_execution::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+>(
+    engine: &ApplicationEngine<P, D, B>,
+    method: &str,
+) -> CoreResult<()> {
     if !is_committee_witness(engine, method)? {
         return Err(CoreError::invalid_operation(format!(
             "{method} requires committee authorization"

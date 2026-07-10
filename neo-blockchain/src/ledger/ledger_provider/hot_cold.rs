@@ -7,7 +7,7 @@
 use neo_error::CoreResult;
 use neo_payloads::{Block, Header, Transaction, TransactionState};
 use neo_primitives::{UInt160, UInt256};
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 use super::{
     BlockProvider, ChainTipProvider, LedgerProvider, LedgerProviderFactory, StorageLedgerProvider,
@@ -148,12 +148,13 @@ impl<Cold> LedgerProviderFactory for HotColdLedgerProviderFactory<Cold>
 where
     Cold: LedgerProvider + Clone,
 {
-    type Provider<'a>
-        = HotColdLedgerProvider<StorageLedgerProvider<'a>, Cold>
+    type Provider<'a, B>
+        = HotColdLedgerProvider<StorageLedgerProvider<'a, B>, Cold>
     where
-        Self: 'a;
+        Self: 'a,
+        B: CacheRead;
 
-    fn provider<'a>(&'a self, snapshot: &'a DataCache) -> Self::Provider<'a> {
+    fn provider<'a, B: CacheRead>(&'a self, snapshot: &'a DataCache<B>) -> Self::Provider<'a, B> {
         HotColdLedgerProvider::new(StorageLedgerProvider::new(snapshot), self.cold.clone())
     }
 }

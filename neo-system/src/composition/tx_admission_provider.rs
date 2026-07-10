@@ -12,12 +12,10 @@ use neo_blockchain::{
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
-use neo_error::{CoreError, CoreResult};
-use neo_execution::NativeContract;
+use neo_error::CoreResult;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_native_contracts::PolicyContract;
 use neo_primitives::{UInt160, UInt256};
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 const TX_ADMISSION_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
     HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
@@ -39,28 +37,40 @@ pub(super) trait TxAdmissionLedgerProvider {
 /// Factory for transaction-admission ledger providers.
 pub(super) trait TxAdmissionLedgerProviderFactory {
     /// Provider returned by this factory.
-    type Provider<'a>: TxAdmissionLedgerProvider
+    type Provider<'a, B>: TxAdmissionLedgerProvider
     where
-        Self: 'a;
+        Self: 'a,
+        B: CacheRead + 'a;
 
     /// Creates a provider instance over `snapshot`.
-    fn provider<'a>(&self, snapshot: &'a DataCache) -> Self::Provider<'a>;
+    fn provider<'a, B>(&self, snapshot: &'a DataCache<B>) -> Self::Provider<'a, B>
+    where
+        B: CacheRead;
 }
 
 /// Production transaction-admission ledger provider over a storage snapshot.
-pub(super) struct NativeTxAdmissionLedgerProvider<'a> {
-    snapshot: &'a DataCache,
+pub(super) struct NativeTxAdmissionLedgerProvider<'a, B>
+where
+    B: CacheRead,
+{
+    snapshot: &'a DataCache<B>,
 }
 
-impl<'a> NativeTxAdmissionLedgerProvider<'a> {
+impl<'a, B> NativeTxAdmissionLedgerProvider<'a, B>
+where
+    B: CacheRead,
+{
     /// Creates a provider backed by the canonical storage ledger provider.
     #[must_use]
-    pub(super) const fn new(snapshot: &'a DataCache) -> Self {
+    pub(super) const fn new(snapshot: &'a DataCache<B>) -> Self {
         Self { snapshot }
     }
 }
 
-impl TxAdmissionLedgerProvider for NativeTxAdmissionLedgerProvider<'_> {
+impl<B> TxAdmissionLedgerProvider for NativeTxAdmissionLedgerProvider<'_, B>
+where
+    B: CacheRead,
+{
     fn contains_transaction(&self, hash: &UInt256) -> CoreResult<bool> {
         TX_ADMISSION_LEDGER_PROVIDER_FACTORY
             .provider(self.snapshot)
@@ -84,9 +94,15 @@ impl TxAdmissionLedgerProvider for NativeTxAdmissionLedgerProvider<'_> {
 pub(super) struct NativeTxAdmissionLedgerProviderFactory;
 
 impl TxAdmissionLedgerProviderFactory for NativeTxAdmissionLedgerProviderFactory {
-    type Provider<'a> = NativeTxAdmissionLedgerProvider<'a>;
+    type Provider<'a, B>
+        = NativeTxAdmissionLedgerProvider<'a, B>
+    where
+        B: CacheRead + 'a;
 
-    fn provider<'a>(&self, snapshot: &'a DataCache) -> Self::Provider<'a> {
+    fn provider<'a, B>(&self, snapshot: &'a DataCache<B>) -> Self::Provider<'a, B>
+    where
+        B: CacheRead,
+    {
         NativeTxAdmissionLedgerProvider::new(snapshot)
     }
 }
@@ -94,11 +110,13 @@ impl TxAdmissionLedgerProviderFactory for NativeTxAdmissionLedgerProviderFactory
 /// Native-contract capabilities required by transaction admission routing.
 pub(super) trait TxAdmissionNativeProvider {
     /// Returns the active `MaxTraceableBlocks` value.
-    fn max_traceable_blocks(
+    fn max_traceable_blocks<B>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
-    ) -> CoreResult<u32>;
+    ) -> CoreResult<u32>
+    where
+        B: CacheRead;
 }
 
 /// Adapter from the node-composed native-contract provider to the transaction
@@ -126,12 +144,6 @@ where
     fn provider(&self) -> &P {
         self.native_contract_provider.as_ref()
     }
-
-    fn policy_contract(&self) -> CoreResult<Arc<dyn NativeContract>> {
-        self.provider()
-            .get_native_contract_by_name("PolicyContract")
-            .ok_or_else(|| CoreError::invalid_operation("native provider missing PolicyContract"))
-    }
 }
 
 impl<P> std::fmt::Debug for NativeTxAdmissionProvider<P>
@@ -149,17 +161,14 @@ impl<P> TxAdmissionNativeProvider for NativeTxAdmissionProvider<P>
 where
     P: NativeContractProvider,
 {
-    fn max_traceable_blocks(
+    fn max_traceable_blocks<B>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &ProtocolSettings,
-    ) -> CoreResult<u32> {
-        self.policy_contract()?
-            .as_any()
-            .downcast_ref::<PolicyContract>()
-            .ok_or_else(|| {
-                CoreError::invalid_operation("native provider returned non-PolicyContract")
-            })?
-            .get_max_traceable_blocks_snapshot(snapshot, settings)
+    ) -> CoreResult<u32>
+    where
+        B: CacheRead,
+    {
+        self.provider().max_traceable_blocks(snapshot, settings)
     }
 }

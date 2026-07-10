@@ -8,11 +8,11 @@ use std::time::{Duration, Instant};
 
 use super::builder::RpcClientBuilder;
 use super::helpers::parse_plugins;
-use super::hooks::RpcRequestOutcome;
+use super::hooks::{RpcObserver, RpcRequestOutcome, TracingRpcObserver};
 use super::{MAX_JSON_NESTING, RpcClient, RpcClientHooks};
 use neo_serialization::json::JToken;
 
-impl RpcClient {
+impl RpcClient<TracingRpcObserver> {
     /// Creates a configurable builder for the RPC client.
     #[must_use]
     pub fn builder(url: Url) -> RpcClientBuilder {
@@ -50,13 +50,29 @@ impl RpcClient {
         )
     }
 
+    /// Gets the RPC method name from a function name
+    /// Matches C# `GetRpcName`
+    pub fn get_rpc_name(method_name: &str) -> String {
+        let without_async = method_name.strip_suffix("Async").unwrap_or(method_name);
+        without_async
+            .strip_suffix("Hex")
+            .or_else(|| without_async.strip_suffix("Both"))
+            .unwrap_or(without_async)
+            .to_lowercase()
+    }
+}
+
+impl<O> RpcClient<O>
+where
+    O: RpcObserver,
+{
     /// Creates a new RPC client with an existing HTTP client and hook/timeout configuration.
     #[must_use]
     pub fn with_client_config(
         client: Client,
         url: Url,
         protocol_settings: ProtocolSettings,
-        hooks: RpcClientHooks,
+        hooks: RpcClientHooks<O>,
         timeout: Duration,
     ) -> Self {
         Self {
@@ -205,17 +221,6 @@ impl RpcClient {
         response
             .result
             .ok_or_else(|| ClientRpcError::new(-32603, "No result returned".to_string()))
-    }
-
-    /// Gets the RPC method name from a function name
-    /// Matches C# `GetRpcName`
-    pub fn get_rpc_name(method_name: &str) -> String {
-        let without_async = method_name.strip_suffix("Async").unwrap_or(method_name);
-        without_async
-            .strip_suffix("Hex")
-            .or_else(|| without_async.strip_suffix("Both"))
-            .unwrap_or(without_async)
-            .to_lowercase()
     }
 
     /// Returns a list of plugins loaded by the node (matches `listplugins`).

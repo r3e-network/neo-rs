@@ -12,10 +12,10 @@ use neo_execution::ApplicationEngine;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_manifest::CallFlags;
 use neo_native_contracts::contract_management::ContractManagement;
-use neo_payloads::ApplicationExecuted;
-use neo_payloads::Block;
+use neo_payloads::{ApplicationExecuted, Block, VerifiableContainer};
 use neo_primitives::{LogLevel, TriggerType, UInt160};
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::providers::MemoryStore;
+use neo_storage::persistence::{CacheRead, DataCache, Store};
 use neo_vm::StackItem;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
@@ -30,20 +30,27 @@ const NEP11_TRANSFER_SENT_PREFIX: u8 = 0xf9;
 const NEP11_TRANSFER_RECEIVED_PREFIX: u8 = 0xfa;
 
 /// NEP-11 token tracker.
-pub struct Nep11Tracker {
-    base: TrackerBase,
+pub struct Nep11Tracker<P = neo_native_contracts::StandardNativeProvider, S: Store = MemoryStore>
+where
+    P: NativeContractProvider,
+{
+    base: TrackerBase<P, S>,
     current_height: u32,
     current_block: Option<Block>,
 }
 
-impl Nep11Tracker {
+impl<P, S> Nep11Tracker<P, S>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
     /// Creates a new NEP-11 tracker.
     pub fn new(
-        db: Arc<dyn neo_storage::persistence::Store>,
+        db: Arc<S>,
         max_results: u32,
         should_track_history: bool,
         settings: Arc<ProtocolSettings>,
-        native_contract_provider: Arc<dyn NativeContractProvider>,
+        native_contract_provider: Arc<P>,
     ) -> Self {
         Self {
             base: TrackerBase::new(
@@ -60,7 +67,7 @@ impl Nep11Tracker {
 
     fn handle_notification(
         &mut self,
-        container: Option<&Arc<dyn neo_primitives::Verifiable>>,
+        container: Option<&Arc<VerifiableContainer>>,
         asset: &UInt160,
         state_items: &[StackItem],
         transfers: &mut Vec<TransferRecord>,
@@ -69,7 +76,7 @@ impl Nep11Tracker {
         if state_items.len() != 4 {
             return;
         }
-        let Some(record) = TrackerBase::get_transfer_record(asset, state_items) else {
+        let Some(record) = TrackerBase::<P, S>::get_transfer_record(asset, state_items) else {
             return;
         };
         let Some(token_id) = record.token_id.clone() else {
@@ -78,10 +85,7 @@ impl Nep11Tracker {
 
         transfers.push(record.clone());
         if let Some(container) = container {
-            if let Some(tx) = container
-                .as_any()
-                .downcast_ref::<neo_payloads::Transaction>()
-            {
+            if let Some(tx) = container.as_transaction() {
                 self.record_transfer_history(&record, &token_id, &tx.hash(), transfer_index);
             }
         }
@@ -116,7 +120,7 @@ impl Nep11Tracker {
                 tx_hash: *tx_hash,
             };
             if let Err(e) = self.base.put(NEP11_TRANSFER_SENT_PREFIX, &key, &value) {
-                TrackerBase::log(
+                TrackerBase::<P, S>::log(
                     self.track_name(),
                     &format!("Failed to store NEP-11 transfer sent: {e}"),
                     LogLevel::Error,
@@ -139,7 +143,7 @@ impl Nep11Tracker {
                 tx_hash: *tx_hash,
             };
             if let Err(e) = self.base.put(NEP11_TRANSFER_RECEIVED_PREFIX, &key, &value) {
-                TrackerBase::log(
+                TrackerBase::<P, S>::log(
                     self.track_name(),
                     &format!("Failed to store NEP-11 transfer received: {e}"),
                     LogLevel::Error,
@@ -150,9 +154,13 @@ impl Nep11Tracker {
         *transfer_index += 1;
     }
 
-    fn save_divisible_nft_balance(&mut self, record: &TransferRecord, snapshot: &DataCache) {
+    fn save_divisible_nft_balance<B: CacheRead>(
+        &mut self,
+        record: &TransferRecord,
+        snapshot: &DataCache<B>,
+    ) {
         let Some(token_id) = record.token_id.clone() else {
-            TrackerBase::log(
+            TrackerBase::<P, S>::log(
                 self.track_name(),
                 "Divisible NEP-11 transfer missing tokenId",
                 LogLevel::Warning,
@@ -192,7 +200,7 @@ impl Nep11Tracker {
             self.current_block.clone().map(Arc::new),
             self.base.settings.as_ref().clone(),
             34_000_000,
-            None,
+            neo_execution::NoDiagnostic,
             Some(Arc::clone(&self.base.native_contract_provider)),
         ) {
             Ok(engine) => engine,
@@ -204,7 +212,7 @@ impl Nep11Tracker {
             .and_then(|_| engine.execute())
             .is_err()
         {
-            TrackerBase::log(
+            TrackerBase::<P, S>::log(
                 self.track_name(),
                 "Divisible NEP-11 balanceOf fault",
                 LogLevel::Warning,
@@ -213,7 +221,7 @@ impl Nep11Tracker {
         }
 
         if engine.state().contains(VMState::FAULT) || engine.result_stack().len() != 2 {
-            TrackerBase::log(
+            TrackerBase::<P, S>::log(
                 self.track_name(),
                 "Divisible NEP-11 balanceOf returned unexpected stack size",
                 LogLevel::Warning,
@@ -247,14 +255,14 @@ impl Nep11Tracker {
         };
 
         if let Err(e) = self.base.put(NEP11_BALANCE_PREFIX, &key_to, &value_to) {
-            TrackerBase::log(
+            TrackerBase::<P, S>::log(
                 self.track_name(),
                 &format!("Failed to store NEP-11 balance (to): {e}"),
                 LogLevel::Error,
             );
         }
         if let Err(e) = self.base.put(NEP11_BALANCE_PREFIX, &key_from, &value_from) {
-            TrackerBase::log(
+            TrackerBase::<P, S>::log(
                 self.track_name(),
                 &format!("Failed to store NEP-11 balance (from): {e}"),
                 LogLevel::Error,
@@ -264,7 +272,7 @@ impl Nep11Tracker {
 
     fn save_nft_balance(&mut self, record: &TransferRecord) {
         let Some(token_id) = record.token_id.clone() else {
-            TrackerBase::log(
+            TrackerBase::<P, S>::log(
                 self.track_name(),
                 "Indivisible NEP-11 transfer missing tokenId",
                 LogLevel::Warning,
@@ -275,7 +283,7 @@ impl Nep11Tracker {
         if record.from != UInt160::zero() {
             let key_from = Nep11BalanceKey::new(record.from, record.asset, token_id.clone());
             if let Err(e) = self.base.delete(NEP11_BALANCE_PREFIX, &key_from) {
-                TrackerBase::log(
+                TrackerBase::<P, S>::log(
                     self.track_name(),
                     &format!("Failed to delete NEP-11 balance (from): {e}"),
                     LogLevel::Error,
@@ -290,7 +298,7 @@ impl Nep11Tracker {
                 last_updated_block: self.current_height,
             };
             if let Err(e) = self.base.put(NEP11_BALANCE_PREFIX, &key_to, &value) {
-                TrackerBase::log(
+                TrackerBase::<P, S>::log(
                     self.track_name(),
                     &format!("Failed to store NEP-11 balance (to): {e}"),
                     LogLevel::Error,
@@ -309,15 +317,19 @@ impl Nep11Tracker {
     }
 }
 
-impl Tracker for Nep11Tracker {
+impl<P, S> Tracker for Nep11Tracker<P, S>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
     fn track_name(&self) -> &str {
         "Nep11Tracker"
     }
 
-    fn on_persist(
+    fn on_persist<B: CacheRead>(
         &mut self,
         block: &Block,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         executed_list: &[ApplicationExecuted],
     ) {
         self.current_block = Some(block.clone());
@@ -371,7 +383,7 @@ impl Tracker for Nep11Tracker {
                 let has_balance1 = abi.get_method("balanceOf", 1).is_some();
                 let has_balance2 = abi.get_method("balanceOf", 2).is_some();
                 if !has_balance1 && !has_balance2 {
-                    TrackerBase::log(
+                    TrackerBase::<P, S>::log(
                         self.track_name(),
                         "Contract does not expose balanceOf for NEP-11",
                         LogLevel::Warning,

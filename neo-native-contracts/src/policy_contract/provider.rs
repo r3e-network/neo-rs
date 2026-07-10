@@ -18,7 +18,7 @@ impl PolicyContract {
     /// let a blocked contract be invoked, diverging from C#.
     pub(super) fn is_contract_blocked_native(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
         contract_hash: &UInt160,
     ) -> CoreResult<bool> {
         Ok(snapshot
@@ -34,7 +34,7 @@ impl PolicyContract {
     /// stored - then its `FixedFee` applies instead of per-instruction fees.
     pub(super) fn whitelisted_fee_native(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
         contract_hash: &UInt160,
         method: &str,
         param_count: u32,

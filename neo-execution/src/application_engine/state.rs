@@ -5,7 +5,12 @@ use super::*;
 // allocator churn without changing the registered protocol surface.
 const HOST_SYSCALL_REGISTRATION_CAPACITY: usize = 41;
 
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     /// Selects the VM jump table for the persisting block, mirroring C#
     /// `ApplicationEngine.Create`: `index = persistingBlock?.Index ??
     /// Ledger.CurrentIndex(snapshot)`; then:
@@ -20,43 +25,46 @@ impl ApplicationEngine {
     /// Neo.VM 3.9.0→3.10.0 change (still present in v3.10.1) handled in the
     /// `shift` handler, not a hardfork
     /// gate.)
-    fn select_jump_table(
-        protocol_settings: &ProtocolSettings,
-        persisting_block: Option<&Block>,
-        snapshot: &DataCache,
-        native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
-    ) -> JumpTable {
-        let index = match persisting_block {
-            Some(block) => block.header.index(),
-            None => native_contract_provider
-                .and_then(|provider| provider.current_block_index(snapshot).ok())
-                .unwrap_or(0),
-        };
-        if protocol_settings.is_hardfork_enabled(Hardfork::HfGorgon, index) {
+    fn select_jump_table(protocol_settings: &ProtocolSettings, current_index: u32) -> JumpTable<B> {
+        if protocol_settings.is_hardfork_enabled(Hardfork::HfGorgon, current_index) {
             JumpTable::default()
-        } else if protocol_settings.is_hardfork_enabled(Hardfork::HfEchidna, index) {
+        } else if protocol_settings.is_hardfork_enabled(Hardfork::HfEchidna, current_index) {
             JumpTable::not_gorgon()
         } else {
             JumpTable::not_echidna()
         }
     }
 
+    fn engine_current_index(
+        persisting_block: Option<&Block>,
+        snapshot: &DataCache<B>,
+        native_contract_provider: Option<&P>,
+    ) -> u32 {
+        persisting_block
+            .map(|block| block.header.index())
+            .or_else(|| {
+                native_contract_provider
+                    .and_then(|provider| provider.current_block_index(snapshot).ok())
+            })
+            .unwrap_or(0)
+    }
+
     /// Creates a new application engine using an owned optional persisting block
-    /// and an explicit native-contract provider.
+    /// and a concrete native-contract provider type.
     ///
-    /// Composition roots and tests must pass the provider they want this engine
-    /// to observe. Keeping provider selection outside the constructor prevents
-    /// long-running services from depending on the process-global compatibility
-    /// bridge.
+    /// Homogeneous node pipelines should use this direct generic constructor so
+    /// the concrete provider type remains visible at the call site. The only
+    /// provider erasure is inside the engine's native-contract registry
+    /// boundary, where native contracts themselves are heterogeneous objects.
     pub fn new_with_native_contract_provider(
         trigger: TriggerType,
-        script_container: Option<Arc<dyn Verifiable>>,
-        snapshot_cache: Arc<DataCache>,
+        script_container: Option<Arc<VerifiableContainer>>,
+        snapshot_cache: Arc<DataCache<B>>,
         persisting_block: Option<Block>,
         protocol_settings: ProtocolSettings,
         gas_limit: i64,
-        diagnostic: Option<Box<dyn Diagnostic>>,
-        native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+        diagnostic: D,
+        native_contract_provider: Option<Arc<P>>,
     ) -> CoreResult<Self> {
         Self::new_with_shared_block_and_native_contract_provider(
             trigger,
@@ -71,33 +79,35 @@ impl ApplicationEngine {
     }
 
     /// Creates a new application engine with a shared optional persisting block
-    /// and an explicit native-contract provider.
+    /// and a concrete native-contract provider type.
     ///
-    /// This is the provider-aware variant used by composition and persistence
-    /// code that already owns the native-contract provider. It avoids reading
-    /// the process-global lookup bridge during engine construction.
+    /// This constructor is the normal provider-aware entry point for
+    /// import/persistence code that owns a single concrete provider for the
+    /// whole batch. It keeps that type visible at call sites and centralizes
+    /// the only required provider erasure at the engine's internal
+    /// native-dispatch boundary.
     // Rationale: engine construction must thread the full protocol, snapshot,
     // gas, diagnostic, and provider context without hiding state in globals.
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_shared_block_and_native_contract_provider(
         trigger: TriggerType,
-        script_container: Option<Arc<dyn Verifiable>>,
-        snapshot_cache: Arc<DataCache>,
+        script_container: Option<Arc<VerifiableContainer>>,
+        snapshot_cache: Arc<DataCache<B>>,
         persisting_block: Option<Arc<Block>>,
         protocol_settings: ProtocolSettings,
         gas_limit: i64,
-        diagnostic: Option<Box<dyn Diagnostic>>,
-        native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+        diagnostic: D,
+        native_contract_provider: Option<Arc<P>>,
     ) -> CoreResult<Self> {
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
         let original_snapshot_cache = Arc::clone(&snapshot_cache);
-        let jump_table = Self::select_jump_table(
-            &protocol_settings,
+        let current_index = Self::engine_current_index(
             persisting_block.as_deref(),
             snapshot_cache.as_ref(),
-            native_contract_provider.clone(),
+            native_contract_provider.as_deref(),
         );
+        let jump_table = Self::select_jump_table(&protocol_settings, current_index);
         let mut engine = ExecutionEngine::new(Some(jump_table));
         // Match C# Neo: no instruction-count cap on the execution path. Bounding
         // is done by gas alone (fee consumption), so a long cheap-instruction
@@ -141,8 +151,8 @@ impl ApplicationEngine {
             random_times: 0,
             diagnostic,
             fault_exception: None,
-            states: HashMap::new(),
-            runtime_context: None,
+            native_arg_null_mask: 0,
+            native_return_null: false,
         };
 
         app.attach_host();
@@ -153,40 +163,41 @@ impl ApplicationEngine {
         app.fee_consumed = 0;
         app.gas_consumed = 0;
 
-        if let Some(mut diagnostic) = app.diagnostic.take() {
-            diagnostic.initialized(&mut app);
-            app.diagnostic = Some(diagnostic);
-        }
+        app.diagnostic.initialized();
 
         Ok(app)
     }
 
-    /// Creates a new engine with preloaded native contract state and an
-    /// explicit native-contract provider.
+    /// Creates a new engine with preloaded native contract state and a concrete
+    /// native-contract provider type.
+    ///
+    /// Transaction persistence uses this path to reuse the typed provider and
+    /// preloaded native cache from the `OnPersist` engine without adding local
+    /// trait-object adapters in the blockchain pipeline.
     // Rationale: this constructor is the explicit test/import composition
     // seam for preloaded native state plus provider-owned execution context.
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_preloaded_native_and_native_contract_provider(
         trigger: TriggerType,
-        script_container: Option<Arc<dyn Verifiable>>,
-        snapshot_cache: Arc<DataCache>,
+        script_container: Option<Arc<VerifiableContainer>>,
+        snapshot_cache: Arc<DataCache<B>>,
         persisting_block: Option<Arc<Block>>,
         protocol_settings: ProtocolSettings,
         gas_limit: i64,
         contracts: HashMap<UInt160, ContractState>,
         native_contract_cache: Arc<Mutex<NativeContractsCache>>,
-        diagnostic: Option<Box<dyn Diagnostic>>,
-        native_contract_provider: Option<Arc<dyn NativeContractProvider>>,
+        diagnostic: D,
+        native_contract_provider: Option<Arc<P>>,
     ) -> CoreResult<Self> {
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
         let original_snapshot_cache = Arc::clone(&snapshot_cache);
-        let jump_table = Self::select_jump_table(
-            &protocol_settings,
+        let current_index = Self::engine_current_index(
             persisting_block.as_deref(),
             snapshot_cache.as_ref(),
-            native_contract_provider.clone(),
+            native_contract_provider.as_deref(),
         );
+        let jump_table = Self::select_jump_table(&protocol_settings, current_index);
         let mut engine = ExecutionEngine::new(Some(jump_table));
         // Match C# Neo: no instruction-count cap on the execution path. Bounding
         // is done by gas alone (fee consumption), so a long cheap-instruction
@@ -230,8 +241,8 @@ impl ApplicationEngine {
             random_times: 0,
             diagnostic,
             fault_exception: None,
-            states: HashMap::new(),
-            runtime_context: None,
+            native_arg_null_mask: 0,
+            native_return_null: false,
         };
 
         app.attach_host();
@@ -241,10 +252,7 @@ impl ApplicationEngine {
         app.fee_consumed = 0;
         app.gas_consumed = 0;
 
-        if let Some(mut diagnostic) = app.diagnostic.take() {
-            diagnostic.initialized(&mut app);
-            app.diagnostic = Some(diagnostic);
-        }
+        app.diagnostic.initialized();
 
         Ok(app)
     }
@@ -253,14 +261,17 @@ impl ApplicationEngine {
     // the unsafe block below documents and confines that invariant.
     #[allow(unsafe_code)]
     pub(super) fn attach_host(&mut self) {
-        let host: &mut dyn InteropHost = self;
-        let host_ptr = host as *mut dyn InteropHost;
+        let host_ptr = self as *mut Self;
         // SAFETY: `host_ptr` is derived from `&mut self` and the
         // `ApplicationEngine` owns the `VmEngine`, so the pointer remains
         // valid for the engine's lifetime. The caller must not move the
         // `ApplicationEngine` after calling `attach_host()` until the VM
         // execution completes.
-        unsafe { self.vm_engine.engine_mut().set_interop_host(host_ptr) };
+        unsafe {
+            self.vm_engine
+                .engine_mut()
+                .set_interop_host::<Self>(host_ptr)
+        };
 
         // Debug assertion: verify the stored pointer is self-referential.
         // Catches misuse where the ApplicationEngine is moved after
@@ -268,8 +279,8 @@ impl ApplicationEngine {
         // host pointer in the VM engine.
         #[cfg(debug_assertions)]
         {
-            let stored: *mut dyn InteropHost = host_ptr;
-            let current: *mut dyn InteropHost = self as *mut dyn InteropHost;
+            let stored = host_ptr.cast::<()>();
+            let current = (self as *mut Self).cast::<()>();
             debug_assert_eq!(
                 stored, current,
                 "ApplicationEngine was moved after attach_host() — VM engine holds dangling interop host pointer"
@@ -300,7 +311,7 @@ impl ApplicationEngine {
         name: &str,
         price: i64,
         call_flags: CallFlags,
-        handler: InteropHandler,
+        handler: InteropHandler<P, D, B>,
     ) -> VmResult<()> {
         let interop_service = self
             .vm_engine
@@ -343,39 +354,37 @@ impl ApplicationEngine {
         self.fault_exception = None;
     }
 
-    /// Stores a typed state value in the engine's state map.
-    pub fn set_state<T: Any + Send + Sync>(&mut self, value: T) {
-        self.states.insert(TypeId::of::<T>(), Box::new(value));
+    /// Signals that the current native method returned a VM `Null` value.
+    pub fn set_native_return_null(&mut self) {
+        self.native_return_null = true;
     }
 
-    /// Retrieves a reference to a typed state value.
-    pub fn get_state<T: Any + Send + Sync>(&self) -> Option<&T> {
-        self.states
-            .get(&TypeId::of::<T>())
-            .and_then(|boxed| boxed.downcast_ref::<T>())
+    /// Returns whether native-call argument `index` was originally VM `Null`.
+    ///
+    /// Native handlers receive serialized byte vectors, where nullable values
+    /// can otherwise be ambiguous. The dispatcher owns this bitmask and clears
+    /// it at the end of every call, including failed calls.
+    #[must_use]
+    pub fn native_arg_is_null(&self, index: usize) -> bool {
+        index < u32::BITS as usize && self.native_arg_null_mask & (1u32 << index) != 0
     }
 
-    /// Retrieves a mutable reference to a typed state value.
-    pub fn get_state_mut<T: Any + Send + Sync>(&mut self) -> Option<&mut T> {
-        self.states
-            .get_mut(&TypeId::of::<T>())
-            .and_then(|boxed| boxed.downcast_mut::<T>())
+    pub(crate) fn begin_native_call(&mut self, null_mask: u32) {
+        self.native_arg_null_mask = null_mask;
+        self.native_return_null = false;
     }
 
-    /// Removes and returns a typed state value.
-    pub fn take_state<T: Any + Send + Sync>(&mut self) -> Option<T> {
-        self.states
-            .remove(&TypeId::of::<T>())
-            .and_then(|boxed| boxed.downcast::<T>().ok())
-            .map(|boxed| *boxed)
+    pub(crate) fn finish_native_call(&mut self) -> bool {
+        self.native_arg_null_mask = 0;
+        std::mem::take(&mut self.native_return_null)
     }
 
     /// Records the VM state for a transaction in the ledger state tracker.
     pub fn record_transaction_vm_state(&mut self, hash: &UInt256, vm_state: VMState) -> bool {
         // LedgerTransactionStates is owned by neo-native-contracts; we don't
         // have a direct reference to it from neo-execution. Return false for
-        // now; this is reactivated when the state is registered via
-        // set_runtime_context.
+        // now; this is reactivated when the state is passed through a typed
+        // ledger-state provider.
         let _ = (hash, vm_state);
         false
     }
@@ -405,7 +414,7 @@ impl ApplicationEngine {
     }
 
     /// Returns the invocation stack of execution contexts.
-    pub fn invocation_stack(&self) -> &[ExecutionContext] {
+    pub fn invocation_stack(&self) -> &[ExecutionContext<B>] {
         self.vm_engine.engine().invocation_stack()
     }
 
@@ -440,13 +449,13 @@ impl ApplicationEngine {
     }
 
     /// Returns the execution state of the current context.
-    pub fn current_execution_state(&self) -> VmResult<Arc<Mutex<ExecutionContextState>>> {
+    pub fn current_execution_state(&self) -> VmResult<Arc<Mutex<ExecutionContextState<B>>>> {
         let context = self
             .vm_engine
             .engine()
             .current_context()
             .ok_or_else(|| VmError::invalid_operation_msg("No current execution context"))?;
-        Ok(context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new))
+        Ok(context.state())
     }
 
     /// Returns the index of the block currently being persisted.
@@ -564,7 +573,7 @@ impl ApplicationEngine {
     }
 
     /// Returns the script container associated with this execution, if any.
-    pub fn script_container(&self) -> Option<&Arc<dyn Verifiable>> {
+    pub fn script_container(&self) -> Option<&Arc<VerifiableContainer>> {
         self.script_container.as_ref()
     }
 
@@ -591,17 +600,11 @@ impl ApplicationEngine {
 
     /// Records a log event emitted by runtime interop.
     pub fn push_log(&mut self, event: LogEventArgs) {
-        // The runtime context is type-erased; downcasting is not done here.
-        // Callers that want log notification can iterate `logs()` after
-        // the engine finishes.
-        let _ = self.runtime_context.as_ref();
         self.logs.push(event);
     }
 
     /// Records a notification event emitted by runtime interop.
     pub fn push_notification(&mut self, event: NotifyEventArgs) {
-        // See `push_log` — runtime context is type-erased.
-        let _ = self.runtime_context.as_ref();
         self.notifications.push(event);
     }
 
@@ -613,11 +616,6 @@ impl ApplicationEngine {
     /// Returns all log events emitted during execution.
     pub fn logs(&self) -> &[LogEventArgs] {
         &self.logs
-    }
-
-    /// Sets the runtime context used for logging/notify callbacks.
-    pub fn set_runtime_context(&mut self, context: Option<Arc<dyn std::any::Any + Send + Sync>>) {
-        self.runtime_context = context;
     }
 
     /// Returns how many times a script hash has been invoked in this engine.
@@ -642,26 +640,14 @@ impl ApplicationEngine {
         Arc::clone(&self.native_contract_cache)
     }
 
-    pub(super) fn native_contract_provider(
-        &self,
-    ) -> Option<Arc<dyn crate::native_contract_provider::NativeContractProvider>> {
-        self.native_contract_provider.clone()
+    pub(super) fn native_contract_provider(&self) -> Option<&P> {
+        self.native_contract_provider.as_deref()
     }
 
-    pub(super) fn native_contract_by_hash(
-        &self,
-        hash: &UInt160,
-    ) -> Option<Arc<dyn NativeContract>> {
+    pub(super) fn native_contract_by_hash(&self, hash: &UInt160) -> Option<P::Contract> {
         self.native_registry
             .get(hash)
             .or_else(|| self.native_contract_provider()?.get_native_contract(hash))
-    }
-
-    pub(super) fn native_contract_by_name(&self, name: &str) -> Option<Arc<dyn NativeContract>> {
-        self.native_registry.get_by_name(name).or_else(|| {
-            self.native_contract_provider()?
-                .get_native_contract_by_name(name)
-        })
     }
 
     /// Returns a shared handle to the native-contract cache.
@@ -675,14 +661,8 @@ impl ApplicationEngine {
     }
 
     /// Returns a clone of the current snapshot cache.
-    pub fn snapshot_cache(&self) -> Arc<DataCache> {
+    pub fn snapshot_cache(&self) -> Arc<DataCache<B>> {
         Arc::clone(&self.snapshot_cache)
-    }
-
-    pub(super) fn policy_contract(&self) -> Option<Arc<dyn NativeContract>> {
-        // Use the provider captured when this engine was constructed. Engine
-        // methods do not read the process-global compatibility bridge.
-        self.native_contract_by_name("PolicyContract")
     }
 
     pub(super) fn get_contract(&self, hash: &UInt160) -> Option<&ContractState> {

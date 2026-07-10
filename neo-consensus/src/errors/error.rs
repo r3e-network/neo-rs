@@ -144,7 +144,9 @@ pub enum ConsensusError {
 
     /// Channel send error with preserved source.
     #[error("Channel send error")]
-    ChannelSendError(#[source] Box<dyn std::error::Error + Send + Sync>),
+    ChannelSendError(
+        #[source] tokio::sync::mpsc::error::TrySendError<crate::service::ConsensusEvent>,
+    ),
 
     /// Persistence error.
     #[error("Persistence error: {0}")]

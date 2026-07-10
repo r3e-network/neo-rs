@@ -9,7 +9,10 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::time::{Duration, SystemTime};
 
-use super::{DEDUP_CACHE_TTL, OracleService, OracleServiceError};
+use neo_execution::native_contract_provider::NativeContractProvider;
+
+use super::native_provider::OracleContractReadProvider;
+use super::{DEDUP_CACHE_TTL, OracleRuntimeProvider, OracleService, OracleServiceError};
 
 pub(in crate::service) struct ExpiringSet<T> {
     entries: HashMap<T, SystemTime>,
@@ -115,7 +118,11 @@ impl OracleDedupState {
     }
 }
 
-impl OracleService {
+impl<R, P> OracleService<R, P>
+where
+    R: OracleRuntimeProvider + 'static,
+    P: NativeContractProvider + OracleContractReadProvider + 'static,
+{
     /// Checks if a request is a duplicate and should be skipped.
     /// Returns true if the request is a duplicate.
     pub fn is_duplicate_request(&self, request_id: u64, url: &str) -> bool {

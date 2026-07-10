@@ -16,6 +16,9 @@
 //! - `tests`: Module-local tests and regression coverage.
 
 use crate::server::rpc_server::RpcHandler;
+use neo_oracle_service::OracleService;
+
+type RpcOracleService = OracleService<crate::server::NodeContext>;
 
 mod request;
 mod response;

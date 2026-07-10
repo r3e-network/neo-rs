@@ -6,7 +6,10 @@ use num_traits::ToPrimitive;
 
 impl NeoToken {
     /// C# `GetRegisterPrice` = `(long)(BigInteger)snapshot[_registerPrice]`.
-    pub(in crate::neo_token) fn register_price(&self, snapshot: &DataCache) -> CoreResult<i64> {
+    pub(in crate::neo_token) fn register_price<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+    ) -> CoreResult<i64> {
         let key = Self::register_price_key();
         let Some(item) = snapshot.get(&key) else {
             return Err(CoreError::invalid_operation(
@@ -20,9 +23,9 @@ impl NeoToken {
 
     /// C# `SetRegisterPrice` storage effect: overwrite `Prefix_RegisterPrice` as a
     /// `BigInteger` (`GetAndChange(_registerPrice).Set(registerPrice)`).
-    pub(in crate::neo_token) fn put_register_price(
+    pub(in crate::neo_token) fn put_register_price<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         price: i64,
     ) -> CoreResult<()> {
         let key = Self::register_price_key();
@@ -44,9 +47,9 @@ impl NeoToken {
     /// (a brand-new index key is tracked as Changed), which commits to the same
     /// stored key/value as the C# Added path — only the resulting store contents
     /// feed the state root.
-    pub(in crate::neo_token) fn put_gas_per_block(
+    pub(in crate::neo_token) fn put_gas_per_block<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         index: u32,
         gas_per_block: &BigInt,
     ) {
@@ -60,9 +63,9 @@ impl NeoToken {
     /// Returns the GAS-per-block effective at `index`: the most recent
     /// `Prefix_GasPerBlock` record whose record index is ≤ `index` (C#
     /// `GetSortedGasRecords(...).First().GasPerBlock`), defaulting to 5 GAS.
-    pub(in crate::neo_token) fn gas_per_block_at(
+    pub(in crate::neo_token) fn gas_per_block_at<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         index: u32,
     ) -> BigInt {
         let prefix = Self::gas_per_block_prefix_key();
@@ -80,7 +83,10 @@ impl NeoToken {
     }
 
     /// Reads the total voted NEO (`Prefix_VotersCount`), defaulting to zero.
-    pub(in crate::neo_token) fn read_voters_count(&self, snapshot: &DataCache) -> BigInt {
+    pub(in crate::neo_token) fn read_voters_count<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+    ) -> BigInt {
         snapshot
             .get(&Self::voters_count_key())
             .map(|item| BigInt::from_signed_bytes_le(&item.value_bytes()))
@@ -88,7 +94,11 @@ impl NeoToken {
     }
 
     /// Writes the total voted NEO (`Prefix_VotersCount`).
-    pub(in crate::neo_token) fn write_voters_count(&self, snapshot: &DataCache, value: &BigInt) {
+    pub(in crate::neo_token) fn write_voters_count<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        value: &BigInt,
+    ) {
         snapshot.update(
             Self::voters_count_key(),
             StorageItem::from_bytes(crate::bigint_to_storage_bytes(value)),
@@ -97,9 +107,9 @@ impl NeoToken {
 
     /// C# `GetSortedGasRecords(snapshot, end)`: the `Prefix_GasPerBlock` records with
     /// index ≤ `end`, descending by index.
-    pub(in crate::neo_token) fn sorted_gas_records(
+    pub(in crate::neo_token) fn sorted_gas_records<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         end: u32,
     ) -> Vec<(u32, BigInt)> {
         let prefix = Self::gas_per_block_prefix_key();
@@ -118,9 +128,9 @@ impl NeoToken {
     }
 
     /// Reads the accumulated GAS-per-vote for `pubkey` (`Prefix_VoterRewardPerCommittee`).
-    pub(in crate::neo_token) fn voter_reward_per_committee(
+    pub(in crate::neo_token) fn voter_reward_per_committee<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         pubkey: &ECPoint,
     ) -> BigInt {
         let key = Self::voter_reward_per_committee_key(pubkey);
@@ -134,9 +144,9 @@ impl NeoToken {
     /// `BalanceHeight` and `end` — the NEO-holder reward (`balance * Σ gasPerBlock *
     /// 10 / 100 / TotalAmount`) plus the vote reward (`balance * (latestGasPerVote -
     /// lastGasPerVote) / VoteFactor`).
-    pub(in crate::neo_token) fn calculate_bonus(
+    pub(in crate::neo_token) fn calculate_bonus<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         state: &NeoAccountStateView,
         end: u32,
     ) -> CoreResult<BigInt> {

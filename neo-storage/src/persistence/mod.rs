@@ -12,13 +12,11 @@
 //!
 //! - `data_cache`: Write-back cache implementation and tracked-entry state.
 //! - `providers`: Provider implementations behind the crate public traits.
-//! - `fast_sync_store`: Fast-sync extension trait (ADR-021).
 //! - `read_only_store`: read-only store trait.
-//! - `raw_overlay_store`: Raw overlay extension trait (ADR-021).
 //! - `seek_direction`: seek direction enum.
 //! - `storage`: Storage contexts, key builders, and storage item helpers for
 //!   execution.
-//! - `store`: Core store trait (read + write + snapshot + downcast).
+//! - `store`: Core store trait (read + write + snapshot + backend capabilities).
 //! - `store_cache`: store-backed cache overlay.
 //! - `store_factory`: named provider registry and store factory facade.
 //! - `store_provider`: backend provider trait implemented by concrete stores.
@@ -29,14 +27,8 @@
 
 /// Data cache with Neo-style trackable entries.
 pub mod data_cache;
-/// Fast-sync extension trait for [`Store`](store::Store).
-#[path = "traits/fast_sync_store.rs"]
-pub mod fast_sync_store;
 /// Built-in store providers used by tests and ephemeral nodes.
 pub mod providers;
-/// Raw overlay extension trait for [`Store`](store::Store).
-#[path = "traits/raw_overlay_store.rs"]
-pub mod raw_overlay_store;
 /// Read-only store traits.
 #[path = "traits/read_only_store.rs"]
 pub mod read_only_store;
@@ -68,13 +60,14 @@ pub mod transaction;
 #[path = "traits/write_store.rs"]
 pub mod write_store;
 
-pub use data_cache::{DataCache, Trackable};
-pub use fast_sync_store::FastSyncStore;
-pub use raw_overlay_store::RawOverlayStore;
+pub use data_cache::{CacheRead, DataCache, EmptyCacheBacking, Trackable};
 pub use read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric};
 pub use seek_direction::SeekDirection;
-pub use store::Store;
-pub use store_cache::StoreCache;
+pub use store::{
+    MdbxEnvironmentInfo, RawOverlaySink, RawOverlaySource, RocksDbBatchMetrics, Store,
+    StoreBackendKind,
+};
+pub use store_cache::{StoreCache, StoreCacheBacking, StoreDataCache};
 pub use store_factory::StoreFactory;
 pub use store_provider::StoreProvider;
 pub use store_snapshot::StoreSnapshot;

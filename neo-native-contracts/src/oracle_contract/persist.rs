@@ -16,7 +16,14 @@ impl OracleContract {
     /// transaction in the persisting block, remove the answered request
     /// record and its id from the per-url id-list, then mint the oracle
     /// price to the designated oracle node selected by `id % nodes.len()`.
-    pub(super) fn post_persist_native(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    pub(super) fn post_persist_native<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        &self,
+        engine: &mut ApplicationEngine<P, D, B>,
+    ) -> CoreResult<()> {
         let (block_index, response_ids): (u32, Vec<u64>) = {
             let block = crate::support::engine::require_persisting_block(
                 engine,

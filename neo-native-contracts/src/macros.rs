@@ -29,10 +29,92 @@ macro_rules! native_contract_handle {
                 Self
             }
 
+            #[doc = concat!("Returns the stable native contract id for `", stringify!($name), "`.")]
+            #[must_use]
+            pub const fn id(&self) -> i32 {
+                Self::ID
+            }
+
             #[doc = concat!("Returns the ", $contract_name, " script hash.")]
             #[must_use]
             pub fn hash(&self) -> neo_primitives::UInt160 {
                 Self::script_hash()
+            }
+
+            #[doc = concat!("Returns the stable native contract name for `", stringify!($name), "`.")]
+            #[must_use]
+            pub fn name(&self) -> &str {
+                <Self as neo_execution::NativeContract<
+                    neo_execution::native_contract_provider::NoNativeContractProvider,
+                >>::name(self)
+            }
+
+            #[doc = concat!("Returns the activation hardfork for `", stringify!($name), "`, if any.")]
+            #[must_use]
+            pub fn active_in(&self) -> Option<neo_config::Hardfork> {
+                <Self as neo_execution::NativeContract<
+                    neo_execution::native_contract_provider::NoNativeContractProvider,
+                >>::active_in(self)
+            }
+
+            #[doc = concat!("Returns the manifest-refresh hardforks for `", stringify!($name), "`.")]
+            #[must_use]
+            pub fn activations(&self) -> &'static [neo_config::Hardfork] {
+                <Self as neo_execution::NativeContract<
+                    neo_execution::native_contract_provider::NoNativeContractProvider,
+                >>::activations(self)
+            }
+
+            #[doc = concat!("Returns the used hardforks for `", stringify!($name), "` metadata.")]
+            #[must_use]
+            pub fn used_hardforks(&self) -> Vec<neo_config::Hardfork> {
+                <Self as neo_execution::NativeContract<
+                    neo_execution::native_contract_provider::NoNativeContractProvider,
+                >>::used_hardforks(self)
+            }
+
+            #[doc = concat!("Returns whether `", stringify!($name), "` is active at the given block.")]
+            #[must_use]
+            pub fn is_active(
+                &self,
+                settings: &neo_config::ProtocolSettings,
+                block_height: u32,
+            ) -> bool {
+                <Self as neo_execution::NativeContract<
+                    neo_execution::native_contract_provider::NoNativeContractProvider,
+                >>::is_active(self, settings, block_height)
+            }
+
+            #[doc = concat!("Returns whether `", stringify!($name), "` initializes at the given block.")]
+            #[must_use]
+            pub fn is_initialize_block(
+                &self,
+                settings: &neo_config::ProtocolSettings,
+                index: u32,
+            ) -> (bool, Vec<neo_config::Hardfork>) {
+                <Self as neo_execution::NativeContract<
+                    neo_execution::native_contract_provider::NoNativeContractProvider,
+                >>::is_initialize_block(self, settings, index)
+            }
+
+            #[doc = concat!("Builds the provider-free contract state for `", stringify!($name), "`.")]
+            #[must_use]
+            pub fn contract_state(
+                &self,
+                settings: &neo_config::ProtocolSettings,
+                block_height: u32,
+            ) -> Option<neo_execution::ContractState> {
+                <Self as neo_execution::NativeContract<
+                    neo_execution::native_contract_provider::NoNativeContractProvider,
+                >>::contract_state(self, settings, block_height)
+            }
+
+            #[doc = concat!("Returns the native method metadata for `", stringify!($name), "`.")]
+            #[must_use]
+            pub fn methods(&self) -> &[neo_execution::NativeMethod] {
+                <Self as neo_execution::NativeContract<
+                    neo_execution::native_contract_provider::NoNativeContractProvider,
+                >>::methods(self)
             }
 
             #[doc = concat!("Returns the ", $contract_name, " script hash.")]
@@ -57,44 +139,50 @@ macro_rules! native_contract_identity {
         fn name(&self) -> &str {
             $contract::NAME
         }
-
-        fn as_any(&self) -> &dyn std::any::Any {
-            self
-        }
     };
 }
 
 macro_rules! native_contract_dispatch {
-    ($bindings:path) => {
-        fn invoke(
+    ($module:ident :: $bindings:ident) => {
+        fn invoke<D, B>(
             &self,
-            engine: &mut neo_execution::ApplicationEngine,
+            engine: &mut neo_execution::ApplicationEngine<P, D, B>,
             method: &str,
             args: &[Vec<u8>],
-        ) -> neo_error::CoreResult<Vec<u8>> {
-            crate::support::invoke::dispatch_by_name(self, &$bindings, engine, method, args)
+        ) -> neo_error::CoreResult<Vec<u8>>
+        where
+            D: neo_execution::Diagnostic + 'static,
+            B: neo_storage::CacheRead,
+        {
+            let bindings = $module::$bindings::<P, D, B>();
+            crate::support::invoke::dispatch_by_name(self, &bindings, engine, method, args)
                 .unwrap_or_else(|| {
                     Err(neo_error::CoreError::invalid_operation(format!(
                         "{} method '{}({})' is not implemented",
-                        self.name(),
+                        <Self as neo_execution::NativeContract<P>>::name(self),
                         method,
                         args.len()
                     )))
                 })
         }
 
-        fn invoke_resolved(
+        fn invoke_resolved<D, B>(
             &self,
-            engine: &mut neo_execution::ApplicationEngine,
+            engine: &mut neo_execution::ApplicationEngine<P, D, B>,
             method_index: usize,
             method: &neo_execution::NativeMethod,
             args: &[Vec<u8>],
-        ) -> neo_error::CoreResult<Vec<u8>> {
-            crate::support::invoke::dispatch_by_index(self, &$bindings, engine, method_index, args)
+        ) -> neo_error::CoreResult<Vec<u8>>
+        where
+            D: neo_execution::Diagnostic + 'static,
+            B: neo_storage::CacheRead,
+        {
+            let bindings = $module::$bindings::<P, D, B>();
+            crate::support::invoke::dispatch_by_index(self, &bindings, engine, method_index, args)
                 .unwrap_or_else(|| {
                     Err(neo_error::CoreError::invalid_operation(format!(
                         "{} method '{}({})' is not implemented",
-                        self.name(),
+                        <Self as neo_execution::NativeContract<P>>::name(self),
                         method.name,
                         args.len()
                     )))
@@ -102,38 +190,48 @@ macro_rules! native_contract_dispatch {
         }
     };
 
-    ($bindings:path, by_name_and_arity) => {
-        fn invoke(
+    ($module:ident :: $bindings:ident, by_name_and_arity) => {
+        fn invoke<D, B>(
             &self,
-            engine: &mut neo_execution::ApplicationEngine,
+            engine: &mut neo_execution::ApplicationEngine<P, D, B>,
             method: &str,
             args: &[Vec<u8>],
-        ) -> neo_error::CoreResult<Vec<u8>> {
+        ) -> neo_error::CoreResult<Vec<u8>>
+        where
+            D: neo_execution::Diagnostic + 'static,
+            B: neo_storage::CacheRead,
+        {
+            let bindings = $module::$bindings::<P, D, B>();
             crate::support::invoke::dispatch_by_name_and_arity(
-                self, &$bindings, engine, method, args,
+                self, &bindings, engine, method, args,
             )
             .unwrap_or_else(|| {
                 Err(neo_error::CoreError::invalid_operation(format!(
                     "{} method '{}({})' is not implemented",
-                    self.name(),
+                    <Self as neo_execution::NativeContract<P>>::name(self),
                     method,
                     args.len()
                 )))
             })
         }
 
-        fn invoke_resolved(
+        fn invoke_resolved<D, B>(
             &self,
-            engine: &mut neo_execution::ApplicationEngine,
+            engine: &mut neo_execution::ApplicationEngine<P, D, B>,
             method_index: usize,
             method: &neo_execution::NativeMethod,
             args: &[Vec<u8>],
-        ) -> neo_error::CoreResult<Vec<u8>> {
-            crate::support::invoke::dispatch_by_index(self, &$bindings, engine, method_index, args)
+        ) -> neo_error::CoreResult<Vec<u8>>
+        where
+            D: neo_execution::Diagnostic + 'static,
+            B: neo_storage::CacheRead,
+        {
+            let bindings = $module::$bindings::<P, D, B>();
+            crate::support::invoke::dispatch_by_index(self, &bindings, engine, method_index, args)
                 .unwrap_or_else(|| {
                     Err(neo_error::CoreError::invalid_operation(format!(
                         "{} method '{}({})' is not implemented",
-                        self.name(),
+                        <Self as neo_execution::NativeContract<P>>::name(self),
                         method.name,
                         args.len()
                     )))

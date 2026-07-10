@@ -15,43 +15,26 @@
 //! exactly as C# binds an `InteropInterface` parameter via `GetInterface<>()`
 //! and faults on a plain byte string.
 
-use neo_vm::stack_item::InteropInterface as VmInteropInterface;
-use std::any::Any;
+use neo_vm::stack_item::InteropInterface;
 
 /// VM interop wrapper holding a BLS12-381 point's canonical encoding.
-#[derive(Debug, Clone)]
-pub struct Bls12381Interop {
-    bytes: Vec<u8>,
-}
+pub type Bls12381Interop = InteropInterface;
 
-impl Bls12381Interop {
+/// Constructors for BLS12-381 VM interop handles.
+pub trait Bls12381InteropExt {
     /// Wraps a point's canonical serialization (48 / 96 / 576 bytes).
-    #[must_use]
-    pub fn new(bytes: Vec<u8>) -> Self {
-        Self { bytes }
-    }
+    fn new(bytes: Vec<u8>) -> Self;
 
     /// The point's canonical serialization.
-    #[must_use]
-    pub fn bytes(&self) -> &[u8] {
-        &self.bytes
-    }
+    fn bytes(&self) -> &[u8];
 }
 
-impl VmInteropInterface for Bls12381Interop {
-    fn interface_type(&self) -> &str {
-        // The group is implied by the encoding length; this string mirrors the
-        // C# runtime object kind for diagnostics only (an InteropInterface is
-        // never serialized, so it is not consensus-observable).
-        match self.bytes.len() {
-            48 => "G1Affine",
-            96 => "G2Affine",
-            576 => "Gt",
-            _ => "Bls12381Point",
-        }
+impl Bls12381InteropExt for InteropInterface {
+    fn new(bytes: Vec<u8>) -> Self {
+        InteropInterface::bls12381(bytes)
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
+    fn bytes(&self) -> &[u8] {
+        self.bls12381_bytes().unwrap_or(&[])
     }
 }

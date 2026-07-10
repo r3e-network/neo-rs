@@ -9,15 +9,19 @@
 use neo_error::CoreResult;
 use neo_native_contracts::ledger_contract::LedgerContract;
 use neo_primitives::UInt256;
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 /// Ledger capabilities required by transaction admission.
 pub(super) trait AdmissionLedgerProvider {
     /// Returns the persisted ledger height.
-    fn current_index(&self, snapshot: &DataCache) -> CoreResult<u32>;
+    fn current_index<B: CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<u32>;
 
     /// Returns whether the ledger contains a full transaction record for `hash`.
-    fn contains_transaction(&self, snapshot: &DataCache, hash: &UInt256) -> CoreResult<bool>;
+    fn contains_transaction<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        hash: &UInt256,
+    ) -> CoreResult<bool>;
 }
 
 /// Native Ledger-contract backed provider for production admission.
@@ -37,11 +41,15 @@ impl NativeAdmissionLedgerProvider {
 }
 
 impl AdmissionLedgerProvider for NativeAdmissionLedgerProvider {
-    fn current_index(&self, snapshot: &DataCache) -> CoreResult<u32> {
+    fn current_index<B: CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<u32> {
         self.ledger.current_index(snapshot)
     }
 
-    fn contains_transaction(&self, snapshot: &DataCache, hash: &UInt256) -> CoreResult<bool> {
+    fn contains_transaction<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        hash: &UInt256,
+    ) -> CoreResult<bool> {
         self.ledger.contains_transaction(snapshot, hash)
     }
 }

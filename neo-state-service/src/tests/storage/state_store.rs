@@ -1,13 +1,9 @@
 use super::*;
+use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::persistence::{
-    RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, Store, StoreSnapshot,
-    WriteStore,
-};
-use neo_storage::persistence::{
-    providers::memory_store::MemoryStore, store::OnNewSnapshotDelegate,
+    RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, Store, WriteStore,
 };
 use neo_storage::{StorageItem, StorageKey};
-use parking_lot::Mutex as ParkingMutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn root(index: u32, byte: u8) -> StateRoot {
@@ -18,7 +14,6 @@ struct SnapshotCountingRawOverlayStore {
     inner: MemoryStore,
     snapshot_count: AtomicUsize,
     commit_count: AtomicUsize,
-    on_new_snapshot: ParkingMutex<Vec<OnNewSnapshotDelegate>>,
 }
 
 impl std::fmt::Debug for SnapshotCountingRawOverlayStore {
@@ -34,7 +29,6 @@ impl SnapshotCountingRawOverlayStore {
             inner: MemoryStore::new(),
             snapshot_count: AtomicUsize::new(0),
             commit_count: AtomicUsize::new(0),
-            on_new_snapshot: ParkingMutex::new(Vec::new()),
         }
     }
 
@@ -48,6 +42,9 @@ impl SnapshotCountingRawOverlayStore {
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for SnapshotCountingRawOverlayStore {
+    type FindIterator<'a> =
+        <MemoryStore as ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>>>::FindIterator<'a>;
+
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
         self.inner.try_get(key)
     }
@@ -56,12 +53,15 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for SnapshotCountingRawOverlayStore 
         &self,
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+    ) -> Self::FindIterator<'_> {
         self.inner.find(key_prefix, direction)
     }
 }
 
 impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for SnapshotCountingRawOverlayStore {
+    type FindIterator<'a> =
+        <MemoryStore as ReadOnlyStoreGeneric<StorageKey, StorageItem>>::FindIterator<'a>;
+
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         self.inner.try_get(key)
     }
@@ -70,7 +70,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for SnapshotCountingRawOverla
         &self,
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+    ) -> Self::FindIterator<'_> {
         self.inner.find(key_prefix, direction)
     }
 }
@@ -94,29 +94,13 @@ impl WriteStore<Vec<u8>, Vec<u8>> for SnapshotCountingRawOverlayStore {
 impl ReadOnlyStore for SnapshotCountingRawOverlayStore {}
 
 impl Store for SnapshotCountingRawOverlayStore {
-    fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
+    type Snapshot = <MemoryStore as Store>::Snapshot;
+
+    fn snapshot(&self) -> Arc<Self::Snapshot> {
         self.snapshot_count.fetch_add(1, Ordering::Relaxed);
-        let snapshot = self.inner.snapshot();
-        for handler in self.on_new_snapshot.lock().iter() {
-            handler(self, snapshot.clone());
-        }
-        snapshot
+        self.inner.snapshot()
     }
 
-    fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate) {
-        self.on_new_snapshot.lock().push(handler);
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_raw_overlay_store(&self) -> Option<&dyn neo_storage::persistence::RawOverlayStore> {
-        Some(self)
-    }
-}
-
-impl neo_storage::persistence::RawOverlayStore for SnapshotCountingRawOverlayStore {
     fn try_commit_raw_overlay(
         &self,
         _overlay: &[(Vec<u8>, Option<Vec<u8>>)],
@@ -124,16 +108,19 @@ impl neo_storage::persistence::RawOverlayStore for SnapshotCountingRawOverlaySto
         Ok(false)
     }
 
-    fn try_commit_borrowed_raw_overlay(
+    fn try_commit_borrowed_raw_overlay<O>(
         &self,
-        visit: &mut dyn FnMut(&mut dyn FnMut(&[u8], Option<&[u8]>)),
-    ) -> neo_storage::StorageResult<bool> {
+        overlay_source: &mut O,
+    ) -> neo_storage::StorageResult<bool>
+    where
+        O: neo_storage::persistence::RawOverlaySource + ?Sized,
+    {
         self.commit_count.fetch_add(1, Ordering::Relaxed);
         let mut batch = std::collections::BTreeMap::new();
         let mut sink = |key: &[u8], value: Option<&[u8]>| {
             batch.insert(key.to_vec(), value.map(<[u8]>::to_vec));
         };
-        visit(&mut sink);
+        overlay_source.visit_raw_overlay(&mut sink);
         self.inner.apply_batch(&batch);
         Ok(true)
     }
@@ -266,7 +253,7 @@ fn mpt_changes_filter_ledger_and_project_track_states() {
     snapshot.delete(&deleted_key);
     snapshot.add(ledger_key, StorageItem::from_bytes(vec![0x02]));
 
-    let changes = StateStore::mpt_changes_from_snapshot(&snapshot);
+    let changes = StateStore::<MemoryStore>::mpt_changes_from_snapshot(&snapshot);
     assert_eq!(changes.len(), 2);
     assert!(
         changes.capacity() >= snapshot.pending_change_count(),
@@ -294,12 +281,12 @@ fn mpt_changes_project_into_reuses_capacity_and_preserves_projection() {
     snapshot.delete(&deleted_key);
     snapshot.add(ledger_key, StorageItem::from_bytes(vec![0x02]));
 
-    let expected = StateStore::mpt_changes_from_snapshot(&snapshot);
+    let expected = StateStore::<MemoryStore>::mpt_changes_from_snapshot(&snapshot);
     let mut changes = Vec::with_capacity(32);
     changes.push(MptChange::Delete { key: vec![0xFF] });
     let capacity = changes.capacity();
 
-    StateStore::project_mpt_changes_into(&snapshot, &mut changes);
+    StateStore::<MemoryStore>::project_mpt_changes_into(&snapshot, &mut changes);
 
     assert_eq!(changes, expected);
     assert_eq!(
@@ -457,11 +444,15 @@ fn state_store_mpt_constructor_surface_is_provider_neutral() {
 
     assert!(
         !source.contains("fn with_mpt_rocksdb"),
-        "StateStore should accept durable MPT backends through Arc<dyn Store>, not a RocksDB-specific constructor"
+        "StateStore should accept durable MPT backends through generic S: Store, not a RocksDB-specific constructor"
     );
     assert!(
         !source.contains("fn with_mpt_memory_store"),
-        "StateStore should accept durable MPT backends through Arc<dyn Store>, not a concrete memory-store constructor"
+        "StateStore should accept durable MPT backends through generic S: Store, not a concrete memory-store constructor"
+    );
+    assert!(
+        source.contains("pub struct StateStore<S: Store = MemoryStore>"),
+        "StateStore must keep its backing MPT backend generic instead of erasing it behind erased Store trait object"
     );
 }
 
@@ -508,7 +499,6 @@ fn apply_snapshot_changes_is_noop_without_mpt_backend() {
 
 #[test]
 fn with_mpt_store_accepts_rocksdb_backend_through_provider_neutral_store() {
-    use neo_storage::persistence::Store;
     use neo_storage::persistence::storage::StorageConfig;
     use neo_storage::rocksdb::RocksDBStoreProvider;
 
@@ -517,7 +507,7 @@ fn with_mpt_store_accepts_rocksdb_backend_through_provider_neutral_store() {
         std::process::id()
     ));
     let _ = std::fs::remove_dir_all(&path);
-    let backing: Arc<dyn Store> = Arc::new(
+    let backing = Arc::new(
         RocksDBStoreProvider::new(StorageConfig {
             path: path.clone(),
             ..Default::default()
@@ -562,6 +552,6 @@ fn with_mpt_store_accepts_memory_backend_through_provider_neutral_store() {
             .is_some()
     );
 
-    let reopened = MptStore::from_memory_store(backing, true).expect("reopen");
+    let reopened = MptStore::from_store(backing, true).expect("reopen");
     assert_eq!(reopened.current_local_root_index(), Some(0));
 }

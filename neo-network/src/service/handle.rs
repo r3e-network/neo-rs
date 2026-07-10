@@ -215,7 +215,7 @@ impl LocalNodeState {
     }
 }
 
-/// Cheap-to-clone handle to a running [`crate::local_node::LocalNodeService`].
+/// Cheap-to-clone handle to a running [`crate::LocalNodeService`].
 ///
 /// The handle is `Clone`, `Send`, and `Sync`. The two channels are
 /// the only state it owns: an `mpsc::Sender<NetworkCommand>` for

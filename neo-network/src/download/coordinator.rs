@@ -5,13 +5,11 @@
 //! [`BlockRangeFetcher`], keeping socket transport outside the scheduling and
 //! ordering policy.
 
-use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use async_trait::async_trait;
 use futures::Stream;
-use futures::stream::FuturesUnordered;
+use tokio::task::JoinSet;
 
 use super::{
     BlockDownloadBatch, BlockDownloadConfig, BlockDownloadPeer, BlockDownloader,
@@ -20,16 +18,14 @@ use super::{
 use crate::{NetworkError, NetworkResult};
 
 type FetchResult = (BlockRangeAssignment, NetworkResult<BlockDownloadBatch>);
-type FetchFuture = Pin<Box<dyn Future<Output = FetchResult> + Send + 'static>>;
 
 /// Fetches one assigned block range from the selected peer.
-#[async_trait]
 pub trait BlockRangeFetcher: Clone + Send + Sync + Unpin + 'static {
     /// Fetch the blocks for `assignment`.
-    async fn fetch_range(
+    fn fetch_range(
         &self,
         assignment: BlockRangeAssignment,
-    ) -> NetworkResult<BlockDownloadBatch>;
+    ) -> impl std::future::Future<Output = NetworkResult<BlockDownloadBatch>> + Send + 'static;
 }
 
 /// Multi-peer downloader that yields ordered block batches.
@@ -39,7 +35,7 @@ pub struct BlockDownloadCoordinator<F: BlockRangeFetcher> {
     buffer: OrderedBlockBatchBuffer,
     peers: Vec<BlockDownloadPeer>,
     fetcher: F,
-    in_flight: FuturesUnordered<FetchFuture>,
+    in_flight: JoinSet<FetchResult>,
 }
 
 impl<F: BlockRangeFetcher> std::fmt::Debug for BlockDownloadCoordinator<F> {
@@ -70,7 +66,7 @@ impl<F: BlockRangeFetcher> BlockDownloadCoordinator<F> {
             buffer: OrderedBlockBatchBuffer::new(local_height.saturating_add(1)),
             peers,
             fetcher,
-            in_flight: FuturesUnordered::new(),
+            in_flight: JoinSet::new(),
         }
     }
 
@@ -103,10 +99,10 @@ impl<F: BlockRangeFetcher> BlockDownloadCoordinator<F> {
                 break;
             };
             let fetcher = self.fetcher.clone();
-            self.in_flight.push(Box::pin(async move {
+            self.in_flight.spawn(async move {
                 let result = fetcher.fetch_range(assignment).await;
                 (assignment, result)
-            }));
+            });
         }
     }
 
@@ -142,8 +138,8 @@ impl<F: BlockRangeFetcher> Stream for BlockDownloadCoordinator<F> {
                 return Poll::Ready(Some(Err(this.no_progress_error())));
             }
 
-            match Pin::new(&mut this.in_flight).poll_next(cx) {
-                Poll::Ready(Some((assignment, Ok(mut batch)))) => {
+            match this.in_flight.poll_join_next(cx) {
+                Poll::Ready(Some(Ok((assignment, Ok(mut batch))))) => {
                     if let Err(err) = this.scheduler.record_success(assignment) {
                         return Poll::Ready(Some(Err(err)));
                     }
@@ -155,7 +151,7 @@ impl<F: BlockRangeFetcher> Stream for BlockDownloadCoordinator<F> {
                     }
                     continue;
                 }
-                Poll::Ready(Some((assignment, Err(err)))) => {
+                Poll::Ready(Some(Ok((assignment, Err(err))))) => {
                     if let Err(retry_err) = this.scheduler.record_failure(assignment) {
                         return Poll::Ready(Some(Err(retry_err)));
                     }
@@ -169,6 +165,11 @@ impl<F: BlockRangeFetcher> Stream for BlockDownloadCoordinator<F> {
                         "block range fetch failed; scheduling retry"
                     );
                     continue;
+                }
+                Poll::Ready(Some(Err(err))) => {
+                    return Poll::Ready(Some(Err(NetworkError::Protocol(format!(
+                        "block range fetch task failed: {err}"
+                    )))));
                 }
                 Poll::Ready(None) => {
                     if this.scheduler.is_complete() {

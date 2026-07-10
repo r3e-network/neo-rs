@@ -12,7 +12,9 @@ use std::time::Duration;
 use neo_blockchain::{BlockchainHandle, RuntimeEvent};
 use neo_config::ProtocolSettings;
 use neo_consensus::messages::ConsensusPayload;
-use neo_consensus::{ConsensusEvent, ConsensusService, ValidatorInfo};
+use neo_consensus::{
+    ConsensusEvent, ConsensusService, ConsensusSigner, NoConsensusSigner, ValidatorInfo,
+};
 use neo_crypto::ECPoint;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_io::Serializable;
@@ -21,7 +23,8 @@ use neo_network::NetworkHandle;
 use neo_payloads::Transaction;
 use neo_primitives::time::now_millis;
 use neo_primitives::{UInt160, UInt256};
-use neo_storage::persistence::{DataCache, Store, StoreCache};
+use neo_storage::persistence::providers::memory_store::MemoryStore;
+use neo_storage::persistence::{CacheRead, DataCache, Store, StoreCache, StoreDataCache};
 use parking_lot::RwLock;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
@@ -35,14 +38,19 @@ use super::proposal::{
     cache_available_proposal_transactions, prepare_request_passes_ledger_guards,
     resolve_transactions, select_primary_proposal_transactions,
 };
-use super::setup::{ConsensusSetup, resolve_public_key_index, validator_infos_from_keys};
+use super::setup::{
+    ConsensusSetup, NodeConsensusSigner, resolve_public_key_index, validator_infos_from_keys,
+};
 
 /// Block version dBFT produces (C# Header default; consensus never sets a non-zero version).
 const BLOCK_VERSION: u32 = 0;
 
 /// Reads the current ledger tip from `snapshot` →
 /// `(next_block_index, prev_hash, prev_timestamp)`.
-fn ledger_tip(native: &impl ConsensusNativeProvider, snapshot: &DataCache) -> (u32, UInt256, u64) {
+fn ledger_tip<B: CacheRead>(
+    native: &impl ConsensusNativeProvider,
+    snapshot: &DataCache<B>,
+) -> (u32, UInt256, u64) {
     let ConsensusLedgerTip {
         next_block_index,
         prev_hash,
@@ -51,24 +59,22 @@ fn ledger_tip(native: &impl ConsensusNativeProvider, snapshot: &DataCache) -> (u
     (next_block_index, prev_hash, prev_timestamp)
 }
 
-fn round_validator_context(
+fn round_validator_context<B: CacheRead>(
     native: &impl ConsensusNativeProvider,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     settings: &ProtocolSettings,
     block_index: u32,
 ) -> anyhow::Result<(Vec<ValidatorInfo>, UInt160)> {
     round_validator_context_with_provider(native, snapshot, settings, block_index)
 }
 
-fn round_validator_context_with_provider(
+fn round_validator_context_with_provider<B: CacheRead>(
     native: &impl ConsensusNativeProvider,
-    snapshot: &DataCache,
+    snapshot: &DataCache<B>,
     settings: &ProtocolSettings,
     block_index: u32,
 ) -> anyhow::Result<(Vec<ValidatorInfo>, UInt160)> {
-    let validators_count = usize::try_from(settings.validators_count).unwrap_or(0);
-    let validators =
-        validator_infos_from_keys(native.next_block_validators(snapshot, validators_count)?);
+    let validators = validator_infos_from_keys(native.next_block_validators(snapshot, settings)?);
     let next_consensus =
         native.next_consensus_address_for_block(snapshot, settings, block_index)?;
     Ok((validators, next_consensus))
@@ -76,11 +82,15 @@ fn round_validator_context_with_provider(
 
 /// The single-task consensus driver: owns the `ConsensusService` (so no lock is
 /// needed) and routes its events to the network/mempool/ledger.
-pub(super) struct ConsensusDriver<P = neo_native_contracts::StandardNativeProvider>
-where
+pub(super) struct ConsensusDriver<
+    P = neo_native_contracts::StandardNativeProvider,
+    C = NoConsensusSigner,
+    St: Store = MemoryStore,
+> where
     P: NativeContractProvider,
+    C: ConsensusSigner,
 {
-    pub(super) service: ConsensusService,
+    pub(super) service: ConsensusService<C>,
     pub(super) event_rx: mpsc::Receiver<ConsensusEvent>,
     pub(super) inbound_rx: mpsc::Receiver<ConsensusPayload>,
     /// Hashes of transactions freshly accepted into the mempool (from peer
@@ -97,7 +107,7 @@ where
     /// Underlying store handle, used to mint a fresh `DataCache` at the start of
     /// each round so committee/validator/`NextConsensus` reads reflect the current
     /// persisted tip (C# `ConsensusContext.Reset` takes a fresh snapshot per round).
-    pub(super) store: Arc<dyn Store>,
+    pub(super) store: Arc<St>,
     /// The `prev_hash` of the round currently being driven (carried into
     /// `assemble_block`).
     pub(super) current_prev_hash: UInt256,
@@ -118,15 +128,17 @@ fn recovery_log_path(data_dir: Option<&std::path::Path>) -> Option<std::path::Pa
     Some(dir.join("consensus-state.bin"))
 }
 
-impl<P> ConsensusDriver<P>
+impl<P, C, St> ConsensusDriver<P, C, St>
 where
     P: NativeContractProvider + 'static,
+    C: ConsensusSigner + 'static,
+    St: Store + 'static,
 {
     /// Builds a fresh read snapshot of the current persisted store state. Called
     /// once per round (at start and on each `Imported`) so a driver process that
     /// spans a committee-refresh height reads the updated validator set rather
     /// than a frozen startup snapshot.
-    fn fresh_round_snapshot(&self) -> Arc<DataCache> {
+    fn fresh_round_snapshot(&self) -> Arc<StoreDataCache<St>> {
         Arc::new(
             StoreCache::new_from_store(Arc::clone(&self.store), false)
                 .data_cache()
@@ -134,9 +146,9 @@ where
         )
     }
 
-    fn configure_round(
+    fn configure_round<B: CacheRead>(
         &mut self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         block_index: u32,
     ) -> anyhow::Result<UInt160> {
         let native = NativeConsensusProvider::new(self.mempool.native_contract_provider());
@@ -342,7 +354,11 @@ where
         }
     }
 
-    pub(super) async fn on_consensus_event(&mut self, event: ConsensusEvent, snapshot: &DataCache) {
+    pub(super) async fn on_consensus_event<B: CacheRead>(
+        &mut self,
+        event: ConsensusEvent,
+        snapshot: &DataCache<B>,
+    ) {
         match event {
             ConsensusEvent::BroadcastMessage(payload) => {
                 let ext = {
@@ -485,35 +501,34 @@ where
 /// caller-owned `inbound_rx` (its matching sender is wired into the network
 /// forwarder before this is called — the network, and thus this driver, is
 /// built after the forwarder). Returns `None` when this node is relay-only.
-pub fn consensus_driver_task<P>(
+pub fn consensus_driver_task<P, St>(
     setup: ConsensusSetup,
     blockchain: BlockchainHandle,
     mempool: Arc<MemoryPool<P>>,
     network: NetworkHandle,
     settings: Arc<ProtocolSettings>,
     validators: Arc<RwLock<Vec<ValidatorInfo>>>,
-    store: Arc<dyn Store>,
+    store: Arc<St>,
     data_dir: Option<&std::path::Path>,
     inbound_rx: mpsc::Receiver<ConsensusPayload>,
     tx_feed_rx: mpsc::Receiver<UInt256>,
 ) -> Option<impl std::future::Future<Output = ()> + Send + 'static>
 where
     P: NativeContractProvider + 'static,
+    St: Store + 'static,
 {
     // Generously sized: a commit emits BroadcastMessage(Commit) + BlockCommitted
     // back-to-back via the consensus crate's non-blocking try_send.
     let (event_tx, event_rx) = mpsc::channel::<ConsensusEvent>(1024);
 
-    let mut service = ConsensusService::new(
+    let mut service = ConsensusService::<NodeConsensusSigner>::new_with_signer(
         setup.network,
         setup.validators.clone(),
         setup.my_index,
         setup.private_key.to_vec(),
         event_tx,
+        setup.signer.clone(),
     );
-    // When an HSM-backed signer is configured, route consensus signing through
-    // it (the software private_key above is zeroed and unused in that case).
-    service.set_signer(setup.signer.clone());
     service.set_expected_block_time(setup.ms_per_block);
     service.set_max_transactions_per_block(settings.max_transactions_per_block);
     // Crash-recovery persistence (C# `DbftSettings.RecoveryLogs`): the context is

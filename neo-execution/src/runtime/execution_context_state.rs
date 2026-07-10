@@ -4,13 +4,23 @@ use crate::contract_state::ContractState;
 use neo_manifest::CallFlags;
 use neo_primitives::ContractParameterType;
 use neo_primitives::UInt160;
-use neo_storage::DataCache;
-use neo_vm::ExecutionContext;
+use neo_storage::{CacheRead, DataCache, EmptyCacheBacking};
 use std::sync::Arc;
+
+/// NeoVM context specialized with the application engine's host state.
+pub type ApplicationExecutionContext<B = EmptyCacheBacking> =
+    neo_vm::ExecutionContext<ExecutionContextState<B>>;
+
+/// NeoVM engine specialized with the application engine's host state.
+pub type ApplicationExecutionEngine<B = EmptyCacheBacking> =
+    neo_vm::ExecutionEngine<ExecutionContextState<B>>;
+
+/// NeoVM opcode table specialized with the application engine's host state.
+pub type ApplicationJumpTable<B = EmptyCacheBacking> = neo_vm::JumpTable<ExecutionContextState<B>>;
 
 /// State associated with an execution context (matches C# ExecutionContextState)
 #[derive(Clone)]
-pub struct ExecutionContextState {
+pub struct ExecutionContextState<B = EmptyCacheBacking> {
     /// The script hash being executed
     pub script_hash: Option<UInt160>,
 
@@ -18,7 +28,7 @@ pub struct ExecutionContextState {
     pub calling_script_hash: Option<UInt160>,
 
     /// The calling execution context (matches C# CallingContext property)
-    pub calling_context: Option<ExecutionContext>,
+    pub calling_context: Option<ApplicationExecutionContext<B>>,
 
     /// The native calling script hash (set by native contracts)
     pub native_calling_script_hash: Option<UInt160>,
@@ -30,7 +40,7 @@ pub struct ExecutionContextState {
     pub call_flags: CallFlags,
 
     /// Cloned snapshot cache for the context
-    pub snapshot_cache: Option<Arc<DataCache>>,
+    pub snapshot_cache: Option<Arc<DataCache<B>>>,
 
     /// Notification count emitted by this context
     pub notification_count: usize,
@@ -54,7 +64,7 @@ pub struct ExecutionContextState {
     pub parameter_types: Vec<ContractParameterType>,
 }
 
-impl ExecutionContextState {
+impl<B: CacheRead> ExecutionContextState<B> {
     /// Creates a new execution context state
     pub fn new() -> Self {
         Self {
@@ -76,4 +86,8 @@ impl ExecutionContextState {
     }
 }
 
-neo_io::impl_default_via_new!(ExecutionContextState);
+impl<B: CacheRead> Default for ExecutionContextState<B> {
+    fn default() -> Self {
+        Self::new()
+    }
+}

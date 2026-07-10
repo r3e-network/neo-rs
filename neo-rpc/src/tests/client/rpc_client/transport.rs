@@ -15,19 +15,20 @@ async fn request_hooks_fire_on_successful_call() {
 
     let calls = Arc::new(AtomicUsize::new(0));
     let successful = Arc::new(AtomicBool::new(false));
-    let hooks = RpcClientHooks::new().with_observer({
-        let calls = Arc::clone(&calls);
-        let successful = Arc::clone(&successful);
-        move |outcome: &RpcRequestOutcome| {
-            calls.fetch_add(1, Ordering::SeqCst);
-            successful.store(outcome.success, Ordering::SeqCst);
-            assert_eq!(outcome.method, "getblockcount");
-            assert!(outcome.elapsed > Duration::from_millis(0));
-        }
-    });
-
     let url = Url::parse(&server.url()).unwrap();
-    let client = RpcClient::builder(url).hooks(hooks).build().unwrap();
+    let client = RpcClient::builder(url)
+        .with_observer({
+            let calls = Arc::clone(&calls);
+            let successful = Arc::clone(&successful);
+            move |outcome: &RpcRequestOutcome| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                successful.store(outcome.success, Ordering::SeqCst);
+                assert_eq!(outcome.method, "getblockcount");
+                assert!(outcome.elapsed > Duration::from_millis(0));
+            }
+        })
+        .build()
+        .unwrap();
     let count = client.get_block_count().await.expect("block count");
     assert_eq!(count, 7);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -130,6 +131,35 @@ fn rpc_client_new_constructs_and_drops() {
     let url = Url::parse("http://www.xxx.yyy").expect("url");
     let client = RpcClient::new(url, None, None, None).expect("client");
     drop(client);
+}
+
+#[test]
+fn default_rpc_client_hooks_are_zero_sized() {
+    assert_eq!(std::mem::size_of::<TracingRpcObserver>(), 0);
+    assert_eq!(std::mem::size_of::<RpcClientHooks>(), 0);
+}
+
+#[test]
+fn observer_closures_are_stored_inline() {
+    fn assert_inline_storage<O>(_: &RpcClientHooks<O>)
+    where
+        O: RpcObserver,
+    {
+        assert_eq!(
+            std::mem::size_of::<RpcClientHooks<O>>(),
+            std::mem::size_of::<O>()
+        );
+        assert!(std::mem::size_of::<O>() > std::mem::size_of::<usize>() * 2);
+    }
+
+    let payload = [7_u8; 64];
+    let hooks = RpcClientHooks::new().with_observer(move |outcome: &RpcRequestOutcome| {
+        let payload = std::hint::black_box(payload);
+        std::hint::black_box(outcome.success);
+        std::hint::black_box(payload);
+    });
+
+    assert_inline_storage(&hooks);
 }
 
 #[tokio::test]

@@ -56,7 +56,7 @@ impl PolicyContract {
     /// iterator (C# `GetWhitelistFeeContracts`).
     pub(in crate::policy_contract) fn whitelist_fee_entries(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
     ) -> Vec<(StorageKey, StorageItem)> {
         let prefix_key = Self::whitelist_fee_prefix_key();
         snapshot
@@ -73,7 +73,7 @@ impl PolicyContract {
     /// or ambiguous — C# `SingleOrDefault` throws on multiple matches).
     pub(in crate::policy_contract) fn resolve_whitelist_method_offset(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<impl neo_storage::CacheRead>,
         contract_hash: &UInt160,
         method: &str,
         arg_count: i32,

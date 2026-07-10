@@ -16,7 +16,11 @@ use num_traits::ToPrimitive;
 
 impl OracleContract {
     /// Look up a single oracle request by its id (C# `GetRequest`).
-    pub fn get_request(&self, snapshot: &DataCache, id: u64) -> CoreResult<Option<OracleRequest>> {
+    pub fn get_request<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        id: u64,
+    ) -> CoreResult<Option<OracleRequest>> {
         self.read_request(snapshot, id)
     }
 
@@ -24,7 +28,10 @@ impl OracleContract {
     /// scan over `Prefix_Request`, the id read big-endian from the key
     /// suffix. Records that fail to decode are skipped (the signature
     /// predates fallibility and only this contract writes the records).
-    pub fn get_requests(&self, snapshot: &DataCache) -> Vec<(u64, OracleRequest)> {
+    pub fn get_requests<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+    ) -> Vec<(u64, OracleRequest)> {
         let prefix = Self::request_prefix_key();
         let mut out = Vec::new();
         for (key, item) in snapshot.find(Some(&prefix), SeekDirection::Forward) {
@@ -45,9 +52,9 @@ impl OracleContract {
     /// Enumerate all pending oracle requests matching a URL (C#
     /// `GetRequestsByUrl`): resolve the per-url id-list, then each record.
     /// A listed id without a record is an error (C# `snapshot[key]` throws).
-    pub fn get_requests_by_url(
+    pub fn get_requests_by_url<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         url: &str,
     ) -> CoreResult<Vec<(u64, OracleRequest)>> {
         let Some(item) = snapshot.get(&Self::id_list_key(url)) else {
@@ -67,9 +74,9 @@ impl OracleContract {
     /// C# `SetPrice` storage effect: overwrite `Prefix_Price` as a `BigInteger`
     /// (`GetAndChange(...).Set(price)`). Genesis initialization creates this
     /// row; later writes fault if it is missing.
-    pub(in crate::oracle_contract) fn put_price(
+    pub(in crate::oracle_contract) fn put_price<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         price: i64,
     ) -> CoreResult<()> {
         crate::support::settings::put_required_i64_setting_key(
@@ -82,7 +89,10 @@ impl OracleContract {
 
     /// Reads `Prefix_Price`. C# genesis initialization seeds this record and
     /// later code reads it with direct storage access, so absence is a fault.
-    pub(in crate::oracle_contract) fn read_price(&self, snapshot: &DataCache) -> CoreResult<i64> {
+    pub(in crate::oracle_contract) fn read_price<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+    ) -> CoreResult<i64> {
         crate::support::settings::read_required_i64_setting_key(
             snapshot,
             Self::price_key(),
@@ -120,9 +130,9 @@ impl OracleContract {
     /// Reads the request-id counter (`Prefix_RequestId`). The C# genesis
     /// `InitializeAsync` seeds it with `BigInteger.Zero`; later `Request`
     /// uses `GetAndChange(... )!`, so absence is a fault.
-    pub(in crate::oracle_contract) fn read_request_id(
+    pub(in crate::oracle_contract) fn read_request_id<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
     ) -> CoreResult<u64> {
         let item = snapshot.get(&Self::request_id_key()).ok_or_else(|| {
             CoreError::invalid_data("OracleContract request-id counter is missing")
@@ -133,9 +143,9 @@ impl OracleContract {
     }
 
     /// Writes the request-id counter (C# `itemId.Add(1)` after taking the id).
-    pub(in crate::oracle_contract) fn write_request_id(
+    pub(in crate::oracle_contract) fn write_request_id<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         value: &BigInt,
     ) {
         snapshot.update(
@@ -178,9 +188,9 @@ impl OracleContract {
 
     /// Reads a pending request record (C# `GetRequest`): `None` when no request
     /// with the given id exists.
-    pub(in crate::oracle_contract) fn read_request(
+    pub(in crate::oracle_contract) fn read_request<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         id: u64,
     ) -> CoreResult<Option<OracleRequest>> {
         match snapshot.get(&Self::request_key(id)) {
@@ -191,9 +201,9 @@ impl OracleContract {
 
     /// Adds a pending request record with C# `SnapshotCache.Add` semantics: the
     /// request id must not already exist.
-    pub(in crate::oracle_contract) fn add_request_record(
+    pub(in crate::oracle_contract) fn add_request_record<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         id: u64,
         request: &OracleRequest,
     ) -> CoreResult<()> {
@@ -226,22 +236,21 @@ impl OracleContract {
     /// carries an `OracleResponse` attribute (a request issued from a response
     /// callback) the original txid is taken from the answered request, otherwise
     /// it is the transaction's own hash.
-    pub(in crate::oracle_contract) fn get_original_txid(
+    pub(in crate::oracle_contract) fn get_original_txid<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &ApplicationEngine,
-        snapshot: &DataCache,
+        engine: &ApplicationEngine<P, D, B>,
+        snapshot: &DataCache<B>,
     ) -> CoreResult<UInt256> {
         let container = engine.script_container().ok_or_else(|| {
             CoreError::invalid_operation("OracleContract: request requires a transaction container")
         })?;
-        let tx = container
-            .as_any()
-            .downcast_ref::<Transaction>()
-            .ok_or_else(|| {
-                CoreError::invalid_operation(
-                    "OracleContract: script container is not a transaction",
-                )
-            })?;
+        let tx = container.as_transaction().ok_or_else(|| {
+            CoreError::invalid_operation("OracleContract: script container is not a transaction")
+        })?;
         match Self::oracle_response_attribute(tx) {
             None => Ok(tx.hash()),
             Some(response) => {

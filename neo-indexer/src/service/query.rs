@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use neo_primitives::UInt256;
-use neo_storage::persistence::{Store, StoreSnapshot};
+use neo_storage::persistence::{Store, providers::RuntimeStore};
 
 use crate::error::IndexerResult;
 use crate::indexer::Indexer;
@@ -126,7 +126,7 @@ impl IndexerService {
         read(&indexer)
     }
 
-    fn store_backend(&self) -> Option<Arc<dyn Store>> {
+    fn store_backend(&self) -> Option<Arc<RuntimeStore>> {
         self.persistence
             .as_deref()
             .and_then(PersistenceBackend::store_backend)
@@ -134,7 +134,7 @@ impl IndexerService {
 
     pub(super) fn read_store_or_indexer<T>(
         &self,
-        read_store: impl FnOnce(&dyn StoreSnapshot) -> IndexerResult<T>,
+        read_store: impl FnOnce(&<RuntimeStore as Store>::Snapshot) -> IndexerResult<T>,
         read_memory: impl FnOnce(&Indexer) -> T,
     ) -> IndexerResult<T> {
         if let Some(store) = self.store_backend() {

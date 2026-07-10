@@ -1,14 +1,19 @@
-use super::super::native_provider::OracleServiceNativeProvider;
+use super::super::native_provider::{OracleContractReadProvider, OracleServiceNativeProvider};
 use super::super::utils::{ledger_height, wallet_has_oracle_account};
-use super::super::{OracleService, OracleStatus};
-use neo_wallets::Wallet;
+use super::super::{OracleRuntimeProvider, OracleService, OracleStatus};
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_wallets::Nep6Wallet;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use tracing::{info, warn};
 
-impl OracleService {
+impl<R, P> OracleService<R, P>
+where
+    R: OracleRuntimeProvider + 'static,
+    P: NativeContractProvider + OracleContractReadProvider + 'static,
+{
     /// Start the oracle service with the wallet that owns a designated oracle key.
-    pub fn start(self: &Arc<Self>, wallet: Arc<dyn Wallet>) {
+    pub fn start(self: &Arc<Self>, wallet: Arc<Nep6Wallet>) {
         if self.is_running() {
             return;
         }

@@ -2,7 +2,6 @@ use super::memory_store::MemoryStore;
 use crate::persistence::{
     read_only_store::{RawReadOnlyStore, ReadOnlyStoreGeneric},
     seek_direction::SeekDirection,
-    store::Store,
     store_snapshot::StoreSnapshot,
     write_store::WriteStore,
 };
@@ -42,6 +41,8 @@ impl MemorySnapshot {
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
+    type FindIterator<'a> = std::vec::IntoIter<(Vec<u8>, Vec<u8>)>;
+
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
         self.immutable_data.get(key).cloned()
     }
@@ -50,8 +51,8 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
         &self,
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
-        let iter: Vec<_> = self
+    ) -> Self::FindIterator<'_> {
+        let mut entries: Vec<_> = self
             .immutable_data
             .iter()
             .filter(|(key, _)| {
@@ -63,10 +64,9 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemorySnapshot {
             .collect();
 
         if direction == SeekDirection::Backward {
-            Box::new(iter.into_iter().rev())
-        } else {
-            Box::new(iter.into_iter())
+            entries.reverse();
         }
+        entries.into_iter()
     }
 }
 
@@ -89,7 +89,9 @@ impl WriteStore<Vec<u8>, Vec<u8>> for MemorySnapshot {
 }
 
 impl StoreSnapshot for MemorySnapshot {
-    fn store(&self) -> Arc<dyn Store> {
+    type Store = MemoryStore;
+
+    fn store(&self) -> Arc<Self::Store> {
         self.store.clone()
     }
 

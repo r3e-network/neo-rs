@@ -12,7 +12,7 @@ use neo_blockchain::{
 use neo_error::CoreResult;
 use neo_payloads::Header;
 use neo_primitives::UInt256;
-use neo_storage::persistence::DataCache;
+use neo_storage::persistence::{CacheRead, DataCache};
 
 const SESSION_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
     HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
@@ -20,7 +20,10 @@ const SESSION_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerP
 /// Ledger capabilities required by RPC session construction.
 pub(super) trait SessionLedgerProvider {
     /// Returns the current persisted block hash and header.
-    fn current_header(&self, snapshot: &DataCache) -> CoreResult<Option<(UInt256, Header)>>;
+    fn current_header<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+    ) -> CoreResult<Option<(UInt256, Header)>>;
 }
 
 /// Factory for RPC session ledger providers.
@@ -45,7 +48,10 @@ impl NativeSessionLedgerProvider {
 }
 
 impl SessionLedgerProvider for NativeSessionLedgerProvider {
-    fn current_header(&self, snapshot: &DataCache) -> CoreResult<Option<(UInt256, Header)>> {
+    fn current_header<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+    ) -> CoreResult<Option<(UInt256, Header)>> {
         let provider = SESSION_LEDGER_PROVIDER_FACTORY.provider(snapshot);
         let current_hash = provider.current_hash()?;
         Ok(provider

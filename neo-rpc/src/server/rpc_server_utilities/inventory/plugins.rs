@@ -1,8 +1,5 @@
-use crate::application_logs::ApplicationLogsService;
-use crate::plugins::tokens_tracker::TokensTrackerService;
 use crate::server::rpc_server::RpcServer;
 use crate::server::rpc_server_utilities::response::{plugin_entry_to_json, plugins_to_json};
-use neo_indexer::IndexerService;
 use serde_json::Value;
 
 impl RpcServer {
@@ -18,28 +15,20 @@ impl RpcServer {
 
         plugins.push(plugin_entry("RpcServer", &[]));
 
-        if self
-            .system()
-            .get_service::<ApplicationLogsService>()
-            .is_some()
-        {
+        if self.system().application_logs_service().is_some() {
             plugins.push(plugin_entry("ApplicationLogs", &persistence_interfaces));
         }
         if self.system().state_store().is_some() {
             plugins.push(plugin_entry("StateService", &persistence_interfaces));
         }
-        if self
-            .system()
-            .get_service::<TokensTrackerService>()
-            .is_some()
-        {
+        if self.system().tokens_tracker_service().is_some() {
             let name = match compat {
                 ListPluginsCompat::Fixture => "RpcNep17Tracker",
                 ListPluginsCompat::Runtime => "TokensTracker",
             };
             plugins.push(plugin_entry(name, &persistence_interfaces));
         }
-        if self.system().get_service::<IndexerService>().is_some() {
+        if self.system().indexer_service().is_some() {
             plugins.push(plugin_entry("NeoIndexer", &persistence_interfaces));
         }
 

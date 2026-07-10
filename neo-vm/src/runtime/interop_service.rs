@@ -13,17 +13,17 @@ use std::collections::HashMap;
 use std::str;
 
 /// Function pointer used for interop handlers that execute within the VM itself.
-pub type InteropCallback = fn(&mut ExecutionEngine) -> VmResult<()>;
+pub type InteropCallback<S = ()> = fn(&mut ExecutionEngine<S>) -> VmResult<()>;
 
 /// Descriptor for a syscall registered with the interop service. Mirrors the shape of
 /// `Neo.SmartContract.InteropDescriptor` while keeping Rust ergonomics.
 #[derive(Clone)]
-pub struct VmInteropDescriptor {
+pub struct VmInteropDescriptor<S = ()> {
     /// Canonical name of the syscall (e.g. `System.Runtime.Platform`).
     pub name: String,
     /// Optional handler executed directly by the VM. When `None`, the call is delegated
     /// to the configured [`InteropHost`].
-    pub handler: Option<InteropCallback>,
+    pub handler: Option<InteropCallback<S>>,
     /// Fixed price charged by the syscall (in execution units).
     ///
     /// In the Neo N3 reference implementation, the host (`ApplicationEngine`) applies
@@ -35,13 +35,13 @@ pub struct VmInteropDescriptor {
 }
 
 /// Internal representation of a registered descriptor including its computed hash.
-struct RegisteredDescriptor {
-    descriptor: VmInteropDescriptor,
+struct RegisteredDescriptor<S = ()> {
+    descriptor: VmInteropDescriptor<S>,
     hash: u32,
 }
 
-impl RegisteredDescriptor {
-    fn new(descriptor: VmInteropDescriptor) -> VmResult<Self> {
+impl<S> RegisteredDescriptor<S> {
+    fn new(descriptor: VmInteropDescriptor<S>) -> VmResult<Self> {
         let hash = hash_syscall(&descriptor.name)?;
         Ok(Self { descriptor, hash })
     }
@@ -55,27 +55,27 @@ impl RegisteredDescriptor {
 /// registration, fixed gas price charging, and required call flags. As in the C#
 /// implementation, syscall security (permissions, container checks, policy rules)
 /// is enforced by the host (`ApplicationEngine` / native contract layer).
-pub trait InteropHost {
+pub trait InteropHost<S = ()> {
     /// Invokes a system call identified by its hash.
     ///
     /// # Arguments
     /// * `engine` - The execution engine
     /// * `hash` - The syscall hash identifier
-    fn invoke_syscall(&mut self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()>;
+    fn invoke_syscall(&mut self, engine: &mut ExecutionEngine<S>, hash: u32) -> VmResult<()>;
 
     /// Called when a new execution context is loaded onto the invocation stack.
     fn on_context_loaded(
         &mut self,
-        _engine: &mut ExecutionEngine,
-        _context: &ExecutionContext,
+        _engine: &mut ExecutionEngine<S>,
+        _context: &ExecutionContext<S>,
     ) -> VmResult<()> {
         Ok(())
     }
     /// Called when an execution context is unloaded from the invocation stack.
     fn on_context_unloaded(
         &mut self,
-        _engine: &mut ExecutionEngine,
-        _context: &ExecutionContext,
+        _engine: &mut ExecutionEngine<S>,
+        _context: &ExecutionContext<S>,
     ) -> VmResult<()> {
         Ok(())
     }
@@ -87,7 +87,7 @@ pub trait InteropHost {
     /// `ExecutionContext` clone.
     fn pre_execute_instruction(
         &mut self,
-        _engine: &mut ExecutionEngine,
+        _engine: &mut ExecutionEngine<S>,
         _instruction: &Instruction,
     ) -> VmResult<()> {
         Ok(())
@@ -100,7 +100,7 @@ pub trait InteropHost {
     /// `ExecutionContext` clone.
     fn post_execute_instruction(
         &mut self,
-        _engine: &mut ExecutionEngine,
+        _engine: &mut ExecutionEngine<S>,
         _instruction: &Instruction,
     ) -> VmResult<()> {
         Ok(())
@@ -115,7 +115,7 @@ pub trait InteropHost {
     ///
     /// # Returns
     /// Default implementation returns an error indicating CALLT requires `ApplicationEngine`.
-    fn on_callt(&mut self, _engine: &mut ExecutionEngine, token_id: u16) -> VmResult<()> {
+    fn on_callt(&mut self, _engine: &mut ExecutionEngine<S>, token_id: u16) -> VmResult<()> {
         Err(VmError::invalid_operation_msg(format!(
             "CALLT (token {token_id}) requires ApplicationEngine context. \
              This opcode cannot be executed in standalone VM mode."
@@ -124,12 +124,17 @@ pub trait InteropHost {
 }
 
 /// `InteropService` manages syscall descriptors and dispatches them just like the C# implementation.
-#[derive(Default)]
-pub struct InteropService {
-    descriptors: HashMap<u32, RegisteredDescriptor>,
+pub struct InteropService<S = ()> {
+    descriptors: HashMap<u32, RegisteredDescriptor<S>>,
 }
 
-impl InteropService {
+impl<S> Default for InteropService<S> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<S> InteropService<S> {
     /// Creates a new, empty interop service. Descriptors must be registered explicitly
     /// by the host (mirroring the static registration that happens in C#).
     #[must_use]
@@ -140,7 +145,7 @@ impl InteropService {
     }
 
     /// Registers a descriptor and returns its syscall hash.
-    pub fn register(&mut self, descriptor: VmInteropDescriptor) -> VmResult<u32> {
+    pub fn register(&mut self, descriptor: VmInteropDescriptor<S>) -> VmResult<u32> {
         let registered = RegisteredDescriptor::new(descriptor)?;
 
         if self.descriptors.contains_key(&registered.hash) {
@@ -172,7 +177,7 @@ impl InteropService {
 
     /// Retrieves a descriptor by name (ASCII byte slice).
     #[must_use]
-    pub fn get_method(&self, name: &[u8]) -> Option<&VmInteropDescriptor> {
+    pub fn get_method(&self, name: &[u8]) -> Option<&VmInteropDescriptor<S>> {
         let name_str = str::from_utf8(name).ok()?;
         let hash = hash_syscall(name_str).ok()?;
         self.descriptors.get(&hash).map(|entry| &entry.descriptor)
@@ -187,7 +192,7 @@ impl InteropService {
     /// Invokes a syscall linked to an instruction.
     pub fn invoke_instruction(
         &mut self,
-        engine: &mut ExecutionEngine,
+        engine: &mut ExecutionEngine<S>,
         instruction: &Instruction,
     ) -> VmResult<()> {
         let hash = instruction.token_u32();
@@ -195,7 +200,7 @@ impl InteropService {
     }
 
     /// Invokes a syscall by its 32-bit hash identifier.
-    pub fn invoke_by_hash(&mut self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()> {
+    pub fn invoke_by_hash(&mut self, engine: &mut ExecutionEngine<S>, hash: u32) -> VmResult<()> {
         let (handler, required_call_flags, name) = {
             let entry = self.descriptors.get(&hash).ok_or_else(|| {
                 VmError::invalid_operation_msg(format!("Syscall 0x{hash:08x} not registered"))

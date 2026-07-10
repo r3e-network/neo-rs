@@ -4,7 +4,7 @@
 
 use super::{ExecutionEngine, StackItem, TryFrom, VMState, VmError, VmResult};
 
-impl ExecutionEngine {
+impl<S> ExecutionEngine<S> {
     /// Executes a try block
     pub fn execute_try(&mut self, catch_offset: i32, finally_offset: i32) -> VmResult<()> {
         use neo_vm_rs::ExceptionHandlingContext;
@@ -34,7 +34,7 @@ impl ExecutionEngine {
         } else {
             base_ip
                 .checked_add(catch_offset)
-                .ok_or_else(|| VmError::InvalidJump(catch_offset))?
+                .ok_or(VmError::InvalidJump(catch_offset))?
         };
 
         let finally_pointer = if finally_offset == 0 {
@@ -42,7 +42,7 @@ impl ExecutionEngine {
         } else {
             base_ip
                 .checked_add(finally_offset)
-                .ok_or_else(|| VmError::InvalidJump(finally_offset))?
+                .ok_or(VmError::InvalidJump(finally_offset))?
         };
 
         context.push_try_context(ExceptionHandlingContext::new(
@@ -90,7 +90,7 @@ impl ExecutionEngine {
 
             let end_pointer = base_ip
                 .checked_add(end_offset)
-                .ok_or_else(|| VmError::InvalidJump(end_offset))?;
+                .ok_or(VmError::InvalidJump(end_offset))?;
             try_entry.set_end_pointer(end_pointer);
 
             let finally_pointer = try_entry.finally_pointer();
@@ -101,7 +101,7 @@ impl ExecutionEngine {
             context.pop_try_context();
             let end_pointer = base_ip
                 .checked_add(end_offset)
-                .ok_or_else(|| VmError::InvalidJump(end_offset))?;
+                .ok_or(VmError::InvalidJump(end_offset))?;
             let end_position =
                 usize::try_from(end_pointer).map_err(|_| VmError::InvalidJump(end_pointer))?;
             context.set_instruction_pointer(end_position);

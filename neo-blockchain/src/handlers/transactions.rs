@@ -68,8 +68,8 @@ where
         )
     }
 
-    fn persisted_conflict_exists_with_provider(
-        snapshot: &neo_storage::DataCache,
+    fn persisted_conflict_exists_with_provider<B: neo_storage::CacheRead>(
+        snapshot: &neo_storage::DataCache<B>,
         settings: &neo_config::ProtocolSettings,
         hash: &neo_primitives::UInt256,
         signers: &[neo_primitives::UInt160],

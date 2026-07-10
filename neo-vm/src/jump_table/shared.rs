@@ -60,7 +60,9 @@ pub(crate) fn numeric_operand(item: StackItem) -> VmResult<StackValue> {
 /// Shared by every opcode-family handler module so the "No current context"
 /// guard reads identically across the jump table.
 #[inline]
-pub(crate) fn require_context(engine: &mut ExecutionEngine) -> VmResult<&mut ExecutionContext> {
+pub(crate) fn require_context<S>(
+    engine: &mut ExecutionEngine<S>,
+) -> VmResult<&mut ExecutionContext<S>> {
     engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))
@@ -76,6 +78,9 @@ pub(crate) fn semantics_error(error: String) -> VmError {
 /// Pushes a typed [`StackValue`] result back onto the evaluation stack,
 /// converting it into the engine's [`StackItem`] representation.
 #[inline]
-pub(crate) fn push_stack_value(ctx: &mut ExecutionContext, value: StackValue) -> VmResult<()> {
+pub(crate) fn push_stack_value<S>(
+    ctx: &mut ExecutionContext<S>,
+    value: StackValue,
+) -> VmResult<()> {
     ctx.push(StackItem::try_from(value)?)
 }

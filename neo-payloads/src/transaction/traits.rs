@@ -76,10 +76,6 @@ impl Interoperable for Transaction {
         Transaction::to_stack_value(self)
             .map_err(|e| InteroperableError::InvalidData(e.to_string()))
     }
-
-    fn clone_box(&self) -> Box<dyn Interoperable> {
-        Box::new(self.clone())
-    }
 }
 
 // Use macro to reduce boilerplate

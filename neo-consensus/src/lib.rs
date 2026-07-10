@@ -67,7 +67,7 @@ pub mod signer;
 pub use change_view_reason::ChangeViewReason;
 pub use error::{ConsensusError, ConsensusResult};
 pub use message_type::ConsensusMessageType;
-pub use signer::ConsensusSigner;
+pub use signer::{ConsensusSigner, NoConsensusSigner};
 
 // ============================================================================
 // Public Re-exports - Context

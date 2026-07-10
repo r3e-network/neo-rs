@@ -1,4 +1,6 @@
-use super::super::OracleService;
+use super::super::native_provider::OracleContractReadProvider;
+use super::super::{OracleRuntimeProvider, OracleService};
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_wallets::KeyPair;
 use tokio::task::JoinHandle;
 
@@ -11,7 +13,11 @@ use std::sync::atomic::Ordering;
 #[cfg(feature = "oracle")]
 use tracing::warn;
 
-impl OracleService {
+impl<R, P> OracleService<R, P>
+where
+    R: OracleRuntimeProvider,
+    P: NativeContractProvider + OracleContractReadProvider,
+{
     #[cfg(feature = "oracle")]
     pub(in super::super) fn send_response_signature(
         &self,

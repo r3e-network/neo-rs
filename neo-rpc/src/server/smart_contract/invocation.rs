@@ -58,8 +58,8 @@ fn execute_script(
     };
     let system = server.system();
     let mut session = Session::new(
-        system.clone(), // Arc<NodeContext> coerced to Arc<dyn StoreProvider>
-        system.clone(), // Arc<NodeContext> coerced to Arc<dyn ConfigProvider>
+        system.clone(),
+        system.clone(),
         system.native_contract_provider(),
         script,
         signers.clone(),

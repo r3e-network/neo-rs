@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use neo_state_service::StateStore;
 use neo_state_service::mpt_store::MptStore;
+use neo_storage::persistence::providers::RuntimeStore;
 
 use super::RpcServerState;
 use crate::server::rpc_error::RpcError;
@@ -15,7 +16,9 @@ use crate::server::rpc_server::RpcServer;
 pub(super) const MAX_FIND_RESULT_ITEMS: usize = 100;
 
 impl RpcServerState {
-    pub(super) fn state_store(server: &RpcServer) -> Result<Arc<StateStore>, RpcException> {
+    pub(super) fn state_store(
+        server: &RpcServer,
+    ) -> Result<Arc<StateStore<RuntimeStore>>, RpcException> {
         server.system().state_store().ok_or_else(|| {
             RpcException::from(
                 RpcError::internal_server_error().with_data("StateService service not registered"),
@@ -25,7 +28,9 @@ impl RpcServerState {
 
     /// Resolves the persisted MPT backend, or reports the same
     /// `UnsupportedState` error the MPT-less build always served.
-    pub(super) fn mpt_store(server: &RpcServer) -> Result<Arc<MptStore>, RpcException> {
+    pub(super) fn mpt_store(
+        server: &RpcServer,
+    ) -> Result<Arc<MptStore<RuntimeStore>>, RpcException> {
         let state_store = Self::state_store(server)?;
         state_store.mpt().ok_or_else(Self::proofs_unsupported)
     }

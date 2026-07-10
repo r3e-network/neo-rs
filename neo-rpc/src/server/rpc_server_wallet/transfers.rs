@@ -6,7 +6,7 @@ use neo_payloads::transaction_attribute::TransactionAttribute;
 use neo_primitives::WitnessScope;
 use neo_primitives::{BigDecimal, UInt160};
 use neo_vm_rs::OpCode;
-use neo_wallets::{AssetDescriptor, TransferOutput, Wallet as CoreWallet};
+use neo_wallets::{AssetDescriptor, Nep6Wallet, TransferOutput};
 use num_traits::ToPrimitive;
 use serde_json::Value;
 use std::sync::Arc;
@@ -211,7 +211,6 @@ impl RpcServerWallet {
             asset_id: entry.asset,
             value,
             script_hash: to,
-            data: None,
         })
     }
 
@@ -260,7 +259,6 @@ impl RpcServerWallet {
             asset_id: asset,
             value,
             script_hash: to,
-            data: None,
         };
 
         let tx_json = Self::build_and_relay(server, &wallet, &[transfer], from, signers)?;
@@ -269,7 +267,7 @@ impl RpcServerWallet {
 
     fn build_and_relay(
         server: &RpcServer,
-        wallet: &Arc<dyn CoreWallet>,
+        wallet: &Arc<Nep6Wallet>,
         outputs: &[TransferOutput],
         from: Option<UInt160>,
         signers: Option<&[Signer]>,

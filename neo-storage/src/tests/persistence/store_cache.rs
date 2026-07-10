@@ -3,8 +3,7 @@ use crate::StorageError;
 use crate::persistence::providers::memory_store::MemoryStore;
 use crate::persistence::read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric};
 use crate::persistence::seek_direction::SeekDirection;
-use crate::persistence::store::{OnNewSnapshotDelegate, Store};
-use crate::persistence::store_snapshot::StoreSnapshot;
+use crate::persistence::store::Store;
 use crate::persistence::write_store::WriteStore;
 use crate::types::{StorageItem, StorageKey};
 use parking_lot::Mutex;
@@ -53,6 +52,9 @@ impl OverlayContractStore {
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for OverlayContractStore {
+    type FindIterator<'a> =
+        <MemoryStore as ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>>>::FindIterator<'a>;
+
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
         self.inner.try_get(key)
     }
@@ -61,12 +63,15 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for OverlayContractStore {
         &self,
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+    ) -> Self::FindIterator<'_> {
         self.inner.find(key_prefix, direction)
     }
 }
 
 impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for OverlayContractStore {
+    type FindIterator<'a> =
+        <MemoryStore as ReadOnlyStoreGeneric<StorageKey, StorageItem>>::FindIterator<'a>;
+
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         self.inner.try_get(key)
     }
@@ -75,7 +80,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for OverlayContractStore {
         &self,
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+    ) -> Self::FindIterator<'_> {
         self.inner.find(key_prefix, direction)
     }
 }
@@ -99,36 +104,23 @@ impl WriteStore<Vec<u8>, Vec<u8>> for OverlayContractStore {
 impl ReadOnlyStore for OverlayContractStore {}
 
 impl Store for OverlayContractStore {
-    fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
+    type Snapshot = <MemoryStore as Store>::Snapshot;
+
+    fn snapshot(&self) -> Arc<Self::Snapshot> {
         self.inner.snapshot()
     }
 
-    fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate) {
-        self.inner.on_new_snapshot(handler);
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_raw_overlay_store(&self) -> Option<&dyn crate::persistence::RawOverlayStore> {
-        if matches!(self.mode, OverlayMode::Unsupported) {
-            None
-        } else {
-            Some(self)
-        }
-    }
-}
-
-impl crate::persistence::RawOverlayStore for OverlayContractStore {
     fn try_commit_raw_overlay(
         &self,
         overlay: &[(Vec<u8>, Option<Vec<u8>>)],
     ) -> crate::StorageResult<bool> {
+        if matches!(self.mode, OverlayMode::Unsupported) {
+            return Ok(false);
+        }
         self.cloned_raw_overlay_attempts
             .fetch_add(1, Ordering::Relaxed);
         match self.mode {
-            OverlayMode::Unsupported => Ok(false),
+            OverlayMode::Unsupported => unreachable!("handled before recording overlay attempts"),
             OverlayMode::Fails => Err(StorageError::backend("raw overlay failed")),
             OverlayMode::Borrowed => {
                 panic!("borrowed overlay mode must not materialize the cloned raw overlay")
@@ -140,10 +132,13 @@ impl crate::persistence::RawOverlayStore for OverlayContractStore {
         }
     }
 
-    fn try_commit_borrowed_raw_overlay(
+    fn try_commit_borrowed_raw_overlay<O>(
         &self,
-        visit: &mut dyn FnMut(&mut dyn FnMut(&[u8], Option<&[u8]>)),
-    ) -> crate::StorageResult<bool> {
+        overlay_source: &mut O,
+    ) -> crate::StorageResult<bool>
+    where
+        O: crate::persistence::RawOverlaySource + ?Sized,
+    {
         if !matches!(self.mode, OverlayMode::Borrowed) {
             return Ok(false);
         }
@@ -152,14 +147,14 @@ impl crate::persistence::RawOverlayStore for OverlayContractStore {
         let mut collect = |key: &[u8], value: Option<&[u8]>| {
             overlay.push((key.to_vec(), value.map(<[u8]>::to_vec)));
         };
-        visit(&mut collect);
+        overlay_source.visit_raw_overlay(&mut collect);
         Ok(true)
     }
 }
 
 #[test]
 fn unsupported_raw_overlay_falls_back_to_snapshot_commit() {
-    let store: Arc<dyn Store> = Arc::new(OverlayContractStore::new(OverlayMode::Unsupported));
+    let store = Arc::new(OverlayContractStore::new(OverlayMode::Unsupported));
     let key = StorageKey::new(7, vec![0x01]);
 
     let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
@@ -177,8 +172,7 @@ fn unsupported_raw_overlay_falls_back_to_snapshot_commit() {
 
 #[test]
 fn snapshot_fallback_skips_raw_overlay_clone_when_store_does_not_support_it() {
-    let concrete = Arc::new(OverlayContractStore::new(OverlayMode::Unsupported));
-    let store: Arc<dyn Store> = concrete.clone();
+    let store = Arc::new(OverlayContractStore::new(OverlayMode::Unsupported));
     let key = StorageKey::new(7, vec![0x05]);
 
     let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
@@ -189,7 +183,7 @@ fn snapshot_fallback_skips_raw_overlay_clone_when_store_does_not_support_it() {
         .expect("snapshot fallback should persist changes");
 
     assert_eq!(
-        concrete.cloned_raw_overlay_attempts(),
+        store.cloned_raw_overlay_attempts(),
         0,
         "unsupported stores should fall back to snapshots without cloning the raw overlay"
     );
@@ -206,7 +200,7 @@ fn snapshot_fallback_skips_raw_overlay_clone_when_store_does_not_support_it() {
 
 #[test]
 fn raw_overlay_error_propagates_and_keeps_cache_dirty() {
-    let store: Arc<dyn Store> = Arc::new(OverlayContractStore::new(OverlayMode::Fails));
+    let store = Arc::new(OverlayContractStore::new(OverlayMode::Fails));
     let key = StorageKey::new(7, vec![0x02]);
 
     let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
@@ -229,8 +223,7 @@ fn raw_overlay_error_propagates_and_keeps_cache_dirty() {
 
 #[test]
 fn borrowed_raw_overlay_fast_path_commits_without_cloned_overlay() {
-    let concrete = Arc::new(OverlayContractStore::new(OverlayMode::Borrowed));
-    let store: Arc<dyn Store> = concrete.clone();
+    let store = Arc::new(OverlayContractStore::new(OverlayMode::Borrowed));
     let added = StorageKey::new(7, vec![0x03]);
     let deleted = StorageKey::new(7, vec![0x04]);
 
@@ -244,7 +237,7 @@ fn borrowed_raw_overlay_fast_path_commits_without_cloned_overlay() {
         .expect("borrowed overlay commit should be accepted");
 
     assert_eq!(writer.data_cache().pending_change_count(), 0);
-    let mut borrowed_overlay = concrete.borrowed_overlay();
+    let mut borrowed_overlay = store.borrowed_overlay();
     borrowed_overlay.sort_by(|left, right| left.0.cmp(&right.0));
     assert_eq!(
         borrowed_overlay,
@@ -257,8 +250,7 @@ fn borrowed_raw_overlay_fast_path_commits_without_cloned_overlay() {
 
 #[test]
 fn borrowed_raw_overlay_fast_path_emits_entries_in_key_order() {
-    let concrete = Arc::new(OverlayContractStore::new(OverlayMode::Borrowed));
-    let store: Arc<dyn Store> = concrete.clone();
+    let store = Arc::new(OverlayContractStore::new(OverlayMode::Borrowed));
     let high_key = StorageKey::new(7, vec![0x30]);
     let low_key = StorageKey::new(7, vec![0x10]);
     let mid_key = StorageKey::new(7, vec![0x20]);
@@ -272,7 +264,7 @@ fn borrowed_raw_overlay_fast_path_emits_entries_in_key_order() {
         .try_commit()
         .expect("borrowed overlay commit should be accepted");
 
-    let borrowed_overlay = concrete.borrowed_overlay();
+    let borrowed_overlay = store.borrowed_overlay();
     assert_eq!(
         borrowed_overlay,
         vec![
@@ -286,8 +278,7 @@ fn borrowed_raw_overlay_fast_path_emits_entries_in_key_order() {
 
 #[test]
 fn materialized_raw_overlay_fallback_emits_entries_in_key_order() {
-    let concrete = Arc::new(OverlayContractStore::new(OverlayMode::Materialized));
-    let store: Arc<dyn Store> = concrete.clone();
+    let store = Arc::new(OverlayContractStore::new(OverlayMode::Materialized));
     let high_key = StorageKey::new(7, vec![0x30]);
     let low_key = StorageKey::new(7, vec![0x10]);
     let mid_key = StorageKey::new(7, vec![0x20]);
@@ -302,7 +293,7 @@ fn materialized_raw_overlay_fallback_emits_entries_in_key_order() {
         .expect("materialized overlay commit should be accepted");
 
     assert_eq!(
-        concrete.cloned_overlay(),
+        store.cloned_overlay(),
         vec![
             (low_key.to_array(), Some(vec![0x01])),
             (mid_key.to_array(), Some(vec![0x02])),

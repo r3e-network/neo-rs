@@ -1,23 +1,28 @@
 use crate::client::native_hashes::policy_hash;
-use crate::{ContractClient, RpcClient, RpcClientError, RpcUtility};
+use crate::{
+    ContractClient, RpcClient, RpcClientError, RpcObserver, RpcUtility, TracingRpcObserver,
+};
 use neo_primitives::UInt160;
 use num_traits::cast::ToPrimitive;
 use std::sync::Arc;
 
 /// Get Policy info by RPC API
 /// Matches C# `PolicyAPI`
-pub struct PolicyApi {
+pub struct PolicyApi<O = TracingRpcObserver> {
     /// Base contract client functionality
-    contract_client: ContractClient,
+    contract_client: ContractClient<O>,
     /// Policy contract script hash
     script_hash: UInt160,
 }
 
-impl PolicyApi {
+impl<O> PolicyApi<O>
+where
+    O: RpcObserver,
+{
     /// `PolicyAPI` Constructor
     /// Matches C# constructor
     #[must_use]
-    pub fn new(rpc_client: Arc<RpcClient>) -> Self {
+    pub fn new(rpc_client: Arc<RpcClient<O>>) -> Self {
         Self {
             contract_client: ContractClient::new(rpc_client),
             script_hash: policy_hash(),

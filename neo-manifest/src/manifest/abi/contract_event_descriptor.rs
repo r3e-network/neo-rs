@@ -115,10 +115,6 @@ impl Interoperable for ContractEventDescriptor {
     fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
         Ok(self.to_stack_value())
     }
-
-    fn clone_box(&self) -> Box<dyn Interoperable> {
-        Box::new(self.clone())
-    }
 }
 
 #[cfg(test)]

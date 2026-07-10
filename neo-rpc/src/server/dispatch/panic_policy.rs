@@ -27,10 +27,9 @@ pub(super) fn invoke_local_handler(
     params: &[Value],
     policy: UnhandledExceptionPolicy,
 ) -> Result<Value, RpcError> {
-    let callback = handler.callback();
     let call_result = panic::catch_unwind(AssertUnwindSafe(|| {
         let server_guard = server_arc.read();
-        (callback)(&server_guard, params)
+        handler.call(&server_guard, params)
     }));
 
     match call_result {

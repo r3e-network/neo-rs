@@ -4,14 +4,99 @@ use super::{
     write_store::WriteStore,
 };
 use crate::error::StorageResult;
-use std::any::Any;
 use std::sync::Arc;
 
-use super::fast_sync_store::FastSyncStore;
-use super::raw_overlay_store::RawOverlayStore;
+/// Stable identifier for a store backend selected through the provider/factory
+/// layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreBackendKind {
+    /// Ephemeral in-memory store used by tests and remote-ledger mode.
+    Memory,
+    /// Production MDBX store.
+    Mdbx,
+    /// RocksDB compatibility/backend store.
+    RocksDb,
+    /// A custom store implementation outside the built-in backend set.
+    Custom(&'static str),
+}
 
-/// Delegate for OnNewSnapshot event
-pub type OnNewSnapshotDelegate = Box<dyn Fn(&dyn Store, Arc<dyn StoreSnapshot>) + Send + Sync>;
+impl StoreBackendKind {
+    /// Returns the stable backend label used in diagnostics and metrics.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Memory => "memory",
+            Self::Mdbx => "mdbx",
+            Self::RocksDb => "rocksdb",
+            Self::Custom(name) => name,
+        }
+    }
+}
+
+/// MDBX environment information projected into storage-owned diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MdbxEnvironmentInfo {
+    /// Current MDBX memory-map size in bytes.
+    pub map_size: usize,
+    /// Last used MDBX page number.
+    pub last_pgno: usize,
+    /// Last committed MDBX transaction id.
+    pub last_txnid: usize,
+    /// Configured MDBX reader slot capacity.
+    pub max_readers: usize,
+    /// MDBX reader slots currently used.
+    pub num_readers: usize,
+}
+
+/// RocksDB fast-sync batch diagnostics projected without exposing the concrete
+/// store type to callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RocksDbBatchMetrics {
+    /// Current write operations buffered before RocksDB flush.
+    pub pending_operations: u64,
+    /// Total RocksDB write batches flushed by fast-sync buffering.
+    pub batches_flushed: u64,
+    /// Total put/delete operations flushed through RocksDB write batches.
+    pub operations_written: u64,
+    /// Approximate payload bytes flushed through RocksDB write batches.
+    pub bytes_written: u64,
+    /// Total RocksDB write-batch flush timeout observations.
+    pub flush_timeouts: u64,
+    /// Average write operations per flushed RocksDB batch.
+    pub avg_ops_per_flush: u64,
+    /// Average payload bytes per flushed RocksDB batch.
+    pub avg_bytes_per_flush: u64,
+    /// Average RocksDB write-batch flush duration in milliseconds.
+    pub avg_flush_duration_ms: u64,
+    /// Active RocksDB write-batch operation threshold.
+    pub max_batch_size: u64,
+    /// Active RocksDB write-batch byte threshold.
+    pub max_batch_bytes: u64,
+    /// Whether RocksDB WAL is disabled for fast-sync batch writes.
+    pub disable_wal: bool,
+}
+
+/// Sink for ordered raw byte-key overlay entries.
+pub trait RawOverlaySink {
+    /// Receives a put (`Some(value)`) or delete (`None`) operation.
+    fn visit(&mut self, key: &[u8], value: Option<&[u8]>);
+}
+
+impl<F> RawOverlaySink for F
+where
+    F: FnMut(&[u8], Option<&[u8]>),
+{
+    fn visit(&mut self, key: &[u8], value: Option<&[u8]>) {
+        self(key, value);
+    }
+}
+
+/// Source of ordered raw byte-key overlay entries.
+pub trait RawOverlaySource {
+    /// Emits put/delete entries into `sink`.
+    fn visit_raw_overlay<S>(&mut self, sink: &mut S)
+    where
+        S: RawOverlaySink + ?Sized;
+}
 
 /// This interface provides methods for reading, writing from/to database.
 /// Developers should implement this interface to provide new storage engines for NEO.
@@ -21,14 +106,11 @@ pub type OnNewSnapshotDelegate = Box<dyn Fn(&dyn Store, Arc<dyn StoreSnapshot>) 
 /// The `Store` trait covers four concerns:
 /// - **Read** — via `ReadOnlyStore` + `RawReadOnlyStore` supertraits
 /// - **Write** — via `WriteStore` supertrait + `flush()`
-/// - **Snapshot** — `snapshot()` + `on_new_snapshot()`
-/// - **Downcast** — `as_any()`
+/// - **Snapshot** — concrete `Snapshot` associated type + `snapshot()`
+/// - **Backend capabilities** — explicit backend identity and optional metrics
 ///
-/// Two additional concerns live in separate extension traits (ADR-020):
-/// - **Fast-sync** — [`FastSyncStore`] (WAL disabling, buffered writes).
-///   Accessed via [`Store::as_fast_sync_store`].
-/// - **Raw overlay** — [`RawOverlayStore`] (direct overlay commit without
-///   snapshot). Accessed via [`Store::as_raw_overlay_store`].
+/// Additional optional backend capabilities are exposed as default methods:
+/// fast-sync mode controls, direct raw-overlay commits, and backend metrics.
 pub trait Store:
     ReadOnlyStore
     + RawReadOnlyStore
@@ -36,13 +118,13 @@ pub trait Store:
     + Send
     + Sync
     + std::fmt::Debug
-    + Any
+    + 'static
 {
-    /// Creates a snapshot of the database.
-    fn snapshot(&self) -> Arc<dyn StoreSnapshot>;
+    /// Concrete point-in-time snapshot produced by this backend.
+    type Snapshot: StoreSnapshot;
 
-    /// Event raised when a new snapshot is created
-    fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate);
+    /// Creates a snapshot of the database.
+    fn snapshot(&self) -> Arc<Self::Snapshot>;
 
     /// Flushes pending writes to durable storage when supported.
     ///
@@ -52,26 +134,76 @@ pub trait Store:
         Ok(())
     }
 
-    /// Downcast support for concrete implementations.
-    fn as_any(&self) -> &dyn Any;
+    /// Returns the selected backend identity without requiring callers to
+    /// downcast the store.
+    fn backend_kind(&self) -> StoreBackendKind {
+        StoreBackendKind::Custom("custom")
+    }
 
-    /// Returns a fast-sync extension handle if the backend supports fast-sync
-    /// optimizations. Returns `None` for backends that don't implement
-    /// [`FastSyncStore`].
-    ///
-    /// Backends that support fast-sync should override this to return
-    /// `Some(self)`.
-    fn as_fast_sync_store(&self) -> Option<&dyn FastSyncStore> {
+    /// Returns MDBX environment information when this store is backed by MDBX.
+    fn mdbx_environment_info(&self) -> Option<StorageResult<MdbxEnvironmentInfo>> {
         None
     }
 
-    /// Returns a raw-overlay extension handle if the backend supports direct
-    /// overlay commit. Returns `None` for backends that don't implement
-    /// [`RawOverlayStore`].
-    ///
-    /// Backends that support raw overlay commit should override this to
-    /// return `Some(self)`.
-    fn as_raw_overlay_store(&self) -> Option<&dyn RawOverlayStore> {
+    /// Returns RocksDB fast-sync batch diagnostics when this store is backed by
+    /// RocksDB.
+    fn rocksdb_batch_metrics(&self) -> Option<RocksDbBatchMetrics> {
         None
+    }
+
+    /// Returns whether this backend implements storage-level fast-sync
+    /// optimizations.
+    fn supports_fast_sync_mode(&self) -> bool {
+        false
+    }
+
+    /// Enables storage-level fast-sync optimizations when this backend supports
+    /// them. Backends that do not support fast-sync mode leave this as a no-op.
+    fn enable_fast_sync_mode(&self) {}
+
+    /// Disables storage-level fast-sync optimizations, restoring normal
+    /// durability guarantees when this backend supports them.
+    fn disable_fast_sync_mode(&self) {}
+
+    /// Drops pending fast-sync buffered writes that have not reached durable
+    /// storage. Backends without buffered fast-sync writes leave this as a
+    /// no-op.
+    fn discard_pending_fast_sync_writes(&self) {}
+
+    /// Returns whether fast-sync writes have been accepted by the backend but
+    /// are not guaranteed visible through fresh snapshots yet.
+    fn has_pending_fast_sync_writes(&self) -> bool {
+        false
+    }
+
+    /// Commits raw byte-key overlay entries directly when the backend can do so
+    /// without constructing a mutable snapshot.
+    ///
+    /// Implementations may sort this materialized overlay by raw key before
+    /// writing so B+tree and LSM backends receive locality-friendly batches.
+    /// Backends that do not support a direct overlay commit return `Ok(false)`
+    /// so callers can fall back to snapshot-based commit.
+    fn try_commit_raw_overlay(
+        &self,
+        overlay: &[(Vec<u8>, Option<Vec<u8>>)],
+    ) -> StorageResult<bool> {
+        let _ = overlay;
+        Ok(false)
+    }
+
+    /// Commits raw byte-key overlay entries from a borrowed visitor when the
+    /// backend can consume the changes without the caller first cloning them
+    /// into a `Vec`.
+    ///
+    /// Callers should visit entries in raw byte-key order. `StoreCache`
+    /// satisfies this contract through `DataCache::visit_raw_changes`, keeping
+    /// the hot commit path sorted without forcing every backend to clone the
+    /// overlay just to sort it again.
+    fn try_commit_borrowed_raw_overlay<O>(&self, overlay: &mut O) -> StorageResult<bool>
+    where
+        O: RawOverlaySource + ?Sized,
+    {
+        let _ = overlay;
+        Ok(false)
     }
 }

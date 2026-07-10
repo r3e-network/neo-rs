@@ -116,10 +116,6 @@ fn operational_ledger_tip_reads_stay_behind_local_provider_boundary() {
             "chain.acc driver",
             include_str!("../../../node/chain_acc/driver.rs"),
         ),
-        (
-            "daemon system context",
-            include_str!("../../../node/context/system_context.rs"),
-        ),
     ];
 
     for (name, source) in sources {
@@ -136,6 +132,17 @@ fn operational_ledger_tip_reads_stay_behind_local_provider_boundary() {
     assert!(
         provider.contains("HotColdLedgerProviderFactory"),
         "operational ledger-tip reads should use the hot/cold ledger provider factory shape"
+    );
+
+    let system_context_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("workspace root")
+        .join("neo-system/src/composition/system_context.rs");
+    let system_context = std::fs::read_to_string(&system_context_path)
+        .unwrap_or_else(|err| panic!("read {}: {err}", system_context_path.display()));
+    assert!(
+        system_context.contains("HotColdLedgerProviderFactory"),
+        "the composition-owned system context should read the canonical tip through the hot/cold provider"
     );
     assert!(
         provider.contains("EmptyLedgerProvider"),

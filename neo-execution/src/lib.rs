@@ -59,15 +59,18 @@ pub mod nep17_reader;
 // Re-exports at the crate root
 // ============================================================================
 pub use application_engine::ApplicationEngine;
-pub use bls12381_interop::Bls12381Interop;
+pub use bls12381_interop::{Bls12381Interop, Bls12381InteropExt};
 pub use contract::Contract;
 pub use contract_parameter::ContractParameter;
 pub use contract_parameters_context::ContractParametersContext;
 pub use contract_state::ContractState;
 pub use deployed_contract::DeployedContract;
-pub use diagnostic::{Diagnostic, InstructionCounter};
+pub use diagnostic::{Diagnostic, InstructionCounter, NoDiagnostic};
 // `env_flag_enabled` stays crate-private to `env_flags` (it is only used inside the engine).
-pub use execution_context_state::ExecutionContextState;
+pub use execution_context_state::{
+    ApplicationExecutionContext, ApplicationExecutionEngine, ApplicationJumpTable,
+    ExecutionContextState,
+};
 pub use hardfork_activable::HardforkActivable;
 pub use helper::Helper;
 pub use interoperable::Interoperable;

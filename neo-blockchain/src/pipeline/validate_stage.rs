@@ -42,14 +42,13 @@ pub use context::{SnapshotValidateContext, ValidateContext};
 use super::stage_traits::{
     EngineResult, PipelineStage, StageContext, StageId, StageOutput, ValidateStage,
 };
-use async_trait::async_trait;
 use neo_payloads::Block;
 
 /// Concrete validate stage wrapping [`crate::block_validation::BlockValidator`]
 /// + stateful checks.
 ///
 /// Construct via [`NeoValidateStage::new`].
-pub struct NeoValidateStage<C = SnapshotValidateContext>
+pub struct NeoValidateStage<C = SnapshotValidateContext<neo_storage::EmptyCacheBacking>>
 where
     C: ValidateContext,
 {
@@ -77,12 +76,11 @@ where
     }
 }
 
-#[async_trait]
 impl<C> ValidateStage for NeoValidateStage<C>
 where
     C: ValidateContext,
 {
-    async fn validate(&self, ctx: &StageContext, block: &Block) -> EngineResult<()> {
+    fn validate(&self, ctx: &StageContext, block: &Block) -> EngineResult<()> {
         let settings = self.ctx.settings();
 
         // Stateless checks always run.
@@ -97,7 +95,6 @@ where
     }
 }
 
-#[async_trait]
 impl<C> PipelineStage for NeoValidateStage<C>
 where
     C: ValidateContext,
@@ -106,10 +103,10 @@ where
         StageId::Validate
     }
 
-    async fn execute(&self, ctx: &StageContext, block: &Block) -> EngineResult<StageOutput> {
+    fn execute(&self, ctx: &StageContext, block: &Block) -> EngineResult<StageOutput> {
         let start = std::time::Instant::now();
 
-        self.validate(ctx, block).await?;
+        self.validate(ctx, block)?;
 
         Ok(StageOutput::performed(neo_runtime::time::elapsed_us(
             start.elapsed(),

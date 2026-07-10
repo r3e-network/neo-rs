@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::ledger_provider::{BlockProvider, StorageLedgerProvider};
 use neo_config::ProtocolSettings;
 use neo_primitives::UInt256;
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 /// Context trait providing the stateful dependencies needed for full validation.
 ///
@@ -31,12 +31,12 @@ pub trait ValidateContext: Send + Sync + fmt::Debug + 'static {
 
 /// Snapshot-backed validate context used by service handlers.
 #[derive(Clone)]
-pub struct SnapshotValidateContext {
+pub struct SnapshotValidateContext<B: CacheRead> {
     settings: Arc<ProtocolSettings>,
-    snapshot: Arc<DataCache>,
+    snapshot: Arc<DataCache<B>>,
 }
 
-impl fmt::Debug for SnapshotValidateContext {
+impl<B: CacheRead> fmt::Debug for SnapshotValidateContext<B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SnapshotValidateContext")
             .field("validators_count", &self.settings.validators_count)
@@ -44,19 +44,19 @@ impl fmt::Debug for SnapshotValidateContext {
     }
 }
 
-impl SnapshotValidateContext {
+impl<B: CacheRead> SnapshotValidateContext<B> {
     /// Creates a validate context over an immutable store snapshot.
     #[must_use]
-    pub fn new(settings: Arc<ProtocolSettings>, snapshot: Arc<DataCache>) -> Self {
+    pub fn new(settings: Arc<ProtocolSettings>, snapshot: Arc<DataCache<B>>) -> Self {
         Self { settings, snapshot }
     }
 
-    fn provider(&self) -> StorageLedgerProvider<'_> {
+    fn provider(&self) -> StorageLedgerProvider<'_, B> {
         StorageLedgerProvider::new(self.snapshot.as_ref())
     }
 }
 
-impl ValidateContext for SnapshotValidateContext {
+impl<B: CacheRead> ValidateContext for SnapshotValidateContext<B> {
     fn settings(&self) -> Arc<ProtocolSettings> {
         Arc::clone(&self.settings)
     }

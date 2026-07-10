@@ -108,7 +108,9 @@ fn validate_stage_owns_concrete_context_type() {
     let source = include_str!("../../pipeline/validate_stage.rs");
 
     assert!(
-        source.contains("pub struct NeoValidateStage<C = SnapshotValidateContext>"),
+        source.contains(
+            "pub struct NeoValidateStage<C = SnapshotValidateContext<neo_storage::EmptyCacheBacking>>"
+        ),
         "validate stage should preserve the concrete context type"
     );
     assert!(
@@ -121,54 +123,50 @@ fn validate_stage_owns_concrete_context_type() {
     );
 }
 
-#[tokio::test]
-async fn validate_stage_accepts_valid_empty_child_block() {
+#[test]
+fn validate_stage_accepts_valid_empty_child_block() {
     let prev_hash = UInt256::from([1u8; 32]);
     let block = empty_block(1, prev_hash, MIN_TIMESTAMP_MS + 15_000);
     let stage = stage(MockValidateContext::new().with_prev(prev_hash, MIN_TIMESTAMP_MS));
     let output = stage
         .execute(&stage_context(0), &block)
-        .await
         .expect("valid block");
 
     assert!(output.performed_work);
 }
 
-#[tokio::test]
-async fn validate_stage_rejects_height_mismatch() {
+#[test]
+fn validate_stage_rejects_height_mismatch() {
     let block = empty_block(3, UInt256::default(), MIN_TIMESTAMP_MS + 15_000);
     let stage = stage(MockValidateContext::new());
     let err = stage
         .execute(&stage_context(0), &block)
-        .await
         .expect_err("height mismatch must fail");
 
     assert!(err.to_string().contains("height mismatch"));
 }
 
-#[tokio::test]
-async fn validate_stage_rejects_previous_hash_mismatch() {
+#[test]
+fn validate_stage_rejects_previous_hash_mismatch() {
     let expected_prev = UInt256::from([1u8; 32]);
     let actual_prev = UInt256::from([2u8; 32]);
     let block = empty_block(1, actual_prev, MIN_TIMESTAMP_MS + 15_000);
     let stage = stage(MockValidateContext::new().with_prev(expected_prev, MIN_TIMESTAMP_MS));
     let err = stage
         .execute(&stage_context(0), &block)
-        .await
         .expect_err("previous hash mismatch must fail");
 
     assert!(err.to_string().contains("previous hash mismatch"));
 }
 
-#[tokio::test]
-async fn validate_stage_uses_protocol_transaction_limit() {
+#[test]
+fn validate_stage_uses_protocol_transaction_limit() {
     let mut settings = ProtocolSettings::default();
     settings.max_transactions_per_block = 1;
     let block = block_with_transactions(1, 2);
     let stage = stage(MockValidateContext::new().with_settings(settings));
     let err = stage
         .execute(&stage_context(0), &block)
-        .await
         .expect_err("protocol tx limit must fail");
 
     assert!(
@@ -177,14 +175,13 @@ async fn validate_stage_uses_protocol_transaction_limit() {
     );
 }
 
-#[tokio::test]
-async fn validate_stage_rejects_invalid_header_witness() {
+#[test]
+fn validate_stage_rejects_invalid_header_witness() {
     let mut block = empty_block(1, UInt256::default(), MIN_TIMESTAMP_MS + 15_000);
     block.header.witness = Witness::new_with_scripts(vec![], vec![0xFF]);
     let stage = stage(MockValidateContext::new());
     let err = stage
         .execute(&stage_context(0), &block)
-        .await
         .expect_err("invalid header witness must fail");
 
     assert!(err.to_string().contains("Invalid witness script"));

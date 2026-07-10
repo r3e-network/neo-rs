@@ -3,7 +3,8 @@
 //! These helpers are intentionally kept out of the hot persist body; they only
 //! run when `NEO_TRACE_TX` matches the current transaction.
 
-use neo_execution::{ApplicationEngine, ExecutionContextState};
+use neo_execution::ApplicationEngine;
+use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_primitives::{UInt160, UInt256};
 
 use super::artifacts::stack_value_snapshot;
@@ -50,14 +51,19 @@ impl TraceTxFilter {
     }
 }
 
-pub(crate) fn trace_tx_frames(engine: &ApplicationEngine) -> String {
+pub(crate) fn trace_tx_frames<P, B>(
+    engine: &ApplicationEngine<P, neo_execution::NoDiagnostic, B>,
+) -> String
+where
+    P: NativeContractProvider + 'static,
+    B: neo_storage::CacheRead,
+{
     engine
         .invocation_stack()
         .iter()
         .enumerate()
         .map(|(index, context)| {
-            let state_arc = context
-                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let state_arc = context.state();
             let state = state_arc.lock();
             let script_hash = state
                 .script_hash
@@ -78,7 +84,13 @@ pub(crate) fn trace_tx_frames(engine: &ApplicationEngine) -> String {
         .join("|")
 }
 
-pub(crate) fn trace_tx_notifications(engine: &ApplicationEngine) -> String {
+pub(crate) fn trace_tx_notifications<P, B>(
+    engine: &ApplicationEngine<P, neo_execution::NoDiagnostic, B>,
+) -> String
+where
+    P: NativeContractProvider + 'static,
+    B: neo_storage::CacheRead,
+{
     engine
         .notifications()
         .iter()

@@ -5,7 +5,6 @@ use super::*;
 #[test]
 fn recover_fund_e2e_requires_request_and_committee() {
     const BLOCK_TIME_MS: u64 = 1_000_000;
-    crate::install();
     let settings = faun_settings();
     let cache = DataCache::new(false);
     let committee = sample_committee();
@@ -92,7 +91,6 @@ fn seed_blocked_request_time(cache: &DataCache, account: &UInt160, request_time_
 fn recover_fund_e2e_requires_call_flags_all_before_dispatch() {
     const REQUEST_TIME_MS: u64 = 1_000_000;
     const BALANCE: i64 = 1234;
-    crate::install();
     let settings = faun_settings();
     let cache = DataCache::new(false);
     let committee = sample_committee();
@@ -168,7 +166,6 @@ fn recover_fund_e2e_requires_call_flags_all_before_dispatch() {
 fn recover_fund_e2e_sweeps_balance_to_treasury_and_notifies() {
     const REQUEST_TIME_MS: u64 = 1_000_000;
     const SWEPT: i64 = 123_456_789;
-    crate::install();
     let settings = faun_settings();
     let cache = DataCache::new(false);
     let committee = sample_committee();
@@ -274,7 +271,6 @@ fn recover_fund_e2e_sweeps_balance_to_treasury_and_notifies() {
 #[test]
 fn recover_fund_e2e_zero_balance_returns_false() {
     const REQUEST_TIME_MS: u64 = 1_000_000;
-    crate::install();
     let settings = faun_settings();
     let cache = DataCache::new(false);
     let committee = sample_committee();
@@ -335,7 +331,6 @@ fn recover_fund_e2e_zero_balance_returns_false() {
 fn recover_fund_e2e_rejects_recent_request() {
     const REQUEST_TIME_MS: u64 = 1_000_000;
     const BALANCE: i64 = 777;
-    crate::install();
     let settings = faun_settings();
     let cache = DataCache::new(false);
     let committee = sample_committee();
@@ -385,7 +380,6 @@ fn recover_fund_e2e_rejects_recent_request() {
 #[test]
 fn recover_fund_e2e_requires_nep17_standard() {
     const REQUEST_TIME_MS: u64 = 1_000_000;
-    crate::install();
     let settings = faun_settings();
     let cache = DataCache::new(false);
     let committee = sample_committee();

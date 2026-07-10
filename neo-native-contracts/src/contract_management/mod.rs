@@ -43,7 +43,10 @@ native_contract_handle!(
     }
 );
 
-impl NativeContract for ContractManagement {
+impl<P> NativeContract<P> for ContractManagement
+where
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+{
     native_contract_identity!(ContractManagement);
 
     fn methods(&self) -> &[NativeMethod] {
@@ -58,11 +61,19 @@ impl NativeContract for ContractManagement {
         &metadata::CONTRACT_MANAGEMENT_EVENTS
     }
 
-    fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    fn initialize<D, B>(&self, engine: &mut ApplicationEngine<P, D, B>) -> CoreResult<()>
+    where
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         self.initialize_native(engine)
     }
 
-    fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    fn on_persist<D, B>(&self, engine: &mut ApplicationEngine<P, D, B>) -> CoreResult<()>
+    where
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         self.on_persist_native(engine)
     }
 
@@ -73,15 +84,15 @@ impl NativeContract for ContractManagement {
     /// provider seam): `System.Contract.Call` to any deployed contract —
     /// native or user — resolves its NEF/manifest through here. Delegates to
     /// the read helper used by the `getContract` invoke arm.
-    fn lookup_contract_state(
+    fn lookup_contract_state<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         hash: &UInt160,
     ) -> CoreResult<Option<ContractState>> {
         Self::get_contract_from_snapshot(snapshot, hash)
     }
 
-    native_contract_dispatch!(metadata::CONTRACT_MANAGEMENT_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::contract_management_method_bindings);
 }
 
 #[cfg(test)]

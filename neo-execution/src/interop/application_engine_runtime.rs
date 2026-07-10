@@ -1,23 +1,30 @@
 //! ApplicationEngine.Runtime - matches C# Neo.SmartContract.ApplicationEngine.Runtime.cs exactly
 
+use crate::ApplicationExecutionEngine as ExecutionEngine;
 use crate::application_engine::{ApplicationEngine, MAX_EVENT_NAME, MAX_NOTIFICATION_SIZE};
+use crate::native_contract_provider::NativeContractProvider;
 use neo_config::hardfork::Hardfork;
 use neo_crypto::murmur;
 use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
 use neo_manifest::ContractParameterDefinition;
+use neo_payloads::LogEventArgs;
 use neo_primitives::ContractParameterType;
-use neo_primitives::LogEventArgs;
 use neo_primitives::UInt160;
 use neo_primitives::constants::{ADDRESS_SIZE, HASH_SIZE};
-use neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
+use neo_vm::{StackItem, VmError, VmResult};
 use neo_vm_rs::StackItemType;
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
 use std::convert::TryFrom;
 use std::string::String as StdString;
 
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     /// Gets the platform name
     pub fn runtime_platform(&mut self) -> CoreResult<()> {
         self.push_string("NEO".to_string())
@@ -52,10 +59,7 @@ impl ApplicationEngine {
             .cloned()
             .ok_or_else(|| CoreError::other("No script container"))?;
 
-        if let Some(transaction) = container
-            .as_any()
-            .downcast_ref::<neo_payloads::Transaction>()
-        {
+        if let Some(transaction) = container.as_transaction() {
             let sv =
                 <neo_payloads::Transaction as neo_vm::Interoperable>::to_stack_value(transaction)
                     .map_err(|e| CoreError::other(e.to_string()))?;
@@ -344,11 +348,7 @@ impl ApplicationEngine {
             return self.push_null();
         };
 
-        let Some(tx) = container
-            .as_ref()
-            .as_any()
-            .downcast_ref::<neo_payloads::Transaction>()
-        else {
+        let Some(tx) = container.as_transaction() else {
             return self.push_null();
         };
 
@@ -373,58 +373,93 @@ fn map_runtime_result(service: &str, result: CoreResult<()>) -> VmResult<()> {
     })
 }
 
-fn runtime_platform_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_platform_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result("System.Runtime.Platform", app.runtime_platform())
 }
 
-fn runtime_get_trigger_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_get_trigger_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result("System.Runtime.GetTrigger", app.runtime_get_trigger())
 }
 
-fn runtime_get_network_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_get_network_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result("System.Runtime.GetNetwork", app.runtime_get_network())
 }
 
-fn runtime_get_address_version_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_get_address_version_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result(
         "System.Runtime.GetAddressVersion",
         app.runtime_get_address_version(),
     )
 }
 
-fn runtime_get_time_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_get_time_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result("System.Runtime.GetTime", app.runtime_get_time())
 }
 
-fn runtime_get_script_container_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_get_script_container_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result(
         "System.Runtime.GetScriptContainer",
         app.runtime_get_script_container(),
     )
 }
 
-fn runtime_load_script_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_load_script_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let args = app.pop_array().map_err(|e| VmError::InteropService {
         service: "System.Runtime.LoadScript".to_string(),
         error: e.to_string(),
@@ -458,92 +493,150 @@ fn runtime_load_script_handler(
     map_runtime_result("System.Runtime.LoadScript", result)
 }
 
-fn runtime_get_executing_script_hash_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_get_executing_script_hash_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result(
         "System.Runtime.GetExecutingScriptHash",
         app.runtime_get_executing_script_hash(),
     )
 }
 
-fn runtime_get_calling_script_hash_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_get_calling_script_hash_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result(
         "System.Runtime.GetCallingScriptHash",
         app.runtime_get_calling_script_hash(),
     )
 }
 
-fn runtime_get_entry_script_hash_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_get_entry_script_hash_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result(
         "System.Runtime.GetEntryScriptHash",
         app.runtime_get_entry_script_hash(),
     )
 }
 
-fn runtime_check_witness_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_check_witness_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result("System.Runtime.CheckWitness", app.runtime_check_witness())
 }
 
-fn runtime_get_invocation_counter_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_get_invocation_counter_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result(
         "System.Runtime.GetInvocationCounter",
         app.runtime_get_invocation_counter(),
     )
 }
 
-fn runtime_get_random_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_get_random_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result("System.Runtime.GetRandom", app.runtime_get_random())
 }
 
-fn runtime_gas_left_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_gas_left_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result("System.Runtime.GasLeft", app.runtime_gas_left())
 }
 
-fn runtime_log_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngine) -> VmResult<()> {
+fn runtime_log_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result("System.Runtime.Log", app.runtime_log())
 }
 
-fn runtime_notify_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_notify_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result("System.Runtime.Notify", app.runtime_notify())
 }
 
-fn runtime_get_notifications_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_get_notifications_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result(
         "System.Runtime.GetNotifications",
         app.runtime_get_notifications(),
     )
 }
 
-fn runtime_burn_gas_handler(
-    app: &mut ApplicationEngine,
-    engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_burn_gas_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let amount_item = engine.pop()?;
     let amount = amount_item
         .into_int()?
@@ -555,17 +648,27 @@ fn runtime_burn_gas_handler(
     map_runtime_result("System.Runtime.BurnGas", app.runtime_burn_gas(amount))
 }
 
-fn runtime_current_signers_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn runtime_current_signers_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     map_runtime_result(
         "System.Runtime.CurrentSigners",
         app.runtime_current_signers(),
     )
 }
 
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     pub(crate) fn register_runtime_interops(&mut self) -> VmResult<()> {
         self.register_host_service(
             "System.Runtime.Platform",

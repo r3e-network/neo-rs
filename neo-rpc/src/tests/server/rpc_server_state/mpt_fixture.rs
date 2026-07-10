@@ -5,6 +5,7 @@ use neo_execution::ContractState;
 use neo_manifest::{ContractManifest, NefFile};
 use neo_primitives::UInt256;
 use neo_state_service::mpt_store::MptChange;
+use neo_storage::persistence::providers::{MemoryStore, RuntimeStore};
 use neo_vm_rs::OpCode;
 
 /// Contract id of the fixture contract deployed into the state trie.
@@ -37,9 +38,13 @@ fn fixture_put(suffix: &[u8], value: &[u8]) -> MptChange {
 ///   one under `0x0B`;
 /// - block 2 rewrites `0x0A01`, adds `0x0A04` and deletes `0x0A02`.
 pub(super) fn make_server_with_mpt(full_state: bool) -> MptFixture {
-    let system = crate::server::test_support::test_system(ProtocolSettings::default());
-    let state_store = Arc::new(StateStore::with_mpt(full_state));
-    system.register_service(Arc::clone(&state_store));
+    let backing = Arc::new(RuntimeStore::Memory(MemoryStore::new()));
+    let state_store =
+        Arc::new(StateStore::with_mpt_store(full_state, backing).expect("state store"));
+    let system = crate::server::test_support::test_system_with_services(
+        ProtocolSettings::default(),
+        crate::server::RpcServices::new().with_state_store(Arc::clone(&state_store)),
+    );
     let mpt = state_store.mpt().expect("MPT backend enabled");
 
     let contract_hash =

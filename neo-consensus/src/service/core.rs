@@ -1,6 +1,6 @@
 use super::ConsensusEvent;
-use crate::ConsensusSigner;
 use crate::context::{ConsensusContext, ValidatorInfo};
+use crate::{ConsensusSigner, NoConsensusSigner};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -10,7 +10,10 @@ use zeroize::Zeroizing;
 pub(super) const DEFAULT_MAX_TRANSACTIONS_PER_BLOCK: u32 = 512;
 
 /// The main consensus service implementing dBFT 2.0
-pub struct ConsensusService {
+pub struct ConsensusService<S = NoConsensusSigner>
+where
+    S: ConsensusSigner,
+{
     /// Consensus context
     pub(super) context: ConsensusContext,
     /// Network magic number
@@ -19,7 +22,7 @@ pub struct ConsensusService {
     /// Wrapped in `Zeroizing` so key material is wiped from memory on drop.
     pub(super) private_key: Zeroizing<Vec<u8>>,
     /// Optional signer for consensus messages (wallet/HSM/external signer).
-    pub(super) signer: Option<Arc<dyn ConsensusSigner>>,
+    pub(super) signer: Option<Arc<S>>,
     /// Event sender
     pub(super) event_tx: mpsc::Sender<ConsensusEvent>,
     /// Protocol `MaxTransactionsPerBlock` limit used for proposal assembly and validation.
@@ -35,7 +38,7 @@ pub struct ConsensusService {
     pub(super) state_path: Option<PathBuf>,
 }
 
-impl ConsensusService {
+impl ConsensusService<NoConsensusSigner> {
     /// Creates a new consensus service
     #[must_use]
     pub fn new(
@@ -45,16 +48,7 @@ impl ConsensusService {
         private_key: Vec<u8>,
         event_tx: mpsc::Sender<ConsensusEvent>,
     ) -> Self {
-        Self {
-            context: ConsensusContext::new(0, validators, my_index, None),
-            network,
-            private_key: Zeroizing::new(private_key),
-            signer: None,
-            event_tx,
-            max_transactions_per_block: DEFAULT_MAX_TRANSACTIONS_PER_BLOCK,
-            running: false,
-            state_path: None,
-        }
+        Self::new_with_signer(network, validators, my_index, private_key, event_tx, None)
     }
 
     /// Creates a consensus service from a pre-loaded context (recovery logs).
@@ -65,11 +59,51 @@ impl ConsensusService {
         private_key: Vec<u8>,
         event_tx: mpsc::Sender<ConsensusEvent>,
     ) -> Self {
+        Self::with_context_and_signer(network, context, private_key, event_tx, None)
+    }
+}
+
+impl<S> ConsensusService<S>
+where
+    S: ConsensusSigner,
+{
+    /// Creates a new consensus service with a concrete external signer type.
+    #[must_use]
+    pub fn new_with_signer(
+        network: u32,
+        validators: Vec<ValidatorInfo>,
+        my_index: Option<u8>,
+        private_key: Vec<u8>,
+        event_tx: mpsc::Sender<ConsensusEvent>,
+        signer: Option<Arc<S>>,
+    ) -> Self {
+        Self {
+            context: ConsensusContext::new(0, validators, my_index, None),
+            network,
+            private_key: Zeroizing::new(private_key),
+            signer,
+            event_tx,
+            max_transactions_per_block: DEFAULT_MAX_TRANSACTIONS_PER_BLOCK,
+            running: false,
+            state_path: None,
+        }
+    }
+
+    /// Creates a consensus service from a pre-loaded context and a concrete
+    /// external signer type.
+    #[must_use]
+    pub fn with_context_and_signer(
+        network: u32,
+        context: ConsensusContext,
+        private_key: Vec<u8>,
+        event_tx: mpsc::Sender<ConsensusEvent>,
+        signer: Option<Arc<S>>,
+    ) -> Self {
         Self {
             context,
             network,
             private_key: Zeroizing::new(private_key),
-            signer: None,
+            signer,
             event_tx,
             max_transactions_per_block: DEFAULT_MAX_TRANSACTIONS_PER_BLOCK,
             running: false,

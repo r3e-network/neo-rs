@@ -37,6 +37,7 @@ fn sample_extensible_payload() -> neo_payloads::ExtensiblePayload {
     payload.category = "dBFT".to_string();
     payload.valid_block_end = 1;
     payload.data = vec![1, 2, 3];
+    payload.sender = payload.witness.script_hash();
     payload
 }
 

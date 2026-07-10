@@ -87,18 +87,18 @@ fn get_version_dynamic_policy_reads_use_node_native_provider_boundary() {
         "node native provider should adapt the composition-root provider through the shared adapter"
     );
     assert!(
-        provider.contains(".with_policy("),
-        "node native provider should downcast through the shared native provider adapter"
+        provider.contains(".milliseconds_per_block(")
+            && provider.contains(".max_traceable_blocks(")
+            && provider.contains(".max_valid_until_block_increment("),
+        "node native provider should call explicit Policy capabilities on the shared adapter"
     );
     assert!(
         !provider.contains("PolicyContract"),
         "node native provider should not name the concrete PolicyContract type"
     );
     assert!(
-        provider.contains("get_milliseconds_per_block_snapshot")
-            && provider.contains("get_max_traceable_blocks_snapshot")
-            && provider.contains("get_max_valid_until_block_increment_snapshot"),
-        "node native provider should use canonical Policy snapshot readers"
+        !provider.contains("downcast_ref::<"),
+        "node native provider should not downcast native contracts for Policy reads"
     );
     assert!(
         !provider.contains("NodeNativeProviderFactory"),

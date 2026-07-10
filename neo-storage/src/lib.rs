@@ -32,6 +32,7 @@ pub use core::{DEFAULT_XX_HASH3_SEED, KeyBuilder, KeyBuilderError, XxHash3};
 pub use core::{hash_utils, key_builder};
 pub use errors::{StorageError, StorageResult, error};
 pub use persistence::data_cache::{
-    DataCache, DataCacheError, DataCacheResult, Trackable, TrackableEntry,
+    CacheRead, DataCache, DataCacheError, DataCacheResult, EmptyCacheBacking, Trackable,
+    TrackableEntry,
 };
-pub use types::{SeekDirection, StorageItem, StorageKey, TrackState};
+pub use types::{SeekDirection, StorageItem, StorageItemCache, StorageKey, TrackState};

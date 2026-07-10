@@ -11,7 +11,7 @@ use neo_blockchain::{
     ChainTipProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
 };
 use neo_primitives::UInt256;
-use neo_storage::persistence::{DataCache, StoreCache, store::Store};
+use neo_storage::persistence::{CacheRead, DataCache, StoreCache, store::Store};
 
 const LOCAL_LEDGER_TIP_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
     HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
@@ -23,7 +23,7 @@ pub(in crate::node) struct LocalLedgerTip {
 }
 
 /// Reads the current ledger index from an existing snapshot.
-pub(in crate::node) fn snapshot_ledger_index(snapshot: &DataCache) -> Option<u32> {
+pub(in crate::node) fn snapshot_ledger_index<B: CacheRead>(snapshot: &DataCache<B>) -> Option<u32> {
     LOCAL_LEDGER_TIP_PROVIDER_FACTORY
         .provider(snapshot)
         .current_index()
@@ -31,15 +31,21 @@ pub(in crate::node) fn snapshot_ledger_index(snapshot: &DataCache) -> Option<u32
 }
 
 /// Reads the current ledger index from a fresh store-backed snapshot.
-pub(in crate::node) fn store_ledger_index(store: &Arc<dyn Store>, read_only: bool) -> Option<u32> {
+pub(in crate::node) fn store_ledger_index<S>(store: &Arc<S>, read_only: bool) -> Option<u32>
+where
+    S: Store,
+{
     let cache = StoreCache::new_from_store(Arc::clone(store), read_only);
     snapshot_ledger_index(cache.data_cache())
 }
 
 /// Reads the current ledger hash and height from a fresh store-backed snapshot.
-pub(in crate::node) fn local_ledger_tip(
-    store: Option<&Arc<dyn Store>>,
-) -> anyhow::Result<Option<LocalLedgerTip>> {
+pub(in crate::node) fn local_ledger_tip<S>(
+    store: Option<&Arc<S>>,
+) -> anyhow::Result<Option<LocalLedgerTip>>
+where
+    S: Store,
+{
     let Some(store) = store else {
         return Ok(None);
     };
@@ -47,7 +53,9 @@ pub(in crate::node) fn local_ledger_tip(
     snapshot_ledger_tip(cache.data_cache())
 }
 
-fn snapshot_ledger_tip(snapshot: &DataCache) -> anyhow::Result<Option<LocalLedgerTip>> {
+fn snapshot_ledger_tip<B: CacheRead>(
+    snapshot: &DataCache<B>,
+) -> anyhow::Result<Option<LocalLedgerTip>> {
     let provider = LOCAL_LEDGER_TIP_PROVIDER_FACTORY.provider(snapshot);
     let Ok(height) = provider.current_index() else {
         return Ok(None);

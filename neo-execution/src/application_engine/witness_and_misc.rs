@@ -1,16 +1,18 @@
 use super::*;
 
-fn witness_trace_enabled(app: &ApplicationEngine) -> bool {
+fn witness_trace_enabled<P, D, B>(app: &ApplicationEngine<P, D, B>) -> bool
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let Ok(raw) = std::env::var("NEO_TRACE_WITNESS_TX") else {
         return false;
     };
     let Some(container) = app.script_container.as_ref() else {
         return false;
     };
-    let Some(tx) = container
-        .as_any()
-        .downcast_ref::<neo_payloads::Transaction>()
-    else {
+    let Some(tx) = container.as_transaction() else {
         return false;
     };
     let Ok(hash) = tx.try_hash() else {
@@ -28,9 +30,8 @@ fn trace_hash(hash: Option<UInt160>) -> String {
         .unwrap_or_else(|| "none".to_string())
 }
 
-fn trace_context_state(context: &ExecutionContext) -> String {
-    let state_arc =
-        context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+fn trace_context_state<B>(context: &ExecutionContext<B>) -> String {
+    let state_arc = context.state();
     let (
         script_hash,
         calling_script_hash,
@@ -55,8 +56,7 @@ fn trace_context_state(context: &ExecutionContext) -> String {
     let calling_context_summary = calling_context
         .as_ref()
         .map(|ctx| {
-            let ctx_state_arc = ctx
-                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let ctx_state_arc = ctx.state();
             let (ctx_script_hash, ctx_calling_script_hash, ctx_has_calling, ctx_method) = {
                 let ctx_state = ctx_state_arc.lock();
                 (
@@ -90,7 +90,12 @@ fn trace_context_state(context: &ExecutionContext) -> String {
     )
 }
 
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     /// Validates that the provided hash has a matching witness in the current transaction.
     /// This matches C# ApplicationEngine.CheckWitnessInternal exactly, including witness rules.
     fn check_witness_internal(&self, hash: &UInt160) -> CoreResult<bool> {
@@ -134,10 +139,7 @@ impl ApplicationEngine {
         };
 
         // 2. Transaction container path (witness rules and scopes).
-        if let Some(tx) = container
-            .as_any()
-            .downcast_ref::<neo_payloads::Transaction>()
-        {
+        if let Some(tx) = container.as_transaction() {
             let mut signers: Vec<_> = tx.signers().to_vec();
 
             // OracleResponse transactions inherit signers from the original request.
@@ -145,27 +147,20 @@ impl ApplicationEngine {
                 TransactionAttribute::OracleResponse(resp) => Some(resp.id),
                 _ => None,
             }) {
-                let oracle = self.native_contract_by_name("OracleContract");
-                let request = oracle
-                    .ok_or_else(|| {
-                        CoreError::invalid_operation(
-                            "OracleResponse CheckWitness requires the Oracle native contract",
-                        )
-                    })?
-                    .oracle_request_url_full(self.snapshot_cache.as_ref(), oracle_id)?
+                let provider = self.native_contract_provider().ok_or_else(|| {
+                    CoreError::invalid_operation(
+                        "OracleResponse CheckWitness requires a native contract provider",
+                    )
+                })?;
+                let request = provider
+                    .oracle_request_details(self.snapshot_cache.as_ref(), oracle_id)?
                     .ok_or_else(|| {
                         CoreError::invalid_operation(format!(
                             "OracleResponse CheckWitness missing request {oracle_id}"
                         ))
                     })?;
 
-                let ledger = self.native_contract_by_name("LedgerContract");
-                let state = ledger
-                    .ok_or_else(|| {
-                        CoreError::invalid_operation(
-                            "OracleResponse CheckWitness requires the Ledger native contract",
-                        )
-                    })?
+                let state = provider
                     .transaction_state(self.snapshot_cache.as_ref(), &request.original_tx_id)?
                     .ok_or_else(|| {
                         CoreError::invalid_operation(format!(
@@ -300,8 +295,7 @@ impl ApplicationEngine {
                     return Ok(true);
                 };
 
-                let calling_state_arc = calling_ctx
-                    .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+                let calling_state_arc = calling_ctx.state();
                 let calling_state = calling_state_arc.lock();
                 Ok(calling_state.calling_context.is_none())
             }
@@ -338,14 +332,11 @@ impl ApplicationEngine {
     /// Group match for a witness Group/CalledByGroup condition. Callers validate
     /// the ReadStates call flag first, matching C# GroupCondition.Match ordering.
     fn contract_matches_group(&self, contract_hash: &UInt160, group: &[u8]) -> CoreResult<bool> {
-        let Some(contract) = self
-            .native_contract_by_name("ContractManagement")
-            .map(|contract_management| {
-                contract_management
-                    .lookup_contract_state(self.snapshot_cache.as_ref(), contract_hash)
-            })
-            .transpose()?
-            .flatten()
+        let Some(provider) = self.native_contract_provider() else {
+            return Ok(false);
+        };
+        let Some(contract) =
+            provider.contract_state(self.snapshot_cache.as_ref(), contract_hash)?
         else {
             return Ok(false);
         };
@@ -361,7 +352,7 @@ impl ApplicationEngine {
 
     /// Gets the current execution context.
     /// This matches C# ApplicationEngine.CurrentContext exactly.
-    pub fn current_context(&self) -> Option<&ExecutionContext> {
+    pub fn current_context(&self) -> Option<&ExecutionContext<B>> {
         // This implements the C# logic: engine.CurrentContext property
         self.vm_engine.current_context()
     }
@@ -517,8 +508,7 @@ impl ApplicationEngine {
         // refresh_context_tracking() (which re-derives calling_script_hash
         // from the context) does not discard the value.
         if let Some(ctx) = self.vm_engine.engine().current_context() {
-            let state_arc =
-                ctx.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let state_arc = ctx.state();
             state_arc.lock().native_calling_script_hash = hash;
         }
         // Also store as an override so refresh_context_tracking preserves it
@@ -687,8 +677,7 @@ impl ApplicationEngine {
         if let Some(current_context) = self.vm_engine.engine().current_context() {
             let fallback_hash = UInt160::from_bytes(&current_context.script_hash())
                 .map_err(|e| CoreError::invalid_operation(format!("Invalid script hash: {e}")))?;
-            let state_arc = current_context
-                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let state_arc = current_context.state();
             let (current_hash, call_flags, calling_script_hash, context_snapshot) = {
                 let state = state_arc.lock();
                 let current_hash = state.script_hash.unwrap_or(fallback_hash);
@@ -697,9 +686,7 @@ impl ApplicationEngine {
                     .or(state.calling_script_hash)
                     .or_else(|| {
                         state.calling_context.as_ref().and_then(|ctx| {
-                            let ctx_state = ctx.get_state_with_factory::<ExecutionContextState, _>(
-                                ExecutionContextState::new,
-                            );
+                            let ctx_state = ctx.state();
                             let ctx_state = ctx_state.lock();
                             ctx_state
                                 .script_hash
@@ -739,7 +726,7 @@ impl ApplicationEngine {
     /// Registers native contracts in the contracts HashMap so they can be found
     pub(super) fn register_native_contracts(&mut self) {
         let block_height = self.current_block_index();
-        let contracts: Vec<Arc<dyn NativeContract>> = self.native_registry.contracts().collect();
+        let contracts: Vec<P::Contract> = self.native_registry.contracts().collect();
         for contract in contracts {
             if !contract.is_active(&self.protocol_settings, block_height) {
                 continue;
@@ -776,42 +763,31 @@ impl ApplicationEngine {
     }
 
     pub(super) fn refresh_policy_settings(&mut self) {
-        if let Some(policy) = self.policy_contract() {
-            let mut got_pico = false;
-            let block_height = self.current_block_index();
-            let faun_storage_migrated = self
-                .protocol_settings
-                .is_hardfork_enabled(Hardfork::HfFaun, block_height);
-            // Native contract method getExecPicoFeeFactor exists since activeIn Hardfork::HfFaun
-            // But we should check if hardfork is enabled to call it safely/logically.
-            if self.is_hardfork_enabled(Hardfork::HfFaun) {
-                if let Ok(raw) = policy.invoke(self, "getExecPicoFeeFactor", &[]) {
-                    if !raw.is_empty() {
-                        let mut buffer = [0u8; 4];
-                        let len = raw.len().min(4);
-                        buffer[..len].copy_from_slice(&raw[..len]);
-                        let raw_factor = u32::from_le_bytes(buffer);
-                        self.exec_fee_factor = if faun_storage_migrated {
-                            raw_factor
-                        } else {
-                            raw_factor.saturating_mul(FEE_FACTOR as u32)
-                        };
-                        got_pico = true;
-                    }
-                }
-            }
+        let block_height = self.current_block_index();
+        let faun_active = self
+            .protocol_settings
+            .is_hardfork_enabled(Hardfork::HfFaun, block_height);
+        let (raw_factor, storage_price) = {
+            let Some(provider) = self.native_contract_provider() else {
+                return;
+            };
+            (
+                provider
+                    .exec_fee_factor_raw(self.snapshot_cache.as_ref())
+                    .ok(),
+                provider.storage_price(self.snapshot_cache.as_ref()).ok(),
+            )
+        };
 
-            if !got_pico {
-                if let Ok(raw) = policy.invoke(self, "getExecFeeFactor", &[]) {
-                    if !raw.is_empty() {
-                        let mut buffer = [0u8; 4];
-                        let len = raw.len().min(4);
-                        buffer[..len].copy_from_slice(&raw[..len]);
-                        let val = u32::from_le_bytes(buffer);
-                        self.exec_fee_factor = val * (FEE_FACTOR as u32);
-                    }
-                }
-            } else if self.trigger == TriggerType::OnPersist
+        if let Some(raw_factor) = raw_factor {
+            self.exec_fee_factor = if faun_active {
+                raw_factor
+            } else {
+                raw_factor.saturating_mul(FEE_FACTOR as u32)
+            };
+
+            if faun_active
+                && self.trigger == TriggerType::OnPersist
                 && block_height > 0
                 && !self
                     .protocol_settings
@@ -819,26 +795,21 @@ impl ApplicationEngine {
             {
                 self.exec_fee_factor = self.exec_fee_factor.saturating_mul(FEE_FACTOR as u32);
             }
+        }
 
-            if let Ok(raw) = policy.invoke(self, "getStoragePrice", &[]) {
-                if !raw.is_empty() {
-                    let mut buffer = [0u8; 4];
-                    let len = raw.len().min(4);
-                    buffer[..len].copy_from_slice(&raw[..len]);
-                    self.storage_price = u32::from_le_bytes(buffer);
-                }
-            }
+        if let Some(storage_price) = storage_price {
+            self.storage_price = storage_price;
         }
     }
 
     pub(super) fn initialize_nonce_data(
-        container: Option<&Arc<dyn Verifiable>>,
+        container: Option<&Arc<VerifiableContainer>>,
         persisting_block: Option<&Block>,
     ) -> [u8; 16] {
         let mut data = [0u8; 16];
 
         if let Some(container) = container {
-            if let Some(transaction) = container.as_any().downcast_ref::<Transaction>() {
+            if let Some(transaction) = container.as_transaction() {
                 let hash_bytes = transaction.hash().to_bytes();
                 data.copy_from_slice(&hash_bytes[..16]);
             }

@@ -107,6 +107,18 @@ impl Witness {
         Self::new()
     }
 
+    /// Returns the invocation script that supplies verification arguments.
+    #[must_use]
+    pub fn invocation_script(&self) -> &[u8] {
+        &self.invocation_script
+    }
+
+    /// Returns the contract script that verifies this witness.
+    #[must_use]
+    pub fn verification_script(&self) -> &[u8] {
+        &self.verification_script
+    }
+
     /// Gets the hash of the verification script (matches C# ScriptHash property).
     /// Calculates RIPEMD160(SHA256(verification_script)) like the C# implementation.
     ///
@@ -158,16 +170,6 @@ impl Witness {
 }
 
 neo_io::impl_default_via_new!(Witness);
-
-impl neo_primitives::Witness for Witness {
-    fn invocation_script(&self) -> &[u8] {
-        &self.invocation_script
-    }
-
-    fn verification_script(&self) -> &[u8] {
-        &self.verification_script
-    }
-}
 
 impl Serializable for Witness {
     fn size(&self) -> usize {

@@ -1,33 +1,25 @@
-use super::StoreFactory;
-use crate::persistence::providers::MemoryStore;
+use super::{StoreFactory, StoreProviderKind};
 use crate::persistence::storage::StorageConfig;
-use crate::rocksdb::RocksDbStore;
 
 #[test]
 fn built_in_provider_names_are_registered() {
     assert!(StoreFactory::get_store_provider("").is_none());
-    assert!(
-        StoreFactory::get_store_provider("memory")
-            .expect("memory provider")
-            .as_any()
-            .is::<crate::persistence::providers::MemoryStoreProvider>()
+    assert_eq!(
+        StoreFactory::get_store_provider("memory"),
+        Some(StoreProviderKind::Memory)
     );
     assert!(StoreFactory::get_store_provider("Memory").is_some());
-    assert!(
-        StoreFactory::get_store_provider("rocksdb")
-            .expect("rocksdb provider")
-            .as_any()
-            .is::<crate::rocksdb::RocksDBStoreProvider>()
+    assert_eq!(
+        StoreFactory::get_store_provider("rocksdb"),
+        Some(StoreProviderKind::RocksDb)
     );
     assert!(
         StoreFactory::get_store_provider("RocksDBStore").is_none(),
         "legacy concrete-type aliases are not part of the production provider contract"
     );
-    assert!(
-        StoreFactory::get_store_provider("mdbx")
-            .expect("mdbx provider")
-            .as_any()
-            .is::<crate::mdbx::MdbxStoreProvider>()
+    assert_eq!(
+        StoreFactory::get_store_provider("mdbx"),
+        Some(StoreProviderKind::Mdbx)
     );
     assert!(
         StoreFactory::get_store_provider("MdbxStore").is_none(),
@@ -65,7 +57,7 @@ fn empty_provider_is_rejected_instead_of_falling_back_to_memory() {
 fn memory_provider_name_creates_memory_store() {
     let memory_store = StoreFactory::get_store("memory", "").expect("memory store");
 
-    assert!(memory_store.as_any().is::<MemoryStore>());
+    assert!(memory_store.as_memory().is_some());
 }
 
 #[cfg(unix)]
@@ -80,7 +72,7 @@ fn factory_accepts_non_utf8_paths_without_string_conversion() {
         .join(OsString::from_vec(vec![b'n', b'e', b'o', 0xFF]));
     let memory_store = StoreFactory::get_store("memory", &non_utf8_path).expect("memory store");
 
-    assert!(memory_store.as_any().is::<MemoryStore>());
+    assert!(memory_store.as_memory().is_some());
 }
 
 #[test]
@@ -89,7 +81,7 @@ fn rocksdb_provider_name_creates_rocksdb_store() {
     let path = temp.path().join("rocksdb");
     let store = StoreFactory::get_store("rocksdb", &path).expect("rocksdb store");
 
-    assert!(store.as_any().is::<RocksDbStore>());
+    assert!(store.as_rocksdb().is_some());
 }
 
 #[test]
@@ -120,7 +112,7 @@ fn mdbx_provider_name_creates_mdbx_store() {
     let path = temp.path().join("mdbx");
     let store = StoreFactory::get_store("mdbx", &path).expect("mdbx store");
 
-    assert!(store.as_any().is::<crate::mdbx::MdbxStore>());
+    assert!(store.as_mdbx().is_some());
 }
 
 #[test]
@@ -128,7 +120,7 @@ fn default_build_registers_mdbx_provider_for_production_storage() {
     let provider = StoreFactory::get_store_provider("mdbx")
         .expect("default neo-storage build must register MDBX");
 
-    assert!(provider.as_any().is::<crate::mdbx::MdbxStoreProvider>());
+    assert_eq!(provider, StoreProviderKind::Mdbx);
 }
 
 #[test]
@@ -168,10 +160,7 @@ fn configured_mdbx_provider_uses_supplied_geometry() {
         },
     )
     .expect("configured MDBX store");
-    let store = store
-        .as_any()
-        .downcast_ref::<crate::mdbx::MdbxStore>()
-        .expect("MDBX store");
+    let store = store.as_mdbx().expect("MDBX store");
 
     assert_eq!(
         store.info().expect("MDBX info").map_size(),

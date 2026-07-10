@@ -9,9 +9,13 @@ use super::{
 };
 use crate::support::invoke::{NativeMethodBinding, method_metadata};
 
-pub(super) static POLICY_CONTRACT_METHOD_BINDINGS: LazyLock<
-    Vec<NativeMethodBinding<PolicyContract>>,
-> = LazyLock::new(|| {
+pub(super) fn policy_contract_method_bindings<P, D, B>()
+-> Vec<NativeMethodBinding<PolicyContract, P, D, B>>
+where
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+    D: neo_execution::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let read_states = CallFlags::READ_STATES.bits();
     vec![
         NativeMethodBinding::new(
@@ -381,10 +385,15 @@ pub(super) static POLICY_CONTRACT_METHOD_BINDINGS: LazyLock<
             PolicyContract::invoke_recover_fund,
         ),
     ]
-});
+}
 
-pub(super) static POLICY_CONTRACT_METHODS: LazyLock<Vec<NativeMethod>> =
-    LazyLock::new(|| method_metadata(&POLICY_CONTRACT_METHOD_BINDINGS));
+pub(super) static POLICY_CONTRACT_METHODS: LazyLock<Vec<NativeMethod>> = LazyLock::new(|| {
+    method_metadata(&policy_contract_method_bindings::<
+        neo_execution::native_contract_provider::NoNativeContractProvider,
+        neo_execution::NoDiagnostic,
+        neo_storage::EmptyCacheBacking,
+    >())
+});
 
 /// Policy's `[ContractEvent]` declarations (PolicyContract.cs:115-125), all
 /// hardfork-gated: `MillisecondsPerBlockChanged` from `HF_Echidna`,

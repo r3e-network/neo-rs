@@ -9,7 +9,11 @@ use std::sync::Arc;
 /// Result type for snapshot commit operations.
 pub type SnapshotCommitResult = Result<(), StorageError>;
 
-/// This interface provides methods for reading, writing, and committing from/to snapshot.
+/// Point-in-time mutable view over a concrete storage backend.
+///
+/// Snapshots stay typed to their backend so hot storage paths do not erase the
+/// store behind a `Store` trait object. Runtime-selected backends should expose a concrete
+/// enum snapshot instead of returning a trait object.
 pub trait StoreSnapshot:
     ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>>
     + RawReadOnlyStore
@@ -17,9 +21,13 @@ pub trait StoreSnapshot:
     + Send
     + Sync
     + std::fmt::Debug
+    + Sized
 {
-    /// Get the underlying store
-    fn store(&self) -> Arc<dyn Store>;
+    /// Concrete store type that can create more snapshots of this shape.
+    type Store: Store<Snapshot = Self>;
+
+    /// Gets the underlying concrete store.
+    fn store(&self) -> Arc<Self::Store>;
 
     /// Commits all changes in the snapshot to the database.
     ///

@@ -42,7 +42,10 @@ native_contract_handle!(
     }
 );
 
-impl NativeContract for LedgerContract {
+impl<P> NativeContract<P> for LedgerContract
+where
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+{
     native_contract_identity!(LedgerContract);
 
     fn methods(&self) -> &[NativeMethod] {
@@ -53,19 +56,19 @@ impl NativeContract for LedgerContract {
         true
     }
 
-    native_contract_dispatch!(metadata::LEDGER_CONTRACT_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::ledger_contract_method_bindings);
 
-    fn transaction_state(
+    fn transaction_state<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &neo_storage::DataCache,
+        snapshot: &neo_storage::DataCache<B>,
         tx_hash: &UInt256,
     ) -> CoreResult<Option<neo_payloads::TransactionState>> {
         self.get_transaction_state(snapshot, tx_hash)
     }
 
-    fn trimmed_block(
+    fn trimmed_block<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &neo_storage::DataCache,
+        snapshot: &neo_storage::DataCache<B>,
         block_hash: &UInt256,
     ) -> CoreResult<Option<TrimmedBlock>> {
         self.get_trimmed_block(snapshot, block_hash)

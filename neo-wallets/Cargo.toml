@@ -28,7 +28,6 @@ neo-manifest = { workspace = true }
 neo-vm = { workspace = true }
 
 # External
-async-trait = { workspace = true }
 bip39 = { workspace = true }
 zeroize = { workspace = true }
 aes = { workspace = true }

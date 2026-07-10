@@ -11,6 +11,7 @@ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use neo_crypto::mpt_trie::{MptResult, MptStoreSnapshot, Trie};
 use neo_io::MemoryReader;
 use neo_state_service::mpt_store::MptReadSnapshot;
+use neo_storage::persistence::Store;
 use serde_json::Value;
 
 use crate::server::rpc_error::RpcError;
@@ -92,11 +93,14 @@ impl RpcServerState {
     /// C# `StatePlugin.GetProof(Trie, int, byte[])`: builds the proof
     /// for `(contract_id, key)` and serializes the payload
     /// (`UnknownStorageItem` when the key is not in the trie).
-    pub(super) fn proof_payload(
-        trie: &mut Trie<MptReadSnapshot>,
+    pub(super) fn proof_payload<S>(
+        trie: &mut Trie<MptReadSnapshot<S>>,
         contract_id: i32,
         key: &[u8],
-    ) -> Result<String, RpcException> {
+    ) -> Result<String, RpcException>
+    where
+        S: Store,
+    {
         let storage_key = Self::storage_key_bytes(contract_id, key);
         let proof = trie
             .try_get_proof(&storage_key)

@@ -7,7 +7,7 @@
 use neo_error::CoreResult;
 use neo_payloads::{Block, Header, Transaction, TransactionState};
 use neo_primitives::{UInt160, UInt256};
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 /// Combined read capability for ledger providers.
 pub trait LedgerProvider: BlockProvider + TxProvider + TransactionStateProvider {}
@@ -47,12 +47,13 @@ where
 /// paths while still letting composition roots swap in routed providers.
 pub trait LedgerProviderFactory {
     /// Provider returned for a snapshot lifetime.
-    type Provider<'a>: LedgerProvider + 'a
+    type Provider<'a, B>: LedgerProvider + 'a
     where
-        Self: 'a;
+        Self: 'a,
+        B: CacheRead;
 
     /// Creates a read provider over `snapshot`.
-    fn provider<'a>(&'a self, snapshot: &'a DataCache) -> Self::Provider<'a>;
+    fn provider<'a, B: CacheRead>(&'a self, snapshot: &'a DataCache<B>) -> Self::Provider<'a, B>;
 }
 
 /// Read-only access to persisted block records.

@@ -4,8 +4,8 @@
 //! [`NativeMethod`] data struct that the application engine and the
 //! concrete native contracts (in `neo-native-contracts`) both depend
 //! on. The trait is defined here (with the engine, the consumer) so
-//! that the engine can dispatch `System.Contract.CallNative` against
-//! any `Arc<dyn NativeContract>` without depending on
+//! that the engine can dispatch `System.Contract.CallNative` through a
+//! provider-generic native-contract registry without depending on
 //! `neo-native-contracts` directly.
 //!
 //! The concrete native-contract implementations live in
@@ -24,16 +24,20 @@ use neo_manifest::{
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
 use serde::{Deserialize, Serialize};
-use std::any::Any;
 
 use crate::application_engine::ApplicationEngine;
 use crate::contract_state::ContractState;
+use crate::diagnostic::Diagnostic;
 use crate::hardfork_activable::HardforkActivable;
+use crate::native_contract_provider::{NativeContractProvider, NoNativeContractProvider};
 
 pub use crate::native_contract_cache::{NativeContractsCache, NativeContractsCacheEntry};
 
 /// Trait for native contract implementations.
-pub trait NativeContract: Any + Send + Sync {
+pub trait NativeContract<P = NoNativeContractProvider>: Send + Sync + Sized
+where
+    P: NativeContractProvider + 'static,
+{
     /// Gets the unique identifier of the native contract.
     fn id(&self) -> i32;
 
@@ -158,7 +162,11 @@ pub trait NativeContract: Any + Send + Sync {
         if !self.is_active(settings, block_height) {
             return None;
         }
-        Some(build_native_contract_state(self, settings, block_height))
+        Some(build_native_contract_state_for::<P, Self>(
+            self,
+            settings,
+            block_height,
+        ))
     }
 
     /// Returns supported standards for the contract manifest.
@@ -208,12 +216,15 @@ pub trait NativeContract: Any + Send + Sync {
     }
 
     /// Invokes a method on the native contract.
-    fn invoke(
+    fn invoke<D, B>(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         method: &str,
         args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>>;
+    ) -> CoreResult<Vec<u8>>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead;
 
     /// Invokes a method after the engine has resolved its active ABI metadata.
     ///
@@ -223,29 +234,45 @@ pub trait NativeContract: Any + Send + Sync {
     /// the binding table entry that produced `methods()[method_index]`, avoiding
     /// a second string/arity/hardfork lookup. The default keeps direct tests and
     /// mock contracts simple by falling back to the legacy name-based entry.
-    fn invoke_resolved(
+    fn invoke_resolved<D, B>(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         method_index: usize,
         method: &NativeMethod,
         args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
+    ) -> CoreResult<Vec<u8>>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         let _ = method_index;
         self.invoke(engine, &method.name, args)
     }
 
     /// Called when the contract is initialized.
-    fn initialize(&self, _engine: &mut ApplicationEngine) -> CoreResult<()> {
+    fn initialize<D, B>(&self, _engine: &mut ApplicationEngine<P, D, B>) -> CoreResult<()>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         Ok(())
     }
 
     /// Called on each block persistence.
-    fn on_persist(&self, _engine: &mut ApplicationEngine) -> CoreResult<()> {
+    fn on_persist<D, B>(&self, _engine: &mut ApplicationEngine<P, D, B>) -> CoreResult<()>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         Ok(())
     }
 
     /// Called after block persistence.
-    fn post_persist(&self, _engine: &mut ApplicationEngine) -> CoreResult<()> {
+    fn post_persist<D, B>(&self, _engine: &mut ApplicationEngine<P, D, B>) -> CoreResult<()>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         Ok(())
     }
 
@@ -265,9 +292,9 @@ pub trait NativeContract: Any + Send + Sync {
     ///
     /// The default implementation returns `Ok(None)`; only
     /// `ContractManagement` overrides this to query the storage.
-    fn lookup_contract_state(
+    fn lookup_contract_state<B: neo_storage::CacheRead>(
         &self,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _hash: &neo_primitives::UInt160,
     ) -> CoreResult<Option<crate::ContractState>> {
         Ok(None)
@@ -278,9 +305,9 @@ pub trait NativeContract: Any + Send + Sync {
     ///
     /// The default implementation returns `Ok(false)`; only
     /// `PolicyContract` overrides this.
-    fn is_contract_blocked(
+    fn is_contract_blocked<B: neo_storage::CacheRead>(
         &self,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _contract_hash: &neo_primitives::UInt160,
     ) -> CoreResult<bool> {
         Ok(false)
@@ -291,9 +318,9 @@ pub trait NativeContract: Any + Send + Sync {
     ///
     /// The default implementation returns `Ok(None)`; only `NeoToken` (which
     /// owns the committee cache) overrides this.
-    fn committee_address(
+    fn committee_address<B: neo_storage::CacheRead>(
         &self,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
     ) -> CoreResult<Option<neo_primitives::UInt160>> {
         Ok(None)
     }
@@ -303,9 +330,9 @@ pub trait NativeContract: Any + Send + Sync {
     ///
     /// The default implementation returns `Ok(None)`; only
     /// `PolicyContract` overrides this.
-    fn whitelisted_fee(
+    fn whitelisted_fee<B: neo_storage::CacheRead>(
         &self,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _contract_hash: &neo_primitives::UInt160,
         _method: &str,
         _param_count: u32,
@@ -319,27 +346,27 @@ pub trait NativeContract: Any + Send + Sync {
     /// The default implementation returns `Ok(None)`; only
     /// `OracleContract` overrides this. Consumed by the engine's
     /// oracle-response witness path (`CheckWitness` signer inheritance).
-    fn oracle_request_url_full(
+    fn oracle_request_url_full<B: neo_storage::CacheRead>(
         &self,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _id: u64,
     ) -> CoreResult<Option<OracleRequestDetails>> {
         Ok(None)
     }
 
     /// Returns the transaction state for a given transaction hash.
-    fn transaction_state(
+    fn transaction_state<B: neo_storage::CacheRead>(
         &self,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _tx_hash: &neo_primitives::UInt256,
     ) -> CoreResult<Option<neo_payloads::TransactionState>> {
         Ok(None)
     }
 
     /// Returns the trimmed block stored by hash.
-    fn trimmed_block(
+    fn trimmed_block<B: neo_storage::CacheRead>(
         &self,
-        _snapshot: &neo_storage::DataCache,
+        _snapshot: &neo_storage::DataCache<B>,
         _block_hash: &neo_primitives::UInt256,
     ) -> CoreResult<Option<neo_payloads::TrimmedBlock>> {
         Ok(None)
@@ -356,9 +383,6 @@ pub trait NativeContract: Any + Send + Sync {
     fn default_storage_price(&self) -> u32 {
         100_000
     }
-
-    /// Returns a reference to self as `Any` for downcasting.
-    fn as_any(&self) -> &dyn Any;
 }
 
 /// Lightweight oracle request descriptor used by the engine.
@@ -628,17 +652,37 @@ pub fn is_active_for<T: HardforkActivable>(
             .is_none_or(|hf| !hf_checker(hf, block_height))
 }
 
-/// Builds a [`ContractState`] for a native contract at the given
+/// Builds a provider-free [`ContractState`] for a native contract at the given
 /// block height.
+///
+/// Metadata pinning, manifest generation, and tests normally use this helper.
+/// Provider-specific engine paths use [`build_native_contract_state_for`].
+pub fn build_native_contract_state<T>(
+    contract: &T,
+    settings: &ProtocolSettings,
+    block_height: u32,
+) -> ContractState
+where
+    T: NativeContract<NoNativeContractProvider>,
+{
+    build_native_contract_state_for::<NoNativeContractProvider, T>(contract, settings, block_height)
+}
+
+/// Builds a [`ContractState`] for a native contract at the given block height
+/// under a specific native-contract provider ABI.
 ///
 /// Mirrors the C# logic that produces the on-disk contract state for
 /// each native contract, including the NEF bytecode that the
 /// application engine loads when dispatching `System.Contract.CallNative`.
-pub fn build_native_contract_state<T: NativeContract + ?Sized>(
+pub fn build_native_contract_state_for<P, T>(
     contract: &T,
     settings: &ProtocolSettings,
     block_height: u32,
-) -> ContractState {
+) -> ContractState
+where
+    P: NativeContractProvider + 'static,
+    T: NativeContract<P>,
+{
     let syscall_hash = neo_vm_rs::interop_hash("System.Contract.CallNative");
 
     let mut methods: Vec<&NativeMethod> = contract

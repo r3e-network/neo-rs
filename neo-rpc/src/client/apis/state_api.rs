@@ -1,6 +1,6 @@
 use super::models::{RpcFoundStates, RpcStateRoot};
 use super::utility::base64_string_token;
-use crate::{RpcClient, RpcClientError};
+use crate::{RpcClient, RpcClientError, RpcObserver, TracingRpcObserver};
 use base64::{Engine as _, engine::general_purpose};
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::json::JToken;
@@ -8,9 +8,9 @@ use std::sync::Arc;
 
 /// State service API
 /// Matches C# `StateAPI`
-pub struct StateApi {
+pub struct StateApi<O = TracingRpcObserver> {
     /// The RPC client instance
-    rpc_client: Arc<RpcClient>,
+    rpc_client: Arc<RpcClient<O>>,
 }
 
 fn decode_base64_rpc_result(result: &JToken) -> Result<Vec<u8>, RpcClientError> {
@@ -20,11 +20,50 @@ fn decode_base64_rpc_result(result: &JToken) -> Result<Vec<u8>, RpcClientError> 
         .map_err(std::convert::Into::into)
 }
 
-impl StateApi {
+fn make_find_states_params_impl(
+    root_hash: &UInt256,
+    script_hash: &UInt160,
+    prefix: &[u8],
+    from: Option<&[u8]>,
+    count: Option<i32>,
+) -> Vec<JToken> {
+    let mut params = vec![
+        JToken::String(root_hash.to_string()),
+        JToken::String(script_hash.to_string()),
+        base64_string_token(prefix),
+        base64_string_token(from.unwrap_or(&[])),
+    ];
+
+    if let Some(c) = count {
+        params.push(JToken::Number(f64::from(c)));
+    }
+
+    params
+}
+
+impl StateApi<TracingRpcObserver> {
+    /// Make parameters for find states call
+    /// Matches C# `MakeFindStatesParams`
+    #[must_use]
+    pub fn make_find_states_params(
+        root_hash: &UInt256,
+        script_hash: &UInt160,
+        prefix: &[u8],
+        from: Option<&[u8]>,
+        count: Option<i32>,
+    ) -> Vec<JToken> {
+        make_find_states_params_impl(root_hash, script_hash, prefix, from, count)
+    }
+}
+
+impl<O> StateApi<O>
+where
+    O: RpcObserver,
+{
     /// `StateAPI` Constructor
     /// Matches C# constructor
     #[must_use]
-    pub const fn new(rpc_client: Arc<RpcClient>) -> Self {
+    pub const fn new(rpc_client: Arc<RpcClient<O>>) -> Self {
         Self { rpc_client }
     }
 
@@ -108,30 +147,6 @@ impl StateApi {
         Ok((local_root_index, validated_root_index))
     }
 
-    /// Make parameters for find states call
-    /// Matches C# `MakeFindStatesParams`
-    #[must_use]
-    pub fn make_find_states_params(
-        root_hash: &UInt256,
-        script_hash: &UInt160,
-        prefix: &[u8],
-        from: Option<&[u8]>,
-        count: Option<i32>,
-    ) -> Vec<JToken> {
-        let mut params = vec![
-            JToken::String(root_hash.to_string()),
-            JToken::String(script_hash.to_string()),
-            base64_string_token(prefix),
-            base64_string_token(from.unwrap_or(&[])),
-        ];
-
-        if let Some(c) = count {
-            params.push(JToken::Number(f64::from(c)));
-        }
-
-        params
-    }
-
     /// Find states with prefix
     /// Matches C# `FindStatesAsync`
     pub async fn find_states(
@@ -142,7 +157,7 @@ impl StateApi {
         from: Option<&[u8]>,
         count: Option<i32>,
     ) -> Result<RpcFoundStates, RpcClientError> {
-        let params = Self::make_find_states_params(root_hash, script_hash, prefix, from, count);
+        let params = make_find_states_params_impl(root_hash, script_hash, prefix, from, count);
 
         let result = self.rpc_client.rpc_send_async("findstates", params).await?;
 

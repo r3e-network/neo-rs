@@ -50,7 +50,10 @@ native_contract_handle!(
     }
 );
 
-impl NativeContract for PolicyContract {
+impl<P> NativeContract<P> for PolicyContract
+where
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+{
     native_contract_identity!(PolicyContract);
 
     fn methods(&self) -> &[NativeMethod] {
@@ -65,21 +68,25 @@ impl NativeContract for PolicyContract {
         &metadata::POLICY_CONTRACT_EVENTS
     }
 
-    fn is_contract_blocked(
+    fn is_contract_blocked<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &neo_storage::persistence::DataCache,
+        snapshot: &neo_storage::persistence::DataCache<B>,
         contract_hash: &UInt160,
     ) -> CoreResult<bool> {
         self.is_contract_blocked_native(snapshot, contract_hash)
     }
 
-    fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    fn initialize<D, B>(&self, engine: &mut ApplicationEngine<P, D, B>) -> CoreResult<()>
+    where
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         self.initialize_native(engine)
     }
 
-    fn whitelisted_fee(
+    fn whitelisted_fee<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         contract_hash: &UInt160,
         method: &str,
         param_count: u32,
@@ -87,7 +94,7 @@ impl NativeContract for PolicyContract {
         self.whitelisted_fee_native(snapshot, contract_hash, method, param_count)
     }
 
-    native_contract_dispatch!(metadata::POLICY_CONTRACT_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::policy_contract_method_bindings);
 }
 
 #[cfg(test)]

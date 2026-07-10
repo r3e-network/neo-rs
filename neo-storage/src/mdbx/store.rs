@@ -5,8 +5,7 @@ use crate::persistence::{
     read_only_store::RawReadOnlyStore,
     read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
     seek_direction::SeekDirection,
-    store::{OnNewSnapshotDelegate, Store},
-    store_snapshot::StoreSnapshot,
+    store::{MdbxEnvironmentInfo, RawOverlaySource, Store, StoreBackendKind},
     write_store::WriteStore,
 };
 use crate::{StorageError, StorageItem, StorageKey, StorageResult};
@@ -14,7 +13,6 @@ use libmdbx::{
     Cursor, Database, DatabaseOptions, Error as MdbxError, Mode, NoWriteMap, RO, ReadWriteOptions,
     SyncMode, TableFlags, Transaction, TransactionKind, WriteFlags,
 };
-use parking_lot::RwLock;
 use std::{collections::BTreeMap, fs, path::Path, sync::Arc};
 use tracing::{error, warn};
 
@@ -23,7 +21,6 @@ type RawEntry = (Vec<u8>, Vec<u8>);
 /// Persistent MDBX implementation of the Neo storage traits.
 pub struct MdbxStore {
     db: Arc<Database<NoWriteMap>>,
-    on_new_snapshot: Arc<RwLock<Vec<OnNewSnapshotDelegate>>>,
 }
 
 impl std::fmt::Debug for MdbxStore {
@@ -80,10 +77,7 @@ impl MdbxStore {
             tx.commit().map_err(mdbx_commit_error)?;
         }
 
-        Ok(Self {
-            db: Arc::new(db),
-            on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
-        })
+        Ok(Self { db: Arc::new(db) })
     }
 
     fn read_entry(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
@@ -263,6 +257,8 @@ fn prefix_upper_bound(prefix: &[u8]) -> Option<Vec<u8>> {
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MdbxStore {
+    type FindIterator<'a> = std::vec::IntoIter<(Vec<u8>, Vec<u8>)>;
+
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
         match self.read_entry(key) {
             Ok(value) => value,
@@ -277,12 +273,12 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MdbxStore {
         &self,
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+    ) -> Self::FindIterator<'_> {
         match self.collect_entries(key_prefix.map(Vec::as_slice), direction) {
-            Ok(entries) => Box::new(entries.into_iter()),
+            Ok(entries) => entries.into_iter(),
             Err(err) => {
                 warn!(target: "neo", error = %err, "MDBX find failed");
-                Box::new(std::iter::empty())
+                Vec::new().into_iter()
             }
         }
     }
@@ -301,6 +297,8 @@ impl RawReadOnlyStore for MdbxStore {
 }
 
 impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for MdbxStore {
+    type FindIterator<'a> = std::vec::IntoIter<(StorageKey, StorageItem)>;
+
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         self.try_get(&key.to_array()).map(StorageItem::from_bytes)
     }
@@ -309,15 +307,17 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for MdbxStore {
         &self,
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+    ) -> Self::FindIterator<'_> {
         let prefix_bytes = key_prefix.map(StorageKey::to_array);
         match self.collect_entries(prefix_bytes.as_deref(), direction) {
-            Ok(entries) => Box::new(entries.into_iter().map(|(key, value)| {
-                (StorageKey::from_bytes(&key), StorageItem::from_bytes(value))
-            })),
+            Ok(entries) => entries
+                .into_iter()
+                .map(|(key, value)| (StorageKey::from_bytes(&key), StorageItem::from_bytes(value)))
+                .collect::<Vec<_>>()
+                .into_iter(),
             Err(err) => {
                 warn!(target: "neo", error = %err, "MDBX typed find failed");
-                Box::new(std::iter::empty())
+                Vec::new().into_iter()
             }
         }
     }
@@ -336,35 +336,30 @@ impl WriteStore<Vec<u8>, Vec<u8>> for MdbxStore {
 }
 
 impl Store for MdbxStore {
-    fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
-        let snapshot = Arc::new(MdbxSnapshot::new(Arc::new(self.clone())));
+    type Snapshot = MdbxSnapshot;
 
-        let handlers = self.on_new_snapshot.read();
-        for handler in handlers.iter() {
-            handler(self, snapshot.clone());
-        }
-
-        snapshot
-    }
-
-    fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate) {
-        self.on_new_snapshot.write().push(handler);
+    fn snapshot(&self) -> Arc<Self::Snapshot> {
+        Arc::new(MdbxSnapshot::new(Arc::new(self.clone())))
     }
 
     fn flush(&self) -> StorageResult<()> {
         self.db.sync(true).map(|_| ()).map_err(mdbx_error)
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn backend_kind(&self) -> StoreBackendKind {
+        StoreBackendKind::Mdbx
     }
 
-    fn as_raw_overlay_store(&self) -> Option<&dyn crate::persistence::RawOverlayStore> {
-        Some(self)
+    fn mdbx_environment_info(&self) -> Option<StorageResult<MdbxEnvironmentInfo>> {
+        Some(self.info().map(|info| MdbxEnvironmentInfo {
+            map_size: info.map_size(),
+            last_pgno: info.last_pgno(),
+            last_txnid: info.last_txnid(),
+            max_readers: info.max_readers(),
+            num_readers: info.num_readers(),
+        }))
     }
-}
 
-impl crate::persistence::RawOverlayStore for MdbxStore {
     fn try_commit_raw_overlay(
         &self,
         overlay: &[(Vec<u8>, Option<Vec<u8>>)],
@@ -377,10 +372,10 @@ impl crate::persistence::RawOverlayStore for MdbxStore {
         Ok(true)
     }
 
-    fn try_commit_borrowed_raw_overlay(
-        &self,
-        visit: &mut dyn FnMut(&mut dyn FnMut(&[u8], Option<&[u8]>)),
-    ) -> StorageResult<bool> {
+    fn try_commit_borrowed_raw_overlay<O>(&self, overlay: &mut O) -> StorageResult<bool>
+    where
+        O: RawOverlaySource + ?Sized,
+    {
         let tx = self.db.begin_rw_txn().map_err(mdbx_error)?;
         let table = tx
             .create_table(None, TableFlags::empty())
@@ -399,7 +394,7 @@ impl crate::persistence::RawOverlayStore for MdbxStore {
                 None => tx.del(&table, key, None).map(|_| ()).map_err(mdbx_error),
             };
         };
-        visit(&mut sink);
+        overlay.visit_raw_overlay(&mut sink);
         apply_result?;
 
         if has_entries {
@@ -413,7 +408,6 @@ impl Clone for MdbxStore {
     fn clone(&self) -> Self {
         Self {
             db: Arc::clone(&self.db),
-            on_new_snapshot: Arc::new(RwLock::new(Vec::new())),
         }
     }
 }

@@ -1,10 +1,10 @@
 //! Thread-safe wallet provider for the [`crate::Node`].
 //!
-//! A [`WalletProvider`] wraps an `Arc<tokio::sync::RwLock<Option<Arc<dyn neo_wallets::Wallet>>>>`
-//! so the rest of the node can read the current wallet without
-//! blocking the wallet-management task that mutates it. The shape
-//! is identical to the legacy `NeoSystem`'s wallet slot.
+//! A [`WalletProvider`] wraps the optional NEP-6 wallet used by node services.
+//! The handle is concrete so wallet operations stay statically typed instead
+//! of routing every account access through erased wallet dispatch.
 
+use neo_wallets::Nep6Wallet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -12,7 +12,7 @@ use tokio::sync::RwLock;
 #[derive(Clone, Default)]
 pub struct WalletProvider {
     /// Inner `RwLock` over the current wallet, if any.
-    inner: Arc<RwLock<Option<Arc<dyn neo_wallets::Wallet>>>>,
+    inner: Arc<RwLock<Option<Arc<Nep6Wallet>>>>,
 }
 
 impl std::fmt::Debug for WalletProvider {
@@ -31,16 +31,14 @@ impl WalletProvider {
 
     /// Construct a [`WalletProvider`] that starts with `wallet`
     /// already loaded.
-    pub fn with_wallet(wallet: Arc<dyn neo_wallets::Wallet>) -> Self {
+    pub fn with_wallet(wallet: Arc<Nep6Wallet>) -> Self {
         Self {
             inner: Arc::new(RwLock::new(Some(wallet))),
         }
     }
 
     /// Returns a read guard to the current wallet (if any).
-    pub async fn read(
-        &self,
-    ) -> tokio::sync::RwLockReadGuard<'_, Option<Arc<dyn neo_wallets::Wallet>>> {
+    pub async fn read(&self) -> tokio::sync::RwLockReadGuard<'_, Option<Arc<Nep6Wallet>>> {
         self.inner.read().await
     }
 
@@ -50,7 +48,7 @@ impl WalletProvider {
     }
 
     /// Install a new wallet, replacing the previous one.
-    pub async fn install(&self, wallet: Arc<dyn neo_wallets::Wallet>) {
+    pub async fn install(&self, wallet: Arc<Nep6Wallet>) {
         *self.inner.write().await = Some(wallet);
     }
 
@@ -61,7 +59,7 @@ impl WalletProvider {
 
     /// Returns a non-async peek at the current wallet's presence.
     /// Useful for `Debug` formatting.
-    fn peek(&self) -> Option<Arc<dyn neo_wallets::Wallet>> {
+    fn peek(&self) -> Option<Arc<Nep6Wallet>> {
         self.inner.try_read().ok().and_then(|g| g.clone())
     }
 }

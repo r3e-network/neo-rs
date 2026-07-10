@@ -5,16 +5,26 @@ use std::time::Instant;
 
 use anyhow::Context;
 use hyper::{Body, Response};
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_storage::persistence::{MdbxEnvironmentInfo, RocksDbBatchMetrics, Store};
 use prometheus::{Encoder, Gauge, IntGauge, IntGaugeVec, Opts, Registry, TextEncoder};
 use tracing::warn;
 
 use super::super::observability::observability_ledger_height;
 use super::super::remote_ledger::RemoteLedgerStatus;
+use super::super::services::NodeServiceHandles;
 use super::readiness::{ReadinessSnapshot, indexer_readiness, readiness_response};
 
-pub(super) struct MetricsExporter {
+pub(super) struct MetricsExporter<
+    P = neo_native_contracts::StandardNativeProvider,
+    S = neo_storage::persistence::providers::MemoryStore,
+> where
+    P: NativeContractProvider,
+    S: Store,
+{
     registry: Registry,
-    node: Arc<neo_system::Node>,
+    node: Arc<neo_system::Node<P, S>>,
+    services: Arc<NodeServiceHandles<S>>,
     started_at: Instant,
     up: IntGauge,
     info: IntGaugeVec,
@@ -38,8 +48,15 @@ pub(super) struct MetricsExporter {
     network_label: String,
 }
 
-impl MetricsExporter {
-    pub(super) fn new(node: Arc<neo_system::Node>) -> anyhow::Result<Self> {
+impl<P, S> MetricsExporter<P, S>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
+    pub(super) fn new(
+        node: Arc<neo_system::Node<P, S>>,
+        services: Arc<NodeServiceHandles<S>>,
+    ) -> anyhow::Result<Self> {
         let registry = Registry::new();
         let up = IntGauge::new("neo_node_up", "Whether the node process is running")?;
         let info = IntGaugeVec::new(
@@ -138,13 +155,14 @@ impl MetricsExporter {
         registry.register(Box::new(indexer_blocks_behind.clone()))?;
         registry.register(Box::new(indexer_synced.clone()))?;
 
-        let network_label = format!("0x{:08X}", node.settings.network);
+        let network_label = format!("0x{:08X}", node.settings().network);
         info.with_label_values(&[env!("CARGO_PKG_VERSION"), network_label.as_str()])
             .set(1);
 
         Ok(Self {
             registry,
             node,
+            services,
             started_at: Instant::now(),
             up,
             info,
@@ -190,21 +208,18 @@ impl MetricsExporter {
 
     fn render_storage_backend_metrics(&self) -> String {
         let storage = self.node.storage();
-        if let Some(store) = storage
-            .as_any()
-            .downcast_ref::<neo_storage::mdbx::MdbxStore>()
-        {
-            return render_mdbx_metrics(store);
+        if let Some(info) = storage.mdbx_environment_info() {
+            return render_mdbx_metrics(info);
         }
-        if storage.as_any().is::<neo_storage::rocksdb::RocksDbStore>() {
-            return self.render_rocksdb_metrics();
+        if let Some(metrics) = storage.rocksdb_batch_metrics() {
+            return render_rocksdb_metrics(metrics);
         }
         String::new()
     }
 }
 
-fn render_mdbx_metrics(store: &neo_storage::mdbx::MdbxStore) -> String {
-    let info = match store.info() {
+fn render_mdbx_metrics(info: neo_storage::StorageResult<MdbxEnvironmentInfo>) -> String {
+    let info = match info {
         Ok(info) => info,
         Err(err) => {
             warn!(target: "neo::telemetry", error = %err, "failed to read MDBX environment info");
@@ -228,74 +243,64 @@ fn render_mdbx_metrics(store: &neo_storage::mdbx::MdbxStore) -> String {
          # HELP neo_storage_mdbx_reader_slots_used MDBX reader slots currently used\n\
          # TYPE neo_storage_mdbx_reader_slots_used gauge\n\
          neo_storage_mdbx_reader_slots_used {}\n",
-        info.map_size(),
-        info.last_pgno(),
-        info.last_txnid(),
-        info.max_readers(),
-        info.num_readers(),
+        info.map_size, info.last_pgno, info.last_txnid, info.max_readers, info.num_readers,
     )
 }
 
-impl MetricsExporter {
-    fn render_rocksdb_metrics(&self) -> String {
-        let storage = self.node.storage();
-        let Some(store) = storage
-            .as_any()
-            .downcast_ref::<neo_storage::rocksdb::RocksDbStore>()
-        else {
-            return String::new();
-        };
+fn render_rocksdb_metrics(metrics: RocksDbBatchMetrics) -> String {
+    format!(
+        "# HELP neo_storage_rocksdb_batch_pending_operations Current write operations buffered before RocksDB flush\n\
+         # TYPE neo_storage_rocksdb_batch_pending_operations gauge\n\
+         neo_storage_rocksdb_batch_pending_operations {}\n\
+         # HELP neo_storage_rocksdb_batch_batches_flushed_total Total RocksDB write batches flushed by fast-sync buffering\n\
+         # TYPE neo_storage_rocksdb_batch_batches_flushed_total counter\n\
+         neo_storage_rocksdb_batch_batches_flushed_total {}\n\
+         # HELP neo_storage_rocksdb_batch_operations_written_total Total put/delete operations flushed through RocksDB write batches\n\
+         # TYPE neo_storage_rocksdb_batch_operations_written_total counter\n\
+         neo_storage_rocksdb_batch_operations_written_total {}\n\
+         # HELP neo_storage_rocksdb_batch_bytes_written_total Approximate payload bytes flushed through RocksDB write batches\n\
+         # TYPE neo_storage_rocksdb_batch_bytes_written_total counter\n\
+         neo_storage_rocksdb_batch_bytes_written_total {}\n\
+         # HELP neo_storage_rocksdb_batch_flush_timeouts_total Total RocksDB write-batch flush timeout observations\n\
+         # TYPE neo_storage_rocksdb_batch_flush_timeouts_total counter\n\
+         neo_storage_rocksdb_batch_flush_timeouts_total {}\n\
+         # HELP neo_storage_rocksdb_batch_avg_ops_per_flush Average write operations per flushed RocksDB batch\n\
+         # TYPE neo_storage_rocksdb_batch_avg_ops_per_flush gauge\n\
+         neo_storage_rocksdb_batch_avg_ops_per_flush {}\n\
+         # HELP neo_storage_rocksdb_batch_avg_bytes_per_flush Average payload bytes per flushed RocksDB batch\n\
+         # TYPE neo_storage_rocksdb_batch_avg_bytes_per_flush gauge\n\
+         neo_storage_rocksdb_batch_avg_bytes_per_flush {}\n\
+         # HELP neo_storage_rocksdb_batch_avg_flush_duration_ms Average RocksDB write-batch flush duration in milliseconds\n\
+         # TYPE neo_storage_rocksdb_batch_avg_flush_duration_ms gauge\n\
+         neo_storage_rocksdb_batch_avg_flush_duration_ms {}\n\
+         # HELP neo_storage_rocksdb_batch_max_batch_size Active RocksDB write-batch operation threshold\n\
+         # TYPE neo_storage_rocksdb_batch_max_batch_size gauge\n\
+         neo_storage_rocksdb_batch_max_batch_size {}\n\
+         # HELP neo_storage_rocksdb_batch_max_batch_bytes Active RocksDB write-batch byte threshold\n\
+         # TYPE neo_storage_rocksdb_batch_max_batch_bytes gauge\n\
+         neo_storage_rocksdb_batch_max_batch_bytes {}\n\
+         # HELP neo_storage_rocksdb_batch_disable_wal Whether RocksDB WAL is disabled for fast-sync batch writes\n\
+         # TYPE neo_storage_rocksdb_batch_disable_wal gauge\n\
+         neo_storage_rocksdb_batch_disable_wal {}\n",
+        metrics.pending_operations,
+        metrics.batches_flushed,
+        metrics.operations_written,
+        metrics.bytes_written,
+        metrics.flush_timeouts,
+        metrics.avg_ops_per_flush,
+        metrics.avg_bytes_per_flush,
+        metrics.avg_flush_duration_ms,
+        metrics.max_batch_size,
+        metrics.max_batch_bytes,
+        bool_to_i64(metrics.disable_wal),
+    )
+}
 
-        let stats = store.batch_commit_stats();
-        let config = store.write_batch_config();
-        format!(
-            "# HELP neo_storage_rocksdb_batch_pending_operations Current write operations buffered before RocksDB flush\n\
-             # TYPE neo_storage_rocksdb_batch_pending_operations gauge\n\
-             neo_storage_rocksdb_batch_pending_operations {}\n\
-             # HELP neo_storage_rocksdb_batch_batches_flushed_total Total RocksDB write batches flushed by fast-sync buffering\n\
-             # TYPE neo_storage_rocksdb_batch_batches_flushed_total counter\n\
-             neo_storage_rocksdb_batch_batches_flushed_total {}\n\
-             # HELP neo_storage_rocksdb_batch_operations_written_total Total put/delete operations flushed through RocksDB write batches\n\
-             # TYPE neo_storage_rocksdb_batch_operations_written_total counter\n\
-             neo_storage_rocksdb_batch_operations_written_total {}\n\
-             # HELP neo_storage_rocksdb_batch_bytes_written_total Approximate payload bytes flushed through RocksDB write batches\n\
-             # TYPE neo_storage_rocksdb_batch_bytes_written_total counter\n\
-             neo_storage_rocksdb_batch_bytes_written_total {}\n\
-             # HELP neo_storage_rocksdb_batch_flush_timeouts_total Total RocksDB write-batch flush timeout observations\n\
-             # TYPE neo_storage_rocksdb_batch_flush_timeouts_total counter\n\
-             neo_storage_rocksdb_batch_flush_timeouts_total {}\n\
-             # HELP neo_storage_rocksdb_batch_avg_ops_per_flush Average write operations per flushed RocksDB batch\n\
-             # TYPE neo_storage_rocksdb_batch_avg_ops_per_flush gauge\n\
-             neo_storage_rocksdb_batch_avg_ops_per_flush {}\n\
-             # HELP neo_storage_rocksdb_batch_avg_bytes_per_flush Average payload bytes per flushed RocksDB batch\n\
-             # TYPE neo_storage_rocksdb_batch_avg_bytes_per_flush gauge\n\
-             neo_storage_rocksdb_batch_avg_bytes_per_flush {}\n\
-             # HELP neo_storage_rocksdb_batch_avg_flush_duration_ms Average RocksDB write-batch flush duration in milliseconds\n\
-             # TYPE neo_storage_rocksdb_batch_avg_flush_duration_ms gauge\n\
-             neo_storage_rocksdb_batch_avg_flush_duration_ms {}\n\
-             # HELP neo_storage_rocksdb_batch_max_batch_size Active RocksDB write-batch operation threshold\n\
-             # TYPE neo_storage_rocksdb_batch_max_batch_size gauge\n\
-             neo_storage_rocksdb_batch_max_batch_size {}\n\
-             # HELP neo_storage_rocksdb_batch_max_batch_bytes Active RocksDB write-batch byte threshold\n\
-             # TYPE neo_storage_rocksdb_batch_max_batch_bytes gauge\n\
-             neo_storage_rocksdb_batch_max_batch_bytes {}\n\
-             # HELP neo_storage_rocksdb_batch_disable_wal Whether RocksDB WAL is disabled for fast-sync batch writes\n\
-             # TYPE neo_storage_rocksdb_batch_disable_wal gauge\n\
-             neo_storage_rocksdb_batch_disable_wal {}\n",
-            stats.pending_operations,
-            stats.batches_flushed,
-            stats.operations_written,
-            stats.bytes_written,
-            stats.flush_timeouts,
-            stats.avg_ops_per_flush(),
-            stats.avg_bytes_per_flush(),
-            stats.avg_flush_duration_ms(),
-            config.max_batch_size,
-            config.max_batch_bytes,
-            bool_to_i64(config.disable_wal),
-        )
-    }
-
+impl<P, S> MetricsExporter<P, S>
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
     pub(super) fn readiness_response(&self) -> Response<Body> {
         let ledger_height = self.ledger_height();
         let remote_ledger = self.remote_ledger_status();
@@ -355,11 +360,11 @@ impl MetricsExporter {
     }
 
     fn ledger_height(&self) -> Option<u32> {
-        observability_ledger_height(&self.node)
+        observability_ledger_height(&self.node, &self.services)
     }
 
     fn remote_ledger_status(&self) -> Option<Arc<RemoteLedgerStatus>> {
-        self.node.get_service::<RemoteLedgerStatus>()
+        self.services.remote_ledger()
     }
 
     fn refresh_service_metrics(&self, ledger_height: Option<u32>) {
@@ -415,33 +420,25 @@ impl MetricsExporter {
     }
 
     fn indexer_status(&self) -> Option<Result<neo_indexer::IndexerStatus, String>> {
-        self.node
-            .get_service::<neo_indexer::IndexerService>()
+        self.services
+            .indexer()
             .map(|indexer| indexer.try_status().map_err(|error| error.to_string()))
     }
 
     fn state_service_enabled(&self) -> bool {
-        self.node
-            .get_service::<neo_state_service::StateStore>()
-            .is_some()
+        self.services.state_store().is_some()
     }
 
     fn indexer_enabled(&self) -> bool {
-        self.node
-            .get_service::<neo_indexer::IndexerService>()
-            .is_some()
+        self.services.indexer().is_some()
     }
 
     fn application_logs_enabled(&self) -> bool {
-        self.node
-            .get_service::<neo_rpc::application_logs::ApplicationLogsService>()
-            .is_some()
+        self.services.application_logs().is_some()
     }
 
     fn tokens_tracker_enabled(&self) -> bool {
-        self.node
-            .get_service::<neo_rpc::plugins::tokens_tracker::TokensTrackerService>()
-            .is_some()
+        self.services.tokens_tracker().is_some()
     }
 }
 

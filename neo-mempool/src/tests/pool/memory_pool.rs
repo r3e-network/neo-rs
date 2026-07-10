@@ -38,10 +38,6 @@ fn memory_pool_requires_explicit_native_provider_constructor() {
         source.contains("native_contract_provider: Arc<P>"),
         "MemoryPool should own Arc<P>, not erase the provider to dyn at the pool boundary"
     );
-    assert!(
-        !source.contains("native_contract_provider: Arc<dyn NativeContractProvider>"),
-        "MemoryPool must not erase its native provider to dyn"
-    );
 }
 
 /// Deterministic secp256r1 keypair: (private key, SEC1 pubkey,
@@ -523,18 +519,7 @@ fn duplicate_admission_reports_already_in_pool() {
 #[test]
 fn try_add_conflict_eviction_reports_capacity_exceeded_like_csharp() {
     let (settings, snapshot, private, public, account) = fixture(0x50);
-    let mut pool = memory_pool(&settings);
-    let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::<(
-        TransactionRemovalReason,
-        Vec<UInt256>,
-    )>::new()));
-    let captured = events.clone();
-    pool.transaction_removed = Some(Box::new(move |_pool, args| {
-        captured.lock().unwrap().push((
-            args.reason,
-            args.transactions.iter().map(|tx| tx.hash()).collect(),
-        ));
-    }));
+    let pool = memory_pool(&settings);
 
     let old = signed_tx_with_fees(
         &settings,
@@ -569,36 +554,13 @@ fn try_add_conflict_eviction_reports_capacity_exceeded_like_csharp() {
 
     assert!(!pool.contains(&old.hash()));
     assert!(pool.contains(&replacement.hash()));
-    let events = events.lock().unwrap();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].0, TransactionRemovalReason::CapacityExceeded);
-    assert_eq!(events[0].1, vec![old.hash()]);
 }
 
 #[test]
-fn try_add_self_capacity_eviction_fires_added_then_removed_before_out_of_memory() {
+fn try_add_self_capacity_eviction_returns_out_of_memory() {
     let (mut settings, snapshot, private, public, account) = fixture(0x51);
     settings.memory_pool_max_transactions = 1;
-    let mut pool = memory_pool(&settings);
-    let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
-    let added_calls = calls.clone();
-    pool.transaction_added = Some(Box::new(move |_pool, tx| {
-        added_calls
-            .lock()
-            .unwrap()
-            .push(format!("added:{}", tx.hash()));
-    }));
-    let removed_calls = calls.clone();
-    pool.transaction_removed = Some(Box::new(move |_pool, args| {
-        removed_calls.lock().unwrap().push(format!(
-            "removed:{:?}:{:?}",
-            args.reason,
-            args.transactions
-                .iter()
-                .map(|tx| tx.hash())
-                .collect::<Vec<_>>()
-        ));
-    }));
+    let pool = memory_pool(&settings);
 
     let kept = signed_tx_with_fees(
         &settings,
@@ -631,19 +593,6 @@ fn try_add_self_capacity_eviction_fires_added_then_removed_before_out_of_memory(
 
     assert!(pool.contains(&kept.hash()));
     assert!(!pool.contains(&evicted.hash()));
-    let calls = calls.lock().unwrap();
-    assert_eq!(
-        calls.as_slice(),
-        [
-            format!("added:{}", kept.hash()),
-            format!("added:{}", evicted.hash()),
-            format!(
-                "removed:{:?}:{:?}",
-                TransactionRemovalReason::CapacityExceeded,
-                vec![evicted.hash()]
-            ),
-        ]
-    );
 }
 
 #[test]

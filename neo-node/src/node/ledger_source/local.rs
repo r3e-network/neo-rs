@@ -14,8 +14,10 @@ const LOCAL_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerPro
 /// ([`neo_network::BlockSource`]) by reconstructing a full block from the
 /// persistent store: `index -> hash -> TrimmedBlock -> transactions`
 /// (the C# `NativeContract.Ledger.GetBlock(snapshot, index)` path).
-pub(in crate::node) struct LedgerBlockSource {
-    snapshot: Arc<neo_storage::persistence::DataCache>,
+pub(in crate::node) struct LedgerBlockSource<
+    B: neo_storage::CacheRead = neo_storage::EmptyCacheBacking,
+> {
+    snapshot: Arc<neo_storage::persistence::DataCache<B>>,
     /// Blockchain relay cache for accepted extensible payloads (dBFT and
     /// state-service messages).
     ledger: Arc<neo_blockchain::LedgerContext>,
@@ -24,9 +26,9 @@ pub(in crate::node) struct LedgerBlockSource {
     mempool: Arc<neo_mempool::MemoryPool>,
 }
 
-impl LedgerBlockSource {
+impl<B: neo_storage::CacheRead> LedgerBlockSource<B> {
     pub(in crate::node) fn new(
-        snapshot: Arc<neo_storage::persistence::DataCache>,
+        snapshot: Arc<neo_storage::persistence::DataCache<B>>,
         ledger: Arc<neo_blockchain::LedgerContext>,
         mempool: Arc<neo_mempool::MemoryPool>,
     ) -> Self {
@@ -43,7 +45,7 @@ impl LedgerBlockSource {
     }
 }
 
-impl neo_network::BlockSource for LedgerBlockSource {
+impl<B: neo_storage::CacheRead> neo_network::BlockSource for LedgerBlockSource<B> {
     fn block_by_index(&self, index: u32) -> Option<neo_payloads::Block> {
         self.persisted_provider()
             .block_by_index(index)

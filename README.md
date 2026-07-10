@@ -24,7 +24,7 @@ runs the NeoVM and dBFT 2.0 consensus, and serves the standard JSON-RPC API.
 neo-rs is a production node implementation that speaks Neo N3's wire protocol,
 executes its virtual machine, and maintains its ledger and state exactly as the
 canonical C# node does — so the two are interchangeable on the same network. It
-is organized as a 7-layer Rust workspace of 28 focused crates, built on mature
+is organized as an 8-layer Rust workspace of 28 focused crates, built on mature
 libraries (MDBX, RocksDB, jsonrpsee, the RustCrypto suite) with the protocol-defining
 parts (NeoVM, var-int wire format, MPT, dBFT) implemented from the specification.
 
@@ -47,16 +47,17 @@ See [docs/protocol-compatibility.md](./docs/protocol-compatibility.md) for the p
 
 ## Architecture at a glance
 
-The workspace is organized into **7 layers, 26 production crates** (plus the
-`neo-test-fixtures` dev crate) so dependencies flow strictly downward —
-Foundation crates know nothing of the services above them.
+The workspace is organized into **8 ordered layers, 26 production crates**
+(plus the `neo-test-fixtures` dev crate). Dependencies flow downward or through
+an explicitly audited, one-way same-layer edge, so foundation crates know
+nothing of the services above them.
 
 ```mermaid
 flowchart TD
     APP["<b>Application</b><br/>neo-node (daemon) · neo-gui (desktop, excluded)"]
-    PLUG["<b>Plugin / RPC Boundary</b><br/>neo-rpc · neo-oracle-service"]
+    PLUG["<b>Plugin / RPC Boundary</b><br/>neo-rpc"]
     COMP["<b>Composition</b><br/>neo-system"]
-    NODE["<b>Node Services</b><br/>neo-blockchain · neo-network · neo-wallets<br/>neo-indexer"]
+    NODE["<b>Node Services</b><br/>neo-blockchain · neo-network · neo-wallets<br/>neo-indexer · neo-oracle-service"]
     DOM["<b>Domain Services</b><br/>neo-runtime · neo-execution · neo-native-contracts<br/>neo-state-service · neo-mempool"]
     PROTO["<b>Protocol</b><br/>neo-payloads · neo-consensus · neo-hsm"]
     INF["<b>Infrastructure</b><br/>neo-io · neo-error · neo-crypto · neo-storage<br/>neo-config · neo-vm · neo-serialization · neo-manifest"]
@@ -71,6 +72,12 @@ per-domain error types, service trait composition). See [`design.md`](./design.m
 for the full ADR log and the 4-phase evolution roadmap, and [docs/architecture.md](./docs/architecture.md)
 for the full crate reference. How a block, transaction, and consensus round
 flow through these crates: [docs/dataflow.md](./docs/dataflow.md).
+
+The daemon lifecycle is staged and intentionally short:
+`NodeCommand -> OpenNodeRuntime -> NodeRuntime -> RunningNode`. Reusable core
+assembly lives in `neo-system::NodeCoreBuilder`; `neo-node` retains process
+policy such as CLI/config selection, optional services, observability, and task
+supervision.
 
 ## Quick start
 
@@ -134,7 +141,7 @@ you can understand the whole node without reading source.
 | Doc | What you'll learn |
 |-----|-------------------|
 | [Getting started](./docs/getting-started.md) | Install, build, and run your first node |
-| [Architecture](./docs/architecture.md) | The 7-layer workspace design and key decisions |
+| [Architecture](./docs/architecture.md) | The 8-layer workspace design and key decisions |
 | [Dataflow](./docs/dataflow.md) | How blocks, transactions, consensus, and state move through the node |
 | [Configuration](./docs/configuration.md) | Every TOML section and key, with defaults |
 | [RPC API](./docs/rpc-api.md) | All JSON-RPC methods, grouped, with examples |
@@ -159,9 +166,9 @@ neo-rs/
 │   neo-native-contracts, neo-state-service,
 │   neo-mempool
 ├── neo-blockchain, neo-network, neo-wallets,# L4 Node Services
-│   neo-indexer
+│   neo-indexer, neo-oracle-service
 ├── neo-system                              # L5 Composition
-├── neo-rpc, neo-oracle-service             # L6 Plugin / RPC Boundary
+├── neo-rpc                                 # L6 Plugin / RPC Boundary
 ├── neo-node                                # L7 Application (daemon binary)
 ├── design.md                               # full ADR log + evolution roadmap
 ├── config/                                 # mainnet/testnet TOML configs

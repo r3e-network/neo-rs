@@ -20,12 +20,12 @@ fn payment_engine(
     snapshot: Arc<DataCache>,
     caller: Option<UInt160>,
     signer: Option<UInt160>,
-) -> ApplicationEngine {
-    let container: Option<Arc<dyn Verifiable>> = signer.map(|hash| {
+) -> ApplicationEngine<crate::StandardNativeProvider> {
+    let container: Option<Arc<VerifiableContainer>> = signer.map(|hash| {
         let mut tx = Transaction::new();
         tx.set_signers(vec![Signer::new(hash, WitnessScope::GLOBAL)]);
         tx.set_witnesses(vec![Witness::empty()]);
-        Arc::new(tx) as Arc<dyn Verifiable>
+        Arc::new(VerifiableContainer::from(tx))
     });
     let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
@@ -34,7 +34,7 @@ fn payment_engine(
         None,
         ProtocolSettings::default(),
         10_000_000,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
@@ -58,13 +58,11 @@ fn seed_registration_payment_snapshot(
     pubkey: &ECPoint,
 ) -> (
     Arc<DataCache>,
-    Arc<dyn Verifiable>,
+    Arc<VerifiableContainer>,
     ProtocolSettings,
     Vec<u8>,
 ) {
     let price = BigInt::from(DEFAULT_REGISTER_PRICE);
-
-    crate::install();
     let cache = DataCache::new(false);
     let mut settings = ProtocolSettings::default();
     settings.hardforks.insert(Hardfork::HfEchidna, 0);
@@ -86,7 +84,7 @@ fn seed_registration_payment_snapshot(
         Signer::new(candidate_account, WitnessScope::GLOBAL),
     ]);
     tx.set_witnesses(vec![Witness::empty(), Witness::empty()]);
-    let container: Arc<dyn Verifiable> = Arc::new(tx);
+    let container = Arc::new(VerifiableContainer::from(tx));
 
     (
         snapshot,
@@ -138,11 +136,11 @@ fn gas_transfer_register_then_get_candidates_script(sender: UInt160, pubkey: &EC
 
 fn registration_payment_engine(
     snapshot: Arc<DataCache>,
-    container: Arc<dyn Verifiable>,
+    container: Arc<VerifiableContainer>,
     settings: ProtocolSettings,
     script: Vec<u8>,
     gas_limit: i64,
-) -> ApplicationEngine {
+) -> ApplicationEngine<crate::StandardNativeProvider> {
     let mut engine = ApplicationEngine::new_with_native_contract_provider(
         TriggerType::Application,
         Some(container),
@@ -150,7 +148,7 @@ fn registration_payment_engine(
         None,
         settings,
         gas_limit,
-        None,
+        neo_execution::NoDiagnostic,
         Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
     )
     .expect("engine builds");
@@ -165,9 +163,11 @@ fn on_nep17_payment_data_parser_uses_stack_value_projection() {
     let source = include_str!("../../../neo_token/invoke.rs");
     let start = source
         .find("fn invoke_on_nep17_payment(")
+        .or_else(|| source.find("fn invoke_on_nep17_payment<"))
         .expect("onNEP17Payment handler exists");
     let end = source[start..]
         .find("fn invoke_unregister_candidate(")
+        .or_else(|| source[start..].find("fn invoke_unregister_candidate<"))
         .map(|offset| start + offset)
         .expect("next handler exists");
     let handler = &source[start..end];
@@ -182,17 +182,17 @@ fn neo_payment_callback_runs_before_deferred_gas_distribution_mint() {
     let source = include_str!("../../../neo_token/transfers.rs");
 
     let post_start = source
-        .find("pub(super) fn neo_post_transfer(")
+        .find("pub(super) fn neo_post_transfer")
         .expect("neo_post_transfer exists");
     let transfer_start = source
-        .find("pub(super) fn neo_transfer_core(")
+        .find("pub(super) fn neo_transfer_core")
         .expect("neo_transfer_core exists");
     let post_transfer = &source[post_start..transfer_start];
     assert!(post_transfer.contains("call_from_native_contract_void"));
     assert!(!post_transfer.contains("queue_contract_call_from_native"));
 
     let vote_start = source
-        .find("pub(crate) fn vote_internal(")
+        .find("pub(crate) fn vote_internal")
         .expect("vote_internal exists");
     let transfer_core = &source[transfer_start..vote_start];
     let callback = transfer_core
@@ -204,7 +204,7 @@ fn neo_payment_callback_runs_before_deferred_gas_distribution_mint() {
     assert!(callback < distribution_mint);
 
     let mint_start = source
-        .find("pub(super) fn neo_mint(")
+        .find("pub(super) fn neo_mint")
         .expect("neo_mint exists");
     let mint_body = &source[mint_start..];
     let callback = mint_body
@@ -354,7 +354,6 @@ fn gas_transfer_to_neo_faults_when_native_transfer_fee_exceeds_transaction_gas_l
 /// account witnesses the transaction.
 #[test]
 fn on_nep17_payment_rejects_bad_caller_amount_pubkey_and_witness() {
-    crate::install();
     let pubkey = candidate_pubkey();
     let candidate_account =
         UInt160::from_script(&Contract::create_signature_redeem_script(pubkey.clone()));

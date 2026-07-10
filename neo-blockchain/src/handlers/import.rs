@@ -99,14 +99,12 @@ where
             }
 
             if import.verify
-                && !self
-                    .verify_import_block_for_command(
-                        block,
-                        current_height,
-                        bulk_sync,
-                        batch_persist_resources.as_ref(),
-                    )
-                    .await
+                && !self.verify_import_block_for_command(
+                    block,
+                    current_height,
+                    bulk_sync,
+                    batch_persist_resources.as_ref(),
+                )
             {
                 return ImportBlocksReply::ok_with_stats(imported, stats);
             }

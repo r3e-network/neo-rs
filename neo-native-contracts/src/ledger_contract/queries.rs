@@ -9,6 +9,7 @@ use neo_execution::ApplicationEngine;
 use neo_io::{MemoryReader, Serializable};
 use neo_payloads::TrimmedBlock;
 use neo_primitives::{UInt160, UInt256};
+use neo_storage::CacheRead;
 use neo_storage::persistence::DataCache;
 
 impl LedgerContract {
@@ -17,7 +18,7 @@ impl LedgerContract {
     /// Reads the current-block pointer (prefix `12`) written by the
     /// block-persist pipeline. C# indexes the storage item directly and
     /// faults if the pointer is absent.
-    pub fn current_index(&self, snapshot: &DataCache) -> CoreResult<u32> {
+    pub fn current_index<B: CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<u32> {
         let key = Self::current_block_storage_key();
         let item = snapshot
             .get(&key)
@@ -32,7 +33,7 @@ impl LedgerContract {
     /// Reads the current-block pointer (prefix `12`) written by the
     /// block-persist pipeline. C# indexes the storage item directly and
     /// faults if the pointer is absent.
-    pub fn current_hash(&self, snapshot: &DataCache) -> CoreResult<UInt256> {
+    pub fn current_hash<B: CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<UInt256> {
         let key = Self::current_block_storage_key();
         let item = snapshot
             .get(&key)
@@ -58,9 +59,9 @@ impl LedgerContract {
     /// the C# *public* `GetTransactionState` null-filter on stubs is
     /// applied by [`Self::contains_transaction`] and by the contract
     /// methods, which all check `transaction.is_some()`.
-    pub fn get_transaction_state(
+    pub fn get_transaction_state<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         tx_hash: &UInt256,
     ) -> CoreResult<Option<neo_payloads::TransactionState>> {
         let key = Self::transaction_storage_key(tx_hash);
@@ -75,9 +76,9 @@ impl LedgerContract {
     /// holds a **full** transaction record for the hash. A conflict
     /// stub (a `TransactionState` whose `Transaction` is null) does
     /// NOT count - C# `GetTransactionState` returns null for stubs.
-    pub fn contains_transaction(
+    pub fn contains_transaction<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         tx_hash: &UInt256,
     ) -> CoreResult<bool> {
         Ok(self
@@ -91,9 +92,9 @@ impl LedgerContract {
     /// one of `signers`. The bare-hash stub is checked first (it must
     /// exist, be a stub - not a full transaction - and be traceable),
     /// then the per-signer stubs (`Prefix_Transaction + hash + signer`).
-    pub fn contains_conflict_hash(
+    pub fn contains_conflict_hash<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         hash: &UInt256,
         signers: &[UInt160],
         max_traceable_blocks: u32,
@@ -128,7 +129,11 @@ impl LedgerContract {
 
     /// Returns the block hash for the given block index, or `None` if
     /// the block has not been persisted yet.
-    pub fn get_block_hash(&self, snapshot: &DataCache, index: u32) -> CoreResult<Option<UInt256>> {
+    pub fn get_block_hash<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        index: u32,
+    ) -> CoreResult<Option<UInt256>> {
         let key = Self::block_hash_storage_key(index);
         match snapshot.get(&key) {
             Some(item) => {
@@ -145,9 +150,9 @@ impl LedgerContract {
     /// persisted (C# `LedgerContract.GetTrimmedBlock`). The on-disk payload is
     /// the `ISerializable` form written by `OnPersist`
     /// (`TrimmedBlock.Create(block).ToArray()`).
-    pub fn get_trimmed_block(
+    pub fn get_trimmed_block<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         hash: &UInt256,
     ) -> CoreResult<Option<TrimmedBlock>> {
         let key = Self::block_storage_key(hash);
@@ -170,9 +175,9 @@ impl LedgerContract {
     ///   the block-hash index (absent index -> `None`);
     /// - exactly 32 bytes -> the bytes are the `UInt256` hash;
     /// - any other length -> rejected (C# `ArgumentException`).
-    pub(in crate::ledger_contract) fn resolve_block_hash(
+    pub(in crate::ledger_contract) fn resolve_block_hash<B: CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         index_or_hash: &[u8],
     ) -> CoreResult<Option<UInt256>> {
         match index_or_hash.len().cmp(&32) {
@@ -202,9 +207,13 @@ impl LedgerContract {
     /// effective `MaxTraceableBlocks` (pre-`HF_Echidna`: the protocol setting;
     /// from `HF_Echidna`: the Policy storage value) and the current height, then
     /// applies the trace-window test.
-    pub(in crate::ledger_contract) fn is_traceable_block(
+    pub(in crate::ledger_contract) fn is_traceable_block<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &ApplicationEngine,
+        engine: &ApplicationEngine<P, D, B>,
         index: u32,
     ) -> CoreResult<bool> {
         let max_traceable_blocks = crate::PolicyContract::new().max_traceable_blocks(engine)?;

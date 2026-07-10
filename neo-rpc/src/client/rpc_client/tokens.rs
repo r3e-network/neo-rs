@@ -4,9 +4,13 @@ use super::super::models::{
 };
 use super::RpcClient;
 use super::helpers::token_as_object;
+use super::hooks::RpcObserver;
 use neo_serialization::json::{JObject, JToken};
 
-impl RpcClient {
+impl<O> RpcClient<O>
+where
+    O: RpcObserver,
+{
     /// Gets NEP-17 transfers.
     pub async fn get_nep17_transfers(
         &self,

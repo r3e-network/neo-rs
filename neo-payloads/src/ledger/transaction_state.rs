@@ -122,10 +122,6 @@ impl Interoperable for TransactionState {
         self.try_to_stack_value()
             .map_err(|e| InteroperableError::InvalidData(e.to_string()))
     }
-
-    fn clone_box(&self) -> Box<dyn Interoperable> {
-        Box::new(self.clone())
-    }
 }
 
 #[cfg(test)]

@@ -10,6 +10,19 @@ where
     TKey: Clone,
     TValue: Clone,
 {
+    /// Concrete iterator returned by [`ReadOnlyStoreGeneric::find`].
+    ///
+    /// Storage backends are concrete performance components, so prefix scans
+    /// should not be forced through a boxed iterator at the trait boundary.
+    /// Backends can still choose their own iterator shape: a materialized
+    /// in-memory iterator, a database cursor adapter, or an enum over multiple
+    /// scan modes.
+    type FindIterator<'a>: Iterator<Item = (TKey, TValue)> + 'a
+    where
+        Self: 'a,
+        TKey: 'a,
+        TValue: 'a;
+
     /// Reads a specified entry from the database.
     /// Returns the data of the entry, or None if it doesn't exist.
     fn try_get(&self, key: &TKey) -> Option<TValue>;
@@ -20,11 +33,7 @@ where
     }
 
     /// Finds the entries starting with the specified prefix.
-    fn find(
-        &self,
-        key_prefix: Option<&TKey>,
-        direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (TKey, TValue)> + '_>;
+    fn find(&self, key_prefix: Option<&TKey>, direction: SeekDirection) -> Self::FindIterator<'_>;
 
     /// Gets the entry with the specified key, returning `None` if absent.
     fn get(&self, key: &TKey) -> Option<TValue> {

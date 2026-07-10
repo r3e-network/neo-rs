@@ -18,7 +18,7 @@ use crate::error::PrimitiveResult;
 /// - `Transaction` (neo-core)
 /// - `Header` / `BlockHeader` (neo-core)
 /// - `ExtensiblePayload` (neo-core)
-pub trait Verifiable: std::any::Any + Send + Sync {
+pub trait Verifiable: Send + Sync {
     /// Verifies the cryptographic validity of the object (state-independent checks only).
     fn verify(&self) -> bool;
 
@@ -27,7 +27,4 @@ pub trait Verifiable: std::any::Any + Send + Sync {
 
     /// Gets the serialized data used for hash computation (unsigned, no witnesses).
     fn hash_data(&self) -> Vec<u8>;
-
-    /// Returns a reference to self as `Any` for downcasting.
-    fn as_any(&self) -> &dyn std::any::Any;
 }

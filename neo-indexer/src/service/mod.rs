@@ -22,7 +22,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use neo_storage::persistence::Store;
+use neo_storage::persistence::{Store, providers::RuntimeStore};
 use parking_lot::{Mutex, RwLock};
 
 use crate::error::IndexerResult;
@@ -43,7 +43,7 @@ use persistence::temporary_snapshot_path;
 #[cfg(test)]
 use persistence::write_snapshot;
 
-/// Shared indexer service registered in `neo_system::ServiceRegistry`.
+/// Shared indexer service installed in the node's typed RPC service bundle.
 #[derive(Clone)]
 pub struct IndexerService {
     inner: Arc<RwLock<Indexer>>,
@@ -93,17 +93,24 @@ impl IndexerService {
     }
 
     /// Opens a persistent indexer service backed by a generic service store.
-    pub fn open_store(store: Arc<dyn Store>) -> IndexerResult<Self> {
+    pub fn open_store<S>(store: Arc<S>) -> IndexerResult<Self>
+    where
+        S: Store + Clone + Into<RuntimeStore> + 'static,
+    {
         Self::open_store_with_path(store, None::<PathBuf>)
     }
 
     /// Opens a persistent indexer service backed by a generic service store and
     /// records the operator-facing store path for diagnostics.
-    pub fn open_store_with_path(
-        store: Arc<dyn Store>,
+    pub fn open_store_with_path<S>(
+        store: Arc<S>,
         path: Option<impl Into<PathBuf>>,
-    ) -> IndexerResult<Self> {
+    ) -> IndexerResult<Self>
+    where
+        S: Store + Clone + Into<RuntimeStore> + 'static,
+    {
         let indexer = store::read_indexer(&store)?;
+        let store = Arc::new(store.as_ref().clone().into());
         Ok(Self {
             inner: Arc::new(RwLock::new(indexer)),
             persist_lock: Arc::new(Mutex::new(())),

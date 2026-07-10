@@ -11,7 +11,7 @@ use neo_vm_rs::semantics::arithmetic;
 use neo_vm_rs::{Instruction, OpCode, StackValue};
 
 /// Registers the bitwise operation handlers.
-pub fn register_handlers(jump_table: &mut JumpTable) {
+pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
     register_jump_handlers![
         jump_table;
         OpCode::INVERT => invert,
@@ -23,15 +23,15 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
     ];
 }
 
-fn invert(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn invert<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
     let value = numeric_operand(ctx.pop()?)?;
     let result = arithmetic::invert_value(value).map_err(semantics_error)?;
     push_stack_value(ctx, result)
 }
 
-fn binary_bitwise(
-    engine: &mut ExecutionEngine,
+fn binary_bitwise<S>(
+    engine: &mut ExecutionEngine<S>,
     op: fn(StackValue, StackValue) -> Result<StackValue, String>,
 ) -> VmResult<()> {
     let ctx = require_context(engine)?;
@@ -41,19 +41,19 @@ fn binary_bitwise(
     push_stack_value(ctx, result)
 }
 
-fn and(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn and<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     binary_bitwise(engine, arithmetic::bitwise_and_values)
 }
 
-fn or(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn or<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     binary_bitwise(engine, arithmetic::bitwise_or_values)
 }
 
-fn xor(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn xor<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     binary_bitwise(engine, arithmetic::bitwise_xor_values)
 }
 
-fn equal(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn equal<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     let (left, right) = {
         let ctx = require_context(engine)?;
         if ctx.evaluation_stack().len() < 2 {
@@ -68,7 +68,7 @@ fn equal(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
     require_context(engine)?.push(StackItem::from_bool(result))
 }
 
-fn not_equal(engine: &mut ExecutionEngine, _: &Instruction) -> VmResult<()> {
+fn not_equal<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     let (left, right) = {
         let ctx = require_context(engine)?;
         (ctx.pop()?, ctx.pop()?)

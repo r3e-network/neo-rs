@@ -21,7 +21,14 @@ impl NeoToken {
     /// (`index % CommitteeMembersCount == 0`) recompute the cached committee via
     /// `ComputeCommitteeMembers` and, from HF_Cockatrice, emit a
     /// `CommitteeChanged` notification when the member set changed.
-    pub(super) fn on_persist_native(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    pub(super) fn on_persist_native<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        &self,
+        engine: &mut ApplicationEngine<P, D, B>,
+    ) -> CoreResult<()> {
         let total_start = Instant::now();
         let block_index =
             crate::support::engine::require_persisting_block(engine, "NeoToken::on_persist")?
@@ -121,7 +128,14 @@ impl NeoToken {
     /// `voterRewardOfEachCommittee = gasPerBlock * VoterRewardRatio * VoteFactor
     /// * m / (m + n) / 100`, credited as `factor * that / votes` with factor 2
     /// for validators (`i < n`) and 1 otherwise.
-    pub(super) fn post_persist_native(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    pub(super) fn post_persist_native<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        &self,
+        engine: &mut ApplicationEngine<P, D, B>,
+    ) -> CoreResult<()> {
         let block_index =
             crate::support::engine::require_persisting_block(engine, "NeoToken::post_persist")?
                 .index();

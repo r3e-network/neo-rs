@@ -17,7 +17,14 @@ impl PolicyContract {
     /// HF_Echidna / HF_Faun re-initialization branches live in
     /// `initialize_for_hardfork`, triggered by `ContractManagement`'s
     /// `on_persist` at those hardfork blocks.
-    pub(super) fn initialize_native(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    pub(super) fn initialize_native<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        &self,
+        engine: &mut ApplicationEngine<P, D, B>,
+    ) -> CoreResult<()> {
         let snapshot = engine.snapshot_cache();
         snapshot.add(
             Self::fee_per_byte_key(),

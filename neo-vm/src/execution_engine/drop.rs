@@ -4,7 +4,7 @@
 
 use super::ExecutionEngine;
 
-impl Drop for ExecutionEngine {
+impl<S> Drop for ExecutionEngine<S> {
     fn drop(&mut self) {
         // Clear host references to avoid dangling pointers
         self.interop_host = None;

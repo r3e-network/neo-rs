@@ -25,7 +25,7 @@ where
         blocks: &[Block],
         position: usize,
         current_height: u32,
-        resources: &BatchPersistResources,
+        resources: &BatchPersistResources<S::NativeProvider, S::CacheBacking>,
         stats: &mut ImportBlocksStats,
     ) -> Option<(usize, u32)> {
         if !self.system.allows_empty_block_fast_forward() {

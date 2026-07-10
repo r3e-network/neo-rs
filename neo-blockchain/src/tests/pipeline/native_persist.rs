@@ -1,10 +1,7 @@
 use super::trace::TraceTxFilter;
 use super::*;
-// `invocation_script`/`verification_script` on `Witness` are trait methods.
-use neo_execution::native_contract_provider::{NativeProviderTestGuard, lock_native_provider};
 use neo_manifest::{ContractManifest, ContractMethodDescriptor, NefFile};
 use neo_payloads::Header;
-use neo_primitives::Witness as _;
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageKey;
@@ -28,11 +25,10 @@ const NEP17_PREFIX_TOTAL_SUPPLY: u8 = 11;
 const ORACLE_PREFIX_PRICE: u8 = 5;
 const ORACLE_PREFIX_REQUEST_ID: u8 = 9;
 
-fn lock_provider() -> NativeProviderTestGuard {
-    lock_native_provider()
-}
+type StandardNativePersistResources =
+    NativePersistResources<neo_native_contracts::StandardNativeProvider>;
 
-fn standard_resources() -> NativePersistResources {
+fn standard_resources() -> StandardNativePersistResources {
     NativePersistResources::from_provider(Arc::new(
         neo_native_contracts::StandardNativeProvider::new(),
     ))
@@ -42,7 +38,7 @@ fn persist_with_resources(
     snapshot: Arc<DataCache>,
     block: Arc<Block>,
     settings: &ProtocolSettings,
-    resources: &NativePersistResources,
+    resources: &StandardNativePersistResources,
 ) -> CoreResult<NativePersistOutcome> {
     persist_block_natives_with_resources(
         snapshot,
@@ -68,21 +64,13 @@ impl CountingNativeProvider {
 }
 
 impl neo_execution::native_contract_provider::NativeContractProvider for CountingNativeProvider {
-    fn get_native_contract(
-        &self,
-        hash: &UInt160,
-    ) -> Option<Arc<dyn neo_execution::NativeContract>> {
+    type Contract = neo_native_contracts::StandardNativeContract;
+
+    fn get_native_contract(&self, hash: &UInt160) -> Option<Self::Contract> {
         self.inner.get_native_contract(hash)
     }
 
-    fn get_native_contract_by_name(
-        &self,
-        name: &str,
-    ) -> Option<Arc<dyn neo_execution::NativeContract>> {
-        self.inner.get_native_contract_by_name(name)
-    }
-
-    fn all_native_contracts(&self) -> Vec<Arc<dyn neo_execution::NativeContract>> {
+    fn all_native_contracts(&self) -> Vec<Self::Contract> {
         self.all_contracts_calls.fetch_add(1, Ordering::Relaxed);
         self.inner.all_native_contracts()
     }
@@ -91,34 +79,49 @@ impl neo_execution::native_contract_provider::NativeContractProvider for Countin
         self.inner.all_native_contract_hashes()
     }
 
-    fn current_block_index(&self, snapshot: &DataCache) -> CoreResult<u32> {
+    fn current_block_index<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+    ) -> CoreResult<u32> {
         self.inner.current_block_index(snapshot)
     }
-}
 
-struct EmptyNativeProvider;
-
-impl neo_execution::native_contract_provider::NativeContractProvider for EmptyNativeProvider {
-    fn get_native_contract(
+    fn policy_is_blocked<B: neo_storage::CacheRead>(
         &self,
-        _hash: &UInt160,
-    ) -> Option<Arc<dyn neo_execution::NativeContract>> {
-        None
+        snapshot: &DataCache<B>,
+        account: &UInt160,
+    ) -> CoreResult<bool> {
+        self.inner.policy_is_blocked(snapshot, account)
     }
 
-    fn get_native_contract_by_name(
+    fn policy_whitelisted_fee<B: neo_storage::CacheRead>(
         &self,
-        _name: &str,
-    ) -> Option<Arc<dyn neo_execution::NativeContract>> {
-        None
+        snapshot: &DataCache<B>,
+        contract_hash: &UInt160,
+        method: &str,
+        param_count: u32,
+    ) -> CoreResult<Option<i64>> {
+        self.inner
+            .policy_whitelisted_fee(snapshot, contract_hash, method, param_count)
     }
 
-    fn all_native_contracts(&self) -> Vec<Arc<dyn neo_execution::NativeContract>> {
-        Vec::new()
+    fn exec_fee_factor_raw<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+    ) -> CoreResult<u32> {
+        self.inner.exec_fee_factor_raw(snapshot)
     }
 
-    fn all_native_contract_hashes(&self) -> Vec<UInt160> {
-        Vec::new()
+    fn storage_price<B: neo_storage::CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<u32> {
+        self.inner.storage_price(snapshot)
+    }
+
+    fn contract_state<B: neo_storage::CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        hash: &UInt160,
+    ) -> CoreResult<Option<neo_execution::ContractState>> {
+        self.inner.contract_state(snapshot, hash)
     }
 }
 
@@ -844,7 +847,6 @@ fn bulk_sync_native_persist_skips_replay_artifacts_but_keeps_vm_state() {
 
 #[test]
 fn reusable_native_persist_resources_fetch_contract_list_once_for_batch() {
-    let _provider_guard = lock_provider();
     let all_contracts_calls = Arc::new(AtomicUsize::new(0));
     let provider = Arc::new(CountingNativeProvider::new(Arc::clone(
         &all_contracts_calls,
@@ -895,8 +897,7 @@ fn reusable_native_persist_resources_fetch_contract_list_once_for_batch() {
 }
 
 #[test]
-fn reusable_native_persist_resources_keep_provider_consistent_after_global_replacement() {
-    let _provider_guard = lock_provider();
+fn reusable_native_persist_resources_keep_provider_consistent_across_blocks() {
     let all_contracts_calls = Arc::new(AtomicUsize::new(0));
     let provider = Arc::new(CountingNativeProvider::new(Arc::clone(
         &all_contracts_calls,
@@ -918,13 +919,6 @@ fn reusable_native_persist_resources_keep_provider_consistent_after_global_repla
     )
     .expect("genesis stages with original provider");
     staged.commit();
-
-    // Simulate a later global provider replacement. The reusable batch resources
-    // must stay internally consistent: direct native hooks and engine native
-    // lookups should both use the provider captured by the resources.
-    neo_execution::native_contract_provider::NativeContractLookup::install_provider(Arc::new(
-        EmptyNativeProvider,
-    ));
 
     let signer_account = UInt160::from_bytes(&[0x55; 20]).unwrap();
     fund_gas(&snapshot, &signer_account, 10_0000_0000);
@@ -958,9 +952,18 @@ fn reusable_native_persist_resources_keep_provider_consistent_after_global_repla
 #[test]
 fn native_persist_resources_do_not_install_thread_scoped_provider() {
     let source = include_str!("../../pipeline/native_persist.rs");
+    let resources = include_str!("../../pipeline/native_persist/types.rs");
     assert!(
         !source.contains("with_scoped_provider"),
         "native persistence resources must pass providers directly into engines, not mutate the thread-scoped global provider"
+    );
+    assert!(
+        resources.contains("pub struct NativePersistResources<P>"),
+        "native persistence resources should preserve the captured provider type"
+    );
+    assert!(
+        resources.contains("provider: Arc<P>"),
+        "native persistence resources should store Arc<P>, not erase the provider internally"
     );
 }
 

@@ -23,7 +23,6 @@ neo-payloads = { workspace = true }
 # Node and domain service crates
 neo-blockchain = { workspace = true }
 neo-mempool = { workspace = true }
-neo-state-service = { workspace = true }
 neo-network = { workspace = true }
 neo-wallets = { workspace = true }
 neo-native-contracts = { workspace = true }
@@ -34,9 +33,7 @@ neo-config = { workspace = true }
 neo-runtime = { workspace = true }
 
 # External
-async-trait = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync"] }
-tokio-util = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 parking_lot = { workspace = true }

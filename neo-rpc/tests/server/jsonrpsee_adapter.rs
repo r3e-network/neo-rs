@@ -7,6 +7,7 @@ use neo_rpc::server::{
     RpcServerIndexer, RpcServerNode, RpcServerUtilities, ServerRpcError, build_jsonrpsee_module,
     build_jsonrpsee_module_with_disabled,
 };
+use neo_storage::persistence::providers::RuntimeStore;
 use neo_system::Node;
 use parking_lot::RwLock;
 use serde_json::{Value, json};
@@ -17,14 +18,14 @@ use std::time::Duration;
 
 fn node_to_context(node: &Node) -> neo_rpc::server::NodeContext {
     neo_rpc::server::NodeContext::from_parts(
-        Arc::clone(&node.settings),
-        Arc::clone(&node.storage),
-        node.blockchain.clone(),
-        node.network.clone(),
-        Arc::clone(&node.mempool),
-        Arc::clone(&node.header_cache),
-        node.services.clone(),
-        Arc::clone(&node.native_contract_provider),
+        node.settings(),
+        Arc::new(RuntimeStore::Memory(node.storage().as_ref().clone())),
+        node.blockchain(),
+        node.network(),
+        node.mempool(),
+        node.header_cache(),
+        neo_rpc::server::RpcServices::default(),
+        node.native_contract_provider(),
     )
 }
 
@@ -162,20 +163,17 @@ async fn module_registers_dynamic_public_methods_without_descriptor_api_breaks()
     let protected_method = ["custom", "protected"].join("");
 
     server.register_handlers(vec![
-        RpcHandler::new(
-            RpcMethodDescriptor::new(dynamic_method.clone()),
-            Arc::new(|_, _| {
-                Err(RpcException::from(
-                    ServerRpcError::invalid_params().with_data("dynamic"),
-                ))
-            }),
-        ),
+        RpcHandler::new(RpcMethodDescriptor::new(dynamic_method.clone()), |_, _| {
+            Err(RpcException::from(
+                ServerRpcError::invalid_params().with_data("dynamic"),
+            ))
+        }),
         RpcHandler::new(
             RpcMethodDescriptor {
                 name: protected_method.clone(),
                 requires_auth: true,
             },
-            Arc::new(|_, _| Ok(json!(true))),
+            |_, _| Ok(json!(true)),
         ),
     ]);
 
@@ -218,7 +216,7 @@ async fn module_registers_protected_methods_when_rpc_auth_is_configured() {
             name: protected_method.clone(),
             requires_auth: true,
         },
-        Arc::new(|_, _| Ok(json!(true))),
+        |_, _| Ok(json!(true)),
     )]);
 
     let server = Arc::new(RwLock::new(server));
@@ -242,7 +240,7 @@ async fn protected_method_without_transport_auth_returns_access_denied() {
             name: protected_method.clone(),
             requires_auth: true,
         },
-        Arc::new(|_, _| Ok(json!(true))),
+        |_, _| Ok(json!(true)),
     )]);
 
     let server = Arc::new(RwLock::new(server));
@@ -274,7 +272,7 @@ async fn http_transport_enforces_basic_auth_when_configured() {
     let mut server = build_server_with_config(config);
     server.register_handlers(vec![RpcHandler::new(
         RpcMethodDescriptor::new("getblockcount"),
-        Arc::new(|_, _| Ok(json!(42))),
+        |_, _| Ok(json!(42)),
     )]);
     let server = Arc::new(RwLock::new(server));
     server
@@ -328,7 +326,7 @@ async fn http_transport_emits_cors_headers_for_allowed_origin() {
     let mut server = build_server_with_config(config);
     server.register_handlers(vec![RpcHandler::new(
         RpcMethodDescriptor::new("getblockcount"),
-        Arc::new(|_, _| Ok(json!(42))),
+        |_, _| Ok(json!(42)),
     )]);
     let server = Arc::new(RwLock::new(server));
     server
@@ -374,7 +372,7 @@ async fn http_transport_answers_cors_preflight_without_basic_auth() {
     let mut server = build_server_with_config(config);
     server.register_handlers(vec![RpcHandler::new(
         RpcMethodDescriptor::new("getblockcount"),
-        Arc::new(|_, _| Ok(json!(42))),
+        |_, _| Ok(json!(42)),
     )]);
     let server = Arc::new(RwLock::new(server));
     server
@@ -520,7 +518,7 @@ async fn dispatch_enforces_configured_process_rate_limit() {
     let mut server = build_server_with_config(config);
     server.register_handlers(vec![RpcHandler::new(
         RpcMethodDescriptor::new("getblock"),
-        Arc::new(|_, _| Ok(json!("ok"))),
+        |_, _| Ok(json!("ok")),
     )]);
     let server = Arc::new(RwLock::new(server));
     let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
@@ -572,11 +570,11 @@ async fn handler_error_preserves_neo_message_and_data() {
     let mut server = RpcServer::new(system, RpcServerConfig::default());
     server.register_handlers(vec![RpcHandler::new(
         RpcMethodDescriptor::new("getblockcount"),
-        Arc::new(|_, _| {
+        |_, _| {
             Err(RpcException::from(
                 ServerRpcError::invalid_params().with_data("height"),
             ))
-        }),
+        },
     )]);
     let server = Arc::new(RwLock::new(server));
     let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");

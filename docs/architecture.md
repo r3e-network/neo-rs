@@ -15,11 +15,12 @@ default store, RocksDB as a supported fallback, and in-memory storage for tests.
 
 ## Layered architecture
 
-The workspace is strictly layered into **7 layers, 26 production crates + 1 dev test crate (neo-test-fixtures)**.
-Dependencies point **downward** only: the foundation crate has no `neo-*`
-dependencies, infrastructure crates only depend on lower infrastructure/foundation
-crates, and each higher layer builds on the ones below it. This keeps the
-protocol-critical core decoupled from the service runtime and from the node binary.
+The workspace is organized into **8 ordered layers, 26 production crates + 1 dev test crate (neo-test-fixtures)**.
+Dependencies point downward, except for an explicit audited allow-list of
+one-way dependencies inside a layer. The canonical layer membership and
+same-layer edges live in `[workspace.metadata.architecture]` and are enforced
+by `neo-tests`. This keeps the protocol-critical core decoupled from service
+composition and the node binary.
 
 ```mermaid
 flowchart TD
@@ -30,7 +31,6 @@ flowchart TD
 
     subgraph PLUG["Plugin / RPC Boundary"]
         rpc[neo-rpc]
-        oracle[neo-oracle-service]
     end
 
     subgraph COMP["Composition Layer"]
@@ -42,6 +42,7 @@ flowchart TD
         network[neo-network]
         wallets[neo-wallets]
         indexer[neo-indexer]
+        oracle[neo-oracle-service]
     end
 
     subgraph DOM["Domain Service Layer"]
@@ -114,12 +115,12 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-native-contracts | Domain service | NEO, GAS, Policy, Oracle, Notary, StdLib, CryptoLib, RoleManagement, ContractManagement, Ledger, plus shared native infrastructure. |
 | neo-state-service | Domain service | MPT state root, state root cache, state store, immutable state-provider views, block-commit pipeline. |
 | neo-mempool | Domain service | Transaction memory pool, pool items, transaction router, per-block verification context. |
-| neo-blockchain | Node service | `Blockchain` service, `LedgerContext`, `HeaderCache`, provider-style ledger reads, cold archive scaffolding, pruning checkpoints, block processing. |
-| neo-network | Node service | P2P host: `LocalNode`, `RemoteNode`, `TaskManager` services. |
+| neo-blockchain | Node service | Root-level `BlockchainHandle`/`BlockchainService` capabilities, `LedgerContext`, `HeaderCache`, provider-style ledger reads, and canonical block processing; command-loop internals stay private. |
+| neo-network | Node service | Root-level P2P handles, services, protocol values, and wire codecs; `LocalNode`, `RemoteNode`, task-manager, wire, and protocol module layouts stay private. |
 | neo-wallets | Node service | NEP-6 wallets, BIP-32/BIP-39 key derivation, keypairs, accounts, witness scripts. |
 | neo-indexer | Node service | Read-side block, transaction, signer-account, and notification indexing for service-style RPC queries. |
-| neo-system | Composition | `Node` orchestrator / composition root that wires the services together. |
-| neo-oracle-service | Plugin/RPC boundary | Oracle request fulfilment over HTTPS and NeoFS. |
+| neo-oracle-service | Node service | Off-chain Oracle request fulfilment over HTTPS and NeoFS, including retries, signing, and request lifecycle processing. |
+| neo-system | Composition | Typed core composition root: `NodeCoreBuilder`, `NodeCoreLaunch`, `BlockchainTask`, `NodeSystemContext`, final `Node`, and sync workflows. |
 | neo-rpc | Plugin/RPC boundary | `jsonrpsee` JSON-RPC server and client, plus optional ApplicationLogs, TokensTracker, NeoIndexer, and Oracle method groups. |
 | neo-node | Application | The node daemon binary (TOML config, storage, P2P, RPC, consensus wiring). |
 | neo-gui | Application | Native desktop manager that talks to a running node over JSON-RPC. |
@@ -130,7 +131,7 @@ The development-only members are not part of the running node:
 tests), and `benches-package` (Criterion benchmarks).
 The pure VM semantics live in `neo-vm-rs`, an external sibling crate referenced
 by path from `neo-vm`. For the full ADR log and evolution roadmap, see
-[`design.md`](../design.md) (32 ADRs covering RPC decoupling, engine integration,
+[`design.md`](../design.md) (35 ADRs covering RPC decoupling, engine integration,
 error unification, oracle decoupling, dead dependency cleanup, pipeline strategy,
 error type policy, MPT layering, and more).
 
@@ -148,10 +149,11 @@ small-crate candidates were checked against the dependency layers above:
 | `neo-error` into another foundation crate | Small but central `CoreError` / `CoreResult` vocabulary. | **Do not merge.** It deliberately sits near the bottom of the graph so storage, crypto, execution, RPC, and node services share one error type without cycles. |
 | `neo-config` into `neo-node` or `neo-system` | TOML-backed protocol, network, storage, RPC, and service configuration shared across daemon startup and reusable node services. | **Do not merge.** It is operator-facing configuration vocabulary; merging upward would make lower services depend on process/composition concerns just to parse or validate settings. |
 | `neo-manifest` into `neo-execution` or `neo-native-contracts` | Contract ABI, NEF files, method tokens, call flags, and validator attributes shared by execution, RPC, wallets, and native-contract metadata. | **Do not merge.** Manifest/ABI data is protocol vocabulary, not execution ownership; merging it upward would make independent tools and RPC paths pull in execution or native-contract internals. |
-| `neo-system` into `neo-node` | Embeddable composition root, node lifecycle, service registry, and cross-service wiring used by the daemon and integration surfaces. | **Do not merge.** The daemon owns CLI/process policy, while `neo-system` should remain reusable node assembly that tests, RPC/indexer wiring, and future service hosts can embed without pulling in the binary. |
-| `neo-indexer` into `neo-rpc` | Query-oriented service used by RPC, but owned by the node lifecycle and optionally registered in `neo-system::ServiceRegistry`. | **Do not merge.** Keeping it as a node service allows RPC, daemon startup, and future REST/worker surfaces to share the same read model. |
+| `neo-system` into `neo-node` | Embeddable composition root for typed core node handles and cross-service wiring used by the daemon and integration surfaces. | **Do not merge.** The daemon owns CLI/process policy and optional application services, while `neo-system` should remain reusable node assembly that tests and future service hosts can embed without pulling in the binary. |
+| `neo-indexer` into `neo-rpc` | Query-oriented service used by RPC, but owned by the node lifecycle and passed through the typed `RpcServices` bundle. | **Do not merge.** Keeping it as a node service allows RPC, daemon startup, and future REST/worker surfaces to share the same read model. |
 | `neo-hsm` into `neo-consensus` or `neo-node` | Optional validator signing backends for PKCS#11, Azure, and GCP HSM integrations. | **Do not merge.** HSM support is an operator/security boundary with heavyweight and feature-specific dependencies; consensus should remain about the protocol while signer providers stay replaceable. |
 | `neo-oracle-service` into `neo-rpc` or `neo-native-contracts` | Off-chain oracle worker for HTTPS/NeoFS fetching, response transaction assembly, and request lifecycle processing. | **Do not merge.** The native Oracle contract must stay deterministic on-chain state, RPC is just an API boundary, and the oracle worker has its own network I/O, retries, signing, and service lifecycle. |
+| `neo-test-fixtures` into production crates | Small shared builders and byte-compatible fixtures used only by tests. | **Keep separate.** Production crates must not acquire test-only constructors or fixture dependencies; the crate is unpublished and development-only. |
 | Development crates `tests` / `benches-package` | Workspace-only verification and benchmark targets. | **Keep separate.** They are not linked into the node and keep dev-only dependencies out of production crates. |
 
 The practical rule for future consolidation is: merge crates only when both
@@ -173,7 +175,7 @@ The detailed rules for this style live in
 
 ## Key design decisions
 
-> The full ADR log lives in [`design.md`](../design.md) — 32 ADRs covering
+> The full ADR log lives in [`design.md`](../design.md) — 35 ADRs covering
 > RPC decoupling, engine integration, error unification, oracle decoupling,
 > dead dependency cleanup, pipeline strategy, error type policy, MPT layering,
 > doc management, runtime versioning, and native contract registry. The
@@ -196,6 +198,36 @@ The detailed rules for this style live in
   and `SyncStageCheckpointStore` seams, and shared events; `neo-system` is the
   composition root that instantiates and connects concrete services. This gives
   clear ownership, backpressure, and testable boundaries between services.
+  Async service traits return concrete futures; `async_trait` and its
+  per-call boxed future allocation are not used.
+
+- **Typed optional-service composition.** `neo-system::Node` owns only core
+  typed handles. `neo-node::NodeServiceHandles<S>` owns daemon-only state,
+  indexer, application-log, token-tracker, and remote-ledger handles.
+  `neo-rpc::RpcServices<S>` projects the read-side subset into `NodeContext` as
+  immutable named fields. There is no `TypeId`/`Any` service locator, so
+  mismatched storage backings fail to compile instead of looking like a
+  disabled service at runtime.
+
+- **Staged core and application lifecycle.** `neo-system::NodeCoreBuilder<P,
+  S, H>` constructs the provider-neutral store snapshot, mempool, header cache,
+  ledger context, static `NodeSystemContext`, and blockchain command service.
+  `NodeCoreLaunch` separates the owned `BlockchainTask` from shareable
+  `NodeCore` capabilities; `NodeCore::into_node(network)` consumes that stage so
+  the final node cannot accidentally substitute a different provider, store,
+  mempool, or blockchain handle. The process host remains responsible for
+  configuration, optional application services, networking policy, HSMs,
+  observability, and task supervision. Its entrypoint is the staged chain
+  `NodeCommand::from_cli(...).open_runtime().await?.run_requested_mode().await`.
+  `NodeRuntime` delegates to a private `RunningNode` workflow instead of
+  destructuring stores, service bundles, and task handles.
+
+- **Stable service capabilities, private module layouts.** `neo-blockchain`
+  and `neo-network` export handles, services, outcomes, protocol values, and
+  codecs from their crate roots. Their command-loop, pending-block, wire, and
+  protocol module trees are implementation details. Public command enums remain
+  only where typed channel constructors expose them; ordinary production
+  callers use `BlockchainHandle` and `NetworkHandle` methods.
 
 - **Node composition traits.** `neo-runtime` defines the `NodeTypes` (sealed),
   `StoreProvider`, `ConfigProvider`, and `TxAdmission` traits — the surviving
@@ -213,7 +245,9 @@ The detailed rules for this style live in
   `neo-blockchain::pipeline::stage_traits`, alongside their concrete
   implementations, `NeoValidateStage` and `NeoConsensusWitnessStage`. The
   high-level `VerifiedImportPipeline` composes those two stages for
-  verification-enabled local imports. The concrete block processing lives in
+  verification-enabled local imports. These validation stages are synchronous
+  because they perform no I/O awaits, avoiding boxed futures and scheduler
+  transitions on every imported block. The concrete block processing lives in
   `neo-blockchain::BlockchainService`. The former
   `neo-engine` crate and its `BlockchainEngineAdapter` bridge were removed in
   ADR-027 as never-instantiated dead code; ADR-009/ADR-010 record the earlier
@@ -261,8 +295,8 @@ The detailed rules for this style live in
   `BlockchainHandle`, bounded `BlockImportQueue`, shared store-backed
   checkpoint provider, and import-stage commit policy so production downloader
   integration has one handle to drive. The same `Arc<SyncImportPipeline>` is
-  registered in the node `ServiceRegistry`, keeping direct field access and
-  provider lookup consistent. `neo_system::SyncDownloadImportDriver` drains any
+  owned directly by `neo_system::Node`; no erased provider lookup is involved.
+  `neo_system::SyncDownloadImportDriver` drains any
   `neo_network::BlockDownloader` stream into that handle, creating a
   `SyncPipelineDriver` and stopping on downloader errors, height gaps, or
   partial imports. Downloaded `SyncBlockBatch` values are checked for contiguous
@@ -322,8 +356,9 @@ The detailed rules for this style live in
   pass the provider directly into each OnPersist/Application/PostPersist engine.
   Batch resource setup builds `NativePersistResources` from that context
   provider and calls the explicit-resource staging/commit path instead of
-  reading an ambient global provider. Headless/test construction can still
-  omit the provider and let the builder own a local standard default. Inside
+  reading an ambient global provider. Every `NodeBuilder` composition supplies
+  its provider explicitly; the in-memory convenience constructor creates and
+  passes a local standard provider itself. Inside
   `neo-native-contracts`, each contract declares one metadata binding table that
   pairs ABI descriptors with Rust handlers, and its `NativeContract` impl uses
   `native_contract_dispatch!` to derive both direct test dispatch and resolved
@@ -377,9 +412,13 @@ The detailed rules for this style live in
 
 ## How the pieces fit at runtime
 
-At startup the `neo-node` binary (L7) reads a TOML config, opens the configured
-store, and uses `neo-system` (L5) to build and launch the service set via
-`NodeBuilder`. The network host (`neo-network`, L4) dials seeds and accepts
+At startup the `neo-node` process host (L7) reads TOML and CLI policy, opens the
+configured store, builds optional application services, and enters
+`neo-system::NodeCoreBuilder` (L5). The typed launch creates the canonical core
+state and blockchain task; after network construction,
+`NodeCore::into_node(network)` finalizes the coherent `Node`. `NodeRuntime`
+then delegates startup import, live-service startup, and graceful shutdown to
+`RunningNode::run_requested_mode`. The network host (`neo-network`, L4) dials seeds and accepts
 peers; the blockchain service (`neo-blockchain`, L4) processes incoming blocks
 and headers through execution (`neo-execution`, L3) and the state-commit pipeline
 (`neo-state-service`, L3); the mempool (`neo-mempool`, L3) admits and routes
@@ -390,6 +429,6 @@ pipeline stage traits it uses live in `neo-blockchain::pipeline::stage_traits`.
 
 For a step-by-step trace of how a block and a transaction move through these
 services — including the P2P sync path, execution, state-root commit, and RPC
-query path — see [dataflow.md](dataflow.md). For the 32 ADRs documenting every
+query path — see [dataflow.md](dataflow.md). For the 35 ADRs documenting every
 architectural decision and the 4-phase evolution roadmap, see
 [design.md](../design.md).

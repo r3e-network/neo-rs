@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use neo_storage::persistence::Store;
+use neo_storage::persistence::providers::RuntimeStore;
 
 use crate::error::IndexerResult;
 use crate::store;
@@ -13,7 +13,7 @@ use super::persistence::{MutationPersistenceMode, PendingPersistence, write_snap
 pub(super) enum PersistenceBackend {
     JsonFile(PathBuf),
     Store {
-        store: Arc<dyn Store>,
+        store: Arc<RuntimeStore>,
         path: Option<PathBuf>,
     },
 }
@@ -23,7 +23,7 @@ impl PersistenceBackend {
         Self::JsonFile(path)
     }
 
-    pub(super) fn store(store: Arc<dyn Store>, path: Option<PathBuf>) -> Self {
+    pub(super) fn store(store: Arc<RuntimeStore>, path: Option<PathBuf>) -> Self {
         Self::Store { store, path }
     }
 
@@ -57,7 +57,7 @@ impl PersistenceBackend {
         }
     }
 
-    pub(super) fn store_backend(&self) -> Option<Arc<dyn Store>> {
+    pub(super) fn store_backend(&self) -> Option<Arc<RuntimeStore>> {
         match self {
             Self::Store { store, .. } => Some(Arc::clone(store)),
             Self::JsonFile(_) => None,

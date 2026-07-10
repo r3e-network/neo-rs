@@ -2,18 +2,28 @@
 
 use serde_json::{Value, json};
 
-use super::super::remote_ledger::RemoteLedgerStatus;
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_storage::persistence::Store;
+
+use super::super::services::NodeServiceHandles;
 use super::observability_ledger_height;
 
-pub(super) fn node_health_payload(node: &neo_system::Node) -> Value {
-    let ledger_height = observability_ledger_height(node);
-    let remote_ledger = node.get_service::<RemoteLedgerStatus>();
+pub(super) fn node_health_payload<P, S>(
+    node: &neo_system::Node<P, S>,
+    services: &NodeServiceHandles<S>,
+) -> Value
+where
+    P: NativeContractProvider + 'static,
+    S: Store + 'static,
+{
+    let ledger_height = observability_ledger_height(node, services);
+    let remote_ledger = services.remote_ledger();
     let ledger_source = if remote_ledger.is_some() {
         "remote_rpc"
     } else {
         "local"
     };
-    let (indexer_payload, indexer_ready) = indexer_health_payload(node, ledger_height);
+    let (indexer_payload, indexer_ready) = indexer_health_payload(services, ledger_height);
     let ready = ledger_height.is_some() && indexer_ready;
     let local_info = node.network().local_node_info();
     let mempool = node.mempool();
@@ -33,20 +43,26 @@ pub(super) fn node_health_payload(node: &neo_system::Node) -> Value {
         },
         "header_cache_entries": node.header_cache().count(),
         "services": {
-            "state_service": {"enabled": node.state_store().is_some()},
+            "state_service": {"enabled": services.state_store().is_some()},
             "indexer": indexer_payload,
             "application_logs": {
-                "enabled": node.get_service::<neo_rpc::application_logs::ApplicationLogsService>().is_some(),
+                "enabled": services.application_logs().is_some(),
             },
             "tokens_tracker": {
-                "enabled": node.get_service::<neo_rpc::plugins::tokens_tracker::TokensTrackerService>().is_some(),
+                "enabled": services.tokens_tracker().is_some(),
             },
         },
     })
 }
 
-fn indexer_health_payload(node: &neo_system::Node, ledger_height: Option<u32>) -> (Value, bool) {
-    match node.get_service::<neo_indexer::IndexerService>() {
+fn indexer_health_payload<S>(
+    services: &NodeServiceHandles<S>,
+    ledger_height: Option<u32>,
+) -> (Value, bool)
+where
+    S: Store + 'static,
+{
+    match services.indexer() {
         Some(indexer) => match indexer.try_status() {
             Ok(status) => (
                 json!({

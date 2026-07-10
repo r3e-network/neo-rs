@@ -9,10 +9,10 @@ use crate::execution_engine::ExecutionEngine;
 use neo_vm_rs::{Instruction, OpCode};
 
 /// A handler for a VM instruction.
-pub type InstructionHandler = fn(&mut ExecutionEngine, &Instruction) -> VmResult<()>;
+pub type InstructionHandler<S = ()> = fn(&mut ExecutionEngine<S>, &Instruction) -> VmResult<()>;
 
-fn unsupported_opcode_handler(
-    _engine: &mut ExecutionEngine,
+fn unsupported_opcode_handler<S>(
+    _engine: &mut ExecutionEngine<S>,
     instruction: &Instruction,
 ) -> VmResult<()> {
     Err(VmError::unsupported_operation(format!(
@@ -21,21 +21,19 @@ fn unsupported_opcode_handler(
     )))
 }
 
-static UNSUPPORTED_OPCODE_HANDLER: InstructionHandler = unsupported_opcode_handler;
-
 /// Represents a jump table for the VM.
 #[derive(Clone)]
-pub struct JumpTable {
+pub struct JumpTable<S = ()> {
     /// The handlers for each opcode.
     /// Uses a fixed-size array of 256 entries (one for each possible byte value)
     /// exactly matching the C# implementation which uses `DelAction`[] Table = new `DelAction`[byte.MaxValue]
     ///
     /// This field is public to allow direct access for performance-critical
     /// instruction dispatch in the execution loop.
-    pub(crate) handlers: [Option<InstructionHandler>; 256],
+    pub(crate) handlers: [Option<InstructionHandler<S>>; 256],
 }
 
-impl JumpTable {
+impl<S> JumpTable<S> {
     pub(super) fn empty() -> Self {
         Self {
             handlers: [None; 256],
@@ -43,13 +41,13 @@ impl JumpTable {
     }
 
     /// Registers a handler for an opcode.
-    pub fn register(&mut self, opcode: OpCode, handler: InstructionHandler) {
+    pub fn register(&mut self, opcode: OpCode, handler: InstructionHandler<S>) {
         self.set_handler(opcode, handler);
     }
 
     /// Gets the handler for an opcode.
     #[must_use]
-    pub fn get(&self, opcode: OpCode) -> Option<InstructionHandler> {
+    pub fn get(&self, opcode: OpCode) -> Option<InstructionHandler<S>> {
         self.get_handler(opcode)
     }
 
@@ -60,7 +58,7 @@ impl JumpTable {
     #[allow(unsafe_code)]
     #[inline(always)]
     #[must_use]
-    pub fn get_handler(&self, opcode: OpCode) -> Option<InstructionHandler> {
+    pub fn get_handler(&self, opcode: OpCode) -> Option<InstructionHandler<S>> {
         let idx = usize::from(opcode.byte());
         debug_assert!(idx < self.handlers.len());
         // SAFETY: OpCode::byte() returns a u8 (0..=255) and handlers has 256 entries.
@@ -77,7 +75,7 @@ impl JumpTable {
     #[allow(unsafe_code)]
     #[inline(always)]
     #[must_use]
-    pub fn get_handler_by_u8(&self, opcode_byte: u8) -> Option<InstructionHandler> {
+    pub fn get_handler_by_u8(&self, opcode_byte: u8) -> Option<InstructionHandler<S>> {
         let idx = usize::from(opcode_byte);
         debug_assert!(idx < self.handlers.len());
         // SAFETY: opcode_byte is u8 (0..=255) and handlers has exactly 256 entries,
@@ -91,7 +89,7 @@ impl JumpTable {
     // u8 opcode value proves the unchecked index bound.
     #[allow(unsafe_code)]
     #[inline]
-    pub fn set_handler(&mut self, opcode: OpCode, handler: InstructionHandler) {
+    pub fn set_handler(&mut self, opcode: OpCode, handler: InstructionHandler<S>) {
         let idx = usize::from(opcode.byte());
         debug_assert!(idx < self.handlers.len());
         // SAFETY: OpCode::byte() returns a u8 (0..=255) and handlers has 256 entries.
@@ -102,68 +100,31 @@ impl JumpTable {
 
     /// Sets the handler for an opcode.
     /// Alias for `set_handler` for convenience.
-    pub fn set(&mut self, opcode: OpCode, handler: InstructionHandler) {
+    pub fn set(&mut self, opcode: OpCode, handler: InstructionHandler<S>) {
         self.set_handler(opcode, handler);
     }
 
     /// Executes an instruction.
-    pub fn execute(&self, engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-        if let Some(handler) = self.get_handler(instruction.opcode()) {
-            handler(engine, instruction)
-        } else {
-            self.invalid_opcode(engine, instruction)
-        }
+    pub fn execute(
+        &self,
+        engine: &mut ExecutionEngine<S>,
+        instruction: &Instruction,
+    ) -> VmResult<()> {
+        let handler = self
+            .get_handler(instruction.opcode())
+            .unwrap_or(unsupported_opcode_handler::<S>);
+        handler(engine, instruction)
     }
 
     /// Handles an invalid opcode.
     pub fn invalid_opcode(
         &self,
-        _engine: &mut ExecutionEngine,
+        _engine: &mut ExecutionEngine<S>,
         instruction: &Instruction,
     ) -> VmResult<()> {
         Err(VmError::unsupported_operation(format!(
             "Unsupported opcode: {:?}",
             instruction.opcode()
         )))
-    }
-}
-
-impl std::ops::Index<OpCode> for JumpTable {
-    type Output = InstructionHandler;
-
-    /// Returns a default unsupported-opcode handler if no handler is
-    /// registered for `opcode`. Production code should use
-    /// [`JumpTable::execute`] instead, which avoids the indexing indirection.
-    // Rationale: the `Index` trait cannot return `VmResult`; unsafe indexing is
-    // confined to the fixed opcode table and production dispatch uses `execute`.
-    #[allow(unsafe_code)]
-    #[inline]
-    fn index(&self, opcode: OpCode) -> &Self::Output {
-        let idx = usize::from(opcode.byte());
-        debug_assert!(idx < self.handlers.len());
-        // SAFETY: OpCode::byte() returns a u8 (0..=255) and handlers has 256 entries.
-        unsafe {
-            match self.handlers.get_unchecked(idx).as_ref() {
-                Some(handler) => handler,
-                None => &UNSUPPORTED_OPCODE_HANDLER,
-            }
-        }
-    }
-}
-
-impl std::ops::IndexMut<OpCode> for JumpTable {
-    // Rationale: mutable index access is retained for VM table setup; fixed
-    // opcode byte bounds protect the unchecked table access.
-    #[allow(unsafe_code)]
-    #[inline]
-    fn index_mut(&mut self, opcode: OpCode) -> &mut Self::Output {
-        let idx = usize::from(opcode.byte());
-        debug_assert!(idx < self.handlers.len());
-        // SAFETY: OpCode::byte() returns a u8 (0..=255) and handlers has 256 entries.
-        unsafe {
-            self.handlers
-                .get_unchecked_mut(idx)
-                .get_or_insert(UNSUPPORTED_OPCODE_HANDLER)
-        }
     }
 }

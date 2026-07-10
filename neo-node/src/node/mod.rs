@@ -46,6 +46,7 @@
 //! - `tasks`: Task supervision, shutdown wiring, and background-service
 //!   handles.
 //! - `telemetry`: Telemetry startup and reporting helpers.
+//! - `workflow`: Composed startup-import, live-service, and shutdown workflow.
 //! - `tests`: Module-local tests and regression coverage.
 
 #[cfg(test)]
@@ -57,6 +58,7 @@ use std::path::Path;
 #[cfg(test)]
 use std::sync::Arc;
 
+mod application;
 mod chain_acc;
 mod cli;
 mod composition;
@@ -84,6 +86,7 @@ mod sync_downloader;
 mod sync_metrics;
 mod tasks;
 mod telemetry;
+mod workflow;
 
 #[cfg(test)]
 use cli::NodeCli;
@@ -104,7 +107,7 @@ use config::{NodeConfig, open_store, validate_config};
 #[cfg(test)]
 use config::{load_config, validate_config_for_ledger_mode};
 #[cfg(test)]
-use context::DaemonContext;
+use context::DaemonCommitHooks;
 #[cfg(test)]
 use inventory_relay::{FAST_SYNC_BURST_CAPACITY, flush_inventory_block_batch};
 #[cfg(test)]

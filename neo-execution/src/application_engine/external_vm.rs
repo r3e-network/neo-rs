@@ -9,14 +9,24 @@ struct ExternalVmExecution {
     instructions_executed: u64,
 }
 
-struct ExternalVmHost<'a> {
-    engine: &'a mut ApplicationEngine,
+struct ExternalVmHost<'a, P, D, B>
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
+    engine: &'a mut ApplicationEngine<P, D, B>,
     instructions_executed: u64,
     max_instructions: u64,
 }
 
-impl<'a> ExternalVmHost<'a> {
-    fn new(engine: &'a mut ApplicationEngine, execution: &ExternalVmExecution) -> Self {
+impl<'a, P, D, B> ExternalVmHost<'a, P, D, B>
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
+    fn new(engine: &'a mut ApplicationEngine<P, D, B>, execution: &ExternalVmExecution) -> Self {
         Self {
             engine,
             instructions_executed: execution.instructions_executed,
@@ -25,7 +35,12 @@ impl<'a> ExternalVmHost<'a> {
     }
 }
 
-impl SyscallProvider for ExternalVmHost<'_> {
+impl<P, D, B> SyscallProvider for ExternalVmHost<'_, P, D, B>
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     fn on_instruction(&mut self, opcode: u8) -> std::result::Result<(), String> {
         if self.instructions_executed >= self.max_instructions {
             return Err(format!(
@@ -35,7 +50,7 @@ impl SyscallProvider for ExternalVmHost<'_> {
         }
         self.instructions_executed = self.instructions_executed.saturating_add(1);
 
-        let opcode_price = ApplicationEngine::get_opcode_price(opcode);
+        let opcode_price = ApplicationEngine::<P, D, B>::get_opcode_price(opcode);
         if opcode_price > 0 {
             self.engine
                 .add_cpu_fee(opcode_price)
@@ -56,7 +71,12 @@ impl SyscallProvider for ExternalVmHost<'_> {
     }
 }
 
-impl ExternalVmHost<'_> {
+impl<P, D, B> ExternalVmHost<'_, P, D, B>
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     fn charge_syscall_fee(&mut self, api: u32) -> std::result::Result<(), String> {
         let entry = self
             .engine
@@ -197,11 +217,7 @@ impl ExternalVmHost<'_> {
                     stack.push(VmStackValue::Null);
                     return Ok(());
                 };
-                let Some(transaction) = container
-                    .as_ref()
-                    .as_any()
-                    .downcast_ref::<neo_payloads::Transaction>()
-                else {
+                let Some(transaction) = container.as_transaction() else {
                     stack.push(VmStackValue::Null);
                     return Ok(());
                 };
@@ -221,11 +237,7 @@ impl ExternalVmHost<'_> {
                     .get_script_container()
                     .ok_or_else(|| "No script container".to_string())?;
 
-                let Some(transaction) = container
-                    .as_ref()
-                    .as_any()
-                    .downcast_ref::<neo_payloads::Transaction>()
-                else {
+                let Some(transaction) = container.as_transaction() else {
                     return Err("Script container does not implement Interoperable".to_string());
                 };
 
@@ -266,7 +278,12 @@ impl ExternalVmHost<'_> {
     }
 }
 
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     pub(super) fn try_execute_with_external_vm(&mut self) -> Option<VMState> {
         let execution = self.prepare_external_vm_execution()?;
         let (result, instructions_executed) = {
@@ -312,7 +329,7 @@ impl ApplicationEngine {
     }
 
     fn prepare_external_vm_execution(&self) -> Option<ExternalVmExecution> {
-        if self.diagnostic.is_some() || !self.pending_native_calls.is_empty() {
+        if self.diagnostic.enabled() || !self.pending_native_calls.is_empty() {
             return None;
         }
 

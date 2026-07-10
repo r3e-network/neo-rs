@@ -1,3 +1,4 @@
+use crate::native_contract_provider::NativeContractProvider;
 use crate::{NativeContract, NativeMethod};
 use neo_config::ProtocolSettings;
 use neo_error::CoreError;
@@ -19,7 +20,11 @@ struct NativeContractCacheKey {
 }
 
 impl NativeContractCacheKey {
-    fn from_contract(contract: &dyn NativeContract) -> Self {
+    fn from_contract<P, C>(contract: &C) -> Self
+    where
+        P: NativeContractProvider + 'static,
+        C: NativeContract<P>,
+    {
         Self {
             id: contract.id(),
             hash: contract.hash(),
@@ -29,14 +34,15 @@ impl NativeContractCacheKey {
 
 impl NativeContractsCache {
     /// Gets the cached entry for the given native contract, building it on demand.
-    pub fn get_or_build<'a>(
-        &'a mut self,
-        contract: &dyn NativeContract,
-    ) -> &'a NativeContractsCacheEntry {
-        let key = NativeContractCacheKey::from_contract(contract);
+    pub fn get_or_build<'a, P, C>(&'a mut self, contract: &C) -> &'a NativeContractsCacheEntry
+    where
+        P: NativeContractProvider + 'static,
+        C: NativeContract<P>,
+    {
+        let key = NativeContractCacheKey::from_contract::<P, C>(contract);
         self.entries
             .entry(key)
-            .or_insert_with(|| NativeContractsCacheEntry::from_contract(contract))
+            .or_insert_with(|| NativeContractsCacheEntry::from_contract::<P, C>(contract))
     }
 }
 
@@ -77,7 +83,11 @@ impl ResolvedNativeMethod {
 }
 
 impl NativeContractsCacheEntry {
-    fn from_contract(contract: &dyn NativeContract) -> Self {
+    fn from_contract<P, C>(contract: &C) -> Self
+    where
+        P: NativeContractProvider + 'static,
+        C: NativeContract<P>,
+    {
         let mut methods_by_name: HashMap<String, Vec<CachedNativeMethod>> = HashMap::new();
         for (method_index, method) in contract.methods().iter().enumerate() {
             let method = Arc::new(method.clone());

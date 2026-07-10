@@ -6,6 +6,7 @@ use super::super::models::{
 use super::helpers::{
     parse_object_array_result, token_as_number, token_as_object, token_as_string,
 };
+use super::hooks::RpcObserver;
 use super::{MAX_JSON_NESTING, RpcClient};
 use crate::client::utility::cloned_token_array;
 use base64::{Engine as _, engine::general_purpose};
@@ -14,7 +15,10 @@ use neo_serialization::json::JToken;
 use num_bigint::BigInt;
 use std::str::FromStr;
 
-impl RpcClient {
+impl<O> RpcClient<O>
+where
+    O: RpcObserver,
+{
     /// Returns the hash of the tallest block in the main chain
     /// Matches C# `GetBestBlockHashAsync`
     pub async fn get_best_block_hash(&self) -> Result<String, ClientRpcError> {

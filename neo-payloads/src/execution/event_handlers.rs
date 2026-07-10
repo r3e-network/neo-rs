@@ -9,7 +9,6 @@
 //! service-facing contracts. These now live beside the block execution payloads
 //! in `neo-payloads`, the canonical home for ledger/payload data.
 
-use std::any::Any;
 use std::sync::Arc;
 
 use crate::{ApplicationExecuted, Block};
@@ -18,11 +17,11 @@ use tracing::debug;
 
 /// Lightweight plugin event enum for internal event broadcasting.
 /// Replaces the previous plugin system with simple logging.
-pub enum PluginEvent {
+pub enum PluginEvent<System = ()> {
     /// Node has started with system reference.
     NodeStarted {
         /// Reference to the NeoSystem, or another system implementation.
-        system: Arc<dyn Any + Send + Sync>,
+        system: Arc<System>,
     },
     /// Node is stopping.
     NodeStopping,
@@ -62,7 +61,7 @@ pub enum PluginEvent {
     },
 }
 
-impl std::fmt::Debug for PluginEvent {
+impl<System> std::fmt::Debug for PluginEvent<System> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PluginEvent::NodeStarted { .. } => write!(f, "NodeStarted {{ system: ... }}"),
@@ -100,7 +99,7 @@ impl std::fmt::Debug for PluginEvent {
     }
 }
 
-impl std::fmt::Display for PluginEvent {
+impl<System> std::fmt::Display for PluginEvent<System> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PluginEvent::NodeStarted { .. } => write!(f, "NodeStarted"),
@@ -128,7 +127,7 @@ impl std::fmt::Display for PluginEvent {
     }
 }
 
-impl PluginEvent {
+impl<System> PluginEvent<System> {
     /// Broadcasts a plugin event by logging it.
     #[inline]
     pub fn broadcast_plugin_event(&self) {
@@ -140,18 +139,18 @@ impl PluginEvent {
 /// the canonical chain. Mirrors the C# `ICommittedHandler` interface.
 pub trait CommittedHandler: Send + Sync {
     /// Called after a block has been committed.
-    fn blockchain_committed_handler(&self, system: &dyn Any, block: &Block);
+    fn blockchain_committed_handler(&self, network: u32, block: &Block);
 }
 
 /// Implemented by services that need to react to a block being committed to
 /// the snapshot. Mirrors the C# `ICommittingHandler` interface.
 pub trait CommittingHandler: Send + Sync {
     /// Called when a block is about to be committed.
-    fn blockchain_committing_handler(
+    fn blockchain_committing_handler<B: neo_storage::CacheRead>(
         &self,
-        system: &dyn Any,
+        network: u32,
         block: &Block,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         application_executed_list: &[ApplicationExecuted],
     );
 }
@@ -160,16 +159,17 @@ pub trait CommittingHandler: Send + Sync {
 /// (e.g. open/close/lock/unlock of accounts). Mirrors the C#
 /// `IWalletChangedHandler` interface.
 pub trait WalletChangedHandler: Send + Sync {
+    /// Concrete event sender type selected by the dispatcher.
+    type Sender: ?Sized;
+
+    /// Concrete wallet handle selected by the dispatcher.
+    type Wallet: Send + Sync + 'static;
+
     /// Called when the active wallet changes.
-    ///
-    /// The `wallet` argument is a type-erased handle so this trait
-    /// can live in a leaf crate without depending on the full
-    /// `neo-wallets` API. Implementations should downcast to the
-    /// concrete `Arc<dyn neo_wallets::Wallet>` they expect.
     fn wallet_provider_wallet_changed_handler(
         &self,
-        sender: &dyn Any,
-        wallet: Option<Arc<dyn Any + Send + Sync>>,
+        sender: &Self::Sender,
+        wallet: Option<Arc<Self::Wallet>>,
     );
 }
 

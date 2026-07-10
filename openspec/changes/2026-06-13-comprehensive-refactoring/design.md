@@ -1,5 +1,9 @@
 # Design — Comprehensive Refactoring & Protocol Completion
 
+> Historical change design. Later architecture work removed `ServiceRegistry`
+> and replaced it with explicit `NodeServiceHandles<S>` / `RpcServices<S>`
+> composition (ADR-034).
+
 ## Overview
 
 This change document captures the structural debt in neo-rs and proposes a phased approach to resolution. It is the **successor** to:
@@ -47,9 +51,9 @@ The user asked: "in the meanwhile check if we can refactor this project, reduce 
 **Decision: keep `neo-error` as a separate crate.** This matches the `polkadot-sdk` and `reth` precedents (both have dedicated `errors` crates). The `crate-boundary-audit-2026-06-08.md:109-119` already plans to drop the 5 cross-crate `From` impls to trim its deps to `neo-primitives + neo-io` only.
 
 ### 5. Why NOT merge `neo-runtime` into `neo-system`
-`neo-runtime` (770 LoC) and `neo-system` (1,049 LoC) have a clean 1-way edge: `neo-system → neo-runtime`. They serve different purposes:
-- `neo-runtime` is **pure trait definitions** (`Service`, `BlockExecutor`, `ConsensusService`, `NeoEngine`, `BlockchainEvent`).
-- `neo-system` is the **composition root** (`Node` + `NodeBuilder` + `WalletProvider` + `ServiceRegistry`).
+`neo-runtime` and `neo-system` have a clean 1-way edge: `neo-system → neo-runtime`. They serve different purposes:
+- `neo-runtime` owns shared static service contracts (`Service`, `NetworkService`, `BlockImport`, `ImportQueue`, and runtime events).
+- `neo-system` is the core composition root (`Node` + `NodeBuilder` + `WalletProvider` + explicit typed handles). Optional daemon/RPC services are composed above it through `NodeServiceHandles<S>` and `RpcServices<S>`.
 
 This is the **Reth-style split** (`reth-engine` traits vs. `reth-node-builder`). Merging them would re-introduce the layering inversion the recent `2026-06-08-reth-style-service-architecture` change spent 5 stages eliminating.
 

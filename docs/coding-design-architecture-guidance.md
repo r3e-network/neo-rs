@@ -166,11 +166,14 @@ Each layer should speak one vocabulary and hide the vocabulary below it.
 
 | Layer | Should expose | Should hide |
 | --- | --- | --- |
-| Application/CLI | `run_node`, `run_fast_sync`, `serve_rpc_only` | channel wiring, RocksDB options, service internals |
-| Composition | `open_storage`, `build_services`, `start_services` | worker loops, wire encodings, backend details |
-| Node service | `sync_blocks`, `import_chain_acc`, `persist_block` | trie serialization, RPC JSON construction |
-| Protocol/domain | `verify_header`, `execute_transaction`, `apply_state_root` | database handles, CLI options, HTTP transport |
-| Storage/VM/RPC/network adapters | precise mechanical operations | business orchestration and policy decisions |
+| Application | `NodeCommand`, opened runtime, requested operating mode | task handles, stores, command loops, protocol mechanics |
+| Plugin/RPC boundary | typed request/response and adapter capabilities | core construction and service ownership |
+| Composition | `NodeCoreBuilder`, `NodeCoreLaunch`, `Node`, sync workflows | protocol rules and application policy |
+| Node service | root-level handles, providers, outcomes, protocol values | command-loop state and source module layout |
+| Domain service | import, execution, native, state, and admission contracts | CLI, RPC transport, and process lifecycle |
+| Protocol | blocks, transactions, witnesses, dBFT messages | stores, HTTP, and process startup |
+| Infrastructure | precise codec, storage, VM, config, and crypto capabilities | node workflow and business policy |
+| Foundation | domain value types | services and mechanical adapters |
 
 Practical rules:
 
@@ -246,8 +249,8 @@ Priority order for crate refactors:
    `BlockImport::import_many`. Use `neo_system::SyncImportPipeline` as the
    node-composed handle that binds the canonical blockchain importer, bounded
    queue, shared store-backed sync checkpoints, and import-stage commit policy;
-   keep it registered in `ServiceRegistry` so downloader/RPC/service consumers
-   discover the same `Arc` instead of composing parallel queues.
+   keep it as one explicit `Node` field so downloader and service consumers
+   clone the same `Arc` instead of composing parallel queues.
    Downloader code should expose `neo_network::BlockDownloader` streams and use
    `neo_system::SyncDownloadImportDriver` to convert downloaded batches into
    ordered `neo_runtime::SyncPipelineDriver` submissions. Stage flushing and
@@ -294,6 +297,7 @@ Top-level workflows should read like a Neo operation:
 ```rust
 NodeCommand::from_cli(args)?
     .open_runtime()
+    .await?
     .run_requested_mode()
     .await
 ```
@@ -322,6 +326,17 @@ Rules for workflow facades:
   `submit`, `persist`, or a more specific domain verb.
 - The facade returns a named report or handle rather than unrelated primitives.
 - The lower mechanics remain independently testable.
+- A staged builder should make invalid ownership graphs unrepresentable. For
+  example, `NodeCore::into_node(network)` consumes the core assembled by
+  `NodeCoreBuilder`; callers cannot finalize a node with a different store,
+  mempool, cache set, or native provider.
+
+Node-service callers import stable capabilities from crate roots. Do not make
+source organization part of the API (`neo_blockchain::service::*`,
+`neo_network::wire::*`, or `neo_network::proto::*`). Prefer
+`neo_blockchain::BlockchainHandle`, `neo_network::NetworkHandle`, and root-level
+wire/protocol values. Implementation modules may change without forcing
+cross-crate migrations.
 
 Break the chain when the code performs a decision reviewers must audit:
 
@@ -374,17 +389,20 @@ This is not a "generics everywhere" rule. It is a boundary-honesty rule.
 
 Use concrete types, generics, or associated types when the collaborator is known
 at compile time, especially in block sync, state-root, MPT, storage, VM, and
-networking paths. Use `dyn Trait` only when runtime substitution is the design:
-plugins, backend selection by config, RPC-only ledger sources, object-safe
-service registries, external integration seams, or tests that intentionally
-substitute behavior.
+networking paths. Prefer a closed enum when configuration selects among the
+implementations shipped by this workspace (`RuntimeStore`, local/remote ledger
+sources, native-contract catalogs, signer backends). Reserve `dyn Trait` for a
+genuinely open-ended external extension boundary whose implementor set cannot
+be represented by a workspace-owned enum. No current node hot path or service
+composition boundary requires one.
 
 | Situation | Prefer | Avoid |
 | --- | --- | --- |
 | Hot block import, state-root, MPT, VM, storage, or networking loop | concrete type, generic, or associated type | allocation-heavy trait object |
 | One method needs type flexibility | method-level generic | adding type parameters to a whole public type |
 | A public facade has a stable compile-time collaborator | struct generic or associated type | `Box<dyn Trait>` by default |
-| Dependency is selected at runtime | named `dyn Trait` boundary | spreading generics through unrelated layers |
+| Dependency is selected at runtime from a closed set | named enum with typed variants | erased service locator or scattered downcasts |
+| Dependency is an open-ended external extension | one documented `dyn Trait` boundary outside hot loops | propagating erasure into protocol code |
 | Repeated payload crosses a layer | named struct or enum | raw tuple, `serde_json::Value`, raw stack item, or byte map |
 | Unknown escape hatch or convenience-only dependency | narrower domain type or trait | `dyn Any`, broad service locator traits |
 
@@ -393,14 +411,22 @@ Rules:
 - Do not add generics to make signatures look more professional. Add them when
   they encode a stable compile-time relationship, improve correctness, remove
   hot-path dispatch cost, or make ownership clearer.
-- Do not remove a clear trait-object runtime boundary if doing so spreads type
-  parameters through unrelated layers.
+- Do not replace a clear runtime boundary with unrelated type parameters;
+  prefer a closed enum at the composition root when the implementation set is
+  workspace-owned.
 - Prefer method-level generics when only one operation needs flexibility.
 - Prefer associated types when a trait has one natural output, key, or backing
   store type.
 - Bound generics with the smallest trait that expresses the operation.
 - Avoid `Arc<dyn Trait>` as the default dependency shape. Use it only when
-  shared runtime polymorphism is actually required.
+  open-ended shared runtime polymorphism is actually required and a closed enum
+  cannot express the supported implementations.
+- Do not use `TypeId`/`Any` maps as service composition. Put each supported
+  service in a named typed field and pass the smallest typed bundle to its
+  consumers.
+- For statically dispatched async traits, return `impl Future + Send` (or use
+  an associated future type). Do not use `async_trait` in protocol or node hot
+  paths because it boxes a future for every call.
 - If a trait object remains in a hot path, document the runtime boundary and
   verify the cost is acceptable.
 - Keep trait definitions close to the API crate or module that owns the

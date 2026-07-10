@@ -1,28 +1,72 @@
 use super::*;
-use crate::types::storage_item::CacheProvider;
-use std::any::Any;
+use crate::types::StorageItemCache;
 
-#[derive(Clone, Debug)]
-struct BytesCache(Vec<u8>);
+#[derive(Clone)]
+struct TestBacking {
+    entries: Arc<BTreeMap<StorageKey, StorageItem>>,
+}
 
-impl CacheProvider for BytesCache {
-    fn to_bytes(&self) -> Vec<u8> {
-        self.0.clone()
+impl CacheRead for TestBacking {
+    fn get(&self, key: &StorageKey) -> Option<StorageItem> {
+        self.entries.get(key).cloned()
     }
 
-    fn clone_box(&self) -> Box<dyn CacheProvider> {
-        Box::new(self.clone())
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
+    fn find(
+        &self,
+        prefix: Option<&StorageKey>,
+        direction: SeekDirection,
+    ) -> Option<Vec<(StorageKey, StorageItem)>> {
+        let prefix = prefix.map(|key| key.as_bytes().into_owned());
+        let mut entries = self
+            .entries
+            .iter()
+            .filter(|(key, _)| {
+                prefix
+                    .as_deref()
+                    .is_none_or(|prefix| key.as_bytes().starts_with(prefix))
+            })
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect::<Vec<_>>();
+        if direction == SeekDirection::Backward {
+            entries.reverse();
+        }
+        Some(entries)
     }
 }
 
 fn cache_item(bytes: Vec<u8>) -> StorageItem {
     let mut item = StorageItem::new();
-    item.set_cache(Box::new(BytesCache(bytes)));
+    item.set_cache(StorageItemCache::bytes(bytes));
     item
+}
+
+#[test]
+fn concrete_backing_type_survives_cache_and_child_overlay() {
+    let stored = StorageKey::new(7, vec![0x01]);
+    let added = StorageKey::new(7, vec![0x02]);
+    let backing = TestBacking {
+        entries: Arc::new(BTreeMap::from([(
+            stored.clone(),
+            StorageItem::from_bytes(vec![0xAA]),
+        )])),
+    };
+    let parent = DataCache::with_backing(false, backing, DataCacheConfig::default());
+    let child = parent.clone_cache();
+
+    fn assert_concrete_cache(_: &DataCache<TestBacking>) {}
+    assert_concrete_cache(&parent);
+    assert_concrete_cache(&child);
+    assert_eq!(
+        parent.get(&stored).map(|item| item.to_value()),
+        Some(vec![0xAA])
+    );
+
+    child.add(added.clone(), StorageItem::from_bytes(vec![0xBB]));
+    child.commit();
+    assert_eq!(
+        parent.get(&added).map(|item| item.to_value()),
+        Some(vec![0xBB])
+    );
 }
 
 #[test]
@@ -123,15 +167,13 @@ fn visit_raw_changes_exposes_byte_overlay_without_consuming_changes() {
 #[test]
 fn try_add_after_deleted_cached_entry_becomes_changed_like_csharp() {
     let key = StorageKey::new(7, vec![0x02]);
-    let stored_key = key.clone();
-    let store_get: Arc<StoreGetFn> = Arc::new(move |lookup: &StorageKey| {
-        if lookup == &stored_key {
-            Some(StorageItem::from_bytes(vec![0xAA]))
-        } else {
-            None
-        }
-    });
-    let cache = DataCache::new_with_store(false, Some(store_get), None);
+    let backing = TestBacking {
+        entries: Arc::new(BTreeMap::from([(
+            key.clone(),
+            StorageItem::from_bytes(vec![0xAA]),
+        )])),
+    };
+    let cache = DataCache::with_backing(false, backing, DataCacheConfig::default());
 
     cache.delete(&key);
     cache
@@ -248,32 +290,6 @@ fn cloned_cache_commit_uses_bulk_merge_when_parent_has_no_update_handlers() {
 }
 
 #[test]
-fn cloned_cache_commit_preserves_update_callbacks_when_registered() {
-    let parent = DataCache::new(false);
-    let callback_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let callback_count_for_handler = Arc::clone(&callback_count);
-    parent.on_update(Arc::new(move |_, _, _| {
-        callback_count_for_handler.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }));
-
-    let child = parent.clone_cache();
-    for index in 0..4u8 {
-        child.add(
-            StorageKey::new(7, vec![index]),
-            StorageItem::from_bytes(vec![index]),
-        );
-    }
-
-    child.commit();
-
-    assert_eq!(
-        callback_count.load(std::sync::atomic::Ordering::Relaxed),
-        4,
-        "registered update callbacks must keep per-item merge notifications"
-    );
-}
-
-#[test]
 fn commit_drains_changes_and_keeps_visible_entries() {
     let cache = DataCache::new(false);
     let added_key = StorageKey::new(7, vec![0x08]);
@@ -312,15 +328,13 @@ fn update_after_deleted_cached_entry_becomes_changed_not_added() {
     // makes the later commit go through `add()` and get swallowed when the
     // parent has the key read-cached as `None`.
     let key = StorageKey::new(7, vec![0x05]);
-    let stored_key = key.clone();
-    let store_get: Arc<StoreGetFn> = Arc::new(move |lookup: &StorageKey| {
-        if lookup == &stored_key {
-            Some(StorageItem::from_bytes(vec![0xAA]))
-        } else {
-            None
-        }
-    });
-    let cache = DataCache::new_with_store(false, Some(store_get), None);
+    let backing = TestBacking {
+        entries: Arc::new(BTreeMap::from([(
+            key.clone(),
+            StorageItem::from_bytes(vec![0xAA]),
+        )])),
+    };
+    let cache = DataCache::with_backing(false, backing, DataCacheConfig::default());
 
     cache.delete(&key);
     cache.update(key.clone(), StorageItem::from_bytes(vec![0xBB]));

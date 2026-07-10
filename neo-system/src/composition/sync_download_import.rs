@@ -9,7 +9,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use neo_network::BlockDownloader;
-use neo_runtime::{ServiceResult, SyncPipelineImportOutcome, SyncStageCheckpoint};
+use neo_runtime::{
+    ServiceResult, SharedStoreSyncStageCheckpointStore, SyncPipelineImportOutcome,
+    SyncStageCheckpoint, SyncStageCheckpointStore,
+};
 
 use crate::sync_import_pipeline::SyncImportPipeline;
 
@@ -50,16 +53,23 @@ impl SyncDownloadImportSummary {
 }
 
 /// Bridges a block downloader stream into the node-composed sync import pipeline.
-pub struct SyncDownloadImportDriver<D: BlockDownloader> {
-    pipeline: Arc<SyncImportPipeline>,
+pub struct SyncDownloadImportDriver<
+    D: BlockDownloader,
+    C: SyncStageCheckpointStore = SharedStoreSyncStageCheckpointStore,
+> {
+    pipeline: Arc<SyncImportPipeline<C>>,
     downloader: D,
     chain_tip_height: Option<u32>,
 }
 
-impl<D: BlockDownloader> SyncDownloadImportDriver<D> {
+impl<D, C> SyncDownloadImportDriver<D, C>
+where
+    D: BlockDownloader,
+    C: SyncStageCheckpointStore,
+{
     /// Create a driver over the shared sync import pipeline and a downloader.
     #[must_use]
-    pub fn new(pipeline: Arc<SyncImportPipeline>, downloader: D) -> Self {
+    pub fn new(pipeline: Arc<SyncImportPipeline<C>>, downloader: D) -> Self {
         Self {
             pipeline,
             downloader,
@@ -74,7 +84,7 @@ impl<D: BlockDownloader> SyncDownloadImportDriver<D> {
     /// the node's authoritative local tip before draining the downloader.
     #[must_use]
     pub fn new_at_chain_tip(
-        pipeline: Arc<SyncImportPipeline>,
+        pipeline: Arc<SyncImportPipeline<C>>,
         downloader: D,
         chain_tip_height: u32,
     ) -> Self {
@@ -87,7 +97,7 @@ impl<D: BlockDownloader> SyncDownloadImportDriver<D> {
 
     /// Returns the sync import pipeline used by this driver.
     #[must_use]
-    pub fn pipeline(&self) -> Arc<SyncImportPipeline> {
+    pub fn pipeline(&self) -> Arc<SyncImportPipeline<C>> {
         Arc::clone(&self.pipeline)
     }
 

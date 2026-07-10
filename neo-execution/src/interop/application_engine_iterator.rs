@@ -1,8 +1,10 @@
 //! ApplicationEngine.Iterator - matches C# Neo.SmartContract.ApplicationEngine.Iterator.cs
 
+use crate::ApplicationExecutionEngine as ExecutionEngine;
 use crate::application_engine::ApplicationEngine;
+use crate::native_contract_provider::NativeContractProvider;
 use neo_manifest::CallFlags;
-use neo_vm::{ExecutionEngine, VmError, VmResult};
+use neo_vm::{VmError, VmResult};
 
 fn map_iterator_error(service: &str, error: impl std::fmt::Display) -> VmError {
     VmError::InteropService {
@@ -11,10 +13,15 @@ fn map_iterator_error(service: &str, error: impl std::fmt::Display) -> VmError {
     }
 }
 
-fn iterator_next_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn iterator_next_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let iterator_id = app
         .pop_iterator_id()
         .map_err(|e| map_iterator_error("System.Iterator.Next", e))?;
@@ -28,10 +35,15 @@ fn iterator_next_handler(
     Ok(())
 }
 
-fn iterator_value_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn iterator_value_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let iterator_id = app
         .pop_iterator_id()
         .map_err(|e| map_iterator_error("System.Iterator.Value", e))?;
@@ -45,7 +57,12 @@ fn iterator_value_handler(
     Ok(())
 }
 
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     pub(crate) fn register_iterator_interops(&mut self) -> VmResult<()> {
         self.register_host_service(
             "System.Iterator.Next",

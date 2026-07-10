@@ -76,12 +76,12 @@ pub mod witness_scope {
     pub use neo_primitives::{InvalidWitnessScopeError, WitnessScope};
 }
 
-pub use execution::{application_executed, event_handlers, notify_event_args};
+pub use execution::{application_executed, event_handlers, log_event_args, notify_event_args};
 pub use ledger::{
     block, header, headers_payload, merkle_block_payload, transaction_state, trimmed_block,
 };
 pub use protocol::{extensible_payload, inventory};
-pub use signing::{helper, signer, verifiable_ext, witness, witness_rule};
+pub use signing::{helper, signer, verifiable_container, verifiable_ext, witness, witness_rule};
 pub use transaction_attribute::{
     conflicts, high_priority_attribute, not_valid_before, notary_assisted, oracle_response,
 };
@@ -101,6 +101,7 @@ pub use headers_payload::HeadersPayload;
 pub use helper::{get_sign_data, get_sign_data_vec};
 pub use high_priority_attribute::HighPriorityAttribute;
 pub use inventory::Inventory;
+pub use log_event_args::LogEventArgs;
 pub use merkle_block_payload::MerkleBlockPayload;
 pub use not_valid_before::NotValidBefore;
 pub use notary_assisted::NotaryAssisted;
@@ -119,6 +120,7 @@ pub use tx_builder::{
     AndConditionBuilder, OrConditionBuilder, SignerBuilder, TransactionAttributesBuilder,
     TransactionBuilder, WitnessBuilder, WitnessConditionBuilder, WitnessRuleBuilder,
 };
+pub use verifiable_container::{VerifiableContainer, VerifiableHashContainer};
 pub use verifiable_ext::VerifiableExt;
 pub use witness::Witness;
 pub use witness_scope::{InvalidWitnessScopeError, WitnessScope};

@@ -22,6 +22,7 @@ async fn relayed_extensible_is_forwarded_to_the_inventory_sink() {
     // (the decoder rejects an empty range, as it should).
     let mut payload = neo_payloads::ExtensiblePayload::new();
     payload.valid_block_end = 1;
+    payload.sender = payload.witness.script_hash();
     fake.send(
         Message::create(MessageCommand::Extensible, Some(&payload), false)
             .expect("encode extensible"),
@@ -54,6 +55,7 @@ async fn broadcast_extensible_reaches_connected_peers() {
     let mut payload = neo_payloads::ExtensiblePayload::new();
     payload.category = "dBFT".to_string();
     payload.valid_block_end = 1; // valid range start(0) < end(1)
+    payload.sender = payload.witness.script_hash();
     handle
         .broadcast_extensible(payload)
         .await

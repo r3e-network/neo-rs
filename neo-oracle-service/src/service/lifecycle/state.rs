@@ -1,3 +1,5 @@
+use super::super::OracleRuntimeProvider;
+use super::super::native_provider::OracleContractReadProvider;
 use super::super::{
     ExpiringSet, FINISHED_CACHE_TTL, OracleDedupState, OracleService, OracleServiceError,
     OracleServiceSettings, OracleStatus,
@@ -5,7 +7,6 @@ use super::super::{
 #[cfg(feature = "oracle")]
 use super::super::{OracleHttpsProtocol, OracleNeoFsProtocol};
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_runtime::{ConfigProvider, StoreProvider, TxAdmission};
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 #[cfg(feature = "oracle")]
@@ -13,22 +14,22 @@ use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Weak};
 
-impl OracleService {
+impl<R, P> OracleService<R, P>
+where
+    R: OracleRuntimeProvider + 'static,
+    P: NativeContractProvider + OracleContractReadProvider + 'static,
+{
     /// Create a new oracle service bound to the given node system.
     pub fn new(
         settings: OracleServiceSettings,
-        config: Arc<dyn ConfigProvider>,
-        store: Arc<dyn StoreProvider>,
-        tx: Arc<dyn TxAdmission>,
-        native_contract_provider: Arc<dyn NativeContractProvider>,
+        runtime: Arc<R>,
+        native_contract_provider: Arc<P>,
     ) -> Result<Self, OracleServiceError> {
         let mut settings = settings;
         settings.normalize();
         Ok(Self {
             settings,
-            config,
-            store,
-            tx,
+            runtime,
             native_contract_provider,
             status: AtomicU8::new(OracleStatus::Unstarted.as_u8()),
             self_ref: RwLock::new(Weak::new()),

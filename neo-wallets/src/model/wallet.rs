@@ -4,7 +4,6 @@
 //! converted from the C# Neo Wallet class (@neo-sharp/src/Neo/Wallets/Wallet.cs).
 
 use crate::{key_pair::KeyPair, version::Version, wallet_account::WalletAccount};
-use async_trait::async_trait;
 use neo_payloads::Transaction;
 use neo_primitives::{UInt160, UInt256};
 use neo_vm::Contract;
@@ -67,8 +66,10 @@ pub enum WalletError {
 
 /// The base trait for all wallet implementations.
 /// This matches the C# Wallet abstract class.
-#[async_trait]
 pub trait Wallet: Send + Sync {
+    /// Concrete account representation returned by this wallet.
+    type Account: WalletAccount + 'static;
+
     /// The name of the wallet.
     fn name(&self) -> &str;
 
@@ -79,76 +80,112 @@ pub trait Wallet: Send + Sync {
     fn version(&self) -> &Version;
 
     /// Changes the password of the wallet.
-    async fn change_password(&self, old_password: &str, new_password: &str) -> WalletResult<bool>;
+    fn change_password(
+        &self,
+        old_password: &str,
+        new_password: &str,
+    ) -> impl std::future::Future<Output = WalletResult<bool>> + Send;
 
     /// Checks whether the wallet contains the specified account.
     fn contains(&self, script_hash: &UInt160) -> bool;
 
     /// Creates a new account with the specified private key.
-    async fn create_account(&self, private_key: &[u8]) -> WalletResult<Arc<dyn WalletAccount>>;
+    fn create_account(
+        &self,
+        private_key: &[u8],
+    ) -> impl std::future::Future<Output = WalletResult<Arc<Self::Account>>> + Send;
 
     /// Creates a new account with the specified contract and key pair.
-    async fn create_account_with_contract(
+    fn create_account_with_contract(
         &self,
         contract: Contract,
         key_pair: Option<KeyPair>,
-    ) -> WalletResult<Arc<dyn WalletAccount>>;
+    ) -> impl std::future::Future<Output = WalletResult<Arc<Self::Account>>> + Send;
 
     /// Creates a new account with the specified script hash (watch-only).
-    async fn create_account_watch_only(
+    fn create_account_watch_only(
         &self,
         script_hash: UInt160,
-    ) -> WalletResult<Arc<dyn WalletAccount>>;
+    ) -> impl std::future::Future<Output = WalletResult<Arc<Self::Account>>> + Send;
 
     /// Deletes the specified account from the wallet.
-    async fn delete_account(&self, script_hash: &UInt160) -> WalletResult<bool>;
+    fn delete_account(
+        &self,
+        script_hash: &UInt160,
+    ) -> impl std::future::Future<Output = WalletResult<bool>> + Send;
 
     /// Exports the wallet to the specified path.
-    async fn export(&self, path: &str, password: &str) -> WalletResult<()>;
+    fn export(
+        &self,
+        path: &str,
+        password: &str,
+    ) -> impl std::future::Future<Output = WalletResult<()>> + Send;
 
     /// Gets the account with the specified script hash.
-    fn account(&self, script_hash: &UInt160) -> Option<Arc<dyn WalletAccount>>;
+    fn account(&self, script_hash: &UInt160) -> Option<Arc<Self::Account>>;
 
     /// Gets all accounts in the wallet.
-    fn accounts(&self) -> Vec<Arc<dyn WalletAccount>>;
+    fn accounts(&self) -> Vec<Arc<Self::Account>>;
 
     /// Gets the available balance of the specified asset.
-    async fn available_balance(&self, asset_id: &UInt256) -> WalletResult<i64>;
+    fn available_balance(
+        &self,
+        asset_id: &UInt256,
+    ) -> impl std::future::Future<Output = WalletResult<i64>> + Send;
 
     /// Gets the unclaimed GAS amount.
-    async fn unclaimed_gas(&self) -> WalletResult<i64>;
+    fn unclaimed_gas(&self) -> impl std::future::Future<Output = WalletResult<i64>> + Send;
 
     /// Imports an account from a WIF (Wallet Import Format) private key.
-    async fn import_wif(&self, wif: &str) -> WalletResult<Arc<dyn WalletAccount>>;
+    fn import_wif(
+        &self,
+        wif: &str,
+    ) -> impl std::future::Future<Output = WalletResult<Arc<Self::Account>>> + Send;
 
     /// Imports an account from a NEP-2 encrypted private key.
-    async fn import_nep2(
+    fn import_nep2(
         &self,
         nep2_key: &str,
         password: &str,
-    ) -> WalletResult<Arc<dyn WalletAccount>>;
+    ) -> impl std::future::Future<Output = WalletResult<Arc<Self::Account>>> + Send;
 
     /// Signs the specified data with the specified account.
-    async fn sign(&self, data: &[u8], script_hash: &UInt160) -> WalletResult<Vec<u8>>;
+    fn sign(
+        &self,
+        data: &[u8],
+        script_hash: &UInt160,
+    ) -> impl std::future::Future<Output = WalletResult<Vec<u8>>> + Send;
 
     /// Signs the specified transaction.
-    async fn sign_transaction(&self, transaction: &mut Transaction) -> WalletResult<()>;
+    fn sign_transaction(
+        &self,
+        transaction: &mut Transaction,
+    ) -> impl std::future::Future<Output = WalletResult<()>> + Send;
 
     /// Unlocks the wallet with the specified password.
-    async fn unlock(&self, password: &str) -> WalletResult<bool>;
+    fn unlock(
+        &self,
+        password: &str,
+    ) -> impl std::future::Future<Output = WalletResult<bool>> + Send;
 
     /// Locks the wallet.
     fn lock(&self);
 
     /// Checks whether the specified password is correct.
-    async fn verify_password(&self, password: &str) -> WalletResult<bool>;
+    fn verify_password(
+        &self,
+        password: &str,
+    ) -> impl std::future::Future<Output = WalletResult<bool>> + Send;
 
     /// Saves the wallet to disk.
-    async fn save(&self) -> WalletResult<()>;
+    fn save(&self) -> impl std::future::Future<Output = WalletResult<()>> + Send;
 
     /// Gets the default account.
-    fn default_account(&self) -> Option<Arc<dyn WalletAccount>>;
+    fn default_account(&self) -> Option<Arc<Self::Account>>;
 
     /// Sets the default account.
-    async fn set_default_account(&self, script_hash: &UInt160) -> WalletResult<()>;
+    fn set_default_account(
+        &self,
+        script_hash: &UInt160,
+    ) -> impl std::future::Future<Output = WalletResult<()>> + Send;
 }

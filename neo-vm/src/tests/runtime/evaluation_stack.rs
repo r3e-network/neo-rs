@@ -60,7 +60,7 @@ fn test_peek() {
 }
 
 #[test]
-fn test_insert_remove() -> Result<(), Box<dyn std::error::Error>> {
+fn test_insert_remove() -> Result<(), String> {
     let reference_counter = ReferenceCounter::new();
     let mut stack = EvaluationStack::new(reference_counter);
 
@@ -99,20 +99,25 @@ fn test_insert_remove() -> Result<(), Box<dyn std::error::Error>> {
         num_bigint::BigInt::from(3)
     );
 
-    let item = stack.remove(1)?;
-    assert_eq!(item.as_int()?, num_bigint::BigInt::from(2));
+    let item = stack.remove(1).map_err(|err| err.to_string())?;
+    assert_eq!(
+        item.as_int().map_err(|err| err.to_string())?,
+        num_bigint::BigInt::from(2)
+    );
     assert_eq!(
         stack
             .peek(1)
             .expect("intermediate value should exist")
-            .as_int()?,
+            .as_int()
+            .map_err(|err| err.to_string())?,
         num_bigint::BigInt::from(1)
     );
     assert_eq!(
         stack
             .peek(0)
             .expect("intermediate value should exist")
-            .as_int()?,
+            .as_int()
+            .map_err(|err| err.to_string())?,
         num_bigint::BigInt::from(3)
     );
     Ok(())

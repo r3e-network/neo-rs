@@ -61,10 +61,11 @@ use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::ApplicationEngine;
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_execution::{ApplicationEngine, NativeContract, NoDiagnostic};
 use neo_payloads::Block;
 use neo_primitives::TriggerType;
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 use neo_vm_rs::VmState as VMState;
 
 mod artifacts;
@@ -101,13 +102,17 @@ use neo_vm_rs::StackValue;
 ///
 /// Runs the C# `Blockchain.Persist` sequence with caller-provided reusable
 /// native resources and commits the staged writes on success.
-pub fn persist_block_natives_with_resources(
-    snapshot: Arc<DataCache>,
+pub fn persist_block_natives_with_resources<P, B>(
+    snapshot: Arc<DataCache<B>>,
     block: Arc<Block>,
     settings: &ProtocolSettings,
     options: NativePersistOptions,
-    resources: &NativePersistResources,
-) -> CoreResult<NativePersistOutcome> {
+    resources: &NativePersistResources<P>,
+) -> CoreResult<NativePersistOutcome>
+where
+    P: NativeContractProvider + 'static,
+    B: CacheRead,
+{
     let staged = stage_block_natives_with_resources(snapshot, block, settings, options, resources)?;
     let outcome = staged.outcome.clone();
     staged.commit();
@@ -115,13 +120,17 @@ pub fn persist_block_natives_with_resources(
 }
 
 /// Runs native block persistence with caller-provided reusable resources.
-pub fn stage_block_natives_with_resources(
-    snapshot: Arc<DataCache>,
+pub fn stage_block_natives_with_resources<P, B>(
+    snapshot: Arc<DataCache<B>>,
     block: Arc<Block>,
     settings: &ProtocolSettings,
     options: NativePersistOptions,
-    resources: &NativePersistResources,
-) -> CoreResult<StagedNativePersist> {
+    resources: &NativePersistResources<P>,
+) -> CoreResult<StagedNativePersist<B>>
+where
+    P: NativeContractProvider + 'static,
+    B: CacheRead,
+{
     let total_start = std::time::Instant::now();
     let block_index = block.index();
     let block_hash = block
@@ -146,8 +155,8 @@ pub fn stage_block_natives_with_resources(
         Some(Arc::clone(&block)),
         settings.clone(),
         0,
-        None,
-        Some(Arc::clone(&resources.provider)),
+        NoDiagnostic,
+        Some(resources.provider()),
     )?;
 
     // Record which activation initializers will run inside
@@ -211,8 +220,8 @@ pub fn stage_block_natives_with_resources(
         Some(Arc::clone(&block)),
         settings.clone(),
         0,
-        None,
-        Some(Arc::clone(&resources.provider)),
+        NoDiagnostic,
+        Some(resources.provider()),
     )?;
     run_native_persist_hooks(
         contracts,

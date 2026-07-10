@@ -300,12 +300,12 @@ fn invoke_request_args_use_shared_raw_parsers() {
     }
 
     let source = include_str!("../../oracle_contract/invoke.rs");
-    let set_price = slice_between(source, "fn invoke_set_price(", "fn invoke_request(");
+    let set_price = slice_between(source, "fn invoke_set_price", "fn invoke_request");
     assert!(set_price.contains("crate::args::raw_i64_arg"));
     assert!(!set_price.contains("BigInt::from_signed_bytes_le(args"));
     assert!(!set_price.contains("BigInt::from_signed_bytes_le(b)"));
 
-    let request = slice_between(source, "fn invoke_request(", "fn invoke_finish(");
+    let request = slice_between(source, "fn invoke_request", "fn invoke_finish");
     assert!(request.contains("crate::args::raw_string_arg"));
     assert!(request.contains("crate::args::raw_i64_arg"));
     assert!(!request.contains("String::from_utf8("));
@@ -424,7 +424,7 @@ fn request_queries_resolve_storage() {
     );
 
     // The native-contract seam exposes the same record to the engine.
-    let details = NativeContract::oracle_request_url_full(&contract, &cache, 3)
+    let details = NativeContract::<neo_execution::native_contract_provider::NoNativeContractProvider>::oracle_request_url_full(&contract, &cache, 3)
         .unwrap()
         .expect("details");
     assert_eq!(details.url, request.url);
@@ -450,8 +450,5 @@ fn manifest_standards_gain_nep30_at_faun() {
     let after = build_native_contract_state(&OracleContract, &settings, 10);
     assert_eq!(after.manifest.supported_standards, ["NEP-30"]);
 
-    assert_eq!(
-        NativeContract::activations(&OracleContract),
-        &[Hardfork::HfFaun]
-    );
+    assert_eq!(OracleContract::new().activations(), &[Hardfork::HfFaun]);
 }

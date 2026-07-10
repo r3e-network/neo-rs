@@ -1,7 +1,5 @@
 use super::*;
 use base64::{Engine as _, engine::general_purpose};
-// `invocation_script`/`verification_script` on `Witness` are trait methods.
-use neo_primitives::Witness as _;
 use neo_serialization::json::JArray;
 
 #[test]

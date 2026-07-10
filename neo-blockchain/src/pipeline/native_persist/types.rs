@@ -10,7 +10,7 @@ use tracing::debug;
 
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::ApplicationExecuted;
-use neo_storage::DataCache;
+use neo_storage::{CacheRead, DataCache};
 
 use super::artifacts::NativePersistNotification;
 
@@ -50,17 +50,23 @@ impl Default for NativePersistOptions {
 /// Reusable native-persistence resources for a sequence of blocks that share
 /// the same explicit native-contract provider and protocol settings.
 #[derive(Clone)]
-pub struct NativePersistResources {
-    pub(super) provider: Arc<dyn NativeContractProvider>,
-    pub(super) contracts: Arc<[Arc<dyn neo_execution::NativeContract>]>,
+pub struct NativePersistResources<P>
+where
+    P: NativeContractProvider + 'static,
+{
+    pub(super) provider: Arc<P>,
+    pub(super) contracts: Arc<[P::Contract]>,
 }
 
-impl NativePersistResources {
+impl<P> NativePersistResources<P>
+where
+    P: NativeContractProvider + 'static,
+{
     /// Captures the canonical native-contract list once from an explicit
     /// provider. The list order is the C# native registration order used by both
     /// OnPersist and PostPersist hooks.
-    pub fn from_provider(provider: Arc<dyn NativeContractProvider>) -> Self {
-        let contracts = provider.all_native_contracts().into();
+    pub fn from_provider(provider: Arc<P>) -> Self {
+        let contracts = Arc::from(provider.all_native_contracts());
         Self {
             provider,
             contracts,
@@ -69,12 +75,12 @@ impl NativePersistResources {
 
     /// Returns the canonical native contracts captured for this persistence
     /// batch, in C# registration order.
-    pub fn contracts(&self) -> &[Arc<dyn neo_execution::NativeContract>] {
+    pub fn contracts(&self) -> &[P::Contract] {
         self.contracts.as_ref()
     }
 
     /// Returns the native-contract provider captured for this persistence batch.
-    pub fn provider(&self) -> Arc<dyn NativeContractProvider> {
+    pub fn provider(&self) -> Arc<P> {
         Arc::clone(&self.provider)
     }
 }
@@ -82,10 +88,10 @@ impl NativePersistResources {
 /// A block persistence result whose storage writes are still staged in a child
 /// cache. The caller must run committing hooks against [`Self::snapshot`] and
 /// call [`Self::commit`] only after every pre-commit gate succeeds.
-pub struct StagedNativePersist {
+pub struct StagedNativePersist<B: CacheRead> {
     /// The staged block writes, isolated from the canonical snapshot until
     /// [`Self::commit`] is called.
-    pub(super) snapshot: Arc<DataCache>,
+    pub(super) snapshot: Arc<DataCache<B>>,
     /// Native persistence metadata and ApplicationExecuted records.
     pub outcome: NativePersistOutcome,
     pub(super) block_index: u32,
@@ -96,9 +102,9 @@ pub struct StagedNativePersist {
     pub(super) total_start: std::time::Instant,
 }
 
-impl StagedNativePersist {
+impl<B: CacheRead> StagedNativePersist<B> {
     /// Returns the staged snapshot that committing hooks should inspect.
-    pub fn snapshot(&self) -> &DataCache {
+    pub fn snapshot(&self) -> &DataCache<B> {
         self.snapshot.as_ref()
     }
 

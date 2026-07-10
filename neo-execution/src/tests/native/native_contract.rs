@@ -1,4 +1,5 @@
 use super::*;
+use crate::Diagnostic;
 use neo_error::CoreError;
 use std::collections::HashMap;
 
@@ -109,7 +110,10 @@ impl MockNative {
     }
 }
 
-impl NativeContract for MockNative {
+impl<P> NativeContract<P> for MockNative
+where
+    P: NativeContractProvider + 'static,
+{
     fn id(&self) -> i32 {
         -100
     }
@@ -130,17 +134,17 @@ impl NativeContract for MockNative {
         &self.events
     }
 
-    fn invoke(
+    fn invoke<D, B>(
         &self,
-        _engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine<P, D, B>,
         _method: &str,
         _args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
+    ) -> CoreResult<Vec<u8>>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         Err(CoreError::invalid_operation("MockNative is metadata-only"))
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 
@@ -160,7 +164,8 @@ fn events_filter_by_hardfork_and_sort_by_order() {
 
     // Pre-Echidna: the deprecated V0 `Dual` is active; ordering puts
     // order 0 before order 1 even though `Ungated` was declared first.
-    let pre = contract.events(&settings, 0);
+    let pre =
+        <MockNative as NativeContract<NoNativeContractProvider>>::events(&contract, &settings, 0);
     assert_eq!(
         pre.iter()
             .map(|e| (e.name.as_str(), e.parameters.len()))
@@ -169,7 +174,8 @@ fn events_filter_by_hardfork_and_sort_by_order() {
     );
 
     // Post-Echidna: V0 drops out, V1 (two parameters) replaces it.
-    let post = contract.events(&settings, 100);
+    let post =
+        <MockNative as NativeContract<NoNativeContractProvider>>::events(&contract, &settings, 100);
     assert_eq!(
         post.iter()
             .map(|e| (e.name.as_str(), e.parameters.len()))
@@ -183,7 +189,11 @@ fn events_filter_by_hardfork_and_sort_by_order() {
         hardforks: HashMap::new(),
         ..ProtocolSettings::mainnet()
     };
-    let never = contract.events(&unscheduled, u32::MAX);
+    let never = <MockNative as NativeContract<NoNativeContractProvider>>::events(
+        &contract,
+        &unscheduled,
+        u32::MAX,
+    );
     assert_eq!(
         never
             .iter()
@@ -200,10 +210,16 @@ fn used_hardforks_include_event_attributes() {
     // events. This is what makes `is_initialize_block` refresh a manifest
     // at a boundary that only changes an event signature.
     let contract = MockNative::new();
-    assert_eq!(contract.used_hardforks(), vec![Hardfork::HfEchidna]);
+    assert_eq!(
+        <MockNative as NativeContract<NoNativeContractProvider>>::used_hardforks(&contract),
+        vec![Hardfork::HfEchidna]
+    );
 
     let settings = settings_with_echidna_at(100);
-    let (initialize, hits) = contract.is_initialize_block(&settings, 100);
+    let (initialize, hits) =
+        <MockNative as NativeContract<NoNativeContractProvider>>::is_initialize_block(
+            &contract, &settings, 100,
+        );
     assert!(initialize);
     assert_eq!(hits, vec![Hardfork::HfEchidna]);
 }
@@ -212,7 +228,9 @@ fn used_hardforks_include_event_attributes() {
 fn manifest_composes_parameter_names_with_argn_fallback() {
     let contract = MockNative::new();
     let settings = settings_with_echidna_at(100);
-    let state = build_native_contract_state(&contract, &settings, 0);
+    let state = build_native_contract_state_for::<NoNativeContractProvider, MockNative>(
+        &contract, &settings, 0,
+    );
 
     let named = state
         .manifest

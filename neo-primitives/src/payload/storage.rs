@@ -7,7 +7,7 @@
 //! # Example
 //!
 //! ```rust
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # fn main() -> Result<(), neo_primitives::StorageValueError> {
 //! use neo_primitives::StorageValue;
 //!
 //! // Vec<u8> implements StorageValue by default

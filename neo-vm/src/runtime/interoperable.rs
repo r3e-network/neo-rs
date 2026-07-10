@@ -33,9 +33,6 @@ pub trait Interoperable: Send + Sync {
 
     /// Converts this value into a VM stack value.
     fn to_stack_value(&self) -> Result<StackValue, InteroperableError>;
-
-    /// Clones this value behind a trait object.
-    fn clone_box(&self) -> Box<dyn Interoperable>;
 }
 
 /// Implement [`Interoperable`] for a type that already has
@@ -57,10 +54,6 @@ macro_rules! impl_interoperable_via_stack_value {
                 &self,
             ) -> ::std::result::Result<::neo_vm_rs::StackValue, $crate::InteroperableError> {
                 Ok(<$ty>::to_stack_value(&*self))
-            }
-
-            fn clone_box(&self) -> ::std::boxed::Box<dyn $crate::Interoperable> {
-                ::std::boxed::Box::new(self.clone())
             }
         }
     };

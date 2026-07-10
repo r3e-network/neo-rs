@@ -26,9 +26,9 @@ impl NeoToken {
     /// `cached_committee[height % committee_count]`. Integer division is kept at
     /// the single-block boundary before multiplying repeated rewards, matching
     /// normal `on_persist`/`post_persist`.
-    pub fn fast_forward_empty_block_rewards(
+    pub fn fast_forward_empty_block_rewards<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &neo_config::ProtocolSettings,
         start: u32,
         end: u32,
@@ -125,9 +125,9 @@ impl NeoToken {
         Ok(())
     }
 
-    fn fast_forward_voter_reward_refreshes(
+    fn fast_forward_voter_reward_refreshes<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &neo_config::ProtocolSettings,
         height: u32,
         validators_count: usize,
@@ -159,9 +159,9 @@ impl NeoToken {
         Ok(())
     }
 
-    fn fast_forward_refresh_reward(
+    fn fast_forward_refresh_reward<B: neo_storage::CacheRead>(
         &self,
-        snapshot: &DataCache,
+        snapshot: &DataCache<B>,
         settings: &neo_config::ProtocolSettings,
         committee_count: usize,
         refresh_height: u32,

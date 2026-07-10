@@ -1,10 +1,11 @@
 //! ApplicationEngine.Contract - ports Neo.SmartContract.ApplicationEngine.Contract.cs
 
+use crate::ApplicationExecutionEngine as ExecutionEngine;
 use crate::application_engine::ApplicationEngine;
 use crate::bls12381_interop::Bls12381Interop;
 use crate::env_flags::env_flag_enabled;
-use crate::execution_context_state::ExecutionContextState;
 use crate::iterators::IteratorInterop;
+use crate::native_contract_provider::NativeContractProvider;
 use neo_crypto::bls12381_point::{G1_COMPRESSED_SIZE, G2_COMPRESSED_SIZE, GT_SIZE};
 use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
@@ -13,7 +14,7 @@ use neo_primitives::ContractParameterType;
 use neo_primitives::hex_util;
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::BinarySerializer;
-use neo_vm::{ExecutionEngine, StackItem, VmError, VmResult};
+use neo_vm::{StackItem, VmError, VmResult};
 use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
@@ -21,36 +22,6 @@ use std::str::FromStr;
 use std::sync::OnceLock;
 
 const SYSTEM_CONTRACT_CALL_PRICE: i64 = 1 << 15;
-
-/// Bitmask tracking which native-call args were originally `StackItem::Null`.
-///
-/// Bit `i` (LSB) is set if arg index `i` was popped as `StackItem::Null`.
-/// The dispatcher in `contract_call_native_handler` populates this state
-/// before invoking the native method, and the handler can query it via
-/// `ApplicationEngine::get_state::<NativeArgNullMask>()` to distinguish
-/// `Null` from `ByteString("")` (both of which collapse to ambiguous bytes
-/// at the `Vec<u8>` args layer — see `OracleContract::request` filter handling).
-pub struct NativeArgNullMask(pub u32);
-
-/// Per-call marker set by a native method to force its return value to
-/// `StackItem::Null`, regardless of the (non-`Void`) ABI return type.
-///
-/// This lets a method whose C# signature is a nullable reference (e.g.
-/// `byte[]?` for `CryptoLib.recoverSecp256K1`) return `null` through the
-/// `Vec<u8>` result channel, which otherwise cannot distinguish an empty byte
-/// string from `null`. The dispatcher in [`contract_call_native_handler`]
-/// consumes this marker right after the native call and, when present, pushes
-/// `Null` instead of decoding the (empty) result payload.
-pub(crate) struct NativeReturnNull;
-
-impl ApplicationEngine {
-    /// Signals that the currently-executing native method returns `null` (for a
-    /// nullable-reference return such as `CryptoLib.recoverSecp256K1`). The method
-    /// should still return `Ok(Vec::new())`; the dispatcher pushes `StackItem::Null`.
-    pub fn set_native_return_null(&mut self) {
-        self.set_state(NativeReturnNull);
-    }
-}
 
 fn native_call_trace_filter_matches(
     tx_filter: Option<UInt256>,
@@ -66,7 +37,12 @@ fn native_call_trace_tx_filter() -> Option<UInt256> {
         .and_then(|raw| UInt256::from_str(raw.trim()).ok())
 }
 
-fn native_call_trace_enabled(app: &ApplicationEngine) -> bool {
+fn native_call_trace_enabled<P, D, B>(app: &ApplicationEngine<P, D, B>) -> bool
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     static TRACE_ALL: OnceLock<bool> = OnceLock::new();
     native_call_trace_filter_matches(
         native_call_trace_tx_filter(),
@@ -89,13 +65,23 @@ fn contract_call_trace_tx_filter() -> Option<UInt256> {
         .and_then(|raw| UInt256::from_str(raw.trim()).ok())
 }
 
-fn current_transaction_hash(app: &ApplicationEngine) -> Option<UInt256> {
+fn current_transaction_hash<P, D, B>(app: &ApplicationEngine<P, D, B>) -> Option<UInt256>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     app.script_container()
-        .and_then(|container| container.as_any().downcast_ref::<Transaction>())
+        .and_then(|container| container.as_transaction())
         .map(Transaction::hash)
 }
 
-fn contract_call_trace_enabled(app: &ApplicationEngine) -> bool {
+fn contract_call_trace_enabled<P, D, B>(app: &ApplicationEngine<P, D, B>) -> bool
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     contract_call_trace_filter_matches(
         contract_call_trace_tx_filter(),
         env_flag_enabled("NEO_TRACE_CONTRACT_CALL", false),
@@ -139,7 +125,12 @@ fn trace_stack_item_summary(item: &StackItem) -> String {
     }
 }
 
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     pub(crate) fn register_contract_interops(&mut self) -> VmResult<()> {
         self.register_host_service(
             "System.Contract.Call",
@@ -201,10 +192,15 @@ fn map_contract_result(service: &str, result: CoreResult<()>) -> VmResult<()> {
     })
 }
 
-fn contract_call_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn contract_call_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     // C# parity (Neo.Extensions.ScriptBuilderExtensions.EmitDynamicCall):
     // stack before SYSCALL: [args_array, call_flags, method, contract_hash]
     // parameters are consumed in declaration order:
@@ -271,10 +267,15 @@ fn contract_call_handler(
     map_contract_result("System.Contract.Call", result)
 }
 
-fn contract_get_call_flags_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn contract_get_call_flags_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let result = (|| -> CoreResult<()> {
         let flags = app.get_current_call_flags()?;
         app.push_integer(i64::from(flags.bits()))?;
@@ -284,10 +285,15 @@ fn contract_get_call_flags_handler(
     map_contract_result("System.Contract.GetCallFlags", result)
 }
 
-fn contract_create_standard_account_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn contract_create_standard_account_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let pub_key_bytes = app.pop_bytes().map_err(|e| VmError::InteropService {
         service: "System.Contract.CreateStandardAccount".to_string(),
         error: e.to_string(),
@@ -308,10 +314,15 @@ fn contract_create_standard_account_handler(
     map_contract_result("System.Contract.CreateStandardAccount", result)
 }
 
-fn contract_create_multisig_account_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn contract_create_multisig_account_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     // C# parity (Neo.SmartContract.ApplicationEngine.Contract.cs):
     //   CreateMultisigAccount(int m, ECPoint[] pubKeys)
     // Parameters are consumed in declaration order: pop m first (top of stack),
@@ -339,10 +350,15 @@ fn contract_create_multisig_account_handler(
     map_contract_result("System.Contract.CreateMultisigAccount", result)
 }
 
-fn contract_call_native_handler(
-    app: &mut ApplicationEngine,
-    engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn contract_call_native_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let result = (|| -> CoreResult<()> {
         let version_item = engine.pop().map_err(|e| CoreError::other(e.to_string()))?;
         let version_big = version_item
@@ -359,8 +375,7 @@ fn contract_call_native_handler(
             let context = engine
                 .current_context()
                 .ok_or_else(|| CoreError::other("No current execution context"))?;
-            let state_arc = context
-                .get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let state_arc = context.state();
             let stack_len = context.evaluation_stack().len();
             (state_arc, stack_len)
         };
@@ -431,7 +446,7 @@ fn contract_call_native_handler(
                     BinarySerializer::serialize(&item, app.execution_limits())?
                 }
                 Some(ContractParameterType::InteropInterface) => stack_item_to_interop_bytes(item)?,
-                _ => ApplicationEngine::stack_item_to_bytes(item)?,
+                _ => ApplicationEngine::<P, D>::stack_item_to_bytes(item)?,
             };
             if trace_native_call {
                 let preview_len = bytes.len().min(24);
@@ -445,14 +460,10 @@ fn contract_call_native_handler(
             args.push(bytes);
         }
 
-        app.set_state(NativeArgNullMask(null_mask));
+        app.begin_native_call(null_mask);
         let call_result = app.call_native_contract(script_hash, &method_name, &args);
-        app.take_state::<NativeArgNullMask>();
+        let force_null_return = app.finish_native_call();
         let result_bytes = call_result?;
-        // A native method may signal a `null` return (a nullable-reference result
-        // such as `byte[]?`) via `set_native_return_null`; consume it here so it
-        // never leaks into the next call.
-        let force_null_return = app.take_state::<NativeReturnNull>().is_some();
 
         if trace_native_call {
             let tx_hash = current_transaction_hash(app)
@@ -498,8 +509,8 @@ fn contract_call_native_handler(
     map_contract_result("System.Contract.CallNative", result)
 }
 
-fn push_native_result(
-    engine: &mut ExecutionEngine,
+fn push_native_result<B>(
+    engine: &mut ExecutionEngine<B>,
     return_type: ContractParameterType,
     result: Vec<u8>,
 ) -> CoreResult<()> {
@@ -560,7 +571,7 @@ fn decode_native_result(
                 // Iterator results are InteropInterface values (C# parity): wrap
                 // the engine-side storage-iterator handle, do not surface it as a
                 // bare integer.
-                return Ok(Some(StackItem::from_interface(IteratorInterop::new(
+                return Ok(Some(StackItem::from_interface(IteratorInterop::iterator(
                     iterator_id,
                 ))));
             }
@@ -575,7 +586,7 @@ fn decode_native_result(
                 result.len(),
                 G1_COMPRESSED_SIZE | G2_COMPRESSED_SIZE | GT_SIZE
             ) {
-                return Ok(Some(StackItem::from_interface(Bls12381Interop::new(
+                return Ok(Some(StackItem::from_interface(Bls12381Interop::bls12381(
                     result,
                 ))));
             }
@@ -588,12 +599,13 @@ fn decode_native_result(
 
 fn stack_item_to_interop_bytes(item: StackItem) -> CoreResult<Vec<u8>> {
     // Iterator interop interfaces encode their engine-side handle id as 4 LE bytes.
-    if let Ok(iterator) = item.as_interface::<IteratorInterop>() {
-        return Ok(iterator.id().to_le_bytes().to_vec());
-    }
-    // BLS12-381 points carry their canonical encoding directly.
-    if let Ok(point) = item.as_interface::<Bls12381Interop>() {
-        return Ok(point.bytes().to_vec());
+    if let Ok(interface) = item.as_interface() {
+        if let Some(iterator_id) = interface.iterator_id() {
+            return Ok(iterator_id.to_le_bytes().to_vec());
+        }
+        if let Some(point) = interface.bls12381_bytes() {
+            return Ok(point.to_vec());
+        }
     }
     // Anything else (e.g. a plain byte string) is NOT a live interop object;
     // rejecting it matches C#, where binding an `InteropInterface` parameter
@@ -601,18 +613,28 @@ fn stack_item_to_interop_bytes(item: StackItem) -> CoreResult<Vec<u8>> {
     Err(CoreError::other("Stack item is not an InteropInterface"))
 }
 
-fn contract_native_on_persist_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn contract_native_on_persist_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let result = app.native_on_persist();
     map_contract_result("System.Contract.NativeOnPersist", result)
 }
 
-fn contract_native_post_persist_handler(
-    app: &mut ApplicationEngine,
-    _engine: &mut ExecutionEngine,
-) -> VmResult<()> {
+fn contract_native_post_persist_handler<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    _engine: &mut ExecutionEngine<B>,
+) -> VmResult<()>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     let result = app.native_post_persist();
     map_contract_result("System.Contract.NativePostPersist", result)
 }

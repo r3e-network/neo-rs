@@ -10,15 +10,18 @@ use super::Notary;
 use crate::{GasToken, LedgerContract, Role, RoleManagement};
 use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
-use neo_execution::application_engine_contract::NativeArgNullMask;
-use neo_payloads::{Transaction, get_sign_data};
+use neo_payloads::get_sign_data;
 use neo_primitives::{TransactionAttributeType, WitnessScope};
 use num_bigint::BigInt;
 
 impl Notary {
-    pub(super) fn invoke_get_max_not_valid_before_delta(
+    pub(super) fn invoke_get_max_not_valid_before_delta<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         _args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -26,9 +29,13 @@ impl Notary {
         Ok(BigInt::from(delta).to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_balance_of(
+    pub(super) fn invoke_balance_of<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -38,9 +45,13 @@ impl Notary {
             .to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_expiration_of(
+    pub(super) fn invoke_expiration_of<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -50,9 +61,13 @@ impl Notary {
             .to_signed_bytes_le())
     }
 
-    pub(super) fn invoke_lock_deposit_until(
+    pub(super) fn invoke_lock_deposit_until<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -81,9 +96,13 @@ impl Notary {
         }
     }
 
-    pub(super) fn invoke_on_nep17_payment(
+    pub(super) fn invoke_on_nep17_payment<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -104,7 +123,7 @@ impl Notary {
         // the persisting transaction (the GAS transfer that triggered this).
         let sender = engine
             .script_container()
-            .and_then(|c| c.as_any().downcast_ref::<Transaction>())
+            .and_then(|container| container.as_transaction())
             .and_then(|tx| tx.sender());
         let allowed_change_till = sender == Some(to);
 
@@ -133,9 +152,13 @@ impl Notary {
         }
     }
 
-    pub(super) fn invoke_withdraw(
+    pub(super) fn invoke_withdraw<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -144,9 +167,7 @@ impl Notary {
         let from = Self::parse_account(args, "withdraw")?;
         // `to` is a nullable UInt160?: a Null arg (bit 1 of the native arg
         // null-mask) means "send to `from`".
-        let to_is_null = engine
-            .get_state::<NativeArgNullMask>()
-            .is_some_and(|mask| mask.0 & (1 << 1) != 0);
+        let to_is_null = engine.native_arg_is_null(1);
         let receive = if to_is_null {
             from
         } else {
@@ -181,9 +202,13 @@ impl Notary {
         Ok(vec![1])
     }
 
-    pub(super) fn invoke_verify(
+    pub(super) fn invoke_verify<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         let snapshot = engine.snapshot_cache();
@@ -196,16 +221,14 @@ impl Notary {
         // secp256r1 signature over the tx sign-data (network magic ++
         // tx hash) by ONE of the designated P2PNotary nodes. Every
         // rejection returns false, never a fault.
-        let signature_is_null = engine
-            .get_state::<NativeArgNullMask>()
-            .is_some_and(|mask| mask.0 & 1 != 0);
+        let signature_is_null = engine.native_arg_is_null(0);
         let signature = args.first().map(Vec::as_slice).unwrap_or(&[]);
         if signature_is_null || signature.len() != 64 {
             return Ok(vec![0]);
         }
         let Some(tx) = engine
             .script_container()
-            .and_then(|c| c.as_any().downcast_ref::<Transaction>())
+            .and_then(|container| container.as_transaction())
         else {
             return Ok(vec![0]); // C# `engine.ScriptContainer as Transaction` null
         };
@@ -264,9 +287,13 @@ impl Notary {
         Ok(vec![u8::from(valid)])
     }
 
-    pub(super) fn invoke_set_max_not_valid_before_delta(
+    pub(super) fn invoke_set_max_not_valid_before_delta<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
         &self,
-        engine: &mut ApplicationEngine,
+        engine: &mut ApplicationEngine<P, D, B>,
         args: &[Vec<u8>],
     ) -> CoreResult<Vec<u8>> {
         // C# param is `uint value`: decode as u32 (out-of-range faults like

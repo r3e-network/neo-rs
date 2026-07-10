@@ -27,7 +27,7 @@ use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
 use neo_primitives::{UInt160, UInt256, WitnessScope};
-use neo_storage::persistence::StoreCache;
+use neo_storage::persistence::{Store, StoreCache};
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm_rs::VmState;
 
@@ -163,11 +163,14 @@ impl TestTransactionBuilder {
 ///
 /// The block header uses deterministic test values: version `0`, timestamp `0`,
 /// and `UInt160::zero()` as `next_consensus`, with a single empty witness.
-pub fn try_make_ledger_block(
-    store: &StoreCache,
+pub fn try_make_ledger_block<S>(
+    store: &StoreCache<S>,
     index: u32,
     transactions: Vec<Transaction>,
-) -> CoreResult<Block> {
+) -> CoreResult<Block>
+where
+    S: Store,
+{
     let ledger = LedgerContract::new();
     let prev_hash = if index == 0 {
         UInt256::zero()
@@ -204,7 +207,10 @@ pub fn try_make_ledger_block(
 ///
 /// Uses [`VmState::HALT`] for the persisted transaction state. Use
 /// [`try_store_block_with_vmstate`] to override the VM state.
-pub fn try_store_block(store: &mut StoreCache, block: &Block) -> CoreResult<()> {
+pub fn try_store_block<S>(store: &mut StoreCache<S>, block: &Block) -> CoreResult<()>
+where
+    S: Store,
+{
     try_store_block_with_vmstate(store, block, VmState::HALT)
 }
 
@@ -218,11 +224,14 @@ pub fn try_store_block(store: &mut StoreCache, block: &Block) -> CoreResult<()> 
 /// - `Prefix_CurrentBlock` (hash + index pointer),
 ///
 /// then calls `store.commit()`.
-pub fn try_store_block_with_vmstate(
-    store: &mut StoreCache,
+pub fn try_store_block_with_vmstate<S>(
+    store: &mut StoreCache<S>,
     block: &Block,
     vmstate: VmState,
-) -> CoreResult<()> {
+) -> CoreResult<()>
+where
+    S: Store,
+{
     let hash = block.hash();
     let index = block.index();
 

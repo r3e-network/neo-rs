@@ -1,12 +1,12 @@
 #![allow(missing_docs)] // benchmark harness: not public API
 use criterion::{BenchmarkId, Throughput};
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use neo_storage::mdbx::MdbxStoreProvider;
+use neo_storage::mdbx::{MdbxStore, MdbxStoreProvider};
 use neo_storage::{
     StorageItem, StorageKey, StorageResult,
     persistence::{
         RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, Store, StoreCache,
-        StoreSnapshot, WriteStore, storage::StorageConfig, store::OnNewSnapshotDelegate,
+        WriteStore, storage::StorageConfig,
     },
     rocksdb::{RocksDBStoreProvider, RocksDbStore},
 };
@@ -52,7 +52,7 @@ fn open_rocksdb(label: &str) -> (Arc<RocksDbStore>, BenchTempDir) {
     (store, tempdir)
 }
 
-fn open_mdbx(label: &str) -> (Arc<dyn Store>, BenchTempDir) {
+fn open_mdbx(label: &str) -> (Arc<MdbxStore>, BenchTempDir) {
     let tempdir = BenchTempDir::new(label);
     let store = Arc::new(
         MdbxStoreProvider::new(StorageConfig {
@@ -77,6 +77,9 @@ impl SnapshotOnlyStore {
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for SnapshotOnlyStore {
+    type FindIterator<'a> =
+        <RocksDbStore as ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>>>::FindIterator<'a>;
+
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
         self.inner.try_get(key)
     }
@@ -85,12 +88,15 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for SnapshotOnlyStore {
         &self,
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)> + '_> {
+    ) -> Self::FindIterator<'_> {
         self.inner.find(key_prefix, direction)
     }
 }
 
 impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for SnapshotOnlyStore {
+    type FindIterator<'a> =
+        <RocksDbStore as ReadOnlyStoreGeneric<StorageKey, StorageItem>>::FindIterator<'a>;
+
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         self.inner.try_get(key)
     }
@@ -99,7 +105,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for SnapshotOnlyStore {
         &self,
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+    ) -> Self::FindIterator<'_> {
         self.inner.find(key_prefix, direction)
     }
 }
@@ -125,32 +131,60 @@ impl RawReadOnlyStore for SnapshotOnlyStore {
 }
 
 impl Store for SnapshotOnlyStore {
-    fn snapshot(&self) -> Arc<dyn StoreSnapshot> {
-        self.inner.snapshot()
-    }
+    type Snapshot = <RocksDbStore as Store>::Snapshot;
 
-    fn on_new_snapshot(&self, handler: OnNewSnapshotDelegate) {
-        self.inner.on_new_snapshot(handler);
+    fn snapshot(&self) -> Arc<Self::Snapshot> {
+        self.inner.snapshot()
     }
 
     fn flush(&self) -> StorageResult<()> {
         self.inner.flush()
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn backend_kind(&self) -> neo_storage::persistence::StoreBackendKind {
+        self.inner.backend_kind()
     }
 
-    fn as_fast_sync_store(&self) -> Option<&dyn neo_storage::persistence::FastSyncStore> {
-        self.inner.as_fast_sync_store()
+    fn rocksdb_batch_metrics(&self) -> Option<neo_storage::persistence::RocksDbBatchMetrics> {
+        self.inner.rocksdb_batch_metrics()
     }
 
-    fn as_raw_overlay_store(&self) -> Option<&dyn neo_storage::persistence::RawOverlayStore> {
-        self.inner.as_raw_overlay_store()
+    fn supports_fast_sync_mode(&self) -> bool {
+        self.inner.supports_fast_sync_mode()
+    }
+
+    fn enable_fast_sync_mode(&self) {
+        self.inner.enable_fast_sync_mode();
+    }
+
+    fn disable_fast_sync_mode(&self) {
+        self.inner.disable_fast_sync_mode();
+    }
+
+    fn discard_pending_fast_sync_writes(&self) {
+        self.inner.discard_pending_fast_sync_writes();
+    }
+
+    fn has_pending_fast_sync_writes(&self) -> bool {
+        self.inner.has_pending_fast_sync_writes()
+    }
+
+    fn try_commit_raw_overlay(
+        &self,
+        overlay: &[(Vec<u8>, Option<Vec<u8>>)],
+    ) -> StorageResult<bool> {
+        self.inner.try_commit_raw_overlay(overlay)
+    }
+
+    fn try_commit_borrowed_raw_overlay<O>(&self, overlay: &mut O) -> StorageResult<bool>
+    where
+        O: neo_storage::persistence::RawOverlaySource + ?Sized,
+    {
+        self.inner.try_commit_borrowed_raw_overlay(overlay)
     }
 }
 
-fn stage_changes(cache: &mut StoreCache, iteration: u64, change_count: usize) {
+fn stage_changes<S: Store>(cache: &mut StoreCache<S>, iteration: u64, change_count: usize) {
     for index in 0..change_count {
         let key = StorageKey::new(
             77,
@@ -163,8 +197,8 @@ fn stage_changes(cache: &mut StoreCache, iteration: u64, change_count: usize) {
     }
 }
 
-fn stage_import_batch_changes(
-    cache: &mut StoreCache,
+fn stage_import_batch_changes<S: Store>(
+    cache: &mut StoreCache<S>,
     batch: u64,
     blocks_per_batch: usize,
     changes_per_block: usize,
@@ -190,7 +224,6 @@ fn bench_store_cache_commit(c: &mut Criterion) {
     for &change_count in &[1usize, 10, 100, 500] {
         direct_group.bench_function(format!("{change_count}_changes"), |b| {
             let (store, _tempdir) = open_rocksdb("direct");
-            let store: Arc<dyn Store> = store;
             let mut iteration = 0u64;
             b.iter(|| {
                 let mut cache = StoreCache::new_from_store(Arc::clone(&store), false);
@@ -206,7 +239,7 @@ fn bench_store_cache_commit(c: &mut Criterion) {
     for &change_count in &[1usize, 10, 100, 500] {
         snapshot_group.bench_function(format!("{change_count}_changes"), |b| {
             let (store, _tempdir) = open_rocksdb("snapshot");
-            let store: Arc<dyn Store> = Arc::new(SnapshotOnlyStore::new(store));
+            let store = Arc::new(SnapshotOnlyStore::new(store));
             let mut iteration = 0u64;
             b.iter(|| {
                 let mut cache = StoreCache::new_from_store(Arc::clone(&store), false);
@@ -245,7 +278,6 @@ fn bench_import_shaped_store_cache_commit(c: &mut Criterion) {
     immediate_group.bench_function("1x500_blocks_4_changes", |b| {
         let (store, _tempdir) = open_rocksdb("import-immediate");
         store.disable_fast_sync_mode();
-        let store: Arc<dyn Store> = store;
         let mut batch = 0u64;
         b.iter(|| {
             let mut cache = StoreCache::new_from_store(Arc::clone(&store), false);
@@ -275,11 +307,10 @@ fn bench_import_shaped_store_cache_commit(c: &mut Criterion) {
         &BUFFERED_LOGICAL_BATCHES,
         |b, &logical_batches| {
             let (store, _tempdir) = open_rocksdb("import-buffered");
-            let store_dyn: Arc<dyn Store> = store.clone();
             let mut batch = 0u64;
             b.iter(|| {
                 for _ in 0..logical_batches {
-                    let mut cache = StoreCache::new_from_store(Arc::clone(&store_dyn), false);
+                    let mut cache = StoreCache::new_from_store(Arc::clone(&store), false);
                     stage_import_batch_changes(
                         &mut cache,
                         batch,

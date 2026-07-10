@@ -14,7 +14,14 @@ impl ContractManagement {
     /// == ActiveIn` (ContractManagement.cs:53-61; the contract is
     /// genesis-active, so this runs while persisting block 0): seed
     /// `Prefix_MinimumDeploymentFee` (10 GAS) and `Prefix_NextAvailableId` (1).
-    pub(super) fn initialize_native(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    pub(super) fn initialize_native<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        &self,
+        engine: &mut ApplicationEngine<P, D, B>,
+    ) -> CoreResult<()> {
         let snapshot = engine.snapshot_cache();
         snapshot.add(
             Self::minimum_deployment_fee_key(),

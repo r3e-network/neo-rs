@@ -3,11 +3,12 @@ use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
 use neo_error::{CoreError, CoreResult};
-use neo_execution::{ApplicationEngine, NativeContractsCache};
+use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_execution::{ApplicationEngine, NativeContractsCache, NoDiagnostic};
 use neo_manifest::CallFlags;
-use neo_payloads::Block;
-use neo_primitives::{TriggerType, Verifiable};
-use neo_storage::DataCache;
+use neo_payloads::{Block, VerifiableContainer};
+use neo_primitives::TriggerType;
+use neo_storage::{CacheRead, DataCache};
 use neo_vm_rs::VmState as VMState;
 use parking_lot::Mutex;
 
@@ -22,15 +23,19 @@ use super::{NativePersistOptions, NativePersistOutcome, NativePersistResources};
 /// limit equal to `tx.SystemFee` over a child cache of the block cache. HALT
 /// commits the child cache into the block cache, FAULT discards it, and the
 /// Ledger transaction record is rewritten with the final VM state either way.
-pub(super) fn run_transaction_stage(
-    block_cache: &Arc<DataCache>,
+pub(super) fn run_transaction_stage<P, B>(
+    block_cache: &Arc<DataCache<B>>,
     block: &Arc<Block>,
     settings: &ProtocolSettings,
     options: NativePersistOptions,
-    resources: &NativePersistResources,
+    resources: &NativePersistResources<P>,
     native_contract_cache: Arc<Mutex<NativeContractsCache>>,
     outcome: &mut NativePersistOutcome,
-) -> CoreResult<u64> {
+) -> CoreResult<u64>
+where
+    P: NativeContractProvider + 'static,
+    B: CacheRead,
+{
     let block_index = block.index();
     let tx_start = std::time::Instant::now();
     let trace_tx_filter = TraceTxFilter::from_env();
@@ -54,7 +59,7 @@ pub(super) fn run_transaction_stage(
         );
 
         let stage_start = std::time::Instant::now();
-        let container: Arc<dyn Verifiable> = Arc::new(tx.clone());
+        let container = Arc::new(VerifiableContainer::from(tx.clone()));
         record_tx_stage(
             neo_runtime::sync_metrics::NativePersistTxStage::ContainerClone,
             stage_start,
@@ -71,7 +76,7 @@ pub(super) fn run_transaction_stage(
                 tx.system_fee(),
                 HashMap::new(),
                 Arc::clone(&native_contract_cache),
-                None,
+                NoDiagnostic,
                 Some(Arc::clone(&native_contract_provider)),
             )?;
         record_tx_stage(

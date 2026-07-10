@@ -47,7 +47,10 @@ impl GasToken {
     pub const DECIMALS: u8 = 8;
 }
 
-impl NativeContract for GasToken {
+impl<P> NativeContract<P> for GasToken
+where
+    P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+{
     native_contract_identity!(GasToken);
 
     fn methods(&self) -> &[NativeMethod] {
@@ -68,13 +71,21 @@ impl NativeContract for GasToken {
         &metadata::GAS_TOKEN_EVENTS
     }
 
-    native_contract_dispatch!(metadata::GAS_TOKEN_METHOD_BINDINGS);
+    native_contract_dispatch!(metadata::gas_token_method_bindings);
 
-    fn initialize(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    fn initialize<D, B>(&self, engine: &mut ApplicationEngine<P, D, B>) -> CoreResult<()>
+    where
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         self.initialize_native(engine)
     }
 
-    fn on_persist(&self, engine: &mut ApplicationEngine) -> CoreResult<()> {
+    fn on_persist<D, B>(&self, engine: &mut ApplicationEngine<P, D, B>) -> CoreResult<()>
+    where
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
         self.on_persist_native(engine)
     }
 }

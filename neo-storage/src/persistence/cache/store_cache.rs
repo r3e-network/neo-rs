@@ -1,7 +1,7 @@
 //! Cache facade that fronts a `Store` or snapshot for smart-contract storage.
 
 use super::{
-    data_cache::{DataCache, DataCacheConfig, DataCacheError, DataCacheResult},
+    data_cache::{CacheRead, DataCache, DataCacheConfig, DataCacheError, DataCacheResult},
     read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
     seek_direction::SeekDirection,
     store::Store,
@@ -9,95 +9,107 @@ use super::{
     track_state::TrackState,
 };
 use crate::error::StorageResult;
+use crate::persistence::providers::memory_store::MemoryStore;
 use crate::types::{StorageItem, StorageKey};
 use std::sync::Arc;
 use tracing::warn;
 
-/// Represents a cache for the snapshot or database of the NEO blockchain.
-type StoreGetFn = dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync;
-type StoreFindFn =
-    dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)> + Send + Sync;
-
-/// Read-through contract storage cache with Neo-style change tracking.
-pub struct StoreCache {
-    data_cache: DataCache,
-    store: Option<Arc<dyn Store>>,
-    snapshot: Option<Arc<dyn StoreSnapshot>>,
+/// Concrete read source carried by [`StoreCache`].
+#[derive(Debug)]
+pub enum StoreCacheBacking<S: Store> {
+    /// Reads directly from a shared store.
+    Store(Arc<S>),
+    /// Reads from a point-in-time backend snapshot.
+    Snapshot(Arc<S::Snapshot>),
 }
 
-impl StoreCache {
+impl<S: Store> Clone for StoreCacheBacking<S> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Store(store) => Self::Store(Arc::clone(store)),
+            Self::Snapshot(snapshot) => Self::Snapshot(Arc::clone(snapshot)),
+        }
+    }
+}
+
+impl<S: Store> CacheRead for StoreCacheBacking<S> {
+    fn get(&self, key: &StorageKey) -> Option<StorageItem> {
+        match self {
+            Self::Store(store) => {
+                <S as ReadOnlyStoreGeneric<StorageKey, StorageItem>>::try_get(store.as_ref(), key)
+            }
+            Self::Snapshot(snapshot) => {
+                let key = key.to_array();
+                <S::Snapshot as ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>>>::try_get(
+                    snapshot.as_ref(),
+                    &key,
+                )
+                .map(StorageItem::from_bytes)
+            }
+        }
+    }
+
+    fn find(
+        &self,
+        prefix: Option<&StorageKey>,
+        direction: SeekDirection,
+    ) -> Option<Vec<(StorageKey, StorageItem)>> {
+        let entries = match self {
+            Self::Store(store) => <S as ReadOnlyStoreGeneric<StorageKey, StorageItem>>::find(
+                store.as_ref(),
+                prefix,
+                direction,
+            )
+            .collect(),
+            Self::Snapshot(snapshot) => {
+                let prefix = prefix.map(StorageKey::to_array);
+                <S::Snapshot as ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>>>::find(
+                    snapshot.as_ref(),
+                    prefix.as_ref(),
+                    direction,
+                )
+                .map(|(key, value)| (StorageKey::from_bytes(&key), StorageItem::from_bytes(value)))
+                .collect()
+            }
+        };
+        Some(entries)
+    }
+}
+
+/// Read cache type produced by a concrete storage backend.
+pub type StoreDataCache<S> = DataCache<StoreCacheBacking<S>>;
+
+/// Read-through contract storage cache with Neo-style change tracking.
+pub struct StoreCache<S: Store = MemoryStore> {
+    data_cache: StoreDataCache<S>,
+    backing: StoreCacheBacking<S>,
+}
+
+impl<S> StoreCache<S>
+where
+    S: Store + 'static,
+{
     /// Initializes a new instance of the StoreCache class with a store.
-    pub fn new_from_store(store: Arc<dyn Store>, read_only: bool) -> Self {
+    pub fn new_from_store(store: Arc<S>, read_only: bool) -> Self {
         Self::new_from_store_with_config(store, read_only, DataCacheConfig::default())
     }
 
     /// Initializes a new instance with a store and custom configuration.
     pub fn new_from_store_with_config(
-        store: Arc<dyn Store>,
+        store: Arc<S>,
         read_only: bool,
         config: DataCacheConfig,
     ) -> Self {
-        let store_for_get = store.clone();
-        let store_for_find = store.clone();
-        let store_get: Arc<StoreGetFn> =
-            Arc::new(move |key: &StorageKey| store_for_get.try_get(key));
-        let store_find: Arc<StoreFindFn> = Arc::new(move |prefix, direction| {
-            store_for_find
-                .find(prefix, direction)
-                .collect::<Vec<(StorageKey, StorageItem)>>()
-        });
+        let backing = StoreCacheBacking::Store(store);
         Self {
-            data_cache: DataCache::new_with_config(
-                read_only,
-                Some(store_get),
-                Some(store_find),
-                config,
-            ),
-            store: Some(store),
-            snapshot: None,
+            data_cache: DataCache::with_backing(read_only, backing.clone(), config),
+            backing,
         }
     }
 
     /// Provides read-only access to the underlying in-memory data cache.
-    pub fn data_cache(&self) -> &DataCache {
+    pub fn data_cache(&self) -> &StoreDataCache<S> {
         &self.data_cache
-    }
-
-    /// Initializes a new instance of the StoreCache class with a snapshot.
-    pub fn new_from_snapshot(snapshot: Arc<dyn StoreSnapshot>) -> Self {
-        Self::new_from_snapshot_with_config(snapshot, DataCacheConfig::default())
-    }
-
-    /// Initializes a new instance with a snapshot and custom cache configuration.
-    pub fn new_from_snapshot_with_config(
-        snapshot: Arc<dyn StoreSnapshot>,
-        config: DataCacheConfig,
-    ) -> Self {
-        let snapshot_for_get = snapshot.clone();
-        let snapshot_for_find = snapshot.clone();
-        let snapshot_get: Arc<StoreGetFn> = Arc::new(move |key: &StorageKey| {
-            let key_bytes = key.to_array();
-            snapshot_for_get
-                .try_get(&key_bytes)
-                .map(StorageItem::from_bytes)
-        });
-        let snapshot_find: Arc<StoreFindFn> = Arc::new(move |prefix, direction| {
-            let prefix_bytes = prefix.map(|key| key.as_bytes().into_owned());
-            snapshot_for_find
-                .find(prefix_bytes.as_ref(), direction)
-                .map(|(key, value)| (StorageKey::from_bytes(&key), StorageItem::from_bytes(value)))
-                .collect::<Vec<(StorageKey, StorageItem)>>()
-        });
-        Self {
-            data_cache: DataCache::new_with_config(
-                false,
-                Some(snapshot_get),
-                Some(snapshot_find),
-                config,
-            ),
-            store: None,
-            snapshot: Some(snapshot),
-        }
     }
 
     /// Commits all changes.
@@ -122,14 +134,9 @@ impl StoreCache {
             return Ok(());
         }
 
-        let mut writer_snapshot = if let Some(snapshot_arc) = self.snapshot.as_ref() {
-            snapshot_arc.store().snapshot()
-        } else if let Some(store_arc) = self.store.as_ref() {
-            store_arc.snapshot()
-        } else {
-            let msg = "no backing store available for commit";
-            warn!(target: "neo", "{msg}");
-            return Err(DataCacheError::CommitFailed(msg.to_string()));
+        let mut writer_snapshot = match &self.backing {
+            StoreCacheBacking::Store(store) => store.snapshot(),
+            StoreCacheBacking::Snapshot(snapshot) => snapshot.store().snapshot(),
         };
 
         if let Some(snapshot) = Arc::get_mut(&mut writer_snapshot) {
@@ -155,36 +162,27 @@ impl StoreCache {
     }
 
     fn try_commit_store_overlay(&self) -> DataCacheResult<bool> {
-        let Some(store) = self.store.as_ref() else {
+        let StoreCacheBacking::Store(store) = &self.backing else {
             return Ok(false);
         };
 
-        // Try the raw overlay extension if the backend supports it.
-        if let Some(raw_overlay) = store.as_raw_overlay_store() {
-            let mut visit = |sink: &mut dyn FnMut(&[u8], Option<&[u8]>)| {
-                self.data_cache.visit_raw_changes(sink);
-            };
-            let committed = raw_overlay
-                .try_commit_borrowed_raw_overlay(&mut visit)
-                .map_err(|e| DataCacheError::CommitFailed(format!("storage write failed: {e}")))?;
-            if committed {
-                self.data_cache.commit();
-                return Ok(true);
-            }
-
-            // Fall back to materialized overlay.
-            let overlay = self.data_cache.extract_raw_changes();
-            let committed = raw_overlay
-                .try_commit_raw_overlay(&overlay)
-                .map_err(|e| DataCacheError::CommitFailed(format!("storage write failed: {e}")))?;
-            if committed {
-                self.data_cache.commit();
-            }
-            return Ok(committed);
+        let mut source = &self.data_cache;
+        let committed = store
+            .try_commit_borrowed_raw_overlay(&mut source)
+            .map_err(|e| DataCacheError::CommitFailed(format!("storage write failed: {e}")))?;
+        if committed {
+            self.data_cache.commit();
+            return Ok(true);
         }
 
-        // Backend doesn't support raw overlay commit.
-        Ok(false)
+        let overlay = self.data_cache.extract_raw_changes();
+        let committed = store
+            .try_commit_raw_overlay(&overlay)
+            .map_err(|e| DataCacheError::CommitFailed(format!("storage write failed: {e}")))?;
+        if committed {
+            self.data_cache.commit();
+        }
+        Ok(committed)
     }
 
     /// Gets an item from the cache or underlying store.
@@ -227,7 +225,7 @@ impl StoreCache {
         &self,
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+    ) -> std::vec::IntoIter<(StorageKey, StorageItem)> {
         self.data_cache.find(key_prefix, direction)
     }
 
@@ -243,6 +241,28 @@ impl StoreCache {
                 TrackState::Deleted => self.delete(key),
                 TrackState::None | TrackState::NotFound => {}
             }
+        }
+    }
+}
+
+impl<S> StoreCache<S>
+where
+    S: Store + 'static,
+{
+    /// Initializes a new instance of the StoreCache class with a snapshot.
+    pub fn new_from_snapshot(snapshot: Arc<S::Snapshot>) -> Self {
+        Self::new_from_snapshot_with_config(snapshot, DataCacheConfig::default())
+    }
+
+    /// Initializes a new instance with a snapshot and custom cache configuration.
+    pub fn new_from_snapshot_with_config(
+        snapshot: Arc<S::Snapshot>,
+        config: DataCacheConfig,
+    ) -> Self {
+        let backing = StoreCacheBacking::Snapshot(snapshot);
+        Self {
+            data_cache: DataCache::with_backing(false, backing.clone(), config),
+            backing,
         }
     }
 }
@@ -279,9 +299,17 @@ where
     Ok(())
 }
 
-impl ReadOnlyStore for StoreCache {}
+impl<S> ReadOnlyStore for StoreCache<S> where S: Store + 'static {}
 
-impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for StoreCache {
+impl<S> ReadOnlyStoreGeneric<StorageKey, StorageItem> for StoreCache<S>
+where
+    S: Store + 'static,
+{
+    type FindIterator<'a>
+        = std::vec::IntoIter<(StorageKey, StorageItem)>
+    where
+        Self: 'a;
+
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         self.get(key)
     }
@@ -290,7 +318,7 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for StoreCache {
         &self,
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
-    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+    ) -> Self::FindIterator<'_> {
         self.data_cache.find(key_prefix, direction)
     }
 }

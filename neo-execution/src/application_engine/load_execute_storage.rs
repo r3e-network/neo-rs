@@ -1,6 +1,11 @@
 use super::*;
 
-impl ApplicationEngine {
+impl<P, D, B> ApplicationEngine<P, D, B>
+where
+    P: crate::native_contract_provider::NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
     /// Loads a raw script into the VM, configuring call flags and optional script hash.
     pub fn load_script(
         &mut self,
@@ -31,8 +36,7 @@ impl ApplicationEngine {
         let has_return_value = method.return_type != ContractParameterType::Void;
         let previous_context = self.vm_engine.engine().current_context().cloned();
         let previous_hash = if let Some(ref ctx) = previous_context {
-            let state_arc =
-                ctx.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
+            let state_arc = ctx.state();
             let hash_from_state = state_arc.lock().script_hash;
             Some(
                 hash_from_state
@@ -183,10 +187,10 @@ impl ApplicationEngine {
         // `neo-native-contracts` directly. C# `GetCommitteeAddress` faults if the
         // committee cache is missing, so a lookup error is propagated. When no
         // provider is installed (engine used standalone), we fail closed.
-        let Some(neo_token) = self.native_contract_by_name("NeoToken") else {
+        let Some(provider) = self.native_contract_provider() else {
             return Ok(false);
         };
-        let committee_address = match neo_token
+        let committee_address = match provider
             .committee_address(self.snapshot_cache.as_ref())
             .map_err(|e| {
                 CoreError::invalid_operation(format!("committee address lookup failed: {e}"))
@@ -223,13 +227,9 @@ impl ApplicationEngine {
 
         // 2. Get contract state to get the ID (matches C# snapshot lookup)
         let contract = self
-            .native_contract_by_name("ContractManagement")
-            .map(|contract_management| {
-                contract_management
-                    .lookup_contract_state(self.snapshot_cache.as_ref(), &contract_hash)
-            })
-            .transpose()?
-            .flatten()
+            .native_contract_provider()
+            .ok_or_else(|| CoreError::not_found(format!("Contract not found: {}", contract_hash)))?
+            .contract_state(self.snapshot_cache.as_ref(), &contract_hash)?
             .ok_or_else(|| {
                 CoreError::not_found(format!("Contract not found: {}", contract_hash))
             })?;

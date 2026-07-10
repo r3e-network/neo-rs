@@ -41,10 +41,11 @@ use super::node_context::NodeContext;
 use super::rpc_remote_ledger::RemoteLedgerRpcClient;
 use super::rpc_server_settings::RpcServerConfig;
 
+type RpcOracleService = neo_oracle_service::OracleService<NodeContext>;
+
 pub use handler::{RpcCallback, RpcHandler};
 pub(crate) use handler::{protected_rpc_handler, rpc_handler};
 pub use metrics::{RPC_ERR_TOTAL, RPC_REQ_TOTAL};
-pub use wallet::WalletChangeCallback;
 
 /// JSON-RPC server for a Neo node.
 pub struct RpcServer {
@@ -53,7 +54,6 @@ pub struct RpcServer {
     handler_lookup: Arc<RwLock<HashMap<String, Arc<RpcHandler>>>>,
     started: bool,
     wallet: wallet::WalletHandle,
-    wallet_change_callback: Option<WalletChangeCallback>,
     /// Session storage using Mutex instead of `RwLock` to enforce exclusive access.
     ///
     /// # Security Note
@@ -71,4 +71,5 @@ pub struct RpcServer {
     /// Process-wide fallback limiter for RPC transports that do not expose client IPs.
     rate_limiter: Arc<GovernorRateLimiter>,
     remote_ledger_rpc: Option<RemoteLedgerRpcClient>,
+    oracle_service: Option<Arc<RpcOracleService>>,
 }

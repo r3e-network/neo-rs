@@ -5,21 +5,45 @@
 //! error projection helpers together so the facade reads as engine composition
 //! rather than support mechanics.
 
+use crate::{
+    ApplicationExecutionContext as ExecutionContext, ApplicationExecutionEngine as ExecutionEngine,
+};
 use neo_error::{CoreError, CoreResult};
 use neo_manifest::CallFlags;
 use neo_primitives::UInt160;
-use neo_vm::execution_context::ExecutionContext;
-use neo_vm::{ExecutionEngine, StackItem, VmError};
+use neo_vm::{StackItem, VmError};
 
 use super::InteropHandler;
+use crate::diagnostic::Diagnostic;
+use crate::native_contract_provider::NativeContractProvider;
 
 pub(super) type StdResult<T> = CoreResult<T>;
 
-#[derive(Clone, Copy)]
-pub(super) struct HostInteropHandler {
+pub(super) struct HostInteropHandler<P, D, B>
+where
+    P: NativeContractProvider + 'static,
+    D: Diagnostic + 'static,
+{
     pub(super) price: i64,
     pub(super) required_call_flags: CallFlags,
-    pub(super) handler: InteropHandler,
+    pub(super) handler: InteropHandler<P, D, B>,
+}
+
+impl<P, D, B> Copy for HostInteropHandler<P, D, B>
+where
+    P: NativeContractProvider + 'static,
+    D: Diagnostic + 'static,
+{
+}
+
+impl<P, D, B> Clone for HostInteropHandler<P, D, B>
+where
+    P: NativeContractProvider + 'static,
+    D: Diagnostic + 'static,
+{
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 pub(super) fn map_core_error_to_vm_error(error: CoreError) -> VmError {
@@ -32,24 +56,24 @@ pub(super) fn map_core_error_to_vm_error(error: CoreError) -> VmError {
     }
 }
 
-pub(super) struct VmEngineHost {
-    engine: ExecutionEngine,
+pub(super) struct VmEngineHost<B> {
+    engine: ExecutionEngine<B>,
 }
 
-impl VmEngineHost {
-    pub(super) fn new(engine: ExecutionEngine) -> Self {
+impl<B> VmEngineHost<B> {
+    pub(super) fn new(engine: ExecutionEngine<B>) -> Self {
         Self { engine }
     }
 
-    pub(super) fn engine(&self) -> &ExecutionEngine {
+    pub(super) fn engine(&self) -> &ExecutionEngine<B> {
         &self.engine
     }
 
-    pub(super) fn engine_mut(&mut self) -> &mut ExecutionEngine {
+    pub(super) fn engine_mut(&mut self) -> &mut ExecutionEngine<B> {
         &mut self.engine
     }
 
-    pub(super) fn current_context(&self) -> Option<&ExecutionContext> {
+    pub(super) fn current_context(&self) -> Option<&ExecutionContext<B>> {
         self.engine.current_context()
     }
 }

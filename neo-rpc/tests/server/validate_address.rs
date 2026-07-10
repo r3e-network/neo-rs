@@ -4,20 +4,21 @@
 use neo_config::ProtocolSettings;
 use neo_primitives::UInt160;
 use neo_rpc::{RpcServer, RpcServerConfig, server::NodeContext};
+use neo_storage::persistence::providers::RuntimeStore;
 use neo_system::Node;
 use serde_json::Value;
 use std::sync::Arc;
 
 fn node_to_context(node: &Node) -> NodeContext {
     NodeContext::from_parts(
-        Arc::clone(&node.settings),
-        Arc::clone(&node.storage),
-        node.blockchain.clone(),
-        node.network.clone(),
-        Arc::clone(&node.mempool),
-        Arc::clone(&node.header_cache),
-        node.services.clone(),
-        Arc::clone(&node.native_contract_provider),
+        node.settings(),
+        Arc::new(RuntimeStore::Memory(node.storage().as_ref().clone())),
+        node.blockchain(),
+        node.network(),
+        node.mempool(),
+        node.header_cache(),
+        neo_rpc::server::RpcServices::default(),
+        node.native_contract_provider(),
     )
 }
 
