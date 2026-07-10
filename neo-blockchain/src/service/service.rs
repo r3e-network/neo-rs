@@ -16,7 +16,6 @@
 //! cheap-to-clone facade the rest of the node uses to talk to the
 //! loop.
 
-use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -26,7 +25,7 @@ use tokio::sync::{broadcast, mpsc};
 use crate::command::BlockchainCommand;
 use crate::handle::BlockchainHandle;
 use crate::header_cache::HeaderCache;
-use crate::internal::UnverifiedBlocksList;
+use crate::internal::UnverifiedBlockCache;
 use crate::ledger_context::LedgerContext;
 use crate::service::MempoolLike;
 use crate::service_context::SystemContext;
@@ -61,7 +60,7 @@ pub struct BlockchainService<S, M> {
     /// Mempool access (used by the high-level `add_transaction` API).
     pub(crate) mempool: Arc<M>,
     /// Future blocks grouped by index until their parent is persisted.
-    pub(crate) unverified_blocks: Arc<Mutex<BTreeMap<u32, UnverifiedBlocksList>>>,
+    pub(crate) unverified_blocks: Mutex<UnverifiedBlockCache>,
     /// Optional validation-mode upper bound for persisted blocks.
     pub(crate) stop_at_height: Option<u32>,
 }
@@ -115,7 +114,7 @@ where
             cmd_rx,
             event_tx,
             mempool,
-            unverified_blocks: Arc::new(Mutex::new(BTreeMap::new())),
+            unverified_blocks: Mutex::new(UnverifiedBlockCache::default()),
             stop_at_height: None,
         };
         (service, handle)
@@ -127,11 +126,7 @@ where
     }
 
     pub(crate) fn unverified_block_count(&self) -> usize {
-        self.unverified_blocks
-            .lock()
-            .values()
-            .map(UnverifiedBlocksList::len)
-            .sum()
+        self.unverified_blocks.lock().len()
     }
 
     /// Convenience constructor that uses the default channel

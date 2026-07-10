@@ -112,8 +112,11 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync {
 ### neo-rs (current)
 
 Blocks processed sequentially through a single `BlockchainService` command loop.
-Out-of-order blocks parked in `Arc<Mutex<BTreeMap<u32, UnverifiedBlocksList>>>`.
-Drain batch size = 500, cache max = 50K. Eviction drops top 25% (O(n log n)).
+Out-of-order blocks are parked in a single-lock `UnverifiedBlockCache` backed
+by height-ordered buckets with exact O(1) block-count accounting. Drain batch
+size = 500 and cache max = 50K. On overflow it evicts exactly 25% of blocks
+from the farthest-future heights without allocating a key list; multiple fork
+candidates at one height no longer cause the whole bucket to be dropped.
 `neo_runtime::sync_pipeline` provides stage identifiers, Reth-style
 `CommitPolicy` thresholds (`max_blocks`, `max_changes`, `max_cumulative_gas`,
 `max_duration`), a provider-neutral `SyncStageCheckpointStore` seam,

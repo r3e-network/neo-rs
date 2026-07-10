@@ -450,6 +450,27 @@ async fn future_inventory_block_is_parked_then_drained_after_parent_persists() {
     );
 }
 
+#[test]
+fn unverified_cache_evicts_exact_block_fraction_when_one_height_is_flooded() {
+    const CACHE_CAPACITY: usize = 50_000;
+    let (service, _handle, _snapshot) = store_fixture();
+    let mut header = Header::new();
+    header.set_index(10_000);
+    let block = Arc::new(Block::from_parts(header, vec![]));
+
+    for _ in 0..CACHE_CAPACITY {
+        assert!(service.park_unverified_block(Arc::clone(&block), false, false));
+    }
+    assert_eq!(service.unverified_block_count(), CACHE_CAPACITY);
+
+    assert!(service.park_unverified_block(block, false, false));
+    assert_eq!(
+        service.unverified_block_count(),
+        CACHE_CAPACITY - CACHE_CAPACITY / 4 + 1,
+        "overflow must evict 25% of blocks, not the entire flooded height bucket"
+    );
+}
+
 #[tokio::test]
 async fn inventory_block_batch_persists_consecutive_blocks_through_inventory_path() {
     let (service, _handle, snapshot) = store_fixture();

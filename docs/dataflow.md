@@ -64,7 +64,9 @@ The node composition code does not construct private `BlockchainCommand`
 variants directly. The blockchain service then structurally and
 witness-verifies blocks, runs the C# `Blockchain.Persist` pipeline, and commits
 them durably. Out-of-order blocks are parked and drained when their parent
-lands. The typed inventory handle methods deliberately preserve
+lands. The parked-block cache tracks its exact size under one lock and evicts
+only the configured fraction of farthest-future candidates under pressure.
+The typed inventory handle methods deliberately preserve
 inventory-specific behavior (relay policy, parking, draining, and live mempool
 maintenance) instead of routing peer blocks through the generic bulk-import
 command.

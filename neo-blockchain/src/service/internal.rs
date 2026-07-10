@@ -6,7 +6,7 @@
 //! per-type modules (`persist_completed`, `import`, `reverify`, `command`,
 //! ...).
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 
 use neo_payloads::Block;
@@ -71,12 +71,99 @@ impl UnverifiedBlocksList {
         self.blocks.pop_front()
     }
 
+    pub(crate) fn pop_back(&mut self) -> Option<UnverifiedBlock> {
+        self.blocks.pop_back()
+    }
+
     pub(crate) fn len(&self) -> usize {
         self.blocks.len()
     }
 
     pub(crate) fn is_empty(&self) -> bool {
         self.blocks.is_empty()
+    }
+}
+
+/// Bounded parked-block storage with exact block-count accounting.
+///
+/// Heights remain ordered so the service can drain the next canonical block
+/// and evict the farthest-future candidates under pressure. The cached count
+/// avoids rescanning every height bucket for each incoming block.
+#[derive(Debug, Default)]
+pub(crate) struct UnverifiedBlockCache {
+    by_height: BTreeMap<u32, UnverifiedBlocksList>,
+    len: usize,
+}
+
+impl UnverifiedBlockCache {
+    pub(crate) const fn len(&self) -> usize {
+        self.len
+    }
+
+    pub(crate) fn push(&mut self, block: UnverifiedBlock) {
+        self.by_height
+            .entry(block.block.index())
+            .or_default()
+            .push_back(block);
+        self.len += 1;
+    }
+
+    pub(crate) fn pop_front(&mut self, height: u32) -> Option<UnverifiedBlock> {
+        let (block, empty) = {
+            let list = self.by_height.get_mut(&height)?;
+            let block = list.pop_front();
+            (block, list.is_empty())
+        };
+        if block.is_some() {
+            self.len -= 1;
+        }
+        if empty {
+            self.by_height.remove(&height);
+        }
+        block
+    }
+
+    /// Evict up to `count` blocks from the highest heights.
+    pub(crate) fn evict_highest(&mut self, count: usize) -> usize {
+        let target = count.min(self.len);
+        let mut evicted = 0usize;
+
+        while evicted < target {
+            let Some(height) = self.by_height.last_key_value().map(|(height, _)| *height) else {
+                break;
+            };
+            let empty = {
+                let Some(list) = self.by_height.get_mut(&height) else {
+                    break;
+                };
+                while evicted < target && list.pop_back().is_some() {
+                    evicted += 1;
+                }
+                list.is_empty()
+            };
+            if empty {
+                self.by_height.remove(&height);
+            }
+        }
+
+        self.len -= evicted;
+        evicted
+    }
+
+    pub(crate) fn remove_up_to(&mut self, up_to_height: u32) -> usize {
+        let mut removed = 0usize;
+        while self
+            .by_height
+            .first_key_value()
+            .is_some_and(|(height, _)| *height <= up_to_height)
+        {
+            let Some((_, blocks)) = self.by_height.pop_first() else {
+                break;
+            };
+            removed += blocks.len();
+        }
+        self.len -= removed;
+        removed
     }
 }
 

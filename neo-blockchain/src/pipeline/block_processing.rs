@@ -37,69 +37,42 @@ where
         relay: bool,
         pre_verified: bool,
     ) -> bool {
-        if self.unverified_block_count() >= MAX_UNVERIFIED_CACHE_SIZE {
-            // Cache is full. Clear the oldest entries (highest heights) to make
-            // room — this prevents a permanent stall where the cache is full of
-            // future blocks that can't be processed because the node is waiting
-            // for a specific missing block. The cleared blocks will be
-            // re-requested by the network layer's sync timer.
-            let mut cache = self.unverified_blocks.lock();
-            let count_before = cache.values().map(|v| v.len()).sum::<usize>();
-            if count_before >= MAX_UNVERIFIED_CACHE_SIZE {
-                // Drop the top 25% of entries (highest block heights).
-                let keys_to_drop: Vec<u32> =
-                    cache.keys().rev().take(count_before / 4).copied().collect();
-                for k in keys_to_drop {
-                    cache.remove(&k);
-                }
-                let dropped = count_before - cache.values().map(|v| v.len()).sum::<usize>();
-                warn!(
-                    target: "neo",
-                    index = block.index(),
-                    dropped,
-                    "unverified block cache overflow; evicted oldest 25% to prevent permanent stall"
-                );
-            }
-        }
-
         let index = block.index();
-        let mut cache = self.unverified_blocks.lock();
-        cache
-            .entry(index)
-            .or_default()
-            .push_back(UnverifiedBlock::new(block, relay, pre_verified));
+        let dropped = {
+            let mut cache = self.unverified_blocks.lock();
+            let dropped = if cache.len() >= MAX_UNVERIFIED_CACHE_SIZE {
+                // Keep the closest future heights and discard exactly one
+                // quarter of the farthest-future blocks. The network sync
+                // scheduler can request discarded inventory again after the
+                // missing gap lands.
+                let eviction_target = (cache.len() / 4).max(1);
+                cache.evict_highest(eviction_target)
+            } else {
+                0
+            };
+            cache.push(UnverifiedBlock::new(block, relay, pre_verified));
+            dropped
+        };
+        if dropped > 0 {
+            warn!(
+                target: "neo",
+                index,
+                dropped,
+                "unverified block cache overflow; evicted farthest-future blocks"
+            );
+        }
         true
     }
 
     fn pop_next_unverified_block(&self) -> Option<UnverifiedBlock> {
         let next_index = self.ledger.current_height().saturating_add(1);
-        let mut cache = self.unverified_blocks.lock();
-        let (next, empty) = {
-            let list = cache.get_mut(&next_index)?;
-            let next = list.pop_front();
-            (next, list.is_empty())
-        };
-        if empty {
-            cache.remove(&next_index);
-        }
-        next
+        self.unverified_blocks.lock().pop_front(next_index)
     }
 
     /// Drop parked blocks that are no longer future candidates after a trusted
     /// import advanced the canonical tip.
     pub(crate) fn remove_parked_blocks_up_to(&self, up_to_index: u32) -> usize {
-        let mut cache = self.unverified_blocks.lock();
-        let keys_to_remove: Vec<u32> = cache
-            .range(..=up_to_index)
-            .map(|(index, _)| *index)
-            .collect();
-        let mut removed = 0usize;
-        for index in keys_to_remove {
-            if let Some(blocks) = cache.remove(&index) {
-                removed += blocks.len();
-            }
-        }
-        removed
+        self.unverified_blocks.lock().remove_up_to(up_to_index)
     }
 
     /// Drain the unverified block cache, persisting up to one bounded batch of
