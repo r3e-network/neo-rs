@@ -25,7 +25,7 @@ impl ConsensusContext {
     /// and the proposal. Used for the one-shot snapshot fill at PrepareRequest
     /// time (C# `OnPrepareRequestReceived` bulk mempool scan). For an
     /// incrementally-arriving single transaction (C# `OnTransaction`), use
-    /// [`mark_transaction_available`] instead, which is additive.
+    /// [`Self::mark_transaction_available`] instead, which is additive.
     pub fn mark_available_transactions<I>(&mut self, tx_hashes: I)
     where
         I: IntoIterator<Item = UInt256>,
@@ -40,7 +40,7 @@ impl ConsensusContext {
 
     /// Additively records that a single proposed transaction is now locally
     /// available (C# `ConsensusService.AddTransaction` populating
-    /// `context.Transactions[tx.Hash]`). Unlike [`mark_available_transactions`]
+    /// `context.Transactions[tx.Hash]`). Unlike [`Self::mark_available_transactions`]
     /// this never clears prior availability, so a late-arriving transaction
     /// (C# `OnTransaction`) accumulates toward completeness instead of resetting
     /// it. Returns `true` if `hash` belongs to the current proposal and was not

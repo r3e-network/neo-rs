@@ -6,7 +6,7 @@
 //! Hardfork configuration and management for Neo N3.
 //!
 //! This module provides hardfork activation tracking and management. The
-//! `Hardfork` enum mirrors C# Neo v3.10.1, while [`ProtocolSettings`] owns the
+//! `Hardfork` enum mirrors C# Neo v3.10.1, while [`crate::ProtocolSettings`] owns the
 //! C# loader rule that backfills omitted leading hardforks at height zero.
 //!
 //! ## Hardforks
@@ -45,7 +45,7 @@ pub use neo_primitives::{Hardfork, HardforkParseError};
 /// Hardfork manager for explicit Neo network schedules.
 ///
 /// `HardforkManager::new()` starts empty. C# `ProtocolSettings.Default` is
-/// represented by [`ProtocolSettings::csharp_default`], which applies the
+/// represented by [`crate::ProtocolSettings::csharp_default`], which applies the
 /// v3.10.1 `EnsureOmmitedHardforks` rule and enables every known hardfork at
 /// height zero.
 #[derive(Debug)]
@@ -61,7 +61,7 @@ impl HardforkManager {
 
     /// Creates an empty hardfork schedule.
     ///
-    /// Use [`ProtocolSettings::csharp_default`] when the C# v3.10.1 default
+    /// Use [`crate::ProtocolSettings::csharp_default`] when the C# v3.10.1 default
     /// `Hardforks` object is required.
     ///
     /// # Returns

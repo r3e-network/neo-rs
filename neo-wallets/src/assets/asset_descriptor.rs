@@ -14,13 +14,13 @@
 //! (`src/Neo/Wallets/AssetDescriptor.cs`):
 //!
 //! 1. `ContractManagement.GetContract(snapshot, assetId)` — absent ⇒ error.
-//! 2. Read `symbol` and `decimals` via [`Nep17MetadataReader`] (which runs
+//! 2. Read `symbol` and `decimals` via [`neo_runtime::Nep17MetadataReader`] (which runs
 //!    a read-only contract call in the execution layer).
 //! 3. `AssetName` is the contract manifest name.
 //!
 //! The VM execution that was previously inlined here (building a script,
 //! running `ApplicationEngine`, checking `VmState::HALT`) has been extracted
-//! into the [`Nep17MetadataReader`] trait (defined in `neo-runtime`, implemented
+//! into the [`neo_runtime::Nep17MetadataReader`] trait (defined in `neo-runtime`, implemented
 //! in `neo-execution`). This removes the direct `neo-wallets → neo-execution`
 //! dependency: the wallet layer now depends on the trait, not the engine.
 

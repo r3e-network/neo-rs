@@ -4,10 +4,9 @@
 //! (`bls12381Serialize` / `bls12381Deserialize` / `bls12381Equal` / `…Add` /
 //! `…Mul` / `…Pairing`).
 //!
-//! This is distinct from the BLS *signature* helpers in [`crate::bls12381`]
-//! (which use `blst::min_sig`): the `CryptoLib` methods operate on raw group
-//! elements (G1, G2, and the target group Gt), so they need the low-level
-//! point API rather than the signature scheme.
+//! These `CryptoLib` methods operate on raw group elements (G1, G2, and the
+//! target group Gt), so they use the low-level `blst` point API rather than a
+//! BLS signature-scheme facade.
 //!
 //! C# parity reference: `Neo.SmartContract.Native.CryptoLib.BLS12_381` +
 //! `Neo.Cryptography.BLS12_381` (a managed port of the zkcrypto `bls12_381`

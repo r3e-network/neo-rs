@@ -142,7 +142,8 @@ where
     ///
     /// Composition roots should pass the concrete backend type they already
     /// own when it is known (`MdbxStore`, `RocksDbStore`, `MemoryStore`, ...).
-    /// Runtime-selected startup code should pass the concrete [`RuntimeStore`]
+    /// Runtime-selected startup code should pass the concrete
+    /// [`neo_storage::persistence::providers::RuntimeStore`]
     /// enum, so the state service stays provider-neutral through the generic
     /// `S` parameter rather than depending on RocksDB/MDBX/memory directly.
     pub fn with_mpt_store(full_state: bool, backing: Arc<S>) -> MptResult<Self> {

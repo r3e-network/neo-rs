@@ -85,7 +85,7 @@ impl<T> OracleRuntimeProvider for T where T: ConfigProvider + StoreProvider + Tx
 /// Oracle service runtime.
 ///
 /// `R` is the composed runtime provider (usually the node composition root or
-/// RPC [`NodeContext`]) and is kept concrete so oracle request processing does
+/// RPC `NodeContext`) and is kept concrete so oracle request processing does
 /// not erase storage/config/transaction-admission calls behind trait objects.
 pub struct OracleService<R, P = neo_native_contracts::StandardNativeProvider>
 where
