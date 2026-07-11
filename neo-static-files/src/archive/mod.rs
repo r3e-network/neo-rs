@@ -1,4 +1,19 @@
-//! Static-file provider, factory, ownership, and crash-recovery facade.
+//! # Static archive provider
+//!
+//! ## Boundary
+//!
+//! This module owns archive lifecycle, exclusive writer ownership, durable
+//! append ordering, lookup, truncation, and recovery. Frame bytes and opaque
+//! records are defined by sibling modules.
+//!
+//! ## Contents
+//!
+//! - `config`: Compression, cache, and resource limits.
+//! - `factory`: Archive creation, indexed open, and suffix recovery.
+//! - `index`: MDBX frame/row locations and strict archive scanning.
+//! - `io`: Positioned file I/O and directory durability helpers.
+//! - `lease`: Kernel-held single-writer exclusion.
+//! - `provider`: Cloneable append, lookup, truncate, and scrub capability.
 
 use std::path::Path;
 
@@ -12,7 +27,7 @@ mod lease;
 mod provider;
 
 pub use config::StaticFileConfig;
-pub use factory::StaticFileArchiveFactory;
+pub use factory::{StaticFileArchiveFactory, StaticFileOpenStats};
 pub use provider::StaticFileArchive;
 
 /// Read capability for opaque records in a static-file archive.

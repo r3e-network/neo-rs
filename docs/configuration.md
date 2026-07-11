@@ -61,7 +61,7 @@ Persistence backend.
 | `mdbx_geometry_upper_gb` | integer | backend default | MDBX map upper bound in GiB. Shipped MainNet/TestNet configs pin this so the mmap geometry is explicit. |
 | `mdbx_geometry_growth_mb` | integer | backend default | MDBX map growth step in MiB. |
 | `mdbx_max_readers` | integer | backend default | MDBX reader slot limit for concurrent RPC/service reads. |
-| `static_files_dir` | path | none (disabled) | Enables the finalized Ledger static archive and stores `ledger.static` in this directory. The configured provider becomes the shared historical fallback for blockchain, consensus, P2P, admission, wallet, and RPC reads. Requires a writable persistent canonical backend. |
+| `static_files_dir` | path | none (disabled) | Enables the finalized Ledger static archive, storing authoritative frames in `ledger.static` and the derived offset index in `ledger.static.index/` (MDBX). The configured provider becomes the shared historical fallback for blockchain, consensus, P2P, admission, wallet, and RPC reads. Requires a writable persistent canonical backend. |
 | `static_files_compression_level` | integer | `3` | Zstandard level applied independently to each finalized-height frame. |
 | `static_files_cache_capacity` | integer | `64` | Number of decompressed height frames retained by the LRU cache; must be greater than zero. |
 | `static_files_recovery_batch_blocks` | integer | `1024` | Maximum hot Ledger blocks appended per startup reconciliation sync; must be greater than zero. |
@@ -83,9 +83,22 @@ Notes:
   itself. A second node using the same file, including through a symlink or
   hard link, fails startup; the kernel releases the lease automatically when
   the owning process exits, so no stale lockfile cleanup is required.
-- The current latest-key index is rebuilt in memory on startup. Its scan time
-  and memory scale with archived rows until persistent MDBX offset/checkpoint
-  indexes and segment rotation are implemented.
+- Static-file publication is ordered `ledger.static append -> sync_data -> MDBX
+  index transaction`. The index stores frame boundaries plus every row-location
+  version, so latest lookup and rollback after truncation do not rebuild a
+  process-local map. A clean open validates the archive identity and published
+  tail, then scans and republishes only bytes beyond the indexed file length.
+  Missing, stale, or archive-ahead indexes rebuild from authoritative frames.
+- Reads decompress and checksum the complete containing frame before returning
+  a value. Published corruption is reported and is never guessed to be a torn
+  write; only an incomplete or corrupt **unpublished** final suffix may be
+  truncated during recovery. `StaticFileArchive::scrub` performs an explicit
+  full frame/index parity check for maintenance integrations. The daemon does
+  not expose that scrub as a CLI operation yet.
+- Static archive format v2 binds the sidecar to a non-zero archive identity.
+  Format v1 development archives are intentionally not migrated: remove both
+  old mirror artifacts and let startup reconcile them from the authoritative
+  hot store.
 - Archive-enabled P2P sync uses at most 64 blocks per deferred canonical batch.
   Larger batches from other import sources fall back to per-block durability,
   bounding pending Ledger-row memory instead of accumulating an entire large

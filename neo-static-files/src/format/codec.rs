@@ -15,7 +15,7 @@ pub(crate) const ROW_INDEX_FIXED_LEN: usize = 10;
 const FILE_MAGIC: &[u8; 8] = b"NEORSF01";
 const FRAME_MAGIC: &[u8; 8] = b"NRSFRM01";
 const FRAME_FOOTER_MAGIC: &[u8; 8] = b"NRSEND01";
-const FORMAT_VERSION: u16 = 1;
+const FORMAT_VERSION: u16 = 2;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct FrameHeader {
@@ -30,7 +30,7 @@ pub(crate) struct FrameHeader {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct EncodedRow {
+pub(crate) struct FrameIndexRow {
     pub(crate) key: Box<[u8]>,
     pub(crate) value_offset: u32,
     pub(crate) value_len: u32,
@@ -40,27 +40,21 @@ pub(crate) struct EncodedRow {
 pub(crate) struct EncodedFrame {
     pub(crate) bytes: Vec<u8>,
     pub(crate) header: FrameHeader,
-    pub(crate) rows: Vec<EncodedRow>,
+    pub(crate) rows: Vec<FrameIndexRow>,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct ParsedIndexRow {
-    pub(crate) key: Box<[u8]>,
-    pub(crate) value_offset: u32,
-    pub(crate) value_len: u32,
-}
-
-pub(crate) fn file_header() -> [u8; FILE_HEADER_LEN] {
+pub(crate) fn file_header(archive_id: u64) -> [u8; FILE_HEADER_LEN] {
     let mut header = [0u8; FILE_HEADER_LEN];
     header[..8].copy_from_slice(FILE_MAGIC);
     header[8..10].copy_from_slice(&FORMAT_VERSION.to_le_bytes());
     header[10..12].copy_from_slice(&(FILE_HEADER_LEN as u16).to_le_bytes());
-    let checksum = xxh3_64(&header[..16]);
+    header[24..32].copy_from_slice(&archive_id.to_le_bytes());
+    let checksum = file_header_checksum(header);
     header[16..24].copy_from_slice(&checksum.to_le_bytes());
     header
 }
 
-pub(crate) fn validate_file_header(bytes: &[u8], offset: u64) -> StaticFileResult<()> {
+pub(crate) fn validate_file_header(bytes: &[u8], offset: u64) -> StaticFileResult<u64> {
     if bytes.len() != FILE_HEADER_LEN {
         return Err(StaticFileError::invalid(offset, "truncated file header"));
     }
@@ -82,13 +76,27 @@ pub(crate) fn validate_file_header(bytes: &[u8], offset: u64) -> StaticFileResul
         ));
     }
     let stored_checksum = read_u64(bytes, 16, offset)?;
-    if stored_checksum != xxh3_64(&bytes[..16]) {
+    let mut header = [0u8; FILE_HEADER_LEN];
+    header.copy_from_slice(bytes);
+    if stored_checksum != file_header_checksum(header) {
         return Err(StaticFileError::invalid(
             offset,
             "file header checksum mismatch",
         ));
     }
-    Ok(())
+    let archive_id = read_u64(bytes, 24, offset)?;
+    if archive_id == 0 {
+        return Err(StaticFileError::invalid(
+            offset,
+            "archive id must be non-zero",
+        ));
+    }
+    Ok(archive_id)
+}
+
+fn file_header_checksum(mut header: [u8; FILE_HEADER_LEN]) -> u64 {
+    header[16..24].fill(0);
+    xxh3_64(&header)
 }
 
 pub(crate) fn encode_frame(
@@ -153,7 +161,7 @@ pub(crate) fn encode_frame(
         index.extend_from_slice(&value_len.to_le_bytes());
         index.extend_from_slice(&key);
         values.extend_from_slice(&value);
-        encoded_rows.push(EncodedRow {
+        encoded_rows.push(FrameIndexRow {
             key: key.into_boxed_slice(),
             value_offset,
             value_len,
@@ -300,7 +308,7 @@ pub(crate) fn parse_index(
     header: FrameHeader,
     index: &[u8],
     offset: u64,
-) -> StaticFileResult<Vec<ParsedIndexRow>> {
+) -> StaticFileResult<Vec<FrameIndexRow>> {
     if xxh3_64(index) != header.index_checksum {
         return Err(StaticFileError::Checksum {
             height: header.height,
@@ -341,7 +349,7 @@ pub(crate) fn parse_index(
                 key_hash: xxh3_64(key),
             });
         }
-        rows.push(ParsedIndexRow {
+        rows.push(FrameIndexRow {
             key: key.to_vec().into_boxed_slice(),
             value_offset,
             value_len,

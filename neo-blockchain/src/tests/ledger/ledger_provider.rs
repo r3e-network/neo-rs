@@ -552,6 +552,59 @@ fn static_archive_reconciles_a_missing_durable_hot_prefix() {
 }
 
 #[test]
+fn static_archive_reconcile_rolls_back_persistent_row_versions_above_hot_tip() {
+    use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+
+    let hot = DataCache::new(false);
+    let archived = DataCache::new(false);
+    let mut blocks = Vec::new();
+    for height in 0..=2 {
+        let mut header = Header::new();
+        header.set_index(height);
+        let block = Block::from_parts(header, vec![test_transaction(6_100 + height)]);
+        let hash = block.header.try_hash().expect("block hash");
+        crate::ledger_records::LedgerRecords::write_on_persist_records(&archived, &block, &hash)
+            .expect("archived on-persist records");
+        crate::ledger_records::LedgerRecords::write_post_persist_record(&archived, &hash, height)
+            .expect("archived post-persist record");
+        if height <= 1 {
+            crate::ledger_records::LedgerRecords::write_on_persist_records(&hot, &block, &hash)
+                .expect("hot on-persist records");
+            crate::ledger_records::LedgerRecords::write_post_persist_record(&hot, &hash, height)
+                .expect("hot post-persist record");
+        }
+        blocks.push(block);
+    }
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let files = StaticFileArchiveFactory::default()
+        .open(&temp.path().join("ledger.static"))
+        .expect("archive");
+    let archive = StaticLedgerArchive::new(files);
+    for block in &blocks {
+        archive
+            .append_block(&archived, block)
+            .expect("append archived block");
+    }
+
+    let recovery = archive
+        .reconcile(&hot, Some(1), 2)
+        .expect("truncate ahead archive");
+
+    assert_eq!(recovery.truncated_blocks, 1);
+    assert_eq!(recovery.final_tip, Some(1));
+    assert_eq!(archive.tip(), Some(1));
+    assert!(
+        archive
+            .provider()
+            .block_by_index(2)
+            .expect("block lookup")
+            .is_none()
+    );
+    archive.files().scrub().expect("archive/index parity");
+}
+
+#[test]
 fn static_archive_rejects_an_interior_canonical_hash_mismatch() {
     use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
 

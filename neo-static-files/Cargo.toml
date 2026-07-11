@@ -14,7 +14,7 @@ readme.workspace = true
 description = "Append-only compressed static-file storage for immutable Neo ledger records"
 
 [dependencies]
-hashbrown = { workspace = true }
+libmdbx = { workspace = true }
 lru = { workspace = true }
 parking_lot = { workspace = true }
 thiserror = { workspace = true }

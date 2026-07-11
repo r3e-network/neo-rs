@@ -7,11 +7,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use lru::LruCache;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 
 use super::StaticFileProvider;
 use super::config::StaticFileConfig;
-use super::index::{ArchiveIndex, RowLocation, scan_archive};
+use super::index::{
+    ArchiveIndex, PositionedEncodedFrame, RowLocation, ScanMode, ScannedFrame, read_frame_index,
+    scan_archive,
+};
 use super::io::{read_exact_at, write_all_at};
 
 use crate::format::{FILE_HEADER_LEN, encode_frame};
@@ -59,7 +62,12 @@ impl StaticFileArchive {
             encoded.push(encode_frame(record, self.inner.config)?);
         }
 
-        let start = self.inner.index.read().file_len;
+        let start = self
+            .inner
+            .index
+            .state()
+            .ok_or_else(|| StaticFileError::invalid_index("archive index is not initialized"))?
+            .indexed_file_len;
         let mut offset = start;
         for frame in &encoded {
             if let Err(source) = write_all_at(&self.inner.file, offset, &frame.bytes) {
@@ -83,37 +91,61 @@ impl StaticFileArchive {
             ));
         }
 
-        let mut index = self.inner.index.write();
         let mut frame_offset = start;
-        for frame in encoded {
-            index.insert_encoded_frame(frame_offset, &frame);
+        let mut positioned = Vec::with_capacity(encoded.len());
+        for frame in &encoded {
+            positioned.push(PositionedEncodedFrame {
+                offset: frame_offset,
+                frame,
+            });
             frame_offset += frame.header.frame_len;
         }
-        index.file_len = offset;
+        if let Err(error) = self.inner.index.publish_frames(&positioned) {
+            self.inner.healthy.store(false, Ordering::Release);
+            return Err(error);
+        }
+        debug_assert_eq!(frame_offset, offset);
         Ok(())
     }
 
-    /// Truncates every frame above `height` and rebuilds the key index.
+    /// Truncates every frame above `height` and rolls back indexed row versions.
     ///
     /// Passing `None` resets the archive to its versioned file header. Passing
     /// a height at or above the current tip is a no-op.
     pub fn truncate_after(&self, height: Option<u32>) -> StaticFileResult<()> {
         let _write_guard = self.inner.write_lock.lock();
-        let current_len = self.inner.index.read().file_len;
-        let target_len = {
-            let index = self.inner.index.read();
-            match height {
-                None => u64::try_from(FILE_HEADER_LEN).expect("header length fits u64"),
-                Some(target) if index.tip().is_none_or(|tip| target >= tip) => current_len,
-                Some(target) => index.frames.range(..=target).next_back().map_or(
-                    u64::try_from(FILE_HEADER_LEN).expect("header length fits u64"),
-                    |(_, frame)| frame.end,
-                ),
-            }
-        };
-        if target_len == current_len {
+        let state =
+            self.inner.index.state().ok_or_else(|| {
+                StaticFileError::invalid_index("archive index is not initialized")
+            })?;
+        if height.is_some_and(|target| state.tip.is_none_or(|tip| target >= tip)) {
             return Ok(());
         }
+        let target_len = match height {
+            None => u64::try_from(FILE_HEADER_LEN).expect("header length fits u64"),
+            Some(target) => {
+                self.inner
+                    .index
+                    .frame(target)?
+                    .ok_or_else(|| {
+                        StaticFileError::invalid_index("truncate target frame is missing")
+                    })?
+                    .end
+            }
+        };
+        if target_len == state.indexed_file_len {
+            return Ok(());
+        }
+
+        let removed = self
+            .inner
+            .index
+            .frames_after(height)?
+            .into_iter()
+            .map(|frame| {
+                read_frame_index(&self.inner.file, &self.inner.path, self.inner.config, frame)
+            })
+            .collect::<StaticFileResult<Vec<_>>>()?;
 
         self.inner
             .file
@@ -123,13 +155,10 @@ impl StaticFileArchive {
             .file
             .sync_all()
             .map_err(|source| StaticFileError::io("sync truncation", &self.inner.path, source))?;
-        let scanned = scan_archive(
-            &self.inner.file,
-            &self.inner.path,
-            self.inner.config,
-            target_len,
-        )?;
-        *self.inner.index.write() = scanned.index;
+        if let Err(error) = self.inner.index.truncate_after(height, &removed) {
+            self.inner.healthy.store(false, Ordering::Release);
+            return Err(error);
+        }
         self.inner.cache.lock().clear();
         self.inner.healthy.store(true, Ordering::Release);
         Ok(())
@@ -139,6 +168,83 @@ impl StaticFileArchive {
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.inner.path
+    }
+
+    /// Returns the path-adjacent MDBX index directory.
+    #[must_use]
+    pub fn index_path(&self) -> &Path {
+        self.inner.index.path()
+    }
+
+    /// Strictly verifies every archive frame and every persistent index entry.
+    ///
+    /// Normal startup trusts the durable MDBX checkpoint and validates only an
+    /// unpublished suffix. Operators can run this full scrub when they need an
+    /// eager media-integrity check instead of on-demand frame verification.
+    pub fn scrub(&self) -> StaticFileResult<()> {
+        let _write_guard = self.inner.write_lock.lock();
+        let state =
+            self.inner.index.state().ok_or_else(|| {
+                StaticFileError::invalid_index("archive index is not initialized")
+            })?;
+        let file_len = self
+            .inner
+            .file
+            .metadata()
+            .map_err(|source| StaticFileError::io("read scrub metadata", &self.inner.path, source))?
+            .len();
+        if file_len != state.indexed_file_len {
+            return Err(StaticFileError::invalid_index(
+                "archive and index lengths differ during scrub",
+            ));
+        }
+
+        const VERIFY_BATCH_FRAMES: usize = 1_024;
+        let mut batch = Vec::<ScannedFrame>::with_capacity(VERIFY_BATCH_FRAMES);
+        let outcome = scan_archive(
+            &self.inner.file,
+            &self.inner.path,
+            self.inner.config,
+            file_len,
+            u64::try_from(FILE_HEADER_LEN).expect("header length fits u64"),
+            0,
+            ScanMode::Strict,
+            |frame| {
+                batch.push(frame);
+                if batch.len() == VERIFY_BATCH_FRAMES {
+                    self.inner.index.verify_frames(&batch)?;
+                    batch.clear();
+                }
+                Ok(())
+            },
+        )?;
+        if !batch.is_empty() {
+            self.inner.index.verify_frames(&batch)?;
+        }
+        let expected_frames = state.tip.map_or(0, |tip| u64::from(tip) + 1);
+        if outcome.valid_file_len != file_len
+            || outcome.frames_scanned != expected_frames
+            || self.inner.index.stored_frame_count()? != expected_frames
+            || outcome.rows_scanned != state.row_versions
+            || self.inner.index.stored_row_versions()? != state.row_versions
+        {
+            return Err(StaticFileError::invalid_index(
+                "archive scrub counts disagree with the persistent index",
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn insert_test_frame_location(
+        &self,
+        height: u32,
+        start: u64,
+        end: u64,
+    ) -> StaticFileResult<()> {
+        self.inner
+            .index
+            .insert_test_frame(super::index::FrameLocation { height, start, end })
     }
 
     /// Returns whether no append durability failure has poisoned this handle.
@@ -186,11 +292,11 @@ impl StaticFileArchive {
 
 impl StaticFileProvider for StaticFileArchive {
     fn tip(&self) -> Option<u32> {
-        self.inner.index.read().tip()
+        self.inner.index.tip()
     }
 
     fn get(&self, key: &[u8]) -> StaticFileResult<Option<Vec<u8>>> {
-        let Some(location) = self.inner.index.read().rows.get(key).copied() else {
+        let Some(location) = self.inner.index.row(key)? else {
             return Ok(None);
         };
         let payload = self.load_payload(location)?;
@@ -218,7 +324,7 @@ pub(super) struct ArchiveInner {
     pub(super) path: PathBuf,
     pub(super) config: StaticFileConfig,
     pub(super) write_lock: Mutex<()>,
-    pub(super) index: RwLock<ArchiveIndex>,
+    pub(super) index: ArchiveIndex,
     pub(super) cache: Mutex<LruCache<u64, Arc<Vec<u8>>>>,
     pub(super) healthy: AtomicBool,
 }

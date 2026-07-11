@@ -19,6 +19,16 @@ pub enum StaticFileError {
         #[source]
         source: std::io::Error,
     },
+    /// The persistent archive index could not be opened or updated.
+    #[error("static-file index {operation} failed for {}: {message}", path.display())]
+    Index {
+        /// Index operation being performed.
+        operation: &'static str,
+        /// Affected MDBX sidecar directory.
+        path: PathBuf,
+        /// Backend diagnostic.
+        message: String,
+    },
     /// Another process owns the archive's writer and recovery lease.
     #[error("static-file archive writer is already active for {}", path.display())]
     WriterOwned {
@@ -106,6 +116,25 @@ impl StaticFileError {
         Self::InvalidFormat {
             offset,
             reason: reason.into(),
+        }
+    }
+
+    pub(crate) fn index(
+        operation: &'static str,
+        path: impl Into<PathBuf>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::Index {
+            operation,
+            path: path.into(),
+            message: message.into(),
+        }
+    }
+
+    pub(crate) fn invalid_index(reason: impl Into<String>) -> Self {
+        Self::InvalidFormat {
+            offset: 0,
+            reason: format!("persistent index: {}", reason.into()),
         }
     }
 }

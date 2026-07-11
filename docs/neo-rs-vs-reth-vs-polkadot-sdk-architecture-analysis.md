@@ -33,7 +33,17 @@ providers behind the same capability traits and GAT factory shape.
 compression, xxh3 checksums, continuity enforcement, an existing-crate LRU
 frame cache, torn-tail repair, and a kernel-owned writer lease retained by all
 provider clones. Frames begin at genesis, and only one process can perform
-recovery or append for an archive at a time. `StaticLedgerArchive` captures exact
+recovery or append for an archive at a time. A path-adjacent MDBX sidecar stores
+checksummed frame boundaries and every height-versioned row location; the
+archive header carries a non-zero identity that prevents reuse of a stale
+sidecar after file replacement. Publication is strictly archive append and
+`sync_data` first, followed by one durable sidecar transaction. Clean open
+validates the published tail and scans only an unpublished suffix. An ahead,
+missing, or incompatible sidecar is rebuilt from authoritative archive frames,
+while truncation deletes discarded versions so an overwritten key exposes its
+latest retained value without a genesis rescan. Normal lookup verifies the
+complete compressed frame before returning bytes, and explicit strict scrub
+checks every frame and index entry. `StaticLedgerArchive` captures exact
 C#-compatible Ledger rows after execution; node commit hooks keep those rows in
 memory until canonical MDBX/RocksDB durability succeeds, then append the whole
 accepted batch with one file sync. Startup validates every retained block hash
@@ -43,9 +53,9 @@ dispatched optional provider now reaches blockchain-service fallback reads,
 node and RPC transaction admission, dBFT tip/transaction/conflict checks, local
 P2P serving, wallet transaction-state reads, and historical RPC block and
 transaction queries. Archive publication is post-canonical and recoverable,
-while hot-row pruning remains deliberately disabled. The latest-key index is
-still rebuilt in memory, leaving persistent offset indexes, bounded startup
-work, archive-aware offline tooling, and prune/recovery parity for the next
+while hot-row pruning remains deliberately disabled. Persistent offsets and
+bounded archive open are complete; archive-aware offline tooling, segment
+rotation, atomic hot deletion, and prune/recovery parity remain for the next
 storage phase.
 Operational persisted-tip reads (startup, config validation, chain.acc
 resume, and daemon context) share that routed factory shape. Observability

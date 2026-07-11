@@ -104,7 +104,7 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-error | Infrastructure | Authoritative `CoreError` / `CoreResult` error types for the workspace. |
 | neo-crypto | Infrastructure | Hashing, secp256r1 ECC, signatures, BLS12-381. |
 | neo-storage | Infrastructure | `Store` traits, `DataCache`, C#-compatible raw key/value codecs, MDBX/RocksDB adapters, and in-memory providers. |
-| neo-static-files | Infrastructure | Versioned genesis-first static records with zstd compression, checksums, kernel writer ownership, LRU frame caching, and torn-tail recovery. |
+| neo-static-files | Infrastructure | Versioned genesis-first static records with zstd compression, checksums, a derived MDBX versioned-offset index, bounded suffix recovery, strict scrubbing, kernel writer ownership, and LRU frame caching. |
 | neo-config | Infrastructure | Node and protocol configuration (TOML-backed settings). |
 | neo-vm | Infrastructure | Stateful NeoVM host (execution engine, contexts, reference-counted stack items) over `neo-vm-rs`. |
 | neo-serialization | Infrastructure | Compression, binary and JSON stack-item codecs, JSONPath, in-memory storage providers. |
@@ -446,12 +446,17 @@ The detailed rules for this style live in
   only `canonical_commit_succeeded` appends the whole accepted batch and syncs
   it. A failed canonical commit discards the pending archive rows. A failed
   post-canonical append requests a recoverable restart, and startup replays the
-  lagging prefix from MDBX/RocksDB. Hot-row pruning remains disabled: the
-  archive is a safe mirror until a later phase adds a persistent archive index,
-  makes offline maintenance tools archive-aware, adds atomic hot-row deletion,
-  and proves prune/recovery parity. The current latest-key index is rebuilt in
-  memory at startup, so its memory and scan cost remain proportional to the
-  archived row count.
+  lagging prefix from MDBX/RocksDB. The archive file is authoritative; only
+  after its bytes are synced does one durable sidecar MDBX transaction publish
+  frame boundaries, all versioned row locations, tip, archive identity, and
+  indexed length. Clean open therefore validates one published boundary and
+  scans only an unpublished suffix instead of rebuilding an O(rows) in-memory
+  map. Missing, stale, or ahead sidecars are rebuilt from archive frames, and
+  truncation removes only discarded row versions so overwritten keys reveal
+  their retained value. Normal reads checksum the full compressed frame;
+  explicit `scrub` verifies every frame and sidecar entry. Hot-row pruning
+  remains disabled until offline maintenance tools use the archive provider,
+  atomic hot-row deletion exists, and prune/recovery parity is proven.
 
 - **Byte-for-byte C# parity as a hard constraint.** Wire formats, hashing,
   signature schemes, fee formulas, VM opcode pricing, native-contract behavior,

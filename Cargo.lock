@@ -2812,7 +2812,7 @@ dependencies = [
 name = "neo-static-files"
 version = "0.10.0"
 dependencies = [
- "hashbrown 0.14.5",
+ "libmdbx",
  "lru",
  "parking_lot",
  "tempfile",
