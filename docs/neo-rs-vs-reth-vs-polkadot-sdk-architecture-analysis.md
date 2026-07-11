@@ -72,11 +72,15 @@ anchor reads and extensible-payload height checks before applying witness and
 native-provider validation.
 Blockchain transaction admission uses the same shape for persisted transaction
 and conflict checks before calling into mempool policy.
-Offline `neo-db-probe` replay follows the same provider boundary for
-transaction-state and block reconstruction, but it does not yet accept the
-node's archive configuration and therefore retains the explicit clean-miss
-`EmptyLedgerProvider`. This is one reason authoritative hot-row pruning remains
-gated.
+Offline `neo-db-probe` replay accepts `--static-files-dir` and composes the
+same `OptionalStaticLedgerProvider` through `HotColdLedgerProviderFactory` for
+transaction-state and block reconstruction. Before exposing cold reads it runs
+the same hot-prefix reconciliation used by node startup, repairing lag/ahead
+tails and rejecting fork mismatch. It also routes explicit raw Ledger
+transaction-row probes to the archive after a clean hot miss, and its
+archive-only `--scrub-static-files` path verifies frame/index parity without
+opening the canonical database. Authoritative hot-row pruning remains gated on
+atomic deletion and prune/recovery proof, not an offline-tooling gap.
 Durable store fallback reads after in-memory block-cache eviction use the same
 routing for block-hash and full-block reconstruction.
 Blockchain and wallet transaction-state adapters use the node-composed routed
@@ -142,7 +146,7 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync {
 
 | Priority | Change | Benefit |
 |----------|--------|---------|
-| P0 remaining | Persistent archive offsets, archive-aware offline tooling, then hot-row pruning | Disk savings and bounded archive-index memory after the safe mirror/recovery/provider-propagation phases |
+| P0 remaining | Atomic hot-row pruning and replay/recovery parity | Disk savings after the safe mirror, persistent-index, provider-propagation, and offline-tooling phases |
 | P1 | Compact derive macro for Neo types | 15-25% storage savings, fewer bytes |
 | Implemented phase | Static Ledger mirror and provider routing | Format, exact row capture, post-canonical batch publication, startup reconciliation, and shared runtime cold reads are wired; pruning remains gated |
 | P3 | `OverlayedChanges`-style transactional overlay | Cleaner per-tx isolation |

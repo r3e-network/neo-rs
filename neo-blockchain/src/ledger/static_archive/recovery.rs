@@ -22,10 +22,11 @@ impl StaticLedgerArchive {
     /// Reconciles the archive against the authoritative canonical store.
     ///
     /// Static files are a post-canonical mirror in this phase: an incomplete
-    /// tail is repaired by the static-file opener, any impossible ahead prefix
-    /// is truncated, and missing finalized blocks are replayed from hot Ledger
-    /// records in bounded batches. Hot data remains authoritative until a
-    /// later, separately verified pruning phase is enabled.
+    /// tail is repaired by the static-file opener, then every overlapping block
+    /// hash is checked against hot truth before an ahead tail is truncated or
+    /// missing finalized blocks are replayed in bounded batches. Hot data
+    /// remains authoritative until a later, separately verified pruning phase
+    /// is enabled.
     pub fn reconcile<B: CacheRead>(
         &self,
         snapshot: &DataCache<B>,
@@ -47,16 +48,10 @@ impl StaticLedgerArchive {
             });
         };
 
-        if self.tip().is_some_and(|tip| tip > canonical_tip) {
-            self.truncate_after(Some(canonical_tip))?;
-        }
-        let truncated_blocks = original_tip
-            .map(|tip| tip.saturating_sub(canonical_tip))
-            .unwrap_or(0);
         let hot = StorageLedgerProvider::new(snapshot);
-        if let Some(archive_tip) = self.tip() {
+        if let Some(archive_tip) = original_tip {
             let archived = self.provider();
-            for height in 0..=archive_tip {
+            for height in 0..=archive_tip.min(canonical_tip) {
                 let archived_hash = archived.block_hash_by_index(height)?.ok_or_else(|| {
                     CoreError::invalid_data(format!(
                         "static archive has no block-hash row at height {height}"
@@ -74,6 +69,13 @@ impl StaticLedgerArchive {
                 }
             }
         }
+
+        if original_tip.is_some_and(|tip| tip > canonical_tip) {
+            self.truncate_after(Some(canonical_tip))?;
+        }
+        let truncated_blocks = original_tip
+            .map(|tip| tip.saturating_sub(canonical_tip))
+            .unwrap_or(0);
 
         let mut next_height = match self.tip() {
             Some(tip) => tip.checked_add(1),

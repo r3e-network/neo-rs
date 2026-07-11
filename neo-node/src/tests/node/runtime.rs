@@ -487,8 +487,9 @@ fn db_probe_replay_uses_hot_cold_ledger_provider_boundary() {
     let replay = &source[replay_start..replay_end];
 
     assert!(source.contains("HotColdLedgerProviderFactory"));
-    assert!(source.contains("EmptyLedgerProvider"));
-    assert!(replay.contains("DB_PROBE_LEDGER_PROVIDER_FACTORY"));
+    assert!(source.contains("OptionalStaticLedgerProvider"));
+    assert!(source.contains("open_offline_ledger_factory"));
+    assert!(replay.contains("let ledger_factory = open_offline_ledger_factory"));
     assert!(!source.contains("StorageLedgerProviderFactory"));
 }
 

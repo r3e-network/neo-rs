@@ -93,8 +93,9 @@ Notes:
   a value. Published corruption is reported and is never guessed to be a torn
   write; only an incomplete or corrupt **unpublished** final suffix may be
   truncated during recovery. `StaticFileArchive::scrub` performs an explicit
-  full frame/index parity check for maintenance integrations. The daemon does
-  not expose that scrub as a CLI operation yet.
+  full frame/index parity check. `neo-db-probe --static-files-dir <DIR>
+  --scrub-static-files` exposes that maintenance operation without opening a
+  hot database and fails if `<DIR>/ledger.static` does not already exist.
 - Static archive format v2 binds the sidecar to a non-zero archive identity.
   Format v1 development archives are intentionally not migrated: remove both
   old mirror artifacts and let startup reconcile them from the authoritative

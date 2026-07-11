@@ -203,6 +203,252 @@ fn cli_accepts_explicit_rocksdb_storage_provider() {
 }
 
 #[test]
+fn cli_accepts_archive_only_scrub_without_hot_database() {
+    let cli = Cli::try_parse_from([
+        "neo-db-probe",
+        "--static-files-dir",
+        "data/static",
+        "--scrub-static-files",
+    ])
+    .expect("parse archive scrub");
+
+    assert!(cli.db.is_none());
+    assert_eq!(
+        cli.static_files_dir.as_deref(),
+        Some(std::path::Path::new("data/static"))
+    );
+    assert!(cli.scrub_static_files);
+}
+
+#[test]
+fn cli_requires_hot_database_unless_running_archive_scrub() {
+    let error = Cli::try_parse_from(["neo-db-probe", "--contract-id", "-4", "--key-hex", "0c"])
+        .expect_err("ordinary probe without --db must fail");
+
+    assert!(error.to_string().contains("--db"));
+}
+
+#[test]
+fn archive_scrub_rejects_hot_database_and_other_probe_modes() {
+    let cli = Cli::try_parse_from([
+        "neo-db-probe",
+        "--db",
+        "data/mainnet",
+        "--static-files-dir",
+        "data/static",
+        "--scrub-static-files",
+    ])
+    .expect("parse conflicting scrub arguments");
+
+    assert!(ensure_static_scrub_args(&cli).is_err());
+}
+
+#[test]
+fn cli_accepts_static_archive_for_historical_transaction_replay() {
+    let cli = Cli::try_parse_from([
+        "neo-db-probe",
+        "--db",
+        "data/mainnet",
+        "--static-files-dir",
+        "data/static",
+        "--replay-tx",
+        "0xc68d5cad0e02197dd66623373751b84b2cadf742e79aaf836b53c6999a8d264d",
+    ])
+    .expect("parse archive replay");
+
+    assert_eq!(
+        cli.static_files_dir.as_deref(),
+        Some(std::path::Path::new("data/static"))
+    );
+}
+
+#[test]
+fn offline_ledger_factory_reconstructs_archive_only_block_and_transaction() {
+    use neo_io::SerializableExtensions;
+    use neo_payloads::TrimmedBlock;
+    use neo_static_files::{
+        StaticFileArchiveFactory, StaticFileProviderFactory, StaticRecord, StaticRow,
+    };
+
+    let mut transaction = Transaction::new();
+    transaction.set_valid_until_block(100);
+    transaction.set_signers(vec![neo_payloads::Signer::new(
+        UInt160::zero(),
+        neo_primitives::WitnessScope::CALLED_BY_ENTRY,
+    )]);
+    transaction.set_script(vec![neo_vm_rs::OpCode::PUSH1.byte()]);
+    transaction.set_witnesses(vec![neo_payloads::Witness::new()]);
+    let tx_hash = transaction.try_hash().expect("transaction hash");
+    let mut header = neo_payloads::Header::new();
+    header.set_index(0);
+    let block = Block::from_parts(header, vec![transaction.clone()]);
+    let block_hash = block.hash();
+
+    let ledger_key = |prefix: u8, suffix: &[u8]| {
+        let mut key = Vec::with_capacity(1 + suffix.len());
+        key.push(prefix);
+        key.extend_from_slice(suffix);
+        StorageKey::new(LedgerContract::ID, key).to_array()
+    };
+    let rows = vec![
+        StaticRow::new(ledger_key(0x09, &0u32.to_be_bytes()), block_hash.to_bytes()),
+        StaticRow::new(
+            ledger_key(0x05, &block_hash.to_bytes()),
+            TrimmedBlock::from_block(&block)
+                .expect("trimmed block")
+                .to_array()
+                .expect("serialize trimmed block"),
+        ),
+        StaticRow::new(
+            ledger_key(0x0b, &tx_hash.to_bytes()),
+            LedgerContract::new()
+                .serialize_persisted_transaction_state(0, VMState::HALT, &transaction)
+                .expect("serialize transaction state"),
+        ),
+    ];
+
+    let directory = tempfile::tempdir().expect("tempdir");
+    let files = StaticFileArchiveFactory::default()
+        .open(&directory.path().join("ledger.static"))
+        .expect("open archive");
+    files
+        .append(StaticRecord::new(0, rows))
+        .expect("append archive record");
+    drop(files);
+
+    let hot = DataCache::new(false);
+    hot.add(
+        StorageKey::new(LedgerContract::ID, vec![0x09, 0, 0, 0, 0]),
+        neo_storage::StorageItem::from_bytes(block_hash.to_bytes()),
+    );
+    hot.add(
+        StorageKey::new(LedgerContract::ID, vec![0x0c]),
+        neo_storage::StorageItem::from_bytes(
+            LedgerContract::new()
+                .serialize_hash_index_state(&block_hash, 0)
+                .expect("serialize current block"),
+        ),
+    );
+    let factory =
+        open_offline_ledger_factory(Some(directory.path()), &hot).expect("ledger factory");
+    let ledger = factory.provider(&hot);
+
+    assert_eq!(
+        ledger
+            .transaction_state_by_hash(&tx_hash)
+            .expect("transaction state")
+            .expect("archived transaction")
+            .state,
+        VMState::HALT
+    );
+    assert_eq!(
+        ledger
+            .block_by_index(0)
+            .expect("block")
+            .expect("archived block")
+            .hash(),
+        block_hash
+    );
+}
+
+#[test]
+fn raw_ledger_probe_falls_back_to_static_archive_after_hot_miss() {
+    use neo_static_files::{
+        StaticFileArchiveFactory, StaticFileProviderFactory, StaticRecord, StaticRow,
+    };
+
+    let directory = tempfile::tempdir().expect("tempdir");
+    let db = directory.path().join("hot");
+    drop(open_store(StorageProviderArg::Mdbx, &db, false).expect("create hot store"));
+    let static_dir = directory.path().join("static");
+    std::fs::create_dir(&static_dir).expect("static directory");
+    let block_hash = UInt256::from_bytes(&[0x44; 32]).expect("block hash");
+    write_storage_value(
+        StorageProviderArg::Mdbx,
+        &db,
+        LedgerContract::ID,
+        vec![0x09, 0, 0, 0, 0],
+        block_hash.to_bytes(),
+    )
+    .expect("write hot block hash");
+    write_storage_value(
+        StorageProviderArg::Mdbx,
+        &db,
+        LedgerContract::ID,
+        vec![0x0c],
+        LedgerContract::new()
+            .serialize_hash_index_state(&block_hash, 0)
+            .expect("serialize current block"),
+    )
+    .expect("write hot current block");
+    let suffix = vec![0x0b, 0x11, 0x22, 0x33];
+    let key = StorageKey::new(LedgerContract::ID, suffix.clone()).to_array();
+    let files = StaticFileArchiveFactory::default()
+        .open(&static_dir.join("ledger.static"))
+        .expect("open archive");
+    files
+        .append(StaticRecord::new(
+            0,
+            vec![
+                StaticRow::new(
+                    StorageKey::new(LedgerContract::ID, vec![0x09, 0, 0, 0, 0]).to_array(),
+                    block_hash.to_bytes(),
+                ),
+                StaticRow::new(key, b"archived".to_vec()),
+            ],
+        ))
+        .expect("append archive row");
+    drop(files);
+
+    assert_eq!(
+        read_storage_value(
+            StorageProviderArg::Mdbx,
+            &db,
+            Some(&static_dir),
+            LedgerContract::ID,
+            suffix,
+        )
+        .expect("read routed value"),
+        Some(b"archived".to_vec())
+    );
+}
+
+#[test]
+fn scrub_static_archive_reports_verified_tip() {
+    use neo_static_files::{
+        StaticFileArchiveFactory, StaticFileProviderFactory, StaticRecord, StaticRow,
+    };
+
+    let directory = tempfile::tempdir().expect("tempdir");
+    let files = StaticFileArchiveFactory::default()
+        .open(&directory.path().join("ledger.static"))
+        .expect("open archive");
+    files
+        .append(StaticRecord::new(
+            0,
+            vec![StaticRow::new(b"key".to_vec(), b"value".to_vec())],
+        ))
+        .expect("append archive row");
+    drop(files);
+
+    let output = scrub_static_archive(directory.path()).expect("scrub archive");
+
+    assert_eq!(output["status"], "ok");
+    assert_eq!(output["tip"], 0);
+}
+
+#[test]
+fn scrub_static_archive_rejects_a_missing_archive_without_creating_it() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let archive_path = directory.path().join("ledger.static");
+
+    let error = scrub_static_archive(directory.path()).expect_err("missing archive must fail");
+
+    assert!(error.to_string().contains("does not exist"));
+    assert!(!archive_path.exists());
+}
+
+#[test]
 fn cli_accepts_neo_account_decode_mode() {
     let cli = Cli::try_parse_from([
         "neo-db-probe",
@@ -377,5 +623,210 @@ fn mpt_state_probe_rejects_chain_storage_arguments() {
         err.to_string()
             .contains("cannot be combined with chain storage probe arguments"),
         "{err}"
+    );
+}
+
+fn offline_empty_block_rows(
+    height: u32,
+    nonce: u64,
+) -> (Block, UInt256, Vec<(StorageKey, Vec<u8>)>) {
+    use neo_io::SerializableExtensions;
+    use neo_payloads::TrimmedBlock;
+
+    let mut header = neo_payloads::Header::new();
+    header.set_index(height);
+    header.set_nonce(nonce);
+    let block = Block::from_parts(header, Vec::new());
+    let hash = block.hash();
+    let mut block_hash_suffix = vec![0x09];
+    block_hash_suffix.extend_from_slice(&height.to_be_bytes());
+    let mut block_suffix = vec![0x05];
+    block_suffix.extend_from_slice(&hash.to_bytes());
+    let rows = vec![
+        (
+            StorageKey::new(LedgerContract::ID, block_hash_suffix),
+            hash.to_bytes(),
+        ),
+        (
+            StorageKey::new(LedgerContract::ID, block_suffix),
+            TrimmedBlock::from_block(&block)
+                .expect("trimmed block")
+                .to_array()
+                .expect("serialize trimmed block"),
+        ),
+    ];
+    (block, hash, rows)
+}
+
+fn add_hot_rows<B: neo_storage::CacheRead>(hot: &DataCache<B>, rows: &[(StorageKey, Vec<u8>)]) {
+    for (key, value) in rows {
+        hot.add(
+            key.clone(),
+            neo_storage::StorageItem::from_bytes(value.clone()),
+        );
+    }
+}
+
+fn set_hot_tip<B: neo_storage::CacheRead>(hot: &DataCache<B>, hash: &UInt256, height: u32) {
+    hot.add(
+        StorageKey::new(LedgerContract::ID, vec![0x0c]),
+        neo_storage::StorageItem::from_bytes(
+            LedgerContract::new()
+                .serialize_hash_index_state(hash, height)
+                .expect("serialize current block"),
+        ),
+    );
+}
+
+fn write_static_records(
+    directory: &std::path::Path,
+    records: Vec<(u32, Vec<(StorageKey, Vec<u8>)>)>,
+) {
+    use neo_static_files::{
+        StaticFileArchiveFactory, StaticFileProviderFactory, StaticRecord, StaticRow,
+    };
+
+    let files = StaticFileArchiveFactory::default()
+        .open(&directory.join("ledger.static"))
+        .expect("open archive");
+    files
+        .append_batch(
+            records
+                .into_iter()
+                .map(|(height, rows)| {
+                    StaticRecord::new(
+                        height,
+                        rows.into_iter()
+                            .map(|(key, value)| StaticRow::new(key.to_array(), value))
+                            .collect(),
+                    )
+                })
+                .collect(),
+        )
+        .expect("append archive records");
+}
+
+#[test]
+fn offline_ledger_factory_repairs_lagging_archive_from_hot_canonical_rows() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let (block0, _, rows0) = offline_empty_block_rows(0, 10);
+    let (block1, hash1, rows1) = offline_empty_block_rows(1, 11);
+    let hot = DataCache::new(false);
+    add_hot_rows(&hot, &rows0);
+    add_hot_rows(&hot, &rows1);
+    set_hot_tip(&hot, &hash1, 1);
+    write_static_records(directory.path(), vec![(0, rows0)]);
+
+    let factory = open_offline_ledger_factory(Some(directory.path()), &hot)
+        .expect("reconcile lagging archive");
+    let provider = factory.provider(&hot);
+
+    assert_eq!(
+        provider
+            .block_by_index(0)
+            .expect("block 0")
+            .expect("stored block 0")
+            .hash(),
+        block0.hash()
+    );
+    assert_eq!(
+        provider
+            .block_by_index(1)
+            .expect("block 1")
+            .expect("stored block 1")
+            .hash(),
+        block1.hash()
+    );
+    drop(provider);
+    drop(factory);
+    assert_eq!(
+        open_existing_static_ledger_archive(directory.path())
+            .expect("reopen archive")
+            .tip(),
+        Some(1)
+    );
+}
+
+#[test]
+fn offline_ledger_factory_truncates_archive_ahead_of_hot_tip() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let (_, hash0, rows0) = offline_empty_block_rows(0, 20);
+    let (_, _, rows1) = offline_empty_block_rows(1, 21);
+    let hot = DataCache::new(false);
+    add_hot_rows(&hot, &rows0);
+    set_hot_tip(&hot, &hash0, 0);
+    write_static_records(directory.path(), vec![(0, rows0), (1, rows1)]);
+
+    drop(
+        open_offline_ledger_factory(Some(directory.path()), &hot).expect("reconcile ahead archive"),
+    );
+
+    assert_eq!(
+        open_existing_static_ledger_archive(directory.path())
+            .expect("reopen archive")
+            .tip(),
+        Some(0)
+    );
+}
+
+#[test]
+fn offline_ledger_factory_rejects_archive_fork_mismatch() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let (_, hot_hash, hot_rows) = offline_empty_block_rows(0, 30);
+    let (_, _, archive_rows) = offline_empty_block_rows(0, 31);
+    let hot = DataCache::new(false);
+    add_hot_rows(&hot, &hot_rows);
+    set_hot_tip(&hot, &hot_hash, 0);
+    write_static_records(directory.path(), vec![(0, archive_rows)]);
+
+    let error = open_offline_ledger_factory(Some(directory.path()), &hot)
+        .expect_err("forked archive must fail");
+
+    assert!(error.to_string().contains("fork mismatch"), "{error}");
+}
+
+#[test]
+fn offline_ledger_factory_does_not_truncate_archive_for_uninitialized_hot_store() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let (_, _, archive_rows) = offline_empty_block_rows(0, 40);
+    write_static_records(directory.path(), vec![(0, archive_rows)]);
+    let hot = DataCache::new(false);
+
+    let error = open_offline_ledger_factory(Some(directory.path()), &hot)
+        .expect_err("uninitialized hot store must fail");
+
+    assert!(error.to_string().contains("uninitialized"), "{error}");
+    assert_eq!(
+        open_existing_static_ledger_archive(directory.path())
+            .expect("reopen archive")
+            .tip(),
+        Some(0)
+    );
+}
+
+#[test]
+fn offline_ledger_factory_rejects_corrupt_hot_tip_without_touching_archive() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let (_, hash, rows) = offline_empty_block_rows(0, 41);
+    write_static_records(directory.path(), vec![(0, rows.clone())]);
+    let hot = DataCache::new(false);
+    add_hot_rows(&hot, &rows);
+    hot.add(
+        StorageKey::new(LedgerContract::ID, vec![0x0c]),
+        neo_storage::StorageItem::from_bytes(vec![0xff]),
+    );
+    let archive =
+        open_existing_static_ledger_archive(directory.path()).expect("hold archive writer lease");
+
+    let error = open_offline_ledger_factory(Some(directory.path()), &hot)
+        .expect_err("corrupt hot tip must fail");
+
+    assert!(error.to_string().contains("read hot Ledger tip"), "{error}");
+    assert_eq!(
+        archive
+            .provider()
+            .block_hash_by_index(0)
+            .expect("archived hash"),
+        Some(hash)
     );
 }

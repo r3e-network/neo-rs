@@ -11,26 +11,28 @@ use anyhow::{Context, Result, anyhow, bail, ensure};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use clap::{Parser, ValueEnum};
 use neo_blockchain::{
-    BlockProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
-    TransactionStateProvider,
+    BlockProvider, ChainTipProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
+    OptionalStaticLedgerProvider, StaticLedgerArchive, StaticLedgerArchiveFactory,
+    StorageLedgerProvider, TransactionStateProvider,
 };
 use neo_config::ProtocolSettings;
 use neo_execution::native::native_contract_provider::NativeContractProvider;
 use neo_execution::{ApplicationEngine, ContractState, Diagnostic};
 use neo_io::Serializable;
 use neo_manifest::CallFlags;
-use neo_native_contracts::{GasToken, StandardNativeProvider};
+use neo_native_contracts::{GasToken, LedgerContract, StandardNativeProvider};
 use neo_payloads::{Block, Transaction, TransactionState, VerifiableContainer};
 use neo_primitives::{TriggerType, UInt160, UInt256};
 use neo_serialization::BinarySerializer;
 use neo_state_service::MptStore;
+use neo_static_files::StaticFileProvider;
 use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::storage::StorageConfig;
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::{
     ReadOnlyStoreGeneric, SeekDirection, StoreCache, StoreFactory, StoreSnapshot, WriteStore,
 };
-use neo_storage::{DataCache, StorageKey};
+use neo_storage::{CacheRead, DataCache, StorageKey};
 use neo_vm::stack_value_as_bigint;
 use neo_vm_rs::{
     ExecutionEngineLimits, Instruction, StackValue, VmState as VMState, stack_value_as_u32,
@@ -39,17 +41,27 @@ use num_bigint::BigInt;
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 
-const DB_PROBE_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
-    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
-
 #[derive(Debug, Parser)]
 #[command(
     name = "neo-db-probe",
-    about = "Read Neo contract storage from an offline database without starting a node"
+    about = "Inspect Neo storage and static archives without starting a node"
 )]
 struct Cli {
-    #[arg(long, value_name = "PATH")]
-    db: PathBuf,
+    /// Hot canonical MDBX or RocksDB directory.
+    #[arg(
+        long,
+        value_name = "PATH",
+        required_unless_present = "scrub_static_files"
+    )]
+    db: Option<PathBuf>,
+
+    /// Directory containing `ledger.static` and its MDBX sidecar.
+    #[arg(long, value_name = "DIR")]
+    static_files_dir: Option<PathBuf>,
+
+    /// Verify every archive frame and persistent index entry, then exit.
+    #[arg(long, requires = "static_files_dir")]
+    scrub_static_files: bool,
 
     #[arg(long, value_enum, default_value_t = default_storage_provider_arg())]
     storage_provider: StorageProviderArg,
@@ -266,6 +278,24 @@ impl Diagnostic for ReplayInstructionTracer {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    if cli.scrub_static_files {
+        ensure_static_scrub_args(&cli)?;
+        let directory = cli
+            .static_files_dir
+            .as_deref()
+            .expect("clap requires --static-files-dir");
+        let output = scrub_static_archive(directory)?;
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
+    let db = cli
+        .db
+        .as_deref()
+        .ok_or_else(|| anyhow!("--db is required for this probe mode"))?;
+    ensure!(
+        cli.static_files_dir.is_none() || cli.write_value_base64.is_none(),
+        "--static-files-dir cannot be combined with --write-value-base64"
+    );
     if cli.mpt_state_height
         || cli.mpt_state_root.is_some()
         || cli.mpt_key_root.is_some()
@@ -275,7 +305,7 @@ fn main() -> Result<()> {
         ensure_mpt_probe_args(&cli)?;
         let output = probe_mpt_state(
             cli.storage_provider,
-            &cli.db,
+            db,
             cli.mpt_state_height,
             cli.mpt_state_root,
             cli.mpt_key_root,
@@ -287,7 +317,7 @@ fn main() -> Result<()> {
             cli.dump_limit,
             cli.decode,
         )
-        .with_context(|| format!("read StateService MPT store {}", cli.db.display()))?;
+        .with_context(|| format!("read StateService MPT store {}", db.display()))?;
         println!("{}", serde_json::to_string_pretty(&output)?);
         return Ok(());
     }
@@ -304,8 +334,13 @@ fn main() -> Result<()> {
                 && cli.key_hex.is_none(),
             "--replay-tx cannot be combined with storage probe arguments"
         );
-        let output = replay_transaction(cli.storage_provider, &cli.db, tx_hash)
-            .with_context(|| format!("replay transaction {tx_hash} from {}", cli.db.display()))?;
+        let output = replay_transaction(
+            cli.storage_provider,
+            db,
+            cli.static_files_dir.as_deref(),
+            tx_hash,
+        )
+        .with_context(|| format!("replay transaction {tx_hash} from {}", db.display()))?;
         println!("{}", serde_json::to_string_pretty(&output)?);
         return Ok(());
     }
@@ -319,14 +354,15 @@ fn main() -> Result<()> {
                 && cli.contract_id.is_none()
                 && cli.key_base64.is_none()
                 && cli.key_hex.is_none()
+                && cli.static_files_dir.is_none()
                 && cli.write_value_base64.is_none(),
             "--replay-raw-tx-base64 cannot be combined with storage probe arguments"
         );
         let block = cli.replay_block_base64.as_deref().ok_or_else(|| {
             anyhow!("--replay-block-base64 is required with --replay-raw-tx-base64")
         })?;
-        let output = replay_raw_transaction(cli.storage_provider, &cli.db, raw_tx, block)
-            .with_context(|| format!("replay raw transaction against {}", cli.db.display()))?;
+        let output = replay_raw_transaction(cli.storage_provider, db, raw_tx, block)
+            .with_context(|| format!("replay raw transaction against {}", db.display()))?;
         println!("{}", serde_json::to_string_pretty(&output)?);
         return Ok(());
     }
@@ -341,15 +377,15 @@ fn main() -> Result<()> {
                 && cli.replay_block_base64.is_none()
                 && cli.key_base64.is_none()
                 && cli.key_hex.is_none()
+                && cli.static_files_dir.is_none()
                 && cli.write_value_base64.is_none(),
             "--dump-contract-storage can only be combined with --contract-id and --dump-limit"
         );
         let contract_id = cli
             .contract_id
             .ok_or_else(|| anyhow!("--contract-id is required with --dump-contract-storage"))?;
-        let output =
-            dump_contract_storage(cli.storage_provider, &cli.db, contract_id, cli.dump_limit)
-                .with_context(|| format!("dump contract storage from {}", cli.db.display()))?;
+        let output = dump_contract_storage(cli.storage_provider, db, contract_id, cli.dump_limit)
+            .with_context(|| format!("dump contract storage from {}", db.display()))?;
         println!("{}", serde_json::to_string_pretty(&output)?);
         return Ok(());
     }
@@ -360,7 +396,7 @@ fn main() -> Result<()> {
         let value = base64_decode(value).context("decode --write-value-base64")?;
         write_storage_value(
             cli.storage_provider,
-            &cli.db,
+            db,
             request.contract_id,
             request.key_suffix.clone(),
             value.clone(),
@@ -369,7 +405,7 @@ fn main() -> Result<()> {
             format!(
                 "write {} at {}",
                 cli.storage_provider.as_provider_name(),
-                cli.db.display()
+                db.display()
             )
         })?;
         Some(value.len())
@@ -378,7 +414,8 @@ fn main() -> Result<()> {
     };
     let value = read_storage_value(
         cli.storage_provider,
-        &cli.db,
+        db,
+        cli.static_files_dir.as_deref(),
         request.contract_id,
         request.key_suffix.clone(),
     )
@@ -386,12 +423,12 @@ fn main() -> Result<()> {
         format!(
             "read {} at {}",
             cli.storage_provider.as_provider_name(),
-            cli.db.display()
+            db.display()
         )
     })?;
 
     let mut output = json!({
-        "db": cli.db,
+        "db": db,
         "storage_provider": cli.storage_provider.as_provider_name(),
         "contract_id": request.contract_id,
         "key_base64": base64_encode(&request.key_suffix),
@@ -450,9 +487,34 @@ fn ensure_mpt_probe_args(cli: &Cli) -> Result<()> {
             && cli.replay_tx.is_none()
             && cli.replay_raw_tx_base64.is_none()
             && cli.replay_block_base64.is_none()
+            && cli.static_files_dir.is_none()
             && !cli.dump_contract_storage
             && cli.write_value_base64.is_none(),
         "--mpt-state-height/--mpt-state-root cannot be combined with chain storage probe arguments"
+    );
+    Ok(())
+}
+
+fn ensure_static_scrub_args(cli: &Cli) -> Result<()> {
+    ensure!(
+        cli.db.is_none()
+            && cli.gas_address.is_none()
+            && cli.ledger_tx.is_none()
+            && cli.contract_state.is_none()
+            && cli.replay_tx.is_none()
+            && cli.replay_raw_tx_base64.is_none()
+            && cli.replay_block_base64.is_none()
+            && !cli.dump_contract_storage
+            && !cli.mpt_state_height
+            && cli.mpt_state_root.is_none()
+            && cli.mpt_key_root.is_none()
+            && cli.mpt_dump_contract_root.is_none()
+            && cli.mpt_dump_root.is_none()
+            && cli.contract_id.is_none()
+            && cli.key_base64.is_none()
+            && cli.key_hex.is_none()
+            && cli.write_value_base64.is_none(),
+        "--scrub-static-files can only be combined with --static-files-dir"
     );
     Ok(())
 }
@@ -464,7 +526,8 @@ fn build_probe_request(cli: &Cli) -> Result<ProbeRequest> {
                 && cli.contract_state.is_none()
                 && cli.contract_id.is_none()
                 && cli.key_base64.is_none()
-                && cli.key_hex.is_none(),
+                && cli.key_hex.is_none()
+                && cli.static_files_dir.is_none(),
             "--gas-address cannot be combined with --ledger-tx, --contract-state, --contract-id, --key-base64, or --key-hex"
         );
         return Ok(ProbeRequest {
@@ -489,7 +552,10 @@ fn build_probe_request(cli: &Cli) -> Result<ProbeRequest> {
 
     if let Some(hash) = cli.contract_state.as_deref() {
         ensure!(
-            cli.contract_id.is_none() && cli.key_base64.is_none() && cli.key_hex.is_none(),
+            cli.contract_id.is_none()
+                && cli.key_base64.is_none()
+                && cli.key_hex.is_none()
+                && cli.static_files_dir.is_none(),
             "--contract-state cannot be combined with --contract-id, --key-base64, or --key-hex"
         );
         return Ok(ProbeRequest {
@@ -503,6 +569,10 @@ fn build_probe_request(cli: &Cli) -> Result<ProbeRequest> {
             "--contract-id is required unless --gas-address, --ledger-tx, or --contract-state is used"
         )
     })?;
+    ensure!(
+        cli.static_files_dir.is_none(),
+        "--static-files-dir is supported only with --ledger-tx, --replay-tx, or --scrub-static-files"
+    );
     let key_suffix = match (cli.key_base64.as_deref(), cli.key_hex.as_deref()) {
         (Some(_), Some(_)) => bail!("use either --key-base64 or --key-hex, not both"),
         (Some(encoded), None) => base64_decode(encoded).context("decode --key-base64")?,
@@ -782,12 +852,26 @@ fn dump_contract_storage(
 fn read_storage_value(
     storage_provider: StorageProviderArg,
     db_path: &Path,
+    static_files_dir: Option<&Path>,
     contract_id: i32,
     key_suffix: Vec<u8>,
 ) -> Result<Option<Vec<u8>>> {
     let store = open_store(storage_provider, db_path, true)?;
     let key = StorageKey::new(contract_id, key_suffix);
-    Ok(store.try_get(&key).map(|item| item.to_value()))
+    if let Some(item) = store.try_get(&key) {
+        return Ok(Some(item.to_value()));
+    }
+    if contract_id != LedgerContract::ID {
+        return Ok(None);
+    }
+    let Some(directory) = static_files_dir else {
+        return Ok(None);
+    };
+    let hot = StoreCache::new_from_store(store, true);
+    open_reconciled_static_ledger_archive(directory, hot.data_cache())?
+        .files()
+        .get(&key.to_array())
+        .map_err(|error| anyhow!("read static Ledger archive: {error}"))
 }
 
 fn write_storage_value(
@@ -834,9 +918,79 @@ fn open_store_cache(
     Ok(StoreCache::<RuntimeStore>::new_from_store(store, false))
 }
 
+fn static_archive_path(directory: &Path) -> PathBuf {
+    directory.join("ledger.static")
+}
+
+fn open_existing_static_ledger_archive(directory: &Path) -> Result<StaticLedgerArchive> {
+    let path = static_archive_path(directory);
+    ensure!(
+        path.is_file(),
+        "static Ledger archive {} does not exist",
+        path.display()
+    );
+    StaticLedgerArchiveFactory::default()
+        .open(&path)
+        .map_err(|error| anyhow!("open static Ledger archive: {error}"))
+}
+
+fn open_reconciled_static_ledger_archive<B: CacheRead>(
+    directory: &Path,
+    snapshot: &DataCache<B>,
+) -> Result<StaticLedgerArchive> {
+    let current_block_key = StorageKey::new(LedgerContract::ID, vec![0x0c]);
+    let canonical_tip = if snapshot.get(&current_block_key).is_some() {
+        Some(
+            StorageLedgerProvider::new(snapshot)
+                .current_index()
+                .map_err(|error| anyhow!("read hot Ledger tip: {error}"))?,
+        )
+    } else {
+        None
+    };
+    let archive = open_existing_static_ledger_archive(directory)?;
+    ensure!(
+        canonical_tip.is_some() || archive.tip().is_none(),
+        "hot Ledger is uninitialized; refusing to reconcile non-empty static archive"
+    );
+    archive
+        .reconcile(snapshot, canonical_tip, 1_024)
+        .map_err(|error| anyhow!("reconcile static Ledger archive: {error}"))?;
+    Ok(archive)
+}
+
+fn open_offline_ledger_factory<B: CacheRead>(
+    static_files_dir: Option<&Path>,
+    snapshot: &DataCache<B>,
+) -> Result<HotColdLedgerProviderFactory<OptionalStaticLedgerProvider>> {
+    let cold = static_files_dir
+        .map(|directory| open_reconciled_static_ledger_archive(directory, snapshot))
+        .transpose()?
+        .map(|archive| archive.provider());
+    Ok(HotColdLedgerProviderFactory::new(
+        OptionalStaticLedgerProvider::from_option(cold),
+    ))
+}
+
+fn scrub_static_archive(directory: &Path) -> Result<Value> {
+    let archive = open_existing_static_ledger_archive(directory)?;
+    archive
+        .files()
+        .scrub()
+        .map_err(|error| anyhow!("scrub static Ledger archive: {error}"))?;
+    Ok(json!({
+        "mode": "static-files-scrub",
+        "archive": archive.files().path(),
+        "index": archive.files().index_path(),
+        "tip": archive.tip(),
+        "status": "ok",
+    }))
+}
+
 fn replay_transaction(
     storage_provider: StorageProviderArg,
     db_path: &Path,
+    static_files_dir: Option<&Path>,
     tx_hash: &str,
 ) -> Result<Value> {
     let tx_hash =
@@ -853,7 +1007,8 @@ fn replay_transaction(
 
     let store_cache = open_store_cache(storage_provider, db_path)?;
     let snapshot = store_cache.data_cache();
-    let ledger = DB_PROBE_LEDGER_PROVIDER_FACTORY.provider(snapshot);
+    let ledger_factory = open_offline_ledger_factory(static_files_dir, snapshot)?;
+    let ledger = ledger_factory.provider(snapshot);
     let tx_state = ledger
         .transaction_state_by_hash(&tx_hash)?
         .ok_or_else(|| anyhow!("transaction {tx_hash} was not found in Ledger storage"))?;

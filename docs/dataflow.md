@@ -381,8 +381,11 @@ Key points:
   publishes frame offsets and versioned row locations. Clean startup validates
   that checkpoint and scans only an unpublished suffix; a missing, stale, or
   ahead sidecar is rebuilt from authoritative frames. Current-tip reads remain
-  hot. Hot pruning is not enabled yet because offline probe tooling is not
-  archive-aware and atomic prune/recovery parity has not been proven.
+  hot. `neo-db-probe` composes the same optional static provider for historical
+  Ledger replay and raw Ledger-row inspection after canonical reconciliation,
+  and can scrub an existing archive without opening the hot store. Hot pruning
+  is not enabled yet because atomic
+  prune/recovery parity has not been proven.
 - **State read boundary.** `neo-state-service` exposes `MptReadSnapshot`,
   `MptStore`, `StateStore`, and `StateStoreLookup`. RPC proof/state paths use
   concrete immutable `MptReadSnapshot` values. A general

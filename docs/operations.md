@@ -304,7 +304,16 @@ it; do not remove `ledger.static` for an index-only incident. A clean indexed
 open intentionally does not reread all historical payloads. Every lookup still
 checksums its complete containing frame, and the public
 `StaticFileArchive::scrub` maintenance API performs a strict full archive/index
-parity pass. The daemon does not yet expose scrub as a command-line operation.
+parity pass. Run it through `neo-db-probe` without opening a hot database:
+
+```bash
+cargo run -p neo-node --bin neo-db-probe -- \
+  --static-files-dir data/static \
+  --scrub-static-files
+```
+
+The scrub command refuses a missing `ledger.static`; it never turns a mistyped
+directory into a successful empty-archive result.
 
 Published frame corruption is media damage and is not auto-truncated. Restore
 the archive from backup or, while hot Ledger rows are still retained, remove
@@ -918,6 +927,32 @@ cargo run -p neo-node --bin neo-db-probe -- \
   --contract-id -4 \
   --key-hex 0c \
   --decode hash-index
+```
+
+For historical Ledger rows that have been moved to `static_files_dir`, pass the
+same directory explicitly. `--ledger-tx` falls back to the immutable archive
+after a clean hot miss, and `--replay-tx` uses the identical hot/cold provider
+composition to reconstruct its block and transaction state. Before either
+operation serves cold data, the probe reconciles the archive against the
+selected hot database exactly as node startup does: every overlapping block
+hash is validated first, then lag is appended or a verified ahead tail is
+truncated. A fork mismatch fails before destructive repair. Keep the node
+stopped because this reconciliation owns the archive writer lease and may
+repair it.
+
+```bash
+cargo run -p neo-node --bin neo-db-probe -- \
+  --db data/mainnet-validate \
+  --static-files-dir data/static \
+  --ledger-tx 0xc68d5cad0e02197dd66623373751b84b2cadf742e79aaf836b53c6999a8d264d \
+  --decode transaction-state
+```
+
+```bash
+cargo run -p neo-node --bin neo-db-probe -- \
+  --db data/mainnet-validate \
+  --static-files-dir data/static \
+  --replay-tx 0xc68d5cad0e02197dd66623373751b84b2cadf742e79aaf836b53c6999a8d264d
 ```
 
 After restoring or replaying a checkpoint, compare selected local GAS account

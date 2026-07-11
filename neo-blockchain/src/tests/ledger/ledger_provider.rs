@@ -605,12 +605,11 @@ fn static_archive_reconcile_rolls_back_persistent_row_versions_above_hot_tip() {
 }
 
 #[test]
-fn static_archive_rejects_an_interior_canonical_hash_mismatch() {
+fn static_archive_rejects_a_fork_before_truncating_an_ahead_tail() {
     use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
 
     let hot = DataCache::new(false);
     let archived = DataCache::new(false);
-    let mut hot_blocks = Vec::new();
     let mut archived_blocks = Vec::new();
     for height in 0..=2 {
         let mut hot_header = Header::new();
@@ -618,10 +617,16 @@ fn static_archive_rejects_an_interior_canonical_hash_mismatch() {
         hot_header.set_nonce(u64::from(height));
         let hot_block = Block::from_parts(hot_header, vec![]);
         let hot_hash = hot_block.header.try_hash().expect("hot block hash");
-        crate::ledger_records::LedgerRecords::write_on_persist_records(&hot, &hot_block, &hot_hash)
+        if height <= 1 {
+            crate::ledger_records::LedgerRecords::write_on_persist_records(
+                &hot, &hot_block, &hot_hash,
+            )
             .expect("hot block records");
-        crate::ledger_records::LedgerRecords::write_post_persist_record(&hot, &hot_hash, height)
+            crate::ledger_records::LedgerRecords::write_post_persist_record(
+                &hot, &hot_hash, height,
+            )
             .expect("hot current block");
+        }
 
         let archived_block = if height == 1 {
             let mut divergent_header = hot_block.header.clone();
@@ -646,7 +651,6 @@ fn static_archive_rejects_an_interior_canonical_hash_mismatch() {
             height,
         )
         .expect("archived current block");
-        hot_blocks.push(hot_block);
         archived_blocks.push(archived_block);
     }
 
@@ -661,13 +665,17 @@ fn static_archive_rejects_an_interior_canonical_hash_mismatch() {
             .expect("append archived block");
     }
     assert_eq!(archive.tip(), Some(2));
-    assert_eq!(archived_blocks[2].hash(), hot_blocks[2].hash());
 
     let error = archive
-        .reconcile(&hot, Some(2), 2)
+        .reconcile(&hot, Some(1), 2)
         .expect_err("interior fork must be rejected");
     assert!(
         error.to_string().contains("height 1"),
         "unexpected error: {error}"
+    );
+    assert_eq!(
+        archive.tip(),
+        Some(2),
+        "fork validation must precede destructive tail repair"
     );
 }

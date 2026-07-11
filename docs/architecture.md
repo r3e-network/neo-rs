@@ -454,9 +454,12 @@ The detailed rules for this style live in
   map. Missing, stale, or ahead sidecars are rebuilt from archive frames, and
   truncation removes only discarded row versions so overwritten keys reveal
   their retained value. Normal reads checksum the full compressed frame;
-  explicit `scrub` verifies every frame and sidecar entry. Hot-row pruning
-  remains disabled until offline maintenance tools use the archive provider,
-  atomic hot-row deletion exists, and prune/recovery parity is proven.
+  explicit `scrub` verifies every frame and sidecar entry. Offline
+  `neo-db-probe` uses the same optional hot/cold provider for historical Ledger
+  replay and inspection after reconciling the archive to the selected hot
+  database, and can run archive-only scrub. Hot-row pruning
+  remains disabled until atomic hot-row deletion and prune/recovery parity are
+  proven.
 
 - **Byte-for-byte C# parity as a hard constraint.** Wire formats, hashing,
   signature schemes, fee formulas, VM opcode pricing, native-contract behavior,
