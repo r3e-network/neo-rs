@@ -1,6 +1,6 @@
 //! # neo-indexer::service
 //!
-//! Service loops, handles, lifecycle helpers, and command processing.
+//! Thread-safe projection commands, queries, and service-store durability.
 //!
 //! ## Boundary
 //!
@@ -10,13 +10,11 @@
 //!
 //! ## Contents
 //!
-//! - `backend`: durable backend kind, diagnostics, and persistence dispatch.
-//! - `commands`: public indexing and revert commands.
+//! - `backend`: service-store diagnostics and persistence dispatch.
+//! - `commands`: public batch, indexing, clear, and revert commands.
 //! - `mutation`: persistence-aware mutation and rollback mechanics.
 //! - `notification_queries`: notification query API.
-//! - `persistence`: Persistence traits, snapshots, transactions, and cache
-//!   overlays.
-//! - `query`: query APIs for indexed data.
+//! - `query`: query APIs and O(1) synchronized status/checkpoint reads.
 //! - `tests`: Module-local tests and regression coverage.
 
 use std::path::{Path, PathBuf};
@@ -34,15 +32,9 @@ mod backend;
 mod commands;
 mod mutation;
 mod notification_queries;
-mod persistence;
 mod query;
 
 use backend::PersistenceBackend;
-use persistence::read_snapshot;
-#[cfg(test)]
-use persistence::temporary_snapshot_path;
-#[cfg(test)]
-use persistence::write_snapshot;
 
 /// Shared indexer service installed in the node's typed RPC service bundle.
 #[derive(Clone)]
@@ -58,7 +50,6 @@ impl std::fmt::Debug for IndexerService {
         f.debug_struct("IndexerService")
             .field("status", &self.status())
             .field("persistence_mode", &self.persistence_mode())
-            .field("snapshot_path", &self.snapshot_path())
             .field("store_path", &self.store_path())
             .finish_non_exhaustive()
     }
@@ -79,21 +70,6 @@ impl IndexerService {
             persistence: None,
             durability_pending: Arc::new(AtomicBool::new(false)),
         }
-    }
-
-    /// Opens a persistent indexer service backed by a JSON snapshot file.
-    ///
-    /// If the snapshot file is absent, the service starts empty and creates the
-    /// file on the first mutation.
-    pub fn open(path: impl AsRef<Path>) -> IndexerResult<Self> {
-        let path = path.as_ref().to_path_buf();
-        let indexer = read_snapshot(&path)?;
-        Ok(Self {
-            inner: Arc::new(RwLock::new(indexer)),
-            persist_lock: Arc::new(Mutex::new(())),
-            persistence: Some(Arc::new(PersistenceBackend::json_file(path))),
-            durability_pending: Arc::new(AtomicBool::new(false)),
-        })
     }
 
     /// Opens a persistent indexer service backed by a generic service store.
@@ -153,14 +129,6 @@ impl IndexerService {
         self.persistence
             .as_deref()
             .map_or("memory", PersistenceBackend::mode_name)
-    }
-
-    /// Returns the persistent JSON snapshot path, if this service was opened
-    /// with one.
-    pub fn snapshot_path(&self) -> Option<&Path> {
-        self.persistence
-            .as_deref()
-            .and_then(PersistenceBackend::snapshot_path)
     }
 
     /// Returns the persistent service-store path, if one was supplied.

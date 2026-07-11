@@ -120,7 +120,7 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-blockchain | Node service | Root-level `BlockchainHandle`/`BlockchainService` capabilities, `LedgerContext`, `HeaderCache`, provider-style ledger reads, and canonical block processing; command-loop internals stay private. |
 | neo-network | Node service | Root-level P2P handles, services, protocol values, and wire codecs; `LocalNode`, `RemoteNode`, task-manager, wire, and protocol module layouts stay private. |
 | neo-wallets | Node service | NEP-6 wallets, BIP-32/BIP-39 key derivation, keypairs, accounts, witness scripts. |
-| neo-indexer | Node service | Read-side block, transaction, signer-account, and notification indexing for service-style RPC queries. |
+| neo-indexer | Node service | Durable read-side block, transaction, signer-account, and notification projections, atomic batch commands, and the contiguous projection checkpoint consumed by the node's Index stage. |
 | neo-oracle-service | Node service | Off-chain Oracle request fulfilment over HTTPS and NeoFS, including retries, signing, and request lifecycle processing. |
 | neo-system | Composition | Typed core composition root: `NodeCoreBuilder`, `NodeCoreLaunch`, `BlockchainTask`, `NodeSystemContext`, final `Node`, and sync workflows. |
 | neo-rpc | Plugin/RPC boundary | `jsonrpsee` JSON-RPC server and client, plus optional ApplicationLogs, TokensTracker, NeoIndexer, and Oracle method groups. |
@@ -255,6 +255,21 @@ The detailed rules for this style live in
   `neo-engine` crate and its `BlockchainEngineAdapter` bridge were removed in
   ADR-027 as never-instantiated dead code; ADR-009/ADR-010 record the earlier
   pipeline-vocabulary overlap that this excision resolved.
+
+- **Committed-chain Index stage.** `neo-node::node::indexer_runtime::IndexStage<P, N>`
+  is a statically dispatched follower over already committed canonical blocks.
+  It is deliberately downstream of `Import`: validation, execution, native
+  persistence, and state-root work are not duplicated as synthetic sync
+  stages. The indexer's synchronized `IndexerStatus` projection is the stage
+  checkpoint because the index and canonical Ledger live in independent
+  durability domains. A valid hash-matched contiguous prefix resumes at the
+  next height, an ahead prefix is pruned, and an invalid prefix is durably
+  cleared before bounded atomic rebuild batches become visible. Startup and
+  later import, revert, tip-change, and lag recovery signals all invoke this
+  same stage. Every batch must hash-link to the verified checkpoint and the
+  fixed target is revalidated before success. The pre-commit hook may only
+  append the exact next block when its parent is the indexed tip, so near-tip
+  writes cannot jump over historical or reverted work.
 
 - **Supervised daemon tasks.** `neo-node` classifies long-running background
   work as essential or normal. Essential task failure requests node shutdown;

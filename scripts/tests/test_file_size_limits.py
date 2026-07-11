@@ -329,11 +329,11 @@ class FileSizeLimitTests(unittest.TestCase):
                     "neo-indexer indexer tests should keep broad behavior coverage split into focused modules",
                 )
 
-    def test_indexer_service_tests_keep_persistence_and_store_cases_split(self):
+    def test_indexer_service_tests_keep_batch_and_store_cases_split(self):
         paths = [
-            REPO_ROOT / "neo-indexer" / "src" / "service" / "tests.rs",
-            REPO_ROOT / "neo-indexer" / "src" / "service" / "tests" / "persistence.rs",
-            REPO_ROOT / "neo-indexer" / "src" / "service" / "tests" / "store_backed.rs",
+            REPO_ROOT / "neo-indexer" / "src" / "tests" / "service" / "mod.rs",
+            REPO_ROOT / "neo-indexer" / "src" / "tests" / "service" / "batch.rs",
+            REPO_ROOT / "neo-indexer" / "src" / "tests" / "service" / "store_backed.rs",
         ]
 
         for path in paths:
@@ -346,15 +346,17 @@ class FileSizeLimitTests(unittest.TestCase):
                 self.assertLessEqual(
                     line_count,
                     500,
-                    "neo-indexer service tests should split snapshot persistence and store-backed query cases",
+                    "neo-indexer service tests should split atomic batch and store-backed query cases",
                 )
 
     def test_indexer_store_keeps_key_schema_split(self):
         limits = {
-            REPO_ROOT / "neo-indexer" / "src" / "store.rs": 160,
+            REPO_ROOT / "neo-indexer" / "src" / "store" / "mod.rs": 80,
             REPO_ROOT / "neo-indexer" / "src" / "store" / "keys.rs": 190,
-            REPO_ROOT / "neo-indexer" / "src" / "store" / "records.rs": 230,
-            REPO_ROOT / "neo-indexer" / "src" / "store" / "status.rs": 80,
+            REPO_ROOT / "neo-indexer" / "src" / "store" / "record_codec.rs": 80,
+            REPO_ROOT / "neo-indexer" / "src" / "store" / "record_read.rs": 130,
+            REPO_ROOT / "neo-indexer" / "src" / "store" / "record_write.rs": 190,
+            REPO_ROOT / "neo-indexer" / "src" / "store" / "lifecycle.rs": 150,
         }
 
         for path, max_lines in limits.items():
@@ -367,7 +369,7 @@ class FileSizeLimitTests(unittest.TestCase):
                 self.assertLessEqual(
                     line_count,
                     max_lines,
-                    "neo-indexer store should keep durable key schema, record codecs, and status statistics separate from store read/write and migration logic",
+                    "neo-indexer store should keep durable key schema, record codecs, reads, writes, and lifecycle logic separate",
                 )
 
     def test_rpc_wallet_entrypoint_keeps_service_headroom(self):

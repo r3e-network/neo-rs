@@ -20,16 +20,6 @@ rpc_user = "neo"
 }
 
 #[test]
-fn validate_config_rejects_empty_indexer_snapshot_path() {
-    let mut config = NodeConfig::default();
-    config.indexer.enabled = true;
-    config.indexer.path = Some(PathBuf::new());
-
-    let err = validate_config(&config, 0x3554_334E).expect_err("empty indexer path should fail");
-    assert!(err.to_string().contains("[indexer].path must not be empty"));
-}
-
-#[test]
 fn validate_config_requires_durable_writable_storage_for_static_files() {
     let mut ephemeral = NodeConfig::default();
     ephemeral.storage.backend = Some("memory".to_string());
@@ -88,35 +78,6 @@ fn validate_config_rejects_zero_static_file_resource_limits() {
     config.storage.static_files_recovery_batch_blocks = Some(0);
     let error = validate_config(&config, 0x3554_334E).expect_err("zero batch must fail");
     assert!(error.to_string().contains("recovery_batch_blocks"));
-}
-
-#[test]
-fn validate_config_rejects_indexer_snapshot_directory_after_network_expansion() {
-    let temp = tempfile::tempdir().expect("temp dir");
-    let expanded = temp.path().join("Indexer_004F454E.json");
-    std::fs::create_dir(&expanded).expect("create directory at expanded snapshot path");
-
-    let mut config = NodeConfig::default();
-    config.indexer.enabled = true;
-    config.indexer.path = Some(temp.path().join("Indexer_{0}.json"));
-
-    let err = validate_config(&config, 0x004F_454E)
-        .expect_err("directory indexer snapshot path should fail");
-    assert!(err.to_string().contains("must be a JSON snapshot file"));
-}
-
-#[test]
-fn validate_config_rejects_non_json_indexer_snapshot_path() {
-    let mut config = NodeConfig::default();
-    config.indexer.enabled = true;
-    config.indexer.path = Some(PathBuf::from("Indexer_{0}.db"));
-
-    let err = validate_config(&config, 0x004F_454E).expect_err("non-json indexer path should fail");
-    assert!(
-        err.to_string()
-            .contains("must be a JSON snapshot file ending in .json"),
-        "{err}"
-    );
 }
 
 #[test]
@@ -708,18 +669,6 @@ DBPath = "{}"
             .contains("[tokens_tracker].db_path must be a service-store directory"),
         "{err}"
     );
-}
-
-#[test]
-fn validate_config_rejects_indexer_snapshot_and_store_path_together() {
-    let mut config = NodeConfig::default();
-    config.indexer.enabled = true;
-    config.indexer.path = Some(PathBuf::from("Indexer_{0}.json"));
-    config.indexer.store_path = Some(PathBuf::from("Indexer_{0}"));
-
-    let err = validate_config(&config, 0x3554_334E)
-        .expect_err("ambiguous indexer persistence should fail");
-    assert!(err.to_string().contains("mutually exclusive"), "{err}");
 }
 
 #[test]

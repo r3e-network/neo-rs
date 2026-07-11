@@ -631,7 +631,6 @@ pub(in crate::node) async fn build_node(
                 blockchain.clone(),
                 indexer,
                 application_logs_service,
-                config.indexer.backfill_on_startup,
                 u64::from(durable_tip_height),
             ),
         );

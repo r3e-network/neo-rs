@@ -194,9 +194,17 @@ can be created from that handle.
 The queue/checkpoint handle is now part of production node composition.
 Production node startup runs a coordinator-backed P2P
 `BlockDownloader` over the live `PeerRegistry` and feeds it through
-`SyncDownloadImportDriver` into the composed import pipeline. The concrete
-multi-stage headers/bodies/execute/index/prune loop remains the next large
-integration step.
+`SyncDownloadImportDriver` into the composed import pipeline. `Import` is now
+followed by one honest production-consumed `Index` stage in `neo-node`. That
+statically dispatched stage snapshots a canonical target, resumes from the
+indexer's hash-verified contiguous `IndexerStatus`, processes committed blocks
+in bounded atomic batches, and fences each batch. It prunes an ahead index and
+durably clears a divergent/incomplete projection before rebuilding. The
+indexer's own status remains authoritative because its service store cannot be
+atomically checkpointed with canonical Ledger storage. Execution, native
+persistence, and state-root work remain inside `Import`; neo-rs does not invent
+fake stages for work already durably completed there. Separate headers/bodies
+and pruning stages remain future work.
 
 Live path: P2P Block -> `InboundInventory::Block` -> `neo-node` buffering ->
 `BlockchainHandle::submit_inventory_blocks` -> neo-blockchain
@@ -252,7 +260,7 @@ while let Some(cmd) = cmd_rx.recv().await {
 
 | Priority | Change | Benefit |
 |----------|--------|---------|
-| P0 | Promote another production-consumed sync stage beyond `Import` | Durable per-stage resume without inventing fake stage boundaries |
+| Implemented | Promote `Index` as the next production-consumed stage after `Import` | Durable bounded projection resume without inventing fake execution/state-root stages or a cross-store checkpoint |
 | Composed / P2P Wired | Import queue boundary with bounded concurrent `check` | Reusable preverification surface; `BlockchainHandle::check` now shares live stateless import-integrity checks, `neo_system::SyncImportPipeline` constructs/registers the queue, and production P2P sync drains coordinator batches into it |
 | Composed / P2P Wired | Commit policy/checkpoint primitives plus import-stage driver | Tunable memory/i-o; durable checkpoint storage is available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, node composition creates the import-stage checkpoint handle, and the coordinator-backed P2P download bridge drives `SyncPipelineDriver` |
 | P2 | Warp sync / state sync | Minutes to sync instead of hours |
@@ -361,7 +369,8 @@ peer handle, issuing `GetBlockByIndex`, and collecting matching block frames
 into a `BlockDownloadBatch`; node composition shares/registers that registry
 and the registry exposes ready, advertised-height download snapshots.
 Production startup now runs a supervised coordinator-backed downloader/import
-task while the broader staged pipeline remains future work.
+task and an independently durable committed-chain Index follower. Separate
+headers/bodies and pruning stages remain future work.
 
 ---
 
@@ -637,7 +646,7 @@ pub struct TransactionState {
 
 | Change | Speed | Storage | Reliability | Complexity | Effort |
 |--------|-------|---------|-------------|------------|--------|
-| Staged sync pipeline integration | ★★★★★ | ★★ | ★★★★ | ★★★★ | Large |
+| Staged sync pipeline integration | ★★★★★ | ★★ | ★★★★ | ★★★★ | Import and committed-chain Index stages are live; headers/bodies/prune remain |
 | Static archive/recovery/provider propagation/hot pruning | ★★★ | ★★★★ | ★★★★ | ★★★ | Implemented; segment rotation remains |
 | Import queue + concurrent verify | ★★★★ | - | ★★★ | ★★★ | Runtime queue and production download-to-import bridge wired |
 | Stage commit policy + checkpoints | ★★★ | - | ★★★★ | ★★ | Import-stage driver done |
@@ -663,6 +672,9 @@ pub struct TransactionState {
    offsets, archive-aware offline tooling, and shared runtime cold reads are
    implemented. Latest-version-aware hot deletion and atomic prune watermarks
    are also implemented; segment rotation remains optional future work.
-7. **Staged sync pipeline integration** (large, biggest overall impact)
+7. **Staged sync pipeline integration** — `Import` plus the durable
+   committed-chain `Index` follower are production-wired. Add only real
+   remaining ownership boundaries (headers/bodies and pruning); do not split
+   execution or state-root work out of canonical `Import` for symmetry.
 
 This document is a living reference — update as architecture evolves.

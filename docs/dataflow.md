@@ -123,6 +123,17 @@ composition root. Local-ledger node startup runs the coordinator-driven
 downloader/import task as the only P2P range-sync owner.
 The canonical execution/persist path remains the `neo-blockchain` service loop.
 
+After the indexer runtime activates, it first runs the same durable Index stage
+used for every later `Imported`, `Reverted`, `TipChanged`, or lag-recovery
+signal. A stage run snapshots a fixed canonical target, reconciles an
+ahead/divergent index, reads committed blocks in ordered bounded batches, and
+applies each batch atomically through `IndexerService` before fencing its
+service store. `IndexerStatus` is the projection's checkpoint; no second
+generic checkpoint is written because the canonical Ledger and indexer store
+cannot advance atomically. The live pre-commit hook writes notifications only
+when the block replaces or extends that contiguous prefix. Otherwise it defers
+to the stage, preventing a near-tip block from creating a historical gap.
+
 ```mermaid
 sequenceDiagram
     participant Peer
@@ -178,6 +189,7 @@ Ownership by step:
 | Native OnPersist / PostPersist + tx execution | neo-blockchain → neo-execution + neo-native-contracts |
 | Per-block atomic staging, durable commit | neo-storage |
 | Mempool eviction of mined/conflicting tx | neo-mempool |
+| Committed block/transaction projection catch-up | neo-node Index stage -> neo-indexer |
 
 The whole `Persist` sequence is staged in a child `DataCache` and merged into
 the shared snapshot only when every stage succeeds; a fault leaves no partial

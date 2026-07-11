@@ -29,32 +29,15 @@ pub(in crate::node) struct StateServiceSection {
 }
 
 /// `[indexer]`: read-side block/transaction/account indexing service.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(in crate::node) struct IndexerSection {
     /// Whether to start the indexer service and expose indexer RPC methods.
     #[serde(default, alias = "Enabled")]
     pub(in crate::node) enabled: bool,
-    /// Optional JSON snapshot path for the indexer.
-    #[serde(default, alias = "Path")]
-    pub(in crate::node) path: Option<PathBuf>,
     /// Optional persistent service-store path for the indexer.
     #[serde(default, alias = "StorePath", alias = "DBPath", alias = "DbPath")]
     pub(in crate::node) store_path: Option<PathBuf>,
-    /// Whether to rebuild the in-memory index from the current canonical chain
-    /// on startup before tailing live block import events.
-    #[serde(default = "super::default_true", alias = "BackfillOnStartup")]
-    pub(in crate::node) backfill_on_startup: bool,
-}
-
-impl Default for IndexerSection {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            path: None,
-            store_path: None,
-            backfill_on_startup: true,
-        }
-    }
 }
 
 /// `[application_logs]`: C# ApplicationLogs plugin-compatible storage.

@@ -218,7 +218,7 @@ instead of silently disappearing from the transport.
 
 | Method | Parameters | Returns | Notes |
 |--------|------------|---------|-------|
-| `getindexerstatus` | none | Indexed tip hash/height, chain lag, record counts, ApplicationLogs availability, and persistence mode | Requires `[indexer] enabled = true`; returns `ledgerheight`, `blocksbehind`, `synced`, `applicationlogs`, `persistent`, `persistencemode` (`memory`, `json-snapshot`, or `service-store`), `snapshotpath`, and `storepath`. |
+| `getindexerstatus` | none | Indexed tip hash/height, chain lag, record counts, ApplicationLogs availability, and persistence mode | Requires `[indexer] enabled = true`; returns `ledgerheight`, `blocksbehind`, `synced`, `applicationlogs`, `persistent`, `persistencemode` (`memory` or `service-store`), and `storepath`. |
 | `getblockindex` | `hash`\|`height` | Indexed block summary or `null` | |
 | `getblockindexes` | `skip?`, `limit?` | Indexed block summaries | Returns blocks in ascending height order. |
 | `gettransactionindex` | `txid` | Indexed transaction summary or `null` | Includes signer accounts and addresses. |
@@ -226,7 +226,7 @@ instead of silently disappearing from the transport.
 | `getaddresstransactions` | `address`, `skip?`, `limit?` | Signer-account transaction records | Limit is capped by the server. |
 | `getcontracttransactions` | `contract`, `event?`, `skip?`, `limit?` | Transactions that emitted matching contract notifications | De-duplicates transactions with multiple matching notifications. |
 | `getaddressnotifications` | `address`, `skip?`, `limit?` | Transfer notifications involving the address | Uses indexed notification participants, not only signer accounts. |
-| `getblocknotifications` | `hash`\|`height`, `skip?`, `limit?` | Indexed notifications for a block | Live imports include notifications. Startup backfill reconstructs block/tx/account records from stored blocks; historical notification backfill requires `[application_logs]` records. |
+| `getblocknotifications` | `hash`\|`height`, `skip?`, `limit?` | Indexed notifications for a block | Live contiguous imports include notifications. For blocks processed during catch-up or rebuild, the durable Index stage can recover notifications from matching `[application_logs]` records; it does not revisit an already verified prefix only to enrich notifications. |
 | `gettransactionnotifications` | `txid`, `skip?`, `limit?` | Indexed notifications for a transaction | |
 | `getcontractnotifications` | `contract`, `event?`, `skip?`, `limit?` | Indexed notifications for a contract | `contract` accepts script hash or address. |
 

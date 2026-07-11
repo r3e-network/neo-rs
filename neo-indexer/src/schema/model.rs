@@ -1,5 +1,6 @@
-//! Public index records exposed by the Neo indexer service.
+//! Public index inputs and records exposed by the Neo indexer service.
 
+use neo_payloads::Block;
 use neo_primitives::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -7,9 +8,37 @@ use serde_json::Value;
 /// Version tag for persisted indexer snapshots.
 ///
 /// Version 2 adds notification payload JSON plus Transfer participant account
-/// indexes. Version 1 snapshots are still accepted and migrated on load when
-/// their notification payload JSON is available.
+/// indexes. Older whole-file snapshot formats are not accepted.
 pub const INDEXER_SNAPSHOT_VERSION: u32 = 2;
+
+/// One canonical block prepared for an atomic indexer batch command.
+pub struct IndexBlockBatchEntry<'a> {
+    pub(crate) block: &'a Block,
+    pub(crate) notifications: Option<Vec<NotificationIndexRecord>>,
+}
+
+impl<'a> IndexBlockBatchEntry<'a> {
+    /// Index only block, transaction, and signer-account records.
+    #[must_use]
+    pub const fn block_only(block: &'a Block) -> Self {
+        Self {
+            block,
+            notifications: None,
+        }
+    }
+
+    /// Index a block together with previously materialized notifications.
+    #[must_use]
+    pub fn with_notifications(
+        block: &'a Block,
+        notifications: Vec<NotificationIndexRecord>,
+    ) -> Self {
+        Self {
+            block,
+            notifications: Some(notifications),
+        }
+    }
+}
 
 /// Canonical block index entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -257,6 +257,17 @@ Priority order for crate refactors:
    crash-resume markers belong in
    `neo_runtime::sync_pipeline::{CommitPolicy, SyncStageCheckpointStore}`
    instead of ad hoc thresholds inside service loops.
+   A committed-chain read projection may use its own durable status as its
+   checkpoint when it lives in a separate store. Do not write a duplicate
+   generic checkpoint that can disagree after a partial cross-store failure.
+   Such a stage must snapshot a canonical target, process ordered bounded
+   batches, fence each durable batch, stop at the first gap, prune an
+   ahead-of-chain prefix, and durably clear an invalid prefix before rebuilding.
+   Each batch must hash-link to the verified checkpoint, and the fixed target
+   must still be canonical before the stage reports success. Pre-commit
+   acceleration may only append the exact next block whose parent is the
+   indexed tip. Never invent `Execute` or `StateRoot` sync stages when canonical
+   `Import` already owns and durably completes that work.
    Treat the durable store fence as fallible: do not publish committed events,
    run post-commit observers, or advance externally visible in-memory state
    until it succeeds. On failure, discard the canonical overlay and rewind any

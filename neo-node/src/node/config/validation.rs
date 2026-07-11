@@ -454,11 +454,6 @@ fn validate_indexer_config(config: &NodeConfig, network: u32) -> anyhow::Result<
     if !config.indexer.enabled {
         return Ok(());
     }
-    if config.indexer.path.is_some() && config.indexer.store_path.is_some() {
-        anyhow::bail!(
-            "[indexer].path and [indexer].store_path are mutually exclusive; use store_path for the service-store indexer"
-        );
-    }
     if let Some(path) = &config.indexer.store_path {
         let path = network_scoped_path(path, network);
         if path.as_os_str().is_empty() {
@@ -471,31 +466,6 @@ fn validate_indexer_config(config: &NodeConfig, network: u32) -> anyhow::Result<
             );
         }
     }
-    let Some(path) = &config.indexer.path else {
-        return Ok(());
-    };
-
-    let path = network_scoped_path(path, network);
-    if path.as_os_str().is_empty() {
-        anyhow::bail!("[indexer].path must not be empty when [indexer].enabled is true");
-    }
-    if path.is_dir() {
-        anyhow::bail!(
-            "[indexer].path must be a JSON snapshot file, got directory {}",
-            path.display()
-        );
-    }
-    if !path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
-    {
-        anyhow::bail!(
-            "[indexer].path must be a JSON snapshot file ending in .json, got {}",
-            path.display()
-        );
-    }
-
     Ok(())
 }
 

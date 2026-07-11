@@ -11,7 +11,7 @@ use crate::error::{IndexerError, IndexerResult};
 use crate::model::{BlockIndexRecord, TransactionIndexRecord};
 
 #[derive(Debug)]
-pub(super) struct PreparedBlock {
+pub(crate) struct PreparedBlock {
     pub(super) block: BlockIndexRecord,
     pub(super) transactions: Vec<TransactionIndexRecord>,
 }

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use neo_payloads::Block;
 use neo_primitives::UInt256;
 use neo_storage::persistence::{Store, providers::RuntimeStore};
 
@@ -110,15 +111,74 @@ impl IndexerService {
         )
     }
 
+    /// Returns whether a live block hash-links to the exact next height after
+    /// the current contiguous in-memory projection tip.
+    ///
+    /// This intentionally reads the service's synchronized projection instead
+    /// of scanning the durable store. Commit hooks use it on the hot path to
+    /// avoid creating an ahead-of-stage gap while historical indexing runs.
+    pub fn can_append_contiguous_block(&self, block: &Block) -> bool {
+        self.read_indexer(|indexer| {
+            let status = indexer.status();
+            let Some(indexed_height) = status.indexed_height else {
+                return block.index() == 0 && *block.prev_hash() == UInt256::zero();
+            };
+            let expected_blocks = u64::from(indexed_height).saturating_add(1);
+            let contiguous =
+                u64::try_from(status.indexed_blocks).unwrap_or(u64::MAX) == expected_blocks;
+            contiguous
+                && indexed_height
+                    .checked_add(1)
+                    .is_some_and(|next| block.index() == next)
+                && status.indexed_hash == Some(*block.prev_hash())
+        })
+    }
+
     /// Returns aggregate indexer status.
     pub fn status(&self) -> IndexerStatus {
-        self.try_status()
-            .unwrap_or_else(|_| self.read_indexer(Indexer::status))
+        self.projection_checkpoint()
+    }
+
+    /// Returns the synchronized in-memory projection checkpoint in O(1).
+    ///
+    /// Every persistent mutation updates the durable backend before returning
+    /// and rolls this projection back on failure. The node's Index stage uses
+    /// this view for per-block control flow, then calls `flush_durable` before
+    /// treating a newly advanced checkpoint as durable. The same synchronized
+    /// counters serve operator status without scanning every persisted row.
+    pub fn projection_checkpoint(&self) -> IndexerStatus {
+        self.read_indexer(Indexer::status)
     }
 
     /// Returns aggregate indexer status, surfacing service-store read errors.
     pub fn try_status(&self) -> IndexerResult<IndexerStatus> {
-        self.read_store_or_indexer(store::status, Indexer::status)
+        let Some(store) = self.store_backend() else {
+            return Ok(self.projection_checkpoint());
+        };
+
+        // Writers take this lock before changing the store and synchronized
+        // projection. Read both under the same lock so a concurrent commit
+        // cannot turn a valid checkpoint into a transient mismatch.
+        let _persist_guard = self.persist_lock.lock();
+        let status = self.projection_checkpoint();
+        let (Some(height), Some(expected_hash)) = (status.indexed_height, status.indexed_hash)
+        else {
+            return Ok(status);
+        };
+        let snapshot = store.snapshot();
+        let record = store::get_record::<BlockIndexRecord>(
+            snapshot.as_ref(),
+            store::block_by_height_key(height),
+        )?
+        .ok_or(crate::IndexerError::MissingCheckpointBlock { height })?;
+        if record.hash != expected_hash {
+            return Err(crate::IndexerError::CheckpointBlockMismatch {
+                height,
+                expected: expected_hash,
+                actual: record.hash,
+            });
+        }
+        Ok(status)
     }
 
     pub(super) fn read_indexer<T>(&self, read: impl FnOnce(&Indexer) -> T) -> T {

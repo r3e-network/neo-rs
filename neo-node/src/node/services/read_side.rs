@@ -67,20 +67,12 @@ fn build_indexer_service(
             neo_indexer::IndexerService::open_store_with_path(store, Some(path.clone()))
                 .with_context(|| format!("opening indexer service store at {}", path.display()))?,
         )
-    } else if let Some(path) = &config.indexer.path {
-        let path = network_scoped_path(path, network);
-        Arc::new(
-            neo_indexer::IndexerService::open(&path)
-                .with_context(|| format!("opening indexer snapshot at {}", path.display()))?,
-        )
     } else {
         Arc::new(neo_indexer::IndexerService::new())
     };
     info!(
         target: "neo::indexer",
-        backfill_on_startup = config.indexer.backfill_on_startup,
         persistence_mode = service.persistence_mode(),
-        snapshot_path = ?service.snapshot_path(),
         store_path = ?service.store_path(),
         "indexer service enabled"
     );

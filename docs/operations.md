@@ -260,7 +260,7 @@ docker inspect --format='{{.State.Health.Status}}' neo-node
 | `[blockchain]` | `block_time`, `max_transactions_per_block` | |
 | `[mempool]` | `max_transactions` | |
 | `[state_service]` | `enabled`, `full_state`, `path` | Enables the StateService MPT store used by state proofs and state-root RPC. |
-| `[indexer]` | `enabled`, `store_path`, `backfill_on_startup` | Enables NeoIndexer RPC methods and durable read-side indexes. |
+| `[indexer]` | `enabled`, `store_path` | Enables NeoIndexer RPC methods and durable read-side indexes that resume their canonical Index stage automatically. |
 | `[application_logs]` | `enabled`, `path`, `debug`, `exception_policy` | Enables C# ApplicationLogs-compatible plugin storage. |
 | `[tokens_tracker]` | `enabled`, `db_path`, `enabled_trackers` | Enables NEP-11/NEP-17 token tracker services. |
 | `[telemetry.metrics]` | `enabled`, `port`, `bind_address`, `path` | Optional Prometheus-compatible text endpoint. |

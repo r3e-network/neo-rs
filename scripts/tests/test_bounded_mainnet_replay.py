@@ -246,6 +246,7 @@ class BoundedMainnetReplayTests(unittest.TestCase):
             self.assertIn("mdbx_geometry_upper_gb = 512", config_text)
             self.assertIn("mdbx_geometry_growth_mb = 256", config_text)
             self.assertIn("mdbx_max_readers = 4096", config_text)
+            self.assertNotIn("backfill_on_startup", config_text)
             self.assertNotIn('backend = "rocksdb"', config_text)
             self.assertIn("port = 31332", config_text)
             self.assertIn("port = 31333", config_text)

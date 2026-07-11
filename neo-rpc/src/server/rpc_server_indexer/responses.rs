@@ -34,7 +34,6 @@ impl RpcServerIndexer {
             "applicationlogs": Self::application_logs_status_to_json(application_logs),
             "persistent": service.is_persistent(),
             "persistencemode": service.persistence_mode(),
-            "snapshotpath": service.snapshot_path().map(|path| path.display().to_string()),
             "storepath": service.store_path().map(|path| path.display().to_string()),
         })
     }

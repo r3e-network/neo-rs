@@ -1,5 +1,25 @@
 use super::*;
-use crate::IndexerStatus;
+
+#[test]
+fn legacy_service_store_snapshot_is_rejected_explicitly() {
+    let store = MemoryStoreProvider::new()
+        .get_store("")
+        .expect("memory store");
+    let mut snapshot = store.snapshot();
+    let snapshot = Arc::get_mut(&mut snapshot).expect("exclusive snapshot");
+    snapshot
+        .put(LEGACY_STORE_SNAPSHOT_KEY.to_vec(), b"{}".to_vec())
+        .expect("seed legacy record");
+    snapshot.try_commit().expect("commit legacy record");
+
+    let error = IndexerService::open_store(store)
+        .expect_err("removed legacy index format must not silently open as empty");
+
+    assert!(matches!(
+        error,
+        IndexerError::LegacyStoreSnapshotUnsupported
+    ));
+}
 
 #[test]
 fn store_backed_service_round_trips_prefixed_records() {
@@ -22,7 +42,6 @@ fn store_backed_service_round_trips_prefixed_records() {
             .expect("open store indexer");
     assert!(service.is_persistent());
     assert_eq!(service.persistence_mode(), "service-store");
-    assert_eq!(service.snapshot_path(), None);
     assert_eq!(service.store_path(), Some(store_path.as_path()));
     service
         .index_block_with_application_executions(
@@ -62,12 +81,6 @@ fn store_backed_service_round_trips_prefixed_records() {
     );
     assert_eq!(count_store_rows(&store, NOTIFICATION_BY_CONTRACT_PREFIX), 1);
     assert_eq!(count_store_rows(&store, NOTIFICATION_BY_ACCOUNT_PREFIX), 2);
-    assert!(
-        store
-            .snapshot()
-            .try_get(&LEGACY_STORE_SNAPSHOT_KEY.to_vec())
-            .is_none()
-    );
 }
 
 #[test]
@@ -102,17 +115,11 @@ fn store_backed_queries_read_prefix_records_without_memory_index() {
     *service.inner.write() = Indexer::new();
 
     assert_eq!(
-        service.status(),
-        IndexerStatus {
-            indexed_height: Some(18),
-            indexed_hash: Some(block_hash),
-            indexed_blocks: 1,
-            indexed_transactions: 2,
-            indexed_accounts: 2,
-            indexed_notifications: 1,
-            indexed_notification_accounts: 2,
-        }
+        service.projection_checkpoint().indexed_height,
+        None,
+        "the stage checkpoint must be an O(1) read of the synchronized projection, not a store scan"
     );
+    assert_eq!(service.status().indexed_height, None);
     assert_eq!(service.block_by_height(18).expect("block").hash, block_hash);
     assert_eq!(
         service.block_by_hash(&block_hash).expect("block").height,
@@ -310,41 +317,6 @@ fn store_backed_activity_queries_match_memory_order_pagination_and_deduplication
 }
 
 #[test]
-fn store_backed_service_migrates_legacy_snapshot_record() {
-    let store = MemoryStoreProvider::new()
-        .get_store("")
-        .expect("memory store");
-    let mut header = Header::new();
-    header.set_index(7);
-    let block = Block::from_parts(header, Vec::new());
-    let block_hash = block.try_hash().expect("block hash");
-    put_legacy_store_snapshot(
-        &store,
-        &IndexerSnapshot::new(
-            vec![BlockIndexRecord {
-                hash: block_hash,
-                height: 7,
-                timestamp: block.timestamp(),
-                transaction_count: 0,
-            }],
-            Vec::new(),
-        ),
-    );
-
-    let restored = IndexerService::open_store(Arc::clone(&store)).expect("restore legacy");
-
-    assert_eq!(restored.status().indexed_height, Some(7));
-    assert_eq!(restored.block_by_height(7).expect("block").hash, block_hash);
-    assert_eq!(count_store_rows(&store, BLOCK_BY_HEIGHT_PREFIX), 1);
-    assert!(
-        store
-            .snapshot()
-            .try_get(&LEGACY_STORE_SNAPSHOT_KEY.to_vec())
-            .is_none()
-    );
-}
-
-#[test]
 fn store_backed_service_persists_reverts() {
     let store = MemoryStoreProvider::new()
         .get_store("")
@@ -366,6 +338,31 @@ fn store_backed_service_persists_reverts() {
     assert!(restored.block_by_height(2).is_none());
     assert!(restored.block_by_height(3).is_none());
     assert_eq!(count_store_rows(&store, BLOCK_BY_HEIGHT_PREFIX), 1);
+}
+
+#[test]
+fn store_backed_service_persists_projection_clear() {
+    let store = MemoryStoreProvider::new()
+        .get_store("")
+        .expect("memory store");
+    let service = IndexerService::open_store(Arc::clone(&store)).expect("open store indexer");
+
+    for height in 0..=2 {
+        service
+            .index_block(&block_with_transactions(
+                height,
+                vec![transaction(height.saturating_add(1), account(1))],
+            ))
+            .expect("index block");
+    }
+    service.clear().expect("clear projection");
+    service.flush_durable().expect("fence cleared projection");
+
+    let restored = IndexerService::open_store(Arc::clone(&store)).expect("restore cleared indexer");
+    assert_eq!(restored.status().indexed_height, None);
+    assert_eq!(restored.status().indexed_blocks, 0);
+    assert_eq!(count_store_rows(&store, BLOCK_BY_HEIGHT_PREFIX), 0);
+    assert_eq!(count_store_rows(&store, TRANSACTION_BY_CHAIN_PREFIX), 0);
 }
 
 #[test]

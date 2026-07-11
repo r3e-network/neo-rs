@@ -8,82 +8,46 @@ use neo_storage::persistence::{Store, providers::RuntimeStore};
 use crate::error::IndexerResult;
 use crate::store;
 
-use super::persistence::{
-    MutationPersistenceMode, PendingPersistence, flush_snapshot, write_snapshot,
-};
-
-pub(super) enum PersistenceBackend {
-    JsonFile(PathBuf),
-    Store {
-        store: Arc<RuntimeStore>,
-        path: Option<PathBuf>,
-    },
+pub(super) struct PersistenceBackend {
+    store: Arc<RuntimeStore>,
+    path: Option<PathBuf>,
 }
 
 impl PersistenceBackend {
-    pub(super) fn json_file(path: PathBuf) -> Self {
-        Self::JsonFile(path)
-    }
-
     pub(super) fn store(store: Arc<RuntimeStore>, path: Option<PathBuf>) -> Self {
-        Self::Store { store, path }
+        Self { store, path }
     }
 
     pub(super) const fn mode_name(&self) -> &'static str {
-        match self {
-            Self::JsonFile(_) => "json-snapshot",
-            Self::Store { .. } => "service-store",
-        }
-    }
-
-    pub(super) fn snapshot_path(&self) -> Option<&Path> {
-        match self {
-            Self::JsonFile(path) => Some(path.as_path()),
-            Self::Store { .. } => None,
-        }
+        "service-store"
     }
 
     pub(super) fn store_path(&self) -> Option<&Path> {
-        match self {
-            Self::Store {
-                path: Some(path), ..
-            } => Some(path.as_path()),
-            _ => None,
-        }
-    }
-
-    pub(super) const fn mutation_mode(&self) -> MutationPersistenceMode {
-        match self {
-            Self::JsonFile(_) => MutationPersistenceMode::JsonFile,
-            Self::Store { .. } => MutationPersistenceMode::Store,
-        }
+        self.path.as_deref()
     }
 
     pub(super) fn store_backend(&self) -> Option<Arc<RuntimeStore>> {
-        match self {
-            Self::Store { store, .. } => Some(Arc::clone(store)),
-            Self::JsonFile(_) => None,
-        }
+        Some(Arc::clone(&self.store))
     }
 
-    pub(super) fn persist_change(&self, change: PendingPersistence) -> IndexerResult<()> {
-        match (self, change) {
-            (Self::JsonFile(path), PendingPersistence::JsonSnapshot(snapshot)) => {
-                write_snapshot(path, &snapshot)
-            }
-            (Self::Store { store, .. }, PendingPersistence::StoreDelta { previous, current }) => {
-                store::write_indexer_delta(store, &previous, &current)
-            }
-            _ => Ok(()),
-        }
+    pub(super) fn persist_change(
+        &self,
+        previous: &crate::model::IndexerSnapshot,
+        current: &crate::model::IndexerSnapshot,
+    ) -> IndexerResult<()> {
+        store::write_indexer_delta(&self.store, previous, current)
+    }
+
+    pub(super) fn persist_projection_change(
+        &self,
+        change: &crate::indexer::ProjectionChangeSet,
+    ) -> IndexerResult<()> {
+        store::write_indexer_change_set(&self.store, change)
     }
 
     pub(super) fn flush_durable(&self) -> IndexerResult<()> {
-        match self {
-            Self::JsonFile(path) => flush_snapshot(path),
-            Self::Store { store, .. } => store
-                .flush()
-                .map_err(|source| crate::IndexerError::StoreRecordWrite { source }),
-        }
+        self.store
+            .flush()
+            .map_err(|source| crate::IndexerError::StoreRecordWrite { source })
     }
 }

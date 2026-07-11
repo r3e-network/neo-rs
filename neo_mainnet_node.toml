@@ -43,7 +43,6 @@ disabled_methods = ["openwallet"]
 
 [indexer]
 enabled = true
-backfill_on_startup = true
 store_path = "./data/mainnet/indexer"
 
 [application_logs]

@@ -79,7 +79,6 @@ port = 10332
 [indexer]
 enabled = true
 store_path = "./data/mainnet/indexer"
-backfill_on_startup = true
 
 [application_logs]
 enabled = true

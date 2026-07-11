@@ -201,6 +201,18 @@ High-signal clusters found during the first pass:
   `SystemContext` trait implementation and store-commit policy, while
   `context/plugins.rs` owns catch-up-aware StateService, indexer,
   ApplicationLogs, and TokensTracker hook dispatch.
+- `neo-node/src/node/indexer_runtime.rs` owns activation supervision, canonical
+  event handling, and stage logging. `indexer_runtime/stage.rs` owns the generic
+  committed-chain `IndexStage<P, N>` and bounded batch execution;
+  `indexer_runtime/stage/canonical.rs` owns hash-linked batch reads and
+  fixed-target revalidation;
+  `indexer_runtime/stage/checkpoint.rs` owns canonical checkpoint verification,
+  ahead pruning, and invalid-prefix reset; `indexer_runtime/application_logs.rs`
+  remains the optional notification adapter for historical blocks processed by
+  the stage. The obsolete parallel
+  backfill implementation and startup toggle were removed. Indexer hook,
+  continuity, failure, and recovery regressions moved out of the oversized
+  `tests/node/runtime.rs` into `tests/node/runtime/indexer.rs`.
 - `neo-blockchain/src/ledger/ledger_context.rs` owns the hot in-memory ledger
   cache. Its block/header LRU capacity now clamps zero to one with explicit
   `NonZeroUsize` handling, matching the cache contract without a production
@@ -259,17 +271,20 @@ High-signal clusters found during the first pass:
   in-memory maps, and `indexer/block.rs` owns canonical block and transaction
   materialization before records are applied.
 - `neo-indexer/src/service/mod.rs` keeps the service facade, constructors, and
-  backend diagnostics, `service/commands.rs` owns public indexing/revert
-  commands, `service/mutation.rs` owns persistence-aware mutation and rollback
-  mechanics, and `service/backend.rs` owns durable backend kind, diagnostic
-  paths, mutation mode selection, and persistence dispatch.
+  backend diagnostics, `service/commands.rs` owns atomic batch, clear,
+  indexing, and revert commands, `service/query.rs` exposes O(1) synchronized
+  stage and operator status without full persisted-row scans,
+  `service/mutation.rs` owns store-before-publication batch commits plus
+  rollback-safe destructive mutations, and `service/backend.rs` owns
+  service-store persistence dispatch. The legacy whole-file JSON snapshot
+  backend was removed.
 - `neo-indexer/src/store/mod.rs` now keeps durable-store facade exports,
-  key/record/status module wiring, and test-only key re-exports.
+  key/record module wiring, and test-only key re-exports.
   `store/record_codec.rs` owns JSON serde for individual records,
   `store/record_read.rs` owns lookup, paging, and filtered reads,
-  `store/record_write.rs` owns snapshot-to-record materialization and puts, and
-  `store/lifecycle.rs` owns schema detection, legacy snapshot migration, full
-  store writes, and delta writes.
+  `store/record_write.rs` owns snapshot and block-change-set materialization,
+  and `store/lifecycle.rs` owns schema detection plus atomic full and
+  block-scoped delta writes.
 - `neo-io/src/serializable/mod.rs` keeps the codec facade and module map,
   `serializable/traits.rs` owns the `Serializable` and extension traits, and
   `serializable/macros.rs` owns the declarative `impl_serializable!` helper.

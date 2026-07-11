@@ -5,15 +5,35 @@ use neo_primitives::UInt256;
 
 use super::IndexerService;
 use crate::error::IndexerResult;
-use crate::model::{BlockIndexRecord, NotificationIndexRecord};
+use crate::indexer::{Indexer, PreparedIndexBatch};
+use crate::model::{BlockIndexRecord, IndexBlockBatchEntry, NotificationIndexRecord};
 
 impl IndexerService {
+    /// Clears the canonical projection through the configured persistence
+    /// backend.
+    ///
+    /// Stage recovery uses this before rebuilding an invalid checkpoint so no
+    /// stale rows beyond the next durable batch remain queryable.
+    pub fn clear(&self) -> IndexerResult<()> {
+        self.mutate_indexer(|indexer| {
+            *indexer = crate::indexer::Indexer::new();
+            Ok(((), true))
+        })
+    }
+
+    /// Indexes a canonical block batch in one persistence transaction.
+    pub fn index_block_batch<'a>(
+        &self,
+        entries: impl IntoIterator<Item = IndexBlockBatchEntry<'a>>,
+    ) -> IndexerResult<Vec<BlockIndexRecord>> {
+        let prepared = Indexer::prepare_index_batch(entries)?;
+        self.commit_prepared_batch(prepared)
+    }
+
     /// Indexes a canonical block.
     pub fn index_block(&self, block: &Block) -> IndexerResult<BlockIndexRecord> {
-        self.mutate_indexer(|indexer| {
-            let record = indexer.index_block(block)?;
-            Ok((record, true))
-        })
+        let prepared = PreparedIndexBatch::single(Indexer::prepare_block_entry(block)?);
+        single_block_result(self.commit_prepared_batch(prepared)?)
     }
 
     /// Indexes a canonical block and its emitted smart-contract notifications.
@@ -22,10 +42,9 @@ impl IndexerService {
         block: &Block,
         executions: &[ApplicationExecuted],
     ) -> IndexerResult<BlockIndexRecord> {
-        self.mutate_indexer(|indexer| {
-            let record = indexer.index_block_with_application_executions(block, executions)?;
-            Ok((record, true))
-        })
+        let prepared =
+            PreparedIndexBatch::single(Indexer::prepare_application_entry(block, executions)?);
+        single_block_result(self.commit_prepared_batch(prepared)?)
     }
 
     /// Indexes a canonical block with notification records recovered from
@@ -35,10 +54,9 @@ impl IndexerService {
         block: &Block,
         notifications: Vec<NotificationIndexRecord>,
     ) -> IndexerResult<BlockIndexRecord> {
-        self.mutate_indexer(|indexer| {
-            let record = indexer.index_block_with_notification_records(block, notifications)?;
-            Ok((record, true))
-        })
+        let prepared =
+            PreparedIndexBatch::single(Indexer::prepare_notification_entry(block, notifications)?);
+        single_block_result(self.commit_prepared_batch(prepared)?)
     }
 
     /// Removes an indexed block by hash.
@@ -67,4 +85,10 @@ impl IndexerService {
             Ok((removed, should_persist))
         })
     }
+}
+
+fn single_block_result(mut records: Vec<BlockIndexRecord>) -> IndexerResult<BlockIndexRecord> {
+    records
+        .pop()
+        .ok_or(crate::IndexerError::MissingPreparedBlockResult)
 }

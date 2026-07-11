@@ -36,7 +36,6 @@ max_gas_invoke = 50000000
 
 [indexer]
 enabled = true
-backfill_on_startup = true
 store_path = "../mainnet/indexer"
 
 [application_logs]

@@ -57,7 +57,6 @@ path = "./data/mainnet/state-root-{0}"
 
 [indexer]
 enabled = true
-backfill_on_startup = true
 store_path = "./data/mainnet/indexer"
 
 [application_logs]

@@ -3,7 +3,6 @@
 use neo_error::CoreError;
 use neo_primitives::UInt256;
 use neo_storage::StorageError;
-use std::path::PathBuf;
 use thiserror::Error;
 
 /// Result alias used by the indexer.
@@ -12,6 +11,10 @@ pub type IndexerResult<T> = Result<T, IndexerError>;
 /// Errors returned while building or mutating indexes.
 #[derive(Debug, Error)]
 pub enum IndexerError {
+    /// A prepared single-block command completed without a block record.
+    #[error("prepared indexer command produced no block record")]
+    MissingPreparedBlockResult,
+
     /// The block header hash could not be computed.
     #[error("failed to hash block")]
     BlockHash {
@@ -309,54 +312,6 @@ pub enum IndexerError {
         notification_index: u32,
     },
 
-    /// A snapshot file could not be opened or read.
-    #[error("failed to read indexer snapshot at {path}")]
-    SnapshotRead {
-        /// Snapshot path.
-        path: PathBuf,
-        /// Source IO error.
-        #[source]
-        source: std::io::Error,
-    },
-
-    /// A snapshot file could not be decoded.
-    #[error("failed to decode indexer snapshot at {path}")]
-    SnapshotDecode {
-        /// Snapshot path.
-        path: PathBuf,
-        /// Source JSON error.
-        #[source]
-        source: serde_json::Error,
-    },
-
-    /// A snapshot file could not be encoded.
-    #[error("failed to encode indexer snapshot at {path}")]
-    SnapshotEncode {
-        /// Snapshot path.
-        path: PathBuf,
-        /// Source JSON error.
-        #[source]
-        source: serde_json::Error,
-    },
-
-    /// A snapshot file could not be written atomically.
-    #[error("failed to write indexer snapshot at {path}")]
-    SnapshotWrite {
-        /// Snapshot path.
-        path: PathBuf,
-        /// Source IO error.
-        #[source]
-        source: std::io::Error,
-    },
-
-    /// A legacy service-store snapshot could not be decoded.
-    #[error("failed to decode legacy indexer snapshot from service store")]
-    StoreSnapshotDecode {
-        /// Source JSON error.
-        #[source]
-        source: serde_json::Error,
-    },
-
     /// A service-store record could not be decoded.
     #[error("failed to decode indexer service-store record at key {key:?}")]
     StoreRecordDecode {
@@ -365,6 +320,28 @@ pub enum IndexerError {
         /// Source JSON error.
         #[source]
         source: serde_json::Error,
+    },
+
+    /// The synchronized projection checkpoint is absent from its service
+    /// store.
+    #[error("indexer service store is missing checkpoint block {height}")]
+    MissingCheckpointBlock {
+        /// Expected checkpoint height.
+        height: u32,
+    },
+
+    /// The synchronized projection checkpoint disagrees with its service
+    /// store record.
+    #[error(
+        "indexer checkpoint block {height} hash mismatch: projection {expected}, store {actual}"
+    )]
+    CheckpointBlockMismatch {
+        /// Checkpoint height.
+        height: u32,
+        /// Hash held by the synchronized projection.
+        expected: UInt256,
+        /// Hash decoded from the service store.
+        actual: UInt256,
     },
 
     /// A service-store record could not be encoded.
@@ -384,6 +361,12 @@ pub enum IndexerError {
         version: String,
     },
 
+    /// The removed whole-snapshot service-store format is still present.
+    #[error(
+        "legacy indexer service-store snapshot is unsupported; remove the indexer store and rebuild its derived projection"
+    )]
+    LegacyStoreSnapshotUnsupported,
+
     /// Service-store records could not be written.
     #[error("failed to write indexer records to service store")]
     StoreRecordWrite {
@@ -395,11 +378,4 @@ pub enum IndexerError {
     /// A service-store snapshot handle was unexpectedly shared while writing.
     #[error("failed to write indexer records: service-store snapshot is still shared")]
     StoreSnapshotShared,
-
-    /// A persistent mutation needed a rollback snapshot, but none was captured.
-    #[error("missing rollback snapshot for persistent indexer mutation in {mode} mode")]
-    MissingRollbackSnapshot {
-        /// Persistence mode that required a rollback snapshot.
-        mode: &'static str,
-    },
 }

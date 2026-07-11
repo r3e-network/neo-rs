@@ -43,7 +43,6 @@ auth_enabled = false
 
 [indexer]
 enabled = false
-backfill_on_startup = false
 store_path = "./data/mainnet-validate/indexer"
 
 [application_logs]
@@ -99,6 +98,7 @@ class PrepareCleanStateRootValidationTests(unittest.TestCase):
             self.assertIn("mdbx_geometry_upper_gb = 512", config)
             self.assertIn("mdbx_geometry_growth_mb = 256", config)
             self.assertIn("mdbx_max_readers = 4096", config)
+            self.assertNotIn("backfill_on_startup", config)
             self.assertNotIn(f'path = "{(work_root / "chain").resolve()}"', config)
             self.assertIn(f'path = "{(work_root / "state-root-{0}").resolve()}"', config)
             self.assertIn("port = 31332", config)

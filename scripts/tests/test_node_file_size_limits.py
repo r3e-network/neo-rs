@@ -181,7 +181,7 @@ class NodeFileSizeLimitTests(unittest.TestCase):
                     "neo-node config parsing tests should split core daemon, service-provider, and observability parsing coverage",
                 )
 
-    def test_node_indexer_runtime_keeps_backfill_and_application_log_recovery_split(self):
+    def test_node_indexer_runtime_keeps_stage_and_application_log_recovery_split(self):
         limits = {
             REPO_ROOT / "neo-node" / "src" / "node" / "indexer_runtime.rs": 500,
             REPO_ROOT
@@ -189,7 +189,34 @@ class NodeFileSizeLimitTests(unittest.TestCase):
             / "src"
             / "node"
             / "indexer_runtime"
+            / "stage.rs": 350,
+            REPO_ROOT
+            / "neo-node"
+            / "src"
+            / "node"
+            / "indexer_runtime"
+            / "stage"
+            / "canonical.rs": 180,
+            REPO_ROOT
+            / "neo-node"
+            / "src"
+            / "node"
+            / "indexer_runtime"
+            / "stage"
+            / "checkpoint.rs": 180,
+            REPO_ROOT
+            / "neo-node"
+            / "src"
+            / "node"
+            / "indexer_runtime"
             / "application_logs.rs": 300,
+            REPO_ROOT
+            / "neo-node"
+            / "src"
+            / "tests"
+            / "node"
+            / "runtime"
+            / "indexer.rs": 300,
         }
 
         for path, max_lines in limits.items():
@@ -202,7 +229,7 @@ class NodeFileSizeLimitTests(unittest.TestCase):
                 self.assertLessEqual(
                     line_count,
                     max_lines,
-                    "neo-node indexer runtime should keep live/backfill orchestration separate from ApplicationLogs recovery parsing",
+                    "neo-node indexer runtime should keep stage orchestration separate from ApplicationLogs recovery parsing",
                 )
 
 

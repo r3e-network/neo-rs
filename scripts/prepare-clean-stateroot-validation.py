@@ -97,7 +97,6 @@ def build_replacements(
         },
         "indexer": {
             "enabled": False,
-            "backfill_on_startup": False,
             "store_path": work_root / "indexer",
         },
         "application_logs": {

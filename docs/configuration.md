@@ -282,31 +282,35 @@ the built-in `NeoIndexer` RPC method group.
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
 | `enabled` | bool | `false` | Start the indexer service and expose indexer RPC methods. Alias: `Enabled`. |
-| `store_path` | path | none | Optional RocksDB/service-store directory for prefix-keyed index records. `{0}` is replaced with uppercase 8-digit network magic. Aliases: `StorePath`, `DBPath`, `DbPath`. |
-| `path` | path | none | Legacy JSON snapshot file for persistence. Mutually exclusive with `store_path`. `{0}` is replaced with uppercase 8-digit network magic. Alias: `Path`. |
-| `backfill_on_startup` | bool | `true` | Fill missing block/transaction/account records from the canonical chain before following live imports. Alias: `BackfillOnStartup`. |
+| `store_path` | path | none | Optional service-store directory for prefix-keyed index records using the configured storage provider. `{0}` is replaced with uppercase 8-digit network magic. Aliases: `StorePath`, `DBPath`, `DbPath`. |
 
 Live block imports include smart-contract notifications because the daemon has
-the current `ApplicationExecuted` list during persistence. Startup backfill can
-reconstruct block, transaction, and signer-account records from stored blocks;
-historical notification backfill requires those execution records to have been
-captured live. When a persisted indexer already has a contiguous tip whose hash
-matches the canonical chain, startup backfill resumes from the next block
-instead of scanning from genesis; if the tip is stale or incomplete, it falls
-back to a conservative full scan.
+the current `ApplicationExecuted` list during persistence. Enabled indexers now
+always resume their durable canonical Index stage automatically on activation:
+if a persisted tip is contiguous with the canonical chain, indexing continues
+from the next block; an ahead tip is pruned, while a stale, divergent, or
+incomplete projection is durably cleared before rebuilding from genesis in
+bounded atomic batches. For blocks the stage processes during that catch-up or
+rebuild, notification recovery requires matching records in the enabled
+ApplicationLogs service; an already verified prefix is not revisited solely to
+enrich notifications.
 
 This is the built-in service-oriented indexer for NeoFura-style RPC workloads:
 it gives operators block, transaction, signer-account, contract-notification,
 and transfer-participant notification queries through JSON-RPC. Use
-`store_path` for the default RocksDB-backed service-store mode, which stores
-blocks, transactions, account transaction links, and notification lookup rows
-under stable `neo-indexer:v3:*` prefixes and updates changed rows with
-per-mutation deltas. `path` remains available only for portable JSON snapshot
-compatibility.
+`store_path` for the configured service-store provider (MDBX in shipped
+profiles). It stores blocks, transactions, account transaction links, and
+notification lookup rows under stable `neo-indexer:v3:*` prefixes and commits
+only the block-scoped rows changed by each indexing batch.
+Removed `path` and `backfill_on_startup` options are rejected instead of
+silently falling back to an in-memory or partial-history indexer.
+Stores containing the removed `neo-indexer:snapshot:v2` whole-snapshot format
+are also rejected explicitly; remove that derived index store and let the
+canonical Index stage rebuild it.
 
 `getindexerstatus` reports the indexed tip, current ledger height, block lag,
-sync state, persistence mode, and whether ApplicationLogs is available for
-historical notification recovery.
+sync state, persistence mode, and whether ApplicationLogs is available when a
+future catch-up or rebuild processes historical blocks.
 
 ### `[application_logs]`
 

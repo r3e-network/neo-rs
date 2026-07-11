@@ -171,7 +171,6 @@ disabled_methods = ["openwallet"]
 
 [indexer]
 enabled = false
-backfill_on_startup = false
 store_path = {toml_quote(chain_db / "indexer")}
 
 [application_logs]

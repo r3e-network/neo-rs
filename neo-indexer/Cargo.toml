@@ -28,7 +28,6 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 neo-vm-rs = { workspace = true }
-tempfile = { workspace = true }
 
 [lints]
 workspace = true

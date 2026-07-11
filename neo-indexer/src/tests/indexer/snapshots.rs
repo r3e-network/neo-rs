@@ -58,58 +58,12 @@ fn snapshot_round_trips_notifications() {
 }
 
 #[test]
-fn snapshot_v1_migrates_transfer_accounts_from_state_json() {
-    let sender = account(1);
-    let recipient = account(2);
-    let contract = account(8);
-    let tx = transaction(71, &[sender]);
-    let tx_hash = tx.try_hash().expect("tx hash");
-    let block = block(13, 13, vec![tx]);
-    let block_hash = block.try_hash().expect("block hash");
-    let state = transfer_state(Some(sender), Some(recipient), 11);
-    let mut snapshot = IndexerSnapshot::with_notifications(
-        vec![BlockIndexRecord {
-            hash: block_hash,
-            height: block.index(),
-            timestamp: block.timestamp(),
-            transaction_count: 1,
-        }],
-        vec![TransactionIndexRecord {
-            hash: tx_hash,
-            block_hash,
-            block_height: block.index(),
-            transaction_index: 0,
-            signers: vec![sender],
-        }],
-        vec![NotificationIndexRecord {
-            block_hash,
-            block_height: block.index(),
-            tx_hash: Some(tx_hash),
-            execution_index: 0,
-            notification_index: 0,
-            contract_hash: contract,
-            event_name: "Transfer".to_string(),
-            trigger: "Application".to_string(),
-            state_item_count: 99,
-            state: state_json(&state),
-            accounts: Vec::new(),
-        }],
-    );
-    snapshot.version = 1;
-
-    let restored = Indexer::from_snapshot(snapshot).expect("v1 snapshot migrates");
-    let records = restored.notifications_for_account(&recipient, 0, 10);
-
-    assert_eq!(restored.status().indexed_notification_accounts, 2);
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].state_item_count, 3);
-    assert_eq!(records[0].accounts, vec![sender, recipient]);
-    assert_eq!(restored.snapshot().version, INDEXER_SNAPSHOT_VERSION);
-}
-
-#[test]
 fn snapshot_rejects_unsupported_versions() {
-    for version in [0, INDEXER_SNAPSHOT_VERSION + 1] {
+    for version in [
+        0,
+        INDEXER_SNAPSHOT_VERSION - 1,
+        INDEXER_SNAPSHOT_VERSION + 1,
+    ] {
         let mut snapshot = IndexerSnapshot::new(Vec::new(), Vec::new());
         snapshot.version = version;
 

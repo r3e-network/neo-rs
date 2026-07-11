@@ -94,31 +94,17 @@ fn shipped_node_configs_enable_durable_rpc_service_stack() {
 
         assert!(config.rpc.enabled, "{relative} RPC enabled");
         assert!(config.indexer.enabled, "{relative} indexer enabled");
+        let store_path = config
+            .indexer
+            .store_path
+            .as_ref()
+            .unwrap_or_else(|| panic!("{relative} must configure an indexer service store"));
         assert!(
-            config.indexer.backfill_on_startup,
-            "{relative} indexer backfill"
+            !network_scoped_path(store_path, settings.network)
+                .as_os_str()
+                .is_empty(),
+            "{relative} indexer store path should not be empty"
         );
-        match (&config.indexer.store_path, &config.indexer.path) {
-            (Some(store_path), None) => {
-                assert!(
-                    !network_scoped_path(store_path, settings.network)
-                        .as_os_str()
-                        .is_empty(),
-                    "{relative} indexer store path should not be empty"
-                );
-            }
-            (None, Some(snapshot_path)) => {
-                assert!(
-                    network_scoped_path(snapshot_path, settings.network)
-                        .extension()
-                        .and_then(|extension| extension.to_str())
-                        .is_some_and(|extension| extension.eq_ignore_ascii_case("json")),
-                    "{relative} indexer path should be a JSON snapshot file"
-                );
-            }
-            (Some(_), Some(_)) => panic!("{relative} must not configure both indexer stores"),
-            (None, None) => panic!("{relative} indexer durable path"),
-        }
 
         assert!(
             config.application_logs.enabled,
@@ -269,7 +255,6 @@ fn indexer_section_parses_service_store_aliases() {
 [indexer]
 Enabled = true
 DBPath = "Indexer_{0}"
-BackfillOnStartup = true
 "#,
     )
     .expect("parse indexer config");
@@ -279,6 +264,25 @@ BackfillOnStartup = true
         config.indexer.store_path.as_deref(),
         Some(std::path::Path::new("Indexer_{0}"))
     );
-    assert!(config.indexer.path.is_none());
-    assert!(config.indexer.backfill_on_startup);
+}
+
+#[test]
+fn indexer_section_rejects_removed_legacy_options() {
+    for removed_option in [
+        r#"
+[indexer]
+enabled = true
+path = "Indexer.json"
+"#,
+        r#"
+[indexer]
+enabled = true
+backfill_on_startup = false
+"#,
+    ] {
+        let error = toml::from_str::<NodeConfig>(removed_option)
+            .expect_err("removed indexer options must not fail open to memory");
+
+        assert!(error.to_string().contains("unknown field"), "{error}");
+    }
 }

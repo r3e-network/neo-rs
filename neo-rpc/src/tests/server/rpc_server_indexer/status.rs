@@ -104,33 +104,6 @@ async fn indexer_status_reports_sync_lag_and_application_logs_availability() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn indexer_status_reports_persistent_snapshot_path() {
-    let path = std::env::temp_dir().join(format!(
-        "neo-rpc-indexer-status-{}-{}.json",
-        std::process::id(),
-        line!()
-    ));
-    let service = Arc::new(IndexerService::open(&path).expect("persistent indexer"));
-    let system = crate::server::test_support::test_system_with_services(
-        ProtocolSettings::default(),
-        crate::server::RpcServices::new().with_indexer(service),
-    );
-
-    let server = RpcServer::new(system, RpcServerConfig::default());
-    let handlers = RpcServerIndexer::register_handlers();
-    let status =
-        (find_handler(&handlers, "getindexerstatus").callback())(&server, &[]).expect("status");
-
-    assert_eq!(status["persistent"].as_bool(), Some(true));
-    assert_eq!(status["persistencemode"].as_str(), Some("json-snapshot"));
-    assert_eq!(
-        status["snapshotpath"].as_str(),
-        Some(path.display().to_string().as_str())
-    );
-    assert!(status["storepath"].is_null());
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn indexer_status_reports_service_store_path() {
     let store = MemoryStoreProvider::new()
         .get_store("")
@@ -151,7 +124,6 @@ async fn indexer_status_reports_service_store_path() {
 
     assert_eq!(status["persistent"].as_bool(), Some(true));
     assert_eq!(status["persistencemode"].as_str(), Some("service-store"));
-    assert!(status["snapshotpath"].is_null());
     assert_eq!(
         status["storepath"].as_str(),
         Some(path.display().to_string().as_str())

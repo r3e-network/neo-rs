@@ -153,8 +153,7 @@ TrackDuringCatchup = true
 
 [indexer]
 Enabled = true
-Path = "Indexer_{0}.json"
-BackfillOnStartup = false
+StorePath = "Indexer_{0}"
 "#;
     let config: NodeConfig = toml::from_str(toml).expect("parses aliases");
 
@@ -194,11 +193,9 @@ BackfillOnStartup = false
     assert!(config.state_service.track_during_catchup);
     assert!(config.indexer.enabled);
     assert_eq!(
-        config.indexer.path.as_deref(),
-        Some(std::path::Path::new("Indexer_{0}.json"))
+        config.indexer.store_path.as_deref(),
+        Some(std::path::Path::new("Indexer_{0}"))
     );
-    assert!(config.indexer.store_path.is_none());
-    assert!(!config.indexer.backfill_on_startup);
 }
 
 #[test]

@@ -54,7 +54,6 @@ async fn indexer_methods_return_indexed_records() {
     assert_eq!(status["indexednotificationaccounts"].as_u64(), Some(2));
     assert_eq!(status["persistent"].as_bool(), Some(false));
     assert_eq!(status["persistencemode"].as_str(), Some("memory"));
-    assert!(status["snapshotpath"].is_null());
     assert!(status["storepath"].is_null());
     assert_eq!(status["ledgerheight"].as_u64(), Some(0));
     assert_eq!(status["blocksbehind"].as_u64(), Some(0));

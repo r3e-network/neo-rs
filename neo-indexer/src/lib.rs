@@ -1,6 +1,7 @@
 //! # neo-indexer
 //!
-//! Chain indexer service, schema models, and durable indexed-data store.
+//! Committed-chain projection service, schema records, and durable indexed-data
+//! store.
 //!
 //! ## Boundary
 //!
@@ -11,10 +12,10 @@
 //!
 //! - `error`: Typed error definitions and conversions.
 //! - `indexer`: Indexer workers and projection logic for chain-derived data.
-//! - `model`: indexer snapshot and projection model records.
+//! - `model`: batch inputs, projection checkpoints, and indexed records.
 //! - `service`: Service loops, handles, lifecycle helpers, and command
 //!   processing.
-//! - `store`: Store implementation for the surrounding backend or domain.
+//! - `store`: Prefix-keyed service-store encoding and query helpers.
 //! - `tests`: Module-local tests and regression coverage.
 
 #[path = "errors/error.rs"]
@@ -28,8 +29,8 @@ mod store;
 pub use error::{IndexerError, IndexerResult};
 pub use indexer::Indexer;
 pub use model::{
-    AccountTransactionRecord, BlockIndexRecord, INDEXER_SNAPSHOT_VERSION, IndexerSnapshot,
-    IndexerStatus, NotificationIndexRecord, TransactionIndexRecord,
+    AccountTransactionRecord, BlockIndexRecord, INDEXER_SNAPSHOT_VERSION, IndexBlockBatchEntry,
+    IndexerSnapshot, IndexerStatus, NotificationIndexRecord, TransactionIndexRecord,
 };
 pub use service::IndexerService;
 

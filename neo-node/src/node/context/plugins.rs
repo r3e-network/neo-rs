@@ -42,8 +42,9 @@ where
         // indexing vs 200+ WITHOUT). Once the node is near the live tip
         // (within ~1000 blocks), we enable full indexing for live operation.
         //
-        // The plugin services can backfill later via their own catch-up path
-        // if needed; the priority during cold sync is reaching consensus tip.
+        // These optional plugin projections begin near the live tip. The
+        // durable Index stage independently reconciles block/transaction
+        // indexes; historical plugin rows require their own replay source.
         let block_index = block.index();
         let catching_up = context.skips_live_observers()
             || (context.uses_dynamic_peer_tip()
@@ -121,11 +122,16 @@ where
                 && u64::from(block_index).saturating_add(COMMITTING_CATCHUP_DISTANCE) < live_tip);
         let should_track_state = self.state_service.is_some()
             && (!catching_up || self.state_service_track_during_catchup);
+        let should_index_live = !catching_up
+            && self
+                .indexer_service
+                .as_ref()
+                .is_some_and(|indexer| indexer.can_append_contiguous_block(block));
         // StateService and a persistent indexer can make an independent store
         // durable before Ledger. ApplicationLogs and TokensTracker only stage
         // here and commit from the post-canonical callback, so they do not arm
         // the cross-store recovery marker.
-        let has_persistent_indexer = !catching_up
+        let has_persistent_indexer = should_index_live
             && self
                 .indexer_service
                 .as_ref()
@@ -155,7 +161,9 @@ where
             return true;
         }
 
-        if let Some(indexer) = &self.indexer_service {
+        if let Some(indexer) = &self.indexer_service
+            && should_index_live
+        {
             if let Err(error) =
                 indexer.index_block_with_application_executions(block, application_executed_list)
             {
@@ -170,6 +178,12 @@ where
                     return false;
                 }
             }
+        } else if self.indexer_service.is_some() && !catching_up {
+            debug!(
+                target: "neo::indexer",
+                height = block_index,
+                "deferred live index write until the durable Index stage fills the preceding gap"
+            );
         }
 
         self.commit_plugin_committing_handlers(block, snapshot, application_executed_list);

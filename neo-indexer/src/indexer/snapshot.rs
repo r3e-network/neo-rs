@@ -9,13 +9,10 @@ use super::notifications::{normalize_notification_payload_metadata, sort_notific
 use crate::error::{IndexerError, IndexerResult};
 use crate::model::{AccountTransactionRecord, INDEXER_SNAPSHOT_VERSION, IndexerSnapshot};
 
-const MIN_SUPPORTED_SNAPSHOT_VERSION: u32 = 1;
-
 impl Indexer {
     /// Rebuilds the in-memory lookup tables from a persisted snapshot.
     pub fn from_snapshot(snapshot: IndexerSnapshot) -> IndexerResult<Self> {
-        if !(MIN_SUPPORTED_SNAPSHOT_VERSION..=INDEXER_SNAPSHOT_VERSION).contains(&snapshot.version)
-        {
+        if snapshot.version != INDEXER_SNAPSHOT_VERSION {
             return Err(IndexerError::UnsupportedSnapshotVersion {
                 version: snapshot.version,
             });

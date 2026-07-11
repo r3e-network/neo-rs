@@ -1,7 +1,7 @@
 //! # neo-indexer::tests::service
 //!
-//! Test module grouping Service loops, handles, lifecycle helpers, and command
-//! processing. coverage for neo-indexer.
+//! Regression coverage for atomic projection commands, persistence, and query
+//! parity.
 //!
 //! ## Boundary
 //!
@@ -10,13 +10,11 @@
 //!
 //! ## Contents
 //!
-//! - `persistence`: Persistence traits, snapshots, transactions, and cache
-//!   overlays.
+//! - `batch`: atomic batch commands and contiguous checkpoint coverage.
 //! - `store_backed`: store-backed service coverage.
 
 use super::*;
 use crate::IndexerError;
-use crate::model::{BlockIndexRecord, IndexerSnapshot};
 use crate::store::{
     ACCOUNT_TRANSACTION_PREFIX, BLOCK_BY_HASH_PREFIX, BLOCK_BY_HEIGHT_PREFIX,
     LEGACY_STORE_SNAPSHOT_KEY, NOTIFICATION_BY_ACCOUNT_PREFIX, NOTIFICATION_BY_BLOCK_PREFIX,
@@ -118,19 +116,6 @@ where
     snapshot.find(Some(&prefix), SeekDirection::Forward).count()
 }
 
-fn put_legacy_store_snapshot<S>(store: &Arc<S>, snapshot: &IndexerSnapshot)
-where
-    S: Store,
-{
-    let bytes = serde_json::to_vec(snapshot).expect("encode legacy snapshot");
-    let mut store_snapshot = store.snapshot();
-    let store_snapshot = Arc::get_mut(&mut store_snapshot).expect("unique store snapshot");
-    store_snapshot
-        .put(LEGACY_STORE_SNAPSHOT_KEY.to_vec(), bytes)
-        .expect("put legacy snapshot");
-    store_snapshot.try_commit().expect("commit legacy snapshot");
-}
-
 #[test]
 fn service_indexes_blocks() {
     let mut header = Header::new();
@@ -144,7 +129,7 @@ fn service_indexes_blocks() {
     assert_eq!(service.block_by_hash(&record.hash), Some(record));
 }
 
-#[path = "persistence.rs"]
-mod persistence;
+#[path = "batch.rs"]
+mod batch;
 #[path = "store_backed.rs"]
 mod store_backed;

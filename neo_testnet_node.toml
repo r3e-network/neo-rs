@@ -41,7 +41,6 @@ disabled_methods = []
 
 [indexer]
 enabled = true
-backfill_on_startup = true
 store_path = "./data/testnet/indexer"
 
 [application_logs]
