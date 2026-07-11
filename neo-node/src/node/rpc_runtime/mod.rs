@@ -48,6 +48,7 @@ pub(super) fn start_rpc_server(
         node.header_cache(),
         services.rpc_services(),
         node.native_contract_provider(),
+        node.cold_ledger_provider(),
     ));
     let mut server = RpcServer::new(node_ctx, rpc_config);
     if let Some(endpoint) = remote_ledger_rpc {

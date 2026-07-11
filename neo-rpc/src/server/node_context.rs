@@ -19,8 +19,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use neo_blockchain::{
-    BlockchainHandle, EmptyLedgerProvider, HeaderCache, HotColdLedgerProviderFactory,
-    LedgerProviderFactory, TransactionStateProvider, TxProvider,
+    BlockchainHandle, HeaderCache, HotColdLedgerProvider, HotColdLedgerProviderFactory,
+    LedgerProviderFactory, OptionalStaticLedgerProvider, StorageLedgerProvider,
+    TransactionStateProvider, TxProvider,
 };
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
@@ -35,9 +36,6 @@ use neo_storage::persistence::store_cache::StoreCache;
 
 use super::native_provider::NativeProviderAdapter;
 use super::rpc_services::RpcServices;
-
-const NODE_CONTEXT_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
-    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
 
 /// Service handle bundle for the RPC server.
 ///
@@ -74,6 +72,10 @@ where
 
     /// Native-contract provider for NeoVM host calls.
     native_contract_provider: Arc<P>,
+
+    /// Node-wide routed Ledger read policy, including the configured immutable
+    /// fallback when static files are enabled.
+    ledger_provider_factory: HotColdLedgerProviderFactory<OptionalStaticLedgerProvider>,
 }
 
 impl<P, S> std::fmt::Debug for NodeContext<P, S>
@@ -93,6 +95,10 @@ where
             .field(
                 "native_contract_provider_contracts",
                 &self.native_contract_provider.all_native_contracts().len(),
+            )
+            .field(
+                "cold_ledger_provider",
+                &self.ledger_provider_factory.cold().is_enabled(),
             )
             .finish()
     }
@@ -117,6 +123,7 @@ where
         header_cache: Arc<HeaderCache>,
         services: RpcServices<S>,
         native_contract_provider: Arc<P>,
+        cold_ledger_provider: OptionalStaticLedgerProvider,
     ) -> Self {
         Self {
             settings,
@@ -127,6 +134,7 @@ where
             header_cache,
             services,
             native_contract_provider,
+            ledger_provider_factory: HotColdLedgerProviderFactory::new(cold_ledger_provider),
         }
     }
 
@@ -213,6 +221,33 @@ where
     pub fn native_contract_provider(&self) -> Arc<P> {
         Arc::clone(&self.native_contract_provider)
     }
+
+    /// Creates the shared hot/cold Ledger provider over `snapshot`.
+    pub fn ledger_provider<'a, B: neo_storage::CacheRead>(
+        &'a self,
+        snapshot: &'a DataCache<B>,
+    ) -> impl neo_blockchain::LedgerProvider + neo_blockchain::ChainTipProvider + 'a {
+        self.ledger_provider_factory.provider(snapshot)
+    }
+}
+
+impl<P, S> LedgerProviderFactory for NodeContext<P, S>
+where
+    P: NativeContractProvider,
+    S: Store,
+{
+    type Provider<'a, B>
+        = HotColdLedgerProvider<StorageLedgerProvider<'a, B>, OptionalStaticLedgerProvider>
+    where
+        Self: 'a,
+        B: neo_storage::CacheRead;
+
+    fn provider<'a, B: neo_storage::CacheRead>(
+        &'a self,
+        snapshot: &'a DataCache<B>,
+    ) -> Self::Provider<'a, B> {
+        self.ledger_provider_factory.provider(snapshot)
+    }
 }
 
 // =============================================================================
@@ -267,7 +302,7 @@ where
         let hash = tx
             .try_hash()
             .map_err(|_| ServiceError::internal(format!("{:?}", VerifyResult::Invalid)))?;
-        let ledger = NODE_CONTEXT_LEDGER_PROVIDER_FACTORY.provider(snapshot);
+        let ledger = self.ledger_provider(snapshot);
         if ledger.contains_transaction(&hash).map_err(|error| {
             ServiceError::internal(format!("ledger contains_transaction: {error}"))
         })? {

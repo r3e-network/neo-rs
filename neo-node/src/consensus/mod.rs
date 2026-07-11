@@ -32,6 +32,8 @@ pub use setup::build_consensus_setup;
 #[cfg(test)]
 use driver::ConsensusDriver;
 #[cfg(test)]
+use native_provider::NativeConsensusProvider;
+#[cfg(test)]
 use payload::{DBFT_CATEGORY, consensus_to_extensible};
 #[cfg(test)]
 use proposal::{

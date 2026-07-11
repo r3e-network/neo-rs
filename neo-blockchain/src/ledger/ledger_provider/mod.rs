@@ -35,6 +35,12 @@ pub use traits::{
     TransactionStateProvider, TxProvider,
 };
 
+/// Runtime-selectable static Ledger fallback without trait-object dispatch.
+///
+/// `Disabled` is the explicit no-archive configuration; `Enabled` carries the
+/// concrete append-only provider opened by the application composition root.
+pub type OptionalStaticLedgerProvider = OptionalLedgerProvider<StaticLedgerProvider>;
+
 #[cfg(test)]
 #[path = "../../tests/ledger/ledger_provider.rs"]
 mod tests;

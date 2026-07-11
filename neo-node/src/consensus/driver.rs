@@ -9,7 +9,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use neo_blockchain::{BlockchainHandle, RuntimeEvent};
+use neo_blockchain::{
+    BlockchainHandle, HotColdLedgerProviderFactory, OptionalStaticLedgerProvider, RuntimeEvent,
+};
 use neo_config::ProtocolSettings;
 use neo_consensus::messages::ConsensusPayload;
 use neo_consensus::{
@@ -108,6 +110,8 @@ pub(super) struct ConsensusDriver<
     /// each round so committee/validator/`NextConsensus` reads reflect the current
     /// persisted tip (C# `ConsensusContext.Reset` takes a fresh snapshot per round).
     pub(super) store: Arc<St>,
+    /// Shared hot/cold Ledger read policy selected by node composition.
+    pub(super) ledger_provider_factory: HotColdLedgerProviderFactory<OptionalStaticLedgerProvider>,
     /// The `prev_hash` of the round currently being driven (carried into
     /// `assemble_block`).
     pub(super) current_prev_hash: UInt256,
@@ -146,12 +150,19 @@ where
         )
     }
 
+    fn native_provider(&self) -> NativeConsensusProvider<P> {
+        NativeConsensusProvider::new(
+            self.mempool.native_contract_provider(),
+            self.ledger_provider_factory.clone(),
+        )
+    }
+
     fn configure_round<B: CacheRead>(
         &mut self,
         snapshot: &DataCache<B>,
         block_index: u32,
     ) -> anyhow::Result<UInt160> {
-        let native = NativeConsensusProvider::new(self.mempool.native_contract_provider());
+        let native = self.native_provider();
         let (validators, next_consensus) =
             round_validator_context(&native, snapshot, &self.settings, block_index)?;
         let my_index = resolve_public_key_index(&self.public_key, &validators);
@@ -186,7 +197,7 @@ where
         // Fresh snapshot for the first round (refreshed on each Imported below).
         let mut round_snapshot = self.fresh_round_snapshot();
         // C# `ConsensusContext.Reset`: first round is height+1 over the tip.
-        let native = NativeConsensusProvider::new(self.mempool.native_contract_provider());
+        let native = self.native_provider();
         let (block_index, prev_hash, prev_timestamp) = ledger_tip(&native, &round_snapshot);
         let next_consensus = match self.configure_round(&round_snapshot, block_index) {
             Ok(next_consensus) => next_consensus,
@@ -254,6 +265,7 @@ where
                         &round_snapshot,
                         &self.mempool,
                         &self.settings,
+                        &native,
                     ) {
                         continue;
                     }
@@ -509,6 +521,7 @@ pub fn consensus_driver_task<P, St>(
     settings: Arc<ProtocolSettings>,
     validators: Arc<RwLock<Vec<ValidatorInfo>>>,
     store: Arc<St>,
+    cold_ledger_provider: OptionalStaticLedgerProvider,
     data_dir: Option<&std::path::Path>,
     inbound_rx: mpsc::Receiver<ConsensusPayload>,
     tx_feed_rx: mpsc::Receiver<UInt256>,
@@ -552,6 +565,7 @@ where
         validators,
         public_key: setup.public_key,
         store,
+        ledger_provider_factory: HotColdLedgerProviderFactory::new(cold_ledger_provider),
         current_prev_hash: UInt256::default(),
         proposal_txs: HashMap::new(),
     };

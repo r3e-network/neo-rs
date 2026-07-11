@@ -213,8 +213,9 @@ fn append_ledger_transaction_context(
     let system = server.system();
     let store = system.store_cache();
     let block_index = state.block_index();
-    let context = ledger_queries::transaction_context(store.data_cache(), block_index)
-        .map_err(internal_error)?;
+    let context =
+        ledger_queries::transaction_context(system.as_ref(), store.data_cache(), block_index)
+            .map_err(internal_error)?;
     obj.insert("confirmations".to_string(), json!(context.confirmations));
 
     // C# GetRawTransaction verbose adds only blockhash, confirmations and

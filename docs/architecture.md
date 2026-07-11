@@ -411,8 +411,8 @@ The detailed rules for this style live in
   remains a supported fallback, and memory providers are used for tests. Higher
   crates read through capability providers: `neo-blockchain` has
   `BlockProvider`/`TxProvider` plus `LedgerProviderFactory`,
-  `StorageLedgerProviderFactory`, `StaticLedgerProviderFactory`, and a generic
-  `HotColdLedgerProviderFactory`.
+  `StorageLedgerProviderFactory`, `StaticLedgerProviderFactory`,
+  `StaticLedgerArchiveFactory`, and a generic `HotColdLedgerProviderFactory`.
   `neo-state-service` currently exposes concrete `MptReadSnapshot`, `MptStore`,
   `StateStore`, and `StateStoreLookup` surfaces; a general state-view factory
   remains future work. These live boundaries preserve C#-compatible key/value
@@ -432,16 +432,23 @@ The detailed rules for this style live in
   hot records miss. When `[storage].static_files_dir` is configured,
   `neo-node` opens `neo-static-files`, reconciles it to the authoritative hot
   Ledger tip before exposing reads, verifies every retained block hash rather
-  than only the tip, and installs `StaticLedgerProvider` as the cold side. A
-  kernel-held archive-file lease excludes concurrent repair or append writers and
-  is released automatically on process exit. `block_committing` captures the
-  exact C#-compatible block-hash,
+  than only the tip, and installs `StaticLedgerProvider` as the cold side. The
+  same statically dispatched optional provider is carried through
+  `NodeSystemContext`, the composed `Node`, dBFT consensus, local P2P serving,
+  transaction admission, and `NodeContext`; historical blockchain, wallet, and
+  RPC reads therefore share one runtime policy instead of rebuilding an empty
+  fallback in each crate. Current-block health/session reads remain hot-only
+  because the current pointer is never a pruning candidate. A kernel-held
+  archive-file lease excludes concurrent repair or append writers and is
+  released automatically on process exit. `block_committing` captures the exact
+  C#-compatible block-hash,
   trimmed-block, final transaction-state, and signer-conflict rows in memory;
   only `canonical_commit_succeeded` appends the whole accepted batch and syncs
   it. A failed canonical commit discards the pending archive rows. A failed
   post-canonical append requests a recoverable restart, and startup replays the
   lagging prefix from MDBX/RocksDB. Hot-row pruning remains disabled: the
-  archive is a safe mirror until a later phase adds atomic hot index updates
+  archive is a safe mirror until a later phase adds a persistent archive index,
+  makes offline maintenance tools archive-aware, adds atomic hot-row deletion,
   and proves prune/recovery parity. The current latest-key index is rebuilt in
   memory at startup, so its memory and scan cost remain proportional to the
   archived row count.

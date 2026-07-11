@@ -16,8 +16,8 @@ fn tx_admission_uses_ledger_provider_boundary() {
     let body = &source[start..];
 
     assert!(
-        body.contains("NativeTxAdmissionLedgerProviderFactory"),
-        "composition-root tx admission must read ledger records through the tx-admission ledger provider factory"
+        body.contains("self.ledger_provider_factory.provider(snapshot)"),
+        "composition-root tx admission must use the node-wide routed Ledger provider factory"
     );
     assert!(
         !body.contains("StorageLedgerProviderFactory"),
@@ -39,20 +39,13 @@ fn tx_admission_uses_ledger_provider_boundary() {
         !body.contains("PolicyContract::new()"),
         "composition-root tx admission must not construct native PolicyContract directly"
     );
-    assert!(provider.contains("trait TxAdmissionLedgerProvider"));
-    assert!(provider.contains("trait TxAdmissionLedgerProviderFactory"));
-    assert!(provider.contains("struct NativeTxAdmissionLedgerProviderFactory"));
     assert!(
-        provider.contains("HotColdLedgerProviderFactory"),
-        "the tx-admission ledger provider should use the routed ledger provider factory"
+        source.contains("HotColdLedgerProviderFactory<OptionalStaticLedgerProvider>"),
+        "the node must retain one statically dispatched configurable Ledger factory"
     );
     assert!(
-        provider.contains("EmptyLedgerProvider"),
-        "the tx-admission ledger provider should keep the no-cold-archive case explicit"
-    );
-    assert!(
-        !provider.contains("StorageLedgerProviderFactory"),
-        "the tx-admission ledger provider should not bypass the hot/cold provider boundary"
+        !provider.contains("TxAdmissionLedgerProvider"),
+        "the obsolete private Ledger wrapper should stay deleted"
     );
     assert!(provider.contains("trait TxAdmissionNativeProvider"));
     assert!(

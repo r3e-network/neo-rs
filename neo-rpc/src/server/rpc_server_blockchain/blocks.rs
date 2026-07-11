@@ -78,15 +78,20 @@ impl RpcServerBlockchain {
                 .map_err(RpcException::from);
         }
         let request = BlockHeightRequest::parse(params, "getblockhash")?;
-        let store = server.system().store_cache();
+        let system = server.system();
+        let store = system.store_cache();
         let current = ledger_queries::current_index(store.data_cache()).map_err(internal_error)?;
         if request.height > current {
             return Err(RpcException::from(RpcError::unknown_height()));
         }
 
-        let hash = ledger_queries::block_hash_by_index(store.data_cache(), request.height)
-            .map_err(internal_error)?
-            .ok_or_else(|| RpcException::from(RpcError::unknown_block()))?;
+        let hash = ledger_queries::block_hash_by_index(
+            system.as_ref(),
+            store.data_cache(),
+            request.height,
+        )
+        .map_err(internal_error)?
+        .ok_or_else(|| RpcException::from(RpcError::unknown_block()))?;
         Ok(hash_to_json(&hash))
     }
 
@@ -95,10 +100,12 @@ impl RpcServerBlockchain {
             return remote.call("getblock", params).map_err(RpcException::from);
         }
         let request = BlockPayloadRequest::parse(params, "getblock")?;
-        let store = server.system().store_cache();
-        let block = Self::fetch_payload_block(&store, &request.identifier)?;
+        let system = server.system();
+        let store = system.store_cache();
+        let block = Self::fetch_payload_block(system.as_ref(), &store, &request.identifier)?;
         if request.verbose {
             let (current_index, next_hash) = ledger_queries::current_index_and_next_hash(
+                system.as_ref(),
                 store.data_cache(),
                 block.header.index(),
             )
@@ -119,13 +126,17 @@ impl RpcServerBlockchain {
                 .map_err(RpcException::from);
         }
         let request = BlockPayloadRequest::parse(params, "getblockheader")?;
-        let store = server.system().store_cache();
-        let block = Self::fetch_payload_block(&store, &request.identifier)?;
+        let system = server.system();
+        let store = system.store_cache();
+        let block = Self::fetch_payload_block(system.as_ref(), &store, &request.identifier)?;
         let header = &block.header;
         if request.verbose {
-            let (current_index, next_hash) =
-                ledger_queries::current_index_and_next_hash(store.data_cache(), header.index())
-                    .map_err(internal_error)?;
+            let (current_index, next_hash) = ledger_queries::current_index_and_next_hash(
+                system.as_ref(),
+                store.data_cache(),
+                header.index(),
+            )
+            .map_err(internal_error)?;
             return Ok(header_to_json(server, header, current_index, next_hash));
         }
 
@@ -142,13 +153,15 @@ impl RpcServerBlockchain {
                 .map_err(RpcException::from);
         }
         let request = BlockHeightRequest::parse(params, "getblocksysfee")?;
-        let store = server.system().store_cache();
+        let system = server.system();
+        let store = system.store_cache();
         let current = ledger_queries::current_index(store.data_cache()).map_err(internal_error)?;
         if request.height > current {
             return Err(RpcException::from(RpcError::unknown_height()));
         }
 
         let block = ledger_queries::get_full_block(
+            system.as_ref(),
             store.data_cache(),
             &RpcBlockHashOrIndex::Index(request.height),
         )

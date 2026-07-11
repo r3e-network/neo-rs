@@ -61,7 +61,7 @@ Persistence backend.
 | `mdbx_geometry_upper_gb` | integer | backend default | MDBX map upper bound in GiB. Shipped MainNet/TestNet configs pin this so the mmap geometry is explicit. |
 | `mdbx_geometry_growth_mb` | integer | backend default | MDBX map growth step in MiB. |
 | `mdbx_max_readers` | integer | backend default | MDBX reader slot limit for concurrent RPC/service reads. |
-| `static_files_dir` | path | none (disabled) | Enables the finalized Ledger static archive and stores `ledger.static` in this directory. Requires a writable persistent canonical backend. |
+| `static_files_dir` | path | none (disabled) | Enables the finalized Ledger static archive and stores `ledger.static` in this directory. The configured provider becomes the shared historical fallback for blockchain, consensus, P2P, admission, wallet, and RPC reads. Requires a writable persistent canonical backend. |
 | `static_files_compression_level` | integer | `3` | Zstandard level applied independently to each finalized-height frame. |
 | `static_files_cache_capacity` | integer | `64` | Number of decompressed height frames retained by the LRU cache; must be greater than zero. |
 | `static_files_recovery_batch_blocks` | integer | `1024` | Maximum hot Ledger blocks appended per startup reconciliation sync; must be greater than zero. |

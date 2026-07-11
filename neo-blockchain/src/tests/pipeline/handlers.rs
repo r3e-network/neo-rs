@@ -193,15 +193,11 @@ fn verified_import_pipeline_uses_explicit_native_providers() {
 }
 
 #[test]
-fn store_fallback_reads_use_hot_cold_provider_boundary() {
+fn store_fallback_reads_use_system_context_provider_boundary() {
     let source = include_str!("../../service/service/store_reads.rs");
     assert!(
-        source.contains("HotColdLedgerProviderFactory"),
-        "store fallback reads should use the hot/cold ledger provider factory"
-    );
-    assert!(
-        source.contains("EmptyLedgerProvider"),
-        "store fallback reads should keep the no-cold-archive case explicit"
+        source.contains("self.system") && source.contains(".ledger_provider("),
+        "store fallback reads should use the provider selected by SystemContext"
     );
     assert!(
         !source.contains("StorageLedgerProviderFactory"),
@@ -272,16 +268,8 @@ fn extensible_verification_uses_system_native_provider() {
         "extensible payload verification should preserve the SystemContext provider type"
     );
     assert!(
-        source.contains("HotColdLedgerProviderFactory"),
-        "extensible payload height reads must route through the hot/cold ledger provider factory"
-    );
-    assert!(
-        source.contains("EmptyLedgerProvider"),
-        "extensible payload height reads should keep the no-cold-archive case explicit"
-    );
-    assert!(
-        verifier.contains("EXTENSIBLE_LEDGER_PROVIDER_FACTORY"),
-        "extensible payload height reads should use the routed module provider"
+        handler.contains("self.system") && handler.contains(".ledger_provider("),
+        "extensible payload height reads must use the provider selected by SystemContext"
     );
     assert!(
         !verifier.contains("StorageLedgerProviderFactory"),
@@ -369,16 +357,12 @@ fn transaction_admission_uses_system_native_provider() {
         "transaction admission must not construct PolicyContract directly in the handler"
     );
     assert!(
-        source.contains("HotColdLedgerProviderFactory"),
-        "transaction admission ledger checks should use the hot/cold ledger provider factory"
+        conflict_helper.contains("self.system.ledger_provider"),
+        "persisted conflict checks should use the provider selected by SystemContext"
     );
     assert!(
-        source.contains("EmptyLedgerProvider"),
-        "transaction admission ledger checks should keep the no-cold-archive case explicit"
-    );
-    assert!(
-        conflict_helper.contains("TRANSACTION_LEDGER_PROVIDER_FACTORY"),
-        "persisted conflict checks should use the routed module provider"
+        conflict_helper.contains("ledger_provider: &impl TransactionStateProvider"),
+        "the conflict helper should depend on its narrow Ledger capability"
     );
     assert!(
         !source.contains("StorageLedgerProviderFactory"),
@@ -429,16 +413,8 @@ fn header_inventory_verification_uses_system_native_provider() {
         "header inventory verification must use the explicit-provider witness helper"
     );
     assert!(
-        source.contains("HotColdLedgerProviderFactory"),
-        "header inventory anchor reads must route through the hot/cold ledger provider factory"
-    );
-    assert!(
-        source.contains("EmptyLedgerProvider"),
-        "header inventory anchor reads should keep the no-cold-archive case explicit"
-    );
-    assert!(
-        handler.contains("HEADER_LEDGER_PROVIDER_FACTORY"),
-        "header inventory anchor reads should use the routed module provider"
+        handler.contains("self.system.ledger_provider"),
+        "header inventory anchor reads should use the provider selected by SystemContext"
     );
     assert!(
         !handler.contains("StorageLedgerProviderFactory"),

@@ -8,16 +8,10 @@
 use crate::server::ledger_queries;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_helpers::internal_error;
-use neo_blockchain::{
-    EmptyLedgerProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
-    TransactionStateProvider,
-};
+use neo_blockchain::{LedgerProviderFactory, TransactionStateProvider};
 use neo_payloads::TransactionState;
 use neo_primitives::UInt256;
 use neo_storage::persistence::{CacheRead, DataCache};
-
-const BLOCKCHAIN_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
-    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
 
 /// Ledger capabilities required by blockchain RPC handlers.
 pub(super) trait BlockchainLedgerProvider {
@@ -43,18 +37,25 @@ pub(super) trait BlockchainLedgerProviderFactory {
 }
 
 /// Production provider backed by canonical ledger storage records.
-#[derive(Clone, Copy, Debug, Default)]
-pub(super) struct NativeBlockchainLedgerProvider;
+#[derive(Clone, Copy, Debug)]
+pub(super) struct NativeBlockchainLedgerProvider<'a, F> {
+    ledger_provider_factory: &'a F,
+}
 
-impl NativeBlockchainLedgerProvider {
+impl<'a, F> NativeBlockchainLedgerProvider<'a, F> {
     /// Creates the production blockchain ledger provider.
     #[must_use]
-    pub(super) const fn new() -> Self {
-        Self
+    pub(super) const fn new(ledger_provider_factory: &'a F) -> Self {
+        Self {
+            ledger_provider_factory,
+        }
     }
 }
 
-impl BlockchainLedgerProvider for NativeBlockchainLedgerProvider {
+impl<F> BlockchainLedgerProvider for NativeBlockchainLedgerProvider<'_, F>
+where
+    F: LedgerProviderFactory,
+{
     fn current_height<B: CacheRead>(&self, snapshot: &DataCache<B>) -> Result<u32, RpcException> {
         ledger_queries::current_index(snapshot).map_err(|err| internal_error(err.to_string()))
     }
@@ -64,7 +65,7 @@ impl BlockchainLedgerProvider for NativeBlockchainLedgerProvider {
         snapshot: &DataCache<B>,
         hash: &UInt256,
     ) -> Result<Option<TransactionState>, RpcException> {
-        BLOCKCHAIN_LEDGER_PROVIDER_FACTORY
+        self.ledger_provider_factory
             .provider(snapshot)
             .transaction_state_by_hash(hash)
             .map_err(|err| internal_error(err.to_string()))
@@ -72,13 +73,28 @@ impl BlockchainLedgerProvider for NativeBlockchainLedgerProvider {
 }
 
 /// Factory for production blockchain ledger providers.
-#[derive(Clone, Copy, Debug, Default)]
-pub(super) struct NativeBlockchainLedgerProviderFactory;
+#[derive(Clone, Copy, Debug)]
+pub(super) struct NativeBlockchainLedgerProviderFactory<'a, F> {
+    ledger_provider_factory: &'a F,
+}
 
-impl BlockchainLedgerProviderFactory for NativeBlockchainLedgerProviderFactory {
-    type Provider = NativeBlockchainLedgerProvider;
+impl<'a, F> NativeBlockchainLedgerProviderFactory<'a, F> {
+    /// Adapts the node-composed Ledger provider factory to this RPC domain.
+    #[must_use]
+    pub(super) const fn new(ledger_provider_factory: &'a F) -> Self {
+        Self {
+            ledger_provider_factory,
+        }
+    }
+}
+
+impl<'a, F> BlockchainLedgerProviderFactory for NativeBlockchainLedgerProviderFactory<'a, F>
+where
+    F: LedgerProviderFactory,
+{
+    type Provider = NativeBlockchainLedgerProvider<'a, F>;
 
     fn provider(&self) -> Self::Provider {
-        NativeBlockchainLedgerProvider::new()
+        NativeBlockchainLedgerProvider::new(self.ledger_provider_factory)
     }
 }

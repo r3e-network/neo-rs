@@ -1,111 +1,16 @@
 //! Transaction-admission read capabilities for composition-root helpers.
 //!
 //! The composition root wires runtime services and should depend on narrow
-//! ledger/native capabilities instead of constructing storage ledger providers
-//! or native contracts inside helper flows. This module owns those local
-//! transaction-admission provider seams.
+//! native capabilities instead of constructing native contracts inside helper
+//! flows. Ledger reads use the node-wide routed provider factory directly;
+//! this module owns the remaining native-contract adapter.
 
-use neo_blockchain::{
-    EmptyLedgerProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
-    TransactionStateProvider, TxProvider,
-};
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
 use neo_error::CoreResult;
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_primitives::{UInt160, UInt256};
 use neo_storage::{CacheRead, DataCache};
-
-const TX_ADMISSION_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
-    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
-
-/// Ledger capabilities required by transaction admission routing.
-pub(super) trait TxAdmissionLedgerProvider {
-    /// Returns whether `hash` is already persisted in the ledger.
-    fn contains_transaction(&self, hash: &UInt256) -> CoreResult<bool>;
-
-    /// Returns whether `hash` conflicts with a traceable on-chain transaction.
-    fn contains_conflict_hash(
-        &self,
-        hash: &UInt256,
-        signers: &[UInt160],
-        max_traceable_blocks: u32,
-    ) -> CoreResult<bool>;
-}
-
-/// Factory for transaction-admission ledger providers.
-pub(super) trait TxAdmissionLedgerProviderFactory {
-    /// Provider returned by this factory.
-    type Provider<'a, B>: TxAdmissionLedgerProvider
-    where
-        Self: 'a,
-        B: CacheRead + 'a;
-
-    /// Creates a provider instance over `snapshot`.
-    fn provider<'a, B>(&self, snapshot: &'a DataCache<B>) -> Self::Provider<'a, B>
-    where
-        B: CacheRead;
-}
-
-/// Production transaction-admission ledger provider over a storage snapshot.
-pub(super) struct NativeTxAdmissionLedgerProvider<'a, B>
-where
-    B: CacheRead,
-{
-    snapshot: &'a DataCache<B>,
-}
-
-impl<'a, B> NativeTxAdmissionLedgerProvider<'a, B>
-where
-    B: CacheRead,
-{
-    /// Creates a provider backed by the canonical storage ledger provider.
-    #[must_use]
-    pub(super) const fn new(snapshot: &'a DataCache<B>) -> Self {
-        Self { snapshot }
-    }
-}
-
-impl<B> TxAdmissionLedgerProvider for NativeTxAdmissionLedgerProvider<'_, B>
-where
-    B: CacheRead,
-{
-    fn contains_transaction(&self, hash: &UInt256) -> CoreResult<bool> {
-        TX_ADMISSION_LEDGER_PROVIDER_FACTORY
-            .provider(self.snapshot)
-            .contains_transaction(hash)
-    }
-
-    fn contains_conflict_hash(
-        &self,
-        hash: &UInt256,
-        signers: &[UInt160],
-        max_traceable_blocks: u32,
-    ) -> CoreResult<bool> {
-        TX_ADMISSION_LEDGER_PROVIDER_FACTORY
-            .provider(self.snapshot)
-            .contains_conflict_hash(hash, signers, max_traceable_blocks)
-    }
-}
-
-/// Factory for production transaction-admission ledger providers.
-#[derive(Clone, Copy, Debug, Default)]
-pub(super) struct NativeTxAdmissionLedgerProviderFactory;
-
-impl TxAdmissionLedgerProviderFactory for NativeTxAdmissionLedgerProviderFactory {
-    type Provider<'a, B>
-        = NativeTxAdmissionLedgerProvider<'a, B>
-    where
-        B: CacheRead + 'a;
-
-    fn provider<'a, B>(&self, snapshot: &'a DataCache<B>) -> Self::Provider<'a, B>
-    where
-        B: CacheRead,
-    {
-        NativeTxAdmissionLedgerProvider::new(snapshot)
-    }
-}
 
 /// Native-contract capabilities required by transaction admission routing.
 pub(super) trait TxAdmissionNativeProvider {

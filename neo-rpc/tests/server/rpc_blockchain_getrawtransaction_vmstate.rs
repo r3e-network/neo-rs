@@ -21,6 +21,7 @@ fn node_to_context(node: &neo_system::Node) -> neo_rpc::server::NodeContext {
         node.header_cache(),
         neo_rpc::server::RpcServices::default(),
         node.native_contract_provider(),
+        node.cold_ledger_provider(),
     )
 }
 

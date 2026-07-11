@@ -149,5 +149,8 @@ where
 }
 
 #[cfg(test)]
+#[path = "../tests/service/cold_reads.rs"]
+mod cold_read_tests;
+#[cfg(test)]
 #[path = "../tests/service/service.rs"]
 mod tests;

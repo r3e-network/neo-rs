@@ -45,7 +45,7 @@ impl RpcServerBlockchain {
         }
 
         let store = system.store_cache();
-        let state = NativeBlockchainLedgerProviderFactory
+        let state = NativeBlockchainLedgerProviderFactory::new(system.as_ref())
             .provider()
             .transaction_state_by_hash(store.data_cache(), &request.hash)?;
 
@@ -72,8 +72,9 @@ impl RpcServerBlockchain {
                 .map_err(RpcException::from);
         }
         let request = TransactionHeightRequest::parse(params)?;
-        let store = server.system().store_cache();
-        let state = NativeBlockchainLedgerProviderFactory
+        let system = server.system();
+        let store = system.store_cache();
+        let state = NativeBlockchainLedgerProviderFactory::new(system.as_ref())
             .provider()
             .transaction_state_by_hash(store.data_cache(), &request.hash)?
             .ok_or_else(|| RpcException::from(RpcError::unknown_transaction()))?;

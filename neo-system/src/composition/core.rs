@@ -2,13 +2,16 @@
 //!
 //! This module owns the mechanical construction shared by every full node:
 //! one canonical store cache and snapshot, one mempool, one header cache, one
-//! ledger context, and the blockchain command service that joins them. Process
-//! policy such as task supervision, RPC, HSM credentials, and observability
-//! remains in the application crate.
+//! ledger context, one statically dispatched cold Ledger fallback, and the
+//! blockchain command service that joins them. Process policy such as task
+//! supervision, RPC, HSM credentials, and observability remains in the
+//! application crate.
 
 use std::sync::Arc;
 
-use neo_blockchain::{BlockchainHandle, BlockchainService, HeaderCache, LedgerContext};
+use neo_blockchain::{
+    BlockchainHandle, BlockchainService, HeaderCache, LedgerContext, OptionalStaticLedgerProvider,
+};
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
@@ -34,6 +37,7 @@ where
     settings: Arc<ProtocolSettings>,
     storage: Arc<S>,
     native_contract_provider: Arc<P>,
+    cold_ledger_provider: OptionalStaticLedgerProvider,
     hooks: Arc<H>,
     persisted_height: u32,
     stop_at_height: Option<u32>,
@@ -57,6 +61,7 @@ where
             settings,
             storage,
             native_contract_provider,
+            cold_ledger_provider: OptionalStaticLedgerProvider::default(),
             hooks,
             persisted_height,
             stop_at_height: None,
@@ -66,6 +71,15 @@ where
     /// Limit persistence to a validation/import target height.
     pub fn with_stop_at_height(mut self, stop_at_height: Option<u32>) -> Self {
         self.stop_at_height = stop_at_height;
+        self
+    }
+
+    /// Install the immutable Ledger fallback selected by the application.
+    pub fn with_cold_ledger_provider(
+        mut self,
+        cold_ledger_provider: OptionalStaticLedgerProvider,
+    ) -> Self {
+        self.cold_ledger_provider = cold_ledger_provider;
         self
     }
 
@@ -83,11 +97,12 @@ where
             ledger_context.record_tip(self.persisted_height);
         }
 
-        let system_context = Arc::new(NodeSystemContext::new(
+        let system_context = Arc::new(NodeSystemContext::new_with_ledger_provider(
             Arc::clone(&self.settings),
             Arc::clone(&snapshot),
             store_cache,
             Arc::clone(&self.native_contract_provider),
+            self.cold_ledger_provider.clone(),
             self.hooks,
         ));
         let (mut service, blockchain) = BlockchainService::with_defaults(
@@ -108,6 +123,7 @@ where
                 ledger_context,
                 snapshot,
                 native_contract_provider: self.native_contract_provider,
+                cold_ledger_provider: self.cold_ledger_provider,
                 persisted_height: self.persisted_height,
             },
             blockchain_task: BlockchainTask { service },
@@ -178,6 +194,7 @@ where
     ledger_context: Arc<LedgerContext>,
     snapshot: Arc<StoreDataCache<S>>,
     native_contract_provider: Arc<P>,
+    cold_ledger_provider: OptionalStaticLedgerProvider,
     persisted_height: u32,
 }
 
@@ -221,6 +238,7 @@ where
             .with_mempool(self.mempool)
             .with_header_cache(self.header_cache)
             .with_native_contract_provider(self.native_contract_provider)
+            .with_cold_ledger_provider(self.cold_ledger_provider)
             .build()
     }
 }

@@ -5,19 +5,13 @@ use tracing::{debug, warn};
 use crate::PreverifyCompleted;
 use crate::command::AddTransactionReply;
 use crate::fill_memory_pool::FillMemoryPool;
-use crate::ledger_provider::{
-    EmptyLedgerProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
-    TransactionStateProvider, TxProvider,
-};
+use crate::ledger_provider::{TransactionStateProvider, TxProvider};
 use crate::service::{BlockchainService, MempoolLike};
 
 use super::transaction_provider::{NativeTransactionProvider, TransactionNativeProvider};
 
 /// C# `Blockchain.MaxTxToReverifyPerIdle`.
 const MAX_TX_TO_REVERIFY_PER_IDLE: usize = 10;
-
-const TRANSACTION_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
-    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
 
 impl<S, M> BlockchainService<S, M>
 where
@@ -28,7 +22,7 @@ where
         let Some(snapshot) = self.system.store_snapshot() else {
             return false;
         };
-        let provider = TRANSACTION_LEDGER_PROVIDER_FACTORY.provider(snapshot.as_ref());
+        let provider = self.system.ledger_provider(snapshot.as_ref());
         match TxProvider::contains_transaction(&provider, hash) {
             Ok(exists) => exists,
             Err(error) => {
@@ -59,12 +53,14 @@ where
             return false;
         };
         let transaction_native_provider = NativeTransactionProvider::new(native_contract_provider);
+        let ledger_provider = self.system.ledger_provider(snapshot.as_ref());
         Self::persisted_conflict_exists_with_provider(
             snapshot.as_ref(),
             settings.as_ref(),
             hash,
             signers,
             &transaction_native_provider,
+            &ledger_provider,
         )
     }
 
@@ -74,6 +70,7 @@ where
         hash: &neo_primitives::UInt256,
         signers: &[neo_primitives::UInt160],
         transaction_native_provider: &impl TransactionNativeProvider,
+        ledger_provider: &impl TransactionStateProvider,
     ) -> bool {
         let max_traceable_blocks =
             match transaction_native_provider.max_traceable_blocks(snapshot, settings) {
@@ -87,8 +84,7 @@ where
                     return false;
                 }
             };
-        let provider = TRANSACTION_LEDGER_PROVIDER_FACTORY.provider(snapshot);
-        match provider.contains_conflict_hash(hash, signers, max_traceable_blocks) {
+        match ledger_provider.contains_conflict_hash(hash, signers, max_traceable_blocks) {
             Ok(exists) => exists,
             Err(error) => {
                 warn!(

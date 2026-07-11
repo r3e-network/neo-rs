@@ -29,15 +29,16 @@ impl RpcServerBlockchain {
         }
         let request = RawMemPoolRequest::parse(params)?;
 
-        let pool = server.system().mempool();
+        let system = server.system();
+        let pool = system.mempool();
         if !request.include_unverified {
             return Ok(raw_mempool_hashes_to_json(&pool.verified_snapshot()));
         }
 
         let (verified, unverified) = (pool.verified_snapshot(), pool.unverified_snapshot());
 
-        let store = server.system().store_cache();
-        let height = NativeBlockchainLedgerProviderFactory
+        let store = system.store_cache();
+        let height = NativeBlockchainLedgerProviderFactory::new(system.as_ref())
             .provider()
             .current_height(store.data_cache())?;
         Ok(raw_mempool_with_unverified_to_json(

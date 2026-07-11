@@ -7,8 +7,8 @@
 //! contracts or ledger providers directly in the consensus flow.
 
 use neo_blockchain::{
-    BlockProvider, ChainTipProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory,
-    LedgerProviderFactory, TransactionStateProvider, TxProvider,
+    BlockProvider, ChainTipProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
+    OptionalStaticLedgerProvider, TransactionStateProvider, TxProvider,
 };
 use neo_config::ProtocolSettings;
 use neo_crypto::ECPoint;
@@ -16,9 +16,6 @@ use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::persistence::{CacheRead, DataCache};
 use std::sync::Arc;
-
-const CONSENSUS_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
-    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
 
 /// Current persisted ledger context used to start a dBFT round.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -91,6 +88,7 @@ where
     P: NativeContractProvider,
 {
     native_contract_provider: Arc<P>,
+    ledger_provider_factory: HotColdLedgerProviderFactory<OptionalStaticLedgerProvider>,
 }
 
 impl<P> NativeConsensusProvider<P>
@@ -99,9 +97,13 @@ where
 {
     /// Creates an adapter over the composition-root native-contract provider.
     #[must_use]
-    pub(super) fn new(native_contract_provider: Arc<P>) -> Self {
+    pub(super) fn new(
+        native_contract_provider: Arc<P>,
+        ledger_provider_factory: HotColdLedgerProviderFactory<OptionalStaticLedgerProvider>,
+    ) -> Self {
         Self {
             native_contract_provider,
+            ledger_provider_factory,
         }
     }
 
@@ -117,6 +119,10 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NativeConsensusProvider")
             .field("native_contract_provider", &"NativeContractProvider")
+            .field(
+                "cold_ledger_provider",
+                &self.ledger_provider_factory.cold().is_enabled(),
+            )
             .finish()
     }
 }
@@ -126,7 +132,7 @@ where
     P: NativeContractProvider,
 {
     fn ledger_tip<B: CacheRead>(&self, snapshot: &DataCache<B>) -> ConsensusLedgerTip {
-        let ledger = CONSENSUS_LEDGER_PROVIDER_FACTORY.provider(snapshot);
+        let ledger = self.ledger_provider_factory.provider(snapshot);
         let height = ledger.current_index().unwrap_or(0);
         let prev_hash = ledger.current_hash().unwrap_or_default();
         let prev_timestamp = ledger
@@ -182,7 +188,7 @@ where
         snapshot: &DataCache<B>,
         hash: &UInt256,
     ) -> anyhow::Result<bool> {
-        let ledger = CONSENSUS_LEDGER_PROVIDER_FACTORY.provider(snapshot);
+        let ledger = self.ledger_provider_factory.provider(snapshot);
         Ok(ledger.contains_transaction(hash)?)
     }
 
@@ -193,7 +199,7 @@ where
         signers: &[UInt160],
         max_traceable_blocks: u32,
     ) -> anyhow::Result<bool> {
-        let ledger = CONSENSUS_LEDGER_PROVIDER_FACTORY.provider(snapshot);
+        let ledger = self.ledger_provider_factory.provider(snapshot);
         Ok(ledger.contains_conflict_hash(hash, signers, max_traceable_blocks)?)
     }
 }

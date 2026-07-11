@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
 use neo_storage::persistence::{StoreCache, providers::RuntimeStore};
 use tracing::info;
 
@@ -31,10 +30,9 @@ pub(super) async fn open_static_ledger_archive(
     let store = Arc::clone(store);
     let worker_path = path.clone();
     let (archive, recovery) = tokio::task::spawn_blocking(move || {
-        let files = StaticFileArchiveFactory::new(static_config)
+        let archive = neo_blockchain::StaticLedgerArchiveFactory::new(static_config)
             .open(&worker_path)
             .with_context(|| format!("opening static Ledger archive {}", worker_path.display()))?;
-        let archive = neo_blockchain::StaticLedgerArchive::new(files);
         let hot = StoreCache::new_from_store(store, true);
         let recovery = archive
             .reconcile(hot.data_cache(), canonical_tip, recovery_batch_blocks)

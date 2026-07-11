@@ -451,6 +451,63 @@ fn static_ledger_provider_round_trips_full_and_conflict_records() {
 }
 
 #[test]
+fn optional_static_provider_routes_archived_records_when_hot_storage_is_empty() {
+    use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+
+    let populated = DataCache::new(false);
+    let tx = test_transaction(5_200);
+    let tx_hash = tx.hash();
+    let mut header = Header::new();
+    header.set_index(0);
+    let block = Block::from_parts(header, vec![tx]);
+    let block_hash = block.header.try_hash().expect("block hash");
+    crate::ledger_records::LedgerRecords::write_on_persist_records(&populated, &block, &block_hash)
+        .expect("on-persist records");
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let files = StaticFileArchiveFactory::default()
+        .open(&temp.path().join("ledger.static"))
+        .expect("archive");
+    let archive = StaticLedgerArchive::new(files);
+    archive
+        .append_block(&populated, &block)
+        .expect("append ledger record");
+
+    let empty_hot = DataCache::new(false);
+    let factory = HotColdLedgerProviderFactory::new(OptionalLedgerProvider::from_option(Some(
+        archive.provider(),
+    )));
+    let provider = factory.provider(&empty_hot);
+
+    assert_eq!(
+        provider.block_hash_by_index(0).expect("archived hash"),
+        Some(block_hash)
+    );
+    assert_eq!(
+        provider
+            .block_by_index(0)
+            .expect("archived block")
+            .expect("block")
+            .transactions[0]
+            .hash(),
+        tx_hash
+    );
+    assert_eq!(
+        provider
+            .transaction_state_by_hash(&tx_hash)
+            .expect("archived transaction state")
+            .expect("transaction state")
+            .block_index,
+        0
+    );
+    assert!(
+        provider
+            .contains_transaction(&tx_hash)
+            .expect("archived transaction presence")
+    );
+}
+
+#[test]
 fn static_archive_reconciles_a_missing_durable_hot_prefix() {
     use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
 

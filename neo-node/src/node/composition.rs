@@ -154,6 +154,11 @@ pub(in crate::node) async fn build_node(
     } else {
         None
     };
+    let cold_ledger_provider = neo_blockchain::OptionalStaticLedgerProvider::from_option(
+        static_archive
+            .as_ref()
+            .map(neo_blockchain::StaticLedgerArchive::provider),
+    );
     let static_archive_enabled = static_archive.is_some();
     let service_storage_provider = service_store_provider(config)?;
     validate_state_service_storage(
@@ -214,6 +219,7 @@ pub(in crate::node) async fn build_node(
         Arc::clone(&daemon_hooks),
         durable_tip_height,
     )
+    .with_cold_ledger_provider(cold_ledger_provider.clone())
     .with_stop_at_height(stop_at_height)
     .build();
     let (core, blockchain_task) = core_launch.into_parts();
@@ -458,6 +464,7 @@ pub(in crate::node) async fn build_node(
             Arc::clone(&settings),
             validators,
             Arc::clone(&store),
+            cold_ledger_provider.clone(),
             consensus_data_dir.as_deref(),
             inbound_rx,
             tx_feed_rx,

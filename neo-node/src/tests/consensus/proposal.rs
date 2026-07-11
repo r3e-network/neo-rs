@@ -431,6 +431,7 @@ async fn proposal_resolution_requests_change_view_for_invalid_unverified_transac
         validators: Arc::new(RwLock::new(validators.clone())),
         public_key: validators[1].public_key.clone(),
         store: Arc::new(neo_storage::persistence::providers::memory_store::MemoryStore::new()),
+        ledger_provider_factory: test_ledger_provider_factory(),
         current_prev_hash: UInt256::default(),
         proposal_txs: HashMap::new(),
     };
@@ -542,6 +543,7 @@ async fn proposal_resolution_requests_block_rejected_without_prepare_response_fo
         validators: Arc::new(RwLock::new(validators.clone())),
         public_key: validators[1].public_key.clone(),
         store: Arc::new(neo_storage::persistence::providers::memory_store::MemoryStore::new()),
+        ledger_provider_factory: test_ledger_provider_factory(),
         current_prev_hash: UInt256::default(),
         proposal_txs: HashMap::new(),
     };
@@ -632,6 +634,7 @@ async fn primary_request_transactions_broadcasts_inv_of_proposal_hashes() {
         validators: Arc::new(RwLock::new(validators.clone())),
         public_key: validators[0].public_key.clone(),
         store: Arc::new(neo_storage::persistence::providers::memory_store::MemoryStore::new()),
+        ledger_provider_factory: test_ledger_provider_factory(),
         current_prev_hash: UInt256::default(),
         proposal_txs: HashMap::new(),
     };
@@ -720,6 +723,7 @@ async fn tx_feed_resumes_backup_and_caches_transaction() {
         validators: Arc::new(RwLock::new(validators.clone())),
         public_key: validators[1].public_key.clone(),
         store: Arc::new(neo_storage::persistence::providers::memory_store::MemoryStore::new()),
+        ledger_provider_factory: test_ledger_provider_factory(),
         current_prev_hash: UInt256::default(),
         proposal_txs: HashMap::new(),
     };

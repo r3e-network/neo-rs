@@ -19,6 +19,11 @@ use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Block};
 
+use crate::ledger_provider::{
+    ChainTipProvider, EmptyLedgerProvider, HotColdLedgerProvider, LedgerProvider,
+    StorageLedgerProvider,
+};
+
 /// Observer semantics for the current block persistence call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockPersistContext {
@@ -123,6 +128,19 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
     /// store remains the implementation's responsibility.
     fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache<Self::CacheBacking>>> {
         None
+    }
+
+    /// Creates the canonical Ledger read provider for `snapshot`.
+    ///
+    /// Lightweight contexts inherit a hot-only provider. Production
+    /// composition roots override this method with the configured immutable
+    /// fallback, keeping every blockchain handler on one monomorphized read
+    /// path without making this protocol crate choose archive policy.
+    fn ledger_provider<'a>(
+        &'a self,
+        snapshot: &'a neo_storage::DataCache<Self::CacheBacking>,
+    ) -> impl LedgerProvider + ChainTipProvider + 'a {
+        HotColdLedgerProvider::new(StorageLedgerProvider::new(snapshot), EmptyLedgerProvider)
     }
 
     /// Returns the native-contract provider captured by the composition root,

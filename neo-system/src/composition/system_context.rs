@@ -10,8 +10,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use neo_blockchain::{
-    BlockPersistContext, ChainTipProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory,
-    LedgerProviderFactory, SyncBatchCommitPolicy, SystemContext,
+    BlockPersistContext, ChainTipProvider, HotColdLedgerProviderFactory, LedgerProvider,
+    LedgerProviderFactory, OptionalStaticLedgerProvider, SyncBatchCommitPolicy, SystemContext,
 };
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
@@ -19,9 +19,6 @@ use neo_payloads::{ApplicationExecuted, Block};
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::{CacheRead, StoreCache, StoreCacheBacking, StoreDataCache};
 use parking_lot::Mutex;
-
-const LEDGER_TIP_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
-    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
 
 /// Application-owned behavior around a canonical block commit.
 ///
@@ -119,6 +116,7 @@ where
     snapshot: Arc<StoreDataCache<S>>,
     store_cache: Mutex<StoreCache<S>>,
     native_contract_provider: Arc<P>,
+    ledger_provider_factory: HotColdLedgerProviderFactory<OptionalStaticLedgerProvider>,
     hooks: Arc<H>,
     fatal_persistence_error: AtomicBool,
 }
@@ -137,11 +135,32 @@ where
         native_contract_provider: Arc<P>,
         hooks: Arc<H>,
     ) -> Self {
+        Self::new_with_ledger_provider(
+            settings,
+            snapshot,
+            store_cache,
+            native_contract_provider,
+            OptionalStaticLedgerProvider::default(),
+            hooks,
+        )
+    }
+
+    /// Compose a blockchain context with an application-selected cold Ledger
+    /// fallback.
+    pub fn new_with_ledger_provider(
+        settings: Arc<ProtocolSettings>,
+        snapshot: Arc<StoreDataCache<S>>,
+        store_cache: StoreCache<S>,
+        native_contract_provider: Arc<P>,
+        cold_ledger_provider: OptionalStaticLedgerProvider,
+        hooks: Arc<H>,
+    ) -> Self {
         Self {
             settings,
             snapshot,
             store_cache: Mutex::new(store_cache),
             native_contract_provider,
+            ledger_provider_factory: HotColdLedgerProviderFactory::new(cold_ledger_provider),
             hooks,
             fatal_persistence_error: AtomicBool::new(false),
         }
@@ -182,7 +201,7 @@ where
     }
 
     fn current_height(&self) -> u32 {
-        LEDGER_TIP_PROVIDER_FACTORY
+        self.ledger_provider_factory
             .provider(self.snapshot.as_ref())
             .current_index()
             .unwrap_or(0)
@@ -190,6 +209,13 @@ where
 
     fn store_snapshot(&self) -> Option<Arc<StoreDataCache<S>>> {
         Some(Arc::clone(&self.snapshot))
+    }
+
+    fn ledger_provider<'a>(
+        &'a self,
+        snapshot: &'a StoreDataCache<S>,
+    ) -> impl LedgerProvider + ChainTipProvider + 'a {
+        self.ledger_provider_factory.provider(snapshot)
     }
 
     fn native_contract_provider(&self) -> Option<Arc<Self::NativeProvider>> {

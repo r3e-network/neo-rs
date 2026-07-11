@@ -229,13 +229,14 @@ impl RpcServerBlockchain {
     }
 
     pub(super) fn fetch_payload_block<S>(
+        ledger_provider_factory: &impl neo_blockchain::LedgerProviderFactory,
         store: &neo_storage::persistence::StoreCache<S>,
         identifier: &RpcBlockHashOrIndex,
     ) -> Result<Block, RpcException>
     where
         S: neo_storage::persistence::Store,
     {
-        ledger_queries::get_full_block(store.data_cache(), identifier)
+        ledger_queries::get_full_block(ledger_provider_factory, store.data_cache(), identifier)
             .map_err(internal_error)?
             .ok_or_else(|| RpcException::from(RpcError::unknown_block()))
     }

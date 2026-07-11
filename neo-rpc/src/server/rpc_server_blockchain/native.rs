@@ -45,7 +45,7 @@ impl RpcServerBlockchain {
         let system = server.system();
         let store = system.store_cache();
         let settings = system.settings();
-        let block_height = NativeBlockchainLedgerProviderFactory
+        let block_height = NativeBlockchainLedgerProviderFactory::new(system.as_ref())
             .provider()
             .current_height(store.data_cache())?;
 

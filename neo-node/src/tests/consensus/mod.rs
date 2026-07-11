@@ -16,7 +16,9 @@ use super::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use neo_blockchain::BlockchainHandle;
+use neo_blockchain::{
+    BlockchainHandle, HotColdLedgerProviderFactory, OptionalStaticLedgerProvider,
+};
 use neo_config::ProtocolSettings;
 use neo_consensus::{
     ChangeViewMessage, ChangeViewReason, ConsensusContext, ConsensusEvent, ConsensusMessageType,
@@ -38,6 +40,8 @@ use neo_vm_rs::OpCode;
 use parking_lot::RwLock;
 use tokio::sync::mpsc;
 
+#[path = "archive_provider.rs"]
+mod archive_provider;
 #[path = "proposal.rs"]
 mod proposal;
 
@@ -45,6 +49,19 @@ fn memory_pool(settings: &ProtocolSettings) -> MemoryPool {
     MemoryPool::new_with_native_contract_provider(
         settings,
         Arc::new(neo_native_contracts::StandardNativeProvider::new()),
+    )
+}
+
+fn test_ledger_provider_factory() -> HotColdLedgerProviderFactory<OptionalStaticLedgerProvider> {
+    HotColdLedgerProviderFactory::new(OptionalStaticLedgerProvider::default())
+}
+
+fn consensus_native_provider(
+    pool: &MemoryPool,
+) -> NativeConsensusProvider<neo_native_contracts::StandardNativeProvider> {
+    NativeConsensusProvider::new(
+        pool.native_contract_provider(),
+        test_ledger_provider_factory(),
     )
 }
 
@@ -184,8 +201,8 @@ fn consensus_ledger_reads_use_provider_boundaries() {
         "consensus native provider should use the routed ledger provider factory"
     );
     assert!(
-        provider.contains("EmptyLedgerProvider"),
-        "consensus native provider should keep the no-cold-archive case explicit"
+        provider.contains("OptionalStaticLedgerProvider"),
+        "consensus native provider should retain the runtime-selected static fallback"
     );
     assert!(
         !provider.contains("StorageLedgerProviderFactory"),
@@ -210,9 +227,10 @@ fn prepare_request_ledger_guard_rejects_already_persisted_transaction_hash() {
     seed_persisted_transaction(&snapshot, 7, &tx);
 
     let payload = prepare_request_payload(vec![tx.hash()]);
+    let native = consensus_native_provider(&pool);
 
     assert!(
-        !prepare_request_passes_ledger_guards(&payload, &snapshot, &pool, &settings),
+        !prepare_request_passes_ledger_guards(&payload, &snapshot, &pool, &settings, &native),
         "C# OnPrepareRequestReceived returns before accepting a proposed on-chain tx"
     );
 }
@@ -234,9 +252,10 @@ fn prepare_request_ledger_guard_rejects_available_transaction_with_onchain_confl
     seed_traceable_conflict(&snapshot, &hash, &signer, 95);
 
     let payload = prepare_request_payload(vec![hash]);
+    let native = consensus_native_provider(&pool);
 
     assert!(
-        !prepare_request_passes_ledger_guards(&payload, &snapshot, &pool, &settings),
+        !prepare_request_passes_ledger_guards(&payload, &snapshot, &pool, &settings, &native),
         "C# OnPrepareRequestReceived rejects proposed txs with traceable on-chain conflicts"
     );
 }
@@ -262,9 +281,10 @@ fn prepare_request_ledger_guard_uses_dynamic_max_traceable_blocks() {
     seed_traceable_conflict(&snapshot, &hash, &signer, 95);
 
     let payload = prepare_request_payload(vec![hash]);
+    let native = consensus_native_provider(&pool);
 
     assert!(
-        prepare_request_passes_ledger_guards(&payload, &snapshot, &pool, &settings),
+        prepare_request_passes_ledger_guards(&payload, &snapshot, &pool, &settings, &native),
         "Policy MaxTraceableBlocks=3 makes a block-95 conflict untraceable at height 100"
     );
 }

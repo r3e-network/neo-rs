@@ -1,6 +1,7 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use neo_blockchain::LedgerContext;
+use neo_blockchain::{LedgerContext, OptionalStaticLedgerProvider, StaticLedgerArchiveFactory};
 use neo_config::ProtocolSettings;
 use neo_native_contracts::StandardNativeProvider;
 use neo_network::NetworkHandle;
@@ -8,6 +9,8 @@ use neo_storage::persistence::providers::MemoryStore;
 
 use super::*;
 use crate::NoopBlockCommitHooks;
+
+static ARCHIVE_ID: AtomicU64 = AtomicU64::new(0);
 
 #[test]
 fn core_builder_preserves_one_typed_component_graph() {
@@ -43,6 +46,40 @@ fn core_builder_preserves_one_typed_component_graph() {
         &provider,
         &node.mempool().native_contract_provider()
     ));
+}
+
+#[test]
+fn core_builder_preserves_the_configured_cold_ledger_provider() {
+    let id = ARCHIVE_ID.fetch_add(1, Ordering::Relaxed);
+    let directory = std::env::temp_dir().join(format!(
+        "neo-system-ledger-archive-{}-{id}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).expect("create archive directory");
+    let archive = StaticLedgerArchiveFactory::default()
+        .open(directory.join("ledger.static"))
+        .expect("open static Ledger archive");
+    let cold = OptionalStaticLedgerProvider::from_option(Some(archive.provider()));
+    drop(archive);
+
+    let launch = NodeCoreBuilder::new(
+        Arc::new(ProtocolSettings::default()),
+        Arc::new(MemoryStore::new()),
+        Arc::new(StandardNativeProvider::new()),
+        Arc::new(NoopBlockCommitHooks),
+        0,
+    )
+    .with_cold_ledger_provider(cold)
+    .build();
+    let (core, blockchain_task) = launch.into_parts();
+    let (network, _commands, _events) = NetworkHandle::channel(8, 8);
+    let node = core.into_node(network).expect("compose node");
+
+    assert!(node.ledger_provider_factory().cold().is_enabled());
+
+    drop(node);
+    drop(blockchain_task);
+    std::fs::remove_dir_all(directory).expect("remove archive directory");
 }
 
 #[test]

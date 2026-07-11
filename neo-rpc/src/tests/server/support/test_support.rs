@@ -213,11 +213,31 @@ pub(crate) fn test_system_with_services(
         node.header_cache(),
         services,
         node.native_contract_provider(),
+        node.cold_ledger_provider(),
     ))
 }
 
 pub(crate) fn test_system(settings: ProtocolSettings) -> Arc<crate::server::NodeContext> {
     test_system_with_services(settings, crate::server::RpcServices::new())
+}
+
+/// Re-composes an existing fixture context with an immutable Ledger fallback
+/// while retaining the same hot store and live service handles.
+pub(crate) fn test_system_with_cold_ledger_provider(
+    system: &Arc<crate::server::NodeContext>,
+    cold_ledger_provider: neo_blockchain::OptionalStaticLedgerProvider,
+) -> Arc<crate::server::NodeContext> {
+    Arc::new(crate::server::NodeContext::from_parts(
+        system.settings(),
+        system.storage(),
+        system.blockchain(),
+        system.network(),
+        system.mempool(),
+        system.header_cache(),
+        system.services().clone(),
+        system.native_contract_provider(),
+        cold_ledger_provider,
+    ))
 }
 
 /// `ContractManagement.PREFIX_CONTRACT` — the per-contract record

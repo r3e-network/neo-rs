@@ -12,14 +12,16 @@
 //! fields to compose: those were removed in ADR-032 / ADR-033. The native
 //! contract provider is an explicit composition-root dependency; callers must
 //! pass the same provider that block import, RPC, consensus, and mempool
-//! admission use. The sync import pipeline is built by default from the same
-//! blockchain and storage handles, so staged-sync callers use one explicit
-//! import/checkpoint boundary.
+//! admission use. The optional static Ledger fallback is also captured once
+//! and retained by the final node, so historical reads do not reconstruct
+//! runtime policy locally. The sync import pipeline is built by default from
+//! the same blockchain and storage handles, so staged-sync callers use one
+//! explicit import/checkpoint boundary.
 
 use std::sync::Arc;
 use tracing::debug;
 
-use neo_blockchain::{BlockchainHandle, HeaderCache};
+use neo_blockchain::{BlockchainHandle, HeaderCache, OptionalStaticLedgerProvider};
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
@@ -47,6 +49,7 @@ where
     mempool: Option<Arc<MemoryPool<P>>>,
     header_cache: Option<Arc<HeaderCache>>,
     native_contract_provider: Option<Arc<P>>,
+    cold_ledger_provider: OptionalStaticLedgerProvider,
     sync_import_pipeline: Option<Arc<SyncImportPipeline<SharedStoreSyncStageCheckpointStore<S>>>>,
 }
 
@@ -65,6 +68,7 @@ where
             mempool: None,
             header_cache: None,
             native_contract_provider: None,
+            cold_ledger_provider: OptionalStaticLedgerProvider::default(),
             sync_import_pipeline: None,
         }
     }
@@ -87,6 +91,10 @@ where
             .field(
                 "native_contract_provider",
                 &self.native_contract_provider.is_some(),
+            )
+            .field(
+                "cold_ledger_provider",
+                &self.cold_ledger_provider.is_enabled(),
             )
             .field("sync_import_pipeline", &self.sync_import_pipeline.is_some())
             .finish()
@@ -155,6 +163,15 @@ where
         self
     }
 
+    /// Install the immutable Ledger fallback opened by the application.
+    pub fn with_cold_ledger_provider(
+        mut self,
+        cold_ledger_provider: OptionalStaticLedgerProvider,
+    ) -> Self {
+        self.cold_ledger_provider = cold_ledger_provider;
+        self
+    }
+
     /// Install a pre-composed sync import pipeline.
     ///
     /// When unset, [`Self::build`] creates one over the same blockchain handle
@@ -208,6 +225,9 @@ where
             mempool,
             header_cache: self.header_cache.unwrap_or_default(),
             native_contract_provider,
+            ledger_provider_factory: neo_blockchain::HotColdLedgerProviderFactory::new(
+                self.cold_ledger_provider,
+            ),
         })
     }
 }

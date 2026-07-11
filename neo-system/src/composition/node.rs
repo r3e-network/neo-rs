@@ -8,7 +8,8 @@
 //! - the typed sync import pipeline handle used by downloader composition,
 //! - a [`WalletProvider`] for the optional node wallet,
 //! - the storage backend, mempool, and header cache,
-//! - and the native contract provider owned for NeoVM host calls.
+//! - the native contract provider owned for NeoVM host calls,
+//! - and the node-wide hot/cold Ledger provider factory.
 //!
 //! Construction goes through [`crate::NodeBuilder`], whose `build()`
 //! validates the required components (storage, the blockchain and
@@ -20,7 +21,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use neo_blockchain::{BlockchainHandle, HeaderCache};
+use neo_blockchain::{
+    BlockchainHandle, HeaderCache, HotColdLedgerProviderFactory, LedgerProviderFactory,
+    OptionalStaticLedgerProvider, TransactionStateProvider, TxProvider,
+};
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
@@ -34,10 +38,7 @@ use neo_storage::persistence::providers::MemoryStore;
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_cache::StoreCache;
 
-use super::tx_admission_provider::{
-    NativeTxAdmissionLedgerProviderFactory, NativeTxAdmissionProvider, TxAdmissionLedgerProvider,
-    TxAdmissionLedgerProviderFactory, TxAdmissionNativeProvider,
-};
+use super::tx_admission_provider::{NativeTxAdmissionProvider, TxAdmissionNativeProvider};
 use crate::sync_import_pipeline::SyncImportPipeline;
 use crate::wallet_provider::WalletProvider;
 use neo_error::{CoreError, CoreResult};
@@ -99,6 +100,9 @@ where
     /// after `NodeBuilder::build()` instead of disappearing into the global
     /// `neo-execution` lookup seam.
     pub(super) native_contract_provider: Arc<P>,
+
+    /// Shared hot/cold Ledger read policy selected by the composition root.
+    pub(super) ledger_provider_factory: HotColdLedgerProviderFactory<OptionalStaticLedgerProvider>,
 }
 
 impl<P, S> std::fmt::Debug for Node<P, S>
@@ -119,6 +123,10 @@ where
             .field(
                 "native_contract_provider_contracts",
                 &self.native_contract_provider.all_native_contracts().len(),
+            )
+            .field(
+                "cold_ledger_provider",
+                &self.ledger_provider_factory.cold().is_enabled(),
             )
             .finish()
     }
@@ -192,6 +200,20 @@ where
         Arc::clone(&self.native_contract_provider)
     }
 
+    /// Returns the node-wide routed Ledger provider factory.
+    #[must_use]
+    pub const fn ledger_provider_factory(
+        &self,
+    ) -> &HotColdLedgerProviderFactory<OptionalStaticLedgerProvider> {
+        &self.ledger_provider_factory
+    }
+
+    /// Returns the configured immutable Ledger fallback.
+    #[must_use]
+    pub fn cold_ledger_provider(&self) -> OptionalStaticLedgerProvider {
+        self.ledger_provider_factory.cold().clone()
+    }
+
     /// Maximum increment of `valid_until_block` over the current
     /// height, from the protocol settings (C#
     /// `ProtocolSettings.MaxValidUntilBlockIncrement`).
@@ -227,6 +249,7 @@ where
             Arc::clone(&self.mempool),
             self.network.clone(),
             Arc::clone(&self.settings),
+            self.ledger_provider_factory.clone(),
         )
     }
 }
@@ -268,6 +291,7 @@ where
     mempool: Arc<MemoryPool<P>>,
     network: NetworkHandle,
     settings: Arc<ProtocolSettings>,
+    ledger_provider_factory: HotColdLedgerProviderFactory<OptionalStaticLedgerProvider>,
 }
 
 impl<P> TxRouterHandle<P>
@@ -279,11 +303,13 @@ where
         mempool: Arc<MemoryPool<P>>,
         network: NetworkHandle,
         settings: Arc<ProtocolSettings>,
+        ledger_provider_factory: HotColdLedgerProviderFactory<OptionalStaticLedgerProvider>,
     ) -> Self {
         Self {
             mempool,
             network,
             settings,
+            ledger_provider_factory,
         }
     }
 
@@ -302,7 +328,7 @@ where
         let hash = tx
             .try_hash()
             .map_err(|_| CoreError::other(format!("{:?}", VerifyResult::Invalid)))?;
-        let ledger = NativeTxAdmissionLedgerProviderFactory.provider(snapshot);
+        let ledger = self.ledger_provider_factory.provider(snapshot);
         // Fail closed on a storage error: a transient lookup failure must NOT be
         // treated as "not present" (which would admit and relay a possibly-
         // duplicate transaction). Propagate the error so admission is blocked.

@@ -105,9 +105,10 @@ impl RpcServerWallet {
         let request =
             CancelTransactionRequest::parse(params, server.system().settings().address_version)?;
         let wallet = Self::require_wallet(server)?;
-        let store = server.system().store_cache();
+        let system = server.system();
+        let store = system.store_cache();
         let snapshot = store.data_cache();
-        if NativeWalletLedgerProviderFactory
+        if NativeWalletLedgerProviderFactory::new(system.as_ref())
             .provider()
             .transaction_state_by_hash(snapshot, &request.txid)?
             .is_some()
@@ -121,8 +122,8 @@ impl RpcServerWallet {
         let conflict_attr = TransactionAttribute::Conflicts(Conflicts::new(request.txid));
         let script = vec![OpCode::RET.byte()];
         let snapshot_arc = Arc::new(snapshot.clone());
-        let native_contract_provider = server.system().native_contract_provider();
-        let settings = server.system().settings();
+        let native_contract_provider = system.native_contract_provider();
+        let settings = system.settings();
         let mut tx = wallet_compat::make_transaction(
             wallet.as_ref(),
             snapshot_arc.as_ref(),

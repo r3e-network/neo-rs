@@ -260,6 +260,8 @@ fn make_contract_state(id: i32, hash: UInt160, name: &str) -> ContractState {
     ContractState::new(id, hash, nef, manifest)
 }
 
+#[path = "../rpc_server_blockchain/archive_reads.rs"]
+mod archive_reads;
 #[path = "../rpc_server_blockchain/blocks.rs"]
 mod blocks;
 #[path = "../rpc_server_blockchain/contracts.rs"]

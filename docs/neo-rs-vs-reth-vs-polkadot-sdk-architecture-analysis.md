@@ -37,11 +37,16 @@ recovery or append for an archive at a time. `StaticLedgerArchive` captures exac
 C#-compatible Ledger rows after execution; node commit hooks keep those rows in
 memory until canonical MDBX/RocksDB durability succeeds, then append the whole
 accepted batch with one file sync. Startup validates every retained block hash
-against the authoritative hot prefix and repairs archive lag before local peer serving installs
-`StaticLedgerProvider` as its cold side. Archive publication is post-canonical
-and recoverable, while hot-row pruning remains deliberately disabled. The
-latest-key index is still rebuilt in memory, leaving persistent offset indexes
-and bounded startup work for the next storage phase.
+against the authoritative hot prefix and repairs archive lag before composition
+installs `StaticLedgerProvider` as the cold side. That same statically
+dispatched optional provider now reaches blockchain-service fallback reads,
+node and RPC transaction admission, dBFT tip/transaction/conflict checks, local
+P2P serving, wallet transaction-state reads, and historical RPC block and
+transaction queries. Archive publication is post-canonical and recoverable,
+while hot-row pruning remains deliberately disabled. The latest-key index is
+still rebuilt in memory, leaving persistent offset indexes, bounded startup
+work, archive-aware offline tooling, and prune/recovery parity for the next
+storage phase.
 Operational persisted-tip reads (startup, config validation, chain.acc
 resume, and daemon context) share that routed factory shape. Observability
 ledger-height reads (health/readiness/metrics) use the same boundary for
@@ -58,14 +63,17 @@ native-provider validation.
 Blockchain transaction admission uses the same shape for persisted transaction
 and conflict checks before calling into mempool policy.
 Offline `neo-db-probe` replay follows the same provider boundary for
-transaction-state and block reconstruction. Paths that do not own node archive
-configuration continue to use the explicit clean-miss `EmptyLedgerProvider`.
+transaction-state and block reconstruction, but it does not yet accept the
+node's archive configuration and therefore retains the explicit clean-miss
+`EmptyLedgerProvider`. This is one reason authoritative hot-row pruning remains
+gated.
 Durable store fallback reads after in-memory block-cache eviction use the same
 routing for block-hash and full-block reconstruction.
-RPC session dummy-block reads plus blockchain and wallet transaction-state
-adapters use the same routed factory shape before projecting JSON-RPC responses;
-the shared RPC ledger-query helper now uses it for block, header, current-tip,
-and verbose transaction-context reads as well.
+Blockchain and wallet transaction-state adapters use the node-composed routed
+factory before projecting JSON-RPC responses; the shared RPC ledger-query
+helper uses it for historical blocks, headers, and verbose transaction context.
+RPC session dummy-block and other current-tip reads deliberately use the hot
+current-block record because that record is never cold-tiered.
 Current-tip reads are exposed as the separate
 `ChainTipProvider` capability, and raw transaction-state records (including
 conflict stubs) are exposed as `TransactionStateProvider`, keeping RPC and
@@ -124,9 +132,9 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync {
 
 | Priority | Change | Benefit |
 |----------|--------|---------|
-| P0 remaining | Persistent MDBX archive offsets plus hot-row pruning | Disk savings and bounded archive-index memory after the safe mirror/recovery phase |
+| P0 remaining | Persistent archive offsets, archive-aware offline tooling, then hot-row pruning | Disk savings and bounded archive-index memory after the safe mirror/recovery/provider-propagation phases |
 | P1 | Compact derive macro for Neo types | 15-25% storage savings, fewer bytes |
-| Implemented phase | Static Ledger mirror and provider routing | Format, exact row capture, post-canonical batch publication, startup reconciliation, and local cold reads are wired; pruning remains gated |
+| Implemented phase | Static Ledger mirror and provider routing | Format, exact row capture, post-canonical batch publication, startup reconciliation, and shared runtime cold reads are wired; pruning remains gated |
 | P3 | `OverlayedChanges`-style transactional overlay | Cleaner per-tx isolation |
 
 ---
@@ -217,7 +225,7 @@ while let Some(cmd) = cmd_rx.recv().await {
 
 | Priority | Change | Benefit |
 |----------|--------|---------|
-| P0 | Staged sync pipeline integration | 3-5x sync speed, crash resume |
+| P0 | Promote another production-consumed sync stage beyond `Import` | Durable per-stage resume without inventing fake stage boundaries |
 | Composed / P2P Wired | Import queue boundary with bounded concurrent `check` | Reusable preverification surface; `BlockchainHandle::check` now shares live stateless import-integrity checks, `neo_system::SyncImportPipeline` constructs/registers the queue, and production P2P sync drains coordinator batches into it |
 | Composed / P2P Wired | Commit policy/checkpoint primitives plus import-stage driver | Tunable memory/i-o; durable checkpoint storage is available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, node composition creates the import-stage checkpoint handle, and the coordinator-backed P2P download bridge drives `SyncPipelineDriver` |
 | P2 | Warp sync / state sync | Minutes to sync instead of hours |
@@ -589,7 +597,7 @@ pub struct TransactionState {
 | Change | Speed | Storage | Reliability | Complexity | Effort |
 |--------|-------|---------|-------------|------------|--------|
 | Staged sync pipeline integration | ★★★★★ | ★★ | ★★★★ | ★★★★ | Large |
-| Static archive mirror/recovery | ★★★ | ★★ | ★★★★ | ★★★ | Implemented; pruning/index phase remains |
+| Static archive mirror/recovery/provider propagation | ★★★ | ★★ | ★★★★ | ★★★ | Implemented; persistent-index/pruning phase remains |
 | Import queue + concurrent verify | ★★★★ | - | ★★★ | ★★★ | Runtime queue and production download-to-import bridge wired |
 | Stage commit policy + checkpoints | ★★★ | - | ★★★★ | ★★ | Import-stage driver done |
 | Compact derive macro | ★★ | ★★★★ | - | ★★ | Small |
@@ -610,8 +618,9 @@ pub struct TransactionState {
 4. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`; durable store-backed checkpoints are available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, node composition creates the import-stage queue/checkpoint handle, and `SyncDownloadImportDriver` now receives production P2P coordinator batches.
 5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; `neo-system` has the download-to-import bridge; per-peer `BlockRequestScheduler` remains as the legacy compatibility path; `BlockDownloadCoordinator` composes `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) and `OrderedBlockBatchBuffer` (contiguous response release) behind a transport-agnostic `BlockRangeFetcher`; `Arc<PeerRegistry>` implements live peer fetching through `RemoteNodeHandle::fetch_blocks_by_index`; `PeerRegistry::download_peers` exposes advertised-height peer snapshots; node composition registers the shared registry, disables legacy per-peer block requests, and starts the coordinator-backed downloader/import task.
 6. **Hot/Cold/Static tiering integration** — append-only mirror, exact Ledger
-   adapter, post-canonical publication, recovery, and local cold reads are
-   implemented. Persistent MDBX archive offsets and hot-row pruning remain.
+   adapter, post-canonical publication, recovery, and shared runtime cold reads
+   are implemented. Persistent archive offsets, archive-aware offline tooling,
+   and hot-row pruning remain.
 7. **Staged sync pipeline integration** (large, biggest overall impact)
 
 This document is a living reference — update as architecture evolves.

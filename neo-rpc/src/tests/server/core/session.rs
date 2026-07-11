@@ -89,6 +89,10 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
         !ledger_queries.contains("StorageLedgerProviderFactory"),
         "shared ledger-query helpers should not bypass the hot/cold provider boundary"
     );
+    assert!(
+        ledger_queries.contains("factory.provider(snapshot)"),
+        "historical ledger-query helpers should consume the node-composed provider factory"
+    );
 
     let session_dummy_block = include_str!("../../../server/session/dummy_block.rs");
     assert!(
@@ -198,12 +202,13 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
         "blockchain current-height reads should use the shared ledger-query boundary"
     );
     assert!(
-        blockchain_provider.contains("HotColdLedgerProviderFactory"),
-        "blockchain transaction-state reads should use the routed ledger provider factory"
+        blockchain_provider.contains("F: LedgerProviderFactory"),
+        "blockchain transaction-state reads should preserve the composed factory type"
     );
     assert!(
-        blockchain_provider.contains("EmptyLedgerProvider"),
-        "blockchain transaction-state reads should keep the no-cold-archive case explicit"
+        blockchain_provider.contains("self.ledger_provider_factory")
+            && blockchain_provider.contains(".provider(snapshot)"),
+        "blockchain transaction-state reads should use the composed routed factory"
     );
     assert!(
         !blockchain_provider.contains("StorageLedgerProviderFactory"),
@@ -226,12 +231,13 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
     assert!(wallet_provider.contains("fn transaction_state_by_hash"));
     assert!(wallet_provider.contains("struct NativeWalletLedgerProviderFactory"));
     assert!(
-        wallet_provider.contains("HotColdLedgerProviderFactory"),
-        "wallet transaction-state reads should use the routed ledger provider factory"
+        wallet_provider.contains("F: LedgerProviderFactory"),
+        "wallet transaction-state reads should preserve the composed factory type"
     );
     assert!(
-        wallet_provider.contains("EmptyLedgerProvider"),
-        "wallet transaction-state reads should keep the no-cold-archive case explicit"
+        wallet_provider.contains("self.ledger_provider_factory")
+            && wallet_provider.contains(".provider(snapshot)"),
+        "wallet transaction-state reads should use the composed routed factory"
     );
     assert!(
         !wallet_provider.contains("StorageLedgerProviderFactory"),

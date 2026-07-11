@@ -370,12 +370,16 @@ Key points:
   providers over native Ledger records; `HotColdLedgerProviderFactory` composes
   hot reads with any cold provider that implements the same capability traits.
   With `[storage].static_files_dir`, node composition installs
-  `StaticLedgerProvider` as the cold side. Final Ledger rows are captured from
-  the post-execution snapshot, appended only after canonical durability, and
-  reconciled from the hot prefix at startup. The archive starts at genesis,
-  verifies every retained block hash against canonical storage, and holds one
-  kernel writer lease across all provider clones. Hot pruning is not enabled
-  yet; the in-memory latest-key index is rebuilt at startup.
+  `StaticLedgerProvider` as the cold side and carries the same concrete
+  optional provider through blockchain commands, consensus, transaction
+  admission, local P2P serving, wallet reads, and historical RPC queries.
+  Final Ledger rows are captured from the post-execution snapshot, appended
+  only after canonical durability, and reconciled from the hot prefix at
+  startup. The archive starts at genesis, verifies every retained block hash
+  against canonical storage, and holds one kernel writer lease across all
+  provider clones. Current-tip reads remain hot. Hot pruning is not enabled
+  yet; the in-memory latest-key index is rebuilt at startup and offline probe
+  tooling is not archive-aware.
 - **State read boundary.** `neo-state-service` exposes `MptReadSnapshot`,
   `MptStore`, `StateStore`, and `StateStoreLookup`. RPC proof/state paths use
   concrete immutable `MptReadSnapshot` values. A general

@@ -5,15 +5,10 @@ use neo_payloads::VerifiableExt;
 use neo_payloads::extensible_payload::ExtensiblePayload;
 use tracing::debug;
 
-use crate::ledger_provider::{
-    ChainTipProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
-};
+use crate::ledger_provider::ChainTipProvider;
 use crate::service::{BlockchainService, MempoolLike};
 
 use super::extensible_provider::{ExtensibleNativeProvider, NativeExtensibleProvider};
-
-const EXTENSIBLE_LEDGER_PROVIDER_FACTORY: HotColdLedgerProviderFactory<EmptyLedgerProvider> =
-    HotColdLedgerProviderFactory::new(EmptyLedgerProvider);
 
 impl<S, M> BlockchainService<S, M>
 where
@@ -40,8 +35,14 @@ where
             })?;
             let extensible_native_provider =
                 NativeExtensibleProvider::new(Arc::clone(&native_contract_provider));
+            let height = self
+                .system
+                .ledger_provider(snapshot.as_ref())
+                .current_index()
+                .map_err(|error| CoreError::other(error.to_string()))?;
             Self::verify_extensible(
                 &payload,
+                height,
                 settings.as_ref(),
                 &snapshot,
                 native_contract_provider,
@@ -64,15 +65,12 @@ where
     /// cap.
     fn verify_extensible<B: neo_storage::CacheRead>(
         payload: &ExtensiblePayload,
+        height: u32,
         settings: &neo_config::ProtocolSettings,
         snapshot: &neo_storage::DataCache<B>,
         native_contract_provider: Arc<S::NativeProvider>,
         extensible_native_provider: &impl ExtensibleNativeProvider,
     ) -> CoreResult<()> {
-        let provider = EXTENSIBLE_LEDGER_PROVIDER_FACTORY.provider(snapshot);
-        let height = provider
-            .current_index()
-            .map_err(|e| CoreError::other(e.to_string()))?;
         if height < payload.valid_block_start || height >= payload.valid_block_end {
             return Err(CoreError::other(format!(
                 "height {height} outside the valid range [{}, {})",
