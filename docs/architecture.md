@@ -15,7 +15,7 @@ default store, RocksDB as a supported fallback, and in-memory storage for tests.
 
 ## Layered architecture
 
-The workspace is organized into **8 ordered layers, 26 production crates + 1 dev test crate (neo-test-fixtures)**.
+The workspace is organized into **8 ordered layers, 26 production workspace members plus 3 development-only members**.
 Dependencies point downward, except for an explicit audited allow-list of
 one-way dependencies inside a layer. The canonical layer membership and
 same-layer edges live in `[workspace.metadata.architecture]` and are enforced
@@ -64,6 +64,7 @@ flowchart TD
         error[neo-error]
         crypto[neo-crypto]
         storage[neo-storage]
+        static[neo-static-files]
         config[neo-config]
         vm[neo-vm]
         serialization[neo-serialization]
@@ -102,7 +103,8 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-io | Infrastructure | Binary and variable-length integer reader/writer (mirrors `Neo.IO`). |
 | neo-error | Infrastructure | Authoritative `CoreError` / `CoreResult` error types for the workspace. |
 | neo-crypto | Infrastructure | Hashing, secp256r1 ECC, signatures, BLS12-381. |
-| neo-storage | Infrastructure | `Store` traits, `DataCache`, typed table codecs, MDBX/RocksDB adapters, and in-memory providers. |
+| neo-storage | Infrastructure | `Store` traits, `DataCache`, C#-compatible raw key/value codecs, MDBX/RocksDB adapters, and in-memory providers. |
+| neo-static-files | Infrastructure | Versioned genesis-first static records with zstd compression, checksums, kernel writer ownership, LRU frame caching, and torn-tail recovery. |
 | neo-config | Infrastructure | Node and protocol configuration (TOML-backed settings). |
 | neo-vm | Infrastructure | Stateful NeoVM host (execution engine, contexts, reference-counted stack items) over `neo-vm-rs`. |
 | neo-serialization | Infrastructure | Compression, binary and JSON stack-item codecs, JSONPath, in-memory storage providers. |
@@ -125,13 +127,13 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-node | Application | The node daemon binary (TOML config, storage, P2P, RPC, consensus wiring). |
 | neo-gui | Application | Native desktop manager that talks to a running node over JSON-RPC. |
 
-The current workspace has 26 production workspace members plus 2 development-only members.
+The current workspace has 26 production workspace members plus 3 development-only members.
 The development-only members are not part of the running node:
 `neo-test-fixtures` (shared test builders), `tests` (cross-crate integration
 tests), and `benches-package` (Criterion benchmarks).
 The pure VM semantics live in `neo-vm-rs`, an external sibling crate referenced
 by path from `neo-vm`. For the full ADR log and evolution roadmap, see
-[`design.md`](../design.md) (35 ADRs covering RPC decoupling, engine integration,
+[`design.md`](../design.md) (36 ADRs covering RPC decoupling, engine integration,
 error unification, oracle decoupling, dead dependency cleanup, pipeline strategy,
 error type policy, MPT layering, and more).
 
@@ -145,6 +147,7 @@ small-crate candidates were checked against the dependency layers above:
 | Candidate | Current size / role | Decision |
 |-----------|---------------------|----------|
 | `neo-io` into `neo-serialization` | Low-level Neo.IO-compatible readers, writers, var-int codecs, compression helpers, and bounded caches used by crypto, errors, payloads, and higher serializers. | **Do not merge.** `neo-serialization` is a higher-level codec crate with VM stack-item and JSON concerns; moving raw wire/disk IO there would make lower protocol crates depend on a broader serialization surface. |
+| `neo-static-files` into `neo-storage` | Protocol-blind append-only finalized records, compression, integrity checks, and crash-tail repair. | **Do not merge.** Mutable KV/MVCC storage and immutable sequential archives have different transaction, recovery, and operational contracts; `neo-blockchain` is the adapter that selects exact Ledger rows without teaching either infrastructure crate Neo protocol semantics. |
 | `neo-runtime` into `neo-system` | Small shared service-trait crate used by `neo-system` and concrete service crates such as `neo-network`. | **Do not merge.** That would force lower service implementations to depend upward on the composition root just to name shared service traits and events. |
 | `neo-error` into another foundation crate | Small but central `CoreError` / `CoreResult` vocabulary. | **Do not merge.** It deliberately sits near the bottom of the graph so storage, crypto, execution, RPC, and node services share one error type without cycles. |
 | `neo-config` into `neo-node` or `neo-system` | TOML-backed protocol, network, storage, RPC, and service configuration shared across daemon startup and reusable node services. | **Do not merge.** It is operator-facing configuration vocabulary; merging upward would make lower services depend on process/composition concerns just to parse or validate settings. |
@@ -175,7 +178,7 @@ The detailed rules for this style live in
 
 ## Key design decisions
 
-> The full ADR log lives in [`design.md`](../design.md) — 35 ADRs covering
+> The full ADR log lives in [`design.md`](../design.md) — 36 ADRs covering
 > RPC decoupling, engine integration, error unification, oracle decoupling,
 > dead dependency cleanup, pipeline strategy, error type policy, MPT layering,
 > doc management, runtime versioning, and native contract registry. The
@@ -408,7 +411,8 @@ The detailed rules for this style live in
   remains a supported fallback, and memory providers are used for tests. Higher
   crates read through capability providers: `neo-blockchain` has
   `BlockProvider`/`TxProvider` plus `LedgerProviderFactory`,
-  `StorageLedgerProviderFactory`, and a generic `HotColdLedgerProviderFactory`.
+  `StorageLedgerProviderFactory`, `StaticLedgerProviderFactory`, and a generic
+  `HotColdLedgerProviderFactory`.
   `neo-state-service` currently exposes concrete `MptReadSnapshot`, `MptStore`,
   `StateStore`, and `StateStoreLookup` surfaces; a general state-view factory
   remains future work. These live boundaries preserve C#-compatible key/value
@@ -422,12 +426,25 @@ The detailed rules for this style live in
   `neo-storage`. `neo-rpc` also uses `neo-crypto::mpt_trie` directly for proof
   verification. This is layered design, not duplication.
 
-- **Cold ledger routing is provider-backed, not implicit.**
+- **Cold ledger routing and publication are explicit.**
   `HotColdLedgerProviderFactory` composes hot native Ledger reads with any cold
   provider implementing `BlockProvider`/`TxProvider`, and falls back only when
-  hot records miss. The static-file archive writer/format remains explicit
-  integration work; the block import path does not silently write static files
-  until node configuration and crash-recovery policy opt in.
+  hot records miss. When `[storage].static_files_dir` is configured,
+  `neo-node` opens `neo-static-files`, reconciles it to the authoritative hot
+  Ledger tip before exposing reads, verifies every retained block hash rather
+  than only the tip, and installs `StaticLedgerProvider` as the cold side. A
+  kernel-held archive-file lease excludes concurrent repair or append writers and
+  is released automatically on process exit. `block_committing` captures the
+  exact C#-compatible block-hash,
+  trimmed-block, final transaction-state, and signer-conflict rows in memory;
+  only `canonical_commit_succeeded` appends the whole accepted batch and syncs
+  it. A failed canonical commit discards the pending archive rows. A failed
+  post-canonical append requests a recoverable restart, and startup replays the
+  lagging prefix from MDBX/RocksDB. Hot-row pruning remains disabled: the
+  archive is a safe mirror until a later phase adds atomic hot index updates
+  and proves prune/recovery parity. The current latest-key index is rebuilt in
+  memory at startup, so its memory and scan cost remain proportional to the
+  archived row count.
 
 - **Byte-for-byte C# parity as a hard constraint.** Wire formats, hashing,
   signature schemes, fee formulas, VM opcode pricing, native-contract behavior,
@@ -455,6 +472,6 @@ pipeline stage traits it uses live in `neo-blockchain::pipeline::stage_traits`.
 
 For a step-by-step trace of how a block and a transaction move through these
 services — including the P2P sync path, execution, state-root commit, and RPC
-query path — see [dataflow.md](dataflow.md). For the 35 ADRs documenting every
+query path — see [dataflow.md](dataflow.md). For the 36 ADRs documenting every
 architectural decision and the 4-phase evolution roadmap, see
 [design.md](../design.md).

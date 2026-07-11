@@ -10,13 +10,15 @@
 //!
 //! ## Contents
 //!
-//! - `plugins`: read-side plugin and deferred commit-hook dispatch.
+//! - `plugins`: read-side plugin, static archive, and deferred commit-hook
+//!   dispatch.
 
 use std::sync::Arc;
 
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::persistence::store::Store;
+use parking_lot::Mutex;
 use parking_lot::RwLock;
 
 use super::recovery::LocalReplayGuard;
@@ -38,6 +40,8 @@ pub(super) struct DaemonCommitHooks<
     indexer_service: Option<Arc<neo_indexer::IndexerService>>,
     application_logs_service: Option<Arc<neo_rpc::application_logs::ApplicationLogsService<L>>>,
     tokens_tracker: RwLock<Option<Arc<neo_rpc::plugins::tokens_tracker::TokensTracker<P, T>>>>,
+    static_archive: Option<neo_blockchain::StaticLedgerArchive>,
+    pending_static_records: Mutex<Vec<neo_static_files::StaticRecord>>,
     replay_guard: Arc<LocalReplayGuard>,
 }
 
@@ -70,6 +74,7 @@ where
         state_service_track_during_catchup: bool,
         indexer_service: Option<Arc<neo_indexer::IndexerService>>,
         application_logs_service: Option<Arc<neo_rpc::application_logs::ApplicationLogsService<L>>>,
+        static_archive: Option<neo_blockchain::StaticLedgerArchive>,
         replay_guard: Arc<LocalReplayGuard>,
     ) -> Self {
         Self {
@@ -79,6 +84,8 @@ where
             indexer_service,
             application_logs_service,
             tokens_tracker: RwLock::new(None),
+            static_archive,
+            pending_static_records: Mutex::new(Vec::new()),
             replay_guard,
         }
     }

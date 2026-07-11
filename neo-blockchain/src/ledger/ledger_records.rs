@@ -75,7 +75,7 @@ impl LedgerRecords {
     /// `Prefix_BlockHash` key: prefix + **big-endian** block index, the C#
     /// `CreateStorageKey(Prefix_BlockHash, engine.PersistingBlock.Index)`
     /// overload (`KeyBuilder.AddBigEndian(uint)`, NativeContract.cs:403).
-    fn block_hash_key(index: u32) -> StorageKey {
+    pub(in crate::ledger) fn block_hash_key(index: u32) -> StorageKey {
         let mut key = Vec::with_capacity(5);
         key.push(PREFIX_BLOCK_HASH);
         key.extend_from_slice(&index.to_be_bytes());
@@ -83,7 +83,7 @@ impl LedgerRecords {
     }
 
     /// `Prefix_Block` key (prefix + 32-byte block hash).
-    fn block_key(hash: &UInt256) -> StorageKey {
+    pub(in crate::ledger) fn block_key(hash: &UInt256) -> StorageKey {
         let mut key = Vec::with_capacity(33);
         key.push(PREFIX_BLOCK);
         key.extend_from_slice(&hash.to_bytes());
@@ -91,7 +91,7 @@ impl LedgerRecords {
     }
 
     /// `Prefix_Transaction` key (prefix + 32-byte transaction hash).
-    fn transaction_key(hash: &UInt256) -> StorageKey {
+    pub(in crate::ledger) fn transaction_key(hash: &UInt256) -> StorageKey {
         let mut key = Vec::with_capacity(33);
         key.push(PREFIX_TRANSACTION);
         key.extend_from_slice(&hash.to_bytes());
@@ -100,7 +100,7 @@ impl LedgerRecords {
 
     /// `Prefix_Transaction` conflict key (prefix + conflict hash + signer),
     /// mirroring C# `CreateStorageKey(Prefix_Transaction, attr.Hash, signer)`.
-    fn conflict_signer_key(hash: &UInt256, signer: &UInt160) -> StorageKey {
+    pub(in crate::ledger) fn conflict_signer_key(hash: &UInt256, signer: &UInt160) -> StorageKey {
         let mut key = Vec::with_capacity(53);
         key.push(PREFIX_TRANSACTION);
         key.extend_from_slice(&hash.to_bytes());

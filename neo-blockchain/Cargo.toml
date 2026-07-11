@@ -20,6 +20,7 @@ neo-error = { workspace = true }
 neo-io = { workspace = true }
 neo-crypto = { workspace = true }
 neo-storage = { workspace = true }
+neo-static-files = { workspace = true }
 neo-payloads = { workspace = true }
 neo-manifest = { workspace = true }
 neo-vm = { workspace = true }
@@ -45,6 +46,7 @@ serde = { workspace = true }
 
 [dev-dependencies]
 num-bigint = { workspace = true }
+tempfile = { workspace = true }
 
 [features]
 default = []

@@ -92,6 +92,19 @@ pub(super) struct StorageSection {
     /// Maximum concurrent MDBX readers.
     #[serde(default)]
     pub(super) mdbx_max_readers: Option<u32>,
+    /// Directory containing the finalized Ledger static archive. Setting this
+    /// enables the post-canonical archive mirror.
+    #[serde(default)]
+    pub(super) static_files_dir: Option<PathBuf>,
+    /// Zstandard compression level for independently readable height frames.
+    #[serde(default)]
+    pub(super) static_files_compression_level: Option<i32>,
+    /// Number of decompressed static-file frames retained in memory.
+    #[serde(default)]
+    pub(super) static_files_cache_capacity: Option<usize>,
+    /// Number of durable hot blocks replayed per archive recovery sync.
+    #[serde(default)]
+    pub(super) static_files_recovery_batch_blocks: Option<usize>,
 }
 
 impl StorageSection {
@@ -99,6 +112,30 @@ impl StorageSection {
     /// from the primary storage section.
     pub(super) fn data_directory(&self) -> Option<PathBuf> {
         self.data_dir.clone()
+    }
+
+    /// Returns the enabled static archive file path.
+    pub(super) fn static_file_path(&self) -> Option<PathBuf> {
+        self.static_files_dir
+            .as_ref()
+            .map(|directory| directory.join("ledger.static"))
+    }
+
+    /// Builds the protocol-blind static-file resource configuration.
+    pub(super) fn static_file_config(&self) -> neo_static_files::StaticFileConfig {
+        let mut config = neo_static_files::StaticFileConfig::default();
+        if let Some(level) = self.static_files_compression_level {
+            config.compression_level = level;
+        }
+        if let Some(capacity) = self.static_files_cache_capacity {
+            config.cache_capacity = capacity;
+        }
+        config
+    }
+
+    /// Returns the bounded archive reconciliation batch size.
+    pub(super) fn static_file_recovery_batch_blocks(&self) -> usize {
+        self.static_files_recovery_batch_blocks.unwrap_or(1_024)
     }
 
     /// Builds the provider-neutral storage configuration for a persistent

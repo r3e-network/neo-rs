@@ -12,18 +12,20 @@ use super::*;
 
 #[cfg(test)]
 pub(in crate::node) fn validate_config(config: &NodeConfig, network: u32) -> anyhow::Result<()> {
-    validate_config_with_local_replay_services(config, network, true)
+    validate_config_with_local_replay_services(config, network, true, None)
 }
 
 pub(in crate::node) fn validate_config_for_ledger_mode(
     config: &NodeConfig,
     network: u32,
     ledger_mode: LedgerMode<'_>,
+    storage_override: Option<&Path>,
 ) -> anyhow::Result<()> {
     validate_config_with_local_replay_services(
         config,
         network,
         ledger_mode.uses_local_replay_services(),
+        storage_override,
     )
 }
 
@@ -31,10 +33,12 @@ fn validate_config_with_local_replay_services(
     config: &NodeConfig,
     network: u32,
     validate_local_replay_services: bool,
+    storage_override: Option<&Path>,
 ) -> anyhow::Result<()> {
     let _ = storage_backend_name(config)?;
     let _ = config.p2p.channels_config()?;
     if validate_local_replay_services {
+        validate_static_files_config(config, storage_override)?;
         validate_indexer_config(config, network)?;
         validate_service_store_paths(config, network)?;
     }
@@ -52,6 +56,43 @@ fn validate_config_with_local_replay_services(
         let _ = config.rpc.server_config(network)?;
     }
 
+    Ok(())
+}
+
+fn validate_static_files_config(
+    config: &NodeConfig,
+    storage_override: Option<&Path>,
+) -> anyhow::Result<()> {
+    let Some(directory) = &config.storage.static_files_dir else {
+        return Ok(());
+    };
+    if directory.as_os_str().is_empty() {
+        anyhow::bail!("[storage].static_files_dir must not be empty");
+    }
+    if directory.is_file() {
+        anyhow::bail!(
+            "[storage].static_files_dir must be a directory, got file {}",
+            directory.display()
+        );
+    }
+    if persistent_store_provider(config, storage_override)?.is_none() {
+        anyhow::bail!(
+            "[storage].static_files_dir requires a durable canonical backend (mdbx or rocksdb)"
+        );
+    }
+    if config.storage.read_only {
+        anyhow::bail!(
+            "[storage].static_files_dir cannot be enabled while [storage].read_only is true"
+        );
+    }
+    config
+        .storage
+        .static_file_config()
+        .validate()
+        .map_err(|error| anyhow::anyhow!("invalid static-file configuration: {error}"))?;
+    if config.storage.static_file_recovery_batch_blocks() == 0 {
+        anyhow::bail!("[storage].static_files_recovery_batch_blocks must be greater than zero");
+    }
     Ok(())
 }
 

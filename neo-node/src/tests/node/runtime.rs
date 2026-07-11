@@ -77,6 +77,7 @@ where
         state_service_track_during_catchup,
         indexer_service,
         application_logs_service,
+        None,
         Arc::new(crate::node::recovery::LocalReplayGuard::new(
             None,
             shutdown.clone(),
@@ -98,6 +99,127 @@ where
 
 fn native_provider() -> Arc<neo_native_contracts::StandardNativeProvider> {
     Arc::new(neo_native_contracts::StandardNativeProvider::new())
+}
+
+#[test]
+fn static_archive_publishes_after_canonical_success_and_discards_failed_pending_rows() {
+    use neo_blockchain::{
+        BlockPersistContext, BlockProvider, NativePersistOptions, NativePersistResources,
+        genesis_block, persist_block_natives_with_resources,
+    };
+    use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+    use neo_storage::EmptyCacheBacking;
+    use neo_storage::persistence::providers::memory_store::MemoryStore;
+    use neo_system::BlockCommitHooks;
+
+    type Hooks = DaemonCommitHooks<
+        neo_native_contracts::StandardNativeProvider,
+        MemoryStore,
+        MemoryStore,
+        MemoryStore,
+    >;
+
+    let settings = ProtocolSettings::default();
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let provider = Arc::new(neo_native_contracts::StandardNativeProvider::new());
+    let resources = NativePersistResources::from_provider(Arc::clone(&provider));
+    let block = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let outcome = persist_block_natives_with_resources(
+        Arc::clone(&snapshot),
+        Arc::clone(&block),
+        &settings,
+        NativePersistOptions::default(),
+        &resources,
+    )
+    .expect("stage finalized Ledger rows");
+    let temp = tempfile::tempdir().expect("tempdir");
+    let archive = neo_blockchain::StaticLedgerArchive::new(
+        StaticFileArchiveFactory::default()
+            .open(&temp.path().join("ledger.static"))
+            .expect("archive"),
+    );
+    let shutdown = tokio_util::sync::CancellationToken::new();
+    let hooks = Hooks::new(
+        settings.network,
+        None,
+        false,
+        None,
+        None,
+        Some(archive.clone()),
+        Arc::new(crate::node::recovery::LocalReplayGuard::new(None, shutdown)),
+    );
+
+    assert!(
+        <Hooks as BlockCommitHooks<EmptyCacheBacking>>::block_committing(
+            &hooks,
+            block.as_ref(),
+            snapshot.as_ref(),
+            &outcome.application_executed,
+            0,
+            BlockPersistContext::live(),
+        )
+    );
+    assert_eq!(
+        archive.tip(),
+        None,
+        "pre-commit capture must stay in memory"
+    );
+    <Hooks as BlockCommitHooks<EmptyCacheBacking>>::canonical_commit_succeeded(&hooks);
+    assert_eq!(archive.tip(), Some(0));
+    assert_eq!(
+        archive
+            .provider()
+            .block_by_index(0)
+            .expect("archive read")
+            .expect("genesis archived")
+            .hash(),
+        block.hash()
+    );
+
+    let second_temp = tempfile::tempdir().expect("tempdir");
+    let discarded_archive = neo_blockchain::StaticLedgerArchive::new(
+        StaticFileArchiveFactory::default()
+            .open(&second_temp.path().join("ledger.static"))
+            .expect("archive"),
+    );
+    let discarded = Hooks::new(
+        settings.network,
+        None,
+        false,
+        None,
+        None,
+        Some(discarded_archive.clone()),
+        Arc::new(crate::node::recovery::LocalReplayGuard::new(
+            None,
+            tokio_util::sync::CancellationToken::new(),
+        )),
+    );
+    assert!(
+        <Hooks as BlockCommitHooks<EmptyCacheBacking>>::block_committing(
+            &discarded,
+            block.as_ref(),
+            snapshot.as_ref(),
+            &outcome.application_executed,
+            0,
+            BlockPersistContext::live(),
+        )
+    );
+    <Hooks as BlockCommitHooks<EmptyCacheBacking>>::canonical_commit_failed(
+        &discarded,
+        "injected canonical failure",
+    );
+    <Hooks as BlockCommitHooks<EmptyCacheBacking>>::canonical_commit_succeeded(&discarded);
+    assert_eq!(discarded_archive.tip(), None);
+    assert!(
+        !<Hooks as BlockCommitHooks<EmptyCacheBacking>>::allows_empty_block_fast_forward(
+            &discarded
+        )
+    );
+    assert!(
+        <Hooks as BlockCommitHooks<EmptyCacheBacking>>::allows_empty_block_committing_fast_forward(
+            &discarded
+        )
+    );
 }
 
 #[test]
@@ -1372,6 +1494,7 @@ fn persistent_indexer_arms_replay_marker_before_precommit_write() {
         false,
         Some(indexer),
         None,
+        None,
         Arc::new(crate::node::recovery::LocalReplayGuard::new(
             Some(marker.clone()),
             shutdown,
@@ -1516,6 +1639,7 @@ fn post_canonical_application_logs_do_not_arm_replay_marker() {
         false,
         None,
         Some(logs),
+        None,
         Arc::new(crate::node::recovery::LocalReplayGuard::new(
             Some(marker.clone()),
             shutdown,
@@ -1571,6 +1695,7 @@ fn sync_batch_policy_never_spans_live_post_canonical_plugin_staging() {
         false,
         None,
         Some(logs),
+        None,
         Arc::new(crate::node::recovery::LocalReplayGuard::new(
             None,
             tokio_util::sync::CancellationToken::new(),
@@ -1594,6 +1719,7 @@ fn sync_batch_policy_never_spans_live_post_canonical_plugin_staging() {
         false,
         None,
         None,
+        None,
         Arc::new(crate::node::recovery::LocalReplayGuard::new(
             None,
             tokio_util::sync::CancellationToken::new(),
@@ -1603,6 +1729,49 @@ fn sync_batch_policy_never_spans_live_post_canonical_plugin_staging() {
         <Hooks as BlockCommitHooks<Backing>>::sync_batch_commit_policy(&observer_free, 1, 100, 0,),
         neo_blockchain::SyncBatchCommitPolicy::DeferredLive,
         "observer-free compositions can batch before a peer tip is known",
+    );
+}
+
+#[test]
+fn static_archive_bounds_deferred_commit_staging() {
+    use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+    use neo_storage::persistence::StoreCacheBacking;
+    use neo_system::BlockCommitHooks;
+
+    type Hooks = DaemonCommitHooks<
+        neo_native_contracts::StandardNativeProvider,
+        MemoryStore,
+        MemoryStore,
+        MemoryStore,
+    >;
+    type Backing = StoreCacheBacking<MemoryStore>;
+
+    let temp = tempfile::tempdir().expect("temp dir");
+    let files = StaticFileArchiveFactory::default()
+        .open(&temp.path().join("ledger.static"))
+        .expect("static archive");
+    let hooks = Hooks::new(
+        ProtocolSettings::default().network,
+        None,
+        false,
+        None,
+        None,
+        Some(neo_blockchain::StaticLedgerArchive::new(files)),
+        Arc::new(crate::node::recovery::LocalReplayGuard::new(
+            None,
+            tokio_util::sync::CancellationToken::new(),
+        )),
+    );
+
+    assert_eq!(
+        <Hooks as BlockCommitHooks<Backing>>::sync_batch_commit_policy(&hooks, 1, 64, 0),
+        neo_blockchain::SyncBatchCommitPolicy::DeferredLive,
+        "a bounded archive batch should retain one canonical commit",
+    );
+    assert_eq!(
+        <Hooks as BlockCommitHooks<Backing>>::sync_batch_commit_policy(&hooks, 1, 65, 0),
+        neo_blockchain::SyncBatchCommitPolicy::PerBlock,
+        "oversized archive staging must fall back to bounded per-block commits",
     );
 }
 

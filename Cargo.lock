@@ -2270,12 +2270,14 @@ dependencies = [
  "neo-runtime",
  "neo-serialization",
  "neo-state-service",
+ "neo-static-files",
  "neo-storage",
  "neo-vm",
  "neo-vm-rs",
  "num-bigint",
  "parking_lot",
  "serde",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -2576,6 +2578,7 @@ dependencies = [
  "neo-runtime",
  "neo-serialization",
  "neo-state-service",
+ "neo-static-files",
  "neo-storage",
  "neo-system",
  "neo-vm",
@@ -2803,6 +2806,19 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing",
+]
+
+[[package]]
+name = "neo-static-files"
+version = "0.10.0"
+dependencies = [
+ "hashbrown 0.14.5",
+ "lru",
+ "parking_lot",
+ "tempfile",
+ "thiserror 2.0.18",
+ "xxhash-rust",
+ "zstd",
 ]
 
 [[package]]

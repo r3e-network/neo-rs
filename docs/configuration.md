@@ -61,6 +61,10 @@ Persistence backend.
 | `mdbx_geometry_upper_gb` | integer | backend default | MDBX map upper bound in GiB. Shipped MainNet/TestNet configs pin this so the mmap geometry is explicit. |
 | `mdbx_geometry_growth_mb` | integer | backend default | MDBX map growth step in MiB. |
 | `mdbx_max_readers` | integer | backend default | MDBX reader slot limit for concurrent RPC/service reads. |
+| `static_files_dir` | path | none (disabled) | Enables the finalized Ledger static archive and stores `ledger.static` in this directory. Requires a writable persistent canonical backend. |
+| `static_files_compression_level` | integer | `3` | Zstandard level applied independently to each finalized-height frame. |
+| `static_files_cache_capacity` | integer | `64` | Number of decompressed height frames retained by the LRU cache; must be greater than zero. |
+| `static_files_recovery_batch_blocks` | integer | `1024` | Maximum hot Ledger blocks appended per startup reconciliation sync; must be greater than zero. |
 
 Notes:
 
@@ -69,6 +73,26 @@ Notes:
   `rocksdb`.
 - A persistent backend (`mdbx` or `rocksdb`) with no directory and no
   `--storage-path` is an error.
+- Static files are currently a **post-canonical mirror**. The node captures the
+  exact Ledger rows before commit, appends them only after MDBX/RocksDB commits,
+  verifies the complete retained block-hash prefix and repairs lag from the hot
+  store at startup, and serves clean hot misses through the same provider
+  traits. Hot Ledger pruning is not enabled yet, so operators should budget for
+  both copies while this correctness-first phase is active.
+- Opening `ledger.static` takes an exclusive OS lock on the archive file
+  itself. A second node using the same file, including through a symlink or
+  hard link, fails startup; the kernel releases the lease automatically when
+  the owning process exits, so no stale lockfile cleanup is required.
+- The current latest-key index is rebuilt in memory on startup. Its scan time
+  and memory scale with archived rows until persistent MDBX offset/checkpoint
+  indexes and segment rotation are implemented.
+- Archive-enabled P2P sync uses at most 64 blocks per deferred canonical batch.
+  Larger batches from other import sources fall back to per-block durability,
+  bounding pending Ledger-row memory instead of accumulating an entire large
+  replay batch.
+- A static archive write failure requests a clean restart; it does not roll
+  back or poison already durable canonical state. Startup repairs the missing
+  prefix before exposing local reads.
 
 ### `[p2p]`
 
@@ -479,6 +503,7 @@ network_type = "testnet"
 [storage]
 backend = "rocksdb"
 data_dir = "./data/testnet"
+static_files_dir = "./data/testnet-static"
 
 [p2p]
 port = 20333

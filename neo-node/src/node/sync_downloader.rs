@@ -113,8 +113,24 @@ where
     }
 }
 
-/// Returns the default production downloader policy.
+/// Returns the production downloader policy for the composed storage domains.
+///
+/// Static archive hooks retain exact Ledger rows until the canonical batch
+/// commits. Bound the downloaded batch so that staging remains predictable
+/// while preserving one store commit and archive sync for each bounded batch.
 #[must_use]
-pub(super) fn default_p2p_block_download_config() -> neo_network::BlockDownloadConfig {
-    neo_network::BlockDownloadConfig::default()
+pub(super) fn p2p_block_download_config(
+    static_archive_enabled: bool,
+) -> neo_network::BlockDownloadConfig {
+    let mut config = neo_network::BlockDownloadConfig::default();
+    if static_archive_enabled {
+        config.max_batch_size = config
+            .max_batch_size
+            .min(super::static_files::STATIC_ARCHIVE_MAX_DEFERRED_BLOCKS);
+    }
+    config
 }
+
+#[cfg(test)]
+#[path = "../tests/node/sync_downloader.rs"]
+mod tests;

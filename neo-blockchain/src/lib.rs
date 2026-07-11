@@ -98,9 +98,11 @@ pub use service_context::{BlockPersistContext, SyncBatchCommitPolicy, SystemCont
 pub use neo_runtime::{BlockchainEvent as RuntimeEvent, ServiceError};
 
 pub use header_cache::HeaderCache;
+pub use ledger::static_archive::{StaticArchiveRecovery, StaticLedgerArchive};
 pub use ledger_context::LedgerContext;
 pub use ledger_provider::{
     BlockProvider, ChainTipProvider, EmptyLedgerProvider, EmptyLedgerProviderFactory,
     HotColdLedgerProvider, HotColdLedgerProviderFactory, LedgerProvider, LedgerProviderFactory,
+    OptionalLedgerProvider, StaticLedgerProvider, StaticLedgerProviderFactory,
     StorageLedgerProvider, StorageLedgerProviderFactory, TransactionStateProvider, TxProvider,
 };

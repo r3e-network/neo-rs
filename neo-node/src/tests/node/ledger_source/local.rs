@@ -1,8 +1,11 @@
 use super::LedgerBlockSource;
+use neo_native_contracts::ledger_contract::storage::PREFIX_BLOCK;
 use neo_network::BlockSource;
 use neo_payloads::{Block, Header, Witness};
 use neo_primitives::UInt256;
+use neo_storage::{StorageItem, StorageKey};
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 fn empty_child_block(parent: &Block, index: u32) -> Block {
     let mut header = Header::new();
@@ -14,7 +17,15 @@ fn empty_child_block(parent: &Block, index: u32) -> Block {
     Block::from_parts(header, Vec::new())
 }
 
-fn local_source_with_block(index: u32) -> (LedgerBlockSource, Block, UInt256) {
+fn local_source_with_block(
+    index: u32,
+) -> (
+    LedgerBlockSource,
+    Block,
+    UInt256,
+    Arc<neo_storage::DataCache>,
+    CancellationToken,
+) {
     let settings = neo_config::ProtocolSettings::default();
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let resources = neo_blockchain::NativePersistResources::from_provider(Arc::new(
@@ -42,20 +53,26 @@ fn local_source_with_block(index: u32) -> (LedgerBlockSource, Block, UInt256) {
     )
     .expect("persist child");
 
+    let shutdown = CancellationToken::new();
     let source = LedgerBlockSource::new(
-        snapshot,
+        Arc::clone(&snapshot),
         Arc::new(neo_blockchain::LedgerContext::default()),
         Arc::new(neo_mempool::MemoryPool::new_with_native_contract_provider(
             &settings,
             Arc::new(neo_native_contracts::StandardNativeProvider::new()),
         )),
+        None,
+        Arc::new(crate::node::recovery::LocalReplayGuard::new(
+            None,
+            shutdown.clone(),
+        )),
     );
-    (source, block, block_hash)
+    (source, block, block_hash, snapshot, shutdown)
 }
 
 #[test]
 fn local_ledger_block_source_reads_persisted_block_through_provider() {
-    let (source, block, block_hash) = local_source_with_block(1);
+    let (source, block, block_hash, _, _) = local_source_with_block(1);
 
     assert_eq!(source.block_hash_by_index(1), Some(block_hash));
     assert_eq!(source.block_index_by_hash(&block_hash), Some(1));
@@ -73,7 +90,7 @@ fn local_ledger_block_source_reads_persisted_block_through_provider() {
 
 #[test]
 fn local_ledger_block_source_reports_miss_for_unknown_records() {
-    let (source, _, _) = local_source_with_block(1);
+    let (source, _, _, _, shutdown) = local_source_with_block(1);
     let missing = UInt256::from([0xEE; 32]);
 
     assert!(source.block_by_index(99).is_none());
@@ -81,6 +98,164 @@ fn local_ledger_block_source_reports_miss_for_unknown_records() {
     assert!(source.block_by_hash(&missing).is_none());
     assert!(source.block_index_by_hash(&missing).is_none());
     assert!(!source.contains_transaction(&missing));
+    assert!(
+        !shutdown.is_cancelled(),
+        "clean local-ledger misses must not request restart"
+    );
+}
+
+#[test]
+fn local_ledger_block_source_requests_restart_on_hot_provider_corruption() {
+    let (source, _, block_hash, snapshot, shutdown) = local_source_with_block(1);
+    let block_key = StorageKey::create_with_uint256(
+        neo_native_contracts::LedgerContract::ID,
+        PREFIX_BLOCK,
+        &block_hash,
+    );
+    snapshot
+        .try_update(block_key, StorageItem::from_bytes(vec![0xFF]))
+        .expect("corrupt block record");
+
+    assert!(source.block_by_index(1).is_none());
+    assert!(
+        shutdown.is_cancelled(),
+        "local provider corruption must request supervised shutdown"
+    );
+    assert_eq!(
+        source.block_hash_by_index(1),
+        None,
+        "a failed provider must stop serving even independently readable records"
+    );
+}
+
+#[test]
+fn local_ledger_block_source_requests_restart_on_static_archive_io_error() {
+    use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+
+    let settings = neo_config::ProtocolSettings::default();
+    let populated = Arc::new(neo_storage::DataCache::new(false));
+    let resources = neo_blockchain::NativePersistResources::from_provider(Arc::new(
+        neo_native_contracts::StandardNativeProvider::new(),
+    ));
+    let genesis = Arc::new(neo_blockchain::genesis_block(&settings).expect("genesis block"));
+    neo_blockchain::persist_block_natives_with_resources(
+        Arc::clone(&populated),
+        Arc::clone(&genesis),
+        &settings,
+        neo_blockchain::NativePersistOptions::default(),
+        &resources,
+    )
+    .expect("persist genesis");
+    let child = empty_child_block(genesis.as_ref(), 1);
+    neo_blockchain::persist_block_natives_with_resources(
+        Arc::clone(&populated),
+        Arc::new(child.clone()),
+        &settings,
+        neo_blockchain::NativePersistOptions::default(),
+        &resources,
+    )
+    .expect("persist child");
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let archive = neo_blockchain::StaticLedgerArchive::new(
+        StaticFileArchiveFactory::default()
+            .open(&temp.path().join("ledger.static"))
+            .expect("archive"),
+    );
+    archive
+        .append_block(populated.as_ref(), genesis.as_ref())
+        .expect("archive genesis");
+    archive
+        .append_block(populated.as_ref(), &child)
+        .expect("archive child");
+
+    let shutdown = CancellationToken::new();
+    let source = LedgerBlockSource::new(
+        Arc::new(neo_storage::DataCache::new(false)),
+        Arc::new(neo_blockchain::LedgerContext::default()),
+        Arc::new(neo_mempool::MemoryPool::new_with_native_contract_provider(
+            &settings,
+            Arc::new(neo_native_contracts::StandardNativeProvider::new()),
+        )),
+        Some(archive.clone()),
+        Arc::new(crate::node::recovery::LocalReplayGuard::new(
+            None,
+            shutdown.clone(),
+        )),
+    );
+
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(archive.files().path())
+        .expect("open archive")
+        .set_len(0)
+        .expect("truncate archive");
+
+    assert!(source.block_by_index(1).is_none());
+    assert!(
+        shutdown.is_cancelled(),
+        "cold archive I/O failures must request supervised shutdown"
+    );
+}
+
+#[test]
+fn local_ledger_block_source_falls_back_to_configured_static_files() {
+    use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+
+    let settings = neo_config::ProtocolSettings::default();
+    let populated = Arc::new(neo_storage::DataCache::new(false));
+    let resources = neo_blockchain::NativePersistResources::from_provider(Arc::new(
+        neo_native_contracts::StandardNativeProvider::new(),
+    ));
+    let genesis = Arc::new(neo_blockchain::genesis_block(&settings).expect("genesis block"));
+    neo_blockchain::persist_block_natives_with_resources(
+        Arc::clone(&populated),
+        Arc::clone(&genesis),
+        &settings,
+        neo_blockchain::NativePersistOptions::default(),
+        &resources,
+    )
+    .expect("persist genesis");
+    let child = empty_child_block(genesis.as_ref(), 1);
+    neo_blockchain::persist_block_natives_with_resources(
+        Arc::clone(&populated),
+        Arc::new(child.clone()),
+        &settings,
+        neo_blockchain::NativePersistOptions::default(),
+        &resources,
+    )
+    .expect("persist child");
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let archive = neo_blockchain::StaticLedgerArchive::new(
+        StaticFileArchiveFactory::default()
+            .open(&temp.path().join("ledger.static"))
+            .expect("archive"),
+    );
+    archive
+        .append_block(populated.as_ref(), genesis.as_ref())
+        .expect("archive genesis");
+    archive
+        .append_block(populated.as_ref(), &child)
+        .expect("archive child");
+
+    let shutdown = CancellationToken::new();
+    let source = LedgerBlockSource::new(
+        Arc::new(neo_storage::DataCache::new(false)),
+        Arc::new(neo_blockchain::LedgerContext::default()),
+        Arc::new(neo_mempool::MemoryPool::new_with_native_contract_provider(
+            &settings,
+            Arc::new(neo_native_contracts::StandardNativeProvider::new()),
+        )),
+        Some(archive),
+        Arc::new(crate::node::recovery::LocalReplayGuard::new(None, shutdown)),
+    );
+
+    assert_eq!(source.block_hash_by_index(1), Some(child.hash()));
+    assert_eq!(
+        source.block_by_index(1).expect("static child").hash(),
+        child.hash()
+    );
 }
 
 #[test]
@@ -89,11 +264,11 @@ fn local_ledger_block_source_uses_hot_cold_provider_factory_shape() {
 
     assert!(
         source.contains("HotColdLedgerProviderFactory"),
-        "local block serving should use the hot/cold ledger provider factory shape"
+        "local block serving should route hot records and configured static files through one provider"
     );
     assert!(
-        source.contains("EmptyLedgerProvider"),
-        "local block serving should use the explicit empty cold provider until static files are installed"
+        source.contains("StaticLedgerProvider"),
+        "local block serving should install the production static-file provider when configured"
     );
     assert!(
         !source.contains("StorageLedgerProviderFactory"),
@@ -146,7 +321,7 @@ fn operational_ledger_tip_reads_stay_behind_local_provider_boundary() {
     );
     assert!(
         provider.contains("EmptyLedgerProvider"),
-        "operational ledger-tip reads should use the explicit empty cold provider until static files are installed"
+        "current-tip metadata is always hot and should retain an explicit clean-miss cold provider"
     );
     assert!(
         !provider.contains("StorageLedgerProviderFactory"),

@@ -157,6 +157,20 @@ impl LocalReplayGuard {
         self.shutdown.cancel();
     }
 
+    /// Requests a clean restart for a recoverable post-canonical failure.
+    ///
+    /// Unlike [`Self::canonical_commit_failed`], this does not create a poison
+    /// marker: the canonical and pre-commit observer stores are already
+    /// consistent, and startup can rebuild the lagging mirror from Ledger.
+    pub(in crate::node) fn request_recoverable_restart(&self, reason: &str) {
+        error!(
+            target: "neo::recovery",
+            reason,
+            "recoverable post-canonical service failure; requesting restart"
+        );
+        self.shutdown.cancel();
+    }
+
     /// Returns whether recovery policy has made local replay fatal.
     pub(in crate::node) fn shutdown_requested(&self) -> bool {
         self.shutdown.is_cancelled()

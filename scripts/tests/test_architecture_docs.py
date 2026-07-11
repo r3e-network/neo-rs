@@ -33,7 +33,7 @@ ARCHITECTURE_LAYER_NAMES = {
     "Plugin/RPC boundary",
     "Application",
 }
-DEV_ONLY_MEMBERS = {"tests", "benches-package"}
+DEV_ONLY_MEMBERS = {"neo-test-fixtures", "tests", "benches-package"}
 
 
 def workspace_members():

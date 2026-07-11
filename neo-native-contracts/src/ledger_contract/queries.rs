@@ -226,16 +226,14 @@ impl LedgerContract {
         ))
     }
 
-    /// Pure core of C# `LedgerContract.IsTraceableBlock(snapshot, index, mtb)`:
-    /// a block `index` is traceable at height `current` iff it is not in the
-    /// future and lies within the last `max_traceable_blocks` blocks. C# uses
-    /// unchecked `uint` addition, so `wrapping_add` is used to match the
-    /// (unreachable) overflow corner byte-for-byte.
-    pub(in crate::ledger_contract) fn is_within_trace_window(
-        index: u32,
-        current: u32,
-        max_traceable_blocks: u32,
-    ) -> bool {
+    /// Returns whether `index` remains inside the C# Ledger trace window.
+    ///
+    /// An index is traceable when it is not in the future and lies within the
+    /// last `max_traceable_blocks` blocks. C# uses unchecked `uint` addition,
+    /// so `wrapping_add` preserves its overflow corner. Hot and static-file
+    /// ledger providers share this pure helper.
+    #[must_use]
+    pub fn is_within_trace_window(index: u32, current: u32, max_traceable_blocks: u32) -> bool {
         if index > current {
             return false;
         }

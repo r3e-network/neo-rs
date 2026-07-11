@@ -74,7 +74,7 @@ sudo yum install -y rocksdb-devel
 
 #### Rust Toolchain
 
-Minimum supported Rust version (MSRV): **1.85.0**
+Minimum supported Rust version (MSRV): **1.89.0**
 
 ```bash
 # Install Rust via rustup
@@ -82,7 +82,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 
 # Verify installation
-rustc --version  # Should be >= 1.85.0
+rustc --version  # Should be >= 1.89.0
 ```
 
 #### Optional Dependencies

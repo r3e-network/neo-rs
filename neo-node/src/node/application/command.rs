@@ -37,7 +37,12 @@ impl NodeCommand {
             config = %self.cli.config.display(),
             "loaded protocol settings"
         );
-        validate_config_for_ledger_mode(&config, settings.network, ledger_mode)?;
+        validate_config_for_ledger_mode(
+            &config,
+            settings.network,
+            ledger_mode,
+            self.cli.storage_path.as_deref(),
+        )?;
 
         if run_startup_preflight(&self.cli, &config, settings.network, ledger_mode)?
             == StartupPreflight::Exit

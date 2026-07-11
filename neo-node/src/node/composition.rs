@@ -29,6 +29,7 @@ use super::observability;
 use super::recovery::{LocalReplayGuard, local_replay_marker_path, refuse_local_replay_marker};
 use super::remote_ledger::RemoteLedgerStatus;
 use super::services::{self, NodeServiceHandles, OperationalServices};
+use super::static_files::open_static_ledger_archive;
 use super::sync_downloader;
 use super::tasks::{TaskKind, spawn_daemon_task, spawn_daemon_task_result};
 use super::workflow::RunningNode;
@@ -148,6 +149,12 @@ pub(in crate::node) async fn build_node(
     // for higher write throughput. The node re-enables durable mode once it
     // approaches the live tip.
     let durable_tip_index = store_ledger_index(&store, false);
+    let static_archive = if ledger_mode.uses_local_replay_services() {
+        open_static_ledger_archive(config, &store, durable_tip_index).await?
+    } else {
+        None
+    };
+    let static_archive_enabled = static_archive.is_some();
     let service_storage_provider = service_store_provider(config)?;
     validate_state_service_storage(
         config,
@@ -190,13 +197,15 @@ pub(in crate::node) async fn build_node(
         use_fast_sync_store_mode,
     )?;
 
+    let replay_guard = Arc::new(LocalReplayGuard::new(replay_marker_path, shutdown.clone()));
     let daemon_hooks = Arc::new(DaemonCommitHooks::new(
         settings.network,
         state_service.clone(),
         config.state_service.track_during_catchup,
         indexer_service.clone(),
         application_logs_service.clone(),
-        Arc::new(LocalReplayGuard::new(replay_marker_path, shutdown.clone())),
+        static_archive.clone(),
+        Arc::clone(&replay_guard),
     ));
     let core_launch = neo_system::NodeCoreBuilder::new(
         Arc::clone(&settings),
@@ -249,6 +258,8 @@ pub(in crate::node) async fn build_node(
             Arc::clone(&snapshot),
             Arc::clone(&ledger_ctx),
             Arc::clone(&mempool),
+            static_archive,
+            Arc::clone(&replay_guard),
         ))),
     };
 
@@ -575,7 +586,7 @@ pub(in crate::node) async fn build_node(
                 node.sync_import_pipeline(),
                 Arc::clone(&peer_registry),
                 shutdown.clone(),
-                sync_downloader::default_p2p_block_download_config(),
+                sync_downloader::p2p_block_download_config(static_archive_enabled),
             ),
         );
     }

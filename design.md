@@ -16,14 +16,15 @@ that is professional, consistent, and ready for long-term evolution.
 
 **Architecture health score**: 9.5/10 (up from 9.4 after ADR-027 dead code excision)
 
-The ADR log now spans ADR-001 through ADR-035. Beyond the early trait-design,
+The ADR log now spans ADR-001 through ADR-036. Beyond the early trait-design,
 duplication, and async/concurrency audits (ADR-016 through ADR-019), later ADRs
 cover store-surface reduction and trait sealing (ADR-020, ADR-021), dead-code
 excision (ADR-022, ADR-027, ADR-028, ADR-032), hex/KeyBuilder consolidation
 (ADR-024, ADR-025), cross-crate helpers and test fixtures (ADR-029), the
 neo-hsm default flip and ConsensusApi rename (ADR-030), and the async
 ConsensusSigner deadlock fix (ADR-031), static composition (ADR-034), and the
-staged core/application lifecycle with private service layouts (ADR-035).
+staged core/application lifecycle with private service layouts (ADR-035), and
+a production-consumed finalized Ledger archive (ADR-036).
 
 ---
 
@@ -1278,7 +1279,7 @@ Validation is split into:
 | doc(html_root_url) versions | All 11 crates at 0.10.0 (ADR-013) |
 | Redundant inline lints | Removed (tokens_tracker module) |
 | reth/polkadot comparison | Documented (8 patterns adopted, 4 deferred) |
-| Evolution roadmap | 4 phases, full ADR log (ADR-001 through ADR-035) |
+| Evolution roadmap | 4 phases, full ADR log (ADR-001 through ADR-036) |
 | Debug trait bounds | Consistent across all service traits (ADR-019) |
 | HSM redeem script | Delegates to canonical neo-vm impl (ADR-016) |
 | Async/concurrency safety | Excellent — 0 Critical/Major issues (ADR audit) |
@@ -1291,7 +1292,7 @@ Validation is split into:
 | Hex encoding | Canonical hex_util module in neo-primitives (ADR-024) |
 | KeyBuilder systems | 3-system coexistence documented, ad-hoc path fixed (ADR-025) |
 | ValidateStage extraction | Concrete `NeoValidateStage` added and tested (ADR-026) |
-| Dead crate `neo-static-files` | Deleted — 0 production consumers (ADR-027) |
+| Static files | Old orphan deleted in ADR-027; production-consumed replacement accepted in ADR-036 |
 | Dead crate `neo-engine` | Deleted — traits moved to `neo-blockchain::pipeline::stage_traits` (ADR-027) |
 | Dead trait excision | 6 dead traits + 1 marker trait deleted (ADR-027) |
 | Native contract codec layer | `support/codec.rs` + `support/engine.rs` + `support/settings.rs` consolidate ~265 lines of duplicated boilerplate (ADR-028) |
@@ -1966,3 +1967,82 @@ callers used typed handles.
   `cargo check --workspace --all-targets`, and workspace Clippy pass.
 - Neo N3 v3.10.1 wire bytes, execution, native contracts, state roots,
   persistence ordering, and task-failure policy are unchanged.
+
+### ADR-036: Production-consumed finalized Ledger static archive
+
+**Status**: Accepted (implemented)
+
+**Context**: ADR-027 correctly deleted an earlier `neo-static-files` crate: it
+had no production caller, duplicated an aspirational archive implementation,
+and made architecture claims unsupported by node composition. The live system
+later gained concrete prerequisites that did not exist then:
+
+- byte-exact Ledger writers and provider traits for block, transaction, and
+  conflict-stub reads;
+- a generic hot/cold provider factory with clean-miss routing;
+- an explicit canonical durability callback and deferred sync-batch boundary;
+- startup recovery policy that distinguishes pre-canonical observer hazards
+  from recoverable post-canonical services.
+
+The remaining storage roadmap required an immutable archive, but teaching a
+generic KV backend about Neo blocks would invert ownership, while putting file
+framing in `neo-blockchain` would mix protocol semantics with infrastructure.
+
+**Decision**:
+
+- Reintroduce the name `neo-static-files` for a new protocol-blind
+  infrastructure implementation with real production consumers. It stores
+  opaque key/value rows in contiguous versioned height frames, compresses each
+  frame with zstd, protects indexes and payloads with xxh3 checksums, reuses the
+  workspace `lru` cache, and repairs incomplete tails on open. Archives begin
+  at genesis and hold a standard-library kernel writer lease for the lifetime
+  of the shared provider, so a second process cannot race startup repair or
+  append. The lease is released automatically if the process exits.
+- Keep Neo semantics in `neo-blockchain::ledger::static_archive`. It captures
+  the exact persisted `Prefix_BlockHash`, `Prefix_Block`, final
+  `Prefix_Transaction`, and signer-specific conflict rows from the
+  post-execution snapshot. `StaticLedgerProvider` decodes those same bytes
+  through the canonical Ledger codecs and implements the existing provider
+  capabilities.
+- Publish static rows **after** canonical MDBX/RocksDB success. The pre-commit
+  hook only buffers immutable rows; one canonical-success callback appends the
+  accepted batch with one sync. Canonical failure discards the buffer.
+- Treat archive publication failure as recoverable canonical lag, not as a
+  cross-store atomicity failure. Request a clean restart without writing the
+  pre-commit poison marker. Startup truncates impossible ahead data, validates
+  every retained block hash against the overlapping canonical hot prefix, and
+  replays any missing durable hot suffix before local read services start.
+- Enable the archive only when `[storage].static_files_dir` is configured.
+  Keep hot Ledger rows authoritative and do not prune in this phase.
+
+**Trade-offs**:
+
+- **Gaining**: a tested immutable storage domain, exact Ledger read parity,
+  batch-level file durability, clean hot/cold composition, and crash recovery
+  without changing consensus bytes or state roots.
+- **Giving up**: immediate disk savings. Until persistent MDBX archive-offset
+  indexes and prune/recovery parity are implemented, enabling static files
+  stores a compressed mirror in addition to hot Ledger rows.
+- **Constraint**: The current file uses an in-memory latest-key index rebuilt
+  from frame indexes at open, and reconciliation verifies the retained prefix.
+  Startup work and index memory therefore scale with archive size. Segment
+  rotation and persistent MDBX offset/checkpoint indexes remain required before
+  enabling aggressive historical hot-row pruning at very large chain sizes.
+- **Constraint**: Archive-enabled P2P sync caps deferred batches at 64 blocks;
+  oversized batches from other sources use per-block durability. This bounds
+  staged Ledger-row memory while preserving batched commits for normal sync.
+- **Reversibility**: High. The feature is config-gated, hot data remains
+  complete, and removing the archive does not alter canonical storage.
+
+**Consequences**:
+
+- ADR-027 remains historically correct: its unused implementation is not
+  restored. ADR-036 introduces a different implementation whose consumers are
+  `neo-blockchain` and `neo-node`.
+- `neo-static-files` is an infrastructure workspace member;
+  `neo-blockchain` is the only Neo Ledger semantic adapter; `neo-node` owns
+  configuration, startup reconciliation, commit-hook buffering, and shutdown
+  policy.
+- Trusted empty-block bulk fast-forward cannot skip commit hooks while the
+  archive is enabled; the committing fast path remains available and preserves
+  per-height Ledger history.

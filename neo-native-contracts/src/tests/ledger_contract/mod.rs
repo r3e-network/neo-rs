@@ -579,7 +579,7 @@ fn ledger_storage_codecs_use_stack_value_projection() {
     let hash_deserializer = slice_between(
         source,
         "pub(crate) fn deserialize_hash_index_state",
-        "pub(crate) fn decode_transaction_state",
+        "fn decode_transaction_state",
     );
     assert!(hash_deserializer.contains("decode_stack_value"));
     assert!(hash_deserializer.contains("HashIndexState::from_stack_value"));
@@ -587,7 +587,7 @@ fn ledger_storage_codecs_use_stack_value_projection() {
     assert!(!hash_deserializer.contains("stack_value_as_u32"));
     assert!(!hash_deserializer.contains("BinarySerializer::deserialize("));
 
-    let tx_deserializer = slice_between(source, "pub(crate) fn decode_transaction_state", "\n}\n");
+    let tx_deserializer = slice_between(source, "fn decode_transaction_state", "\n}\n");
     assert!(tx_deserializer.contains("decode_stack_value"));
     assert!(tx_deserializer.contains("from_stack_value"));
     assert!(!tx_deserializer.contains("Transaction::deserialize"));

@@ -1,0 +1,28 @@
+[package]
+name = "neo-static-files"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "Append-only compressed static-file storage for immutable Neo ledger records"
+
+[dependencies]
+hashbrown = { workspace = true }
+lru = { workspace = true }
+parking_lot = { workspace = true }
+thiserror = { workspace = true }
+xxhash-rust = { workspace = true }
+zstd = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

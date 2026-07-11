@@ -9,6 +9,8 @@ use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_storage::DataCache;
 use neo_vm_rs::VmState;
 
+use crate::StaticLedgerArchive;
+
 fn test_transaction(nonce: u32) -> Transaction {
     let mut tx = Transaction::new();
     tx.set_nonce(nonce);
@@ -382,4 +384,180 @@ fn hot_cold_transaction_state_prefers_hot_conflict_stub_over_cold_transaction() 
         .expect("hot stub wins");
     assert_eq!(state.block_index, 42);
     assert!(state.transaction.is_none());
+}
+
+#[test]
+fn static_ledger_provider_round_trips_full_and_conflict_records() {
+    use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+
+    let cache = DataCache::new(false);
+    let conflict_hash = UInt256::from_bytes(&[0xDA; 32]).expect("conflict hash");
+    let signer_account = UInt160::from_bytes(&[0x35; 20]).expect("signer");
+    let mut tx = test_transaction(5100);
+    tx.set_signers(vec![Signer::new(signer_account, WitnessScope::NONE)]);
+    tx.set_attributes(vec![TransactionAttribute::Conflicts(
+        neo_payloads::Conflicts::new(conflict_hash),
+    )]);
+    let tx_hash = tx.hash();
+    let mut header = Header::new();
+    header.set_index(0);
+    let block = Block::from_parts(header, vec![tx]);
+    let block_hash = block.header.try_hash().expect("block hash");
+    crate::ledger_records::LedgerRecords::write_on_persist_records(&cache, &block, &block_hash)
+        .expect("on-persist records");
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let files = StaticFileArchiveFactory::default()
+        .open(&temp.path().join("ledger.static"))
+        .expect("archive");
+    let archive = StaticLedgerArchive::new(files);
+    archive
+        .append_block(&cache, &block)
+        .expect("append ledger record");
+    let provider = archive.provider();
+
+    assert_eq!(
+        provider.block_hash_by_index(0).expect("hash"),
+        Some(block_hash)
+    );
+    assert_eq!(
+        provider
+            .block_by_index(0)
+            .expect("block")
+            .expect("archived block")
+            .transactions[0]
+            .hash(),
+        tx_hash
+    );
+    assert_eq!(
+        provider
+            .transaction_state_by_hash(&tx_hash)
+            .expect("state")
+            .expect("full state")
+            .block_index,
+        0
+    );
+    let stub = provider
+        .transaction_state_by_hash(&conflict_hash)
+        .expect("stub")
+        .expect("conflict stub");
+    assert_eq!(stub.block_index, 0);
+    assert!(stub.transaction.is_none());
+    assert!(
+        provider
+            .contains_conflict_hash(&conflict_hash, &[signer_account], 100)
+            .expect("contains conflict")
+    );
+}
+
+#[test]
+fn static_archive_reconciles_a_missing_durable_hot_prefix() {
+    use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+
+    let cache = DataCache::new(false);
+    let mut blocks = Vec::new();
+    for height in 0..=2 {
+        let mut header = Header::new();
+        header.set_index(height);
+        let block = Block::from_parts(header, vec![test_transaction(6_000 + height)]);
+        let hash = block.header.try_hash().expect("block hash");
+        crate::ledger_records::LedgerRecords::write_on_persist_records(&cache, &block, &hash)
+            .expect("on-persist records");
+        crate::ledger_records::LedgerRecords::write_post_persist_record(&cache, &hash, height)
+            .expect("post-persist record");
+        blocks.push(block);
+    }
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let files = StaticFileArchiveFactory::default()
+        .open(&temp.path().join("ledger.static"))
+        .expect("archive");
+    let archive = StaticLedgerArchive::new(files);
+    archive
+        .append_block(&cache, &blocks[0])
+        .expect("seed archive");
+
+    let recovery = archive
+        .reconcile(&cache, Some(2), 2)
+        .expect("reconcile archive");
+
+    assert_eq!(recovery.appended_blocks, 2);
+    assert_eq!(archive.tip(), Some(2));
+    assert_eq!(
+        archive
+            .provider()
+            .block_by_index(2)
+            .expect("block")
+            .expect("archived block")
+            .hash(),
+        blocks[2].hash()
+    );
+}
+
+#[test]
+fn static_archive_rejects_an_interior_canonical_hash_mismatch() {
+    use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+
+    let hot = DataCache::new(false);
+    let archived = DataCache::new(false);
+    let mut hot_blocks = Vec::new();
+    let mut archived_blocks = Vec::new();
+    for height in 0..=2 {
+        let mut hot_header = Header::new();
+        hot_header.set_index(height);
+        hot_header.set_nonce(u64::from(height));
+        let hot_block = Block::from_parts(hot_header, vec![]);
+        let hot_hash = hot_block.header.try_hash().expect("hot block hash");
+        crate::ledger_records::LedgerRecords::write_on_persist_records(&hot, &hot_block, &hot_hash)
+            .expect("hot block records");
+        crate::ledger_records::LedgerRecords::write_post_persist_record(&hot, &hot_hash, height)
+            .expect("hot current block");
+
+        let archived_block = if height == 1 {
+            let mut divergent_header = hot_block.header.clone();
+            divergent_header.set_nonce(10_001);
+            Block::from_parts(divergent_header, vec![])
+        } else {
+            hot_block.clone()
+        };
+        let archived_hash = archived_block
+            .header
+            .try_hash()
+            .expect("archived block hash");
+        crate::ledger_records::LedgerRecords::write_on_persist_records(
+            &archived,
+            &archived_block,
+            &archived_hash,
+        )
+        .expect("archived block records");
+        crate::ledger_records::LedgerRecords::write_post_persist_record(
+            &archived,
+            &archived_hash,
+            height,
+        )
+        .expect("archived current block");
+        hot_blocks.push(hot_block);
+        archived_blocks.push(archived_block);
+    }
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let files = StaticFileArchiveFactory::default()
+        .open(&temp.path().join("ledger.static"))
+        .expect("archive");
+    let archive = StaticLedgerArchive::new(files);
+    for block in &archived_blocks {
+        archive
+            .append_block(&archived, block)
+            .expect("append archived block");
+    }
+    assert_eq!(archive.tip(), Some(2));
+    assert_eq!(archived_blocks[2].hash(), hot_blocks[2].hash());
+
+    let error = archive
+        .reconcile(&hot, Some(2), 2)
+        .expect_err("interior fork must be rejected");
+    assert!(
+        error.to_string().contains("height 1"),
+        "unexpected error: {error}"
+    );
 }

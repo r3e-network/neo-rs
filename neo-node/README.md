@@ -67,8 +67,9 @@ max_connections = 40
 seed_nodes = ["seed1.neo.org:10333", "seed2.neo.org:10333"]
 
 [storage]
-path = "./data/chain"
+data_dir = "./data/chain"
 backend = "mdbx"
+static_files_dir = "./data/chain-static"
 
 [rpc]
 enabled = true

@@ -115,12 +115,15 @@ impl LedgerContract {
         Ok((state.hash, state.index))
     }
 
-    /// Decodes a `Prefix_Transaction` record: the C# `TransactionState`
-    /// interoperable stack item. `Struct[Integer]` is a conflict stub;
+    /// Decodes the C#-compatible value stored under `Prefix_Transaction`.
+    ///
+    /// The value is a C# `TransactionState` interoperable stack item:
+    /// `Struct[Integer]` is a conflict stub, while
     /// `Struct[Integer, ByteString, Integer]` is a full record.
-    pub(crate) fn decode_transaction_state(
-        bytes: &[u8],
-    ) -> CoreResult<neo_payloads::TransactionState> {
+    ///
+    /// Storage and static-file ledger providers share this codec so moving an
+    /// immutable record between physical tiers cannot change its semantics.
+    pub fn decode_transaction_state(bytes: &[u8]) -> CoreResult<neo_payloads::TransactionState> {
         let item = crate::support::codec::decode_stack_value(bytes, "TransactionState")?;
         let mut state = neo_payloads::TransactionState::new(0, None, VMState::NONE);
         state

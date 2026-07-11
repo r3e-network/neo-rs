@@ -12,6 +12,8 @@ members = [
     "neo-crypto",
     # Storage traits, `DataCache`, MDBX, RocksDB, and in-memory stores.
     "neo-storage",
+    # Append-only compressed static files for immutable ledger records.
+    "neo-static-files",
     # Binary IO helpers (matches C# Neo.IO).
     "neo-io",
     # Stateful NeoVM host over the sibling `neo-vm-rs` semantics crate.
@@ -99,7 +101,7 @@ exclude = [
 [workspace.package]
 version = "0.10.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.89"
 authors = [
     "R3E Network <jimmy@r3e.network>"
 ]
@@ -113,7 +115,7 @@ readme = "README.md"
 
 [workspace.metadata]
 # Minimum supported Rust version policy
-msrv = "1.85"
+msrv = "1.89"
 
 # Canonical crate-layer model consumed by architecture tests. Dependencies must
 # point to a lower layer unless the exact same-layer edge is recorded below.
@@ -160,6 +162,7 @@ infrastructure = [
     "neo-error",
     "neo-crypto",
     "neo-storage",
+    "neo-static-files",
     "neo-config",
     "neo-vm",
     "neo-serialization",
@@ -209,6 +212,10 @@ module_inception = "allow"
 type_complexity = "allow"
 len_zero = "allow"
 nonminimal_bool = "allow"
+# Rust 1.89 activates these style-only rewrites across legacy protocol code.
+# Keep architecture changes reviewable; modernize touched modules incrementally.
+collapsible_if = "allow"
+manual_is_multiple_of = "allow"
 enum_variant_names = "allow"
 too_many_arguments = "allow"
 field_reassign_with_default = "allow"
@@ -225,6 +232,7 @@ neo-primitives = { path = "neo-primitives", version = "0.10.0" }
 neo-config = { path = "neo-config", version = "0.10.0" }
 neo-crypto = { path = "neo-crypto", version = "0.10.0" }
 neo-storage = { path = "neo-storage", version = "0.10.0" }
+neo-static-files = { path = "neo-static-files", version = "0.10.0" }
 neo-io = { path = "neo-io", version = "0.10.0" }
 neo-vm = { path = "neo-vm", version = "0.10.0" }
 neo-vm-rs = { path = "../neo-vm-rs" }

@@ -14,7 +14,7 @@ separate CLI client binary — you query a running node over HTTP.
 
 ```mermaid
 flowchart TD
-    A[Install Rust 1.85+ and native storage build deps] --> B[Clone the repository]
+    A[Install Rust 1.89+ and native storage build deps] --> B[Clone the repository]
     B --> C[cargo build --release -p neo-node]
     C --> D[Pick a TOML config<br/>TestNet or MainNet]
     D --> E[Run neo-node --config FILE]
@@ -27,7 +27,7 @@ flowchart TD
 
 | Requirement | Version / Notes |
 |-------------|-----------------|
-| Rust toolchain | 1.85 or newer (the workspace uses edition 2024). Install via [rustup](https://rustup.rs). |
+| Rust toolchain | 1.89 or newer (the workspace uses edition 2024 and standard-library file locking). Install via [rustup](https://rustup.rs). |
 | Native storage build dependencies | The production storage provider is MDBX, and RocksDB remains compiled as an explicit fallback/test backend. On Ubuntu/Debian: `build-essential cmake clang libclang-dev libsnappy-dev liblz4-dev libzstd-dev zlib1g-dev libbz2-dev`. |
 | Disk | A full MainNet persistent store grows large (hundreds of GB over time). Use a durable volume. |
 | OS | Linux or macOS. |

@@ -86,6 +86,7 @@ neo-primitives = { workspace = true }
 neo-runtime = { workspace = true }
 neo-state-service = { workspace = true }
 neo-storage = { workspace = true }
+neo-static-files = { workspace = true }
 neo-serialization = { workspace = true }
 neo-system = { workspace = true }
 neo-wallets = { workspace = true }

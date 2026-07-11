@@ -11,7 +11,7 @@ runs the NeoVM and dBFT 2.0 consensus, and serves the standard JSON-RPC API.
 
 [![Build Status](https://github.com/r3e-network/neo-rs/workflows/CI/badge.svg)](https://github.com/r3e-network/neo-rs/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Rust Version](https://img.shields.io/badge/rust-1.85+-blue.svg)](https://www.rust-lang.org)
+[![Rust Version](https://img.shields.io/badge/rust-1.89+-blue.svg)](https://www.rust-lang.org)
 
 > **New here?** This README is a complete tour. For depth, the [`docs/`](./docs/README.md)
 > system explains the architecture, dataflow, configuration, and full RPC API with
@@ -40,15 +40,15 @@ parts (NeoVM, var-int wire format, MPT, dBFT) implemented from the specification
 | **Standards** | NEP-17 (tokens), NEP-11 (NFTs), NEP-6 (wallets), NEP-2 keys |
 | **Hardforks** | Full Neo N3 hardfork enum through v3.10.1, with MainNet/TestNet activation schedules |
 | **JSON-RPC** | ~55 methods (blockchain, state, invocation, governance, wallet, oracle) |
-| **Storage** | MDBX by default, RocksDB fallback, typed table codecs, hot/cold provider boundaries, or in-memory |
+| **Storage** | MDBX by default, RocksDB fallback, append-only static Ledger archives, hot/cold provider factories, or in-memory |
 | **Oracle** | HTTPS + NeoFS request fulfilment |
 
 See [docs/protocol-compatibility.md](./docs/protocol-compatibility.md) for the parity details.
 
 ## Architecture at a glance
 
-The workspace is organized into **8 ordered layers, 26 production crates**
-(plus the `neo-test-fixtures` dev crate). Dependencies flow downward or through
+The workspace is organized into **8 ordered layers, 26 production workspace members**
+(plus 3 development-only members). Dependencies flow downward or through
 an explicitly audited, one-way same-layer edge, so foundation crates know
 nothing of the services above them.
 
@@ -60,7 +60,7 @@ flowchart TD
     NODE["<b>Node Services</b><br/>neo-blockchain · neo-network · neo-wallets<br/>neo-indexer · neo-oracle-service"]
     DOM["<b>Domain Services</b><br/>neo-runtime · neo-execution · neo-native-contracts<br/>neo-state-service · neo-mempool"]
     PROTO["<b>Protocol</b><br/>neo-payloads · neo-consensus · neo-hsm"]
-    INF["<b>Infrastructure</b><br/>neo-io · neo-error · neo-crypto · neo-storage<br/>neo-config · neo-vm · neo-serialization · neo-manifest"]
+    INF["<b>Infrastructure</b><br/>neo-io · neo-error · neo-crypto · neo-storage · neo-static-files<br/>neo-config · neo-vm · neo-serialization · neo-manifest"]
     FND["<b>Foundation</b><br/>neo-primitives"]
     APP --> PLUG --> COMP --> NODE --> DOM --> PROTO --> INF --> FND
 ```
@@ -81,7 +81,7 @@ supervision.
 
 ## Quick start
 
-Requires Rust **1.85+** and the usual build toolchain for the bundled native
+Requires Rust **1.89+** and the usual build toolchain for the bundled native
 storage backends — see [getting-started.md](./docs/getting-started.md).
 
 ```bash
@@ -159,7 +159,7 @@ developers → *architecture → dataflow → protocol-compatibility → rpc-api
 neo-rs/
 ├── neo-primitives                          # L0 Foundation — primitive types
 ├── neo-io, neo-error, neo-crypto,          # L1 Infrastructure
-│   neo-storage, neo-config,
+│   neo-storage, neo-static-files, neo-config,
 │   neo-vm, neo-serialization, neo-manifest
 ├── neo-payloads, neo-consensus, neo-hsm    # L2 Protocol
 ├── neo-runtime, neo-execution,             # L3 Domain Services

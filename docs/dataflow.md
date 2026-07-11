@@ -369,8 +369,13 @@ Key points:
   `TxProvider` capability traits. `StorageLedgerProviderFactory` creates hot
   providers over native Ledger records; `HotColdLedgerProviderFactory` composes
   hot reads with any cold provider that implements the same capability traits.
-  Static archive writes are explicit integration work, not an implicit side
-  effect of block import.
+  With `[storage].static_files_dir`, node composition installs
+  `StaticLedgerProvider` as the cold side. Final Ledger rows are captured from
+  the post-execution snapshot, appended only after canonical durability, and
+  reconciled from the hot prefix at startup. The archive starts at genesis,
+  verifies every retained block hash against canonical storage, and holds one
+  kernel writer lease across all provider clones. Hot pruning is not enabled
+  yet; the in-memory latest-key index is rebuilt at startup.
 - **State read boundary.** `neo-state-service` exposes `MptReadSnapshot`,
   `MptStore`, `StateStore`, and `StateStoreLookup`. RPC proof/state paths use
   concrete immutable `MptReadSnapshot` values. A general

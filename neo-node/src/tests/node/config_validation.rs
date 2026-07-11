@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use super::*;
 use neo_storage::persistence::{Store, StoreSnapshot, WriteStore};
 
@@ -25,6 +27,67 @@ fn validate_config_rejects_empty_indexer_snapshot_path() {
 
     let err = validate_config(&config, 0x3554_334E).expect_err("empty indexer path should fail");
     assert!(err.to_string().contains("[indexer].path must not be empty"));
+}
+
+#[test]
+fn validate_config_requires_durable_writable_storage_for_static_files() {
+    let mut ephemeral = NodeConfig::default();
+    ephemeral.storage.backend = Some("memory".to_string());
+    ephemeral.storage.static_files_dir = Some(PathBuf::from("./data/static"));
+    let error = validate_config(&ephemeral, 0x3554_334E)
+        .expect_err("ephemeral canonical storage cannot own a durable mirror");
+    assert!(error.to_string().contains("durable canonical backend"));
+
+    let mut read_only = NodeConfig::default();
+    read_only.storage.backend = Some("mdbx".to_string());
+    read_only.storage.data_dir = Some(PathBuf::from("./data/chain"));
+    read_only.storage.read_only = true;
+    read_only.storage.static_files_dir = Some(PathBuf::from("./data/static"));
+    let error = validate_config(&read_only, 0x3554_334E)
+        .expect_err("read-only canonical storage cannot publish archive frames");
+    assert!(error.to_string().contains("read_only"));
+}
+
+#[test]
+fn validate_config_for_ledger_mode_allows_static_files_with_storage_override() {
+    let mut config = NodeConfig::default();
+    config.storage.backend = Some("memory".to_string());
+    config.storage.static_files_dir = Some(PathBuf::from("./data/static"));
+
+    validate_config_for_ledger_mode(
+        &config,
+        0x3554_334E,
+        LedgerMode::Local,
+        Some(Path::new("./data/chain")),
+    )
+    .expect("CLI storage override should satisfy durable local storage validation");
+}
+
+#[test]
+fn validate_config_for_ledger_mode_rejects_truly_in_memory_static_files_in_local_mode() {
+    let mut config = NodeConfig::default();
+    config.storage.backend = Some("memory".to_string());
+    config.storage.static_files_dir = Some(PathBuf::from("./data/static"));
+
+    let error = validate_config_for_ledger_mode(&config, 0x3554_334E, LedgerMode::Local, None)
+        .expect_err("local mode without durable storage must still reject static files");
+    assert!(error.to_string().contains("durable canonical backend"));
+}
+
+#[test]
+fn validate_config_rejects_zero_static_file_resource_limits() {
+    let mut config = NodeConfig::default();
+    config.storage.backend = Some("mdbx".to_string());
+    config.storage.data_dir = Some(PathBuf::from("./data/chain"));
+    config.storage.static_files_dir = Some(PathBuf::from("./data/static"));
+    config.storage.static_files_cache_capacity = Some(0);
+    let error = validate_config(&config, 0x3554_334E).expect_err("zero cache must fail");
+    assert!(error.to_string().contains("cache_capacity"));
+
+    config.storage.static_files_cache_capacity = Some(1);
+    config.storage.static_files_recovery_batch_blocks = Some(0);
+    let error = validate_config(&config, 0x3554_334E).expect_err("zero batch must fail");
+    assert!(error.to_string().contains("recovery_batch_blocks"));
 }
 
 #[test]
@@ -586,6 +649,7 @@ DBPath = ""
         LedgerMode::RemoteRpc {
             endpoint: "https://rpc.example.invalid",
         },
+        None,
     )
     .expect("remote-ledger mode must ignore disabled local replay service paths");
 }

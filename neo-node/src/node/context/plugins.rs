@@ -15,6 +15,7 @@ use neo_system::BlockCommitHooks;
 use tracing::warn;
 
 use super::DaemonCommitHooks;
+use crate::node::static_files::STATIC_ARCHIVE_MAX_DEFERRED_BLOCKS;
 
 const COMMITTED_CATCHUP_DISTANCE: u64 = 1_000;
 const COMMITTING_CATCHUP_DISTANCE: u64 = 10_000;
@@ -89,6 +90,21 @@ where
         live_tip: u64,
         context: BlockPersistContext,
     ) -> bool {
+        if let Some(archive) = &self.static_archive {
+            match archive.capture_block(snapshot, block) {
+                Ok(record) => self.pending_static_records.lock().push(record),
+                Err(error) => {
+                    warn!(
+                        target: "neo::static_files",
+                        height = block.index(),
+                        error = %error,
+                        "failed to capture finalized Ledger rows for static archive"
+                    );
+                    return false;
+                }
+            }
+        }
+
         // During catch-up, skip the expensive per-block hooks:
         // - StateService.on_committing computes the MPT state root per block
         //   (~24ms measured — the dominant sync bottleneck). Validation
@@ -220,10 +236,20 @@ where
 
     fn sync_batch_commit_policy(
         &self,
-        _start_height: u32,
+        start_height: u32,
         end_height: u32,
         live_tip: u64,
     ) -> SyncBatchCommitPolicy {
+        let batch_blocks = u64::from(end_height)
+            .saturating_sub(u64::from(start_height))
+            .saturating_add(1);
+        if self.static_archive.is_some()
+            && batch_blocks
+                > u64::try_from(STATIC_ARCHIVE_MAX_DEFERRED_BLOCKS)
+                    .expect("archive batch bound fits u64")
+        {
+            return SyncBatchCommitPolicy::PerBlock;
+        }
         let observers_skipped_for_entire_batch = live_tip > 0
             && u64::from(end_height).saturating_add(COMMITTING_CATCHUP_DISTANCE) < live_tip;
         let has_post_canonical_staging =
@@ -263,9 +289,26 @@ where
 
     fn canonical_commit_succeeded(&self) {
         self.replay_guard.canonical_commit_succeeded();
+        let Some(archive) = &self.static_archive else {
+            return;
+        };
+        let pending = std::mem::take(&mut *self.pending_static_records.lock());
+        if pending.is_empty() {
+            return;
+        }
+        if let Err(error) = archive.append_records(pending) {
+            warn!(
+                target: "neo::static_files",
+                error = %error,
+                "canonical Ledger committed but static archive publication failed; startup reconciliation will repair the lag"
+            );
+            self.replay_guard
+                .request_recoverable_restart("post-canonical static archive publication failed");
+        }
     }
 
     fn canonical_commit_failed(&self, reason: &str) {
+        self.pending_static_records.lock().clear();
         self.replay_guard.canonical_commit_failed(reason);
     }
 
@@ -274,14 +317,15 @@ where
     }
 
     fn allows_empty_block_fast_forward(&self) -> bool {
-        self.state_service.is_none()
+        self.static_archive.is_none()
+            && self.state_service.is_none()
             && self.indexer_service.is_none()
             && self.application_logs_service.is_none()
             && self.tokens_tracker().is_none()
     }
 
     fn allows_empty_block_committing_fast_forward(&self) -> bool {
-        self.state_service.is_some()
+        (self.static_archive.is_some() || self.state_service.is_some())
             && self.indexer_service.is_none()
             && self.application_logs_service.is_none()
             && self.tokens_tracker().is_none()

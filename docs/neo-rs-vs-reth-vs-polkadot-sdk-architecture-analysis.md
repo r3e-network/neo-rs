@@ -27,13 +27,22 @@ after canonical success. A crash or failure leaves the marker for startup to rej
 (including the uninitialized-chain/genesis-root mismatch). ApplicationLogs and
 TokensTracker persist post-canonical and avoid this marker cost. Canonical
 durability failure always stops the active writer immediately. The ledger read
-boundary has a hot native-record provider, a hot/cold router, and an explicit
-`EmptyLedgerProvider` for nodes without an installed cold archive, so
-composition roots can keep one provider shape before static files land.
-Node-local peer block serving now uses that
-same hot/cold factory shape with `EmptyLedgerProvider` as the cold side, so
-installing static files later is a provider swap instead of a block-source
-rewrite. Operational persisted-tip reads (startup, config validation, chain.acc
+boundary now has hot native-record, static-file, optional, and hot/cold routed
+providers behind the same capability traits and GAT factory shape.
+`neo-static-files` supplies versioned append-only height frames, zstd
+compression, xxh3 checksums, continuity enforcement, an existing-crate LRU
+frame cache, torn-tail repair, and a kernel-owned writer lease retained by all
+provider clones. Frames begin at genesis, and only one process can perform
+recovery or append for an archive at a time. `StaticLedgerArchive` captures exact
+C#-compatible Ledger rows after execution; node commit hooks keep those rows in
+memory until canonical MDBX/RocksDB durability succeeds, then append the whole
+accepted batch with one file sync. Startup validates every retained block hash
+against the authoritative hot prefix and repairs archive lag before local peer serving installs
+`StaticLedgerProvider` as its cold side. Archive publication is post-canonical
+and recoverable, while hot-row pruning remains deliberately disabled. The
+latest-key index is still rebuilt in memory, leaving persistent offset indexes
+and bounded startup work for the next storage phase.
+Operational persisted-tip reads (startup, config validation, chain.acc
 resume, and daemon context) share that routed factory shape. Observability
 ledger-height reads (health/readiness/metrics) use the same boundary for
 local-ledger mode while remote-ledger mode reports the upstream RPC height.
@@ -49,8 +58,8 @@ native-provider validation.
 Blockchain transaction admission uses the same shape for persisted transaction
 and conflict checks before calling into mempool policy.
 Offline `neo-db-probe` replay follows the same provider boundary for
-transaction-state and block reconstruction, with `EmptyLedgerProvider` as the
-explicit cold side until static-file archives are wired.
+transaction-state and block reconstruction. Paths that do not own node archive
+configuration continue to use the explicit clean-miss `EmptyLedgerProvider`.
 Durable store fallback reads after in-memory block-cache eviction use the same
 routing for block-hash and full-block reconstruction.
 RPC session dummy-block reads plus blockchain and wallet transaction-state
@@ -82,10 +91,10 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync {
 |--------|--------|------|-------------|
 | Abstraction | `Store` with an associated concrete snapshot; `RuntimeStore` enum for config selection | `Database` trait with GATs | `kvdb` trait, 3-level stack |
 | Table encoding | Live: `StorageKey` / `KeyBuilder` over raw C#-compatible bytes; no separate typed-table API yet | Per-table `Encode`/`Decode` + `Compact` derive | Per-column encoding (parity-scale-codec) |
-| Tiering | Hot DB today; hot/cold provider factory exists, while static-file archive writing/format is still unwired | Hot (MDBX) / Cold (RocksDB) / Static (NippyJar) | Single DB (parity-db or RocksDB) |
+| Tiering | Hot MDBX/RocksDB plus opt-in compressed static Ledger mirror; provider routing and recovery are wired, hot pruning is not | Hot (MDBX) / Cold (RocksDB) / Static (NippyJar) | Single DB (parity-db or RocksDB) |
 | Overlay | `DataCache` with `Arc<RwLock<HashMap>>` | MDBX transaction | `OverlayedChanges` |
 | Pruning | Manual via `MaxTraceableBlocks` | Per-segment config (4 profiles) | `PruningMode` enum |
-| Static files | Static-file archive writer/format remains future work; provider routing can already compose either a cold implementation or the explicit clean-miss `EmptyLedgerProvider` | NippyJar columnar (mandatory, mmap) | None |
+| Static files | Versioned per-height zstd frames, opaque exact Ledger rows, checksums, LRU reads, continuity and torn-tail recovery; post-canonical mirror today | NippyJar columnar (mandatory, mmap) | None |
 
 ### Reth innovations
 
@@ -115,9 +124,9 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync {
 
 | Priority | Change | Benefit |
 |----------|--------|---------|
-| P0 | Hot/Cold/Static tiering | 30%+ disk savings, tiered hardware |
+| P0 remaining | Persistent MDBX archive offsets plus hot-row pruning | Disk savings and bounded archive-index memory after the safe mirror/recovery phase |
 | P1 | Compact derive macro for Neo types | 15-25% storage savings, fewer bytes |
-| Partially wired | Hot/cold ledger provider factory | Provider routing plus explicit empty-cold provider are implemented; append-only static-file archive writing and recovery are still future work |
+| Implemented phase | Static Ledger mirror and provider routing | Format, exact row capture, post-canonical batch publication, startup reconciliation, and local cold reads are wired; pruning remains gated |
 | P3 | `OverlayedChanges`-style transactional overlay | Cleaner per-tx isolation |
 
 ---
@@ -580,7 +589,7 @@ pub struct TransactionState {
 | Change | Speed | Storage | Reliability | Complexity | Effort |
 |--------|-------|---------|-------------|------------|--------|
 | Staged sync pipeline integration | ★★★★★ | ★★ | ★★★★ | ★★★★ | Large |
-| Hot/Cold/Static tiering | ★★★ | ★★★★★ | ★★★ | ★★★ | Medium |
+| Static archive mirror/recovery | ★★★ | ★★ | ★★★★ | ★★★ | Implemented; pruning/index phase remains |
 | Import queue + concurrent verify | ★★★★ | - | ★★★ | ★★★ | Runtime queue and production download-to-import bridge wired |
 | Stage commit policy + checkpoints | ★★★ | - | ★★★★ | ★★ | Import-stage driver done |
 | Compact derive macro | ★★ | ★★★★ | - | ★★ | Small |
@@ -594,11 +603,15 @@ pub struct TransactionState {
 ## Implementation Order (Recommended)
 
 1. **Essential task supervision + metrics** — implemented in `neo-node`.
-2. **Typed table boundary** — implemented in `neo-storage` but on no live storage access path (the live encoding remains `StorageKey` / `KeyBuilder` over raw C#-compatible bytes); compact derive is still future work.
+2. **Typed table boundary** — not implemented. The live encoding remains
+   `StorageKey` / `KeyBuilder` over raw C#-compatible bytes; any future typed
+   adapter and compact derive must preserve those bytes.
 3. **Block import queue with concurrent verification** — reusable runtime boundary implemented and composed by `neo_system::SyncImportPipeline`.
 4. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`; durable store-backed checkpoints are available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, node composition creates the import-stage queue/checkpoint handle, and `SyncDownloadImportDriver` now receives production P2P coordinator batches.
 5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; `neo-system` has the download-to-import bridge; per-peer `BlockRequestScheduler` remains as the legacy compatibility path; `BlockDownloadCoordinator` composes `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) and `OrderedBlockBatchBuffer` (contiguous response release) behind a transport-agnostic `BlockRangeFetcher`; `Arc<PeerRegistry>` implements live peer fetching through `RemoteNodeHandle::fetch_blocks_by_index`; `PeerRegistry::download_peers` exposes advertised-height peer snapshots; node composition registers the shared registry, disables legacy per-peer block requests, and starts the coordinator-backed downloader/import task.
-6. **Hot/Cold/Static tiering integration** (medium, big storage win)
+6. **Hot/Cold/Static tiering integration** — append-only mirror, exact Ledger
+   adapter, post-canonical publication, recovery, and local cold reads are
+   implemented. Persistent MDBX archive offsets and hot-row pruning remain.
 7. **Staged sync pipeline integration** (large, biggest overall impact)
 
 This document is a living reference — update as architecture evolves.

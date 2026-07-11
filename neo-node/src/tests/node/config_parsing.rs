@@ -283,6 +283,10 @@ backend = "mdbx"
 mdbx_geometry_upper_gb = 768
 mdbx_geometry_growth_mb = 512
 mdbx_max_readers = 8192
+static_files_dir = "./data/static"
+static_files_compression_level = 5
+static_files_cache_capacity = 128
+static_files_recovery_batch_blocks = 2048
 "#,
     )
     .expect("parse mdbx geometry config");
@@ -290,6 +294,13 @@ mdbx_max_readers = 8192
     assert_eq!(config.storage.mdbx_geometry_upper_gb, Some(768));
     assert_eq!(config.storage.mdbx_geometry_growth_mb, Some(512));
     assert_eq!(config.storage.mdbx_max_readers, Some(8192));
+    assert_eq!(
+        config.storage.static_file_path(),
+        Some(std::path::PathBuf::from("./data/static/ledger.static"))
+    );
+    assert_eq!(config.storage.static_file_config().compression_level, 5);
+    assert_eq!(config.storage.static_file_config().cache_capacity, 128);
+    assert_eq!(config.storage.static_file_recovery_batch_blocks(), 2048);
 }
 
 #[test]
