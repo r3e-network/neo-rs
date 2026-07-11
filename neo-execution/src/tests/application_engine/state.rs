@@ -45,7 +45,7 @@ fn negative_fee_faults_before_whitelist_like_csharp_v3101() {
         ProtocolSettings::default(),
         TEST_MODE_GAS,
         NoDiagnostic,
-        None,
+        Arc::new(CurrentIndexProvider(0)),
     )
     .expect("engine");
 
@@ -154,6 +154,7 @@ fn jump_table_selection_uses_supplied_native_provider_current_index() {
 
 #[test]
 fn engine_native_provider_is_fixed_at_construction() {
+    let provider = Arc::new(CurrentIndexProvider(7));
     let engine = ApplicationEngine::<CurrentIndexProvider>::new_with_shared_block_and_native_contract_provider(
         TriggerType::Application,
         None,
@@ -162,14 +163,15 @@ fn engine_native_provider_is_fixed_at_construction() {
         ProtocolSettings::default(),
         TEST_MODE_GAS,
         NoDiagnostic,
-        None,
+        Arc::clone(&provider),
     )
-    .expect("engine without native provider");
+    .expect("engine with native provider");
 
-    assert!(
-        engine.native_contract_provider().is_none(),
-        "an engine constructed without a provider must not observe any ambient provider"
-    );
+    assert!(std::ptr::eq(
+        engine.native_contract_provider(),
+        provider.as_ref()
+    ));
+    assert_eq!(engine.current_block_index(), 7);
 }
 
 fn expected_base_services() -> Vec<(String, i64, u8)> {
@@ -401,7 +403,7 @@ fn engine_with_settings(settings: ProtocolSettings) -> ApplicationEngine {
         settings,
         TEST_MODE_GAS,
         NoDiagnostic,
-        None,
+        Arc::new(NoNativeContractProvider),
     )
     .expect("application engine")
 }
@@ -420,7 +422,7 @@ fn engine_with_settings_at_block(
         settings,
         TEST_MODE_GAS,
         NoDiagnostic,
-        None,
+        Arc::new(NoNativeContractProvider),
     )
     .expect("application engine")
 }
@@ -523,4 +525,85 @@ fn application_engine_diagnostic_is_typed_not_trait_object() {
         !state_source.contains("Box<dyn Diagnostic>"),
         "engine constructors must accept typed diagnostics, not boxed trait objects"
     );
+}
+
+#[test]
+fn application_engine_native_provider_is_a_required_typed_dependency() {
+    let engine_source = include_str!("../../application_engine/mod.rs");
+    let state_source = include_str!("../../application_engine/state.rs");
+
+    assert!(
+        engine_source.contains("native_contract_provider: Arc<P>"),
+        "ApplicationEngine should always own its concrete native provider"
+    );
+    assert!(
+        !engine_source.contains("native_contract_provider: Option<Arc<P>>"),
+        "provider availability belongs in the provider type, not runtime engine state"
+    );
+    assert!(
+        !state_source.contains("native_contract_provider: Option<Arc<P>>"),
+        "provider-aware constructors should require a concrete provider value"
+    );
+    assert!(
+        state_source.contains("fn native_contract_provider(&self) -> &P"),
+        "engine internals should access the mandatory provider without optional branching"
+    );
+}
+
+#[test]
+fn application_engine_constructors_do_not_publish_a_movable_self_pointer() {
+    let state_source = include_str!("../../application_engine/state.rs");
+    let attach_host_offset = state_source
+        .find("pub(super) fn attach_host")
+        .expect("attach_host definition");
+    let constructors = &state_source[..attach_host_offset];
+
+    assert!(
+        !constructors.contains("app.attach_host()"),
+        "constructors return the engine by value, so host binding must wait until a callback-capable operation"
+    );
+    assert!(
+        state_source.contains("fn attach_host(&mut self) -> bool"),
+        "nested callback operations must know whether they own the host binding"
+    );
+    assert!(
+        state_source.contains("fn detach_host(&mut self, attached_here: bool)"),
+        "only the operation that installed the host may clear it"
+    );
+}
+
+#[test]
+fn vm_host_binding_is_scoped_to_callback_capable_operations() {
+    let mut engine = engine_with_settings(ProtocolSettings::default());
+    assert!(engine.vm_engine.engine().interop_host_ptr().is_none());
+
+    engine
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
+        .expect("load script");
+    assert!(
+        engine.vm_engine.engine().interop_host_ptr().is_none(),
+        "script loading must not retain a self-pointer after returning"
+    );
+
+    assert_eq!(engine.execute_allow_fault(), VMState::HALT);
+    assert!(
+        engine.vm_engine.engine().interop_host_ptr().is_none(),
+        "execution must not retain a self-pointer after returning"
+    );
+}
+
+#[test]
+fn nested_vm_host_binding_is_released_by_its_outer_owner() {
+    let mut engine = engine_with_settings(ProtocolSettings::default());
+
+    let outer = engine.attach_host();
+    let inner = engine.attach_host();
+    assert!(outer);
+    assert!(!inner);
+
+    engine.detach_host(inner);
+    assert!(engine.vm_engine.engine().interop_host_ptr().is_some());
+
+    engine.detach_host(outer);
+    assert!(engine.vm_engine.engine().interop_host_ptr().is_none());
 }

@@ -64,7 +64,7 @@ fn gas_transfer_from_calling_contract_uses_contract_as_witness() {
         ProtocolSettings::default(),
         10_000_000,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
 
@@ -300,7 +300,7 @@ fn total_supply_invoke_reads_full_bigint() {
         ProtocolSettings::default(),
         10_000_000,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
 
@@ -351,7 +351,7 @@ fn gas_burn_debits_balance_and_supply() {
         ProtocolSettings::default(),
         10_000_000,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
 
@@ -464,7 +464,7 @@ mod persist_tests {
             ProtocolSettings::default(),
             0,
             neo_execution::NoDiagnostic,
-            Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+            std::sync::Arc::new(crate::StandardNativeProvider::new()),
         )
         .expect("engine builds")
     }
@@ -504,7 +504,7 @@ mod persist_tests {
             settings.clone(),
             0,
             neo_execution::NoDiagnostic,
-            Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+            std::sync::Arc::new(crate::StandardNativeProvider::new()),
         )
         .expect("engine builds");
 

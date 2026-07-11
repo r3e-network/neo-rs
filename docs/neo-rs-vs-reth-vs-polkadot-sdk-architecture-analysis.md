@@ -526,25 +526,24 @@ Native Rust NeoVM — no WASM. `ApplicationEngine` with per-tx child caches.
 dependency. The daemon constructs the standard provider once before genesis
 initialization and passes the same `Arc` into every provider-aware subsystem and
 into `NodeBuilder`; headless/test construction still falls back to the builder's
-local standard provider default. `ApplicationEngine` now captures the explicit
-or scoped provider at construction and uses that stable handle for direct native
+local standard provider default. `ApplicationEngine<P, D, B>` now owns a
+mandatory `Arc<P>` and uses that stable handle for direct native
 calls, policy reads, dynamic-call policy gates, contract-management lookups made
 from contract loading, committee-witness checks, storage-context resolution,
 OracleResponse witness inheritance, witness group checks, current-index reads,
-and whitelisted-fee checks. Engine methods do not read the global provider after
-construction, so later provider replacement cannot affect an already-created
-engine. Production composition no longer mutates the process-global provider
-slot. Runtime witness helpers now have explicit-provider entry points. Native
-block persistence passes
+and whitelisted-fee checks. Provider-aware constructors and witness helpers no
+longer accept `Option<Arc<P>>`; standalone engines use the typed
+`NoNativeContractProvider` null implementation. This makes provider ownership a
+compile-time invariant and removes missing-provider branches from the execution
+hot path. Native block persistence passes
 `NativePersistResources` providers directly into OnPersist/Application/PostPersist
 engines, and service-level genesis initialization plus batch resource setup
 build those resources from `SystemContext::native_contract_provider`; live block
 import uses the explicit-resource staging/commit path instead of the global
-provider. `NativeContractLookup` is now reduced to a compatibility bridge for
-installing, replacing, scoping, and reading the ambient provider; the
-contract-specific global helper wrappers were removed from
-`neo-execution/src/native/native_contract_provider.rs`. Mempool admission
-adapts the `MemoryPool`-captured provider for Policy, GAS, Notary, NEO,
+provider. The obsolete ambient `NativeContractLookup` bridge has been removed;
+the provider trait and composition-owned values are the only native lookup
+path. Mempool admission adapts the `MemoryPool`-captured provider for Policy,
+GAS, Notary, NEO,
 Oracle, and RoleManagement reads instead of constructing a private native
 provider factory, so transaction verification observes the same native-contract
 set as block import, consensus, RPC, and state-root verification. RPC session
@@ -560,7 +559,9 @@ registry lookup and downcasting, leaving each endpoint module with only its
 narrow capability trait. Oracle service processing also adapts the `OracleService`-owned
 `NativeContractProvider` for Oracle, ContractManagement, RoleManagement, and
 Policy reads instead of constructing private native handles or a service-local
-native factory.
+native factory. The VM's raw, monomorphized host callback pointer is installed
+only for context-load or execution operations and cleared before those methods
+return, keeping a returned `ApplicationEngine` movable between calls.
 
 ### Polkadot SDK innovations
 
@@ -576,24 +577,25 @@ native factory.
 ### Recommendations for neo-rs
 
 1. Keep native execution (NeoVM in Rust is already fast).
-2. **Partial:** `NativeContractProvider` is now an explicit `NodeBuilder` field,
+2. **Implemented at the execution boundary:** `NativeContractProvider` is an
+   explicit `NodeBuilder` field,
    so the composition root chooses the provider. The daemon now reuses one
    standard provider for early genesis/native persistence and the composed
-   `Node`, and `ApplicationEngine` captures the provider during construction for
+   `Node`, and `ApplicationEngine` requires the provider during construction for
    direct native calls, policy reads, dynamic-call policy gates,
    contract-management lookups made from contract loading, committee-witness
    checks, storage-context resolution, OracleResponse witness inheritance,
    witness group checks, current-index reads, and fee whitelist checks. Engine
-   methods no longer read the global provider after construction.
+   methods no longer perform optional-provider branches. Standalone/test
+   engines pass `NoNativeContractProvider` explicitly, and witness helpers
+   require `Arc<P>` as well.
    Batch block import, genesis initialization, header inventory verification,
    extensible-payload verification, and signed-StateRoot verification now use
    explicit providers when their caller owns one; native persistence exposes an
-   explicit-resource committing helper, and production composition no longer
-   installs the standard provider globally. `NativeContractLookup` now only
-   exposes provider install/replace/scope/access helpers, so callers must use
-   the provider trait for concrete native lookups instead of contract-specific
-   global wrappers. Mempool admission now follows that same rule: its native
-   read capability is an adapter over the composed provider, with only the
+   explicit-resource committing helper. The removed ambient lookup bridge
+   cannot be used to bypass composition. Mempool admission follows the same
+   rule: its native read capability is an adapter over the composed provider,
+   with only the
    ledger-storage read capability left behind its separate provider factory.
    Oracle service request processing and response construction also adapt the
    `OracleService`-owned provider for Oracle/ContractManagement/RoleManagement/

@@ -219,27 +219,27 @@ if let Some(ref err) = reply.error {
 
 ---
 
-### ✅ Fix 9: Unsafe interop host pointer hardened with debug assertion (MEDIUM)
+### ✅ Fix 9: Unsafe interop host pointer scoped to VM callbacks (MEDIUM)
 **Severity**: MEDIUM  
-**Impact**: Dangling pointer risk if ApplicationEngine was moved after attach_host()
+**Impact**: Dangling pointer risk if `ApplicationEngine` moves while the VM retains its host
 
 **Problem**:
-- `attach_host()` stored a raw `*mut dyn InteropHost` in the VM engine
-- If `ApplicationEngine` was moved after, the pointer became dangling
-- No runtime detection of this misuse
+- Engine constructors installed the raw host pointer before returning `Self`
+  by value.
+- Script loading and execution retained the pointer after returning, even
+  though callers may then move the engine.
 
 **Files Modified**:
 - `neo-execution/src/application_engine/state.rs`
 
-**Fix**: Added `debug_assert_eq!` that verifies the stored pointer still points to `self`:
+**Fix**: Constructors leave the VM host unbound. Each context-load or execution
+operation installs the monomorphized host pointer immediately before callbacks
+can run and clears it on both success and error before returning:
 ```rust
-#[cfg(debug_assertions)]
-{
-    let stored: *mut dyn InteropHost = host_ptr;
-    let current: *mut dyn InteropHost = self as *mut dyn InteropHost;
-    debug_assert_eq!(stored, current,
-        "ApplicationEngine was moved after attach_host() — VM engine holds dangling pointer");
-}
+let attached_here = self.attach_host();
+let result = self.vm_engine.engine_mut().load_context(context);
+self.detach_host(attached_here);
+result?;
 ```
 
 ---

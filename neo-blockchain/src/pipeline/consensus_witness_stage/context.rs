@@ -37,7 +37,7 @@ pub trait ConsensusWitnessContext: Send + Sync + fmt::Debug + 'static {
     fn snapshot(&self) -> &DataCache<Self::CacheBacking>;
 
     /// Returns the explicit native provider used by NeoVM host calls.
-    fn native_contract_provider(&self) -> Option<Arc<Self::NativeProvider>>;
+    fn native_contract_provider(&self) -> Arc<Self::NativeProvider>;
 
     /// Resolves the previous header context for `block`.
     fn parent_header(&self, block: &Block) -> CoreResult<ParentHeaderContext>;
@@ -126,8 +126,8 @@ where
         self.snapshot_ref()
     }
 
-    fn native_contract_provider(&self) -> Option<Arc<Self::NativeProvider>> {
-        Some(Arc::clone(&self.native_contract_provider))
+    fn native_contract_provider(&self) -> Arc<Self::NativeProvider> {
+        Arc::clone(&self.native_contract_provider)
     }
 
     fn parent_header(&self, block: &Block) -> CoreResult<ParentHeaderContext> {

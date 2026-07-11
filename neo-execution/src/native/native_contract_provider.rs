@@ -28,7 +28,7 @@
 //!     settings,
 //!     gas_limit,
 //!     diagnostic,
-//!     Some(provider),
+//!     provider,
 //! )?;
 //! ```
 //!
@@ -430,4 +430,29 @@ where
 
 impl NativeContractProvider for NoNativeContractProvider {
     type Contract = NoNativeContract;
+
+    fn policy_whitelisted_fee<B: CacheRead>(
+        &self,
+        _snapshot: &DataCache<B>,
+        _contract_hash: &UInt160,
+        _method: &str,
+        _param_count: u32,
+    ) -> CoreResult<Option<i64>> {
+        Ok(None)
+    }
+
+    fn committee_address<B: CacheRead>(
+        &self,
+        _snapshot: &DataCache<B>,
+    ) -> CoreResult<Option<UInt160>> {
+        Ok(None)
+    }
+
+    fn contract_state<B: CacheRead>(
+        &self,
+        _snapshot: &DataCache<B>,
+        _hash: &UInt160,
+    ) -> CoreResult<Option<ContractState>> {
+        Ok(None)
+    }
 }

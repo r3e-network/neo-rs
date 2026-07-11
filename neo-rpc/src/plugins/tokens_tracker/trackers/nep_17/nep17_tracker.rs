@@ -191,7 +191,7 @@ where
             self.base.settings.as_ref().clone(),
             17_000_000,
             neo_execution::NoDiagnostic,
-            Some(Arc::clone(&self.base.native_contract_provider)),
+            Arc::clone(&self.base.native_contract_provider),
         ) {
             Ok(engine) => engine,
             Err(_) => return,

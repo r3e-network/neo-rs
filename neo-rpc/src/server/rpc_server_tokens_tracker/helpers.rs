@@ -138,7 +138,7 @@ where
             settings.clone(),
             TEST_MODE_GAS,
             neo_execution::NoDiagnostic,
-            Some(native_contract_provider),
+            native_contract_provider,
         )
         .ok()?;
     engine

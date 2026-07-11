@@ -706,7 +706,7 @@ fn native_method_storage_fee_is_charged_in_datoshi() {
         ProtocolSettings::default(),
         TEST_MODE_GAS,
         NoDiagnostic,
-        Some(provider),
+        provider,
     )
     .expect("engine");
 
@@ -737,7 +737,7 @@ fn native_method_fee_overflow_does_not_partially_charge_cpu_fee() {
         ProtocolSettings::default(),
         TEST_MODE_GAS,
         NoDiagnostic,
-        Some(provider),
+        provider,
     )
     .expect("engine");
 
@@ -772,7 +772,7 @@ fn native_call_uses_provider_captured_at_engine_creation() {
         ProtocolSettings::default(),
         TEST_MODE_GAS,
         NoDiagnostic,
-        Some(provider),
+        provider,
     )
     .expect("engine");
 
@@ -801,7 +801,7 @@ fn native_call_uses_resolved_method_index_after_hardfork_selection() {
         settings,
         TEST_MODE_GAS,
         NoDiagnostic,
-        Some(provider),
+        provider,
     )
     .expect("engine");
 
@@ -826,7 +826,7 @@ fn committee_witness_uses_provider_captured_at_engine_creation() {
         ProtocolSettings::default(),
         TEST_MODE_GAS,
         NoDiagnostic,
-        Some(provider),
+        provider,
     )
     .expect("engine");
 
@@ -858,7 +858,7 @@ fn storage_context_uses_provider_captured_at_engine_creation() {
         ProtocolSettings::default(),
         TEST_MODE_GAS,
         NoDiagnostic,
-        Some(provider),
+        provider,
     )
     .expect("engine");
 
@@ -898,7 +898,7 @@ fn oracle_response_witness_uses_provider_captured_at_engine_creation() {
         ProtocolSettings::default(),
         TEST_MODE_GAS,
         NoDiagnostic,
-        Some(provider),
+        provider,
     )
     .expect("engine");
 
@@ -944,7 +944,7 @@ fn group_witness_uses_provider_captured_at_engine_creation() {
         ProtocolSettings::default(),
         TEST_MODE_GAS,
         NoDiagnostic,
-        Some(provider),
+        provider,
     )
     .expect("engine");
 
@@ -988,7 +988,7 @@ fn call_contract_uses_execution_state_script_hash_for_caller() {
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
         NoDiagnostic,
-        Some(provider),
+        provider,
     )
     .expect("engine");
 
@@ -1051,7 +1051,7 @@ fn call_contract_dynamic_rejects_policy_blocked_target() {
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
         NoDiagnostic,
-        Some(provider),
+        provider,
     )
     .expect("engine");
 
@@ -1099,7 +1099,7 @@ fn dynamic_contract_policy_uses_provider_captured_at_engine_creation() {
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
         NoDiagnostic,
-        Some(provider),
+        provider,
     )
     .expect("engine");
 
@@ -1147,7 +1147,7 @@ fn call_contract_internal_checks_policy_before_return_type_mismatch() {
         HashMap::new(),
         Arc::new(PlMutex::new(NativeContractsCache::default())),
         NoDiagnostic,
-        Some(provider),
+        provider,
     )
     .expect("engine");
 
@@ -1189,7 +1189,7 @@ fn call_contract_dynamic_faults_when_policy_provider_is_missing() {
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
         NoDiagnostic,
-        Some(provider),
+        provider,
     )
     .expect("engine");
 
@@ -1261,7 +1261,7 @@ fn engine_with_entry(
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
         NoDiagnostic,
-        Some(provider),
+        provider,
     )
     .expect("engine");
     engine
@@ -1584,7 +1584,7 @@ fn returning_call_exception_cannot_be_caught_below_native_frame() {
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
         NoDiagnostic,
-        Some(provider),
+        provider,
     )
     .expect("engine");
     engine
@@ -1661,7 +1661,7 @@ fn queued_native_call_exception_cannot_be_caught_below_native_frame() {
         contracts,
         Arc::new(PlMutex::new(NativeContractsCache::default())),
         NoDiagnostic,
-        Some(provider),
+        provider,
     )
     .expect("engine");
     engine

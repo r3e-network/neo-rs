@@ -11,7 +11,12 @@
 //! ## Boundary
 //!
 //! This execution crate owns VM/native interop behavior and must not own
-//! durable storage engines, P2P sync, or application startup.
+//! durable storage engines, P2P sync, or application startup. Application
+//! engines are generic over a mandatory native-contract provider, diagnostic,
+//! and cache backing; standalone engines use the explicit
+//! `NoNativeContractProvider` null provider. The raw VM host bridge is bound
+//! only around callback-capable operations so engines remain movable between
+//! calls.
 //!
 //! ## Contents
 //!

@@ -82,22 +82,16 @@ where
     }
 
     fn is_contract_blocked(&mut self, contract_hash: &UInt160) -> CoreResult<bool> {
-        let provider = self.native_contract_provider().ok_or_else(|| {
-            CoreError::invalid_operation(
-                "PolicyContract lookup requires a native contract provider",
-            )
-        })?;
-        provider.policy_is_blocked(self.snapshot_cache.as_ref(), contract_hash)
+        self.native_contract_provider()
+            .policy_is_blocked(self.snapshot_cache.as_ref(), contract_hash)
     }
 
     fn lookup_contract_management_state(
         &self,
         hash: &UInt160,
     ) -> CoreResult<Option<ContractState>> {
-        let Some(provider) = self.native_contract_provider() else {
-            return Ok(None);
-        };
-        provider.contract_state(self.snapshot_cache.as_ref(), hash)
+        self.native_contract_provider()
+            .contract_state(self.snapshot_cache.as_ref(), hash)
     }
 
     pub(super) fn whitelisted_fee_for_policy(
@@ -106,10 +100,7 @@ where
         method: &str,
         param_count: u32,
     ) -> CoreResult<Option<i64>> {
-        let Some(provider) = self.native_contract_provider() else {
-            return Ok(None);
-        };
-        provider.policy_whitelisted_fee(
+        self.native_contract_provider().policy_whitelisted_fee(
             self.snapshot_cache.as_ref(),
             contract_hash,
             method,
@@ -183,10 +174,10 @@ where
             }
 
             let init_context = context.clone_with_position(init.offset as usize);
-            self.vm_engine
-                .engine_mut()
-                .load_context(init_context)
-                .map_err(|e| CoreError::invalid_operation(e.to_string()))?;
+            let attached_here = self.attach_host();
+            let load_result = self.vm_engine.engine_mut().load_context(init_context);
+            self.detach_host(attached_here);
+            load_result.map_err(|e| CoreError::invalid_operation(e.to_string()))?;
             self.refresh_context_tracking()?;
         }
 

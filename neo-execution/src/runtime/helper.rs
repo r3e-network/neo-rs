@@ -154,7 +154,7 @@ impl Helper {
         settings: &ProtocolSettings,
         snapshot: &DataCache<B>,
         max_gas: i64,
-        native_contract_provider: Option<Arc<P>>,
+        native_contract_provider: Arc<P>,
     ) -> bool
     where
         V: VerifiableExt,
@@ -175,7 +175,7 @@ impl Helper {
             match known_script_hashes_for_verifying_with_native_provider(
                 container.as_ref(),
                 snapshot,
-                native_contract_provider.as_deref(),
+                native_contract_provider.as_ref(),
             ) {
                 Ok(Some(hashes)) => hashes,
                 Ok(None) => verifiable.script_hashes_for_verifying(snapshot),
@@ -204,7 +204,7 @@ impl Helper {
                 hash,
                 witnesses[i],
                 remaining_gas,
-                native_contract_provider.clone(),
+                Arc::clone(&native_contract_provider),
             ) {
                 Ok(fee) => {
                     remaining_gas -= fee;
@@ -230,7 +230,7 @@ impl Helper {
         hash: &UInt160,
         witness: &Witness,
         max_gas: i64,
-        native_contract_provider: Option<Arc<P>>,
+        native_contract_provider: Arc<P>,
     ) -> CoreResult<i64>
     where
         V: VerifiableExt,
@@ -264,17 +264,14 @@ impl Helper {
             settings.clone(),
             max_gas,
             NoDiagnostic,
-            native_contract_provider.clone(),
+            Arc::clone(&native_contract_provider),
         )?;
 
         // Check if witness has empty verification script (contract verification)
         if witness.verification_script.is_empty() {
             // Contract verification: load the contract's Verify method
             let mut contract = native_contract_provider
-                .as_ref()
-                .map(|provider| provider.contract_state(snapshot, hash))
-                .transpose()?
-                .flatten()
+                .contract_state(snapshot, hash)?
                 .ok_or_else(|| {
                     CoreError::invalid_operation(format!("Contract not found for hash {}", hash))
                 })?;
@@ -381,7 +378,7 @@ impl Helper {
 pub(crate) fn known_script_hashes_for_verifying_with_native_provider<P, B>(
     container: &VerifiableContainer,
     snapshot: &DataCache<B>,
-    native_contract_provider: Option<&P>,
+    native_contract_provider: &P,
 ) -> CoreResult<Option<Vec<UInt160>>>
 where
     P: NativeContractProvider,
@@ -403,7 +400,7 @@ where
 fn header_script_hashes_for_verifying<P, B>(
     header: &neo_payloads::Header,
     snapshot: &DataCache<B>,
-    native_contract_provider: Option<&P>,
+    native_contract_provider: &P,
 ) -> CoreResult<Vec<UInt160>>
 where
     P: NativeContractProvider,
@@ -413,10 +410,7 @@ where
         return Ok(vec![header.witness.script_hash()]);
     }
 
-    let provider = native_contract_provider.ok_or_else(|| {
-        CoreError::invalid_operation("Header witness verification requires a native provider")
-    })?;
-    let previous = provider
+    let previous = native_contract_provider
         .trimmed_block(snapshot, header.prev_hash())?
         .ok_or_else(|| {
             CoreError::invalid_operation(format!("Block {} was not found", header.prev_hash()))

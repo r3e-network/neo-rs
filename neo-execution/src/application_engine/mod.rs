@@ -116,7 +116,7 @@ where
     notifications: Vec<NotifyEventArgs>,
     logs: Vec<LogEventArgs>,
     native_registry: NativeRegistry<P>,
-    native_contract_provider: Option<Arc<P>>,
+    native_contract_provider: Arc<P>,
     native_contract_cache: Arc<Mutex<NativeContractsCache>>,
     contracts: HashMap<UInt160, ContractState>,
     storage_iterators: HashMap<u32, StorageIterator>,

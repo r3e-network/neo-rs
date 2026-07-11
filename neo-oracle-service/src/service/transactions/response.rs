@@ -110,7 +110,7 @@ where
             settings.clone(),
             neo_execution::helper::Helper::MAX_VERIFICATION_GAS,
             NoDiagnostic,
-            Some(Arc::clone(&self.native_contract_provider)),
+            Arc::clone(&self.native_contract_provider),
         )
         .map_err(|err| OracleServiceError::Processing(err.to_string()))?;
 

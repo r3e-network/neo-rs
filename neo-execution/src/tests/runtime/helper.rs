@@ -32,8 +32,8 @@ impl NativeContractProvider for ContractStateProvider {
     }
 }
 
-fn empty_provider() -> Option<Arc<EmptyNativeProvider>> {
-    Some(Arc::new(EmptyNativeProvider))
+fn empty_provider() -> Arc<EmptyNativeProvider> {
+    Arc::new(EmptyNativeProvider)
 }
 
 fn build_verify_contract(hash: UInt160) -> ContractState {
@@ -226,7 +226,7 @@ fn verify_witness_uses_explicit_native_provider_for_contract_verification() {
         &contract_hash,
         &witness,
         Helper::MAX_VERIFICATION_GAS,
-        Some(provider),
+        provider,
     )
     .expect("explicit provider should resolve ContractManagement after global replacement");
 }

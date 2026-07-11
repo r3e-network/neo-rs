@@ -49,10 +49,8 @@ impl ConsensusWitnessContext for MockConsensusWitnessContext {
         &self.snapshot
     }
 
-    fn native_contract_provider(
-        &self,
-    ) -> Option<Arc<neo_native_contracts::StandardNativeProvider>> {
-        None
+    fn native_contract_provider(&self) -> Arc<neo_native_contracts::StandardNativeProvider> {
+        Arc::new(neo_native_contracts::StandardNativeProvider::new())
     }
 
     fn parent_header(&self, _block: &Block) -> CoreResult<ParentHeaderContext> {

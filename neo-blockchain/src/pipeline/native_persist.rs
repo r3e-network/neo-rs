@@ -156,7 +156,7 @@ where
         settings.clone(),
         0,
         NoDiagnostic,
-        Some(resources.provider()),
+        resources.provider(),
     )?;
 
     // Record which activation initializers will run inside
@@ -221,7 +221,7 @@ where
         settings.clone(),
         0,
         NoDiagnostic,
-        Some(resources.provider()),
+        resources.provider(),
     )?;
     run_native_persist_hooks(
         contracts,

@@ -42,7 +42,7 @@ fn run_signed(script: Vec<u8>, signers: &[UInt160]) -> (VmState, bool) {
         ProtocolSettings::default(),
         10_000_000,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
     engine

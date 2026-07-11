@@ -38,14 +38,11 @@ where
     fn engine_current_index(
         persisting_block: Option<&Block>,
         snapshot: &DataCache<B>,
-        native_contract_provider: Option<&P>,
+        native_contract_provider: &P,
     ) -> u32 {
         persisting_block
             .map(|block| block.header.index())
-            .or_else(|| {
-                native_contract_provider
-                    .and_then(|provider| provider.current_block_index(snapshot).ok())
-            })
+            .or_else(|| native_contract_provider.current_block_index(snapshot).ok())
             .unwrap_or(0)
     }
 
@@ -53,9 +50,8 @@ where
     /// and a concrete native-contract provider type.
     ///
     /// Homogeneous node pipelines should use this direct generic constructor so
-    /// the concrete provider type remains visible at the call site. The only
-    /// provider erasure is inside the engine's native-contract registry
-    /// boundary, where native contracts themselves are heterogeneous objects.
+    /// the concrete provider and its associated contract-handle type remain
+    /// visible through the entire engine.
     pub fn new_with_native_contract_provider(
         trigger: TriggerType,
         script_container: Option<Arc<VerifiableContainer>>,
@@ -64,7 +60,7 @@ where
         protocol_settings: ProtocolSettings,
         gas_limit: i64,
         diagnostic: D,
-        native_contract_provider: Option<Arc<P>>,
+        native_contract_provider: Arc<P>,
     ) -> CoreResult<Self> {
         Self::new_with_shared_block_and_native_contract_provider(
             trigger,
@@ -83,9 +79,8 @@ where
     ///
     /// This constructor is the normal provider-aware entry point for
     /// import/persistence code that owns a single concrete provider for the
-    /// whole batch. It keeps that type visible at call sites and centralizes
-    /// the only required provider erasure at the engine's internal
-    /// native-dispatch boundary.
+    /// whole batch. It keeps that type visible at call sites and through the
+    /// engine's native-dispatch boundary.
     // Rationale: engine construction must thread the full protocol, snapshot,
     // gas, diagnostic, and provider context without hiding state in globals.
     #[allow(clippy::too_many_arguments)]
@@ -97,7 +92,7 @@ where
         protocol_settings: ProtocolSettings,
         gas_limit: i64,
         diagnostic: D,
-        native_contract_provider: Option<Arc<P>>,
+        native_contract_provider: Arc<P>,
     ) -> CoreResult<Self> {
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
@@ -105,7 +100,7 @@ where
         let current_index = Self::engine_current_index(
             persisting_block.as_deref(),
             snapshot_cache.as_ref(),
-            native_contract_provider.as_deref(),
+            native_contract_provider.as_ref(),
         );
         let jump_table = Self::select_jump_table(&protocol_settings, current_index);
         let mut engine = ExecutionEngine::new(Some(jump_table));
@@ -155,7 +150,6 @@ where
             native_return_null: false,
         };
 
-        app.attach_host();
         app.register_native_contracts();
         app.refresh_policy_settings();
         app.register_default_interops()?;
@@ -187,7 +181,7 @@ where
         contracts: HashMap<UInt160, ContractState>,
         native_contract_cache: Arc<Mutex<NativeContractsCache>>,
         diagnostic: D,
-        native_contract_provider: Option<Arc<P>>,
+        native_contract_provider: Arc<P>,
     ) -> CoreResult<Self> {
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
@@ -195,7 +189,7 @@ where
         let current_index = Self::engine_current_index(
             persisting_block.as_deref(),
             snapshot_cache.as_ref(),
-            native_contract_provider.as_deref(),
+            native_contract_provider.as_ref(),
         );
         let jump_table = Self::select_jump_table(&protocol_settings, current_index);
         let mut engine = ExecutionEngine::new(Some(jump_table));
@@ -245,7 +239,6 @@ where
             native_return_null: false,
         };
 
-        app.attach_host();
         app.refresh_policy_settings();
         app.register_default_interops()?;
         // Ignore any fees incurred during engine initialization.
@@ -257,34 +250,39 @@ where
         Ok(app)
     }
 
+    /// Binds this engine as the VM interop host for one callback-capable operation.
+    ///
+    /// The caller must clear the VM host before returning so the application
+    /// engine remains movable between operations. Constructors deliberately do
+    /// not bind the pointer because they return `Self` by value. The return
+    /// value is `true` only when this call installed the binding; nested
+    /// callback operations must leave their caller's binding in place.
     // Rationale: VM interop callbacks need one self-referential host pointer;
-    // the unsafe block below documents and confines that invariant.
+    // the unsafe block below documents and confines that short-lived invariant.
     #[allow(unsafe_code)]
-    pub(super) fn attach_host(&mut self) {
+    pub(super) fn attach_host(&mut self) -> bool {
         let host_ptr = self as *mut Self;
+        if let Some(attached) = self.vm_engine.engine().interop_host_ptr() {
+            debug_assert_eq!(attached, host_ptr.cast::<()>());
+            return false;
+        }
+
         // SAFETY: `host_ptr` is derived from `&mut self` and the
-        // `ApplicationEngine` owns the `VmEngine`, so the pointer remains
-        // valid for the engine's lifetime. The caller must not move the
-        // `ApplicationEngine` after calling `attach_host()` until the VM
-        // execution completes.
+        // `ApplicationEngine` owns the `VmEngine`. Callers clear the binding
+        // before the callback-capable operation returns, so `self` cannot move
+        // while the VM may dereference the pointer.
         unsafe {
             self.vm_engine
                 .engine_mut()
                 .set_interop_host::<Self>(host_ptr)
         };
+        true
+    }
 
-        // Debug assertion: verify the stored pointer is self-referential.
-        // Catches misuse where the ApplicationEngine is moved after
-        // attach_host() is called, which would leave a dangling interop
-        // host pointer in the VM engine.
-        #[cfg(debug_assertions)]
-        {
-            let stored = host_ptr.cast::<()>();
-            let current = (self as *mut Self).cast::<()>();
-            debug_assert_eq!(
-                stored, current,
-                "ApplicationEngine was moved after attach_host() — VM engine holds dangling interop host pointer"
-            );
+    /// Clears a host binding installed by the matching [`Self::attach_host`].
+    pub(super) fn detach_host(&mut self, attached_here: bool) {
+        if attached_here {
+            self.vm_engine.engine_mut().clear_interop_host();
         }
     }
 
@@ -464,10 +462,7 @@ where
             return block.header.index();
         }
 
-        let Some(provider) = self.native_contract_provider() else {
-            return 0;
-        };
-        provider
+        self.native_contract_provider()
             .current_block_index(self.snapshot_cache.as_ref())
             .unwrap_or(0)
     }
@@ -640,14 +635,14 @@ where
         Arc::clone(&self.native_contract_cache)
     }
 
-    pub(super) fn native_contract_provider(&self) -> Option<&P> {
-        self.native_contract_provider.as_deref()
+    pub(super) fn native_contract_provider(&self) -> &P {
+        self.native_contract_provider.as_ref()
     }
 
     pub(super) fn native_contract_by_hash(&self, hash: &UInt160) -> Option<P::Contract> {
         self.native_registry
             .get(hash)
-            .or_else(|| self.native_contract_provider()?.get_native_contract(hash))
+            .or_else(|| self.native_contract_provider().get_native_contract(hash))
     }
 
     /// Returns a shared handle to the native-contract cache.

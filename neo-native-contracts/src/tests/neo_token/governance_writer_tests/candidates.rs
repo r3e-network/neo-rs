@@ -45,7 +45,7 @@ fn get_candidates_filters_blocked_and_projects_votes() {
         ProtocolSettings::default(),
         10_000_000,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
 
@@ -98,7 +98,7 @@ fn get_all_candidates_iterator_filters_and_projects() {
         ProtocolSettings::default(),
         10_000_000,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
 

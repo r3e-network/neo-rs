@@ -26,7 +26,7 @@ fn engine_with_gorgon(active: bool) -> ApplicationEngine {
         settings,
         crate::application_engine::TEST_MODE_GAS,
         NoDiagnostic,
-        None,
+        Arc::new(NoNativeContractProvider),
     )
     .expect("application engine")
 }

@@ -35,7 +35,7 @@ fn payment_engine(
         ProtocolSettings::default(),
         10_000_000,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
     engine.set_calling_script_hash(caller);
@@ -149,7 +149,7 @@ fn registration_payment_engine(
         settings,
         gas_limit,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
     engine

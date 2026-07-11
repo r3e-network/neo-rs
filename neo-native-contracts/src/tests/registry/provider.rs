@@ -70,7 +70,7 @@ fn provider_current_block_index_feeds_engine_without_persisting_block() {
         ProtocolSettings::default(),
         1_000_000,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
 

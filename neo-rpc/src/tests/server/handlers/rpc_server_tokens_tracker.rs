@@ -213,7 +213,7 @@ async fn get_nep17_balances_reports_asset_metadata() {
         system.settings().as_ref().clone(),
         TEST_MODE_GAS,
         neo_execution::NoDiagnostic,
-        Some(system.native_contract_provider()),
+        system.native_contract_provider(),
     )
     .expect("engine");
     engine

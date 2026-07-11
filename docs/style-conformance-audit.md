@@ -227,7 +227,11 @@ High-signal clusters found during the first pass:
   `neo-execution/src/application_engine`, the root keeps the public
   `ApplicationEngine` facade and module map while `application_engine/host_state.rs`
   owns the private VM host wrapper, host syscall metadata, queued native-call
-  record, and CoreError-to-VM-fault projection.
+  record, and CoreError-to-VM-fault projection. `ApplicationEngine<P, D, B>`
+  stores a mandatory `Arc<P>`; provider-aware constructors and witness helpers
+  do not accept optional providers, and standalone engines use
+  `NoNativeContractProvider`. The raw VM host pointer is scoped to
+  callback-capable operations and cleared before returning.
 - `neo-execution/src/lib.rs` still re-exports internal implementation modules
   broadly. Keep crate-root exports to deliberate facade/domain types after
   downstream imports are mapped.

@@ -1132,7 +1132,7 @@ fn execute_transaction_probe<B: neo_storage::CacheRead>(
         ProtocolSettings::mainnet(),
         transaction.system_fee(),
         diagnostic,
-        Some(Arc::new(StandardNativeProvider::new())),
+        Arc::new(StandardNativeProvider::new()),
     )?;
     let (vm_state, load_error) =
         match engine.load_script(transaction.script().to_vec(), CallFlags::ALL, None) {

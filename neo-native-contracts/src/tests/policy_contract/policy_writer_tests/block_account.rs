@@ -33,7 +33,7 @@ fn real_policy_blocked_storage_rejects_system_contract_call_target() {
         settings,
         2000_00000000,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
     engine

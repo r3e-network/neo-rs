@@ -201,9 +201,6 @@ where
     where
         F: FnOnce(&mut ExecutionContextState<B>),
     {
-        // Ensure the VM has a valid host pointer in case the engine has moved since creation.
-        self.attach_host();
-
         let script = Script::from(script_bytes)
             .map_err(|e| CoreError::invalid_operation(format!("Invalid script: {e}")))?;
 
@@ -238,14 +235,11 @@ where
             .entry(invocation_counter_hash)
             .or_insert(1);
 
-        {
-            let engine = self.vm_engine.engine_mut();
-            engine
-                .load_context(context)
-                .map_err(|e| CoreError::invalid_operation(e.to_string()))?;
-
-            engine.set_call_flags(call_flags);
-        }
+        let attached_here = self.attach_host();
+        let load_result = self.vm_engine.engine_mut().load_context(context);
+        self.detach_host(attached_here);
+        load_result.map_err(|e| CoreError::invalid_operation(e.to_string()))?;
+        self.vm_engine.engine_mut().set_call_flags(call_flags);
 
         let new_context = self
             .vm_engine

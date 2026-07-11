@@ -388,7 +388,7 @@ where
                 hash,
                 witness,
                 net_fee,
-                Some(native_contract_provider.clone()),
+                native_contract_provider.clone(),
             ) {
                 Ok(fee) => net_fee -= fee,
                 Err(_) => return VerifyResult::Invalid,

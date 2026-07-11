@@ -143,7 +143,7 @@ fn runtime_log_allows_dynamic_script_without_container_like_csharp() {
             ProtocolSettings::default(),
             TEST_MODE_GAS,
             NoDiagnostic,
-            None,
+            Arc::new(NoNativeContractProvider),
         )
         .expect("application engine");
     engine
@@ -172,7 +172,7 @@ fn send_notification_enforces_echidna_cap_for_native_paths_like_csharp() {
             settings,
             TEST_MODE_GAS,
             NoDiagnostic,
-            None,
+            Arc::new(NoNativeContractProvider),
         )
         .expect("application engine");
     engine
@@ -210,7 +210,7 @@ fn get_notifications_deep_copies_domovoi_state_like_csharp() {
             settings,
             TEST_MODE_GAS,
             NoDiagnostic,
-            None,
+            Arc::new(NoNativeContractProvider),
         )
         .expect("application engine");
     engine
@@ -304,7 +304,7 @@ fn runtime_check_witness_faults_on_invalid_public_key_like_csharp() {
             ProtocolSettings::default(),
             TEST_MODE_GAS,
             NoDiagnostic,
-            None,
+            Arc::new(NoNativeContractProvider),
         )
         .expect("application engine");
     engine
@@ -334,7 +334,7 @@ fn verification_trigger_without_persisting_block_uses_configured_hardforks_like_
             settings,
             TEST_MODE_GAS,
             NoDiagnostic,
-            None,
+            Arc::new(NoNativeContractProvider),
         )
         .expect("application engine");
     engine
@@ -359,7 +359,7 @@ fn default_policy_storage_exec_fee_factor_charges_push1_as_thirty_datoshi() {
             ProtocolSettings::default(),
             TEST_MODE_GAS,
             NoDiagnostic,
-            None,
+            Arc::new(NoNativeContractProvider),
         )
         .expect("application engine");
     engine
@@ -388,7 +388,7 @@ fn policy_provider_legacy_exec_fee_factor_is_scaled_until_faun_height() {
             ProtocolSettings::default(),
             TEST_MODE_GAS,
             NoDiagnostic,
-            Some(provider),
+            provider,
         )
         .expect("application engine");
         engine
@@ -414,7 +414,7 @@ fn external_vm_loop_hits_gas_limit_before_instruction_cap() {
             ProtocolSettings::default(),
             1_000_000,
             NoDiagnostic,
-            None,
+            Arc::new(NoNativeContractProvider),
         )
         .expect("application engine");
     engine
@@ -449,7 +449,7 @@ fn invocation_counter_uses_explicit_context_script_hash_like_csharp() {
             ProtocolSettings::default(),
             TEST_MODE_GAS,
             NoDiagnostic,
-            None,
+            Arc::new(NoNativeContractProvider),
         )
         .expect("application engine");
     engine
@@ -492,7 +492,7 @@ fn external_vm_pointer_result_halts_like_local_engine() {
             ProtocolSettings::default(),
             TEST_MODE_GAS,
             NoDiagnostic,
-            None,
+            Arc::new(NoNativeContractProvider),
         )
         .expect("application engine");
     engine

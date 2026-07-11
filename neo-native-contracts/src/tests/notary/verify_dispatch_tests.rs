@@ -104,7 +104,7 @@ fn call_verify(
         echidna_settings(),
         10_00000000,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
     engine
@@ -392,7 +392,7 @@ fn on_persist_debits_payer_deposit_and_mints_notary_reward() {
         echidna_settings(),
         0,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
     NativeContract::on_persist(&Notary, &mut engine).expect("notary on_persist");
@@ -448,7 +448,7 @@ fn on_persist_faults_when_notary_paid_payer_deposit_is_missing() {
         echidna_settings(),
         0,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
 
@@ -490,7 +490,7 @@ fn on_persist_faults_when_notary_paid_payer_deposit_is_overdrawn() {
         echidna_settings(),
         0,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
 

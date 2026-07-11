@@ -77,7 +77,7 @@ where
                 HashMap::new(),
                 Arc::clone(&native_contract_cache),
                 NoDiagnostic,
-                Some(Arc::clone(&native_contract_provider)),
+                Arc::clone(&native_contract_provider),
             )?;
         record_tx_stage(
             neo_runtime::sync_metrics::NativePersistTxStage::EngineCreate,

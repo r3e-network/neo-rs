@@ -421,7 +421,7 @@ fn max_not_valid_before_delta_requires_initialized_storage() {
         ProtocolSettings::default(),
         0,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
 

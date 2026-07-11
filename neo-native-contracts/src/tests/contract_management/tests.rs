@@ -402,7 +402,7 @@ fn has_method_rejects_invalid_utf8_method_name_like_csharp() {
         neo_config::ProtocolSettings::default(),
         0,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
     let hash = UInt160::from_bytes(&[0x51u8; 20]).unwrap();
@@ -591,7 +591,7 @@ fn minimum_deployment_fee_requires_initialized_storage() {
         neo_config::ProtocolSettings::default(),
         0,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
 

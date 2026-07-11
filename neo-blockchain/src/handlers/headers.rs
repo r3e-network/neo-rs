@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use neo_payloads::header::Header;
 
 use crate::ledger_provider::{BlockProvider, ChainTipProvider};
@@ -56,6 +58,9 @@ where
             // Skipped only when no store snapshot is available (no anchor to
             // verify against, e.g. header-only unit fixtures).
             if let (Some(snap), Some(prev_header)) = (&snapshot, &prev) {
+                let Some(provider) = &native_contract_provider else {
+                    break;
+                };
                 if i32::from(header.primary_index()) >= settings.validators_count {
                     break;
                 }
@@ -73,7 +78,7 @@ where
                     &next_consensus,
                     &header.witness,
                     300_000_000,
-                    native_contract_provider.clone(),
+                    Arc::clone(provider),
                 )
                 .is_err()
                 {

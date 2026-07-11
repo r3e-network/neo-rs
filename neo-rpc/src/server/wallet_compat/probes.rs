@@ -37,7 +37,7 @@ where
         settings.clone(),
         max_gas,
         neo_execution::NoDiagnostic,
-        Some(Arc::clone(native_contract_provider)),
+        Arc::clone(native_contract_provider),
     )
     .map_err(|err| CoreError::other(err.to_string()))?;
     engine

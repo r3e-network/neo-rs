@@ -111,7 +111,7 @@ pub(super) fn engine_for(
         settings,
         1000_00000000, // covers the 10-GAS minimum deployment fee
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds")
 }

@@ -113,6 +113,11 @@ Practical node rules:
   fuzz/property tests, and justified with benchmark or profiling evidence. Do
   not weaken deterministic execution, replayability, or error handling to win a
   microbenchmark.
+- Raw self-pointers used for allocation-free VM callbacks must be scoped to the
+  exact callback-capable operation and cleared before the public method
+  returns. Never install a self-pointer in a constructor that returns the owner
+  by value, and never rely on an assertion made immediately after installation
+  to detect a later move.
 - Treat `unwrap`, `expect`, and `panic!` in consensus, execution, sync, storage,
   and RPC parsing as stop-the-node risks unless they prove an impossible
   invariant.
@@ -472,6 +477,11 @@ Rules:
 - Avoid `Arc<dyn Trait>` as the default dependency shape. Use it only when
   open-ended shared runtime polymorphism is actually required and a closed enum
   cannot express the supported implementations.
+- A collaborator required by an operation is a concrete field or parameter,
+  not `Option<T>`. When a standalone mode intentionally exposes no capability,
+  model that state with an explicit typed null implementation such as
+  `NoNativeContractProvider`; branch on optional composition before entering
+  the execution layer.
 - Do not use `TypeId`/`Any` maps as service composition. Put each supported
   service in a named typed field and pass the smallest typed bundle to its
   consumers.

@@ -72,7 +72,7 @@ fn call(snapshot: Arc<DataCache>, signer: UInt160, pubkey: &[u8], method: &str) 
         ProtocolSettings::default(),
         2000_00000000, // > the 1000-GAS register price
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
     engine

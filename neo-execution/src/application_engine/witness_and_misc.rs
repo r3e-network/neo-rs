@@ -147,11 +147,7 @@ where
                 TransactionAttribute::OracleResponse(resp) => Some(resp.id),
                 _ => None,
             }) {
-                let provider = self.native_contract_provider().ok_or_else(|| {
-                    CoreError::invalid_operation(
-                        "OracleResponse CheckWitness requires a native contract provider",
-                    )
-                })?;
+                let provider = self.native_contract_provider();
                 let request = provider
                     .oracle_request_details(self.snapshot_cache.as_ref(), oracle_id)?
                     .ok_or_else(|| {
@@ -332,11 +328,9 @@ where
     /// Group match for a witness Group/CalledByGroup condition. Callers validate
     /// the ReadStates call flag first, matching C# GroupCondition.Match ordering.
     fn contract_matches_group(&self, contract_hash: &UInt160, group: &[u8]) -> CoreResult<bool> {
-        let Some(provider) = self.native_contract_provider() else {
-            return Ok(false);
-        };
-        let Some(contract) =
-            provider.contract_state(self.snapshot_cache.as_ref(), contract_hash)?
+        let Some(contract) = self
+            .native_contract_provider()
+            .contract_state(self.snapshot_cache.as_ref(), contract_hash)?
         else {
             return Ok(false);
         };
@@ -723,7 +717,7 @@ where
         Ok(())
     }
 
-    /// Registers native contracts in the contracts HashMap so they can be found
+    /// Materializes active initialization-block contract states from the typed registry.
     pub(super) fn register_native_contracts(&mut self) {
         let block_height = self.current_block_index();
         let contracts: Vec<P::Contract> = self.native_registry.contracts().collect();
@@ -767,17 +761,11 @@ where
         let faun_active = self
             .protocol_settings
             .is_hardfork_enabled(Hardfork::HfFaun, block_height);
-        let (raw_factor, storage_price) = {
-            let Some(provider) = self.native_contract_provider() else {
-                return;
-            };
-            (
-                provider
-                    .exec_fee_factor_raw(self.snapshot_cache.as_ref())
-                    .ok(),
-                provider.storage_price(self.snapshot_cache.as_ref()).ok(),
-            )
-        };
+        let provider = self.native_contract_provider();
+        let raw_factor = provider
+            .exec_fee_factor_raw(self.snapshot_cache.as_ref())
+            .ok();
+        let storage_price = provider.storage_price(self.snapshot_cache.as_ref()).ok();
 
         if let Some(raw_factor) = raw_factor {
             self.exec_fee_factor = if faun_active {

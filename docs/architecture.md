@@ -381,20 +381,17 @@ The detailed rules for this style live in
   `neo-native-contracts`, but `neo-system::NodeBuilder` now accepts and stores
   the provider as an explicit dependency. The daemon builds the standard Neo N3
   provider once before genesis initialization and passes the same `Arc` into
-  every provider-aware subsystem and into `NodeBuilder`. `ApplicationEngine` now
-  captures the explicit or scoped provider at construction and uses that stable
+  every provider-aware subsystem and into `NodeBuilder`. `ApplicationEngine<P,
+  D, B>` now requires and stores `Arc<P>` at construction and uses that stable
   handle for direct native calls, policy
   reads, dynamic-call policy gates, contract-management lookups made from
   contract loading, committee-witness checks, storage-context resolution,
   OracleResponse witness inheritance, witness group checks, current-index
-  reads, and whitelisted-fee checks. Engine methods do not read the global slot
-  after construction, so provider replacement cannot change an already-created
-  engine. Production composition no longer mutates the global slot. The
-  process-global lookup remains only as a provider compatibility bridge for
-  standalone callers, legacy runtime-helper wrappers, and tests that
-  intentionally exercise ambient lookup; it no longer exposes contract-specific
-  native helper wrappers. Mempool admission, RPC session construction,
-  smart-contract wallet invocation, wallet-compat network-fee calculation,
+  reads, and whitelisted-fee checks. Provider-aware engine constructors and
+  witness helpers require `Arc<P>` rather than `Option<Arc<P>>`; standalone
+  engines pass `NoNativeContractProvider` explicitly. The removed ambient
+  provider bridge cannot bypass composition. Mempool admission, RPC session
+  construction, smart-contract wallet invocation, wallet-compat network-fee calculation,
   oracle service processing, RPC wallet signing/finalization, and RPC node
   `getversion` policy projection adapt the composed provider for native reads
   instead of constructing private native-contract handles. RPC Policy provider
@@ -403,10 +400,13 @@ The detailed rules for this style live in
   capability traits.
   `Helper::verify_witness*_with_native_provider` and
   provider-aware script-hash resolution let node services verify witnesses
-  against an explicit provider without reading the global slot. Batch block
+  against an explicit provider. Batch block
   import, genesis initialization, header inventory verification,
   extensible-payload verification, and signed-StateRoot verification now use
-  explicit providers when their caller owns one.
+  explicit providers before entering execution. The VM host pointer used for
+  allocation-free callbacks is bound only around context loading and execution
+  and is cleared before each public operation returns, so engines remain
+  movable between calls.
   `SystemContext::native_contract_provider` is the blockchain-service seam for
   handler paths, and native block persistence uses `NativePersistResources` to
   pass the provider directly into each OnPersist/Application/PostPersist engine.

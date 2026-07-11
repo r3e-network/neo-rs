@@ -87,12 +87,14 @@ where
     /// This mirrors the C# engine behaviour used by RPC invocation endpoints: callers can inspect
     /// `state()` / `fault_exception()` even when execution faults.
     pub fn execute_allow_fault(&mut self) -> VMState {
-        // Keep the engine host pointer aligned with this instance across moves.
-        self.attach_host();
+        // Bind only for the callback-capable operation. The engine remains
+        // movable after this method returns.
+        let attached_here = self.attach_host();
 
         let state = self
             .try_execute_with_external_vm()
             .unwrap_or_else(|| self.vm_engine.engine_mut().execute());
+        self.detach_host(attached_here);
         if state == VMState::FAULT {
             self.capture_fault_exception_from_vm();
         }
@@ -103,20 +105,20 @@ where
     /// or the VM halts/faults. Intended for native contract helpers that need to run
     /// a nested contract call synchronously.
     pub fn execute_until_invocation_stack_depth(&mut self, target_depth: usize) -> VMState {
-        // Keep the engine host pointer aligned with this instance across moves.
-        self.attach_host();
+        // Bind only while VM steps can invoke host callbacks.
+        let attached_here = self.attach_host();
 
-        loop {
+        let result = loop {
             let state = self.vm_engine.engine().state();
             if state == VMState::HALT || state == VMState::FAULT {
                 if state == VMState::FAULT {
                     self.capture_fault_exception_from_vm();
                 }
-                return state;
+                break state;
             }
 
             if self.vm_engine.engine().invocation_stack().len() <= target_depth {
-                return state;
+                break state;
             }
 
             if let Err(err) = self.vm_engine.engine_mut().execute_next() {
@@ -126,9 +128,11 @@ where
                 ));
                 self.vm_engine.engine_mut().set_state(VMState::FAULT);
                 self.capture_fault_exception_from_vm();
-                return VMState::FAULT;
+                break VMState::FAULT;
             }
-        }
+        };
+        self.detach_host(attached_here);
+        result
     }
 
     /// Executes the loaded scripts until the VM halts or faults.
@@ -186,11 +190,9 @@ where
         // through the native-contract seam — the engine cannot depend on
         // `neo-native-contracts` directly. C# `GetCommitteeAddress` faults if the
         // committee cache is missing, so a lookup error is propagated. When no
-        // provider is installed (engine used standalone), we fail closed.
-        let Some(provider) = self.native_contract_provider() else {
-            return Ok(false);
-        };
-        let committee_address = match provider
+        // standalone engine uses `NoNativeContractProvider`, we fail closed.
+        let committee_address = match self
+            .native_contract_provider()
             .committee_address(self.snapshot_cache.as_ref())
             .map_err(|e| {
                 CoreError::invalid_operation(format!("committee address lookup failed: {e}"))
@@ -228,7 +230,6 @@ where
         // 2. Get contract state to get the ID (matches C# snapshot lookup)
         let contract = self
             .native_contract_provider()
-            .ok_or_else(|| CoreError::not_found(format!("Contract not found: {}", contract_hash)))?
             .contract_state(self.snapshot_cache.as_ref(), &contract_hash)?
             .ok_or_else(|| {
                 CoreError::not_found(format!("Contract not found: {}", contract_hash))

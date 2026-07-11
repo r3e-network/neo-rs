@@ -98,7 +98,7 @@ fn deploy_verify_contract(system: &Arc<crate::server::NodeContext>) -> UInt160 {
         system.settings().as_ref().clone(),
         50_000_000_000,
         neo_execution::NoDiagnostic,
-        Some(system.native_contract_provider()),
+        system.native_contract_provider(),
     )
     .expect("engine");
     engine

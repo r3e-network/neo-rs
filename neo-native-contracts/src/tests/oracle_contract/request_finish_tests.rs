@@ -132,7 +132,7 @@ fn run(script: Vec<u8>, tx: Transaction, snapshot: Arc<DataCache>) -> (VmState, 
         ProtocolSettings::default(),
         2000_00000000,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
     engine
@@ -187,7 +187,7 @@ fn request_writes_record_id_list_counter_and_mints_response_gas() {
         ProtocolSettings::default(),
         2000_00000000,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
     engine
@@ -405,7 +405,7 @@ fn finish_notifies_and_queues_the_callback() {
         ProtocolSettings::default(),
         2000_00000000,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
     engine
@@ -476,7 +476,7 @@ fn verify_accepts_only_oracle_response_transactions() {
             ProtocolSettings::default(),
             10_00000000,
             neo_execution::NoDiagnostic,
-            Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+            std::sync::Arc::new(crate::StandardNativeProvider::new()),
         )
         .expect("engine builds")
     };
@@ -510,7 +510,7 @@ fn post_persist_engine(
         ProtocolSettings::default(),
         2000_00000000,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds")
 }

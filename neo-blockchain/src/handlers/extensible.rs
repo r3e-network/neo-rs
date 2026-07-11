@@ -143,7 +143,7 @@ where
                 hash,
                 witness,
                 remaining_gas,
-                Some(Arc::clone(&native_contract_provider)),
+                Arc::clone(&native_contract_provider),
             ) {
                 Ok(fee) => remaining_gas -= fee,
                 Err(error) => {

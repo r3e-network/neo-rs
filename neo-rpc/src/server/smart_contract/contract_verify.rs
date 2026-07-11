@@ -100,7 +100,7 @@ pub(super) fn invoke_contract_verify(
         system.settings().as_ref().clone(),
         server.settings().max_gas_invoke,
         neo_execution::NoDiagnostic,
-        Some(system.native_contract_provider()),
+        system.native_contract_provider(),
     )
     .map_err(|err| internal_error(err.to_string()))?;
 

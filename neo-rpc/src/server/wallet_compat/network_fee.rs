@@ -263,7 +263,7 @@ where
         settings.clone(),
         max_execution_cost,
         neo_execution::NoDiagnostic,
-        Some(Arc::clone(native_contract_provider)),
+        Arc::clone(native_contract_provider),
     )
     .map_err(|err| WalletCompatError::Other(err.to_string()))?;
     engine

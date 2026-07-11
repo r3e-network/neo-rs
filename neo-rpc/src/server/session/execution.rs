@@ -109,7 +109,7 @@ impl<T: Store> SessionRecord<StoreCacheBacking<T>> {
             settings.as_ref().clone(),
             gas_limit,
             diagnostic.clone(),
-            Some(native_contract_provider),
+            native_contract_provider,
         )
         .map_err(|err| CoreError::other(err.to_string()))?;
 

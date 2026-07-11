@@ -42,7 +42,7 @@ pub(super) fn invoke_native_read<B: CacheRead>(
         settings,
         server.settings().max_gas_invoke,
         neo_execution::NoDiagnostic,
-        Some(system.native_contract_provider()),
+        system.native_contract_provider(),
     )
     .map_err(|err| CoreError::other(err.to_string()))?;
     engine

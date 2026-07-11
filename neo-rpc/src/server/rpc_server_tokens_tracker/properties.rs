@@ -58,7 +58,7 @@ impl RpcServerTokensTracker {
             system.settings().as_ref().clone(),
             TEST_MODE_GAS,
             neo_execution::NoDiagnostic,
-            Some(system.native_contract_provider()),
+            system.native_contract_provider(),
         )
         .map_err(|err| internal_error(err.to_string()))?;
         engine

@@ -52,7 +52,7 @@ fn transfer_moves_balance_and_follows_vote_weight() {
         ProtocolSettings::default(),
         2000_00000000,
         neo_execution::NoDiagnostic,
-        Some(std::sync::Arc::new(crate::StandardNativeProvider::new())),
+        std::sync::Arc::new(crate::StandardNativeProvider::new()),
     )
     .expect("engine builds");
     engine

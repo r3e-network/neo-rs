@@ -17,7 +17,7 @@ fn storage_engine() -> ApplicationEngine {
             ProtocolSettings::default(),
             1_000_000,
             NoDiagnostic,
-            None,
+            Arc::new(NoNativeContractProvider),
         )
         .expect("engine builds");
     engine

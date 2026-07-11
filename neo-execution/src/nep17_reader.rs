@@ -94,7 +94,7 @@ where
             self.settings.clone(),
             DESCRIPTOR_PROBE_GAS,
             NoDiagnostic,
-            Some(Arc::clone(&self.native_contract_provider)),
+            Arc::clone(&self.native_contract_provider),
         )
         .map_err(|e| ServiceError::Internal(e.to_string()))?;
         engine

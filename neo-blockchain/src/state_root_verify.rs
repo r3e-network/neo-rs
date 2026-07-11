@@ -187,7 +187,7 @@ where
         settings,
         snapshot,
         STATE_ROOT_VERIFY_GAS,
-        Some(native_contract_provider),
+        native_contract_provider,
     )
 }
 
