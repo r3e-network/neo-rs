@@ -253,7 +253,7 @@ docker inspect --format='{{.State.Health.Status}}' neo-node
 | Section | Key keys | Notes |
 |---------|----------|-------|
 | `[network]` | `network_magic`, `network_type` | Selects the chain. `--network-magic` overrides. |
-| `[storage]` | `backend`, `data_dir`, `read_only`, `static_files_dir`, static-file compression/cache/recovery limits | `backend = "mdbx"` is the production persistent default; `rocksdb` remains an explicit fallback/test backend; `memory` is ephemeral. Setting `static_files_dir` enables the precommit-durable compressed Ledger mirror, a derived `ledger.static.index/` MDBX offset index, full-prefix canonical reconciliation, a kernel-held single-writer lease, and the shared historical fallback used by blockchain, consensus, P2P, transaction-admission, wallet, and RPC reads. Current-tip rows remain hot. Hot pruning is not enabled yet. |
+| `[storage]` | `backend`, `data_dir`, `read_only`, `static_files_dir`, static-file compression/cache/recovery limits | `backend = "mdbx"` is the production persistent default; `rocksdb` remains an explicit fallback/test backend; `memory` is ephemeral. Setting `static_files_dir` enables the precommit-durable compressed Ledger archive, a derived `ledger.static.index/` MDBX offset index, watermark-aware canonical reconciliation, a kernel-held single-writer lease, and the shared historical fallback used by blockchain, consensus, P2P, transaction-admission, wallet, and RPC reads. Archived hot rows older than the initial protocol `MaxTraceableBlocks` window are pruned automatically; `CurrentBlock` remains hot. |
 | `[p2p]` | `port`, `bind_address`, `seed_nodes`, `max_connections`, `min_desired_connections`, `max_connections_per_address` | `bind_address` defaults to `0.0.0.0`; `max_connections = -1` means unlimited (C# parity). |
 | `[rpc]` | `enabled`, `port`, `bind_address`, `rpc_user`, `rpc_pass`, `disabled_methods`, limits | The daemon wires these into `neo-rpc` at startup. Built-in Basic auth protects HTTP RPC when credentials are configured; use a proxy for TLS and network-level policy. |
 | `[consensus]` | `enabled`, `private_key_hex`, `hsm`, `auto_start` | Off by default; consensus participation starts when `enabled` or `auto_start` is true and requires validator key material. |
@@ -301,6 +301,15 @@ overlapping hot prefix and truncates it. An index that is missing, belongs to
 another archive identity, or points beyond the archive is discarded logically
 and rebuilt from the frame stream.
 
+After successful sidecar publication, the node enumerates the newly eligible
+frame keys, checks each key's latest archived version, compares hot and cold
+bytes, and removes only versions at or below the prune frontier. MDBX commits
+the hot deletes and node-local `hot-pruned-through` metadata in one transaction;
+RocksDB uses one synchronous cross-column-family batch. Startup rejects a
+watermark above the canonical or archive tip, rejects archive lag below the
+watermark, and validates the remaining overlap from `watermark + 1`. A malformed
+hot `CurrentBlock` is a fatal startup error, not an empty-chain result.
+
 Stop the node before manipulating either artifact. If only the sidecar is lost
 or semantically invalid, remove `ledger.static.index/` and restart to rebuild
 it; do not remove `ledger.static` for an index-only incident. A clean indexed
@@ -319,11 +328,17 @@ The scrub command refuses a missing `ledger.static`; it never turns a mistyped
 directory into a successful empty-archive result.
 
 Published frame corruption is media damage and is not auto-truncated. Restore
-the archive from backup or, while hot Ledger rows are still retained, remove
-both mirror artifacts and let startup reconcile a new archive. Only an
+the archive from backup. Removing both archive artifacts and rebuilding from
+hot rows is valid only when no prune watermark exists; after pruning begins,
+historical Ledger rows no longer exist in the hot database. Only an
 incomplete or corrupt final suffix that was never published to MDBX is treated
 as a recoverable torn write. Development format-v1 archives are not migrated;
 rebuild them from the hot store as v2.
+
+Stop the node and back up the canonical database plus `ledger.static` together.
+The `ledger.static.index/` sidecar is rebuildable, but including it reduces
+restore time. A hot-database-only backup is incomplete after the first prune
+watermark and cannot serve historical block or transaction data.
 
 Operational guarantees and markers the node enforces at the data directory:
 

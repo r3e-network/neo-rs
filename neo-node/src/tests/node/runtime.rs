@@ -266,7 +266,7 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
     assert_eq!(recovered_archive.tip(), Some(0));
     let empty_hot = neo_storage::DataCache::new(false);
     let recovery = recovered_archive
-        .reconcile(&empty_hot, None, 64)
+        .reconcile(&empty_hot, None, None, 64)
         .expect("truncate uncommitted ahead archive frame");
     assert_eq!(recovery.truncated_blocks, 1);
     assert_eq!(recovered_archive.tip(), None);
@@ -280,6 +280,108 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
             &discarded
         )
     );
+}
+
+#[test]
+fn canonical_archive_publication_prunes_hot_ledger_rows_atomically() {
+    use neo_blockchain::{
+        BlockPersistContext, NativePersistOptions, NativePersistResources, genesis_block,
+        persist_block_natives_with_resources,
+    };
+    use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+    use neo_storage::persistence::ReadOnlyStoreGeneric;
+    use neo_storage::persistence::providers::RuntimeStore;
+    use neo_storage::persistence::providers::memory_store::MemoryStore;
+    use neo_storage::persistence::store::Store;
+    use neo_storage::{EmptyCacheBacking, StorageKey};
+    use neo_system::BlockCommitHooks;
+
+    type Hooks = DaemonCommitHooks<
+        neo_native_contracts::StandardNativeProvider,
+        MemoryStore,
+        MemoryStore,
+        MemoryStore,
+    >;
+
+    let settings = ProtocolSettings::default();
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let provider = Arc::new(neo_native_contracts::StandardNativeProvider::new());
+    let resources = NativePersistResources::from_provider(provider);
+    let block = Arc::new(genesis_block(&settings).expect("genesis block"));
+    let outcome = persist_block_natives_with_resources(
+        Arc::clone(&snapshot),
+        Arc::clone(&block),
+        &settings,
+        NativePersistOptions::default(),
+        &resources,
+    )
+    .expect("stage genesis Ledger rows");
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(RuntimeStore::RocksDb(
+        neo_storage::rocksdb::RocksDBStoreProvider::new(
+            neo_storage::persistence::storage::StorageConfig {
+                path: temp.path().join("hot"),
+                ..Default::default()
+            },
+        )
+        .get_rocksdb_store(std::path::Path::new(""))
+        .expect("RocksDB store"),
+    ));
+    assert!(
+        store
+            .try_commit_raw_overlay(&snapshot.extract_raw_changes())
+            .expect("seed canonical store")
+    );
+    let archive = neo_blockchain::StaticLedgerArchive::new(
+        StaticFileArchiveFactory::default()
+            .open(&temp.path().join("ledger.static"))
+            .expect("archive"),
+    );
+    let shutdown = tokio_util::sync::CancellationToken::new();
+    let hooks = Hooks::new(
+        settings.network,
+        None,
+        false,
+        None,
+        None,
+        Some(archive.clone()),
+        Arc::new(crate::node::recovery::LocalReplayGuard::new(
+            None,
+            shutdown.clone(),
+        )),
+    );
+    hooks.configure_hot_ledger_pruning(Arc::clone(&store), 0);
+
+    assert!(
+        <Hooks as BlockCommitHooks<EmptyCacheBacking>>::block_committing(
+            &hooks,
+            block.as_ref(),
+            snapshot.as_ref(),
+            &outcome.application_executed,
+            0,
+            BlockPersistContext::live(),
+        )
+    );
+    <Hooks as BlockCommitHooks<EmptyCacheBacking>>::fence_precommit_durability(&hooks)
+        .expect("stage archive");
+    <Hooks as BlockCommitHooks<EmptyCacheBacking>>::canonical_commit_succeeded(&hooks);
+
+    let mut block_hash_key = vec![9];
+    block_hash_key.extend_from_slice(&0u32.to_be_bytes());
+    let block_hash_key = StorageKey::new(neo_native_contracts::LedgerContract::ID, block_hash_key);
+    let current_block_key = StorageKey::new(
+        neo_native_contracts::LedgerContract::ID,
+        vec![neo_native_contracts::ledger_contract::storage::PREFIX_CURRENT_BLOCK],
+    );
+    assert!(store.try_get(&block_hash_key).is_none());
+    assert!(
+        store.try_get(&current_block_key).is_some(),
+        "CurrentBlock must remain in the hot store"
+    );
+    assert_eq!(archive.hot_pruned_through(store.as_ref()).unwrap(), Some(0));
+    assert_eq!(archive.tip(), Some(0));
+    assert!(!shutdown.is_cancelled());
 }
 
 #[test]

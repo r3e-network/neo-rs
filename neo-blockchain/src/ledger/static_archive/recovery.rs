@@ -1,4 +1,4 @@
-//! Startup reconciliation from the authoritative hot Ledger prefix.
+//! Startup reconciliation across canonical hot suffix and archived prefix.
 
 use neo_error::{CoreError, CoreResult};
 use neo_storage::{CacheRead, DataCache};
@@ -7,7 +7,7 @@ use crate::ledger::ledger_provider::{BlockProvider, StorageLedgerProvider};
 
 use super::StaticLedgerArchive;
 
-/// Outcome of reconciling a static archive to the durable hot Ledger tip.
+/// Outcome of reconciling a static archive to the durable canonical Ledger tip.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct StaticArchiveRecovery {
     /// Number of archive-tail blocks removed because they exceeded hot truth.
@@ -16,23 +16,26 @@ pub struct StaticArchiveRecovery {
     pub appended_blocks: u32,
     /// Archive tip after reconciliation.
     pub final_tip: Option<u32>,
+    /// Existing hot-pruning watermark validated during reconciliation.
+    pub hot_pruned_through: Option<u32>,
 }
 
 impl StaticLedgerArchive {
-    /// Reconciles the archive against the authoritative canonical store.
+    /// Reconciles the archive against canonical storage and its prune watermark.
     ///
     /// Static-file bytes are durably fenced before the canonical hot
     /// transaction, while their provider-visible index is published only after
     /// hot success. The opener recovers a complete unpublished suffix, then
-    /// reconciliation checks every overlapping block hash against hot truth
-    /// before truncating a cold-ahead suffix left by an interrupted canonical
-    /// commit or replaying missing finalized blocks in bounded batches. Hot
-    /// data remains authoritative until a later, separately verified pruning
-    /// phase is enabled.
+    /// reconciliation checks every still-hot overlapping block hash before
+    /// truncating a cold-ahead suffix left by an interrupted canonical commit
+    /// or replaying missing finalized blocks in bounded batches. Heights at or
+    /// below `hot_pruned_through` are archive-authoritative and are never
+    /// expected to remain in the hot store.
     pub fn reconcile<B: CacheRead>(
         &self,
         snapshot: &DataCache<B>,
         canonical_tip: Option<u32>,
+        hot_pruned_through: Option<u32>,
         batch_size: usize,
     ) -> CoreResult<StaticArchiveRecovery> {
         if batch_size == 0 {
@@ -41,33 +44,62 @@ impl StaticLedgerArchive {
             ));
         }
         let original_tip = self.tip();
+        if let Some(watermark) = hot_pruned_through {
+            let canonical_tip = canonical_tip.ok_or_else(|| {
+                CoreError::invalid_data(format!(
+                    "hot Ledger prune watermark {watermark} exists without a canonical tip"
+                ))
+            })?;
+            if watermark > canonical_tip {
+                return Err(CoreError::invalid_data(format!(
+                    "hot Ledger prune watermark {watermark} exceeds canonical tip {canonical_tip}"
+                )));
+            }
+            if original_tip.is_none_or(|archive_tip| archive_tip < watermark) {
+                return Err(CoreError::invalid_data(format!(
+                    "static Ledger archive tip {:?} does not cover hot-pruned height {watermark}",
+                    original_tip
+                )));
+            }
+        }
         let Some(canonical_tip) = canonical_tip else {
             self.truncate_after(None)?;
             return Ok(StaticArchiveRecovery {
                 truncated_blocks: original_tip.map_or(0, |height| height.saturating_add(1)),
                 appended_blocks: 0,
                 final_tip: None,
+                hot_pruned_through,
             });
         };
 
         let hot = StorageLedgerProvider::new(snapshot);
         if let Some(archive_tip) = original_tip {
             let archived = self.provider();
-            for height in 0..=archive_tip.min(canonical_tip) {
-                let archived_hash = archived.block_hash_by_index(height)?.ok_or_else(|| {
-                    CoreError::invalid_data(format!(
-                        "static archive has no block-hash row at height {height}"
-                    ))
-                })?;
-                let hot_hash = hot.block_hash_by_index(height)?.ok_or_else(|| {
-                    CoreError::invalid_data(format!(
-                        "hot Ledger has no block hash at archived height {height}"
-                    ))
-                })?;
-                if archived_hash != hot_hash {
-                    return Err(CoreError::invalid_data(format!(
-                        "static archive fork mismatch at height {height}: archive={archived_hash}, hot={hot_hash}"
-                    )));
+            let overlap_end = archive_tip.min(canonical_tip);
+            let overlap_start = match hot_pruned_through {
+                Some(height) => height.checked_add(1),
+                None => Some(0),
+            };
+            if let Some(overlap_start) = overlap_start {
+                if overlap_start <= overlap_end {
+                    for height in overlap_start..=overlap_end {
+                        let archived_hash =
+                            archived.block_hash_by_index(height)?.ok_or_else(|| {
+                                CoreError::invalid_data(format!(
+                                    "static archive has no block-hash row at height {height}"
+                                ))
+                            })?;
+                        let hot_hash = hot.block_hash_by_index(height)?.ok_or_else(|| {
+                            CoreError::invalid_data(format!(
+                                "hot Ledger has no block hash at archived height {height}"
+                            ))
+                        })?;
+                        if archived_hash != hot_hash {
+                            return Err(CoreError::invalid_data(format!(
+                                "static archive fork mismatch at height {height}: archive={archived_hash}, hot={hot_hash}"
+                            )));
+                        }
+                    }
                 }
             }
         }
@@ -116,6 +148,7 @@ impl StaticLedgerArchive {
             truncated_blocks,
             appended_blocks,
             final_tip: self.tip(),
+            hot_pruned_through,
         })
     }
 }

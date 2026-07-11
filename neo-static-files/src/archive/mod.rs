@@ -38,6 +38,21 @@ pub trait StaticFileProvider: Clone + Send + Sync + 'static {
 
     /// Returns the latest value stored under `key` at the archive tip.
     fn get(&self, key: &[u8]) -> StaticFileResult<Option<Vec<u8>>>;
+
+    /// Returns the raw row keys captured in the archived frame at `height`.
+    ///
+    /// Implementations may satisfy this from frame metadata alone without
+    /// decompressing frame payload bytes.
+    fn frame_row_keys(&self, height: u32) -> StaticFileResult<Option<Vec<Vec<u8>>>>;
+
+    /// Returns the latest archived height for each key in `keys`.
+    ///
+    /// The returned vector preserves input order and contains `None` for keys
+    /// with no archived version.
+    fn latest_heights_for_keys<K: AsRef<[u8]>>(
+        &self,
+        keys: &[K],
+    ) -> StaticFileResult<Vec<Option<u32>>>;
 }
 
 /// Factory contract for concrete static-file providers.

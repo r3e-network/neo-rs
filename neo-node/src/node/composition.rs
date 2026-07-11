@@ -148,9 +148,15 @@ pub(in crate::node) async fn build_node(
     // Enable backend-specific fast-sync optimizations during initial catch-up
     // for higher write throughput. The node re-enables durable mode once it
     // approaches the live tip.
-    let durable_tip_index = store_ledger_index(&store, false);
+    let durable_tip_index = store_ledger_index(&store, false)?;
     let static_archive = if ledger_mode.uses_local_replay_services() {
-        open_static_ledger_archive(config, &store, durable_tip_index).await?
+        open_static_ledger_archive(
+            config,
+            &store,
+            durable_tip_index,
+            settings.max_traceable_blocks,
+        )
+        .await?
     } else {
         None
     };
@@ -212,6 +218,10 @@ pub(in crate::node) async fn build_node(
         static_archive.clone(),
         Arc::clone(&replay_guard),
     ));
+    if static_archive_enabled {
+        daemon_hooks
+            .configure_hot_ledger_pruning(Arc::clone(&store), settings.max_traceable_blocks);
+    }
     let core_launch = neo_system::NodeCoreBuilder::new(
         Arc::clone(&settings),
         Arc::clone(&store),

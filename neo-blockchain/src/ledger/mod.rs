@@ -15,7 +15,7 @@
 //! - `ledger_context`: ledger context facade for block import.
 //! - `ledger_provider`: provider-style read traits over hot ledger records.
 //! - `ledger_records`: persisted ledger record codecs.
-//! - `static_archive`: finalized Ledger-record capture and recovery.
+//! - `static_archive`: finalized Ledger-record capture, recovery, and pruning.
 
 pub mod header_cache;
 pub mod ledger_context;

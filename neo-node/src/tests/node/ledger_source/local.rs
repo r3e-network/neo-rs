@@ -1,5 +1,5 @@
 use super::LedgerBlockSource;
-use neo_native_contracts::ledger_contract::storage::PREFIX_BLOCK;
+use neo_native_contracts::ledger_contract::storage::{PREFIX_BLOCK, PREFIX_CURRENT_BLOCK};
 use neo_network::BlockSource;
 use neo_payloads::{Block, Header, Witness};
 use neo_primitives::UInt256;
@@ -330,5 +330,36 @@ fn operational_ledger_tip_reads_stay_behind_local_provider_boundary() {
     assert!(
         provider.contains("StoreCache::new_from_store"),
         "durable store tip reads should be centralized behind the same store-cache snapshot path"
+    );
+}
+
+#[test]
+fn durable_tip_read_distinguishes_uninitialized_and_corrupt_current_block() {
+    use neo_storage::persistence::StoreCache;
+    use neo_storage::persistence::providers::memory_store::MemoryStore;
+
+    let empty = Arc::new(MemoryStore::new());
+    assert_eq!(
+        crate::node::ledger_source::tip::store_ledger_index(&empty, false)
+            .expect("empty store tip"),
+        None
+    );
+
+    let corrupt = Arc::new(MemoryStore::new());
+    let mut writer = StoreCache::new_from_store(Arc::clone(&corrupt), false);
+    writer.add(
+        StorageKey::new(
+            neo_native_contracts::LedgerContract::ID,
+            vec![PREFIX_CURRENT_BLOCK],
+        ),
+        StorageItem::from_bytes(vec![0xff]),
+    );
+    writer.try_commit().expect("commit malformed tip");
+
+    let error = crate::node::ledger_source::tip::store_ledger_index(&corrupt, false)
+        .expect_err("malformed current block must fail startup");
+    assert!(
+        error.to_string().contains("persisted ledger tip"),
+        "{error}"
     );
 }

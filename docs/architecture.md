@@ -103,8 +103,8 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-io | Infrastructure | Binary and variable-length integer reader/writer (mirrors `Neo.IO`). |
 | neo-error | Infrastructure | Authoritative `CoreError` / `CoreResult` error types for the workspace. |
 | neo-crypto | Infrastructure | Hashing, secp256r1 ECC, signatures, BLS12-381. |
-| neo-storage | Infrastructure | `Store` traits, `DataCache`, C#-compatible raw key/value codecs, MDBX/RocksDB adapters, and in-memory providers. |
-| neo-static-files | Infrastructure | Versioned genesis-first static records with zstd compression, checksums, a derived MDBX versioned-offset index, bounded suffix recovery, strict scrubbing, kernel writer ownership, and LRU frame caching. |
+| neo-storage | Infrastructure | `Store` traits, `DataCache`, C#-compatible raw key/value codecs, isolated node-maintenance metadata, MDBX/RocksDB adapters, and in-memory providers. |
+| neo-static-files | Infrastructure | Versioned genesis-first static records with zstd compression, checksums, a derived MDBX versioned-offset index, payload-free frame-key lookup, bounded suffix recovery, strict scrubbing, kernel writer ownership, and LRU frame caching. |
 | neo-config | Infrastructure | Node and protocol configuration (TOML-backed settings). |
 | neo-vm | Infrastructure | Stateful NeoVM host (execution engine, contexts, reference-counted stack items) over `neo-vm-rs`. |
 | neo-serialization | Infrastructure | Compression, binary and JSON stack-item codecs, JSONPath, in-memory storage providers. |
@@ -407,8 +407,12 @@ The detailed rules for this style live in
 
 - **Pluggable storage behind `Store` and provider traits.** `neo-storage`
   exposes `Store`, `DataCache`, raw/typed read traits, and `StoreFactory` over
-  the existing `StorageKey`/`StorageItem` bytes. MDBX is the production default, RocksDB
-  remains a supported fallback, and memory providers are used for tests. Higher
+  the existing `StorageKey`/`StorageItem` bytes. Node-local maintenance
+  checkpoints are physically separate: MDBX uses a named table and RocksDB a
+  column family, while `StoreMaintenanceBatch` atomically combines ordinary
+  row mutations with metadata updates. Those bytes cannot enter typed scans,
+  store dumps, or state-root calculation. MDBX is the production default,
+  RocksDB remains a supported fallback, and memory providers are used for tests. Higher
   crates read through capability providers: `neo-blockchain` has
   `BlockProvider`/`TxProvider` plus `LedgerProviderFactory`,
   `StorageLedgerProviderFactory`, `StaticLedgerProviderFactory`,
@@ -430,9 +434,9 @@ The detailed rules for this style live in
   `HotColdLedgerProviderFactory` composes hot native Ledger reads with any cold
   provider implementing `BlockProvider`/`TxProvider`, and falls back only when
   hot records miss. When `[storage].static_files_dir` is configured,
-  `neo-node` opens `neo-static-files`, reconciles it to the authoritative hot
-  Ledger tip before exposing reads, verifies every retained block hash rather
-  than only the tip, and installs `StaticLedgerProvider` as the cold side. The
+  `neo-node` opens `neo-static-files`, reconciles it to the canonical Ledger
+  tip before exposing reads, verifies every still-hot overlapping block hash,
+  and installs `StaticLedgerProvider` as the cold side. The
   same statically dispatched optional provider is carried through
   `NodeSystemContext`, the composed `Node`, dBFT consensus, local P2P serving,
   transaction admission, and `NodeContext`; historical blockchain, wallet, and
@@ -456,13 +460,24 @@ The detailed rules for this style live in
   map. Missing, stale, or ahead sidecars are rebuilt from archive frames, and
   truncation removes only discarded row versions so overwritten keys reveal
   their retained value.
+  After index publication, hot pruning enumerates frame keys without payload
+  decompression, resolves each key's latest archived height in one MDBX read
+  transaction, and deletes only keys whose latest version is no newer than the
+  prune frontier. Before deletion it verifies that hot and cold values match.
+  The deletes and `hot-pruned-through` watermark commit atomically through the
+  backend maintenance namespace. The initial protocol
+  `MaxTraceableBlocks` value is the retention floor, so native Ledger methods
+  keep every traceable record; prefix `12` (`CurrentBlock`) is never archived
+  or pruned. Startup rejects a watermark above canonical/archive truth, fails
+  when the archive no longer covers a pruned prefix, and validates overlap from
+  `watermark + 1` instead of expecting deleted history in the hot store.
   Normal reads checksum the full compressed frame;
   explicit `scrub` verifies every frame and sidecar entry. Offline
   `neo-db-probe` uses the same optional hot/cold provider for historical Ledger
   replay and inspection after reconciling the archive to the selected hot
-  database, and can run archive-only scrub. Hot-row pruning
-  remains disabled until atomic hot-row deletion and prune/recovery parity are
-  proven.
+  database, reads the same prune watermark, and can run archive-only scrub.
+  Once a watermark exists, the archive is authoritative for historical Ledger
+  rows and must be backed up and restored with the hot database.
 
 - **Byte-for-byte C# parity as a hard constraint.** Wire formats, hashing,
   signature schemes, fee formulas, VM opcode pricing, native-contract behavior,

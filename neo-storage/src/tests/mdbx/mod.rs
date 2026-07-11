@@ -13,8 +13,8 @@
 
 use super::*;
 use crate::persistence::{
-    RawReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, Store, StoreCache, StoreSnapshot,
-    WriteStore, storage::StorageConfig,
+    RawReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, Store, StoreCache,
+    StoreMaintenanceBatch, StoreSnapshot, WriteStore, storage::StorageConfig,
 };
 use crate::{StorageItem, StorageKey};
 use std::fs;
@@ -300,4 +300,62 @@ fn data_persists_after_reopen() {
         .get_mdbx_store(std::path::Path::new(""))
         .expect("reopen mdbx store");
     assert_eq!(reopened.try_get(&key), Some(b"value".to_vec()));
+}
+
+#[test]
+fn maintenance_commit_is_atomic_and_metadata_is_not_in_the_data_table() {
+    let tmp = TempDir::new().expect("tempdir");
+    let db_path = tmp.path().join("maintenance");
+    let provider = MdbxStoreProvider::new(StorageConfig {
+        path: db_path,
+        ..Default::default()
+    });
+    let data_key = StorageKey::new(-4, vec![9, 0, 0, 0, 1]).to_array();
+    let metadata_key = b"ledger-pruned-through".to_vec();
+
+    {
+        let mut store = provider
+            .get_mdbx_store(std::path::Path::new(""))
+            .expect("open mdbx store");
+        store
+            .put(data_key.clone(), b"archived".to_vec())
+            .expect("seed data row");
+
+        let mut batch = StoreMaintenanceBatch::new();
+        batch.delete_data(data_key.clone());
+        batch.put_metadata(metadata_key.clone(), 42u32.to_be_bytes().to_vec());
+        assert!(
+            store
+                .try_commit_durable_maintenance(&batch)
+                .expect("maintenance commit")
+        );
+
+        assert_eq!(store.try_get_bytes(&data_key), None);
+        assert_eq!(
+            store
+                .maintenance_metadata(&metadata_key)
+                .expect("metadata read"),
+            Some(42u32.to_be_bytes().to_vec())
+        );
+        assert!(
+            <MdbxStore as ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>>>::find(
+                &store,
+                None,
+                SeekDirection::Forward,
+            )
+            .all(|(key, _)| key != metadata_key),
+            "maintenance metadata must not enter the normal data table"
+        );
+    }
+
+    let reopened = provider
+        .get_mdbx_store(std::path::Path::new(""))
+        .expect("reopen mdbx store");
+    assert_eq!(reopened.try_get_bytes(&data_key), None);
+    assert_eq!(
+        reopened
+            .maintenance_metadata(&metadata_key)
+            .expect("reopened metadata read"),
+        Some(42u32.to_be_bytes().to_vec())
+    );
 }

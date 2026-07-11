@@ -353,6 +353,32 @@ impl StaticFileProvider for StaticFileArchive {
         })?;
         Ok(Some(value.to_vec()))
     }
+
+    fn frame_row_keys(&self, height: u32) -> StaticFileResult<Option<Vec<Vec<u8>>>> {
+        let Some(location) = self.inner.index.frame(height)? else {
+            return Ok(None);
+        };
+        let frame = read_frame_index(
+            &self.inner.file,
+            &self.inner.path,
+            self.inner.config,
+            location,
+        )?;
+        Ok(Some(
+            frame
+                .rows
+                .into_iter()
+                .map(|row| row.key.into_vec())
+                .collect(),
+        ))
+    }
+
+    fn latest_heights_for_keys<K: AsRef<[u8]>>(
+        &self,
+        keys: &[K],
+    ) -> StaticFileResult<Vec<Option<u32>>> {
+        self.inner.index.latest_heights_for_keys(keys)
+    }
 }
 
 pub(super) struct ArchiveInner {

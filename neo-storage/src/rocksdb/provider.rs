@@ -240,6 +240,7 @@ pub(crate) fn reverse_prefix_iterator<'a>(
 pub(crate) fn build_db_options(config: &StorageConfig, enable_bloom_filters: bool) -> Options {
     let mut options = Options::default();
     options.create_if_missing(true);
+    options.create_missing_column_families(true);
     options.set_error_if_exists(false);
     if let Ok(parallelism) = std::thread::available_parallelism() {
         options.increase_parallelism(parallelism.get() as i32);

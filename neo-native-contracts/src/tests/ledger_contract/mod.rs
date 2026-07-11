@@ -694,6 +694,7 @@ fn current_index_and_hash_round_trip_through_storage() {
 
     // Empty ledger: C# indexes Prefix_CurrentBlock directly and faults when
     // the current-block pointer is absent.
+    assert_eq!(ledger.optional_current_tip(&cache).unwrap(), None);
     assert!(ledger.current_index(&cache).is_err());
     assert!(ledger.current_hash(&cache).is_err());
 
@@ -706,6 +707,10 @@ fn current_index_and_hash_round_trip_through_storage() {
     cache.add(
         LedgerContract::current_block_storage_key(),
         StorageItem::from_bytes(bytes),
+    );
+    assert_eq!(
+        ledger.optional_current_tip(&cache).unwrap(),
+        Some((hash, 1234))
     );
     assert_eq!(ledger.current_index(&cache).unwrap(), 1234);
     assert_eq!(ledger.current_hash(&cache).unwrap(), hash);

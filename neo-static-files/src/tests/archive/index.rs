@@ -196,3 +196,71 @@ fn repeated_reopen_and_truncate_preserve_latest_value_per_key() {
     }
     archive.scrub().expect("generated archive scrub");
 }
+
+#[test]
+fn latest_heights_for_keys_preserves_input_order_and_missing_entries() {
+    let temp = tempdir().expect("tempdir");
+    let path = temp.path().join("ledger.static");
+    let factory = StaticFileArchiveFactory::new(test_config());
+    let archive = factory.open(&path).expect("create archive");
+    archive
+        .append_batch(vec![
+            StaticRecord::new(
+                0,
+                vec![row(b"same", b"zero"), row(b"zero-only", b"zero-only-value")],
+            ),
+            StaticRecord::new(
+                1,
+                vec![row(b"same", b"one"), row(b"one-only", b"one-only-value")],
+            ),
+            StaticRecord::new(
+                2,
+                vec![row(b"same", b"two"), row(b"two-only", b"two-only-value")],
+            ),
+        ])
+        .expect("append records");
+    drop(archive);
+
+    let reopened = factory.open(&path).expect("reopen archive");
+    let keys = [
+        b"same".as_slice(),
+        b"missing".as_slice(),
+        b"zero-only".as_slice(),
+        b"same".as_slice(),
+        b"one-only".as_slice(),
+        b"two-only".as_slice(),
+    ];
+
+    assert_eq!(
+        reopened
+            .latest_heights_for_keys(&keys)
+            .expect("resolve latest heights"),
+        vec![Some(2), None, Some(0), Some(2), Some(1), Some(2)]
+    );
+}
+
+#[test]
+fn frame_row_keys_reads_a_frame_index_without_payload_lookup() {
+    let temp = tempdir().expect("tempdir");
+    let path = temp.path().join("ledger.static");
+    let factory = StaticFileArchiveFactory::new(test_config());
+    let archive = factory.open(&path).expect("create archive");
+    archive
+        .append_batch(vec![
+            StaticRecord::new(0, vec![row(b"seed", b"zero")]),
+            StaticRecord::new(
+                1,
+                vec![row(b"zeta", b"z"), row(b"alpha", b"a"), row(b"mid", b"m")],
+            ),
+        ])
+        .expect("append records");
+    drop(archive);
+
+    let reopened = factory.open(&path).expect("reopen archive");
+
+    assert_eq!(
+        reopened.frame_row_keys(1).expect("enumerate frame keys"),
+        Some(vec![b"alpha".to_vec(), b"mid".to_vec(), b"zeta".to_vec()])
+    );
+    assert_eq!(reopened.frame_row_keys(3).expect("missing frame"), None);
+}

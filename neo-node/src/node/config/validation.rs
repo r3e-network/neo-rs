@@ -512,12 +512,12 @@ pub(in crate::node) fn validate_storage(
 
     let state_service_provider = service_store_provider(config)?;
     let store = open_store(config, storage_override)?;
-    let ledger_index = durable_ledger_index(&store);
+    let ledger_index = durable_ledger_index(&store)?;
     validate_state_service_storage(config, network, ledger_index, &state_service_provider)?;
     Ok(())
 }
 
-fn durable_ledger_index<S>(store: &Arc<S>) -> Option<u32>
+fn durable_ledger_index<S>(store: &Arc<S>) -> anyhow::Result<Option<u32>>
 where
     S: neo_storage::persistence::store::Store + 'static,
 {

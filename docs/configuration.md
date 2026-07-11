@@ -61,7 +61,7 @@ Persistence backend.
 | `mdbx_geometry_upper_gb` | integer | backend default | MDBX map upper bound in GiB. Shipped MainNet/TestNet configs pin this so the mmap geometry is explicit. |
 | `mdbx_geometry_growth_mb` | integer | backend default | MDBX map growth step in MiB. |
 | `mdbx_max_readers` | integer | backend default | MDBX reader slot limit for concurrent RPC/service reads. |
-| `static_files_dir` | path | none (disabled) | Enables the finalized Ledger static archive, storing authoritative frames in `ledger.static` and the derived offset index in `ledger.static.index/` (MDBX). The configured provider becomes the shared historical fallback for blockchain, consensus, P2P, admission, wallet, and RPC reads. Requires a writable persistent canonical backend. |
+| `static_files_dir` | path | none (disabled) | Enables the finalized Ledger static archive, storing authoritative frames in `ledger.static` and the derived offset index in `ledger.static.index/` (MDBX). The configured provider becomes the shared historical fallback for blockchain, consensus, P2P, admission, wallet, and RPC reads. Archived hot Ledger rows older than the initial protocol `MaxTraceableBlocks` window are pruned automatically. Requires a writable persistent canonical backend. |
 | `static_files_compression_level` | integer | `3` | Zstandard level applied independently to each finalized-height frame. |
 | `static_files_cache_capacity` | integer | `64` | Number of decompressed height frames retained by the LRU cache; must be greater than zero. |
 | `static_files_recovery_batch_blocks` | integer | `1024` | Maximum hot Ledger blocks appended per startup reconciliation sync; must be greater than zero. |
@@ -73,14 +73,18 @@ Notes:
   `rocksdb`.
 - A persistent backend (`mdbx` or `rocksdb`) with no directory and no
   `--storage-path` is an error.
-- Static files are a **precommit-durable mirror**. The node captures the exact
+- Static files are a **precommit-durable cold archive**. The node captures the exact
   Ledger rows, writes and syncs provider-invisible frames before the canonical
   MDBX/RocksDB transaction, and publishes their sidecar index only after hot
-  success. Startup verifies the complete retained block-hash prefix, recovers
-  and truncates a cold-ahead suffix left by a failed hot commit, repairs legacy
-  lag from the hot store, and serves clean hot misses through the same provider
-  traits. Hot Ledger pruning is not enabled yet, so operators should budget for
-  both copies while this correctness-first phase is active.
+  success. Startup verifies the still-hot overlapping block-hash suffix,
+  recovers and truncates a cold-ahead suffix left by a failed hot commit,
+  repairs archive lag only where hot rows still exist, and serves clean hot
+  misses through the same provider traits. After publication, rows older than
+  the initial protocol `MaxTraceableBlocks` retention window are pruned from
+  the hot store. An MDBX named table or RocksDB column family stores the
+  node-local watermark outside Neo contract storage; row deletes and watermark
+  advancement are one durable backend transaction. `Prefix_CurrentBlock (12)`
+  always remains hot.
 - Opening `ledger.static` takes an exclusive OS lock on the archive file
   itself. A second node using the same file, including through a symlink or
   hard link, fails startup; the kernel releases the lease automatically when
@@ -108,6 +112,16 @@ Notes:
   Larger batches from other import sources fall back to per-block durability,
   bounding pending Ledger-row memory instead of accumulating an entire large
   replay batch.
+- The first startup after enabling static files may spend additional time
+  verifying hot/cold row bytes and pruning an existing historical prefix in
+  bounded 1024-frame transactions. Startup fails rather than advancing the
+  watermark if a row differs, if the watermark exceeds the canonical tip, or
+  if the archive does not cover an already-pruned height.
+- Once `hot-pruned-through` exists, `ledger.static` is not a disposable mirror.
+  Back up and restore the canonical database, `ledger.static`, and
+  `ledger.static.index/` together. The sidecar can be rebuilt from the archive,
+  but missing or corrupt authoritative frame bytes require a matching backup or
+  a clean resync.
 - A precommit archive frame write or sync failure rejects the canonical commit
   before hot state is published and stops the writer. If the archive fence
   completed but the hot commit did not, startup validates and truncates the

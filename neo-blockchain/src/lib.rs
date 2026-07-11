@@ -99,7 +99,7 @@ pub use neo_runtime::{BlockchainEvent as RuntimeEvent, ServiceError};
 
 pub use header_cache::HeaderCache;
 pub use ledger::static_archive::{
-    StaticArchiveRecovery, StaticLedgerArchive, StaticLedgerArchiveFactory,
+    HotLedgerPruneOutcome, StaticArchiveRecovery, StaticLedgerArchive, StaticLedgerArchiveFactory,
 };
 pub use ledger_context::LedgerContext;
 pub use ledger_provider::{

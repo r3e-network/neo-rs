@@ -15,6 +15,7 @@
 use super::*;
 use crate::persistence::RawReadOnlyStore;
 use crate::persistence::StoreCache;
+use crate::persistence::StoreMaintenanceBatch;
 use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::persistence::seek_direction::SeekDirection;
 use crate::persistence::storage::StorageConfig;
@@ -42,6 +43,97 @@ fn opens_store_and_creates_directory() {
 
     // basic snapshot call to ensure the store is usable
     let _snapshot = store.snapshot();
+}
+
+#[test]
+fn writable_open_adds_the_maintenance_column_family_to_an_existing_default_database() {
+    let tmp = TempDir::new().expect("tempdir");
+    let db_path = tmp.path().join("rocksdb-default-only");
+    let legacy_key = b"legacy-row";
+    {
+        let mut options = rocksdb::Options::default();
+        options.create_if_missing(true);
+        let db = rocksdb::DB::open(&options, &db_path).expect("create default-only database");
+        db.put(legacy_key, b"value").expect("seed default row");
+    }
+
+    let config = StorageConfig {
+        path: db_path,
+        ..Default::default()
+    };
+    let store = RocksDbStore::open(&config, WriteBatchConfig::balanced(), true, true)
+        .expect("open upgraded RocksDB store");
+
+    assert_eq!(store.try_get_bytes(legacy_key), Some(b"value".to_vec()));
+    assert_eq!(
+        store
+            .maintenance_metadata(b"missing")
+            .expect("metadata lookup"),
+        None
+    );
+}
+
+#[test]
+fn maintenance_commit_is_atomic_and_metadata_is_not_in_the_default_column_family() {
+    let tmp = TempDir::new().expect("tempdir");
+    let db_path = tmp.path().join("rocksdb-maintenance");
+    let config = StorageConfig {
+        path: db_path.clone(),
+        ..Default::default()
+    };
+    let data_key = StorageKey::new(-4, vec![9, 0, 0, 0, 1]).to_array();
+    let metadata_key = b"ledger-pruned-through".to_vec();
+
+    {
+        let mut store = RocksDbStore::open(&config, WriteBatchConfig::balanced(), true, true)
+            .expect("open RocksDB store");
+        store
+            .put(data_key.clone(), b"archived".to_vec())
+            .expect("seed data row");
+
+        let mut batch = StoreMaintenanceBatch::new();
+        batch.delete_data(data_key.clone());
+        batch.put_metadata(metadata_key.clone(), 42u32.to_be_bytes().to_vec());
+        assert!(
+            store
+                .try_commit_durable_maintenance(&batch)
+                .expect("maintenance commit")
+        );
+
+        assert_eq!(store.try_get_bytes(&data_key), None);
+        assert_eq!(store.try_get_bytes(&metadata_key), None);
+        assert_eq!(
+            store
+                .maintenance_metadata(&metadata_key)
+                .expect("metadata read"),
+            Some(42u32.to_be_bytes().to_vec())
+        );
+    }
+
+    let reopened = RocksDbStore::open(&config, WriteBatchConfig::balanced(), true, true)
+        .expect("reopen RocksDB store");
+    assert_eq!(reopened.try_get_bytes(&data_key), None);
+    assert_eq!(
+        reopened
+            .maintenance_metadata(&metadata_key)
+            .expect("reopened metadata read"),
+        Some(42u32.to_be_bytes().to_vec())
+    );
+
+    drop(reopened);
+    let read_only_config = StorageConfig {
+        path: db_path,
+        read_only: true,
+        ..Default::default()
+    };
+    let read_only = RocksDbStore::open(&read_only_config, WriteBatchConfig::balanced(), true, true)
+        .expect("open RocksDB store read-only with metadata column family");
+    assert_eq!(
+        read_only
+            .maintenance_metadata(&metadata_key)
+            .expect("read-only metadata read"),
+        Some(42u32.to_be_bytes().to_vec())
+    );
 }
 
 #[test]

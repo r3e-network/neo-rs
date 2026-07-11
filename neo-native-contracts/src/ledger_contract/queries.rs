@@ -19,13 +19,9 @@ impl LedgerContract {
     /// block-persist pipeline. C# indexes the storage item directly and
     /// faults if the pointer is absent.
     pub fn current_index<B: CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<u32> {
-        let key = Self::current_block_storage_key();
-        let item = snapshot
-            .get(&key)
-            .ok_or_else(|| CoreError::invalid_data("LedgerContract current block is missing"))?;
-        let bytes = item.value_bytes().into_owned();
-        let (_, index) = Self::deserialize_hash_index_state(&bytes)?;
-        Ok(index)
+        self.optional_current_tip(snapshot)?
+            .map(|(_, index)| index)
+            .ok_or_else(|| CoreError::invalid_data("LedgerContract current block is missing"))
     }
 
     /// Returns the current block hash of the blockchain.
@@ -34,13 +30,23 @@ impl LedgerContract {
     /// block-persist pipeline. C# indexes the storage item directly and
     /// faults if the pointer is absent.
     pub fn current_hash<B: CacheRead>(&self, snapshot: &DataCache<B>) -> CoreResult<UInt256> {
+        self.optional_current_tip(snapshot)?
+            .map(|(hash, _)| hash)
+            .ok_or_else(|| CoreError::invalid_data("LedgerContract current block is missing"))
+    }
+
+    /// Returns the current hash/index pair, or `None` for an uninitialized
+    /// Ledger, from one coherent storage-item read.
+    pub fn optional_current_tip<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+    ) -> CoreResult<Option<(UInt256, u32)>> {
         let key = Self::current_block_storage_key();
-        let item = snapshot
-            .get(&key)
-            .ok_or_else(|| CoreError::invalid_data("LedgerContract current block is missing"))?;
+        let Some(item) = snapshot.get(&key) else {
+            return Ok(None);
+        };
         let bytes = item.value_bytes().into_owned();
-        let (hash, _) = Self::deserialize_hash_index_state(&bytes)?;
-        Ok(hash)
+        Self::deserialize_hash_index_state(&bytes).map(Some)
     }
 
     /// Returns the per-transaction state for the given transaction

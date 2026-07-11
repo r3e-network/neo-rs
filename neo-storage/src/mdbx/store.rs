@@ -6,6 +6,7 @@ use crate::persistence::{
     read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
     seek_direction::SeekDirection,
     store::{MdbxEnvironmentInfo, RawOverlaySource, Store, StoreBackendKind},
+    store_maintenance::StoreMaintenanceBatch,
     write_store::WriteStore,
 };
 use crate::{StorageError, StorageItem, StorageKey, StorageResult};
@@ -17,6 +18,8 @@ use std::{collections::BTreeMap, fs, path::Path, sync::Arc};
 use tracing::{error, warn};
 
 type RawEntry = (Vec<u8>, Vec<u8>);
+
+const MAINTENANCE_TABLE: &str = "neo_node_metadata";
 
 /// Persistent MDBX implementation of the Neo storage traits.
 pub struct MdbxStore {
@@ -53,6 +56,7 @@ impl MdbxStore {
                 // MDBX before open; keep the field here so a wrapper upgrade
                 // starts enforcing it without changing the provider boundary.
                 max_readers: Some(max_readers),
+                max_tables: Some(2),
                 mode: if read_only {
                     Mode::ReadOnly
                 } else {
@@ -73,6 +77,8 @@ impl MdbxStore {
         if !read_only {
             let tx = db.begin_rw_txn().map_err(mdbx_error)?;
             tx.create_table(None, TableFlags::empty())
+                .map_err(mdbx_error)?;
+            tx.create_table(Some(MAINTENANCE_TABLE), TableFlags::empty())
                 .map_err(mdbx_error)?;
             tx.commit().map_err(mdbx_commit_error)?;
         }
@@ -408,6 +414,52 @@ impl Store for MdbxStore {
         O: RawOverlaySource + ?Sized,
     {
         self.try_commit_borrowed_raw_overlay(overlay)
+    }
+
+    fn maintenance_metadata(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
+        let tx = self.db.begin_ro_txn().map_err(mdbx_error)?;
+        let table = match tx.open_table(Some(MAINTENANCE_TABLE)) {
+            Ok(table) => table,
+            Err(MdbxError::NotFound) => return Ok(None),
+            Err(error) => return Err(mdbx_error(error)),
+        };
+        tx.get::<Vec<u8>>(&table, key).map_err(mdbx_error)
+    }
+
+    fn try_commit_durable_maintenance(&self, batch: &StoreMaintenanceBatch) -> StorageResult<bool> {
+        if batch.is_empty() {
+            return Ok(true);
+        }
+
+        let tx = self.db.begin_rw_txn().map_err(mdbx_error)?;
+        let data = tx
+            .create_table(None, TableFlags::empty())
+            .map_err(mdbx_error)?;
+        let metadata = tx
+            .create_table(Some(MAINTENANCE_TABLE), TableFlags::empty())
+            .map_err(mdbx_error)?;
+        for (key, value) in batch.data_operations() {
+            match value {
+                Some(value) => tx
+                    .put(&data, key, value, WriteFlags::UPSERT)
+                    .map_err(mdbx_error)?,
+                None => {
+                    tx.del(&data, key, None).map_err(mdbx_error)?;
+                }
+            }
+        }
+        for (key, value) in batch.metadata_operations() {
+            match value {
+                Some(value) => tx
+                    .put(&metadata, key, value, WriteFlags::UPSERT)
+                    .map_err(mdbx_error)?,
+                None => {
+                    tx.del(&metadata, key, None).map_err(mdbx_error)?;
+                }
+            }
+        }
+        tx.commit().map_err(mdbx_commit_error)?;
+        Ok(true)
     }
 }
 

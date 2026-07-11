@@ -2,14 +2,12 @@
 //!
 //! This module is the node-local provider boundary for operational reads of
 //! the durable ledger pointer. Startup, config validation, chain.acc resume, and
-//! daemon system context all route through this helper so the no-cold-archive
-//! case and future static-file cold archive share one provider shape.
+//! daemon system context all route through this helper. An absent current-tip
+//! row means an uninitialized chain; malformed persisted bytes are fatal.
 
 use std::sync::Arc;
 
-use neo_blockchain::{
-    ChainTipProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
-};
+use neo_blockchain::{EmptyLedgerProvider, HotColdLedgerProviderFactory, LedgerProviderFactory};
 use neo_primitives::UInt256;
 use neo_storage::persistence::{CacheRead, DataCache, StoreCache, store::Store};
 
@@ -22,21 +20,16 @@ pub(in crate::node) struct LocalLedgerTip {
     pub(in crate::node) hash: UInt256,
 }
 
-/// Reads the current ledger index from an existing snapshot.
-pub(in crate::node) fn snapshot_ledger_index<B: CacheRead>(snapshot: &DataCache<B>) -> Option<u32> {
-    LOCAL_LEDGER_TIP_PROVIDER_FACTORY
-        .provider(snapshot)
-        .current_index()
-        .ok()
-}
-
 /// Reads the current ledger index from a fresh store-backed snapshot.
-pub(in crate::node) fn store_ledger_index<S>(store: &Arc<S>, read_only: bool) -> Option<u32>
+pub(in crate::node) fn store_ledger_index<S>(
+    store: &Arc<S>,
+    read_only: bool,
+) -> anyhow::Result<Option<u32>>
 where
     S: Store,
 {
     let cache = StoreCache::new_from_store(Arc::clone(store), read_only);
-    snapshot_ledger_index(cache.data_cache())
+    snapshot_ledger_tip(cache.data_cache()).map(|tip| tip.map(|tip| tip.height))
 }
 
 /// Reads the current ledger hash and height from a fresh store-backed snapshot.
@@ -57,11 +50,12 @@ fn snapshot_ledger_tip<B: CacheRead>(
     snapshot: &DataCache<B>,
 ) -> anyhow::Result<Option<LocalLedgerTip>> {
     let provider = LOCAL_LEDGER_TIP_PROVIDER_FACTORY.provider(snapshot);
-    let Ok(height) = provider.current_index() else {
+    let Some((hash, height)) = provider
+        .hot()
+        .optional_current_tip()
+        .map_err(|error| anyhow::anyhow!("reading local persisted ledger tip: {error}"))?
+    else {
         return Ok(None);
     };
-    let hash = provider
-        .current_hash()
-        .map_err(|err| anyhow::anyhow!("reading local persisted ledger tip hash: {err}"))?;
     Ok(Some(LocalLedgerTip { height, hash }))
 }

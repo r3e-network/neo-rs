@@ -309,6 +309,16 @@ Priority order for crate refactors:
    `StorageKey`/`StorageItem`; no typed table codec is exported. If one is added,
    it must adapt existing persisted bytes and must not invent a new consensus
    serialization format.
+6. **Operational metadata must be physically isolated.** Prune watermarks,
+   checkpoints, schema versions, and repair state must not use magic keys in
+   the normal Neo data table: typed scans can interpret them as `StorageKey`
+   values and state dumps can become nondeterministic. Use the backend's named
+   metadata table/column family and commit data mutations plus checkpoint
+   advancement through one `StoreMaintenanceBatch`. For immutable-history
+   pruning, enumerate exact archived keys, resolve each key's latest archived
+   version, verify hot/cold byte equality, and only then delete and advance the
+   watermark atomically. Recovery must fail closed if canonical, archive, and
+   watermark truth cannot all agree.
 
 Do not copy reth's heavy memory-chain reorg overlay or Polkadot's Wasm
 meta-runtime into Neo just for symmetry. Keep the part that matters here:

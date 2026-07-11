@@ -365,6 +365,10 @@ Key points:
   over existing raw bytes. `StorageKey` still encodes with `to_array()` and
   `StorageItem` with `to_value()`. No typed table/codec API is currently
   exported; any future one must preserve these C#-compatible bytes.
+  `StoreMaintenanceBatch` is a separate operational path: MDBX stores its
+  metadata in a named table and RocksDB in a column family, allowing one
+  durable transaction to delete ordinary rows and advance a node checkpoint
+  without exposing metadata to contract scans or state roots.
 - **Ledger provider boundary.** `neo-blockchain` exposes `BlockProvider` and
   `TxProvider` capability traits. `StorageLedgerProviderFactory` creates hot
   providers over native Ledger records; `HotColdLedgerProviderFactory` composes
@@ -377,17 +381,24 @@ Key points:
   precommit fence writes and syncs their frames before the canonical hot
   transaction but keeps them out of the provider-visible index; canonical
   success then publishes frame offsets and versioned row locations in one MDBX
-  transaction. The archive starts at genesis, verifies every retained block
-  hash against canonical storage, and holds one kernel writer lease across all
+  transaction. The archive starts at genesis, verifies every still-hot
+  overlapping block hash against canonical storage, and holds one kernel writer lease across all
   provider clones. Clean startup validates the sidecar checkpoint and scans only
   an unpublished suffix; a missing or stale sidecar is rebuilt from
   authoritative frames, while a recovered cold-ahead suffix left by a failed
   hot commit is validated and truncated. Current-tip reads remain hot.
+  After publication, the node derives a prune frontier from the initial
+  protocol `MaxTraceableBlocks`, enumerates archived frame keys without
+  decoding payloads, and batch-resolves each key's latest archived height.
+  Only latest versions at or below the current bounded frontier are eligible;
+  their hot bytes must equal the checksummed cold value before deletion.
+  Deletions and `hot-pruned-through` advance in one backend transaction, while
+  `CurrentBlock` remains hot. Startup requires the archive to cover the entire
+  pruned prefix and begins hot/cold overlap validation at `watermark + 1`.
   `neo-db-probe` composes the same optional static provider for historical
   Ledger replay and raw Ledger-row inspection after canonical reconciliation,
-  and can scrub an existing archive without opening the hot store. Hot pruning
-  is not enabled yet because atomic
-  prune/recovery parity has not been proven.
+  reads the maintenance watermark when a hot store is opened, and can scrub an
+  existing archive without opening the hot store.
 - **State read boundary.** `neo-state-service` exposes `MptReadSnapshot`,
   `MptStore`, `StateStore`, and `StateStoreLookup`. RPC proof/state paths use
   concrete immutable `MptReadSnapshot` values. A general

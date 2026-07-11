@@ -867,8 +867,8 @@ fn read_storage_value(
     let Some(directory) = static_files_dir else {
         return Ok(None);
     };
-    let hot = StoreCache::new_from_store(store, true);
-    open_reconciled_static_ledger_archive(directory, hot.data_cache())?
+    let hot = StoreCache::new_from_store(Arc::clone(&store), true);
+    open_reconciled_static_ledger_archive(directory, store.as_ref(), hot.data_cache())?
         .files()
         .get(&key.to_array())
         .map_err(|error| anyhow!("read static Ledger archive: {error}"))
@@ -913,9 +913,10 @@ fn open_store(
 fn open_store_cache(
     storage_provider: StorageProviderArg,
     db_path: &Path,
-) -> Result<StoreCache<RuntimeStore>> {
+) -> Result<(Arc<RuntimeStore>, StoreCache<RuntimeStore>)> {
     let store = open_store(storage_provider, db_path, true)?;
-    Ok(StoreCache::<RuntimeStore>::new_from_store(store, false))
+    let cache = StoreCache::<RuntimeStore>::new_from_store(Arc::clone(&store), false);
+    Ok((store, cache))
 }
 
 fn static_archive_path(directory: &Path) -> PathBuf {
@@ -934,8 +935,9 @@ fn open_existing_static_ledger_archive(directory: &Path) -> Result<StaticLedgerA
         .map_err(|error| anyhow!("open static Ledger archive: {error}"))
 }
 
-fn open_reconciled_static_ledger_archive<B: CacheRead>(
+fn open_reconciled_static_ledger_archive<B: CacheRead, S: Store>(
     directory: &Path,
+    store: &S,
     snapshot: &DataCache<B>,
 ) -> Result<StaticLedgerArchive> {
     let current_block_key = StorageKey::new(LedgerContract::ID, vec![0x0c]);
@@ -949,22 +951,26 @@ fn open_reconciled_static_ledger_archive<B: CacheRead>(
         None
     };
     let archive = open_existing_static_ledger_archive(directory)?;
+    let hot_pruned_through = archive
+        .hot_pruned_through(store)
+        .map_err(|error| anyhow!("read hot Ledger prune watermark: {error}"))?;
     ensure!(
         canonical_tip.is_some() || archive.tip().is_none(),
         "hot Ledger is uninitialized; refusing to reconcile non-empty static archive"
     );
     archive
-        .reconcile(snapshot, canonical_tip, 1_024)
+        .reconcile(snapshot, canonical_tip, hot_pruned_through, 1_024)
         .map_err(|error| anyhow!("reconcile static Ledger archive: {error}"))?;
     Ok(archive)
 }
 
-fn open_offline_ledger_factory<B: CacheRead>(
+fn open_offline_ledger_factory<B: CacheRead, S: Store>(
     static_files_dir: Option<&Path>,
+    store: &S,
     snapshot: &DataCache<B>,
 ) -> Result<HotColdLedgerProviderFactory<OptionalStaticLedgerProvider>> {
     let cold = static_files_dir
-        .map(|directory| open_reconciled_static_ledger_archive(directory, snapshot))
+        .map(|directory| open_reconciled_static_ledger_archive(directory, store, snapshot))
         .transpose()?
         .map(|archive| archive.provider());
     Ok(HotColdLedgerProviderFactory::new(
@@ -1005,9 +1011,9 @@ fn replay_transaction(
         .zip(trace_events.as_ref())
         .map(|(limit, events)| ReplayInstructionTracer::new(limit, Arc::clone(events)));
 
-    let store_cache = open_store_cache(storage_provider, db_path)?;
+    let (store, store_cache) = open_store_cache(storage_provider, db_path)?;
     let snapshot = store_cache.data_cache();
-    let ledger_factory = open_offline_ledger_factory(static_files_dir, snapshot)?;
+    let ledger_factory = open_offline_ledger_factory(static_files_dir, store.as_ref(), snapshot)?;
     let ledger = ledger_factory.provider(snapshot);
     let tx_state = ledger
         .transaction_state_by_hash(&tx_hash)?
@@ -1063,7 +1069,7 @@ fn replay_raw_transaction(
         "raw transaction {tx_hash} is not included in supplied block"
     );
 
-    let store_cache = open_store_cache(storage_provider, db_path)?;
+    let (_store, store_cache) = open_store_cache(storage_provider, db_path)?;
     let snapshot = store_cache.data_cache();
     execute_transaction_probe(
         db_path,

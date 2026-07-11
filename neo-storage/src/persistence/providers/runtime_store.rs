@@ -14,7 +14,8 @@ use crate::persistence::store::{
     MdbxEnvironmentInfo, RawOverlaySource, RocksDbBatchMetrics, StoreBackendKind,
 };
 use crate::persistence::{
-    RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric, Store, StoreSnapshot, WriteStore,
+    RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric, Store, StoreMaintenanceBatch,
+    StoreSnapshot, WriteStore,
 };
 use crate::rocksdb::{RocksDbSnapshot, RocksDbStore};
 use crate::types::{SeekDirection, StorageItem, StorageKey};
@@ -493,6 +494,22 @@ impl Store for RuntimeStore {
             Self::Memory(store) => store.try_commit_durable_borrowed_raw_overlay(overlay),
             Self::Mdbx(store) => store.try_commit_durable_borrowed_raw_overlay(overlay),
             Self::RocksDb(store) => store.try_commit_durable_borrowed_raw_overlay(overlay),
+        }
+    }
+
+    fn maintenance_metadata(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
+        match self {
+            Self::Memory(store) => store.maintenance_metadata(key),
+            Self::Mdbx(store) => store.maintenance_metadata(key),
+            Self::RocksDb(store) => store.maintenance_metadata(key),
+        }
+    }
+
+    fn try_commit_durable_maintenance(&self, batch: &StoreMaintenanceBatch) -> StorageResult<bool> {
+        match self {
+            Self::Memory(store) => store.try_commit_durable_maintenance(batch),
+            Self::Mdbx(store) => store.try_commit_durable_maintenance(batch),
+            Self::RocksDb(store) => store.try_commit_durable_maintenance(batch),
         }
     }
 }

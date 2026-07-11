@@ -4,6 +4,7 @@ use super::{
     write_store::WriteStore,
 };
 use crate::error::StorageResult;
+use crate::persistence::store_maintenance::StoreMaintenanceBatch;
 use std::sync::Arc;
 
 /// Stable identifier for a store backend selected through the provider/factory
@@ -110,10 +111,11 @@ pub trait RawOverlaySource {
 /// - **Backend capabilities** — explicit backend identity and optional metrics
 ///
 /// Additional backend capabilities are exposed as default methods: fast-sync
-/// controls, direct raw-overlay commits, and backend metrics. Most are
-/// optional. Atomic durable-overlay commit is mandatory when a store backs the
-/// canonical chain writer; its default `Ok(false)` only permits non-canonical
-/// implementations to compile without claiming a durability guarantee.
+/// controls, direct raw-overlay commits, isolated maintenance metadata, and
+/// backend metrics. Most are optional. Atomic durable-overlay commit is
+/// mandatory when a store backs the canonical chain writer; its default
+/// `Ok(false)` only permits non-canonical implementations to compile without
+/// claiming a durability guarantee.
 pub trait Store:
     ReadOnlyStore
     + RawReadOnlyStore
@@ -222,6 +224,27 @@ pub trait Store:
         O: RawOverlaySource + ?Sized,
     {
         let _ = overlay;
+        Ok(false)
+    }
+
+    /// Reads one value from the backend's isolated maintenance namespace.
+    ///
+    /// Persistent backends keep this namespace outside the normal Neo data
+    /// table so these bytes never appear in contract-storage scans or state
+    /// roots. Backends without that capability return `Ok(None)`.
+    fn maintenance_metadata(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
+        let _ = key;
+        Ok(None)
+    }
+
+    /// Atomically and durably applies normal data operations together with
+    /// isolated maintenance-metadata operations.
+    ///
+    /// A backend returning `Ok(false)` does not provide the cross-namespace
+    /// transaction guarantee. Callers must not advance a maintenance
+    /// checkpoint through a non-atomic fallback.
+    fn try_commit_durable_maintenance(&self, batch: &StoreMaintenanceBatch) -> StorageResult<bool> {
+        let _ = batch;
         Ok(false)
     }
 }

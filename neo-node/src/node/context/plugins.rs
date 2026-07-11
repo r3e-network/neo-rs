@@ -12,10 +12,12 @@ use neo_payloads::{ApplicationExecuted, Block, CommittedHandler, CommittingHandl
 use neo_storage::persistence::store::Store;
 use neo_storage::{CacheRead, DataCache};
 use neo_system::BlockCommitHooks;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use super::DaemonCommitHooks;
-use crate::node::static_files::STATIC_ARCHIVE_MAX_DEFERRED_BLOCKS;
+use crate::node::static_files::{
+    STATIC_ARCHIVE_MAX_DEFERRED_BLOCKS, STATIC_ARCHIVE_PRUNE_BATCH_FRAMES, hot_ledger_prune_target,
+};
 
 const COMMITTED_CATCHUP_DISTANCE: u64 = 1_000;
 const COMMITTING_CATCHUP_DISTANCE: u64 = 10_000;
@@ -308,6 +310,41 @@ where
             );
             self.replay_guard
                 .request_recoverable_restart("staged static archive publication failed");
+            return;
+        }
+
+        let Some(pruning) = self.hot_ledger_pruning.read().clone() else {
+            return;
+        };
+        let Some(target) = archive
+            .tip()
+            .and_then(|tip| hot_ledger_prune_target(tip, pruning.retention_blocks))
+        else {
+            return;
+        };
+        match archive.prune_hot_through(
+            pruning.store.as_ref(),
+            target,
+            STATIC_ARCHIVE_PRUNE_BATCH_FRAMES,
+        ) {
+            Ok(outcome) => {
+                debug!(
+                    target: "neo::static_files",
+                    pruned_through = outcome.pruned_through,
+                    deleted_rows = outcome.deleted_rows,
+                    processed_frames = outcome.processed_frames,
+                    "pruned archived Ledger rows from the hot store"
+                );
+            }
+            Err(error) => {
+                warn!(
+                    target: "neo::static_files",
+                    error = %error,
+                    "static archive published but hot Ledger pruning failed"
+                );
+                self.replay_guard
+                    .request_recoverable_restart("hot Ledger pruning failed");
+            }
         }
     }
 

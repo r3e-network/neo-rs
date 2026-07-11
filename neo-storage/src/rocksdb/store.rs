@@ -6,6 +6,7 @@ use crate::persistence::{
     seek_direction::SeekDirection,
     storage::StorageConfig,
     store::{RawOverlaySource, RocksDbBatchMetrics, Store, StoreBackendKind},
+    store_maintenance::StoreMaintenanceBatch,
     store_snapshot::StoreSnapshot,
     write_store::WriteStore,
 };
@@ -13,7 +14,8 @@ use crate::rocksdb::write_batch_buffer::{WriteBatchConfig, WriteBatchStatsSnapsh
 use crate::{StorageError, StorageItem, StorageKey, StorageResult};
 use parking_lot::{Mutex, RwLock};
 use rocksdb::{
-    DB, DBIteratorWithThreadMode, ReadOptions, Snapshot as DbSnapshot, WriteBatch, WriteOptions,
+    DB, DBIteratorWithThreadMode, DEFAULT_COLUMN_FAMILY_NAME, Options, ReadOptions,
+    Snapshot as DbSnapshot, WriteBatch, WriteOptions,
 };
 use std::{
     collections::BTreeMap,
@@ -28,6 +30,8 @@ use tracing::{debug, error, warn};
 
 use super::find_iterator::{RocksDbRawFindIterator, RocksDbStorageFindIterator};
 use super::provider::{self, BatchCommitter, ReadAheadConfig};
+
+const MAINTENANCE_COLUMN_FAMILY: &str = "neo_node_metadata";
 
 /// Persistent RocksDB implementation of the Neo storage traits.
 pub struct RocksDbStore {
@@ -67,9 +71,39 @@ impl RocksDbStore {
 
         let options = provider::build_db_options(config, enable_bloom_filters);
         let db = if config.read_only {
-            Arc::new(DB::open_for_read_only(&options, &config.path, false)?)
+            let column_families = DB::list_cf(&options, &config.path).unwrap_or_default();
+            if column_families
+                .iter()
+                .any(|name| name == MAINTENANCE_COLUMN_FAMILY)
+            {
+                Arc::new(DB::open_cf_with_opts_for_read_only(
+                    &options,
+                    &config.path,
+                    column_family_options(config, enable_bloom_filters, column_families),
+                    false,
+                )?)
+            } else {
+                Arc::new(DB::open_for_read_only(&options, &config.path, false)?)
+            }
         } else {
-            Arc::new(DB::open(&options, &config.path)?)
+            let mut column_families = DB::list_cf(&options, &config.path).unwrap_or_default();
+            if !column_families
+                .iter()
+                .any(|name| name == DEFAULT_COLUMN_FAMILY_NAME)
+            {
+                column_families.push(DEFAULT_COLUMN_FAMILY_NAME.to_owned());
+            }
+            if !column_families
+                .iter()
+                .any(|name| name == MAINTENANCE_COLUMN_FAMILY)
+            {
+                column_families.push(MAINTENANCE_COLUMN_FAMILY.to_owned());
+            }
+            Arc::new(DB::open_cf_with_opts(
+                &options,
+                &config.path,
+                column_family_options(config, enable_bloom_filters, column_families),
+            )?)
         };
 
         let batch_committer = Arc::new(BatchCommitter::new(Arc::clone(&db), batch_config));
@@ -238,6 +272,24 @@ impl RocksDbStore {
             crate::StorageError::CommitFailed(format!("RocksDB raw overlay commit failed: {err}"))
         })
     }
+}
+
+fn column_family_options(
+    config: &StorageConfig,
+    enable_bloom_filters: bool,
+    names: Vec<String>,
+) -> Vec<(String, Options)> {
+    names
+        .into_iter()
+        .map(|name| {
+            let options = if name == DEFAULT_COLUMN_FAMILY_NAME {
+                provider::build_db_options(config, enable_bloom_filters)
+            } else {
+                Options::default()
+            };
+            (name, options)
+        })
+        .collect()
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RocksDbStore {
@@ -546,6 +598,58 @@ impl Store for RocksDbStore {
         self.db.write_opt(batch, &write_options).map_err(|error| {
             error!(target: "neo", error = %error, "rocksdb durable overlay commit failed");
             StorageError::commit_failed(format!("RocksDB durable overlay commit failed: {error}"))
+        })?;
+        Ok(true)
+    }
+
+    fn maintenance_metadata(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
+        let Some(column_family) = self.db.cf_handle(MAINTENANCE_COLUMN_FAMILY) else {
+            return Ok(None);
+        };
+        self.db.get_cf(column_family, key).map_err(|error| {
+            error!(target: "neo", error = %error, "rocksdb maintenance metadata read failed");
+            StorageError::backend(format!("RocksDB maintenance metadata read failed: {error}"))
+        })
+    }
+
+    fn try_commit_durable_maintenance(
+        &self,
+        maintenance: &StoreMaintenanceBatch,
+    ) -> StorageResult<bool> {
+        if maintenance.is_empty() {
+            return Ok(true);
+        }
+        if self.fast_sync_buffering.load(Ordering::Acquire) || self.has_pending_fast_sync_writes() {
+            self.flush()?;
+        }
+
+        let column_family = self
+            .db
+            .cf_handle(MAINTENANCE_COLUMN_FAMILY)
+            .ok_or_else(|| {
+                StorageError::invalid_operation("RocksDB maintenance column family is unavailable")
+            })?;
+        let mut batch = WriteBatch::default();
+        for (key, value) in maintenance.data_operations() {
+            match value {
+                Some(value) => batch.put(key, value),
+                None => batch.delete(key),
+            }
+        }
+        for (key, value) in maintenance.metadata_operations() {
+            match value {
+                Some(value) => batch.put_cf(column_family, key, value),
+                None => batch.delete_cf(column_family, key),
+            }
+        }
+
+        let mut write_options = WriteOptions::default();
+        write_options.set_sync(true);
+        self.db.write_opt(batch, &write_options).map_err(|error| {
+            error!(target: "neo", error = %error, "rocksdb durable maintenance commit failed");
+            StorageError::commit_failed(format!(
+                "RocksDB durable maintenance commit failed: {error}"
+            ))
         })?;
         Ok(true)
     }

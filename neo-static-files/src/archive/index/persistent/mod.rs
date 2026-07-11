@@ -231,6 +231,46 @@ impl ArchiveIndex {
         RowLocation::decode(key, &bytes).map(Some)
     }
 
+    pub(crate) fn latest_heights_for_keys<K: AsRef<[u8]>>(
+        &self,
+        keys: &[K],
+    ) -> StaticFileResult<Vec<Option<u32>>> {
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let tx = self
+            .db
+            .begin_ro_txn()
+            .map_err(|error| self.error("begin batched row lookup", error))?;
+        let table = tx
+            .open_table(Some(ROWS_TABLE))
+            .map_err(|error| self.error("open row table", error))?;
+        let mut cursor = tx
+            .cursor(&table)
+            .map_err(|error| self.error("open row cursor", error))?;
+        let mut heights = Vec::with_capacity(keys.len());
+
+        for key in keys {
+            let key = key.as_ref();
+            if cursor
+                .set::<Vec<u8>>(key)
+                .map_err(|error| self.error("seek row", error))?
+                .is_none()
+            {
+                heights.push(None);
+                continue;
+            }
+            let bytes = cursor
+                .last_dup::<Vec<u8>>()
+                .map_err(|error| self.error("read latest row", error))?
+                .ok_or_else(|| StaticFileError::invalid_index("row key has no location value"))?;
+            heights.push(Some(RowLocation::decode(key, &bytes)?.height));
+        }
+
+        Ok(heights)
+    }
+
     pub(crate) fn frame(&self, height: u32) -> StaticFileResult<Option<FrameLocation>> {
         let tx = self
             .db

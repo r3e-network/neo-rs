@@ -24,6 +24,12 @@ impl<'a, B: CacheRead> StorageLedgerProvider<'a, B> {
             ledger: LedgerContract::new(),
         }
     }
+
+    /// Returns the optional canonical tip while distinguishing an absent
+    /// uninitialized pointer from malformed persisted bytes.
+    pub fn optional_current_tip(&self) -> CoreResult<Option<(UInt256, u32)>> {
+        self.ledger.optional_current_tip(self.snapshot)
+    }
 }
 
 impl<B: CacheRead> BlockProvider for StorageLedgerProvider<'_, B> {

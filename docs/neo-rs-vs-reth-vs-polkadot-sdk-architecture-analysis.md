@@ -48,17 +48,27 @@ C#-compatible Ledger rows after execution; node commit hooks keep those rows in
 memory until the precommit durability fence writes and syncs the whole accepted
 batch without publishing its index, then commit canonical MDBX/RocksDB state
 and expose the staged frames through one sidecar transaction. Startup validates
-every retained block hash against the authoritative hot prefix, truncates a
-recovered cold-ahead suffix, and repairs legacy archive lag before composition
+every still-hot overlapping block hash against the canonical suffix, truncates
+a recovered cold-ahead suffix, and repairs archive lag above the prune
+watermark before composition
 installs `StaticLedgerProvider` as the cold side. That same statically
 dispatched optional provider now reaches blockchain-service fallback reads,
 node and RPC transaction admission, dBFT tip/transaction/conflict checks, local
 P2P serving, wallet transaction-state reads, and historical RPC block and
 transaction queries. Archive publication is cold-first and crash-reconcilable,
-while hot-row pruning remains deliberately disabled. Persistent offsets,
-bounded archive open, and archive-aware offline tooling are complete; segment
-rotation, atomic hot deletion, and prune/recovery parity remain for the next
-storage phase.
+and hot-row pruning is now version-aware and atomic. The archive enumerates a
+frame's keys without payload decompression and batch-resolves the latest height
+for each key in one sidecar MDBX read transaction. Only keys whose latest
+version is at or below the bounded frontier are eligible, and hot/cold bytes
+must match before deletion. MDBX uses one transaction across its data and
+node-metadata tables; RocksDB uses one synchronous batch across its default and
+metadata column families. The initial protocol `MaxTraceableBlocks` is the hot
+retention floor, while `CurrentBlock` remains hot. The delete set and
+`hot-pruned-through` watermark become durable atomically. Startup rejects a
+watermark above canonical/archive truth or archive lag below a pruned prefix,
+then validates overlap from `watermark + 1`. Persistent offsets, bounded
+archive open, archive-aware offline tooling, atomic hot deletion, and
+prune/recovery parity are complete; segment rotation remains future work.
 Operational persisted-tip reads (startup, config validation, chain.acc
 resume, and daemon context) share that routed factory shape. Observability
 ledger-height reads (health/readiness/metrics) use the same boundary for
@@ -81,8 +91,9 @@ the same hot-prefix reconciliation used by node startup, repairing lag/ahead
 tails and rejecting fork mismatch. It also routes explicit raw Ledger
 transaction-row probes to the archive after a clean hot miss, and its
 archive-only `--scrub-static-files` path verifies frame/index parity without
-opening the canonical database. Authoritative hot-row pruning remains gated on
-atomic deletion and prune/recovery proof, not an offline-tooling gap.
+opening the canonical database. When it opens a hot database, it also reads the
+isolated prune watermark before reconciliation so archive-backed history works
+after hot pruning.
 Durable store fallback reads after in-memory block-cache eviction use the same
 routing for block-hash and full-block reconstruction.
 Blockchain and wallet transaction-state adapters use the node-composed routed
@@ -115,9 +126,9 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync {
 |--------|--------|------|-------------|
 | Abstraction | `Store` with an associated concrete snapshot; `RuntimeStore` enum for config selection | `Database` trait with GATs | `kvdb` trait, 3-level stack |
 | Table encoding | Live: `StorageKey` / `KeyBuilder` over raw C#-compatible bytes; no separate typed-table API yet | Per-table `Encode`/`Decode` + `Compact` derive | Per-column encoding (parity-scale-codec) |
-| Tiering | Hot MDBX/RocksDB plus opt-in compressed static Ledger mirror; provider routing and recovery are wired, hot pruning is not | Hot (MDBX) / Cold (RocksDB) / Static (NippyJar) | Single DB (parity-db or RocksDB) |
+| Tiering | Hot MDBX/RocksDB plus opt-in compressed static Ledger archive; provider routing, atomic pruning, and watermark-aware recovery are wired | Hot (MDBX) / Cold (RocksDB) / Static (NippyJar) | Single DB (parity-db or RocksDB) |
 | Overlay | `DataCache` with `Arc<RwLock<HashMap>>` | MDBX transaction | `OverlayedChanges` |
-| Pruning | Manual via `MaxTraceableBlocks` | Per-segment config (4 profiles) | `PruningMode` enum |
+| Pruning | Static Ledger rows automatically prune beyond the initial `MaxTraceableBlocks` window; state/MPT pruning remains separately configured | Per-segment config (4 profiles) | `PruningMode` enum |
 | Static files | Versioned per-height zstd frames, opaque exact Ledger rows, checksums, LRU reads, continuity and torn-tail recovery; cold-first bytes with post-hot index visibility | NippyJar columnar (mandatory, mmap) | None |
 
 ### Reth innovations
@@ -148,9 +159,9 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync {
 
 | Priority | Change | Benefit |
 |----------|--------|---------|
-| P0 remaining | Atomic hot-row pruning and replay/recovery parity | Disk savings after the safe mirror, persistent-index, provider-propagation, and offline-tooling phases |
+| Implemented phase | Atomic hot-row pruning and replay/recovery parity | Disk savings with latest-version filtering, byte parity checks, isolated watermarks, and fail-closed startup |
 | P1 | Compact derive macro for Neo types | 15-25% storage savings, fewer bytes |
-| Implemented phase | Static Ledger mirror and provider routing | Format, exact row capture, cold-first batch publication, startup reconciliation, and shared runtime cold reads are wired; pruning remains gated |
+| Implemented phase | Static Ledger archive and provider routing | Format, exact row capture, cold-first batch publication, startup reconciliation, shared runtime cold reads, and hot pruning are wired |
 | P3 | `OverlayedChanges`-style transactional overlay | Cleaner per-tx isolation |
 
 ---
@@ -613,7 +624,7 @@ pub struct TransactionState {
 | Change | Speed | Storage | Reliability | Complexity | Effort |
 |--------|-------|---------|-------------|------------|--------|
 | Staged sync pipeline integration | ★★★★★ | ★★ | ★★★★ | ★★★★ | Large |
-| Static archive mirror/recovery/provider propagation | ★★★ | ★★ | ★★★★ | ★★★ | Implemented; persistent-index/pruning phase remains |
+| Static archive/recovery/provider propagation/hot pruning | ★★★ | ★★★★ | ★★★★ | ★★★ | Implemented; segment rotation remains |
 | Import queue + concurrent verify | ★★★★ | - | ★★★ | ★★★ | Runtime queue and production download-to-import bridge wired |
 | Stage commit policy + checkpoints | ★★★ | - | ★★★★ | ★★ | Import-stage driver done |
 | Compact derive macro | ★★ | ★★★★ | - | ★★ | Small |
@@ -633,10 +644,11 @@ pub struct TransactionState {
 3. **Block import queue with concurrent verification** — reusable runtime boundary implemented and composed by `neo_system::SyncImportPipeline`.
 4. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`; durable store-backed checkpoints are available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, node composition creates the import-stage queue/checkpoint handle, and `SyncDownloadImportDriver` now receives production P2P coordinator batches.
 5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; `neo-system` has the download-to-import bridge; per-peer `BlockRequestScheduler` remains as the legacy compatibility path; `BlockDownloadCoordinator` composes `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) and `OrderedBlockBatchBuffer` (contiguous response release) behind a transport-agnostic `BlockRangeFetcher`; `Arc<PeerRegistry>` implements live peer fetching through `RemoteNodeHandle::fetch_blocks_by_index`; `PeerRegistry::download_peers` exposes advertised-height peer snapshots; node composition registers the shared registry, disables legacy per-peer block requests, and starts the coordinator-backed downloader/import task.
-6. **Hot/Cold/Static tiering integration** — append-only mirror, exact Ledger
+6. **Hot/Cold/Static tiering integration** — append-only archive, exact Ledger
    adapter, cold-first precommit publication, recovery, persistent archive
    offsets, archive-aware offline tooling, and shared runtime cold reads are
-   implemented. Hot-row pruning remains.
+   implemented. Latest-version-aware hot deletion and atomic prune watermarks
+   are also implemented; segment rotation remains optional future work.
 7. **Staged sync pipeline integration** (large, biggest overall impact)
 
 This document is a living reference — update as architecture evolves.

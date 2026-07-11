@@ -42,7 +42,8 @@
 //!   store finalization.
 //! - `startup_cleanup`: Startup import rollback, durable-mode restore, and
 //!   shutdown flush helpers.
-//! - `static_files`: Finalized Ledger archive open and startup reconciliation.
+//! - `static_files`: Finalized Ledger archive open, watermark recovery, and
+//!   hot-row pruning.
 //! - `sync_downloader`: Coordinator-backed P2P block download startup.
 //! - `sync_metrics`: Sync-speed counters, summaries, and operator-facing
 //!   throughput status.

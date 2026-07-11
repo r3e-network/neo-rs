@@ -7,6 +7,8 @@ use neo_io::Serializable;
 use neo_payloads::{Block, Header, Signer, Transaction, TransactionAttribute, Witness};
 use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_storage::DataCache;
+use neo_storage::persistence::storage::StorageConfig;
+use neo_storage::persistence::{RawReadOnlyStore, Store, StoreCache};
 use neo_vm_rs::VmState;
 
 use crate::StaticLedgerArchive;
@@ -535,7 +537,7 @@ fn static_archive_reconciles_a_missing_durable_hot_prefix() {
         .expect("seed archive");
 
     let recovery = archive
-        .reconcile(&cache, Some(2), 2)
+        .reconcile(&cache, Some(2), None, 2)
         .expect("reconcile archive");
 
     assert_eq!(recovery.appended_blocks, 2);
@@ -588,7 +590,7 @@ fn static_archive_reconcile_rolls_back_persistent_row_versions_above_hot_tip() {
     }
 
     let recovery = archive
-        .reconcile(&hot, Some(1), 2)
+        .reconcile(&hot, Some(1), None, 2)
         .expect("truncate ahead archive");
 
     assert_eq!(recovery.truncated_blocks, 1);
@@ -667,7 +669,7 @@ fn static_archive_rejects_a_fork_before_truncating_an_ahead_tail() {
     assert_eq!(archive.tip(), Some(2));
 
     let error = archive
-        .reconcile(&hot, Some(1), 2)
+        .reconcile(&hot, Some(1), None, 2)
         .expect_err("interior fork must be rejected");
     assert!(
         error.to_string().contains("height 1"),
@@ -678,4 +680,259 @@ fn static_archive_rejects_a_fork_before_truncating_an_ahead_tail() {
         Some(2),
         "fork validation must precede destructive tail repair"
     );
+}
+
+#[test]
+fn static_archive_reconciliation_starts_after_the_hot_prune_watermark() {
+    use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+
+    let archived = DataCache::new(false);
+    let hot = DataCache::new(false);
+    let mut blocks = Vec::new();
+    for height in 0..=2 {
+        let mut header = Header::new();
+        header.set_index(height);
+        let block = Block::from_parts(header, vec![test_transaction(6_200 + height)]);
+        let hash = block.hash();
+        crate::ledger_records::LedgerRecords::write_on_persist_records(&archived, &block, &hash)
+            .expect("archived rows");
+        crate::ledger_records::LedgerRecords::write_post_persist_record(&archived, &hash, height)
+            .expect("archived tip");
+        if height == 2 {
+            crate::ledger_records::LedgerRecords::write_on_persist_records(&hot, &block, &hash)
+                .expect("retained hot rows");
+            crate::ledger_records::LedgerRecords::write_post_persist_record(&hot, &hash, height)
+                .expect("hot tip");
+        }
+        blocks.push(block);
+    }
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let files = StaticFileArchiveFactory::default()
+        .open(&temp.path().join("ledger.static"))
+        .expect("archive");
+    let archive = StaticLedgerArchive::new(files);
+    for block in &blocks {
+        archive
+            .append_block(&archived, block)
+            .expect("append archived block");
+    }
+
+    let recovery = archive
+        .reconcile(&hot, Some(2), Some(1), 2)
+        .expect("reconcile retained hot suffix");
+
+    assert_eq!(recovery.hot_pruned_through, Some(1));
+    assert_eq!(recovery.final_tip, Some(2));
+    assert_eq!(recovery.appended_blocks, 0);
+    assert_eq!(recovery.truncated_blocks, 0);
+}
+
+#[test]
+fn static_archive_reconciliation_rejects_archive_lag_below_hot_prune_watermark() {
+    use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+
+    let hot = DataCache::new(false);
+    let mut header = Header::new();
+    header.set_index(0);
+    let block = Block::from_parts(header, vec![]);
+    let hash = block.hash();
+    crate::ledger_records::LedgerRecords::write_on_persist_records(&hot, &block, &hash)
+        .expect("hot rows");
+    crate::ledger_records::LedgerRecords::write_post_persist_record(&hot, &hash, 2)
+        .expect("canonical tip");
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let files = StaticFileArchiveFactory::default()
+        .open(&temp.path().join("ledger.static"))
+        .expect("archive");
+    let archive = StaticLedgerArchive::new(files);
+    archive.append_block(&hot, &block).expect("archive block 0");
+
+    let error = archive
+        .reconcile(&hot, Some(2), Some(1), 2)
+        .expect_err("archive below prune watermark must fail");
+
+    assert!(error.to_string().contains("does not cover"), "{error}");
+    assert_eq!(archive.tip(), Some(0));
+}
+
+#[test]
+fn hot_pruning_keeps_newer_overwrites_and_current_block_until_their_frontier() {
+    use std::sync::Arc;
+
+    use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+    use neo_storage::mdbx::MdbxStoreProvider;
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(
+        MdbxStoreProvider::new(StorageConfig {
+            path: temp.path().join("hot"),
+            ..Default::default()
+        })
+        .get_mdbx_store(std::path::Path::new(""))
+        .expect("MDBX store"),
+    );
+    let files = StaticFileArchiveFactory::default()
+        .open(&temp.path().join("ledger.static"))
+        .expect("archive");
+    let archive = StaticLedgerArchive::new(files);
+    let conflict_hash = UInt256::from_bytes(&[0xD7; 32]).expect("conflict hash");
+    let signer = UInt160::from_bytes(&[0x31; 20]).expect("signer");
+    let mut blocks = Vec::new();
+
+    for height in 0..=2 {
+        let mut tx = test_transaction(7_000 + height);
+        if height != 1 {
+            tx.set_signers(vec![Signer::new(signer, WitnessScope::NONE)]);
+            tx.set_attributes(vec![TransactionAttribute::Conflicts(
+                neo_payloads::Conflicts::new(conflict_hash),
+            )]);
+        }
+        let mut header = Header::new();
+        header.set_index(height);
+        let block = Block::from_parts(header, vec![tx]);
+        let block_hash = block.header.try_hash().expect("block hash");
+        let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
+        crate::ledger_records::LedgerRecords::write_on_persist_records(
+            writer.data_cache(),
+            &block,
+            &block_hash,
+        )
+        .expect("on-persist records");
+        crate::ledger_records::LedgerRecords::write_post_persist_record(
+            writer.data_cache(),
+            &block_hash,
+            height,
+        )
+        .expect("post-persist record");
+        archive
+            .append_block(writer.data_cache(), &block)
+            .expect("archive block");
+        writer.try_commit_durable().expect("commit hot Ledger");
+        blocks.push(block);
+    }
+
+    let first_tx_hash = blocks[0].transactions[0].hash();
+    let first_block_hash = blocks[0].hash();
+    let conflict_key = crate::ledger_records::LedgerRecords::transaction_key(&conflict_hash);
+    let first = archive
+        .prune_hot_through(store.as_ref(), 0, 64)
+        .expect("prune first archived height");
+
+    assert_eq!(first.pruned_through, Some(0));
+    assert_eq!(first.processed_frames, 1);
+    assert!(
+        store
+            .try_get_bytes(&crate::ledger_records::LedgerRecords::block_hash_key(0).to_array())
+            .is_none()
+    );
+    assert!(
+        store
+            .try_get_bytes(
+                &crate::ledger_records::LedgerRecords::block_key(&first_block_hash).to_array()
+            )
+            .is_none()
+    );
+    assert!(
+        store
+            .try_get_bytes(
+                &crate::ledger_records::LedgerRecords::transaction_key(&first_tx_hash).to_array()
+            )
+            .is_none()
+    );
+    assert!(
+        store.try_get_bytes(&conflict_key.to_array()).is_some(),
+        "a conflict key overwritten at height 2 must survive frontier 0"
+    );
+
+    let hot = StoreCache::new_from_store(Arc::clone(&store), true);
+    assert_eq!(
+        StorageLedgerProvider::new(hot.data_cache())
+            .current_index()
+            .expect("current block stays hot"),
+        2
+    );
+    let routed = HotColdLedgerProvider::new(
+        StorageLedgerProvider::new(hot.data_cache()),
+        archive.provider(),
+    );
+    assert_eq!(
+        routed
+            .block_by_index(0)
+            .expect("cold block lookup")
+            .expect("archived block")
+            .hash(),
+        first_block_hash
+    );
+
+    let final_outcome = archive
+        .prune_hot_through(store.as_ref(), 2, 64)
+        .expect("prune remaining archived heights");
+    assert_eq!(final_outcome.previous_watermark, Some(0));
+    assert_eq!(final_outcome.pruned_through, Some(2));
+    assert!(store.try_get_bytes(&conflict_key.to_array()).is_none());
+    assert_eq!(archive.hot_pruned_through(store.as_ref()).unwrap(), Some(2));
+    assert_eq!(
+        StorageLedgerProvider::new(hot.data_cache())
+            .current_index()
+            .expect("current block remains after full archive prune"),
+        2
+    );
+}
+
+#[test]
+fn hot_pruning_rejects_hot_cold_byte_mismatch_without_advancing_watermark() {
+    use std::sync::Arc;
+
+    use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+    use neo_storage::mdbx::MdbxStoreProvider;
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let store = Arc::new(
+        MdbxStoreProvider::new(StorageConfig {
+            path: temp.path().join("hot-mismatch"),
+            ..Default::default()
+        })
+        .get_mdbx_store(std::path::Path::new(""))
+        .expect("MDBX store"),
+    );
+    let files = StaticFileArchiveFactory::default()
+        .open(&temp.path().join("mismatch.static"))
+        .expect("archive");
+    let archive = StaticLedgerArchive::new(files);
+    let mut header = Header::new();
+    header.set_index(0);
+    let block = Block::from_parts(header, vec![]);
+    let block_hash = block.hash();
+    let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
+    crate::ledger_records::LedgerRecords::write_on_persist_records(
+        writer.data_cache(),
+        &block,
+        &block_hash,
+    )
+    .expect("on-persist records");
+    crate::ledger_records::LedgerRecords::write_post_persist_record(
+        writer.data_cache(),
+        &block_hash,
+        0,
+    )
+    .expect("post-persist record");
+    archive
+        .append_block(writer.data_cache(), &block)
+        .expect("archive block");
+    writer.try_commit_durable().expect("commit hot Ledger");
+
+    let block_key = crate::ledger_records::LedgerRecords::block_key(&block_hash).to_array();
+    assert!(
+        store
+            .try_commit_raw_overlay(&[(block_key, Some(b"corrupt".to_vec()))])
+            .expect("corrupt hot row")
+    );
+    let error = archive
+        .prune_hot_through(store.as_ref(), 0, 64)
+        .expect_err("mismatch must stop pruning");
+
+    assert!(error.to_string().contains("mismatch"), "{error}");
+    assert_eq!(archive.hot_pruned_through(store.as_ref()).unwrap(), None);
 }

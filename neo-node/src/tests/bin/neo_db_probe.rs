@@ -330,7 +330,7 @@ fn offline_ledger_factory_reconstructs_archive_only_block_and_transaction() {
         ),
     );
     let factory =
-        open_offline_ledger_factory(Some(directory.path()), &hot).expect("ledger factory");
+        open_test_offline_ledger_factory(Some(directory.path()), &hot).expect("ledger factory");
     let ledger = factory.provider(&hot);
 
     assert_eq!(
@@ -706,6 +706,14 @@ fn write_static_records(
         .expect("append archive records");
 }
 
+fn open_test_offline_ledger_factory<B: CacheRead>(
+    static_files_dir: Option<&Path>,
+    snapshot: &DataCache<B>,
+) -> Result<HotColdLedgerProviderFactory<OptionalStaticLedgerProvider>> {
+    let metadata = neo_storage::persistence::providers::memory_store::MemoryStore::new();
+    open_offline_ledger_factory(static_files_dir, &metadata, snapshot)
+}
+
 #[test]
 fn offline_ledger_factory_repairs_lagging_archive_from_hot_canonical_rows() {
     let directory = tempfile::tempdir().expect("tempdir");
@@ -717,7 +725,7 @@ fn offline_ledger_factory_repairs_lagging_archive_from_hot_canonical_rows() {
     set_hot_tip(&hot, &hash1, 1);
     write_static_records(directory.path(), vec![(0, rows0)]);
 
-    let factory = open_offline_ledger_factory(Some(directory.path()), &hot)
+    let factory = open_test_offline_ledger_factory(Some(directory.path()), &hot)
         .expect("reconcile lagging archive");
     let provider = factory.provider(&hot);
 
@@ -758,7 +766,8 @@ fn offline_ledger_factory_truncates_archive_ahead_of_hot_tip() {
     write_static_records(directory.path(), vec![(0, rows0), (1, rows1)]);
 
     drop(
-        open_offline_ledger_factory(Some(directory.path()), &hot).expect("reconcile ahead archive"),
+        open_test_offline_ledger_factory(Some(directory.path()), &hot)
+            .expect("reconcile ahead archive"),
     );
 
     assert_eq!(
@@ -779,7 +788,7 @@ fn offline_ledger_factory_rejects_archive_fork_mismatch() {
     set_hot_tip(&hot, &hot_hash, 0);
     write_static_records(directory.path(), vec![(0, archive_rows)]);
 
-    let error = open_offline_ledger_factory(Some(directory.path()), &hot)
+    let error = open_test_offline_ledger_factory(Some(directory.path()), &hot)
         .expect_err("forked archive must fail");
 
     assert!(error.to_string().contains("fork mismatch"), "{error}");
@@ -792,7 +801,7 @@ fn offline_ledger_factory_does_not_truncate_archive_for_uninitialized_hot_store(
     write_static_records(directory.path(), vec![(0, archive_rows)]);
     let hot = DataCache::new(false);
 
-    let error = open_offline_ledger_factory(Some(directory.path()), &hot)
+    let error = open_test_offline_ledger_factory(Some(directory.path()), &hot)
         .expect_err("uninitialized hot store must fail");
 
     assert!(error.to_string().contains("uninitialized"), "{error}");
@@ -818,7 +827,7 @@ fn offline_ledger_factory_rejects_corrupt_hot_tip_without_touching_archive() {
     let archive =
         open_existing_static_ledger_archive(directory.path()).expect("hold archive writer lease");
 
-    let error = open_offline_ledger_factory(Some(directory.path()), &hot)
+    let error = open_test_offline_ledger_factory(Some(directory.path()), &hot)
         .expect_err("corrupt hot tip must fail");
 
     assert!(error.to_string().contains("read hot Ledger tip"), "{error}");

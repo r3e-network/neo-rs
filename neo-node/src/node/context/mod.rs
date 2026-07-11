@@ -10,12 +10,13 @@
 //!
 //! ## Contents
 //!
-//! - `plugins`: read-side plugin, static archive, and deferred commit-hook
-//!   dispatch.
+//! - `plugins`: read-side plugin, static archive publication/pruning, and
+//!   deferred commit-hook dispatch.
 
 use std::sync::Arc;
 
 use neo_execution::native_contract_provider::NativeContractProvider;
+use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::persistence::store::Store;
 use parking_lot::Mutex;
@@ -24,6 +25,12 @@ use parking_lot::RwLock;
 use super::recovery::LocalReplayGuard;
 
 mod plugins;
+
+#[derive(Clone)]
+struct HotLedgerPruning {
+    store: Arc<RuntimeStore>,
+    retention_blocks: u32,
+}
 
 /// Application observers and catch-up policy used by the core system context.
 pub(super) struct DaemonCommitHooks<
@@ -42,6 +49,7 @@ pub(super) struct DaemonCommitHooks<
     tokens_tracker: RwLock<Option<Arc<neo_rpc::plugins::tokens_tracker::TokensTracker<P, T>>>>,
     static_archive: Option<neo_blockchain::StaticLedgerArchive>,
     pending_static_records: Mutex<Vec<neo_static_files::StaticRecord>>,
+    hot_ledger_pruning: RwLock<Option<HotLedgerPruning>>,
     replay_guard: Arc<LocalReplayGuard>,
 }
 
@@ -86,6 +94,7 @@ where
             tokens_tracker: RwLock::new(None),
             static_archive,
             pending_static_records: Mutex::new(Vec::new()),
+            hot_ledger_pruning: RwLock::new(None),
             replay_guard,
         }
     }
@@ -101,5 +110,16 @@ where
         &self,
     ) -> Option<Arc<neo_rpc::plugins::tokens_tracker::TokensTracker<P, T>>> {
         self.tokens_tracker.read().as_ref().map(Arc::clone)
+    }
+
+    pub(super) fn configure_hot_ledger_pruning(
+        &self,
+        store: Arc<RuntimeStore>,
+        retention_blocks: u32,
+    ) {
+        *self.hot_ledger_pruning.write() = Some(HotLedgerPruning {
+            store,
+            retention_blocks,
+        });
     }
 }

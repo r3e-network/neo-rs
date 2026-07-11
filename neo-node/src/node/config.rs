@@ -93,7 +93,8 @@ pub(super) struct StorageSection {
     #[serde(default)]
     pub(super) mdbx_max_readers: Option<u32>,
     /// Directory containing the finalized Ledger static archive. Setting this
-    /// enables the precommit-durable archive mirror.
+    /// enables cold-first publication, historical fallback reads, and bounded
+    /// hot Ledger pruning beyond the protocol traceability window.
     #[serde(default)]
     pub(super) static_files_dir: Option<PathBuf>,
     /// Zstandard compression level for independently readable height frames.
