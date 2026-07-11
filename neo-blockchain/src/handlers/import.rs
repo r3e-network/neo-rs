@@ -5,14 +5,15 @@ use tracing::warn;
 use crate::command::{ImportBlocksReply, ImportBlocksStats};
 use crate::import::Import;
 use crate::internal::ImportDisposition;
-use crate::native_persist::NativePersistOptions;
 use crate::service::{BlockchainService, MempoolLike};
-use crate::service_context::BlockPersistContext;
 
 mod empty_fast_forward;
 mod finalization;
 mod persist;
+mod plan;
 mod verification;
+
+use plan::ImportPlan;
 
 impl<S, M> BlockchainService<S, M>
 where
@@ -24,21 +25,14 @@ where
         let mut imported = 0usize;
         let mut already_durable = 0usize;
         let mut stats = ImportBlocksStats::default();
-        let bulk_sync = import.bulk_sync;
-        let persist_options = if bulk_sync {
-            NativePersistOptions {
-                capture_replay_artifacts: false,
-            }
-        } else {
-            NativePersistOptions::default()
-        };
-        let persist_context = if bulk_sync {
-            BlockPersistContext::bulk_sync()
-        } else {
-            BlockPersistContext::live()
-        };
         let blocks = import.blocks;
         let durable_height = self.ledger.current_height();
+        let plan = ImportPlan::resolve(import.mode, &blocks, durable_height, self.system.as_ref());
+        let verify = plan.verify();
+        let trusted_replay = plan.is_trusted_replay();
+        let persist_options = plan.persist_options();
+        let persist_context = plan.persist_context();
+        let defer_store_commit = plan.defers_store_commit();
         let mut deferred_committed_positions = Vec::new();
         let mut import_error = None;
         let mut batch_persist_resources = None;
@@ -68,7 +62,7 @@ where
                 ImportDisposition::NextExpected => {}
             }
 
-            if bulk_sync && !batch_persist_resources_loaded {
+            if defer_store_commit && !batch_persist_resources_loaded {
                 match self.batch_persist_resources(index) {
                     Ok(resources) => {
                         batch_persist_resources = resources;
@@ -87,8 +81,8 @@ where
                 batch_persist_resources_loaded = true;
             }
 
-            if bulk_sync
-                && !import.verify
+            if trusted_replay
+                && !verify
                 && let Some(resources) = &batch_persist_resources
                 && let Some((fast_forwarded, last_height)) = self.try_bulk_empty_fast_forward(
                     &blocks,
@@ -104,18 +98,18 @@ where
                 continue;
             }
 
-            if import.verify
+            if verify
                 && !self.verify_import_block_for_command(
                     block,
                     current_height,
-                    bulk_sync,
+                    trusted_replay,
                     batch_persist_resources.as_ref(),
                 )
             {
                 break;
             }
 
-            if bulk_sync && let Some(resources) = &batch_persist_resources {
+            if trusted_replay && let Some(resources) = &batch_persist_resources {
                 let empty_start = Instant::now();
                 match self.persist_empty_block_with_committing_fast_forward(
                     block,
@@ -150,7 +144,7 @@ where
             if let Err(error) = self
                 .persist_import_block_for_command(
                     &blocks[position],
-                    bulk_sync,
+                    defer_store_commit,
                     persist_options,
                     persist_context,
                     batch_persist_resources.as_ref(),
@@ -164,20 +158,25 @@ where
             }
             imported += 1;
             last_imported_height = Some(index);
-            if bulk_sync {
+            if defer_store_commit {
                 deferred_committed_positions.push(position);
             }
             position += 1;
             if self.system.should_stop_blockchain_service() {
                 import_error.get_or_insert_with(|| {
                     format!(
-                        "import stopped after durable block {index}: canonical writer shutdown requested"
+                        "import stopped after {} block {index}: canonical writer shutdown requested",
+                        if defer_store_commit {
+                            "staged"
+                        } else {
+                            "durable"
+                        }
                     )
                 });
                 break;
             }
         }
-        if bulk_sync {
+        if defer_store_commit {
             if self.system.should_stop_blockchain_service() {
                 self.system.abort_store_commit();
                 self.ledger.rewind_to(durable_height);
@@ -185,11 +184,12 @@ where
                     already_durable,
                     stats,
                     import_error.unwrap_or_else(|| {
-                        "bulk import aborted after a fatal persistence failure".to_string()
+                        "deferred import aborted after a fatal persistence failure".to_string()
                     }),
                 );
             }
-            if let Err(error) = self.finalize_bulk_import(imported, &mut stats) {
+            let newly_staged = imported.saturating_sub(already_durable);
+            if let Err(error) = self.finalize_deferred_import(newly_staged, &mut stats) {
                 self.ledger.rewind_to(durable_height);
                 return ImportBlocksReply::failed_with_stats(already_durable, stats, error);
             }
@@ -198,15 +198,30 @@ where
                     (!blocks[position].transactions.is_empty()).then(std::time::Instant::now);
                 self.system
                     .block_committed_with_context(&blocks[position], persist_context);
+                if plan.maintains_live_side_effects() {
+                    self.mempool.block_persisted(&blocks[position]);
+                    if let Ok(hash) = Self::try_block_hash(&blocks[position]) {
+                        self.event_tx
+                            .send(crate::RuntimeEvent::Imported {
+                                hash,
+                                height: blocks[position].index(),
+                                timestamp: blocks[position].timestamp(),
+                            })
+                            .ok();
+                    }
+                }
                 if let Some(start) = committed_hook_start {
                     stats.transaction_committed_hook_elapsed += start.elapsed();
                 }
             }
-            self.finish_bulk_import_cache_maintenance(last_imported_height)
-                .await;
+            self.finish_deferred_import_cache_maintenance(
+                last_imported_height,
+                plan.maintains_live_side_effects(),
+            )
+            .await;
             if self.system.should_stop_blockchain_service() {
                 import_error.get_or_insert_with(|| {
-                    "bulk import committed durably but canonical writer shutdown was requested"
+                    "deferred import committed durably but canonical writer shutdown was requested"
                         .to_string()
                 });
             }

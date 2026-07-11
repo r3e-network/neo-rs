@@ -54,7 +54,7 @@ fn bulk_options() -> NativePersistOptions {
 }
 
 fn bulk_context() -> BlockPersistContext {
-    BlockPersistContext::bulk_sync()
+    BlockPersistContext::trusted_replay()
 }
 
 fn persist_block_with_resources(

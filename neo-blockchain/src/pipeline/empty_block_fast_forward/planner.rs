@@ -155,7 +155,7 @@ where
     if blocks.is_empty() {
         return Err(EmptyBlockFastForwardRejection::EmptyCandidate);
     }
-    if !persist_context.bulk_sync {
+    if !persist_context.is_trusted_replay() {
         return Err(EmptyBlockFastForwardRejection::NotBulkSync);
     }
     if persist_options.capture_replay_artifacts {

@@ -368,7 +368,7 @@ async fn sync_pipeline_driver_rejects_partial_imported_batches_without_advancing
     let checkpoints = Arc::new(InMemorySyncStageCheckpointStore::default());
     let mut driver = SyncPipelineDriver::new(
         queue,
-        checkpoints,
+        Arc::clone(&checkpoints),
         CommitPolicy::new().with_max_blocks(1),
         BlockOrigin::Sync,
     )
@@ -381,6 +381,13 @@ async fn sync_pipeline_driver_rejects_partial_imported_batches_without_advancing
 
     assert!(err.to_string().contains("processed 1 of 2 blocks"), "{err}");
     assert_eq!(importer.imported_batches.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        checkpoints
+            .checkpoint(SyncStageKind::Import)
+            .expect("checkpoint read after partial import"),
+        None,
+        "partial batch progress must not advance the durable import checkpoint"
+    );
 
     let err = driver
         .push_batch(SyncBlockBatch::new(3, vec![block(3)]))

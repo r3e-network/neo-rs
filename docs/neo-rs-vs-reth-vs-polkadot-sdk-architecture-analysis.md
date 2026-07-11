@@ -62,12 +62,12 @@ Current-tip reads are exposed as the separate
 conflict stubs) are exposed as `TransactionStateProvider`, keeping RPC and
 peer-serving code on the same provider seam instead of reaching into the native
 Ledger contract directly.
-Raw key/value bytes remain C# compatible through
-`StorageKey` / `StorageItem`, and `StorageKey` / `KeyBuilder` over those raw
-bytes is the live encoding on every storage access path.
-`neo_storage::persistence::Table`, `TableCodec`, and `TableReader` add a typed
-table boundary over those same bytes, but that boundary is on no live storage
-access path today — it is a defined seam, not a live encoding.
+Raw key/value bytes remain C# compatible through `StorageKey` / `StorageItem`,
+and `StorageKey` / `KeyBuilder` over those raw bytes is the live encoding on
+every storage access path. `Store`, `RawReadOnlyStore`,
+`ReadOnlyStoreGeneric`, and `StoreFactory` are the implemented backend seams;
+a Reth-style typed table/codec layer remains future work and must adapt these
+existing bytes rather than redefine them.
 
 ```rust
 pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync {
@@ -81,7 +81,7 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync {
 | Aspect | neo-rs | Reth | Polkadot SDK |
 |--------|--------|------|-------------|
 | Abstraction | `Store` with an associated concrete snapshot; `RuntimeStore` enum for config selection | `Database` trait with GATs | `kvdb` trait, 3-level stack |
-| Table encoding | Live: `StorageKey` / `KeyBuilder` over raw C#-compatible bytes; `Table`/`TableCodec` boundary exists but on no live access path | Per-table `Encode`/`Decode` + `Compact` derive | Per-column encoding (parity-scale-codec) |
+| Table encoding | Live: `StorageKey` / `KeyBuilder` over raw C#-compatible bytes; no separate typed-table API yet | Per-table `Encode`/`Decode` + `Compact` derive | Per-column encoding (parity-scale-codec) |
 | Tiering | Hot DB today; hot/cold provider factory exists, while static-file archive writing/format is still unwired | Hot (MDBX) / Cold (RocksDB) / Static (NippyJar) | Single DB (parity-db or RocksDB) |
 | Overlay | `DataCache` with `Arc<RwLock<HashMap>>` | MDBX transaction | `OverlayedChanges` |
 | Pruning | Manual via `MaxTraceableBlocks` | Per-segment config (4 profiles) | `PruningMode` enum |
@@ -234,12 +234,20 @@ Verification-enabled imports then run
 `NeoValidateStage` followed by `NeoConsensusWitnessStage` over the same
 snapshot used by native persistence. The second stage resolves the previous
 trimmed block, reads its `NextConsensus`, and verifies the header witness
-through the explicit native-contract provider; trusted `verify: false`
-fast-sync package imports keep relying on the block decoder's import-integrity
-checks to avoid duplicating merkle/hash work on the hot replay path.
+through the explicit native-contract provider. `ImportMode::Sync` always uses
+that verified path. Trusted local package replay uses
+`ImportMode::TrustedReplay { verify: false }`, keeps decoder integrity checks,
+and alone suppresses replay artifacts and live side effects. Before mutation,
+`ImportPlan` resolves a range-aware `SyncBatchCommitPolicy`: eligible peer
+batches share one durable commit while retaining ordered hooks, mempool
+updates, import events, and one batch-end reverify; otherwise they use per-block
+durability. The plan freezes live or catch-up observer behavior for the range.
 `neo_runtime::SyncPipelineDriver` consumes contiguous sync batches, rejects
-height gaps, calls the import queue, and writes import-stage checkpoints
-according to `CommitPolicy`. `neo_system::SyncImportPipeline` now composes the
+height gaps, calls the import queue, and writes import-stage checkpoints only
+after durable progress and according to `CommitPolicy`.
+`SyncDownloadImportDriver` seeds its cursor from the canonical tip and surfaces
+downloader, checkpoint-read/write, gap, and partial-import errors.
+`neo_system::SyncImportPipeline` now composes the
 bounded import queue and durable checkpoint provider from the node's
 `BlockchainHandle` and shared storage handle as one explicit node field;
 production P2P range sync now creates a coordinator-backed

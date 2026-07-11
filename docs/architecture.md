@@ -276,9 +276,17 @@ The detailed rules for this style live in
   `NeoValidateStage` followed by `NeoConsensusWitnessStage` over the same
   snapshot used by native persistence; the second stage verifies the header
   witness against the previous block's `NextConsensus` using the explicit
-  native-contract provider. Trusted
-  `verify: false` fast-sync package imports keep relying on the block decoder's
-  import-integrity checks to avoid duplicate work. Peer-relayed block bursts
+  native-contract provider. `ImportMode::Sync` always uses that verified path.
+  Trusted `chain.acc` and built-in fast-sync replay use
+  `ImportMode::TrustedReplay { verify: false }` and retain decoder integrity
+  checks while suppressing replay-only artifacts and live side effects. Before
+  mutation, one immutable `ImportPlan` resolves a range-aware
+  `SyncBatchCommitPolicy`. Eligible peer batches share one durable canonical
+  commit while preserving ordered committed hooks, mempool eviction, import
+  events, and one batch-end reverify; unsafe observer configurations fall back
+  to per-block durability. The plan freezes live or catch-up observer behavior
+  for the entire range, so a moving peer tip cannot change plugin staging
+  mid-batch. Peer-relayed block bursts
   enter the live inventory path through
   `BlockchainHandle::submit_inventory_blocks`,
   consensus-produced blocks use `submit_inventory_block`, extensible payloads
@@ -313,12 +321,12 @@ The detailed rules for this style live in
   checkpoint provider, and import-stage commit policy so production downloader
   integration has one handle to drive. The same `Arc<SyncImportPipeline>` is
   owned directly by `neo_system::Node`; no erased provider lookup is involved.
-  `neo_system::SyncDownloadImportDriver` drains any
-  `neo_network::BlockDownloader` stream into that handle, creating a
-  `SyncPipelineDriver` and stopping on downloader errors, height gaps, or
-  partial imports. Downloaded `SyncBlockBatch` values are checked for contiguous
-  heights, imported through the canonical `ImportQueue`, and checkpointed when
-  policy fires. The store-backed checkpoint adapters persist versioned runtime
+  `neo_system::SyncDownloadImportDriver` seeds the driver from the canonical
+  tip and drains any `neo_network::BlockDownloader` stream into that handle. It
+  stops on downloader, checkpoint-read/write, height-gap, or partial-import
+  errors. Downloaded `SyncBlockBatch` values are checked for contiguous
+  heights, imported through the canonical `ImportQueue`, and checkpointed only
+  after durable import progress and when policy fires. The store-backed checkpoint adapters persist versioned runtime
   sync metadata under a short raw-key namespace that cannot overlap normal
   `StorageKey` contract rows. `neo_network::BlockDownloader` is the
   stream-shaped download boundary; its `BlockDownloadBatch` converts into the
@@ -395,15 +403,16 @@ The detailed rules for this style live in
   pattern.
 
 - **Pluggable storage behind `Store` and provider traits.** `neo-storage`
-  exposes `Store`, `DataCache`, and typed `Table`/`TableCodec`/`TableReader`
-  adapters over the existing raw bytes. MDBX is the production default, RocksDB
+  exposes `Store`, `DataCache`, raw/typed read traits, and `StoreFactory` over
+  the existing `StorageKey`/`StorageItem` bytes. MDBX is the production default, RocksDB
   remains a supported fallback, and memory providers are used for tests. Higher
   crates read through capability providers: `neo-blockchain` has
   `BlockProvider`/`TxProvider` plus `LedgerProviderFactory`,
-  `StorageLedgerProviderFactory`, and a generic `HotColdLedgerProviderFactory`;
-  `neo-state-service` has `StateProviderFactory`/`StateView` for immutable MPT
-  views. These provider factories make hot/cold routing explicit without
-  changing C#-compatible key/value bytes.
+  `StorageLedgerProviderFactory`, and a generic `HotColdLedgerProviderFactory`.
+  `neo-state-service` currently exposes concrete `MptReadSnapshot`, `MptStore`,
+  `StateStore`, and `StateStoreLookup` surfaces; a general state-view factory
+  remains future work. These live boundaries preserve C#-compatible key/value
+  bytes.
 
 - **MPT layering.** The Merkle-Patricia Trie is split across two crates
   (ADR-012): `neo-crypto::mpt_trie` owns the generic data structure (`Node`,

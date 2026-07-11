@@ -1,5 +1,4 @@
 use super::*;
-use crate::Import;
 use crate::command::BlockchainCommand;
 use crate::fill_memory_pool::FillMemoryPool;
 use crate::handle::BlockchainHandle;
@@ -8,6 +7,7 @@ use crate::ledger_context::LedgerContext;
 use crate::relay_result::RelayResult;
 use crate::service::MempoolLike;
 use crate::service_context::SystemContext;
+use crate::{Import, ImportMode};
 use neo_payloads::Block;
 use neo_payloads::InventoryType;
 use neo_payloads::Transaction;
@@ -26,6 +26,21 @@ type NativeProviderArc = Arc<neo_native_contracts::StandardNativeProvider>;
 
 fn standard_native_provider() -> NativeProviderArc {
     Arc::new(neo_native_contracts::StandardNativeProvider::new())
+}
+
+fn sign_header_for_test(
+    header: &Header,
+    network: u32,
+    private_key: &[u8; 32],
+    verification: &[u8],
+) -> neo_payloads::Witness {
+    let mut sign_data = Vec::with_capacity(36);
+    sign_data.extend_from_slice(&network.to_le_bytes());
+    sign_data.extend_from_slice(&header.hash().to_bytes());
+    let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, private_key).expect("sign");
+    let mut invocation = vec![0x0C, 64];
+    invocation.extend_from_slice(&signature);
+    neo_payloads::Witness::new_with_scripts(invocation, verification.to_vec())
 }
 
 #[derive(Debug)]
@@ -852,6 +867,8 @@ fn seed_conflict_record<B: neo_storage::CacheRead>(
 mod block_flow;
 #[path = "handlers/extensible_headers.rs"]
 mod extensible_headers;
+#[path = "handlers/sync_batch.rs"]
+mod sync_batch;
 #[path = "handlers/transactions.rs"]
 mod transactions;
 

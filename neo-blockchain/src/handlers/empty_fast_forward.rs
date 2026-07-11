@@ -67,7 +67,7 @@ where
         persist_options: NativePersistOptions,
         persist_context: BlockPersistContext,
     ) -> CoreResult<bool> {
-        if !persist_context.bulk_sync
+        if !persist_context.is_trusted_replay()
             || persist_options.capture_replay_artifacts
             || !self.system.allows_empty_block_committing_fast_forward()
             || !block.transactions.is_empty()

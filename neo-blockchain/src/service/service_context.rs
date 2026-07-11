@@ -19,26 +19,79 @@ use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Block};
 
-/// Extra metadata for the current block persistence call.
+/// Observer semantics for the current block persistence call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BlockPersistContext {
-    /// True for trusted local bootstrap/import paths such as chain.acc and
-    /// built-in fast-sync packages.
-    pub bulk_sync: bool,
+pub enum BlockPersistContext {
+    /// Ordinary persistence; daemon hooks may derive catch-up behavior from
+    /// the current peer tip for this individual block.
+    Live,
+    /// A range-level decision to retain live observer behavior for every block
+    /// in a deferred sync batch, independent of later peer-tip changes.
+    SyncBatch,
+    /// A range-level catch-up decision frozen before a deferred sync batch.
+    ///
+    /// Live plugin staging is skipped for every block in the batch even if the
+    /// observed peer tip changes while the batch is executing.
+    CatchUp,
+    /// Trusted local bootstrap/import such as `chain.acc` or built-in fast sync.
+    TrustedReplay,
 }
 
 impl BlockPersistContext {
     /// Normal live-network/consensus persistence.
     #[must_use]
     pub const fn live() -> Self {
-        Self { bulk_sync: false }
+        Self::Live
+    }
+
+    /// Frozen catch-up observer semantics for a verified sync batch.
+    #[must_use]
+    pub const fn catch_up() -> Self {
+        Self::CatchUp
+    }
+
+    /// Frozen live observer semantics for a verified sync batch.
+    #[must_use]
+    pub const fn sync_batch() -> Self {
+        Self::SyncBatch
     }
 
     /// Trusted local bootstrap/import persistence.
     #[must_use]
-    pub const fn bulk_sync() -> Self {
-        Self { bulk_sync: true }
+    pub const fn trusted_replay() -> Self {
+        Self::TrustedReplay
     }
+
+    /// Returns whether live observer staging must be skipped.
+    #[must_use]
+    pub const fn skips_live_observers(self) -> bool {
+        matches!(self, Self::CatchUp | Self::TrustedReplay)
+    }
+
+    /// Returns whether daemon hooks may derive catch-up from the current peer tip.
+    #[must_use]
+    pub const fn uses_dynamic_peer_tip(self) -> bool {
+        matches!(self, Self::Live)
+    }
+
+    /// Returns whether this is a trusted local replay path.
+    #[must_use]
+    pub const fn is_trusted_replay(self) -> bool {
+        matches!(self, Self::TrustedReplay)
+    }
+}
+
+/// Composition decision for the durability boundary of a verified sync range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncBatchCommitPolicy {
+    /// Commit each accepted block through the ordinary live path.
+    PerBlock,
+    /// Stage the range in one canonical snapshot while retaining live observer
+    /// behavior for every block, then commit it once.
+    DeferredLive,
+    /// Stage the range in one canonical snapshot while skipping catch-up
+    /// observers for every block, then commit it once.
+    DeferredCatchUp,
 }
 
 /// System access required by [`crate::service::BlockchainService`].
@@ -141,13 +194,27 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
         false
     }
 
-    /// Flushes any deferred commit-handler work that was queued during a trusted
-    /// bulk-sync batch before the batch is durably committed.
+    /// Returns whether a verified peer-sync range may share one durable commit.
+    ///
+    /// Implementations must return [`SyncBatchCommitPolicy::PerBlock`] when any
+    /// active observer requires a per-block canonical durability boundary. The
+    /// default is conservative; store-less and observer-free test contexts opt
+    /// in explicitly.
+    fn sync_batch_commit_policy(
+        &self,
+        _start_height: u32,
+        _end_height: u32,
+    ) -> SyncBatchCommitPolicy {
+        SyncBatchCommitPolicy::PerBlock
+    }
+
+    /// Flushes deferred commit-handler work before an import batch is durably
+    /// committed.
     ///
     /// The default is a no-op. Daemon contexts use this to force the
     /// StateService async MPT worker to surface failures at the batch boundary
     /// instead of deferring them until shutdown.
-    fn flush_bulk_sync_commit_handlers(&self) -> Result<(), String> {
+    fn flush_deferred_commit_handlers(&self) -> Result<(), String> {
         Ok(())
     }
 

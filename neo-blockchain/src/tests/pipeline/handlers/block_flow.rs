@@ -1,21 +1,6 @@
 use super::*;
 use neo_payloads::header::Header;
 
-fn sign_header_for_test(
-    header: &Header,
-    network: u32,
-    private_key: &[u8; 32],
-    verification: &[u8],
-) -> neo_payloads::Witness {
-    let mut sign_data = Vec::with_capacity(36);
-    sign_data.extend_from_slice(&network.to_le_bytes());
-    sign_data.extend_from_slice(&header.hash().to_bytes());
-    let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, private_key).expect("sign");
-    let mut invocation = vec![0x0C, 64];
-    invocation.extend_from_slice(&signature);
-    neo_payloads::Witness::new_with_scripts(invocation, verification.to_vec())
-}
-
 fn first_two_empty_blocks() -> (Block, Block) {
     let settings = neo_config::ProtocolSettings::default();
     let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
@@ -286,7 +271,7 @@ impl SystemContext for FailingBulkFlushContext {
         Some(standard_native_provider())
     }
 
-    fn flush_bulk_sync_commit_handlers(&self) -> Result<(), String> {
+    fn flush_deferred_commit_handlers(&self) -> Result<(), String> {
         self.flush_calls.fetch_add(1, Ordering::SeqCst);
         Err("state-root worker reported a failed operation".to_string())
     }
@@ -361,7 +346,7 @@ impl SystemContext for StateServiceEmptyFastPathContext {
             .on_committing_deferred(block.index(), snapshot)
     }
 
-    fn flush_bulk_sync_commit_handlers(&self) -> Result<(), String> {
+    fn flush_deferred_commit_handlers(&self) -> Result<(), String> {
         self.state_service
             .flush_result()
             .map_err(|err| err.to_string())
@@ -547,8 +532,7 @@ async fn bulk_import_flush_failure_aborts_batch_before_durable_store_commit() {
     let imported = service
         .handle_import(Import {
             blocks: vec![genesis, block1, Block::from_parts(header2, vec![])],
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
 
@@ -642,8 +626,7 @@ async fn non_bulk_import_reply_surfaces_durable_commit_failure() {
     let imported = service
         .handle_import(Import {
             blocks: vec![Block::from_parts(header, Vec::new())],
-            verify: false,
-            bulk_sync: false,
+            mode: ImportMode::Live { verify: false },
         })
         .await;
 
@@ -687,8 +670,7 @@ async fn non_bulk_import_stops_after_durable_block_requests_writer_shutdown() {
     let imported = service
         .handle_import(Import {
             blocks: vec![block1, block2],
-            verify: false,
-            bulk_sync: false,
+            mode: ImportMode::Live { verify: false },
         })
         .await;
 
@@ -734,8 +716,7 @@ async fn bulk_import_reports_shutdown_requested_after_successful_durable_fence()
     let imported = service
         .handle_import(Import {
             blocks: vec![block1, block2],
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
 
@@ -781,8 +762,7 @@ async fn bulk_commit_failure_rewinds_staged_tip_and_suppresses_post_commit_hooks
     let imported = service
         .handle_import(Import {
             blocks: vec![block1, Block::from_parts(header2, Vec::new())],
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
 
@@ -1070,8 +1050,7 @@ async fn import_verify_true_rejects_invalid_header_like_csharp() {
     service
         .handle_import(Import {
             blocks: vec![Block::from_parts(header, vec![])],
-            verify: true,
-            bulk_sync: false,
+            mode: ImportMode::Live { verify: true },
         })
         .await;
 
@@ -1108,8 +1087,7 @@ async fn import_verify_true_rejects_invalid_transaction_merkle_root() {
             // transaction. `verify: true` must run the shared validate stage
             // before persistence, so the stale zero root is rejected.
             blocks: vec![Block::from_parts(header, vec![transaction_with_nonce(42)])],
-            verify: true,
-            bulk_sync: false,
+            mode: ImportMode::Live { verify: true },
         })
         .await;
 
@@ -1181,8 +1159,7 @@ async fn bulk_import_uses_batch_block_before_parked_duplicate_height() {
     let imported = service
         .handle_import(Import {
             blocks: vec![block1, import_block2],
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
 
@@ -1221,8 +1198,7 @@ async fn import_verify_false_skips_header_verification_like_csharp() {
     service
         .handle_import(Import {
             blocks: vec![Block::from_parts(header, vec![])],
-            verify: false,
-            bulk_sync: false,
+            mode: ImportMode::Live { verify: false },
         })
         .await;
 
@@ -1262,8 +1238,7 @@ async fn explicit_bulk_import_skips_replay_artifacts_but_normal_import_keeps_the
     let imported = normal_service
         .handle_import(Import {
             blocks: vec![Block::from_parts(normal_header, vec![])],
-            verify: false,
-            bulk_sync: false,
+            mode: ImportMode::Live { verify: false },
         })
         .await;
     assert_eq!(imported.imported, 1);
@@ -1287,8 +1262,7 @@ async fn explicit_bulk_import_skips_replay_artifacts_but_normal_import_keeps_the
     let imported = bulk_service
         .handle_import(Import {
             blocks: vec![Block::from_parts(bulk_header, vec![])],
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
     assert_eq!(imported.imported, 1);
@@ -1328,8 +1302,7 @@ async fn bulk_import_flushes_store_once_per_accepted_batch() {
     let imported = normal_service
         .handle_import(Import {
             blocks: vec![normal_block1, Block::from_parts(normal_header2, vec![])],
-            verify: false,
-            bulk_sync: false,
+            mode: ImportMode::Live { verify: false },
         })
         .await;
 
@@ -1372,8 +1345,7 @@ async fn bulk_import_flushes_store_once_per_accepted_batch() {
     let imported = bulk_service
         .handle_import(Import {
             blocks: vec![bulk_block1, Block::from_parts(bulk_header2, vec![])],
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
 
@@ -1419,8 +1391,7 @@ async fn bulk_import_reuses_store_snapshot_for_accepted_batch() {
     let imported = service
         .handle_import(Import {
             blocks: vec![block1, Block::from_parts(header2, vec![])],
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
 
@@ -1467,8 +1438,7 @@ async fn bulk_import_fast_forwards_empty_run_when_no_per_block_observers_are_act
     let imported = service
         .handle_import(Import {
             blocks: vec![block1, block2],
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
 
@@ -1553,8 +1523,7 @@ async fn bulk_import_fast_forwards_short_empty_bursts_around_transaction_blocks(
     let imported = service
         .handle_import(Import {
             blocks,
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
 
@@ -1652,8 +1621,7 @@ async fn bulk_import_fast_forward_chunks_empty_runs_beyond_one_internal_batch() 
     let imported = service
         .handle_import(Import {
             blocks,
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
 
@@ -1713,8 +1681,7 @@ async fn bulk_import_fast_forward_skips_observer_callbacks_when_fast_path_is_all
     let imported = service
         .handle_import(Import {
             blocks: vec![block1, block2],
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
 
@@ -1754,8 +1721,7 @@ async fn bulk_import_falls_back_when_per_block_committing_observer_is_active() {
     let imported = service
         .handle_import(Import {
             blocks: vec![block1, block2],
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
 
@@ -1816,8 +1782,7 @@ async fn bulk_import_uses_empty_fast_path_when_only_state_service_is_loaded() {
     let imported = service
         .handle_import(Import {
             blocks: vec![block1, block2],
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
 
@@ -1873,8 +1838,7 @@ async fn bulk_import_uses_empty_fast_path_when_only_state_service_is_loaded() {
     let normal_imported = normal_service
         .handle_import(Import {
             blocks: vec![normal_block1, normal_block2],
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
     assert_eq!(normal_imported.imported, 2);
@@ -1942,8 +1906,7 @@ async fn bulk_import_verify_true_validates_against_prior_batch_block() {
     let imported = service
         .handle_import(Import {
             blocks: vec![block1, Block::from_parts(header2, vec![])],
-            verify: true,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: true },
         })
         .await;
 
@@ -2008,8 +1971,7 @@ async fn bulk_import_keeps_accepted_prefix_when_second_block_committing_fails() 
     let imported = service
         .handle_import(Import {
             blocks: vec![block1, Block::from_parts(header2, vec![])],
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
 
@@ -2070,8 +2032,7 @@ async fn fatal_bulk_precommit_failure_aborts_staged_prefix_without_finalizing() 
     let imported = service
         .handle_import(Import {
             blocks: vec![block1, block2],
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
 
@@ -2307,8 +2268,7 @@ async fn bulk_import_skips_per_block_mempool_maintenance() {
     let imported = service
         .handle_import(Import {
             blocks: vec![block1, Block::from_parts(header2, vec![])],
-            verify: false,
-            bulk_sync: true,
+            mode: ImportMode::TrustedReplay { verify: false },
         })
         .await;
 

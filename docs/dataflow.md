@@ -87,9 +87,15 @@ import-stage checkpoints through
 node-level `neo_system::SyncImportPipeline` now composes the queue and durable
 checkpoint provider over the same blockchain and storage handles used by the
 rest of the node and is owned directly by `neo_system::Node`.
-`neo_system::SyncDownloadImportDriver` drains any `BlockDownloader` stream into
-that handle and stops on downloader, contiguity, partial-import, or checkpoint
-errors. Production local-ledger node startup now feeds it from the
+`neo_system::SyncDownloadImportDriver` seeds the driver from the canonical tip,
+drains any `BlockDownloader` stream into that handle, and stops on downloader,
+contiguity, partial-import, or checkpoint errors. `BlockOrigin::Sync` maps to
+`ImportMode::Sync`: full verification and live artifacts are mandatory, while
+a range-aware `SyncBatchCommitPolicy` may collapse canonical writes to one
+durable commit. The resolved `ImportPlan` freezes observer behavior, publishes
+ordered hooks/mempool updates/import events only after durability, removes
+stale headers before one batch-end reverify, and falls back to per-block
+durability when plugin staging is not batch-safe. Production local-ledger node startup now feeds it from the
 coordinator-backed P2P downloader over live peer handles. The
 per-peer `GetBlockByIndex` request window is planned by
 `neo_network::BlockRequestScheduler` and sent by `PeerSession`. Cross-peer range
@@ -354,21 +360,21 @@ Key points:
   marker. Even without an auxiliary-store hazard, canonical durability failure
   cancels the node because the process must not continue on an indeterminate
   storage result.
-- **Typed table boundary.** `neo-storage::persistence::Table`,
-  `TableCodec`, and `TableReader` give storage code a typed table API over the
-  existing raw bytes. `StorageKey` still encodes with `to_array()` and
-  `StorageItem` still encodes with `to_value()`, so this abstraction does not
-  alter C#-compatible state roots.
+- **Storage byte boundary.** `neo-storage` exposes `Store`,
+  `RawReadOnlyStore`, `ReadOnlyStoreGeneric`, `DataCache`, and `StoreFactory`
+  over existing raw bytes. `StorageKey` still encodes with `to_array()` and
+  `StorageItem` with `to_value()`. No typed table/codec API is currently
+  exported; any future one must preserve these C#-compatible bytes.
 - **Ledger provider boundary.** `neo-blockchain` exposes `BlockProvider` and
   `TxProvider` capability traits. `StorageLedgerProviderFactory` creates hot
   providers over native Ledger records; `HotColdLedgerProviderFactory` composes
   hot reads with any cold provider that implements the same capability traits.
   Static archive writes are explicit integration work, not an implicit side
   effect of block import.
-- **State provider boundary.** `neo-state-service` exposes
-  `StateProviderFactory` and `StateView` so RPC, VM, and tests can request an
-  immutable MPT view at a specific height instead of holding ad-hoc references
-  to mutable service internals.
+- **State read boundary.** `neo-state-service` exposes `MptReadSnapshot`,
+  `MptStore`, `StateStore`, and `StateStoreLookup`. RPC proof/state paths use
+  concrete immutable `MptReadSnapshot` values. A general
+  `StateProviderFactory`/`StateView` capability is not exported yet.
 - **State root.** The MPT root is computed from a block's storage change set and
   stored under the C# `StateRoot` wire layout (`neo-state-service/src/mpt_store.rs`),
   with per-block records by index and by hash. `getstateroot`/`getstateheight`

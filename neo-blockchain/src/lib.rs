@@ -76,7 +76,7 @@ pub use command::{
 pub use fill_completed::FillCompleted;
 pub use fill_memory_pool::FillMemoryPool;
 pub use handle::BlockchainHandle;
-pub use import::Import;
+pub use import::{Import, ImportMode};
 pub use import_completed::ImportCompleted;
 pub use inventory_payload::InventoryPayload;
 pub use native_persist::{
@@ -93,7 +93,7 @@ pub use neo_mempool::PreverifyCompleted;
 pub use relay_result::RelayResult;
 pub use reverify::{Reverify, ReverifyItem};
 pub use service::{BlockchainService, MempoolLike};
-pub use service_context::{BlockPersistContext, SystemContext};
+pub use service_context::{BlockPersistContext, SyncBatchCommitPolicy, SystemContext};
 
 pub use neo_runtime::{BlockchainEvent as RuntimeEvent, ServiceError};
 

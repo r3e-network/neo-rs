@@ -66,7 +66,7 @@ where
         &self,
         block: &Block,
         current_height: u32,
-        bulk_sync: bool,
+        trusted_replay: bool,
         settings: Arc<neo_config::ProtocolSettings>,
         snapshot: Arc<neo_storage::DataCache<S::CacheBacking>>,
         native_contract_provider: Arc<S::NativeProvider>,
@@ -74,7 +74,7 @@ where
         VerifiedImportPipeline::<S::NativeProvider, S::CacheBacking>::verify_block(
             block,
             current_height,
-            bulk_sync,
+            trusted_replay,
             settings,
             snapshot,
             native_contract_provider,

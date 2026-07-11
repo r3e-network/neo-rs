@@ -91,12 +91,12 @@ fn verified_import_stage_context_marks_bulk_as_trusted_local() {
     let normal = StageContext::for_verified_import(7, false);
     assert_eq!(normal.origin, BlockOrigin::Rpc);
     assert_eq!(normal.current_height, 7);
-    assert!(!normal.bulk_sync);
+    assert!(!normal.trusted_replay);
 
     let bulk = StageContext::for_verified_import(7, true);
     assert_eq!(bulk.origin, BlockOrigin::TrustedLocal);
     assert_eq!(bulk.current_height, 7);
-    assert!(bulk.bulk_sync);
+    assert!(bulk.trusted_replay);
 }
 
 #[test]

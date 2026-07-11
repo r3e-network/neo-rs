@@ -53,11 +53,11 @@ where
         BlockValidator::validate_primary_index(block.primary_index(), self.ctx.validators_count())?;
 
         // Timestamp bounds
-        if !ctx.bulk_sync {
+        if !ctx.trusted_replay {
             // Normal mode: check both minimum and future drift.
             BlockValidator::validate_timestamp_bounds(block.timestamp())?;
         } else {
-            // Bulk sync: only check the minimum (genesis) timestamp.
+            // Trusted replay: only check the minimum (genesis) timestamp.
             if block.timestamp() < MIN_TIMESTAMP_MS {
                 return Err(BlockValidationError::TimestampTooOld {
                     timestamp: block.timestamp(),

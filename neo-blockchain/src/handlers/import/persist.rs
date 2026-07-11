@@ -26,7 +26,7 @@ where
     pub(crate) async fn persist_import_block_for_command(
         &self,
         block: &Block,
-        bulk_sync: bool,
+        defer_store_commit: bool,
         persist_options: NativePersistOptions,
         persist_context: BlockPersistContext,
         batch_persist_resources: Option<&BatchPersistResources<S::NativeProvider, S::CacheBacking>>,
@@ -44,11 +44,12 @@ where
 
         let transaction_block = !block.transactions.is_empty();
         let transaction_start = transaction_block.then(Instant::now);
-        let persisted = if bulk_sync {
+        let persisted = if defer_store_commit {
             if let Some(resources) = batch_persist_resources {
                 self.persist_block_sequence_with_resources(
                     Arc::clone(&block),
                     persist_options,
+                    persist_context,
                     resources,
                 )
             } else {
@@ -69,11 +70,10 @@ where
             stats.transaction_elapsed += start.elapsed();
         }
 
-        // Normal live imports flush each block immediately. Trusted bulk-sync
-        // imports keep staging into the shared snapshot and flush once after the
-        // accepted batch, avoiding one durable commit per block while preserving
-        // per-block native/state transitions.
-        if !bulk_sync {
+        // Ordinary imports flush each block immediately. A policy-approved
+        // sync batch or trusted replay keeps staging into the shared snapshot
+        // and flushes once after the accepted batch.
+        if !defer_store_commit {
             self.system.commit_to_store().map_err(|error| {
                 format!("import aborted at height {index}: durable store commit failed: {error}")
             })?;
@@ -86,7 +86,7 @@ where
             stats.transaction_ledger_insert_elapsed += start.elapsed();
         }
 
-        if !bulk_sync {
+        if !defer_store_commit {
             let committed_hook_start = transaction_block.then(Instant::now);
             self.system
                 .block_committed_with_context(block.as_ref(), persist_context);
@@ -95,15 +95,23 @@ where
             }
         }
 
-        // Cold-start bulk sync imports a trusted local chain.acc package, so it
-        // stays on canonical state transitions only. Live import and peer-relay
-        // paths still mirror C# MemPool.UpdatePoolForBlockPersisted per block.
-        if !bulk_sync {
+        // Deferred imports replay these effects only after batch durability.
+        // Per-block imports retain the C# ordering here.
+        if !defer_store_commit {
             self.mempool.block_persisted(block.as_ref());
             self.reverify_mempool_after_persist(
                 index,
                 self.system.settings().max_transactions_per_block as usize,
             );
+            if !persist_context.is_trusted_replay() {
+                self.event_tx
+                    .send(crate::RuntimeEvent::Imported {
+                        hash,
+                        height: index,
+                        timestamp: block.timestamp(),
+                    })
+                    .ok();
+            }
             self.header_cache.remove_up_to(index);
 
             let drained = self.handle_drain_unverified_blocks().await;

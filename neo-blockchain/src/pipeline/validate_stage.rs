@@ -17,7 +17,7 @@
 //!
 //! # Wiring Status
 //!
-//! Verified block import (`Import { verify: true }`) constructs this stage over
+//! Verified block import constructs this stage over
 //! the same snapshot used by native persistence before running
 //! `NeoConsensusWitnessStage`. Live peer inventory still keeps its inline
 //! import-integrity checks because that path intentionally follows C#
@@ -27,9 +27,9 @@
 //!
 //! # Bulk-Sync Behavior
 //!
-//! When `StageContext.bulk_sync` is true, the stage skips timestamp drift
-//! checks (trusted bulk import path). This matches the existing behavior where
-//! `handle_import` with `verify: false` skips stateful header verification.
+//! When `StageContext.trusted_replay` is true, the stage skips timestamp drift
+//! checks (trusted local replay path). This matches `ImportMode::TrustedReplay`
+//! with `verify: false`; `ImportMode::Sync` always runs full validation.
 
 use std::fmt;
 use std::sync::Arc;

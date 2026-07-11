@@ -97,6 +97,39 @@ fn context_exposes_the_composed_native_provider() {
 }
 
 #[test]
+fn sync_batch_policy_is_owned_by_composed_commit_hooks() {
+    let observer_free_store = Arc::new(MemoryStore::new());
+    let observer_free_cache = StoreCache::new_from_store(observer_free_store, false);
+    let observer_free_snapshot = Arc::new(observer_free_cache.data_cache().clone());
+    let observer_free = NodeSystemContext::new(
+        Arc::new(ProtocolSettings::default()),
+        observer_free_snapshot,
+        observer_free_cache,
+        Arc::new(StandardNativeProvider::new()),
+        Arc::new(NoopBlockCommitHooks),
+    );
+    assert_eq!(
+        observer_free.sync_batch_commit_policy(1, 512),
+        neo_blockchain::SyncBatchCommitPolicy::DeferredLive
+    );
+
+    let conservative_store = Arc::new(MemoryStore::new());
+    let conservative_cache = StoreCache::new_from_store(conservative_store, false);
+    let conservative_snapshot = Arc::new(conservative_cache.data_cache().clone());
+    let conservative = NodeSystemContext::new(
+        Arc::new(ProtocolSettings::default()),
+        conservative_snapshot,
+        conservative_cache,
+        Arc::new(StandardNativeProvider::new()),
+        Arc::new(RecordingCommitHooks::default()),
+    );
+    assert_eq!(
+        conservative.sync_batch_commit_policy(1, 512),
+        neo_blockchain::SyncBatchCommitPolicy::PerBlock
+    );
+}
+
+#[test]
 fn durable_commit_outcome_is_reported_to_application_hooks() {
     let store = Arc::new(MemoryStore::new());
     let writable_cache = StoreCache::new_from_store(Arc::clone(&store), false);

@@ -201,7 +201,7 @@ fn daemon_context_skips_state_service_mpt_during_default_cold_catchup() {
         &block,
         &snapshot,
         &[],
-        BlockPersistContext::bulk_sync(),
+        BlockPersistContext::trusted_replay(),
     ));
     assert_eq!(
         state_store
@@ -257,7 +257,7 @@ fn daemon_context_can_track_state_service_mpt_during_cold_catchup_for_validation
         &block,
         &snapshot,
         &[],
-        BlockPersistContext::bulk_sync(),
+        BlockPersistContext::trusted_replay(),
     ));
     let mpt = state_store.mpt().expect("state store exposes MPT");
     assert_eq!(
@@ -560,12 +560,17 @@ track_during_catchup = true
     let block = Block::from_parts(header, Vec::new());
 
     assert!(
-        ctx.block_committing_with_context(&block, &snapshot, &[], BlockPersistContext::bulk_sync()),
+        ctx.block_committing_with_context(
+            &block,
+            &snapshot,
+            &[],
+            BlockPersistContext::trusted_replay(),
+        ),
         "async StateService enqueue succeeds before the worker observes the non-contiguous root"
     );
     let err = ctx
-        .flush_bulk_sync_commit_handlers()
-        .expect_err("bulk-sync finalization must surface async StateService worker failure");
+        .flush_deferred_commit_handlers()
+        .expect_err("deferred finalization must surface async StateService worker failure");
     assert!(
         err.contains("state-root worker"),
         "unexpected flush error: {err}"
@@ -1539,6 +1544,69 @@ fn post_canonical_application_logs_do_not_arm_replay_marker() {
 }
 
 #[test]
+fn sync_batch_policy_never_spans_live_post_canonical_plugin_staging() {
+    use neo_rpc::application_logs::{ApplicationLogsService, ApplicationLogsSettings};
+    use neo_storage::persistence::StoreCacheBacking;
+    use neo_system::BlockCommitHooks;
+
+    type Hooks = DaemonCommitHooks<
+        neo_native_contracts::StandardNativeProvider,
+        MemoryStore,
+        MemoryStore,
+        MemoryStore,
+    >;
+    type Backing = StoreCacheBacking<MemoryStore>;
+
+    let settings = ProtocolSettings::default();
+    let mut logs_settings = ApplicationLogsSettings::default();
+    logs_settings.enabled = true;
+    logs_settings.network = settings.network;
+    let logs = Arc::new(ApplicationLogsService::new(
+        logs_settings,
+        Arc::new(MemoryStore::new()),
+    ));
+    let guarded = Hooks::new(
+        settings.network,
+        None,
+        false,
+        None,
+        Some(logs),
+        Arc::new(crate::node::recovery::LocalReplayGuard::new(
+            None,
+            tokio_util::sync::CancellationToken::new(),
+        )),
+    );
+
+    assert_eq!(
+        <Hooks as BlockCommitHooks<Backing>>::sync_batch_commit_policy(&guarded, 1, 100, 10_100,),
+        neo_blockchain::SyncBatchCommitPolicy::PerBlock,
+        "the exact catch-up boundary still runs per-block plugin staging",
+    );
+    assert_eq!(
+        <Hooks as BlockCommitHooks<Backing>>::sync_batch_commit_policy(&guarded, 1, 100, 10_101,),
+        neo_blockchain::SyncBatchCommitPolicy::DeferredCatchUp,
+        "batching freezes catch-up observer semantics for the whole range",
+    );
+
+    let observer_free = Hooks::new(
+        settings.network,
+        None,
+        false,
+        None,
+        None,
+        Arc::new(crate::node::recovery::LocalReplayGuard::new(
+            None,
+            tokio_util::sync::CancellationToken::new(),
+        )),
+    );
+    assert_eq!(
+        <Hooks as BlockCommitHooks<Backing>>::sync_batch_commit_policy(&observer_free, 1, 100, 0,),
+        neo_blockchain::SyncBatchCommitPolicy::DeferredLive,
+        "observer-free compositions can batch before a peer tip is known",
+    );
+}
+
+#[test]
 fn daemon_context_skips_application_logs_committed_handler_during_bulk_sync() {
     use neo_blockchain::{BlockPersistContext, SystemContext};
     use neo_payloads::{ApplicationExecuted, Block, Header, NotifyEventArgs, Signer, Transaction};
@@ -1605,9 +1673,9 @@ fn daemon_context_skips_application_logs_committed_handler_during_bulk_sync() {
         &block,
         &snapshot,
         &[executed],
-        BlockPersistContext::bulk_sync(),
+        BlockPersistContext::trusted_replay(),
     ));
-    ctx.block_committed_with_context(&block, BlockPersistContext::bulk_sync());
+    ctx.block_committed_with_context(&block, BlockPersistContext::trusted_replay());
 
     assert!(
         logs_service.get_transaction_log(&tx_hash).is_none(),

@@ -295,13 +295,16 @@ Priority order for crate refactors:
    should trigger graceful node shutdown; normal task failure should be logged,
    metered, and restarted or disabled according to policy.
 4. **One provider/factory pattern for reads.** Storage-backed read APIs should
-   expose capability traits (`BlockProvider`, `TxProvider`, `StateView`) plus
-   factories (`LedgerProviderFactory`, `StateProviderFactory`) rather than
-   leaking concrete caches or backend handles upward.
-5. **Typed tables over existing bytes.** Use
-   `neo_storage::persistence::Table` and `TableCodec` for table-specific
-   storage APIs. These codecs adapt the existing persisted key/value bytes; they
-   are not permission to invent a new consensus serialization format.
+   expose capability traits and factories rather than leaking concrete caches
+   or backend handles upward. The live ledger pattern is
+   `BlockProvider`/`TxProvider` plus `LedgerProviderFactory`; state reads
+   currently use concrete immutable `MptReadSnapshot` values, so add a state
+   factory only when a real second implementation or consumer boundary needs it.
+5. **Typed tables may only adapt existing bytes.** The current live storage API
+   is `Store`/`RawReadOnlyStore`/`ReadOnlyStoreGeneric` over
+   `StorageKey`/`StorageItem`; no typed table codec is exported. If one is added,
+   it must adapt existing persisted bytes and must not invent a new consensus
+   serialization format.
 
 Do not copy reth's heavy memory-chain reorg overlay or Polkadot's Wasm
 meta-runtime into Neo just for symmetry. Keep the part that matters here:

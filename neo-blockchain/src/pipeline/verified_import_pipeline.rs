@@ -1,4 +1,4 @@
-//! Verified import pipeline for `Import { verify: true }`.
+//! Verified import pipeline used by `ImportMode::Sync` and verified live/replay imports.
 //!
 //! This is the narrow block-import chain used before native persistence for
 //! verification-enabled local imports: structural/stateful validation first,
@@ -81,14 +81,14 @@ where
     pub fn verify_block(
         block: &Block,
         current_height: u32,
-        bulk_sync: bool,
+        trusted_replay: bool,
         settings: Arc<ProtocolSettings>,
         snapshot: Arc<DataCache<B>>,
         native_contract_provider: Arc<P>,
     ) -> EngineResult<()> {
         let pipeline = Self::new(settings, snapshot, native_contract_provider);
         pipeline.verify(
-            &StageContext::for_verified_import(current_height, bulk_sync),
+            &StageContext::for_verified_import(current_height, trusted_replay),
             block,
         )
     }

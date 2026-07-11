@@ -50,7 +50,7 @@ where
             crate::native_persist::NativePersistOptions {
                 capture_replay_artifacts: false,
             },
-            crate::service_context::BlockPersistContext::bulk_sync(),
+            crate::service_context::BlockPersistContext::trusted_replay(),
             &resources.native_persist,
             current_height,
         ) {

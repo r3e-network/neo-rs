@@ -71,7 +71,7 @@ fn stage_context() -> StageContext {
     StageContext {
         origin: BlockOrigin::Sync,
         current_height: 0,
-        bulk_sync: false,
+        trusted_replay: false,
     }
 }
 

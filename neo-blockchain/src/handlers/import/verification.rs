@@ -11,8 +11,8 @@ where
     S: crate::service_context::SystemContext,
     M: MempoolLike,
 {
-    /// Verify an import-command block with either the shared bulk-sync
-    /// persistence resources or a fresh live snapshot.
+    /// Verify an import-command block with shared batch persistence resources
+    /// or a fresh live snapshot.
     ///
     /// The verified import pipeline remains the canonical validation path.
     /// This helper only keeps resource selection and import-command logging out
@@ -21,14 +21,14 @@ where
         &self,
         block: &Block,
         current_height: u32,
-        bulk_sync: bool,
+        trusted_replay: bool,
         batch_persist_resources: Option<&BatchPersistResources<S::NativeProvider, S::CacheBacking>>,
     ) -> bool {
         let verify_result = if let Some(resources) = batch_persist_resources {
             self.verify_import_block_with_pipeline(
                 block,
                 current_height,
-                bulk_sync,
+                trusted_replay,
                 Arc::clone(&resources.settings),
                 Arc::clone(&resources.snapshot),
                 resources.native_persist.provider(),
@@ -48,7 +48,7 @@ where
             self.verify_import_block_with_pipeline(
                 block,
                 current_height,
-                bulk_sync,
+                trusted_replay,
                 self.system.settings(),
                 snapshot,
                 match self.system.native_contract_provider() {

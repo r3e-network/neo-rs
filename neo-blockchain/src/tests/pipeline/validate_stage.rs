@@ -68,7 +68,7 @@ fn stage_context(current_height: u32) -> StageContext {
     StageContext {
         origin: BlockOrigin::Sync,
         current_height,
-        bulk_sync: false,
+        trusted_replay: false,
     }
 }
 

@@ -76,9 +76,9 @@ pub struct ImportBlocksStats {
     pub transaction_ledger_insert_elapsed: Duration,
     /// Elapsed time spent running committed hooks for transaction-bearing blocks.
     pub transaction_committed_hook_elapsed: Duration,
-    /// Elapsed time spent flushing bulk-sync commit handlers and durable store.
+    /// Elapsed time spent flushing deferred handlers and the durable store.
     pub finalization_elapsed: Duration,
-    /// Elapsed time spent waiting for bulk-sync commit handlers, including StateService workers.
+    /// Elapsed time spent waiting for deferred handlers, including StateService workers.
     pub finalization_commit_handlers_elapsed: Duration,
     /// Elapsed time spent flushing the shared snapshot to the durable store.
     pub finalization_store_commit_elapsed: Duration,

@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use neo_blockchain::{
     BlockPersistContext, ChainTipProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory,
-    LedgerProviderFactory, SystemContext,
+    LedgerProviderFactory, SyncBatchCommitPolicy, SystemContext,
 };
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
@@ -47,8 +47,18 @@ where
     /// Notify post-commit observers.
     fn block_committed(&self, _block: &Block, _live_tip: u64, _context: BlockPersistContext) {}
 
-    /// Flush deferred work at a trusted bulk-import boundary.
-    fn flush_bulk_sync(&self) -> Result<(), String> {
+    /// Whether a verified peer-sync range may share one durable commit.
+    fn sync_batch_commit_policy(
+        &self,
+        _start_height: u32,
+        _end_height: u32,
+        _live_tip: u64,
+    ) -> SyncBatchCommitPolicy {
+        SyncBatchCommitPolicy::PerBlock
+    }
+
+    /// Flush deferred work at an import-batch boundary.
+    fn flush_deferred(&self) -> Result<(), String> {
         Ok(())
     }
 
@@ -69,7 +79,7 @@ where
         false
     }
 
-    /// Whether a bulk import may skip per-block commit hooks entirely.
+    /// Whether trusted replay may skip per-block commit hooks entirely.
     fn allows_empty_block_fast_forward(&self) -> bool {
         false
     }
@@ -84,7 +94,19 @@ where
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NoopBlockCommitHooks;
 
-impl<B> BlockCommitHooks<B> for NoopBlockCommitHooks where B: CacheRead {}
+impl<B> BlockCommitHooks<B> for NoopBlockCommitHooks
+where
+    B: CacheRead,
+{
+    fn sync_batch_commit_policy(
+        &self,
+        _start_height: u32,
+        _end_height: u32,
+        _live_tip: u64,
+    ) -> SyncBatchCommitPolicy {
+        SyncBatchCommitPolicy::DeferredLive
+    }
+}
 
 /// Provider-neutral context consumed by `neo-blockchain`.
 pub struct NodeSystemContext<P, S, H>
@@ -242,8 +264,20 @@ where
             || self.hooks.should_stop_blockchain_service()
     }
 
-    fn flush_bulk_sync_commit_handlers(&self) -> Result<(), String> {
-        let result = self.hooks.flush_bulk_sync();
+    fn sync_batch_commit_policy(
+        &self,
+        start_height: u32,
+        end_height: u32,
+    ) -> SyncBatchCommitPolicy {
+        self.hooks.sync_batch_commit_policy(
+            start_height,
+            end_height,
+            neo_runtime::sync_metrics::peer_live_tip(),
+        )
+    }
+
+    fn flush_deferred_commit_handlers(&self) -> Result<(), String> {
+        let result = self.hooks.flush_deferred();
         if let Err(error) = &result {
             self.mark_fatal_persistence_error(error);
         }

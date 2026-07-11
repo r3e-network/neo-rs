@@ -1,6 +1,6 @@
 use super::*;
 
-use neo_blockchain::{BlockchainCommand, BlockchainHandle};
+use neo_blockchain::{BlockchainCommand, BlockchainHandle, ImportMode};
 use neo_network::{BlockDownloadBatch, BlockDownloadConfig, ChannelBlockDownloader, NetworkError};
 use neo_payloads::{Block, Header};
 use neo_runtime::{
@@ -24,10 +24,10 @@ async fn download_import_driver_drains_batches_into_canonical_import_queue() {
             let BlockchainCommand::ImportBlocks { import, reply } = command else {
                 panic!("unexpected blockchain command");
             };
-            assert!(import.verify, "sync downloader imports should preverify");
-            assert!(
-                !import.bulk_sync,
-                "sync downloader imports are not trusted local bulk replay"
+            assert_eq!(
+                import.mode,
+                ImportMode::Sync,
+                "coordinator batches need verified sync-batch semantics"
             );
             let indexes = import.blocks.iter().map(Block::index).collect::<Vec<_>>();
             let imported = import.blocks.len();
@@ -86,6 +86,60 @@ async fn download_import_driver_drains_batches_into_canonical_import_queue() {
         command_task.await.expect("command task"),
         vec![vec![1, 2], vec![3]]
     );
+}
+
+#[tokio::test]
+async fn download_import_driver_preserves_existing_checkpoint_until_commit_policy_fires() {
+    let (blockchain, mut commands) = BlockchainHandle::with_capacity();
+    let command_task = tokio::spawn(async move {
+        let Some(BlockchainCommand::ImportBlocks { import, reply }) = commands.recv().await else {
+            panic!("blockchain command channel closed before import");
+        };
+        assert_eq!(import.mode, ImportMode::Sync);
+        let indexes = import.blocks.iter().map(Block::index).collect::<Vec<_>>();
+        reply
+            .send(neo_blockchain::ImportBlocksReply::ok(import.blocks.len()))
+            .expect("send import reply");
+        indexes
+    });
+
+    let checkpoints = Arc::new(InMemorySyncStageCheckpointStore::default());
+    let existing_checkpoint =
+        SyncStageCheckpoint::new(SyncStageKind::Import, 2).with_counters(2, 0);
+    checkpoints
+        .put_checkpoint(existing_checkpoint.clone())
+        .expect("seed prior checkpoint");
+    let pipeline = Arc::new(SyncImportPipeline::with_parts(
+        Arc::new(BlockImportQueue::new(Arc::new(blockchain), 2)),
+        checkpoints.clone(),
+        CommitPolicy::new().with_max_blocks(4),
+        BlockOrigin::Sync,
+    ));
+    let (tx, downloader) = ChannelBlockDownloader::channel(BlockDownloadConfig::new(1, 1), 1);
+    tx.send(Ok(BlockDownloadBatch::new(None, 3, vec![block(3)])))
+        .await
+        .expect("send sync batch");
+    drop(tx);
+
+    let mut driver = SyncDownloadImportDriver::new(pipeline, downloader);
+    let summary = driver
+        .import_all()
+        .await
+        .expect("single batch below checkpoint threshold should still import");
+
+    assert_eq!(summary.downloaded_batches, 1);
+    assert_eq!(summary.imported_blocks, 1);
+    assert_eq!(summary.last_imported_height, Some(3));
+    assert_eq!(summary.checkpoints_written, 0);
+    assert_eq!(summary.last_checkpoint, None);
+    assert_eq!(
+        checkpoints
+            .checkpoint(SyncStageKind::Import)
+            .expect("checkpoint read"),
+        Some(existing_checkpoint),
+        "the previous durable checkpoint must remain authoritative until the commit policy fires"
+    );
+    assert_eq!(command_task.await.expect("command task"), vec![3]);
 }
 
 #[tokio::test]

@@ -145,25 +145,25 @@ pub struct StageContext {
     pub origin: BlockOrigin,
     /// The current canonical chain tip height (before this block).
     pub current_height: u32,
-    /// Whether the pipeline is in bulk-sync (catch-up) mode.
-    pub bulk_sync: bool,
+    /// Whether validation is running for trusted local replay.
+    pub trusted_replay: bool,
 }
 
 impl StageContext {
     /// Builds the stage context used by verification-enabled import commands.
     ///
-    /// Bulk-sync imports are trusted local replay artifacts; non-bulk imports
+    /// Trusted replay imports are local artifacts; other imports
     /// enter through RPC-like local submission.
     #[must_use]
-    pub fn for_verified_import(current_height: u32, bulk_sync: bool) -> Self {
+    pub fn for_verified_import(current_height: u32, trusted_replay: bool) -> Self {
         Self {
-            origin: if bulk_sync {
+            origin: if trusted_replay {
                 BlockOrigin::TrustedLocal
             } else {
                 BlockOrigin::Rpc
             },
             current_height,
-            bulk_sync,
+            trusted_replay,
         }
     }
 }

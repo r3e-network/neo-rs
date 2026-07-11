@@ -15,7 +15,7 @@ use neo_runtime::{
 
 use super::BlockchainHandle;
 use crate::command::{BlockchainCommand, ImportBlocksReply};
-use crate::import::Import;
+use crate::import::{Import, ImportMode};
 
 impl BlockchainHandle {
     /// Import an externally supplied block and return the typed import outcome.
@@ -61,39 +61,46 @@ impl BlockchainHandle {
         blocks: Vec<Block>,
         verify: bool,
     ) -> Result<usize, ServiceError> {
-        self.import_blocks_with_mode(blocks, verify, false).await
+        self.import_blocks_with_mode(blocks, ImportMode::Live { verify })
+            .await
     }
 
-    /// Import a trusted bulk-sync batch and skip replay-only artifacts that
+    /// Import a peer-sync batch with full verification and live side effects.
+    ///
+    /// The blockchain service may collapse the batch to one durable commit
+    /// when the composed observer policy explicitly permits it.
+    pub async fn import_blocks_sync(&self, blocks: Vec<Block>) -> Result<usize, ServiceError> {
+        self.import_blocks_with_mode(blocks, ImportMode::Sync).await
+    }
+
+    /// Import a trusted replay batch and skip replay-only artifacts that
     /// cold-sync consumers intentionally do not read.
     pub async fn import_blocks_bulk(
         &self,
         blocks: Vec<Block>,
         verify: bool,
     ) -> Result<usize, ServiceError> {
-        self.import_blocks_with_mode(blocks, verify, true).await
+        self.import_blocks_with_mode(blocks, ImportMode::TrustedReplay { verify })
+            .await
     }
 
-    /// Import a trusted bulk-sync batch and return the detailed service-side
+    /// Import a trusted replay batch and return the detailed service-side
     /// timing/composition reply.
     pub async fn import_blocks_bulk_detailed(
         &self,
         blocks: Vec<Block>,
         verify: bool,
     ) -> Result<ImportBlocksReply, ServiceError> {
-        self.import_blocks_reply_with_mode(blocks, verify, true)
+        self.import_blocks_reply_with_mode(blocks, ImportMode::TrustedReplay { verify })
             .await
     }
 
     async fn import_blocks_with_mode(
         &self,
         blocks: Vec<Block>,
-        verify: bool,
-        bulk_sync: bool,
+        mode: ImportMode,
     ) -> Result<usize, ServiceError> {
-        let reply = self
-            .import_blocks_reply_with_mode(blocks, verify, bulk_sync)
-            .await?;
+        let reply = self.import_blocks_reply_with_mode(blocks, mode).await?;
         if let Some(error) = reply.error {
             return Err(ServiceError::InvalidState(format!(
                 "block import finalization failed after importing {} blocks: {error}",
@@ -106,17 +113,12 @@ impl BlockchainHandle {
     async fn import_blocks_reply_with_mode(
         &self,
         blocks: Vec<Block>,
-        verify: bool,
-        bulk_sync: bool,
+        mode: ImportMode,
     ) -> Result<ImportBlocksReply, ServiceError> {
         let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
         self.cmd_tx
             .send(BlockchainCommand::ImportBlocks {
-                import: Import {
-                    blocks,
-                    verify,
-                    bulk_sync,
-                },
+                import: Import { blocks, mode },
                 reply: reply_tx,
             })
             .await
@@ -158,11 +160,10 @@ impl BlockImport for BlockchainHandle {
         blocks: Vec<Block>,
         origin: BlockOrigin,
     ) -> Result<BlockBatchImportOutcome, ServiceError> {
-        let verify = !matches!(origin, BlockOrigin::TrustedLocal);
-        let processed = if matches!(origin, BlockOrigin::TrustedLocal) {
-            self.import_blocks_bulk(blocks, verify).await?
-        } else {
-            self.import_blocks(blocks, verify).await?
+        let processed = match origin {
+            BlockOrigin::Sync => self.import_blocks_sync(blocks).await?,
+            BlockOrigin::TrustedLocal => self.import_blocks_bulk(blocks, false).await?,
+            BlockOrigin::Consensus | BlockOrigin::Rpc => self.import_blocks(blocks, true).await?,
         };
         Ok(BlockBatchImportOutcome::new(processed))
     }

@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use neo_blockchain::BlockPersistContext;
+use neo_blockchain::{BlockPersistContext, SyncBatchCommitPolicy};
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Block, CommittedHandler, CommittingHandler};
 use neo_storage::persistence::store::Store;
@@ -15,6 +15,9 @@ use neo_system::BlockCommitHooks;
 use tracing::warn;
 
 use super::DaemonCommitHooks;
+
+const COMMITTED_CATCHUP_DISTANCE: u64 = 1_000;
+const COMMITTING_CATCHUP_DISTANCE: u64 = 10_000;
 
 impl<P, S, L, T> DaemonCommitHooks<P, S, L, T>
 where
@@ -39,8 +42,10 @@ where
         // The plugin services can backfill later via their own catch-up path
         // if needed; the priority during cold sync is reaching consensus tip.
         let block_index = block.index();
-        let catching_up =
-            context.bulk_sync || (live_tip > 0 && (block_index as u64) + 1000 < live_tip);
+        let catching_up = context.skips_live_observers()
+            || (context.uses_dynamic_peer_tip()
+                && live_tip > 0
+                && u64::from(block_index).saturating_add(COMMITTED_CATCHUP_DISTANCE) < live_tip);
         if catching_up {
             return;
         }
@@ -89,11 +94,13 @@ where
         //   (~24ms measured — the dominant sync bottleneck). Validation
         //   profiles can force it on with [state_service].track_during_catchup.
         // - IndexerService.index_block indexes transaction execution results.
-        // Deferred hooks resume near the live tip. This mirrors C# Neo's chain.acc
-        // import which skips verification and indexing during bulk sync.
+        // Deferred hooks resume near the live tip. Trusted replay always skips
+        // them; verified sync can freeze the same catch-up decision per batch.
         let block_index = block.index();
-        let catching_up =
-            context.bulk_sync || (live_tip > 0 && (block_index as u64) + 10000 < live_tip);
+        let catching_up = context.skips_live_observers()
+            || (context.uses_dynamic_peer_tip()
+                && live_tip > 0
+                && u64::from(block_index).saturating_add(COMMITTING_CATCHUP_DISTANCE) < live_tip);
         let should_track_state = self.state_service.is_some()
             && (!catching_up || self.state_service_track_during_catchup);
         // StateService and a persistent indexer can make an independent store
@@ -211,7 +218,29 @@ where
         self.block_committed_with_live_tip_and_context(block, live_tip, context);
     }
 
-    fn flush_bulk_sync(&self) -> Result<(), String> {
+    fn sync_batch_commit_policy(
+        &self,
+        _start_height: u32,
+        end_height: u32,
+        live_tip: u64,
+    ) -> SyncBatchCommitPolicy {
+        let observers_skipped_for_entire_batch = live_tip > 0
+            && u64::from(end_height).saturating_add(COMMITTING_CATCHUP_DISTANCE) < live_tip;
+        let has_post_canonical_staging =
+            self.application_logs_service.is_some() || self.tokens_tracker().is_some();
+
+        if has_post_canonical_staging && !observers_skipped_for_entire_batch {
+            return SyncBatchCommitPolicy::PerBlock;
+        }
+
+        if observers_skipped_for_entire_batch {
+            SyncBatchCommitPolicy::DeferredCatchUp
+        } else {
+            SyncBatchCommitPolicy::DeferredLive
+        }
+    }
+
+    fn flush_deferred(&self) -> Result<(), String> {
         if let Some(state_service) = &self.state_service {
             state_service
                 .flush_result()

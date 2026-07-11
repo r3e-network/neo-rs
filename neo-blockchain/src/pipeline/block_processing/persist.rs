@@ -58,7 +58,12 @@ where
                 return false;
             }
         };
-        self.persist_block_sequence_with_resources(block, options, &resources)
+        let persist_context = if options.capture_replay_artifacts {
+            BlockPersistContext::live()
+        } else {
+            BlockPersistContext::trusted_replay()
+        };
+        self.persist_block_sequence_with_resources(block, options, persist_context, &resources)
     }
 
     pub(crate) fn batch_persist_resources(
@@ -92,13 +97,9 @@ where
         &self,
         block: Arc<Block>,
         options: crate::native_persist::NativePersistOptions,
+        persist_context: BlockPersistContext,
         resources: &BatchPersistResources<S::NativeProvider, S::CacheBacking>,
     ) -> bool {
-        let persist_context = if options.capture_replay_artifacts {
-            BlockPersistContext::live()
-        } else {
-            BlockPersistContext::bulk_sync()
-        };
         match crate::native_persist::stage_block_natives_with_resources(
             Arc::clone(&resources.snapshot),
             Arc::clone(&block),
