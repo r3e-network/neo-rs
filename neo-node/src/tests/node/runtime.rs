@@ -102,7 +102,7 @@ fn native_provider() -> Arc<neo_native_contracts::StandardNativeProvider> {
 }
 
 #[test]
-fn static_archive_publishes_after_canonical_success_and_discards_failed_pending_rows() {
+fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure() {
     use neo_blockchain::{
         BlockPersistContext, BlockProvider, NativePersistOptions, NativePersistResources,
         genesis_block, persist_block_natives_with_resources,
@@ -164,6 +164,13 @@ fn static_archive_publishes_after_canonical_success_and_discards_failed_pending_
         None,
         "pre-commit capture must stay in memory"
     );
+    <Hooks as BlockCommitHooks<EmptyCacheBacking>>::fence_precommit_durability(&hooks)
+        .expect("durably stage archive before canonical commit");
+    assert_eq!(
+        archive.tip(),
+        None,
+        "the staged cold frame must remain hidden before canonical commit"
+    );
     <Hooks as BlockCommitHooks<EmptyCacheBacking>>::canonical_commit_succeeded(&hooks);
     assert_eq!(archive.tip(), Some(0));
     assert_eq!(
@@ -210,6 +217,59 @@ fn static_archive_publishes_after_canonical_success_and_discards_failed_pending_
     );
     <Hooks as BlockCommitHooks<EmptyCacheBacking>>::canonical_commit_succeeded(&discarded);
     assert_eq!(discarded_archive.tip(), None);
+
+    let ahead_temp = tempfile::tempdir().expect("tempdir");
+    let ahead_path = ahead_temp.path().join("ledger.static");
+    let ahead_archive = neo_blockchain::StaticLedgerArchive::new(
+        StaticFileArchiveFactory::default()
+            .open(&ahead_path)
+            .expect("archive"),
+    );
+    let ahead = Hooks::new(
+        settings.network,
+        None,
+        false,
+        None,
+        None,
+        Some(ahead_archive.clone()),
+        Arc::new(crate::node::recovery::LocalReplayGuard::new(
+            None,
+            tokio_util::sync::CancellationToken::new(),
+        )),
+    );
+    assert!(
+        <Hooks as BlockCommitHooks<EmptyCacheBacking>>::block_committing(
+            &ahead,
+            block.as_ref(),
+            snapshot.as_ref(),
+            &outcome.application_executed,
+            0,
+            BlockPersistContext::live(),
+        )
+    );
+    <Hooks as BlockCommitHooks<EmptyCacheBacking>>::fence_precommit_durability(&ahead)
+        .expect("publish ahead archive frame");
+    <Hooks as BlockCommitHooks<EmptyCacheBacking>>::canonical_commit_failed(
+        &ahead,
+        "injected failure after cold durability",
+    );
+    assert_eq!(
+        ahead_archive.tip(),
+        None,
+        "failed canonical data must remain invisible until restart recovery"
+    );
+    drop(ahead);
+    drop(ahead_archive);
+    let recovered_archive = neo_blockchain::StaticLedgerArchiveFactory::default()
+        .open(&ahead_path)
+        .expect("recover staged archive suffix");
+    assert_eq!(recovered_archive.tip(), Some(0));
+    let empty_hot = neo_storage::DataCache::new(false);
+    let recovery = recovered_archive
+        .reconcile(&empty_hot, None, 64)
+        .expect("truncate uncommitted ahead archive frame");
+    assert_eq!(recovery.truncated_blocks, 1);
+    assert_eq!(recovered_archive.tip(), None);
     assert!(
         !<Hooks as BlockCommitHooks<EmptyCacheBacking>>::allows_empty_block_fast_forward(
             &discarded

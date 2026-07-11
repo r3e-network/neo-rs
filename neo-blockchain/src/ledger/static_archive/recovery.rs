@@ -21,12 +21,14 @@ pub struct StaticArchiveRecovery {
 impl StaticLedgerArchive {
     /// Reconciles the archive against the authoritative canonical store.
     ///
-    /// Static files are a post-canonical mirror in this phase: an incomplete
-    /// tail is repaired by the static-file opener, then every overlapping block
-    /// hash is checked against hot truth before an ahead tail is truncated or
-    /// missing finalized blocks are replayed in bounded batches. Hot data
-    /// remains authoritative until a later, separately verified pruning phase
-    /// is enabled.
+    /// Static-file bytes are durably fenced before the canonical hot
+    /// transaction, while their provider-visible index is published only after
+    /// hot success. The opener recovers a complete unpublished suffix, then
+    /// reconciliation checks every overlapping block hash against hot truth
+    /// before truncating a cold-ahead suffix left by an interrupted canonical
+    /// commit or replaying missing finalized blocks in bounded batches. Hot
+    /// data remains authoritative until a later, separately verified pruning
+    /// phase is enabled.
     pub fn reconcile<B: CacheRead>(
         &self,
         snapshot: &DataCache<B>,

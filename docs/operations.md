@@ -253,7 +253,7 @@ docker inspect --format='{{.State.Health.Status}}' neo-node
 | Section | Key keys | Notes |
 |---------|----------|-------|
 | `[network]` | `network_magic`, `network_type` | Selects the chain. `--network-magic` overrides. |
-| `[storage]` | `backend`, `data_dir`, `read_only`, `static_files_dir`, static-file compression/cache/recovery limits | `backend = "mdbx"` is the production persistent default; `rocksdb` remains an explicit fallback/test backend; `memory` is ephemeral. Setting `static_files_dir` enables the post-canonical compressed Ledger mirror, a derived `ledger.static.index/` MDBX offset index, full-prefix canonical reconciliation, a kernel-held single-writer lease, and the shared historical fallback used by blockchain, consensus, P2P, transaction-admission, wallet, and RPC reads. Current-tip rows remain hot. Hot pruning is not enabled yet. |
+| `[storage]` | `backend`, `data_dir`, `read_only`, `static_files_dir`, static-file compression/cache/recovery limits | `backend = "mdbx"` is the production persistent default; `rocksdb` remains an explicit fallback/test backend; `memory` is ephemeral. Setting `static_files_dir` enables the precommit-durable compressed Ledger mirror, a derived `ledger.static.index/` MDBX offset index, full-prefix canonical reconciliation, a kernel-held single-writer lease, and the shared historical fallback used by blockchain, consensus, P2P, transaction-admission, wallet, and RPC reads. Current-tip rows remain hot. Hot pruning is not enabled yet. |
 | `[p2p]` | `port`, `bind_address`, `seed_nodes`, `max_connections`, `min_desired_connections`, `max_connections_per_address` | `bind_address` defaults to `0.0.0.0`; `max_connections = -1` means unlimited (C# parity). |
 | `[rpc]` | `enabled`, `port`, `bind_address`, `rpc_user`, `rpc_pass`, `disabled_methods`, limits | The daemon wires these into `neo-rpc` at startup. Built-in Basic auth protects HTTP RPC when credentials are configured; use a proxy for TLS and network-level policy. |
 | `[consensus]` | `enabled`, `private_key_hex`, `hsm`, `auto_start` | Off by default; consensus participation starts when `enabled` or `auto_start` is true and requires validator key material. |
@@ -292,11 +292,14 @@ The exact on-disk size depends on the chain height at the time you sync and on w
 
 When `static_files_dir` is enabled, `ledger.static` is the authoritative cold
 frame stream and `ledger.static.index/` is a derived MDBX frame/row-location
-index. Writes always sync archive bytes before advancing the index checkpoint.
-A crash in that interval leaves an archive-ahead suffix; the next startup
-validates, replays, and republishes only that suffix. An index that is missing,
-belongs to another archive identity, or points beyond the archive is discarded
-logically and rebuilt from the frame stream.
+index. The precommit fence syncs archive bytes without advancing the index
+checkpoint; the provider-visible index advances only after hot success. A crash
+before index publication leaves an unpublished archive suffix that open
+validates and republishes. A crash or hot-commit failure after the cold fence can
+therefore recover a cold-ahead height suffix; startup validates it against the
+overlapping hot prefix and truncates it. An index that is missing, belongs to
+another archive identity, or points beyond the archive is discarded logically
+and rebuilt from the frame stream.
 
 Stop the node before manipulating either artifact. If only the sidecar is lost
 or semantically invalid, remove `ledger.static.index/` and restart to rebuild

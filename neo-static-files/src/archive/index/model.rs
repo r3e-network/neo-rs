@@ -288,22 +288,33 @@ impl IndexedFrame for ScannedFrame {
     }
 }
 
-pub(crate) struct PositionedEncodedFrame<'a> {
+pub(crate) struct PositionedEncodedFrame {
     pub(crate) offset: u64,
-    pub(crate) frame: &'a EncodedFrame,
+    header: FrameHeader,
+    rows: Vec<FrameIndexRow>,
 }
 
-impl IndexedFrame for PositionedEncodedFrame<'_> {
+impl PositionedEncodedFrame {
+    pub(crate) fn new(offset: u64, frame: EncodedFrame) -> Self {
+        Self {
+            offset,
+            header: frame.header,
+            rows: frame.rows,
+        }
+    }
+}
+
+impl IndexedFrame for PositionedEncodedFrame {
     fn offset(&self) -> u64 {
         self.offset
     }
 
     fn header(&self) -> FrameHeader {
-        self.frame.header
+        self.header
     }
 
     fn rows(&self) -> &[FrameIndexRow] {
-        &self.frame.rows
+        &self.rows
     }
 }
 

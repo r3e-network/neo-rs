@@ -174,6 +174,7 @@ impl StaticFileArchiveFactory {
                     path: path.to_path_buf(),
                     config: self.config,
                     write_lock: Mutex::new(()),
+                    pending: Mutex::new(None),
                     index,
                     cache: Mutex::new(LruCache::new(
                         NonZeroUsize::new(self.config.cache_capacity)

@@ -1,4 +1,4 @@
-//! Cloneable archive provider and append/read/truncate operations.
+//! Cloneable archive provider and staged publication/read/truncate operations.
 
 use std::fmt;
 use std::fs::File;
@@ -38,22 +38,28 @@ impl fmt::Debug for StaticFileArchive {
 }
 
 impl StaticFileArchive {
-    /// Appends and durably flushes one finalized-height record.
-    pub fn append(&self, record: StaticRecord) -> StaticFileResult<()> {
-        self.append_batch(vec![record])
-    }
-
-    /// Appends a contiguous record batch and performs one durability sync.
-    pub fn append_batch(&self, records: Vec<StaticRecord>) -> StaticFileResult<()> {
+    /// Writes and syncs a contiguous record batch without publishing its index.
+    ///
+    /// The staged frames are invisible to readers until
+    /// [`Self::publish_staged_append`] succeeds. This is the visibility half of
+    /// the cold-first canonical commit protocol: durable cold bytes may exist
+    /// before the hot transaction, but no provider can route a read to them.
+    pub fn stage_append(&self, records: Vec<StaticRecord>) -> StaticFileResult<()> {
         if records.is_empty() {
             return Ok(());
         }
+        let _write_guard = self.inner.write_lock.lock();
+        self.stage_append_locked(records)
+    }
+
+    fn stage_append_locked(&self, records: Vec<StaticRecord>) -> StaticFileResult<()> {
         if !self.is_healthy() {
             return Err(StaticFileError::Unhealthy);
         }
-        let _write_guard = self.inner.write_lock.lock();
-        if !self.is_healthy() {
-            return Err(StaticFileError::Unhealthy);
+        if self.inner.pending.lock().is_some() {
+            return Err(StaticFileError::invalid_index(
+                "static archive already has an unpublished append",
+            ));
         }
 
         validate_continuity(self.tip(), &records)?;
@@ -69,43 +75,68 @@ impl StaticFileArchive {
             .ok_or_else(|| StaticFileError::invalid_index("archive index is not initialized"))?
             .indexed_file_len;
         let mut offset = start;
-        for frame in &encoded {
+        let mut frames = Vec::with_capacity(encoded.len());
+        for frame in encoded {
+            let end = offset
+                .checked_add(frame.header.frame_len)
+                .ok_or_else(|| StaticFileError::invalid(start, "archive offset overflow"))?;
             if let Err(source) = write_all_at(&self.inner.file, offset, &frame.bytes) {
                 self.inner.healthy.store(false, Ordering::Release);
                 return Err(StaticFileError::io(
-                    "append frame",
+                    "stage archive frame",
                     &self.inner.path,
                     source,
                 ));
             }
-            offset = offset
-                .checked_add(frame.header.frame_len)
-                .ok_or_else(|| StaticFileError::invalid(start, "archive offset overflow"))?;
+            frames.push(PositionedEncodedFrame::new(offset, frame));
+            offset = end;
         }
         if let Err(source) = self.inner.file.sync_data() {
             self.inner.healthy.store(false, Ordering::Release);
             return Err(StaticFileError::io(
-                "sync appended frames",
+                "sync staged archive frames",
                 &self.inner.path,
                 source,
             ));
         }
+        *self.inner.pending.lock() = Some(PendingAppend { frames });
+        Ok(())
+    }
 
-        let mut frame_offset = start;
-        let mut positioned = Vec::with_capacity(encoded.len());
-        for frame in &encoded {
-            positioned.push(PositionedEncodedFrame {
-                offset: frame_offset,
-                frame,
-            });
-            frame_offset += frame.header.frame_len;
-        }
-        if let Err(error) = self.inner.index.publish_frames(&positioned) {
+    /// Publishes the index for a previously staged append.
+    ///
+    /// Returns `Ok(())` when no append is pending as well. If publication
+    /// fails, the bytes remain an unpublished suffix for strict startup
+    /// recovery; the handle is poisoned so the caller can stop the writer.
+    pub fn publish_staged_append(&self) -> StaticFileResult<()> {
+        let _write_guard = self.inner.write_lock.lock();
+        self.publish_staged_append_locked()
+    }
+
+    fn publish_staged_append_locked(&self) -> StaticFileResult<()> {
+        let Some(pending) = self.inner.pending.lock().take() else {
+            return Ok(());
+        };
+        if let Err(error) = self.inner.index.publish_frames(&pending.frames) {
             self.inner.healthy.store(false, Ordering::Release);
             return Err(error);
         }
-        debug_assert_eq!(frame_offset, offset);
         Ok(())
+    }
+
+    /// Appends and durably flushes one finalized-height record.
+    pub fn append(&self, record: StaticRecord) -> StaticFileResult<()> {
+        self.append_batch(vec![record])
+    }
+
+    /// Appends a contiguous record batch and performs one durability sync.
+    pub fn append_batch(&self, records: Vec<StaticRecord>) -> StaticFileResult<()> {
+        if records.is_empty() {
+            return Ok(());
+        }
+        let _write_guard = self.inner.write_lock.lock();
+        self.stage_append_locked(records)?;
+        self.publish_staged_append_locked()
     }
 
     /// Truncates every frame above `height` and rolls back indexed row versions.
@@ -114,6 +145,11 @@ impl StaticFileArchive {
     /// a height at or above the current tip is a no-op.
     pub fn truncate_after(&self, height: Option<u32>) -> StaticFileResult<()> {
         let _write_guard = self.inner.write_lock.lock();
+        if self.inner.pending.lock().is_some() {
+            return Err(StaticFileError::invalid_index(
+                "cannot truncate while an archive append is unpublished",
+            ));
+        }
         let state =
             self.inner.index.state().ok_or_else(|| {
                 StaticFileError::invalid_index("archive index is not initialized")
@@ -324,9 +360,14 @@ pub(super) struct ArchiveInner {
     pub(super) path: PathBuf,
     pub(super) config: StaticFileConfig,
     pub(super) write_lock: Mutex<()>,
+    pub(super) pending: Mutex<Option<PendingAppend>>,
     pub(super) index: ArchiveIndex,
     pub(super) cache: Mutex<LruCache<u64, Arc<Vec<u8>>>>,
     pub(super) healthy: AtomicBool,
+}
+
+pub(super) struct PendingAppend {
+    frames: Vec<PositionedEncodedFrame>,
 }
 
 fn validate_continuity(tip: Option<u32>, records: &[StaticRecord]) -> StaticFileResult<()> {

@@ -115,9 +115,9 @@ where
 
 /// Returns the production downloader policy for the composed storage domains.
 ///
-/// Static archive hooks retain exact Ledger rows until the canonical batch
-/// commits. Bound the downloaded batch so that staging remains predictable
-/// while preserving one store commit and archive sync for each bounded batch.
+/// Static archive hooks retain exact Ledger rows until the precommit durability
+/// fence. Bound the downloaded batch so staging remains predictable while
+/// preserving one store commit and archive sync for each bounded batch.
 #[must_use]
 pub(super) fn p2p_block_download_config(
     static_archive_enabled: bool,

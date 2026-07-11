@@ -443,17 +443,20 @@ The detailed rules for this style live in
   released automatically on process exit. `block_committing` captures the exact
   C#-compatible block-hash,
   trimmed-block, final transaction-state, and signer-conflict rows in memory;
-  only `canonical_commit_succeeded` appends the whole accepted batch and syncs
-  it. A failed canonical commit discards the pending archive rows. A failed
-  post-canonical append requests a recoverable restart, and startup replays the
-  lagging prefix from MDBX/RocksDB. The archive file is authoritative; only
-  after its bytes are synced does one durable sidecar MDBX transaction publish
-  frame boundaries, all versioned row locations, tip, archive identity, and
-  indexed length. Clean open therefore validates one published boundary and
+  `fence_precommit_durability` appends and syncs the whole accepted batch before
+  the canonical MDBX/RocksDB transaction, but leaves those frames absent from
+  the provider-visible index. `canonical_commit_succeeded` then publishes frame
+  boundaries, all versioned row locations, tip, archive identity, and indexed
+  length in one sidecar MDBX transaction. Failure before the cold fence discards
+  pending rows. Failure or interruption after it leaves an unpublished suffix;
+  startup recovers that suffix, validates the overlapping canonical prefix, and
+  truncates any cold-ahead heights. The archive file is authoritative relative
+  to its rebuildable sidecar. Clean open validates one published boundary and
   scans only an unpublished suffix instead of rebuilding an O(rows) in-memory
   map. Missing, stale, or ahead sidecars are rebuilt from archive frames, and
   truncation removes only discarded row versions so overwritten keys reveal
-  their retained value. Normal reads checksum the full compressed frame;
+  their retained value.
+  Normal reads checksum the full compressed frame;
   explicit `scrub` verifies every frame and sidecar entry. Offline
   `neo-db-probe` uses the same optional hot/cold provider for historical Ledger
   replay and inspection after reconciling the archive to the selected hot

@@ -373,15 +373,17 @@ Key points:
   `StaticLedgerProvider` as the cold side and carries the same concrete
   optional provider through blockchain commands, consensus, transaction
   admission, local P2P serving, wallet reads, and historical RPC queries.
-  Final Ledger rows are captured from the post-execution snapshot, appended
-  only after canonical durability, and reconciled from the hot prefix at
-  startup. The archive starts at genesis, verifies every retained block hash
-  against canonical storage, and holds one kernel writer lease across all
-  provider clones. Archive frames sync before a derived MDBX transaction
-  publishes frame offsets and versioned row locations. Clean startup validates
-  that checkpoint and scans only an unpublished suffix; a missing, stale, or
-  ahead sidecar is rebuilt from authoritative frames. Current-tip reads remain
-  hot. `neo-db-probe` composes the same optional static provider for historical
+  Final Ledger rows are captured from the post-execution snapshot. The
+  precommit fence writes and syncs their frames before the canonical hot
+  transaction but keeps them out of the provider-visible index; canonical
+  success then publishes frame offsets and versioned row locations in one MDBX
+  transaction. The archive starts at genesis, verifies every retained block
+  hash against canonical storage, and holds one kernel writer lease across all
+  provider clones. Clean startup validates the sidecar checkpoint and scans only
+  an unpublished suffix; a missing or stale sidecar is rebuilt from
+  authoritative frames, while a recovered cold-ahead suffix left by a failed
+  hot commit is validated and truncated. Current-tip reads remain hot.
+  `neo-db-probe` composes the same optional static provider for historical
   Ledger replay and raw Ledger-row inspection after canonical reconciliation,
   and can scrub an existing archive without opening the hot store. Hot pruning
   is not enabled yet because atomic

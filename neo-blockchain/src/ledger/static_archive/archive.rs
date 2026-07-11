@@ -64,6 +64,20 @@ impl StaticLedgerArchive {
             .map_err(|error| static_file_error("append Ledger archive", error))
     }
 
+    /// Durably stages one contiguous batch without exposing it to readers.
+    pub fn stage_records(&self, records: Vec<StaticRecord>) -> CoreResult<()> {
+        self.files
+            .stage_append(records)
+            .map_err(|error| static_file_error("stage Ledger archive", error))
+    }
+
+    /// Publishes the index for the batch staged before canonical durability.
+    pub fn publish_staged_records(&self) -> CoreResult<()> {
+        self.files
+            .publish_staged_append()
+            .map_err(|error| static_file_error("publish staged Ledger archive", error))
+    }
+
     pub(crate) fn get(&self, key: &StorageKey) -> CoreResult<Option<Vec<u8>>> {
         self.files
             .get(key.as_bytes().as_ref())

@@ -284,6 +284,14 @@ where
                 .flush_durable()
                 .map_err(|error| format!("indexer durability fence failed: {error}"))?;
         }
+        if let Some(archive) = &self.static_archive {
+            let pending = std::mem::take(&mut *self.pending_static_records.lock());
+            if !pending.is_empty() {
+                archive
+                    .stage_records(pending)
+                    .map_err(|error| format!("static archive durability fence failed: {error}"))?;
+            }
+        }
         Ok(())
     }
 
@@ -292,18 +300,14 @@ where
         let Some(archive) = &self.static_archive else {
             return;
         };
-        let pending = std::mem::take(&mut *self.pending_static_records.lock());
-        if pending.is_empty() {
-            return;
-        }
-        if let Err(error) = archive.append_records(pending) {
+        if let Err(error) = archive.publish_staged_records() {
             warn!(
                 target: "neo::static_files",
                 error = %error,
-                "canonical Ledger committed but static archive publication failed; startup reconciliation will repair the lag"
+                "canonical Ledger committed but staged archive publication failed; startup recovery will publish or replay the suffix"
             );
             self.replay_guard
-                .request_recoverable_restart("post-canonical static archive publication failed");
+                .request_recoverable_restart("staged static archive publication failed");
         }
     }
 

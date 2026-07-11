@@ -13,7 +13,8 @@
 //! - `index`: MDBX frame/row locations and strict archive scanning.
 //! - `io`: Positioned file I/O and directory durability helpers.
 //! - `lease`: Kernel-held single-writer exclusion.
-//! - `provider`: Cloneable append, lookup, truncate, and scrub capability.
+//! - `provider`: Cloneable staged publication, lookup, truncate, and scrub
+//!   capability.
 
 use std::path::Path;
 

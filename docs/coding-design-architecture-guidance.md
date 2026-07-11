@@ -273,6 +273,10 @@ Priority order for crate refactors:
    and TokensTracker stage pre-commit data but persist only post-canonical, so
    they must not pay the marker fsync cost. Do not call MPT rollback as a
    generic repair because pruning may already have removed required nodes.
+   A self-reconciling immutable mirror may fence before canonical storage
+   without the poison marker only when startup validates the shared prefix and
+   deterministically truncates every cold-ahead suffix. Do not apply this
+   exception to mutable observer stores.
    Cancel the node on every canonical durability failure and stop the active
    writer command immediately.
    Per-peer request-window decisions belong in

@@ -32,6 +32,42 @@ fn append_lookup_and_reopen_preserve_latest_rows() {
 }
 
 #[test]
+fn staged_append_remains_invisible_until_index_publication() {
+    let temp = tempdir().expect("tempdir");
+    let archive = open_archive(&temp.path().join("ledger.static"));
+
+    archive
+        .stage_append(vec![StaticRecord::new(0, vec![row(b"hidden", b"value")])])
+        .expect("stage durable frame");
+
+    assert_eq!(archive.tip(), None);
+    assert_eq!(archive.get(b"hidden").expect("hidden lookup"), None);
+    archive
+        .append_batch(Vec::new())
+        .expect("empty append remains a no-op");
+    assert_eq!(archive.tip(), None);
+    assert!(
+        archive
+            .stage_append(vec![StaticRecord::new(0, vec![row(b"second", b"value")],)])
+            .is_err()
+    );
+    assert!(archive.truncate_after(None).is_err());
+
+    archive
+        .publish_staged_append()
+        .expect("publish staged frame index");
+
+    assert_eq!(archive.tip(), Some(0));
+    assert_eq!(
+        archive.get(b"hidden").expect("published lookup"),
+        Some(b"value".to_vec())
+    );
+    archive
+        .publish_staged_append()
+        .expect("repeated publication is a no-op");
+}
+
+#[test]
 fn append_rejects_duplicate_gap_and_duplicate_rows() {
     let temp = tempdir().expect("tempdir");
     let archive = open_archive(&temp.path().join("ledger.static"));

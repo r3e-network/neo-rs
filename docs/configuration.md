@@ -73,22 +73,26 @@ Notes:
   `rocksdb`.
 - A persistent backend (`mdbx` or `rocksdb`) with no directory and no
   `--storage-path` is an error.
-- Static files are currently a **post-canonical mirror**. The node captures the
-  exact Ledger rows before commit, appends them only after MDBX/RocksDB commits,
-  verifies the complete retained block-hash prefix and repairs lag from the hot
-  store at startup, and serves clean hot misses through the same provider
+- Static files are a **precommit-durable mirror**. The node captures the exact
+  Ledger rows, writes and syncs provider-invisible frames before the canonical
+  MDBX/RocksDB transaction, and publishes their sidecar index only after hot
+  success. Startup verifies the complete retained block-hash prefix, recovers
+  and truncates a cold-ahead suffix left by a failed hot commit, repairs legacy
+  lag from the hot store, and serves clean hot misses through the same provider
   traits. Hot Ledger pruning is not enabled yet, so operators should budget for
   both copies while this correctness-first phase is active.
 - Opening `ledger.static` takes an exclusive OS lock on the archive file
   itself. A second node using the same file, including through a symlink or
   hard link, fails startup; the kernel releases the lease automatically when
   the owning process exits, so no stale lockfile cleanup is required.
-- Static-file publication is ordered `ledger.static append -> sync_data -> MDBX
-  index transaction`. The index stores frame boundaries plus every row-location
-  version, so latest lookup and rollback after truncation do not rebuild a
-  process-local map. A clean open validates the archive identity and published
-  tail, then scans and republishes only bytes beyond the indexed file length.
-  Missing, stale, or archive-ahead indexes rebuild from authoritative frames.
+- Static-file publication is ordered `ledger.static append -> sync_data -> hot
+  canonical transaction -> MDBX index transaction`. Until the final index
+  transaction, staged frames are invisible to providers. The index stores frame
+  boundaries plus every row-location version, so latest lookup and rollback
+  after truncation do not rebuild a process-local map. A clean open validates
+  the archive identity and published tail, then scans and republishes only bytes
+  beyond the indexed file length. Missing, stale, or archive-ahead indexes
+  rebuild from authoritative frames before canonical reconciliation.
 - Reads decompress and checksum the complete containing frame before returning
   a value. Published corruption is reported and is never guessed to be a torn
   write; only an incomplete or corrupt **unpublished** final suffix may be
@@ -104,9 +108,12 @@ Notes:
   Larger batches from other import sources fall back to per-block durability,
   bounding pending Ledger-row memory instead of accumulating an entire large
   replay batch.
-- A static archive write failure requests a clean restart; it does not roll
-  back or poison already durable canonical state. Startup repairs the missing
-  prefix before exposing local reads.
+- A precommit archive frame write or sync failure rejects the canonical commit
+  before hot state is published and stops the writer. If the archive fence
+  completed but the hot commit did not, startup validates and truncates the
+  cold-ahead suffix before exposing local reads. If hot commit succeeds but the
+  sidecar index publication fails, the node requests a recoverable restart and
+  startup republishes the durable suffix.
 
 ### `[p2p]`
 
