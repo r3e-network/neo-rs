@@ -436,9 +436,9 @@ impl NetworkHandle {
     }
 
     /// Update the locally advertised block height (C# ledger
-    /// `CurrentIndex`), advertised in version + ping payloads and used to
-    /// gate block-sync requests. Driven by the ledger's block-imported
-    /// events from the composition root.
+    /// `CurrentIndex`) carried by version and ping payloads. The composition
+    /// root drives this from block-imported events; the shared downloader
+    /// independently reads canonical height from the blockchain service.
     pub async fn set_block_height(&self, height: u32) -> NetworkResult<()> {
         self.cmd_tx
             .send(NetworkCommand::SetBlockHeight { height })

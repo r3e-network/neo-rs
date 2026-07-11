@@ -28,9 +28,9 @@ use tokio_util::sync::CancellationToken;
 use neo_config::ProtocolSettings;
 use neo_network::MessageCommand;
 use neo_network::{
-    BlockDownloadPeer, BlockRangeAssignment, BlockRequest, BlockSyncMode, ChannelsConfig,
-    ConnectionTimeouts, InboundInventory, LocalIdentity, LocalNodeService, NetworkEvent,
-    NetworkHandle, PeerId, PeerRegistry, RemoteNodeService, RemoteNodeState,
+    BlockRangeAssignment, BlockRequest, ChannelsConfig, ConnectionTimeouts, InboundInventory,
+    LocalIdentity, LocalNodeService, NetworkEvent, NetworkHandle, PeerId, PeerRegistry,
+    RemoteNodeService, RemoteNodeState,
 };
 use neo_network::{Message, MessageCodec};
 use neo_payloads::p2p_payloads::{
@@ -196,6 +196,27 @@ async fn complete_handshake(
     assert_eq!(verack.command, MessageCommand::Verack);
     framed.send(verack_message()).await.expect("send verack");
     node_version
+}
+
+/// Wait until the session has processed peer `verack` and published itself as
+/// an eligible downloader peer. Sending the frame alone does not establish
+/// ordering against commands on the independent handle channel.
+async fn await_download_peer_ready(registry: &PeerRegistry, peer_id: PeerId) {
+    let deadline = tokio::time::Instant::now() + TEST_TIMEOUT;
+    loop {
+        if registry
+            .download_peers()
+            .iter()
+            .any(|peer| peer.peer_id == peer_id)
+        {
+            return;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed out waiting for peer {peer_id} to become download-ready"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
 }
 
 async fn recv_getblockbyindex(fake: &mut FakeFramed) -> GetBlockByIndexPayload {

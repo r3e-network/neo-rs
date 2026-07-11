@@ -62,7 +62,6 @@ where
                 let payload = PingPayload::deserialize(&mut reader).map_err(|err| {
                     CloseReason::ProtocolViolation(format!("invalid ping payload: {err}"))
                 })?;
-                self.peer_last_block_index = payload.last_block_index;
                 self.registry
                     .record_block_height(self.peer_id, payload.last_block_index);
                 let pong =
@@ -85,7 +84,6 @@ where
                 let payload = PingPayload::deserialize(&mut reader).map_err(|err| {
                     CloseReason::ProtocolViolation(format!("invalid pong payload: {err}"))
                 })?;
-                self.peer_last_block_index = payload.last_block_index;
                 self.registry
                     .record_block_height(self.peer_id, payload.last_block_index);
                 Ok(())

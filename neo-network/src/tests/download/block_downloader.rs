@@ -52,50 +52,11 @@ fn block_download_batch_converts_to_runtime_sync_batch() {
 }
 
 #[test]
-fn block_request_scheduler_requests_two_protocol_windows() {
-    let mut scheduler = BlockRequestScheduler::default();
-
-    let first = scheduler.next_request(0, 5_000).expect("first request");
-    let second = scheduler.next_request(0, 5_000).expect("second request");
-    let third = scheduler.next_request(0, 5_000);
-
-    assert_eq!(first, BlockRequest::new(1, 500));
-    assert_eq!(second, BlockRequest::new(501, 500));
-    assert!(third.is_none());
-}
-
-#[test]
-fn block_request_scheduler_resumes_from_persisted_tip() {
-    let mut scheduler = BlockRequestScheduler::default();
-    scheduler
-        .next_request(42, 100)
-        .expect("request after durable tip");
-
-    assert_eq!(scheduler.requested_to(), 100);
-}
-
-#[test]
-fn block_request_scheduler_resets_when_caught_up() {
-    let mut scheduler = BlockRequestScheduler::default();
-    scheduler.next_request(0, 100).expect("request");
-
-    assert!(scheduler.next_request(100, 100).is_none());
-    assert_eq!(scheduler.requested_to(), 100);
-    assert_eq!(scheduler.stall_ticks(), 0);
-}
-
-#[test]
-fn block_request_scheduler_rewinds_after_stall_limit() {
-    let mut scheduler = BlockRequestScheduler::default();
-    scheduler.next_request(0, 5_000).expect("first");
-    scheduler.next_request(0, 5_000).expect("second");
-
-    for _ in 0..BlockRequestScheduler::STALL_LIMIT {
-        scheduler.record_tick(0, 5_000);
-    }
-
-    let retry = scheduler.next_request(0, 5_000).expect("retry after stall");
-    assert_eq!(retry, BlockRequest::new(1, 500));
+fn block_request_cap_matches_the_neo_inventory_limit() {
+    assert_eq!(
+        BlockRequest::MAX_COUNT,
+        neo_payloads::inv_payload::MAX_HASHES_COUNT as u32
+    );
 }
 
 #[test]
@@ -118,6 +79,29 @@ fn block_range_scheduler_retries_failed_range_on_another_peer() {
     assert_eq!(retry.request, first.request);
     assert_eq!(retry.peer_id, second_peer);
     assert_eq!(retry.attempt, 1);
+}
+
+#[test]
+fn block_range_scheduler_limits_each_peer_to_one_in_flight_range() {
+    let peer_id = PeerId::from_raw(1);
+    let config = BlockDownloadConfig::new(8, 64);
+    let mut scheduler = CrossPeerBlockRangeScheduler::new(0, 128, config);
+    let peers = [BlockDownloadPeer::new(peer_id, 128)];
+
+    let first = scheduler.next_assignment(&peers).expect("first assignment");
+    assert!(
+        scheduler.next_assignment(&peers).is_none(),
+        "one peer cannot serve overlapping correlated range fetches"
+    );
+
+    scheduler
+        .record_success(first)
+        .expect("complete first range");
+    let second = scheduler
+        .next_assignment(&peers)
+        .expect("peer becomes eligible after completion");
+    assert_eq!(second.peer_id, peer_id);
+    assert_eq!(second.request.start, first.request.end().saturating_add(1));
 }
 
 #[test]

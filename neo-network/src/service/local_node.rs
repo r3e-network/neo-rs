@@ -71,7 +71,6 @@ use crate::peer_registry::PeerRegistry;
 use crate::remote_node::{
     BlockSource, InboundInventory, NoBlockSource, RemoteNodeService, RemoteNodeState,
 };
-use crate::service::block_sync_mode::BlockSyncMode;
 use crate::spawn::spawn_guarded;
 
 /// Time we wait for the outbound TCP dial to complete before
@@ -124,8 +123,6 @@ where
     /// Optional read-only ledger view handed to every per-peer service
     /// so it can serve peers' block requests.
     block_source: Option<Arc<B>>,
-    /// Owner of outbound block range requests.
-    block_sync_mode: BlockSyncMode,
     /// Cadence of the peer-discovery maintenance tick. Defaults to
     /// [`DISCOVERY_INTERVAL`] (C# `Peer.OnTimer` = 5 s); overridable so
     /// integration tests can drive discovery on a fast cadence.
@@ -204,7 +201,6 @@ impl LocalNodeService<NoBlockSource> {
             accept_handle: None,
             inbound_tx: None,
             block_source: None,
-            block_sync_mode: BlockSyncMode::default(),
             discovery_interval: DISCOVERY_INTERVAL,
         };
         (service, handle)
@@ -251,19 +247,8 @@ where
             accept_handle: self.accept_handle,
             inbound_tx: self.inbound_tx,
             block_source: Some(block_source),
-            block_sync_mode: self.block_sync_mode,
             discovery_interval: self.discovery_interval,
         }
-    }
-
-    /// Select which component owns outbound block-sync range requests.
-    ///
-    /// Defaults to [`BlockSyncMode::LegacyPerPeer`]. Production composition can
-    /// switch to [`BlockSyncMode::ExternalCoordinator`] when a shared
-    /// `BlockDownloadCoordinator` task owns cross-peer scheduling.
-    pub fn with_block_sync_mode(mut self, mode: BlockSyncMode) -> Self {
-        self.block_sync_mode = mode;
-        self
     }
 
     /// Channel configuration in effect for this service.
@@ -415,7 +400,8 @@ where
             }
             NetworkCommand::SetBlockHeight { height } => {
                 // Shared with every per-peer task via the `Arc<LocalIdentity>`;
-                // advertised in version/ping and read to gate block-sync.
+                // used only for version/ping height advertisement. The shared
+                // downloader reads canonical height from `BlockchainHandle`.
                 self.identity.set_block_height(height);
             }
             NetworkCommand::Shutdown => {
@@ -461,7 +447,6 @@ where
                 self.shutdown.clone(),
                 self.inbound_tx.clone(),
                 self.block_source.clone(),
-                self.block_sync_mode,
             ),
         ));
 
@@ -491,7 +476,6 @@ where
             self.shutdown.clone(),
             self.block_source.clone(),
         );
-        let service = service.with_block_sync_mode(self.block_sync_mode);
         let service = match &self.inbound_tx {
             Some(tx) => service.with_inventory_sink(tx.clone()),
             None => service,
@@ -694,7 +678,6 @@ async fn accept_loop<B>(
     shutdown: CancellationToken,
     inbound_tx: Option<mpsc::Sender<InboundInventory>>,
     block_source: Option<Arc<B>>,
-    block_sync_mode: BlockSyncMode,
 ) where
     B: BlockSource + 'static,
 {
@@ -720,7 +703,6 @@ async fn accept_loop<B>(
                             shutdown.clone(),
                             block_source.clone(),
                         );
-                        let service = service.with_block_sync_mode(block_sync_mode);
                         let service = match &inbound_tx {
                             Some(tx) => service.with_inventory_sink(tx.clone()),
                             None => service,

@@ -92,10 +92,9 @@ pub enum NetworkCommand {
     },
 
     /// Update the locally advertised block height (C# ledger
-    /// `CurrentIndex`). Advertised in the version + ping payloads and
-    /// used to gate per-peer block-sync requests (request blocks only
-    /// while a peer is ahead). Fire-and-forget; driven by the ledger's
-    /// block-imported events.
+    /// `CurrentIndex`). Advertised in version and ping payloads so peers can
+    /// select this node for their own sync work. Fire-and-forget; driven by the
+    /// ledger's block-imported events.
     SetBlockHeight {
         /// The new local block height.
         height: u32,

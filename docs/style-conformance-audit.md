@@ -121,6 +121,14 @@ High-signal clusters found during the first pass:
   cleanup share one durable `StoreMaintenanceBatch`, so operational state cannot
   leak into typed scans, deterministic dumps, or state-root calculation.
 
+- P2P range sync has one production owner. `BlockDownloadCoordinator` composes
+  cross-peer assignment, ordered buffering, and correlated peer fetches; the
+  per-peer correlation is ready-only, bypasses the generic handshake queue, has
+  an absolute deadline that unrelated traffic cannot refresh, and is cleared
+  without tearing down a healthy connection. The
+  uncomposed network task manager, per-peer timer scheduler, ownership mode, and
+  fire-and-forget request API were deleted.
+
 - `neo-manifest/src/manifest/contract_manifest.rs` has been decomposed into
   root/domain, `json`, `stack`, `wire`, `validation`, and typed `fields`
   modules. The remaining manifest cleanup is to keep permission/trust policy

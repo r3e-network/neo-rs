@@ -345,16 +345,23 @@ with the queue and store-backed checkpoints and registers it for service
 lookup, while `SyncDownloadImportDriver` drains production coordinator-backed
 peer batches into the import-stage driver.
 `neo-network::BlockDownloadBatch` converts into `neo_runtime::SyncBlockBatch`,
-preserving the single ordered import path. `PeerSession` uses the per-peer
-`BlockRequestScheduler`, and the transport-agnostic
-`BlockDownloadCoordinator` now composes `CrossPeerBlockRangeScheduler` with the
-ordered response buffer behind the `BlockDownloader` stream boundary.
+preserving the single ordered import path. `BlockRequest` carries the protocol
+cap, while the transport-agnostic `BlockDownloadCoordinator` composes the sole
+`CrossPeerBlockRangeScheduler` with the ordered response buffer behind the
+`BlockDownloader` stream boundary. `PeerSession` only executes correlated
+range assignments, and the scheduler limits each peer to one in-flight range to
+match that response state. Each peer correlation has an absolute deadline that
+unrelated traffic cannot refresh. It is accepted only in the `Ready` state and
+never enters the generic handshake queue; expiry leaves the connection
+available for coordinator-driven retry. The uncomposed network
+`TaskManagerService`, per-peer timer scheduler, and fire-and-forget range API
+were removed.
 `Arc<PeerRegistry>` implements `BlockRangeFetcher` by resolving the assigned
 peer handle, issuing `GetBlockByIndex`, and collecting matching block frames
 into a `BlockDownloadBatch`; node composition shares/registers that registry
-and the registry exposes advertised-height download snapshots. Production
-startup now runs a supervised coordinator-backed downloader/import task while
-the broader staged pipeline remains future work.
+and the registry exposes ready, advertised-height download snapshots.
+Production startup now runs a supervised coordinator-backed downloader/import
+task while the broader staged pipeline remains future work.
 
 ---
 
@@ -432,31 +439,32 @@ pub struct NodeTaskManager {
 
 ### neo-rs (current)
 
-`LocalNodeService` owns TCP accept loop, spawns `RemoteNodeService` per-peer.
-Incoming blocks routed through `mpsc` to blockchain service. Block requests are
-planned by a reusable per-peer scheduler, while received bodies still arrive via
-wire `block` messages and the inventory sink. The
+`LocalNodeService` owns the TCP accept loop and spawns one `RemoteNodeService`
+per peer. Relayed blocks route through `mpsc` to the blockchain service, while
+coordinator-assigned bodies are correlated inside the peer session and returned
+as download batches. The
 `neo_network::BlockDownloader` stream boundary and `BlockDownloadConfig` policy
 records now exist, with a channel-backed adapter for tests/composition roots.
 `BlockDownloadBatch` converts into `neo_runtime::SyncBlockBatch`, which the
 runtime sync driver can feed into the import queue. `neo_system` provides
 `SyncDownloadImportDriver`, which drains any `BlockDownloader` stream into the
 node-composed `SyncImportPipeline` and surfaces downloader/import errors through
-the shared runtime error vocabulary. The per-peer
-`BlockRequestScheduler` owns the `GetBlockByIndex` request-window policy
-used by `PeerSession` (`500` blocks per request, `1000` blocks in flight,
-stall rewind).
+the shared runtime error vocabulary. `BlockRequest` owns the Neo 500-block wire
+cap; there is no autonomous per-peer scheduler.
 `CrossPeerBlockRangeScheduler` (cross-peer selection, peer bias, bounded
-in-flight range assignment, retry accounting) and `OrderedBlockBatchBuffer`
+in-flight range assignment with one range per peer, retry accounting) and
+`OrderedBlockBatchBuffer`
 (holds out-of-order peer responses until the next contiguous height is
 available) are composed by `BlockDownloadCoordinator`, a transport-agnostic
 `BlockDownloader` stream over any `BlockRangeFetcher`. Live peer transport now
-has a registry-backed fetcher that uses `RemoteNodeHandle::fetch_blocks_by_index`;
-`PeerRegistry::download_peers` provides advertised-height peer snapshots, and
-the node composition root registers the shared registry. `ChannelBlockDownloader`
-remains available for tests and composition roots. Node startup now disables
-legacy per-peer automatic block requests and runs the coordinator-backed
-downloader/import driver as the production owner of P2P range sync.
+has a registry-backed fetcher that uses
+`RemoteNodeHandle::fetch_blocks_by_index`; `PeerRegistry::download_peers`
+provides ready, advertised-height peer snapshots, and the node composition root
+registers the shared registry. `ChannelBlockDownloader` remains available for
+tests and composition roots. Node startup runs the coordinator-backed
+downloader/import driver as the only owner of P2P range sync. The earlier
+uncomposed network task manager and per-peer compatibility request loop were
+deleted.
 
 ### Reth innovations
 
@@ -488,7 +496,7 @@ pub trait BlockDownloader:
     fn config(&self) -> &BlockDownloadConfig;
     fn poll_next_batch(...) -> Poll<Option<NetworkResult<BlockDownloadBatch>>>;
 }
-// WIRED: per-peer compatibility policy (BlockRequestScheduler, used by PeerSession).
+// WIRED: protocol request cap (BlockRequest::MAX_COUNT).
 // WIRED: cross-peer range policy + retry accounting (CrossPeerBlockRangeScheduler).
 // WIRED: contiguous response release (OrderedBlockBatchBuffer).
 // WIRED: transport-agnostic coordinator stream (BlockDownloadCoordinator).
@@ -649,7 +657,7 @@ pub struct TransactionState {
    adapter and compact derive must preserve those bytes.
 3. **Block import queue with concurrent verification** — reusable runtime boundary implemented and composed by `neo_system::SyncImportPipeline`.
 4. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`; durable store-backed checkpoints are available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, persist in isolated maintenance metadata through atomic `StoreMaintenanceBatch` commits, node composition creates the import-stage queue/checkpoint handle, and `SyncDownloadImportDriver` now receives production P2P coordinator batches.
-5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; `neo-system` has the download-to-import bridge; per-peer `BlockRequestScheduler` remains as the legacy compatibility path; `BlockDownloadCoordinator` composes `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) and `OrderedBlockBatchBuffer` (contiguous response release) behind a transport-agnostic `BlockRangeFetcher`; `Arc<PeerRegistry>` implements live peer fetching through `RemoteNodeHandle::fetch_blocks_by_index`; `PeerRegistry::download_peers` exposes advertised-height peer snapshots; node composition registers the shared registry, disables legacy per-peer block requests, and starts the coordinator-backed downloader/import task.
+5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; `neo-system` has the download-to-import bridge; `BlockDownloadCoordinator` is the single range owner and composes `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) with `OrderedBlockBatchBuffer` (contiguous response release) behind a transport-agnostic `BlockRangeFetcher`; `Arc<PeerRegistry>` implements live peer fetching through the correlated `RemoteNodeHandle::fetch_blocks_by_index` API; each peer fetch is ready-only, bypasses the generic handshake queue, has an absolute deadline independent of connection-idle traffic, and clears its correlation state on expiry; `PeerRegistry::download_peers` exposes ready, advertised-height peer snapshots; node composition registers the shared registry and starts the coordinator-backed downloader/import task. The unused network task manager, per-peer timer scheduler, ownership mode, and fire-and-forget request API were removed.
 6. **Hot/Cold/Static tiering integration** — append-only archive, exact Ledger
    adapter, cold-first precommit publication, recovery, persistent archive
    offsets, archive-aware offline tooling, and shared runtime cold reads are

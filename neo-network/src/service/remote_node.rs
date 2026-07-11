@@ -30,16 +30,20 @@
 //!    `(remote_ip, listener_port)` endpoint is published so
 //!    `getpeers` serves the C# `Listener` value.
 //! 3. The second inbound message **must** be `verack`; afterwards the
-//!    data plane is open. Post-handshake messages other than the
-//!    handshake commands are ignored-and-logged: the full protocol
-//!    dispatcher (`RemoteNode.ProtocolHandler` message handlers) is
-//!    future work, and per C# a repeated `version`/`verack` is a
-//!    protocol violation that disconnects.
+//!    data plane is open. The session dispatches supported inventory,
+//!    discovery, liveness, and ledger-serving messages; unknown commands are
+//!    ignored and logged. Per C#, a repeated `version`/`verack` is a protocol
+//!    violation that disconnects.
 //! 4. EOF, decode errors, write errors, and inactivity timeouts
 //!    (C# `Connection.cs` 10 s initial / 60 s rolling) all tear the
 //!    connection down: the peer is removed from the shared
 //!    [`PeerRegistry`] and a `PeerDisconnected` event is published —
 //!    this task is the *only* publisher of that event for its peer.
+//! 5. A coordinator-assigned block range has an independent absolute
+//!    deadline and is accepted only after the session reaches `Ready`.
+//!    Correlated requests never enter the generic handshake queue. Expiry
+//!    fails and clears only that fetch so a healthy connection remains
+//!    available for a later assignment.
 
 use std::fmt;
 use std::net::SocketAddr;
@@ -51,7 +55,7 @@ use tokio_util::codec::Framed;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::download::{BlockDownloadBatch, BlockRequest, BlockRequestScheduler};
+use crate::download::{BlockDownloadBatch, BlockRequest};
 use crate::wire::MessageCodec;
 use neo_payloads::{Block, ExtensiblePayload, Header, Transaction};
 use neo_primitives::UInt256;
@@ -62,7 +66,6 @@ use crate::event::NetworkEvent;
 use crate::local_identity::LocalIdentity;
 use crate::peer_id::PeerId;
 use crate::peer_registry::PeerRegistry;
-use crate::service::block_sync_mode::BlockSyncMode;
 
 #[path = "../remote_node/session.rs"]
 mod session;
@@ -213,14 +216,6 @@ pub enum InventoryItem {
 pub enum RemoteNodeCommand {
     /// Send an inventory item to the peer.
     SendInventory(InventoryItem),
-    /// Request a contiguous block range from this peer via `GetBlockByIndex`.
-    RequestBlocksByIndex {
-        /// Planned range to request.
-        request: BlockRequest,
-        /// Completion signal after the frame has been sent, queued for the
-        /// post-handshake flush, or rejected locally.
-        reply: oneshot::Sender<NetworkResult<()>>,
-    },
     /// Request and collect a contiguous block range from this peer.
     FetchBlocksByIndex {
         /// Planned range to request.
@@ -295,29 +290,6 @@ impl RemoteNodeHandle {
             .map_err(|_| crate::error::NetworkError::LocalShuttingDown)
     }
 
-    /// Ask this peer for a contiguous block range using `GetBlockByIndex`.
-    ///
-    /// This is the request-side seam used by the future transport-backed
-    /// [`crate::BlockRangeFetcher`]. Response correlation remains owned by the
-    /// caller/fetcher layer; this method only validates and sends the wire
-    /// request through the per-peer session. If the handshake is still
-    /// finishing, the session queues the frame and flushes it at `verack`, the
-    /// same policy used for outbound inventory.
-    pub async fn request_blocks_by_index(&self, request: BlockRequest) -> NetworkResult<()> {
-        Self::validate_block_index_request(request)?;
-        let (reply_tx, reply_rx) = oneshot::channel();
-        self.cmd_tx
-            .send(RemoteNodeCommand::RequestBlocksByIndex {
-                request,
-                reply: reply_tx,
-            })
-            .await
-            .map_err(|_| crate::error::NetworkError::LocalShuttingDown)?;
-        reply_rx
-            .await
-            .map_err(|_| crate::error::NetworkError::LocalShuttingDown)?
-    }
-
     /// Ask this peer for a contiguous block range and wait for the matching
     /// `block` frames.
     ///
@@ -325,7 +297,9 @@ impl RemoteNodeHandle {
     /// [`crate::BlockRangeFetcher`]. The per-peer session accepts only one
     /// explicit fetch at a time so range responses cannot be interleaved
     /// ambiguously; callers that need concurrency should spread assignments
-    /// across peers through `BlockDownloadCoordinator`.
+    /// across peers through `BlockDownloadCoordinator`. Fetches are accepted
+    /// only after the peer handshake reaches [`RemoteNodeState::Ready`]; they
+    /// are never queued with generic pre-handshake outbound messages.
     pub async fn fetch_blocks_by_index(
         &self,
         request: BlockRequest,
@@ -350,11 +324,11 @@ impl RemoteNodeHandle {
                 "GetBlockByIndex request count must be greater than zero".to_string(),
             ));
         }
-        if request.count > BlockRequestScheduler::MAX_BLOCKS_PER_REQUEST {
+        if request.count > BlockRequest::MAX_COUNT {
             return Err(crate::error::NetworkError::Protocol(format!(
                 "GetBlockByIndex request count {} exceeds protocol cap {}",
                 request.count,
-                BlockRequestScheduler::MAX_BLOCKS_PER_REQUEST
+                BlockRequest::MAX_COUNT
             )));
         }
         i16::try_from(request.count).map(|_| ()).map_err(|_| {
@@ -459,15 +433,13 @@ where
     /// Cancellation token shared with the local node; fires on node
     /// shutdown.
     shutdown: CancellationToken,
-    /// Inactivity timeouts (C# `Connection.cs` constants by default).
+    /// Connection-liveness and correlated-fetch timeouts.
     timeouts: ConnectionTimeouts,
     /// Optional sink for blocks/transactions decoded from this peer,
     /// drained by the composition root into the blockchain service.
     inbound_tx: Option<mpsc::Sender<InboundInventory>>,
     /// Optional read-only ledger view for serving block requests.
     block_source: Option<Arc<B>>,
-    /// Owner of outbound block range requests.
-    block_sync_mode: BlockSyncMode,
 }
 
 impl<B> fmt::Debug for RemoteNodeService<B>
@@ -542,13 +514,11 @@ where
             timeouts: ConnectionTimeouts::default(),
             inbound_tx: None,
             block_source,
-            block_sync_mode: BlockSyncMode::default(),
         };
         (service, handle)
     }
 
-    /// Override the connection inactivity timeouts (defaults match
-    /// C# `Connection.cs`: 10 s initial, 60 s idle).
+    /// Override connection and block-fetch liveness timeouts.
     pub fn with_timeouts(mut self, timeouts: ConnectionTimeouts) -> Self {
         self.timeouts = timeouts;
         self
@@ -565,12 +535,6 @@ where
     /// requests from this peer.
     pub fn with_block_source(mut self, block_source: Arc<B>) -> Self {
         self.block_source = Some(block_source);
-        self
-    }
-
-    /// Select which component owns outbound block-sync range requests.
-    pub fn with_block_sync_mode(mut self, mode: BlockSyncMode) -> Self {
-        self.block_sync_mode = mode;
         self
     }
 
@@ -603,7 +567,6 @@ where
             timeouts,
             inbound_tx,
             block_source,
-            block_sync_mode,
         } = self;
 
         info!(
@@ -626,9 +589,6 @@ where
             verack_received: false,
             listener_port: 0,
             peer_is_full_node: false,
-            peer_last_block_index: 0,
-            sync_scheduler: BlockRequestScheduler::default(),
-            block_sync_mode,
             peer_allows_compression: false,
             pending_outbound: Vec::new(),
             get_addr_sent: false,

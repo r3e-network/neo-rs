@@ -279,17 +279,22 @@ Priority order for crate refactors:
    exception to mutable observer stores.
    Cancel the node on every canonical durability failure and stop the active
    writer command immediately.
-   Per-peer request-window decisions belong in
-   `neo_network::BlockRequestScheduler`; session code should only serialize and
-   send the planned wire request. Cross-peer range assignment, peer bias, and
-   retry accounting belong in `neo_network::CrossPeerBlockRangeScheduler` so the
-   downloader policy stays independent from wire transport. Use
-   `neo_network::BlockDownloadCoordinator` to compose that scheduler with
-   `neo_network::OrderedBlockBatchBuffer` and a transport-specific
-   `neo_network::BlockRangeFetcher`; production P2P range fetching goes
-   through the connected-peer registry/remote-node handle, uses the registry's
-   advertised-height snapshots for range assignment, and leaves ordered release
-   to the coordinator before batches reach the runtime import queue.
+   Cross-peer range assignment, peer bias, and retry accounting belong only in
+   `neo_network::CrossPeerBlockRangeScheduler` so downloader policy stays
+   independent from wire transport. Assign at most one live range to each peer,
+   matching the peer session's single correlated-response state. Session code
+   must only serialize an explicitly assigned `BlockRequest` and correlate its
+   response after the peer reaches `Ready`; correlated requests must never enter
+   a generic pre-handshake queue. Enforce an absolute per-fetch deadline that
+   unrelated traffic cannot refresh, clear timed-out correlation state without
+   closing a healthy connection, and do not run an autonomous request-window
+   scheduler. Use `neo_network::BlockDownloadCoordinator` to compose that
+   scheduler with `neo_network::OrderedBlockBatchBuffer` and a
+   transport-specific `neo_network::BlockRangeFetcher`; production P2P range
+   fetching goes through the connected-peer registry/remote-node handle, uses
+   the registry's ready, advertised-height snapshots for range assignment, and
+   leaves ordered release to the coordinator before batches reach the runtime
+   import queue.
 2. **One reorg-aware chain event stream.** Indexers, RPC application logs,
    token trackers, oracle services, and plugins should derive from a single
    bounded stream of chain outcomes. Because Neo committed blocks are final,

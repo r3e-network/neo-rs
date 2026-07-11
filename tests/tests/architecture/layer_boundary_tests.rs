@@ -808,11 +808,30 @@ fn test_node_services_hide_command_loop_and_wire_module_layouts() {
     for forbidden in [
         "pub mod proto;",
         "pub mod wire;",
-        "block_sync_mode, command, event, handle, local_node, remote_node, task_manager,",
+        "command, event, handle, local_node, remote_node,",
     ] {
         assert!(
             !network_lib.contains(forbidden),
             "neo-network should export typed capabilities, not module layout `{forbidden}`"
+        );
+    }
+
+    let network_service_root = workspace_root.join("neo-network/src/service");
+    for removed in ["block_sync_mode.rs", "task_manager.rs"] {
+        assert!(
+            !network_service_root.join(removed).exists(),
+            "coordinator-owned range sync must not regain legacy service module `{removed}`"
+        );
+    }
+    for removed_export in [
+        "BlockRequestScheduler",
+        "BlockSyncMode",
+        "TaskManagerService",
+        "TaskManagerHandle",
+    ] {
+        assert!(
+            !network_lib.contains(removed_export),
+            "neo-network must keep one coordinator-owned range-sync path; found `{removed_export}`"
         );
     }
 }
@@ -923,7 +942,7 @@ async fn test_active_architecture_docs_do_not_reference_retired_crates() {
         "neo-network/src/lib.rs",
         "neo-network/src/wire/mod.rs",
         "neo-network/src/proto/mod.rs",
-        "neo-network/src/service/task_manager.rs",
+        "neo-network/src/service/mod.rs",
     ];
 
     let retired_terms = [

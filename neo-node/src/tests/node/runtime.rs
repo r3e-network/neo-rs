@@ -2080,7 +2080,7 @@ async fn build_node_restarts_from_durable_rocksdb_tip_and_resumes_sync_cursor() 
     assert_eq!(
         request.index_start,
         DURABLE_TIP + 1,
-        "restart sync cursor resumes just after the durable tip"
+        "coordinator sync cursor resumes just after the durable tip"
     );
     assert_eq!(request.count, (PEER_HEIGHT - DURABLE_TIP) as i16);
 

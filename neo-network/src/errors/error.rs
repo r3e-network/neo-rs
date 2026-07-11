@@ -20,9 +20,10 @@ pub enum NetworkError {
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 
-    /// A peer was sent a message after the per-connection send
-    /// channel had been closed (i.e. the remote node service task
-    /// had already exited).
+    /// A peer operation could not complete, for example because the
+    /// per-connection service exited or a correlated range fetch expired.
+    /// The latter fails only the assignment and does not imply that the
+    /// underlying connection was closed.
     #[error("remote node {peer_id:?} is unavailable: {detail}")]
     RemoteUnavailable {
         /// Identifier of the remote node service.

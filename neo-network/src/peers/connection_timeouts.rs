@@ -1,6 +1,7 @@
-//! Per-connection inactivity timeouts.
+//! Per-connection and correlated-fetch timeouts.
 //!
-//! Mirrors the two constants in C# `Connection.cs`:
+//! Carries the two constants from C# `Connection.cs` plus one Rust-specific
+//! correlated-fetch deadline:
 //!
 //! - `connectionTimeoutLimitStart` (10 s) — armed when the connection
 //!   is created, before any data has been received. A peer that never
@@ -8,6 +9,9 @@
 //!   it fires.
 //! - `connectionTimeoutLimit` (60 s) — re-armed after every received
 //!   payload.
+//! - block fetch (15 s) — Rust-specific absolute deadline for one
+//!   coordinator-assigned `GetBlockByIndex` range. Unrelated peer traffic
+//!   does not extend it.
 //!
 //! C# resets the timer on every raw TCP segment; the Rust read loop
 //! resets it on every *decoded frame*. The Rust behaviour is the
@@ -17,8 +21,8 @@
 
 use std::time::Duration;
 
-/// Inactivity timeouts applied by the
-/// [`crate::remote_node::RemoteNodeService`] read loop.
+/// Liveness timeouts applied by the
+/// [`crate::remote_node::RemoteNodeService`] session loop.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ConnectionTimeouts {
     /// Time allowed before the first frame arrives
@@ -27,6 +31,9 @@ pub struct ConnectionTimeouts {
     /// Idle time allowed between subsequent frames
     /// (C# `connectionTimeoutLimit` = 60 s).
     pub idle: Duration,
+    /// Absolute time allowed to complete one correlated block-range fetch.
+    /// Unlike [`Self::idle`], this deadline is not reset by inbound frames.
+    pub block_fetch: Duration,
 }
 
 impl ConnectionTimeouts {
@@ -34,6 +41,8 @@ impl ConnectionTimeouts {
     pub const DEFAULT_INITIAL: Duration = Duration::from_secs(10);
     /// C# `Connection.connectionTimeoutLimit`.
     pub const DEFAULT_IDLE: Duration = Duration::from_secs(60);
+    /// Rust coordinator policy for one peer-level block-range assignment.
+    pub const DEFAULT_BLOCK_FETCH: Duration = Duration::from_secs(15);
 }
 
 impl Default for ConnectionTimeouts {
@@ -41,6 +50,7 @@ impl Default for ConnectionTimeouts {
         Self {
             initial: Self::DEFAULT_INITIAL,
             idle: Self::DEFAULT_IDLE,
+            block_fetch: Self::DEFAULT_BLOCK_FETCH,
         }
     }
 }

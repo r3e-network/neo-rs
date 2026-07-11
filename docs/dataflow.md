@@ -101,21 +101,26 @@ a range-aware `SyncBatchCommitPolicy` may collapse canonical writes to one
 durable commit. The resolved `ImportPlan` freezes observer behavior, publishes
 ordered hooks/mempool updates/import events only after durability, removes
 stale headers before one batch-end reverify, and falls back to per-block
-durability when plugin staging is not batch-safe. Production local-ledger node startup now feeds it from the
-coordinator-backed P2P downloader over live peer handles. The
-per-peer `GetBlockByIndex` request window is planned by
-`neo_network::BlockRequestScheduler` and sent by `PeerSession`. Cross-peer range
-assignment, peer bias, and retry accounting are now owned by
-`neo_network::CrossPeerBlockRangeScheduler`. The transport-agnostic
+durability when plugin staging is not batch-safe. Production local-ledger node
+startup now feeds it from the coordinator-backed P2P downloader over live peer
+handles. `BlockRequest` owns the Neo 500-block wire cap. Cross-peer range
+assignment, peer bias, and retry accounting are owned only by
+`neo_network::CrossPeerBlockRangeScheduler`;
+the scheduler assigns at most one live range per peer. `PeerSession` serializes
+assigned `GetBlockByIndex` requests only after the handshake reaches `Ready`
+and never places them in the generic handshake queue. It correlates matching
+block frames under an absolute fetch deadline. Unrelated frames do not extend
+that deadline; expiry clears only the correlation so the coordinator can retry
+another peer. The transport-agnostic
 `neo_network::BlockDownloadCoordinator` composes that scheduler with
 `neo_network::OrderedBlockBatchBuffer` and yields ordered `BlockDownloadBatch`
 values from any `BlockRangeFetcher`. `Arc<neo_network::PeerRegistry>` now
 implements that fetcher by resolving the assigned peer handle, sending
 `GetBlockByIndex`, and collecting the matching block frames into a batch; the
-same registry records advertised peer heights for downloader snapshots and is
-registered by the node composition root. Local-ledger node startup disables
-legacy automatic per-peer block requests and runs the coordinator-driven
-downloader/import task as the production P2P range-sync owner.
+same registry records advertised peer heights but exposes downloader snapshots
+only after version/verack processing completes. It is registered by the node
+composition root. Local-ledger node startup runs the coordinator-driven
+downloader/import task as the only P2P range-sync owner.
 The canonical execution/persist path remains the `neo-blockchain` service loop.
 
 ```mermaid

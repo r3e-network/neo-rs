@@ -14,13 +14,12 @@ use super::{
 };
 use crate::MessageCommand;
 use crate::connection_timeouts::ConnectionTimeouts;
-use crate::download::{BlockDownloadBatch, BlockRequest, BlockRequestScheduler};
+use crate::download::{BlockDownloadBatch, BlockRequest};
 use crate::error::NetworkError;
 use crate::event::NetworkEvent;
 use crate::local_identity::LocalIdentity;
 use crate::peer_id::PeerId;
 use crate::peer_registry::PeerRegistry;
-use crate::service::block_sync_mode::BlockSyncMode;
 use crate::wire::Message;
 use neo_io::{MemoryReader, Serializable};
 use neo_payloads::p2p_payloads::{
@@ -86,15 +85,6 @@ pub(super) struct PeerSession<B: BlockSource> {
     /// Whether the peer advertised the `FullNode` capability
     /// (C# `RemoteNode.IsFullNode`).
     pub(super) peer_is_full_node: bool,
-    /// The peer's last known block height (C# `RemoteNode.LastBlockIndex`):
-    /// seeded from the `FullNode` capability's `StartHeight` and refreshed
-    /// by each `ping`/`pong` exchange. Drives the block-sync gate
-    /// (`block.Index > LastBlockIndex`) once sync is wired.
-    pub(super) peer_last_block_index: u32,
-    /// Per-peer block-sync request planner.
-    pub(super) sync_scheduler: BlockRequestScheduler,
-    /// Owner of outbound block range requests.
-    pub(super) block_sync_mode: BlockSyncMode,
     /// Whether outbound frames to this peer may be compressed
     /// (C# `VersionPayload.AllowCompression`: no `DisableCompression`
     /// capability present).
@@ -122,6 +112,7 @@ pub(super) struct PendingBlockFetch {
     request: BlockRequest,
     next_index: u32,
     blocks: Vec<neo_payloads::Block>,
+    deadline: Instant,
     reply: oneshot::Sender<crate::NetworkResult<BlockDownloadBatch>>,
 }
 
@@ -130,8 +121,8 @@ where
     B: BlockSource,
 {
     /// Run the connection: send our version, then loop over inbound
-    /// frames, outbound commands, the inactivity deadline, and the
-    /// local shutdown token.
+    /// frames, outbound commands, connection and fetch deadlines, and
+    /// the local shutdown token.
     pub(super) async fn drive(
         &mut self,
         framed: &mut PeerFramed,
@@ -156,13 +147,11 @@ where
         let ping_interval = Duration::from_secs(30);
         let mut ping_timer =
             tokio::time::interval_at(Instant::now() + ping_interval, ping_interval);
-        // Block-sync runs on its own fast cadence (decoupled from the 30 s
-        // keepalive ping): each tick pipelines the next batch forward while the
-        // ledger trails the peer, instead of one batch per keepalive interval.
-        let sync_interval = Duration::from_millis(100);
-        let mut sync_timer =
-            tokio::time::interval_at(Instant::now() + sync_interval, sync_interval);
         loop {
+            let fetch_deadline = self
+                .pending_block_fetch
+                .as_ref()
+                .map(|fetch| fetch.deadline);
             tokio::select! {
                 _ = shutdown.cancelled() => {
                     return CloseReason::LocalShutdown;
@@ -170,10 +159,16 @@ where
                 _ = tokio::time::sleep_until(deadline) => {
                     return CloseReason::TimedOut;
                 }
-                // Message reads are placed before timer ticks so that
-                // incoming frames are always processed with priority,
-                // preventing starvation when timers fire concurrently
-                // (the sync timer runs on a fast 100 ms cadence).
+                _ = async {
+                    match fetch_deadline {
+                        Some(deadline) => tokio::time::sleep_until(deadline).await,
+                        None => std::future::pending::<()>().await,
+                    }
+                } => {
+                    self.expire_pending_block_fetch(timeouts.block_fetch);
+                }
+                // The connection deadline is refreshed by every decoded frame;
+                // the independently captured fetch deadline remains absolute.
                 frame = framed.next() => match frame {
                     Some(Ok(message)) => {
                         deadline = Instant::now() + timeouts.idle;
@@ -193,33 +188,23 @@ where
                         return reason;
                     }
                 }
-                _ = sync_timer.tick() => {
-                    // C# `TaskManager` timer: keep the block-sync pipeline full
-                    // while the ledger trails the peer.
-                    if self.block_sync_mode.uses_legacy_per_peer_requests()
-                        && let Err(reason) = self.request_blocks_if_behind(framed).await
-                    {
-                        return reason;
-                    }
-                }
                 cmd = cmd_rx.recv() => match cmd {
                     Some(RemoteNodeCommand::SendInventory(item)) => {
                         if let Err(reason) = self.on_send_inventory(framed, item).await {
                             return reason;
                         }
                     }
-                    Some(RemoteNodeCommand::RequestBlocksByIndex { request, reply }) => {
-                        match self.send_get_block_by_index(framed, request).await {
-                            Ok(()) => {
-                                let _ = reply.send(Ok(()));
-                            }
-                            Err(reason) => {
-                                let _ = reply.send(Err(self.network_error_for_close_reason(&reason)));
-                                return reason;
-                            }
-                        }
-                    }
                     Some(RemoteNodeCommand::FetchBlocksByIndex { request, reply }) => {
+                        if self.state != RemoteNodeState::Ready {
+                            let _ = reply.send(Err(NetworkError::RemoteUnavailable {
+                                peer_id: self.peer_id.to_string(),
+                                detail: format!(
+                                    "peer handshake is not complete (state {:?})",
+                                    self.state
+                                ),
+                            }));
+                            continue;
+                        }
                         if self.pending_block_fetch.is_some() {
                             let _ = reply.send(Err(NetworkError::Protocol(
                                 "block range fetch already in flight for this peer".to_string(),
@@ -232,6 +217,7 @@ where
                                     request,
                                     next_index: request.start,
                                     blocks: Vec::with_capacity(request.count as usize),
+                                    deadline: Instant::now() + timeouts.block_fetch,
                                     reply,
                                 });
                             }
@@ -320,66 +306,17 @@ where
         Ok(())
     }
 
-    /// C# `TaskManager` block-sync request: while this peer is ahead of our
-    /// ledger, request the next batch of blocks by index
-    /// (`GetBlockByIndex`). The peer replies with `block` frames, which the
-    /// inbound-inventory sink forwards to the blockchain service; as the
-    /// ledger advances and the shared height updates, the next request asks
-    /// for the new tip. Redundant requests across peers are deduplicated by
-    /// the blockchain service (already-persisted blocks are dropped), so a
-    /// per-peer trigger needs no cross-peer range assignment to be correct.
-    async fn request_blocks_if_behind(
-        &mut self,
-        framed: &mut PeerFramed,
-    ) -> Result<(), CloseReason> {
-        if !self.verack_received {
-            return Ok(());
-        }
-        let local_height = self.identity.block_height();
-        let peer_height = self.peer_last_block_index;
-
-        // Caught up: reset the in-flight cursor + stall tracker so a future
-        // divergence restarts the pipeline cleanly.
-        if peer_height <= local_height {
-            self.sync_scheduler.record_tick(local_height, peer_height);
-            let _ = self.sync_scheduler.next_request(local_height, peer_height);
-            return Ok(());
-        }
-
-        self.sync_scheduler.record_tick(local_height, peer_height);
-
-        // Pipeline forward from the in-flight high-water mark (C# `TaskManager.
-        // RequestTasks`, TaskManager.cs:400-409): request the next contiguous
-        // run the peer holds while preserving the per-message protocol cap.
-        // The ahead window keeps two batches queued per peer, so aggregate
-        // throughput can reach N_peers x 1000 blocks of in-flight work without
-        // sending an invalid over-sized request.
-        let Some(request) = self.sync_scheduler.next_request(local_height, peer_height) else {
-            return Ok(());
-        };
-        self.send_get_block_by_index(framed, request).await?;
-        debug!(
-            target: "neo_network",
-            peer_id = %self.peer_id,
-            from = request.start,
-            count = request.count,
-            peer_height,
-            "requesting block batch from peer"
-        );
-        Ok(())
-    }
-
     fn validate_get_block_by_index_request(request: BlockRequest) -> Result<i16, CloseReason> {
         if request.count == 0 {
             return Err(CloseReason::ProtocolViolation(
                 "GetBlockByIndex request count must be greater than zero".to_string(),
             ));
         }
-        if request.count > BlockRequestScheduler::MAX_BLOCKS_PER_REQUEST {
+        if request.count > BlockRequest::MAX_COUNT {
             return Err(CloseReason::ProtocolViolation(format!(
                 "GetBlockByIndex request count {} exceeds protocol cap {}",
                 request.count,
-                BlockRequestScheduler::MAX_BLOCKS_PER_REQUEST
+                BlockRequest::MAX_COUNT
             )));
         }
         i16::try_from(request.count).map_err(|_| {
@@ -403,7 +340,10 @@ where
             self.peer_allows_compression,
         )
         .map_err(|err| CloseReason::Transport(format!("encode getblockbyindex: {err}")))?;
-        self.send_or_queue(framed, message).await
+        framed
+            .send(message)
+            .await
+            .map_err(|err| CloseReason::Transport(format!("send getblockbyindex: {err}")))
     }
 
     fn network_error_for_close_reason(&self, reason: &CloseReason) -> NetworkError {
@@ -419,6 +359,28 @@ where
             }
             CloseReason::ProtocolViolation(detail) => NetworkError::Protocol(detail.clone()),
         }
+    }
+
+    fn expire_pending_block_fetch(&mut self, timeout: Duration) {
+        let Some(fetch) = self.pending_block_fetch.take() else {
+            return;
+        };
+        let range_end = fetch.request.start.saturating_add(fetch.request.count);
+        let detail = format!(
+            "block range [{}, {}) timed out after {timeout:?}",
+            fetch.request.start, range_end
+        );
+        warn!(
+            peer = %self.peer_id,
+            start = fetch.request.start,
+            count = fetch.request.count,
+            ?timeout,
+            "block range fetch timed out"
+        );
+        let _ = fetch.reply.send(Err(NetworkError::RemoteUnavailable {
+            peer_id: self.peer_id.to_string(),
+            detail,
+        }));
     }
 
     pub(super) fn accept_pending_block_fetch(
@@ -472,9 +434,6 @@ where
             match capability {
                 NodeCapability::FullNode { start_height } => {
                     self.peer_is_full_node = true;
-                    // C# `RemoteNode.LastBlockIndex = StartHeight` on the
-                    // FullNode capability (RemoteNode.ProtocolHandler.cs:403).
-                    self.peer_last_block_index = *start_height;
                     self.registry
                         .record_block_height(self.peer_id, *start_height);
                     // Update the global peer-reported live tip so the daemon's
@@ -580,12 +539,7 @@ where
                 .await
                 .map_err(|err| CloseReason::Transport(format!("flush queued message: {err}")))?;
         }
-        // C# `TaskManager` kicks off block sync as soon as a peer is ready:
-        // if this peer is ahead of our ledger, request the first batch now
-        // rather than waiting for the periodic timer.
-        if self.block_sync_mode.uses_legacy_per_peer_requests() {
-            self.request_blocks_if_behind(framed).await?;
-        }
+        self.registry.mark_ready(self.peer_id);
         Ok(())
     }
 

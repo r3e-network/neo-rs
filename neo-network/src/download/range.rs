@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use super::{BlockDownloadConfig, BlockRequest, BlockRequestScheduler};
+use super::{BlockDownloadConfig, BlockRequest};
 use crate::{NetworkError, NetworkResult, PeerId};
 
 /// Snapshot of a peer that can serve block ranges.
@@ -113,12 +113,13 @@ impl CrossPeerBlockRangeScheduler {
             return None;
         }
 
+        let busy_peers = self.in_flight_peer_ids();
         let peer = Self::select_peer(
             self.config.peer_bias,
             peers,
             self.next_start,
             self.next_start,
-            &[],
+            &busy_peers,
         )?;
         let count = self.fresh_request_count(peer.height);
         if count == 0 {
@@ -186,12 +187,14 @@ impl CrossPeerBlockRangeScheduler {
         let retry_count = self.retries.len();
         for _ in 0..retry_count {
             let retry = self.retries.pop_front()?;
+            let mut unavailable_peers = retry.failed_peers.clone();
+            unavailable_peers.extend(self.in_flight_peer_ids());
             if let Some(peer) = Self::select_peer(
                 self.config.peer_bias,
                 peers,
                 retry.request.start,
                 retry.request.end(),
-                &retry.failed_peers,
+                &unavailable_peers,
             ) {
                 let assignment =
                     BlockRangeAssignment::new(peer.peer_id, retry.request, retry.attempt);
@@ -209,12 +212,19 @@ impl CrossPeerBlockRangeScheduler {
         None
     }
 
+    fn in_flight_peer_ids(&self) -> Vec<PeerId> {
+        self.in_flight
+            .values()
+            .map(|range| range.assignment.peer_id)
+            .collect()
+    }
+
     fn fresh_request_count(&self, peer_height: u32) -> u32 {
         if peer_height < self.next_start {
             return 0;
         }
         let max_by_config = u32::try_from(self.config.max_batch_size).unwrap_or(u32::MAX);
-        let max_count = max_by_config.min(BlockRequestScheduler::MAX_BLOCKS_PER_REQUEST);
+        let max_count = max_by_config.min(BlockRequest::MAX_COUNT);
         let upper = self
             .target_height
             .min(peer_height)

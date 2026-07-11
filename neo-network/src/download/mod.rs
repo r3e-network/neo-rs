@@ -18,7 +18,7 @@
 //! - `coordinator`: transport-agnostic scheduler/buffer/fetcher composition.
 //! - `order`: ordered response buffering for multi-peer downloads.
 //! - `range`: cross-peer range assignment and retry scheduling.
-//! - `request`: per-peer `GetBlockByIndex` request-window scheduling.
+//! - `request`: `GetBlockByIndex` request values and protocol limits.
 //! - `stream`: stream trait consumed by sync/import drivers.
 
 mod batch;
@@ -36,7 +36,7 @@ pub use config::BlockDownloadConfig;
 pub use coordinator::{BlockDownloadCoordinator, BlockRangeFetcher};
 pub use order::OrderedBlockBatchBuffer;
 pub use range::{BlockDownloadPeer, BlockRangeAssignment, CrossPeerBlockRangeScheduler};
-pub use request::{BlockRequest, BlockRequestScheduler};
+pub use request::BlockRequest;
 pub use stream::BlockDownloader;
 
 #[cfg(test)]

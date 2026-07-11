@@ -4,10 +4,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
-use neo_network::{
-    LocalNodeService, NetworkCommand, PeerRegistry, SyncTask, SyncTaskKind, TaskId,
-    TaskManagerService,
-};
+use neo_network::{LocalNodeService, NetworkCommand, PeerRegistry};
 use neo_runtime::NetworkService;
 
 #[tokio::test]
@@ -28,35 +25,6 @@ async fn local_node_service_concrete_handle_works() {
     assert_eq!(service.peer_count().await, 0);
     let mut rx = service.subscribe_events();
     assert!(rx.try_recv().is_err());
-}
-
-#[tokio::test]
-async fn task_manager_handle_lifecycle() {
-    let (service, handle) = TaskManagerService::new();
-    let task = tokio::spawn(service.run());
-
-    let task_id = handle
-        .add_task(SyncTask::FetchBlock {
-            hash: Default::default(),
-            kind: SyncTaskKind::Block,
-        })
-        .await
-        .expect("add_task");
-    assert_ne!(task_id, TaskId::default());
-
-    let active = handle.active_tasks().await.expect("active_tasks");
-    assert_eq!(active.len(), 1);
-    assert_eq!(active[0], task_id);
-
-    handle
-        .complete_task(task_id, Default::default())
-        .await
-        .expect("complete_task");
-    let active = handle.active_tasks().await.expect("active_tasks");
-    assert_eq!(active.len(), 0);
-
-    handle.shutdown().await.expect("shutdown");
-    task.await.expect("service task");
 }
 
 #[tokio::test]

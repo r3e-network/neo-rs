@@ -36,8 +36,8 @@ mod wire;
 
 pub use download::{
     BlockDownloadBatch, BlockDownloadConfig, BlockDownloadCoordinator, BlockDownloadPeer,
-    BlockDownloader, BlockRangeAssignment, BlockRangeFetcher, BlockRequest, BlockRequestScheduler,
-    ChannelBlockDownloader, CrossPeerBlockRangeScheduler, OrderedBlockBatchBuffer,
+    BlockDownloader, BlockRangeAssignment, BlockRangeFetcher, BlockRequest, ChannelBlockDownloader,
+    CrossPeerBlockRangeScheduler, OrderedBlockBatchBuffer,
 };
 pub use errors::{NetworkError, NetworkResult, error};
 pub use identity::{LocalIdentity, local_identity};
@@ -45,11 +45,9 @@ pub use peers::{
     ConnectionTimeouts, PeerId, PeerRegistry, connection_timeouts, peer_id, peer_registry,
 };
 pub use service::{
-    BlockSource, BlockSyncMode, ConnectedPeer, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY,
-    InboundInventory, InventoryItem, LocalNodeInfo, LocalNodeService, NetworkCommand, NetworkEvent,
-    NetworkHandle, RemoteNodeCommand, RemoteNodeHandle, RemoteNodeService, RemoteNodeState,
-    SharedNetworkHandle, SyncTask, SyncTaskKind, TaskId, TaskManagerCommand, TaskManagerHandle,
-    TaskManagerService,
+    BlockSource, ConnectedPeer, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, InboundInventory,
+    InventoryItem, LocalNodeInfo, LocalNodeService, NetworkCommand, NetworkEvent, NetworkHandle,
+    RemoteNodeCommand, RemoteNodeHandle, RemoteNodeService, RemoteNodeState, SharedNetworkHandle,
 };
 pub(crate) use service::{command, event, handle, remote_node};
 pub use wire::{

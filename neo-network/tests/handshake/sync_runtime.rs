@@ -47,6 +47,7 @@ async fn silent_peer_is_disconnected_after_handshake_timeout() {
     let service = service.with_timeouts(ConnectionTimeouts {
         initial: Duration::from_millis(200),
         idle: Duration::from_millis(200),
+        block_fetch: Duration::from_secs(1),
     });
     tokio::spawn(service.run());
 
@@ -139,73 +140,11 @@ async fn relayed_block_is_forwarded_to_the_inventory_sink() {
     handle.shutdown().await.expect("shutdown");
 }
 
-/// C# `TaskManager` block sync: once a peer that is ahead of our ledger
-/// completes the handshake, the node requests the next batch of blocks by
-/// index (`GetBlockByIndex` starting at `local_height + 1`).
+/// Ready peers do not issue unsolicited range requests. The shared downloader
+/// coordinator is the sole owner of `GetBlockByIndex` assignments.
 #[tokio::test]
-async fn node_requests_blocks_when_peer_is_ahead() {
+async fn ready_peer_does_not_issue_unsolicited_block_requests() {
     let (handle, _events, port) = start_local_node(ChannelsConfig::default()).await;
-    let network = ProtocolSettings::default().network;
-    let mut fake = fake_dial(port).await;
-
-    // Drive the handshake manually so the peer can advertise a non-zero
-    // height via the `FullNode` capability.
-    let _node_version = recv_frame(&mut fake).await.expect("node version");
-    let capabilities = vec![
-        NodeCapability::full_node(100),
-        NodeCapability::tcp_server(20333),
-    ];
-    let payload = VersionPayload::create(
-        network,
-        0xfa4e_0004,
-        "/fake-peer:0.0.1/".to_string(),
-        0,
-        capabilities,
-    );
-    fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
-        .await
-        .expect("send version");
-    let verack = recv_frame(&mut fake).await.expect("verack");
-    assert_eq!(verack.command, MessageCommand::Verack);
-    fake.send(verack_message()).await.expect("send verack");
-
-    // The node, at genesis height 0, must request blocks from index 1.
-    let request = loop {
-        let frame = recv_frame(&mut fake).await.expect("getblockbyindex frame");
-        if frame.command == MessageCommand::GetBlockByIndex {
-            break frame;
-        }
-    };
-    let mut reader = neo_io::MemoryReader::new(&request.payload_raw);
-    let payload = <GetBlockByIndexPayload as neo_io::Serializable>::deserialize(&mut reader)
-        .expect("decode getblockbyindex");
-    assert_eq!(
-        payload.index_start, 1,
-        "request starts at local genesis height + 1"
-    );
-    // C# `TaskManager` requests `Math.Min(endHeight - startHeight, MaxHashesCount)`:
-    // the peer advertised height 100, so the node asks for exactly 100 blocks
-    // (capped to the peer's height, well under the 500 batch ceiling).
-    assert_eq!(payload.count, 100);
-
-    handle.shutdown().await.expect("shutdown");
-}
-
-/// Coordinator-owned sync mode: the per-peer session must not issue automatic
-/// `GetBlockByIndex` requests, because the shared downloader coordinator owns
-/// range assignment and uses explicit fetch commands instead.
-#[tokio::test]
-async fn external_coordinator_mode_suppresses_legacy_block_requests() {
-    let settings = Arc::new(ProtocolSettings::default());
-    let (service, handle) = LocalNodeService::with_config(settings, ChannelsConfig::default());
-    let service = service.with_block_sync_mode(BlockSyncMode::ExternalCoordinator);
-    tokio::spawn(service.run());
-    handle
-        .start("127.0.0.1:0".parse().unwrap())
-        .await
-        .expect("start");
-    let port = handle.local_node_info().port();
-
     let network = ProtocolSettings::default().network;
     let mut fake = fake_dial(port).await;
     let _node_version = recv_frame(&mut fake).await.expect("node version");
@@ -229,72 +168,12 @@ async fn external_coordinator_mode_suppresses_legacy_block_requests() {
     match tokio::time::timeout(Duration::from_millis(350), fake.next()).await {
         Err(_) => {}
         Ok(Some(Ok(message))) => panic!(
-            "external coordinator mode should not emit legacy {:?} frame",
+            "peer session should not emit unsolicited {:?} frame",
             message.command
         ),
-        Ok(Some(Err(err))) => panic!("frame decode failed while checking legacy sync: {err}"),
-        Ok(None) => panic!("peer connection closed while checking legacy sync suppression"),
+        Ok(Some(Err(err))) => panic!("frame decode failed while checking sync ownership: {err}"),
+        Ok(None) => panic!("peer connection closed while checking sync ownership"),
     }
-
-    handle.shutdown().await.expect("shutdown");
-}
-
-/// Transport fetcher seam: callers can explicitly ask one peer for an assigned
-/// block range without reimplementing `GetBlockByIndex` frame encoding.
-#[tokio::test]
-async fn remote_node_handle_can_request_explicit_block_range() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-    let listen_addr = listener.local_addr().expect("addr");
-
-    let mut fake = {
-        let stream = TcpStream::connect(listen_addr).await.expect("dial");
-        Framed::new(stream, MessageCodec::new())
-    };
-    let (stream, remote_addr) = listener.accept().await.expect("accept");
-
-    let identity = Arc::new(LocalIdentity::new(
-        ProtocolSettings::default().network,
-        7,
-        "/neo-rs:test/".to_string(),
-        true,
-    ));
-    let registry = Arc::new(PeerRegistry::with_limits(8, 8));
-    let (event_tx, _events) = broadcast::channel(64);
-    let peer_id = PeerId::new();
-    let (service, handle) = RemoteNodeService::new(
-        stream,
-        peer_id,
-        remote_addr,
-        identity,
-        registry.clone(),
-        event_tx,
-        RemoteNodeState::Handshake,
-        CancellationToken::new(),
-    );
-    assert!(registry.try_admit(peer_id, remote_addr, handle.clone()));
-    tokio::spawn(service.run());
-
-    complete_handshake(
-        &mut fake,
-        ProtocolSettings::default().network,
-        0xfa4e_0011,
-        20333,
-    )
-    .await;
-    assert_eq!(
-        registry.download_peers(),
-        vec![BlockDownloadPeer::new(peer_id, 0)],
-        "FullNode start height is captured for downloader peer snapshots"
-    );
-
-    handle
-        .request_blocks_by_index(BlockRequest::new(7, 3))
-        .await
-        .expect("request explicit block range");
-    let request = recv_getblockbyindex(&mut fake).await;
-
-    assert_eq!(request.index_start, 7);
-    assert_eq!(request.count, 3);
 
     handle.shutdown().await.expect("shutdown");
 }
@@ -343,6 +222,7 @@ async fn remote_node_handle_fetches_explicit_block_range_as_batch() {
         20333,
     )
     .await;
+    await_download_peer_ready(&registry, peer_id).await;
 
     let fetch = tokio::spawn({
         let handle = handle.clone();
@@ -384,6 +264,218 @@ async fn remote_node_handle_fetches_explicit_block_range_as_batch() {
             .collect::<Vec<_>>(),
         vec![7, 8, 9]
     );
+
+    handle.shutdown().await.expect("shutdown");
+}
+
+/// A peer cannot keep an incomplete coordinator assignment alive by sending
+/// unrelated traffic. Fetch expiry clears the per-peer correlation state while
+/// leaving the healthy connection available for a later assignment.
+#[tokio::test]
+async fn block_fetch_timeout_is_absolute_and_clears_pending_assignment() {
+    const FETCH_TIMEOUT: Duration = Duration::from_millis(150);
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let listen_addr = listener.local_addr().expect("addr");
+
+    let mut fake = {
+        let stream = TcpStream::connect(listen_addr).await.expect("dial");
+        Framed::new(stream, MessageCodec::new())
+    };
+    let (stream, remote_addr) = listener.accept().await.expect("accept");
+
+    let identity = Arc::new(LocalIdentity::new(
+        ProtocolSettings::default().network,
+        7,
+        "/neo-rs:test/".to_string(),
+        true,
+    ));
+    let registry = Arc::new(PeerRegistry::with_limits(8, 8));
+    let (event_tx, _events) = broadcast::channel(64);
+    let peer_id = PeerId::new();
+    let (service, handle) = RemoteNodeService::new(
+        stream,
+        peer_id,
+        remote_addr,
+        identity,
+        registry.clone(),
+        event_tx,
+        RemoteNodeState::Handshake,
+        CancellationToken::new(),
+    );
+    let service = service.with_timeouts(ConnectionTimeouts {
+        initial: Duration::from_secs(2),
+        idle: Duration::from_secs(2),
+        block_fetch: FETCH_TIMEOUT,
+    });
+    assert!(registry.try_admit(peer_id, remote_addr, handle.clone()));
+    tokio::spawn(service.run());
+
+    complete_handshake(
+        &mut fake,
+        ProtocolSettings::default().network,
+        0xfa4e_0014,
+        20333,
+    )
+    .await;
+    await_download_peer_ready(&registry, peer_id).await;
+
+    let first_fetch = tokio::spawn({
+        let handle = handle.clone();
+        async move { handle.fetch_blocks_by_index(BlockRequest::new(7, 3)).await }
+    });
+    let first_request = recv_getblockbyindex(&mut fake).await;
+    assert_eq!(first_request.index_start, 7);
+    assert_eq!(first_request.count, 3);
+    fake.send(block_message(7))
+        .await
+        .expect("send first requested block");
+
+    let ping_nonce = 0x4e30_0014;
+    let ping_payload = PingPayload::create_with_nonce(99, ping_nonce);
+    fake.send(Message::create(MessageCommand::Ping, Some(&ping_payload), false).expect("ping"))
+        .await
+        .expect("send ping while fetch is pending");
+    let pong = recv_frame(&mut fake)
+        .await
+        .expect("pong while fetch is pending");
+    assert_eq!(pong.command, MessageCommand::Pong);
+
+    let first_error = tokio::time::timeout(Duration::from_secs(1), first_fetch)
+        .await
+        .expect("block fetch did not expire")
+        .expect("fetch task joined")
+        .expect_err("incomplete block fetch must time out");
+    match first_error {
+        neo_network::NetworkError::RemoteUnavailable {
+            peer_id: failed_peer,
+            detail,
+        } => {
+            assert_eq!(failed_peer, peer_id.to_string());
+            assert!(detail.contains("block range [7, 10)"), "{detail}");
+            assert!(detail.contains("150ms"), "{detail}");
+        }
+        other => panic!("expected remote-unavailable timeout, got {other}"),
+    }
+
+    let second_fetch = tokio::spawn({
+        let handle = handle.clone();
+        async move { handle.fetch_blocks_by_index(BlockRequest::new(20, 1)).await }
+    });
+    let second_request = recv_getblockbyindex(&mut fake).await;
+    assert_eq!(second_request.index_start, 20);
+    assert_eq!(second_request.count, 1);
+    fake.send(block_message(20))
+        .await
+        .expect("complete second block fetch");
+
+    let second_batch = second_fetch
+        .await
+        .expect("second fetch task joined")
+        .expect("second fetch succeeds after timeout cleanup");
+    assert_eq!(second_batch.start_height, 20);
+    assert_eq!(second_batch.blocks.len(), 1);
+    assert_eq!(second_batch.blocks[0].index(), 20);
+
+    handle.shutdown().await.expect("shutdown");
+}
+
+/// Coordinator range requests are a ready-session operation, not generic
+/// outbound messages. Rejecting them before `verack` prevents an expired
+/// request from remaining in the handshake queue and flushing later.
+#[tokio::test]
+async fn block_fetch_before_verack_is_rejected_without_queuing_stale_request() {
+    const FETCH_TIMEOUT: Duration = Duration::from_millis(150);
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let listen_addr = listener.local_addr().expect("addr");
+
+    let mut fake = {
+        let stream = TcpStream::connect(listen_addr).await.expect("dial");
+        Framed::new(stream, MessageCodec::new())
+    };
+    let (stream, remote_addr) = listener.accept().await.expect("accept");
+
+    let network = ProtocolSettings::default().network;
+    let identity = Arc::new(LocalIdentity::new(
+        network,
+        7,
+        "/neo-rs:test/".to_string(),
+        true,
+    ));
+    let registry = Arc::new(PeerRegistry::with_limits(8, 8));
+    let (event_tx, _events) = broadcast::channel(64);
+    let peer_id = PeerId::new();
+    let (service, handle) = RemoteNodeService::new(
+        stream,
+        peer_id,
+        remote_addr,
+        identity,
+        registry.clone(),
+        event_tx,
+        RemoteNodeState::Handshake,
+        CancellationToken::new(),
+    );
+    let service = service.with_timeouts(ConnectionTimeouts {
+        initial: Duration::from_secs(2),
+        idle: Duration::from_secs(2),
+        block_fetch: FETCH_TIMEOUT,
+    });
+    assert!(registry.try_admit(peer_id, remote_addr, handle.clone()));
+    tokio::spawn(service.run());
+
+    let node_version = recv_frame(&mut fake).await.expect("node version");
+    assert_eq!(node_version.command, MessageCommand::Version);
+    fake.send(version_message(network, 0xfa4e_0015, 20333))
+        .await
+        .expect("send peer version");
+    let node_verack = recv_frame(&mut fake).await.expect("node verack");
+    assert_eq!(node_verack.command, MessageCommand::Verack);
+
+    let pre_ready_error = handle
+        .fetch_blocks_by_index(BlockRequest::new(7, 3))
+        .await
+        .expect_err("fetch before peer verack must be rejected");
+    match pre_ready_error {
+        neo_network::NetworkError::RemoteUnavailable {
+            peer_id: failed_peer,
+            detail,
+        } => {
+            assert_eq!(failed_peer, peer_id.to_string());
+            assert!(detail.contains("handshake"), "{detail}");
+        }
+        other => panic!("expected pre-handshake remote-unavailable error, got {other}"),
+    }
+
+    tokio::time::sleep(FETCH_TIMEOUT + Duration::from_millis(50)).await;
+    fake.send(verack_message()).await.expect("send peer verack");
+    match tokio::time::timeout(Duration::from_millis(100), fake.next()).await {
+        Err(_) => {}
+        Ok(Some(Ok(message))) => panic!(
+            "pre-handshake fetch must not flush a stale {:?} frame",
+            message.command
+        ),
+        Ok(Some(Err(err))) => panic!("frame decode failed after verack: {err}"),
+        Ok(None) => panic!("peer connection closed after verack"),
+    }
+    await_download_peer_ready(&registry, peer_id).await;
+
+    let ready_fetch = tokio::spawn({
+        let handle = handle.clone();
+        async move { handle.fetch_blocks_by_index(BlockRequest::new(20, 1)).await }
+    });
+    let ready_request = recv_getblockbyindex(&mut fake).await;
+    assert_eq!(ready_request.index_start, 20);
+    assert_eq!(ready_request.count, 1);
+    fake.send(block_message(20))
+        .await
+        .expect("complete ready fetch");
+    let batch = ready_fetch
+        .await
+        .expect("ready fetch task joined")
+        .expect("ready fetch succeeds");
+    assert_eq!(batch.start_height, 20);
+    assert_eq!(batch.blocks.len(), 1);
 
     handle.shutdown().await.expect("shutdown");
 }
@@ -431,6 +523,7 @@ async fn peer_registry_fetcher_collects_assigned_peer_range() {
         20333,
     )
     .await;
+    await_download_peer_ready(&registry, peer_id).await;
 
     let fetch = tokio::spawn({
         let registry = registry.clone();
@@ -470,12 +563,12 @@ async fn peer_registry_fetcher_collects_assigned_peer_range() {
     handle.shutdown().await.expect("shutdown");
 }
 
-/// Restart/resume cursor: the daemon seeds the network-advertised height from
-/// durable `Ledger.CurrentIndex` before accepting peers. A peer that is ahead
-/// must see that height in our `version` payload and the first block-sync
-/// request must start at `durable_tip + 1`, not at genesis + 1.
+/// The daemon seeds the network-advertised height from durable
+/// `Ledger.CurrentIndex` before accepting peers. Range assignment remains owned
+/// by the coordinator, so advertising a durable tip must not trigger a request
+/// from the peer session itself.
 #[tokio::test]
-async fn seeded_local_height_resumes_block_requests_after_durable_tip() {
+async fn seeded_local_height_is_advertised_without_unsolicited_sync() {
     const DURABLE_TIP: u32 = 42;
 
     let (handle, _events, port) =
@@ -513,195 +606,15 @@ async fn seeded_local_height_resumes_block_requests_after_durable_tip() {
     assert_eq!(verack.command, MessageCommand::Verack);
     fake.send(verack_message()).await.expect("send verack");
 
-    let request = recv_getblockbyindex(&mut fake).await;
-    assert_eq!(
-        request.index_start,
-        DURABLE_TIP + 1,
-        "sync resumes just after the durable tip"
-    );
-    assert_eq!(request.count, (100 - DURABLE_TIP) as i16);
-
-    handle.shutdown().await.expect("shutdown");
-}
-
-/// C# `TaskManager` pipelining: while a peer is far ahead, the node requests a
-/// 500-block window, then advances the request cursor forward as the ledger
-/// persists; it does NOT re-request from the genesis tip each tick.
-#[tokio::test]
-async fn node_pipelines_block_requests_as_height_advances() {
-    let (handle, _events, port) = start_local_node(ChannelsConfig::default()).await;
-    let network = ProtocolSettings::default().network;
-    let mut fake = fake_dial(port).await;
-
-    // Drive the handshake so the peer advertises a height far ahead (5000).
-    let _node_version = recv_frame(&mut fake).await.expect("node version");
-    let capabilities = vec![
-        NodeCapability::full_node(5000),
-        NodeCapability::tcp_server(20333),
-    ];
-    let payload = VersionPayload::create(
-        network,
-        0xfa4e_000c,
-        "/fake-peer:0.0.1/".to_string(),
-        0,
-        capabilities,
-    );
-    fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
-        .await
-        .expect("send version");
-    let verack = recv_frame(&mut fake).await.expect("verack");
-    assert_eq!(verack.command, MessageCommand::Verack);
-    fake.send(verack_message()).await.expect("send verack");
-
-    // First request: a full 500-block window from genesis + 1 (peer far ahead,
-    // so the batch is capped by MaxHashesCount, not the peer height).
-    let first = recv_getblockbyindex(&mut fake).await;
-    assert_eq!(first.index_start, 1);
-    assert_eq!(first.count, 500);
-
-    // Simulate the ledger persisting that window; the node must pipeline the
-    // next window forward (501..) rather than re-requesting from index 1.
-    handle.set_block_height(500).await.expect("advance height");
-    let second = recv_getblockbyindex(&mut fake).await;
-    assert_eq!(
-        second.index_start, 501,
-        "request pipelines forward past the persisted tip"
-    );
-
-    handle.shutdown().await.expect("shutdown");
-}
-
-/// Sync throughput: a far-ahead peer should keep the per-peer request pipeline
-/// two protocol-sized windows ahead of the durable tip. Each
-/// `GetBlockByIndex` still respects Neo's 500-block wire limit, but the node
-/// should not leave the transport idle while the first window is being
-/// persisted.
-#[tokio::test]
-async fn node_keeps_two_block_request_windows_in_flight() {
-    let (handle, _events, port) = start_local_node(ChannelsConfig::default()).await;
-    let network = ProtocolSettings::default().network;
-    let mut fake = fake_dial(port).await;
-
-    let _node_version = recv_frame(&mut fake).await.expect("node version");
-    let capabilities = vec![
-        NodeCapability::full_node(5000),
-        NodeCapability::tcp_server(20333),
-    ];
-    let payload = VersionPayload::create(
-        network,
-        0xfa4e_000e,
-        "/fake-peer:0.0.1/".to_string(),
-        0,
-        capabilities,
-    );
-    fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
-        .await
-        .expect("send version");
-    let verack = recv_frame(&mut fake).await.expect("verack");
-    assert_eq!(verack.command, MessageCommand::Verack);
-    fake.send(verack_message()).await.expect("send verack");
-
-    let first = recv_getblockbyindex(&mut fake).await;
-    assert_eq!(first.index_start, 1);
-    assert_eq!(first.count, 500);
-
-    let second = recv_getblockbyindex(&mut fake).await;
-    assert_eq!(
-        second.index_start, 501,
-        "sync should keep a second request window in flight"
-    );
-    assert_eq!(
-        second.count, 500,
-        "each request must still obey the protocol request cap"
-    );
-
-    handle.shutdown().await.expect("shutdown");
-}
-
-/// Sync cadence: the second in-flight window must be requested quickly enough
-/// to support a 1000 BPS target on a single responsive peer. The request still
-/// waits for the periodic sync tick, but that tick should be sub-250ms rather
-/// than the old half-second cadence.
-#[tokio::test]
-async fn node_requests_second_sync_window_without_half_second_idle() {
-    let (handle, _events, port) = start_local_node(ChannelsConfig::default()).await;
-    let network = ProtocolSettings::default().network;
-    let mut fake = fake_dial(port).await;
-
-    let _node_version = recv_frame(&mut fake).await.expect("node version");
-    let capabilities = vec![
-        NodeCapability::full_node(5000),
-        NodeCapability::tcp_server(20333),
-    ];
-    let payload = VersionPayload::create(
-        network,
-        0xfa4e_000f,
-        "/fake-peer:0.0.1/".to_string(),
-        0,
-        capabilities,
-    );
-    fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
-        .await
-        .expect("send version");
-    let verack = recv_frame(&mut fake).await.expect("verack");
-    assert_eq!(verack.command, MessageCommand::Verack);
-    fake.send(verack_message()).await.expect("send verack");
-
-    let first = recv_getblockbyindex(&mut fake).await;
-    assert_eq!(first.index_start, 1);
-    assert_eq!(first.count, 500);
-
-    let second = tokio::time::timeout(Duration::from_millis(250), recv_getblockbyindex(&mut fake))
-        .await
-        .expect("second sync request should not wait for a half-second timer");
-    assert_eq!(second.index_start, 501);
-    assert_eq!(second.count, 500);
-
-    handle.shutdown().await.expect("shutdown");
-}
-
-/// Recovery should not mistake a full pipeline for a dropped response. With a
-/// 100ms sync cadence, a three-tick stall threshold would rewind in about
-/// 300ms and duplicate the first request window before a real node has had a
-/// fair chance to persist the in-flight blocks.
-#[tokio::test]
-async fn node_does_not_rewind_sync_cursor_before_stall_timeout() {
-    let (handle, _events, port) = start_local_node(ChannelsConfig::default()).await;
-    let network = ProtocolSettings::default().network;
-    let mut fake = fake_dial(port).await;
-
-    let _node_version = recv_frame(&mut fake).await.expect("node version");
-    let capabilities = vec![
-        NodeCapability::full_node(5000),
-        NodeCapability::tcp_server(20333),
-    ];
-    let payload = VersionPayload::create(
-        network,
-        0xfa4e_0010,
-        "/fake-peer:0.0.1/".to_string(),
-        0,
-        capabilities,
-    );
-    fake.send(Message::create(MessageCommand::Version, Some(&payload), false).expect("version"))
-        .await
-        .expect("send version");
-    let verack = recv_frame(&mut fake).await.expect("verack");
-    assert_eq!(verack.command, MessageCommand::Verack);
-    fake.send(verack_message()).await.expect("send verack");
-
-    let first = recv_getblockbyindex(&mut fake).await;
-    assert_eq!(first.index_start, 1);
-    assert_eq!(first.count, 500);
-    let second = recv_getblockbyindex(&mut fake).await;
-    assert_eq!(second.index_start, 501);
-    assert_eq!(second.count, 500);
-
-    let duplicate =
-        tokio::time::timeout(Duration::from_millis(500), recv_getblockbyindex(&mut fake)).await;
-    assert!(
-        duplicate.is_err(),
-        "sync should not duplicate an in-flight request window before the stall timeout"
-    );
+    match tokio::time::timeout(Duration::from_millis(350), fake.next()).await {
+        Err(_) => {}
+        Ok(Some(Ok(message))) => panic!(
+            "peer session should not emit unsolicited {:?} frame",
+            message.command
+        ),
+        Ok(Some(Err(err))) => panic!("frame decode failed while checking sync ownership: {err}"),
+        Ok(None) => panic!("peer connection closed while checking sync ownership"),
+    }
 
     handle.shutdown().await.expect("shutdown");
 }

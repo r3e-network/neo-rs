@@ -259,8 +259,9 @@ The detailed rules for this style live in
 - **Supervised daemon tasks.** `neo-node` classifies long-running background
   work as essential or normal. Essential task failure requests node shutdown;
   normal task failure is reported through bounded-label observability metrics
-  and error endpoints. This follows Substrate's TaskManager discipline without
-  confusing it with the Neo P2P `TaskManager` sync scheduler.
+  and error endpoints. This follows Substrate's TaskManager discipline. The
+  former uncomposed P2P `TaskManagerService` was removed; task lifecycle and
+  block-range scheduling now have distinct owners.
 
 - **Canonical block import plus bounded preverification.**
   `neo_runtime::BlockImport` is the shared import trait for consensus, sync, RPC,
@@ -338,20 +339,27 @@ The detailed rules for this style live in
   the canonical chain tip is authoritative and production sync realigns its
   cursor before downloading. `neo_network::BlockDownloader` is the
   stream-shaped download boundary; its `BlockDownloadBatch` converts into the
-  runtime batch type. `BlockRequestScheduler` owns the per-peer
-  `GetBlockByIndex` request-window policy used by `PeerSession`.
-  `CrossPeerBlockRangeScheduler` owns peer selection, bias, bounded in-flight
-  range assignment, and retry accounting. `OrderedBlockBatchBuffer` holds
+  runtime batch type. `BlockRequest` owns the Neo 500-block wire cap.
+  `CrossPeerBlockRangeScheduler` is the sole owner of peer selection, bias,
+  bounded in-flight range assignment, and retry accounting. It permits at most
+  one in-flight range per peer, matching `PeerSession`'s single correlated-fetch
+  invariant. `PeerSession` serializes only explicitly assigned requests and
+  correlates their block responses. Correlated fetches are accepted only in the
+  `Ready` state and never enter the generic handshake queue. Each correlation
+  has an absolute fetch deadline independent of connection-idle traffic; expiry
+  clears the assignment without closing a healthy peer so coordinator retry
+  policy can reassign it.
+  `OrderedBlockBatchBuffer` holds
   out-of-order peer responses until the next contiguous height is available.
   `BlockDownloadCoordinator` composes the cross-peer scheduler, ordered buffer,
   and a transport-provided `BlockRangeFetcher` into a `BlockDownloader` stream.
   `PeerRegistry` implements the live-peer fetcher by resolving the assigned
   `RemoteNodeHandle`, sending `GetBlockByIndex`, and collecting matching block
   frames into a batch. The node composition root shares and registers that
-  registry, and the registry exposes advertised-height snapshots for range
-  scheduling. Local-ledger node startup disables legacy automatic per-peer
-  block requests and runs a supervised coordinator-backed downloader/import
-  task as the production P2P range-sync owner.
+  registry, and the registry exposes ready peers with advertised heights for
+  range scheduling. Local-ledger node startup runs one supervised
+  coordinator-backed downloader/import task as the production P2P range-sync
+  owner; peer sessions never initiate autonomous sync windows.
 
 - **Native dispatch is explicit at composition.** `neo-execution` still owns the
   low-level `NativeContractProvider` seam so the engine does not depend on

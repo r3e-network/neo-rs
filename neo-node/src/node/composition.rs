@@ -378,8 +378,6 @@ pub(in crate::node) async fn build_node(
         channels_config,
         Arc::clone(&peer_registry),
     );
-    let net_service =
-        net_service.with_block_sync_mode(neo_network::BlockSyncMode::ExternalCoordinator);
     let net_service = if ledger_mode.uses_local_replay_services() {
         net_service.with_inventory_sink(inv_tx)
     } else {
@@ -526,15 +524,15 @@ pub(in crate::node) async fn build_node(
 
     // ----- ledger height -> network advertisement -----
     // Seed the advertised height from the DURABLE tip before P2P sync starts,
-    // so a node restarted on a populated store advertises its real height and
-    // the block-sync cursor (`local_height + 1`) resumes from the persisted tip
-    // instead of re-requesting the entire chain from block 1.
+    // so a node restarted on a populated store reports its real height. The
+    // shared download coordinator independently reads the same durable tip
+    // through `BlockchainHandle` when planning its first range.
     let _ = network.set_block_height(advertised_tip).await;
     info!(target: "neo", height = advertised_tip, "advertised ledger tip to peers");
 
-    // As the ledger persists blocks, advertise the new height to peers
-    // (version + ping) so block-sync requests advance their cursor and
-    // peers learn our progress (C# `LocalNode` reads `Ledger.CurrentIndex`).
+    // As the ledger persists blocks, advertise the new height in ping payloads
+    // so peers learn our progress (C# `LocalNode` reads
+    // `Ledger.CurrentIndex`). Range planning remains coordinator-owned.
     {
         let mut events = blockchain.subscribe();
         let network = network.clone();

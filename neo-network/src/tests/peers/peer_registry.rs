@@ -193,7 +193,7 @@ fn handles_snapshot_and_lookup() {
 }
 
 #[test]
-fn download_peers_are_height_snapshots_for_advertising_full_nodes() {
+fn download_peers_are_ready_height_snapshots_for_full_nodes() {
     let registry = PeerRegistry::with_limits(100, 10);
     let (first, _) = admit(&registry, "10.0.0.1:1001");
     let (second, _) = admit(&registry, "10.0.0.2:1002");
@@ -205,6 +205,16 @@ fn download_peers_are_height_snapshots_for_advertising_full_nodes() {
 
     registry.record_block_height(second, 42);
     registry.record_block_height(first, 7);
+    assert!(
+        registry.download_peers().is_empty(),
+        "advertised height alone does not make a handshaking peer eligible"
+    );
+
+    registry.mark_ready(second);
+    let peers = registry.download_peers();
+    assert_eq!(peers, vec![BlockDownloadPeer::new(second, 42)]);
+
+    registry.mark_ready(first);
     let peers = registry.download_peers();
 
     assert_eq!(peers.len(), 2);

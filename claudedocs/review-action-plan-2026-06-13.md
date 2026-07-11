@@ -2,6 +2,9 @@
 
 > Historical review snapshot. Current composition uses typed service fields;
 > references below to a `ServiceRegistry` describe the pre-ADR-034 tree.
+> The network `TaskManagerService` decision recorded below was also superseded:
+> the coordinator-backed downloader became the sole production range-sync
+> owner, and the uncomposed scaffold plus its integration test were removed.
 
 Source: a 26-crate deep review across 9 quality dimensions (style, Rust best
 practice, blockchain-node best practice, duplication, over-engineering, clarity,
@@ -184,11 +187,13 @@ neo-serialization CSharpEscapeFormatter; neo-wallets NEP-2 AES/Base58Check crypt
   uuid/dirs (config), anyhow (tee), bigdecimal (root) + a duplicate lint.
   [`6fcdd74d`]
 
-### Decisions (kept, not changed)
-- **#22 neo-network TaskManagerService + typed-wire** — KEPT. Both have an
-  integration test / are WIP sync scaffolding; deleting tested intentional WIP
-  is a maintainer call, not a cleanup. The 16 conditional-jump opcode handlers
-  are likewise kept explicit for 1:1 C# auditability.
+### Decisions (historical)
+- **#22 neo-network TaskManagerService** — SUPERSEDED. Once the
+  coordinator-backed downloader and correlated peer fetch path became the sole
+  production owner, the uncomposed task-manager scaffold, ownership mode,
+  per-peer timer scheduler, fire-and-forget request API, and scaffold-only test
+  were deleted. Typed wire values remain independent of that decision. The 16
+  conditional-jump opcode handlers remain explicit for 1:1 C# auditability.
 
 ### Remaining (precisely scoped follow-ups — each a focused effort)
 - **#24 `Result<_,String>` → `CoreResult`/thiserror** across neo-manifest,

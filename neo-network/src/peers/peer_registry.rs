@@ -51,6 +51,9 @@ struct PeerEntry {
     /// Last block height advertised by this peer's FullNode capability or
     /// ping/pong payload.
     last_block_index: Option<u32>,
+    /// Whether the peer completed version/verack processing and can accept
+    /// coordinator-assigned data-plane requests.
+    ready: bool,
 }
 
 /// Interior, lock-guarded state.
@@ -177,6 +180,7 @@ impl PeerRegistry {
                 version_nonce: None,
                 listener_addr: None,
                 last_block_index: None,
+                ready: false,
             },
         );
         true
@@ -228,16 +232,29 @@ impl PeerRegistry {
         }
     }
 
+    /// Mark a peer eligible for data-plane work after its version/verack
+    /// handshake and queued-message flush complete.
+    pub(crate) fn mark_ready(&self, peer_id: PeerId) {
+        let mut inner = self.inner.lock();
+        if let Some(entry) = inner.peers.get_mut(&peer_id) {
+            entry.ready = true;
+        }
+    }
+
     /// Snapshot of connected peers that can serve block downloads.
     ///
-    /// Peers only appear after they have advertised a block height. The list is
-    /// deterministic by peer id so downloader tests and logs are stable.
+    /// Peers only appear after they have advertised a block height and completed
+    /// the handshake. The list is deterministic by peer id so downloader tests
+    /// and logs are stable.
     pub fn download_peers(&self) -> Vec<BlockDownloadPeer> {
         let inner = self.inner.lock();
         let mut peers = inner
             .peers
             .iter()
             .filter_map(|(peer_id, entry)| {
+                if !entry.ready {
+                    return None;
+                }
                 entry
                     .last_block_index
                     .map(|height| BlockDownloadPeer::new(*peer_id, height))

@@ -4,6 +4,12 @@
 > neo-rs hand-rolled audit, synthesis). Companion to
 > [reth-polkadot-reuse-strategy.md](reth-polkadot-reuse-strategy.md) and
 > [neo-core-decomposition-plan.md](neo-core-decomposition-plan.md).
+>
+> Historical roadmap: the actor migration described below has since landed.
+> The temporary network `TaskManagerService`/`TaskManagerHandle` scaffold was
+> later deleted after `BlockDownloadCoordinator` became the sole production
+> range-sync owner. References to those types document the pre-migration tree,
+> not current architecture.
 
 ## 1. Headline Answer: Neither reth Nor Polkadot Uses an Actor Framework
 
