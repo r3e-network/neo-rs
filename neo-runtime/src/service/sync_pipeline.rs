@@ -9,11 +9,13 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use neo_payloads::Block;
-use neo_storage::persistence::Store;
-use neo_storage::persistence::providers::memory_store::MemoryStore;
 use parking_lot::RwLock;
 
 use crate::{BlockBatchImportOutcome, BlockOrigin, ImportQueue, ServiceError, ServiceResult};
+
+mod checkpoint_store;
+
+pub use checkpoint_store::{SharedStoreSyncStageCheckpointStore, StoreSyncStageCheckpointStore};
 
 /// Stable sync-stage identifiers.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -233,154 +235,22 @@ impl SyncStageCheckpointStore for InMemorySyncStageCheckpointStore {
     }
 }
 
-const STORE_CHECKPOINT_KEY_PREFIX: [u8; 2] = [0xF8, b's'];
+const STORE_CHECKPOINT_METADATA_KEY_PREFIX: &[u8] = b"neo.sync.stage-checkpoint.v1.";
+const LEGACY_STORE_CHECKPOINT_KEY_PREFIX: [u8; 2] = [0xF8, b's'];
 const STORE_CHECKPOINT_VALUE_MAGIC: &[u8; 6] = b"NRSCP1";
 const STORE_CHECKPOINT_VALUE_LEN: usize = STORE_CHECKPOINT_VALUE_MAGIC.len() + 1 + 4 + 8 + 8;
 
-/// Store-backed checkpoint provider for crash-resumable sync stages.
-///
-/// The key is deliberately three bytes (`0xF8`, `s`, stage-code), shorter than
-/// every consensus [`neo_storage::StorageKey`] row, whose serialized form starts
-/// with a four-byte contract id. This keeps runtime sync metadata out of the
-/// contract-storage keyspace while still using the same provider/factory-backed
-/// storage engine. Values are versioned fixed-width records:
-/// `NRSCP1 || stage || height_be || processed_blocks_be || changed_bytes_be`.
-#[derive(Debug)]
-pub struct StoreSyncStageCheckpointStore<S: Store + Clone> {
-    store: S,
-    write_lock: parking_lot::Mutex<()>,
-}
-
-impl<S> StoreSyncStageCheckpointStore<S>
-where
-    S: Store + Clone,
-{
-    /// Create a checkpoint store over a concrete storage backend handle.
-    ///
-    /// Cloned store handles are expected to observe the same backend state,
-    /// which is true for the built-in memory, MDBX, and RocksDB stores.
-    #[must_use]
-    pub fn new(store: S) -> Self {
-        Self {
-            store,
-            write_lock: parking_lot::Mutex::new(()),
-        }
-    }
-
-    /// Return the underlying store handle.
-    #[must_use]
-    pub const fn store(&self) -> &S {
-        &self.store
-    }
-}
-
-impl<S> SyncStageCheckpointStore for StoreSyncStageCheckpointStore<S>
-where
-    S: Store + Clone,
-{
-    fn checkpoint(&self, stage: SyncStageKind) -> ServiceResult<Option<SyncStageCheckpoint>> {
-        let Some(bytes) = self.store.try_get_bytes(&checkpoint_key(stage)) else {
-            return Ok(None);
-        };
-        decode_checkpoint(stage, &bytes).map(Some)
-    }
-
-    fn put_checkpoint(&self, checkpoint: SyncStageCheckpoint) -> ServiceResult<()> {
-        let key = checkpoint_key(checkpoint.stage);
-        let value = encode_checkpoint(&checkpoint);
-
-        let overlay = [(key.clone(), Some(value.clone()))];
-        if self
-            .store
-            .try_commit_raw_overlay(&overlay)
-            .map_err(|err| storage_error("write sync checkpoint", err))?
-        {
-            self.store
-                .flush()
-                .map_err(|err| storage_error("flush sync checkpoint", err))?;
-            return Ok(());
-        }
-
-        let _guard = self.write_lock.lock();
-        let mut writer = self.store.clone();
-        writer
-            .put_sync(key, value)
-            .map_err(|err| storage_error("write sync checkpoint", err))?;
-        writer
-            .flush()
-            .map_err(|err| storage_error("flush sync checkpoint", err))
-    }
-}
-
-/// Store-backed checkpoint provider over a shared store handle.
-///
-/// Node composition usually owns storage as an `Arc<S>` shared by RPC,
-/// blockchain, state-root, and sync services. This adapter keeps that concrete
-/// store type instead of forcing an erased `Store` handle at the checkpoint boundary,
-/// while preserving the same durable checkpoint encoding as
-/// [`StoreSyncStageCheckpointStore`].
-#[derive(Debug)]
-pub struct SharedStoreSyncStageCheckpointStore<S: Store = MemoryStore> {
-    store: Arc<S>,
-    write_lock: parking_lot::Mutex<()>,
-}
-
-impl<S> SharedStoreSyncStageCheckpointStore<S>
-where
-    S: Store,
-{
-    /// Create a checkpoint store over a shared storage backend.
-    #[must_use]
-    pub fn new(store: Arc<S>) -> Self {
-        Self {
-            store,
-            write_lock: parking_lot::Mutex::new(()),
-        }
-    }
-
-    /// Return the shared store handle.
-    #[must_use]
-    pub fn store(&self) -> Arc<S> {
-        Arc::clone(&self.store)
-    }
-}
-
-impl<S> SyncStageCheckpointStore for SharedStoreSyncStageCheckpointStore<S>
-where
-    S: Store,
-{
-    fn checkpoint(&self, stage: SyncStageKind) -> ServiceResult<Option<SyncStageCheckpoint>> {
-        let Some(bytes) = self.store.try_get_bytes(&checkpoint_key(stage)) else {
-            return Ok(None);
-        };
-        decode_checkpoint(stage, &bytes).map(Some)
-    }
-
-    fn put_checkpoint(&self, checkpoint: SyncStageCheckpoint) -> ServiceResult<()> {
-        let key = checkpoint_key(checkpoint.stage);
-        let value = encode_checkpoint(&checkpoint);
-
-        let _guard = self.write_lock.lock();
-        let overlay = [(key, Some(value))];
-        if !self
-            .store
-            .try_commit_raw_overlay(&overlay)
-            .map_err(|err| storage_error("write sync checkpoint", err))?
-        {
-            return Err(ServiceError::invalid_state(
-                "shared store declined raw overlay sync checkpoint write",
-            ));
-        }
-        self.store
-            .flush()
-            .map_err(|err| storage_error("flush sync checkpoint", err))
-    }
-}
-
 fn checkpoint_key(stage: SyncStageKind) -> Vec<u8> {
+    let mut key = Vec::with_capacity(STORE_CHECKPOINT_METADATA_KEY_PREFIX.len() + 1);
+    key.extend_from_slice(STORE_CHECKPOINT_METADATA_KEY_PREFIX);
+    key.push(stage.code());
+    key
+}
+
+fn legacy_checkpoint_key(stage: SyncStageKind) -> Vec<u8> {
     vec![
-        STORE_CHECKPOINT_KEY_PREFIX[0],
-        STORE_CHECKPOINT_KEY_PREFIX[1],
+        LEGACY_STORE_CHECKPOINT_KEY_PREFIX[0],
+        LEGACY_STORE_CHECKPOINT_KEY_PREFIX[1],
         stage.code(),
     ]
 }
@@ -461,10 +331,6 @@ fn take_checkpoint_bytes<'a>(
     })?;
     *cursor = end;
     Ok(slice)
-}
-
-fn storage_error(context: &'static str, err: impl std::fmt::Display) -> ServiceError {
-    ServiceError::internal(format!("{context}: {err}"))
 }
 
 /// One contiguous block batch entering a staged sync/import driver.

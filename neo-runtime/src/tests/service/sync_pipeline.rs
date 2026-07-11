@@ -7,6 +7,8 @@ use neo_payloads::{Block, Header};
 use neo_storage::mdbx::MdbxStoreProvider;
 use neo_storage::persistence::providers::MemoryStore;
 use neo_storage::persistence::storage::StorageConfig;
+use neo_storage::persistence::{RawReadOnlyStore, Store, WriteStore};
+use neo_storage::rocksdb::RocksDBStoreProvider;
 use parking_lot::Mutex;
 use std::fs;
 use std::path::PathBuf;
@@ -65,28 +67,9 @@ fn in_memory_checkpoint_store_persists_stage_progress() {
 }
 
 #[test]
-fn store_checkpoint_keys_do_not_overlap_contract_storage_keys() {
-    for stage in [
-        SyncStageKind::Headers,
-        SyncStageKind::Bodies,
-        SyncStageKind::Preverify,
-        SyncStageKind::Import,
-        SyncStageKind::Execute,
-        SyncStageKind::StateRoot,
-        SyncStageKind::Index,
-        SyncStageKind::Prune,
-    ] {
-        assert!(
-            checkpoint_key(stage).len() < std::mem::size_of::<i32>(),
-            "{} checkpoint keys must stay outside StorageKey's contract-id namespace",
-            stage.as_str()
-        );
-    }
-}
-
-#[test]
 fn store_checkpoint_store_round_trips_and_overwrites_memory_backend() {
-    let store = StoreSyncStageCheckpointStore::new(MemoryStore::new());
+    let backing = MemoryStore::new();
+    let store = StoreSyncStageCheckpointStore::new(backing.clone());
     let first = SyncStageCheckpoint::new(SyncStageKind::Import, 10).with_counters(10, 1_000);
     let second = SyncStageCheckpoint::new(SyncStageKind::Import, 12).with_counters(12, 2_000);
 
@@ -100,6 +83,36 @@ fn store_checkpoint_store_round_trips_and_overwrites_memory_backend() {
         Some(second)
     );
     assert_eq!(store.checkpoint(SyncStageKind::Bodies).expect("get"), None);
+    assert_eq!(
+        backing.try_get_bytes(&checkpoint_key(SyncStageKind::Import)),
+        None,
+        "sync metadata must not enter the normal Neo data table"
+    );
+    assert!(
+        backing
+            .maintenance_metadata(&checkpoint_key(SyncStageKind::Import))
+            .expect("read isolated checkpoint metadata")
+            .is_some()
+    );
+}
+
+#[test]
+fn store_checkpoint_store_discards_legacy_raw_metadata_keys() {
+    let mut backing = MemoryStore::new();
+    let legacy_key = legacy_checkpoint_key(SyncStageKind::Import);
+    let legacy_checkpoint =
+        SyncStageCheckpoint::new(SyncStageKind::Import, 8).with_counters(8, 512);
+    backing
+        .put(legacy_key.clone(), encode_checkpoint(&legacy_checkpoint))
+        .expect("seed legacy normal-table checkpoint");
+    let store = StoreSyncStageCheckpointStore::new(backing.clone());
+
+    assert_eq!(store.checkpoint(SyncStageKind::Import).expect("get"), None);
+    assert_eq!(
+        backing.try_get_bytes(&legacy_key),
+        None,
+        "legacy checkpoint bytes must be removed from the normal data table"
+    );
 }
 
 #[test]
@@ -133,11 +146,64 @@ fn store_checkpoint_store_persists_across_mdbx_reopen() {
         store
             .put_checkpoint(checkpoint.clone())
             .expect("persist checkpoint");
+        assert_eq!(
+            store
+                .store()
+                .try_get_bytes(&checkpoint_key(SyncStageKind::Import)),
+            None
+        );
+        assert!(
+            store
+                .store()
+                .maintenance_metadata(&checkpoint_key(SyncStageKind::Import))
+                .expect("read MDBX checkpoint metadata")
+                .is_some()
+        );
     }
 
     {
         let mdbx = provider.get_mdbx_store(&path).expect("reopen mdbx");
         let store = StoreSyncStageCheckpointStore::new(mdbx);
+        assert_eq!(
+            store.checkpoint(SyncStageKind::Import).expect("read"),
+            Some(checkpoint)
+        );
+    }
+
+    let _ = fs::remove_dir_all(path);
+}
+
+#[test]
+fn store_checkpoint_store_persists_across_rocksdb_reopen() {
+    let path = unique_test_path("sync-checkpoint-rocksdb");
+    let provider = RocksDBStoreProvider::new(StorageConfig {
+        path: path.clone(),
+        ..Default::default()
+    });
+    let checkpoint =
+        SyncStageCheckpoint::new(SyncStageKind::Import, 101).with_counters(100, 32_768);
+
+    {
+        let rocksdb = provider
+            .get_rocksdb_store(std::path::Path::new(""))
+            .expect("open RocksDB");
+        let store = StoreSyncStageCheckpointStore::new(rocksdb);
+        store
+            .put_checkpoint(checkpoint.clone())
+            .expect("persist checkpoint");
+        assert_eq!(
+            store
+                .store()
+                .try_get_bytes(&checkpoint_key(SyncStageKind::Import)),
+            None
+        );
+    }
+
+    {
+        let rocksdb = provider
+            .get_rocksdb_store(std::path::Path::new(""))
+            .expect("reopen RocksDB");
+        let store = StoreSyncStageCheckpointStore::new(rocksdb);
         assert_eq!(
             store.checkpoint(SyncStageKind::Import).expect("read"),
             Some(checkpoint)

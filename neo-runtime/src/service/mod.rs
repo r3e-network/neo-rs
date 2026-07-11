@@ -13,10 +13,12 @@
 //!
 //! - `block_import`: Shared block-import trait and outcome records.
 //! - `blockchain`: Blockchain-domain primitive records used across crates.
+//! - `nep17`: Shared NEP-17 metadata capability contract.
 //! - `outcome`: Runtime outcome records shared across services.
 //! - `services`: Auxiliary service startup and handles used by the daemon.
 //! - `sync_pipeline`: Shared staged-sync batch, checkpoint, and commit-policy
-//!   primitives.
+//!   primitives, with store-backed checkpoint adapters isolated in its
+//!   `checkpoint_store` implementation module.
 //! - `sync_metrics`: Sync-speed counters, summaries, and operator-facing
 //!   throughput status.
 

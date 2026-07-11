@@ -329,9 +329,14 @@ The detailed rules for this style live in
   stops on downloader, checkpoint-read/write, height-gap, or partial-import
   errors. Downloaded `SyncBlockBatch` values are checked for contiguous
   heights, imported through the canonical `ImportQueue`, and checkpointed only
-  after durable import progress and when policy fires. The store-backed checkpoint adapters persist versioned runtime
-  sync metadata under a short raw-key namespace that cannot overlap normal
-  `StorageKey` contract rows. `neo_network::BlockDownloader` is the
+  after durable import progress and when policy fires. The store-backed
+  checkpoint adapters persist versioned runtime metadata in the backend's
+  isolated maintenance namespace. Checkpoint advancement and discard of any
+  obsolete normal-table checkpoint row use durable `StoreMaintenanceBatch`
+  transactions, so sync metadata cannot enter `StorageKey` scans, store dumps,
+  or state-root calculation. Legacy checkpoint hints are not migrated because
+  the canonical chain tip is authoritative and production sync realigns its
+  cursor before downloading. `neo_network::BlockDownloader` is the
   stream-shaped download boundary; its `BlockDownloadBatch` converts into the
   runtime batch type. `BlockRequestScheduler` owns the per-peer
   `GetBlockByIndex` request-window policy used by `PeerSession`.

@@ -86,7 +86,13 @@ import-stage checkpoints through
 `neo_runtime::sync_pipeline::{CommitPolicy, SyncStageCheckpointStore}`. The
 node-level `neo_system::SyncImportPipeline` now composes the queue and durable
 checkpoint provider over the same blockchain and storage handles used by the
-rest of the node and is owned directly by `neo_system::Node`.
+rest of the node and is owned directly by `neo_system::Node`. Store-backed
+checkpoint adapters read and write the backend's isolated maintenance
+namespace. Each versioned checkpoint update and any obsolete normal-table key
+discard are committed through durable `StoreMaintenanceBatch` transactions;
+checkpoint bytes therefore remain outside typed Neo storage scans, dumps, and
+state roots. Obsolete checkpoint hints are not migrated: production sync
+realigns to the authoritative canonical tip before consuming peer batches.
 `neo_system::SyncDownloadImportDriver` seeds the driver from the canonical tip,
 drains any `BlockDownloader` stream into that handle, and stops on downloader,
 contiguity, partial-import, or checkpoint errors. `BlockOrigin::Sync` maps to

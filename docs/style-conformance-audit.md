@@ -116,6 +116,11 @@ High-signal clusters found during the first pass:
   are now limited to standard-library panic payload boundaries and comments
   explaining that invariant.
 
+- Staged-sync checkpoints use backend-isolated maintenance metadata instead of
+  magic keys in the normal Neo data table. Checkpoint advancement and legacy-row
+  cleanup share one durable `StoreMaintenanceBatch`, so operational state cannot
+  leak into typed scans, deterministic dumps, or state-root calculation.
+
 - `neo-manifest/src/manifest/contract_manifest.rs` has been decomposed into
   root/domain, `json`, `stack`, `wire`, `validation`, and typed `fields`
   modules. The remaining manifest cleanup is to keep permission/trust policy

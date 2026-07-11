@@ -136,3 +136,39 @@ fn snapshot_backed_store_cache_backward_find_matches_prefix_rows() {
 
     assert_eq!(keys, vec![key_b.to_array(), key_a.to_array()]);
 }
+
+#[test]
+fn maintenance_batch_is_atomic_and_metadata_is_isolated() {
+    let mut store = MemoryStore::new();
+    let data_key = StorageKey::new(-4, vec![9, 0, 0, 0, 1]).to_array();
+    let metadata_key = b"sync-checkpoint".to_vec();
+    store
+        .put(data_key.clone(), b"value".to_vec())
+        .expect("seed data");
+
+    let mut batch = StoreMaintenanceBatch::new();
+    batch.delete_data(data_key.clone());
+    batch.put_metadata(metadata_key.clone(), b"checkpoint".to_vec());
+    assert!(
+        store
+            .try_commit_durable_maintenance(&batch)
+            .expect("maintenance commit")
+    );
+
+    assert_eq!(store.try_get_bytes(&data_key), None);
+    assert_eq!(store.try_get_bytes(&metadata_key), None);
+    assert_eq!(
+        store
+            .maintenance_metadata(&metadata_key)
+            .expect("metadata read"),
+        Some(b"checkpoint".to_vec())
+    );
+
+    store.reset();
+    assert_eq!(
+        store
+            .maintenance_metadata(&metadata_key)
+            .expect("metadata after reset"),
+        None
+    );
+}

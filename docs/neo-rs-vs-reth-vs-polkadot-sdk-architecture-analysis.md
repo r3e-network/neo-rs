@@ -288,7 +288,13 @@ updates, import events, and one batch-end reverify; otherwise they use per-block
 durability. The plan freezes live or catch-up observer behavior for the range.
 `neo_runtime::SyncPipelineDriver` consumes contiguous sync batches, rejects
 height gaps, calls the import queue, and writes import-stage checkpoints only
-after durable progress and according to `CommitPolicy`.
+after durable progress and according to `CommitPolicy`. Store-backed checkpoint
+providers use the backend's isolated maintenance metadata rather than magic
+keys in the normal Neo data table. Versioned checkpoint updates and obsolete
+normal-table key discard use durable `StoreMaintenanceBatch` transactions,
+keeping operational metadata out of typed scans, store dumps, and state-root
+input. Old checkpoint hints are deliberately not migrated because production
+sync realigns to the authoritative canonical tip before downloading.
 `SyncDownloadImportDriver` seeds its cursor from the canonical tip and surfaces
 downloader, checkpoint-read/write, gap, and partial-import errors.
 `neo_system::SyncImportPipeline` now composes the
@@ -642,7 +648,7 @@ pub struct TransactionState {
    `StorageKey` / `KeyBuilder` over raw C#-compatible bytes; any future typed
    adapter and compact derive must preserve those bytes.
 3. **Block import queue with concurrent verification** — reusable runtime boundary implemented and composed by `neo_system::SyncImportPipeline`.
-4. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`; durable store-backed checkpoints are available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, node composition creates the import-stage queue/checkpoint handle, and `SyncDownloadImportDriver` now receives production P2P coordinator batches.
+4. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`; durable store-backed checkpoints are available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, persist in isolated maintenance metadata through atomic `StoreMaintenanceBatch` commits, node composition creates the import-stage queue/checkpoint handle, and `SyncDownloadImportDriver` now receives production P2P coordinator batches.
 5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; `neo-system` has the download-to-import bridge; per-peer `BlockRequestScheduler` remains as the legacy compatibility path; `BlockDownloadCoordinator` composes `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) and `OrderedBlockBatchBuffer` (contiguous response release) behind a transport-agnostic `BlockRangeFetcher`; `Arc<PeerRegistry>` implements live peer fetching through `RemoteNodeHandle::fetch_blocks_by_index`; `PeerRegistry::download_peers` exposes advertised-height peer snapshots; node composition registers the shared registry, disables legacy per-peer block requests, and starts the coordinator-backed downloader/import task.
 6. **Hot/Cold/Static tiering integration** — append-only archive, exact Ledger
    adapter, cold-first precommit publication, recovery, persistent archive

@@ -3,6 +3,7 @@ use crate::persistence::{
     read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric},
     seek_direction::SeekDirection,
     store::{RawOverlaySource, Store, StoreBackendKind},
+    store_maintenance::StoreMaintenanceBatch,
     write_store::WriteStore,
 };
 use crate::types::{StorageItem, storage_key::StorageKey};
@@ -12,7 +13,13 @@ use std::sync::Arc;
 
 /// An in-memory Store implementation that uses BTreeMap as the underlying storage.
 pub struct MemoryStore {
-    inner_data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>,
+    state: Arc<RwLock<MemoryStoreState>>,
+}
+
+#[derive(Default)]
+pub(super) struct MemoryStoreState {
+    pub(super) data: BTreeMap<Vec<u8>, Vec<u8>>,
+    metadata: BTreeMap<Vec<u8>, Vec<u8>>,
 }
 
 impl std::fmt::Debug for MemoryStore {
@@ -25,13 +32,13 @@ impl MemoryStore {
     /// Creates a new MemoryStore.
     pub fn new() -> Self {
         Self {
-            inner_data: Arc::new(RwLock::new(BTreeMap::new())),
+            state: Arc::new(RwLock::new(MemoryStoreState::default())),
         }
     }
 
-    /// Resets the store, clearing all data.
+    /// Resets the store, clearing normal data and maintenance metadata.
     pub fn reset(&self) {
-        self.inner_data.write().clear();
+        *self.state.write() = MemoryStoreState::default();
     }
 }
 
@@ -41,7 +48,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
     type FindIterator<'a> = std::vec::IntoIter<(Vec<u8>, Vec<u8>)>;
 
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
-        self.inner_data.read().get(key).cloned()
+        self.state.read().data.get(key).cloned()
     }
 
     fn find(
@@ -49,8 +56,9 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
         key_prefix: Option<&Vec<u8>>,
         direction: SeekDirection,
     ) -> Self::FindIterator<'_> {
-        let data = self.inner_data.read();
-        let mut entries: Vec<_> = data
+        let state = self.state.read();
+        let mut entries: Vec<_> = state
+            .data
             .iter()
             .filter(|(key, _)| {
                 key_prefix
@@ -69,7 +77,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
 
 impl RawReadOnlyStore for MemoryStore {
     fn try_get_bytes(&self, key: &[u8]) -> Option<Vec<u8>> {
-        self.inner_data.read().get(key).cloned()
+        self.state.read().data.get(key).cloned()
     }
 }
 
@@ -78,8 +86,9 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for MemoryStore {
 
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         let raw_key = key.to_array();
-        self.inner_data
+        self.state
             .read()
+            .data
             .get(&raw_key)
             .cloned()
             .map(StorageItem::from_bytes)
@@ -90,10 +99,11 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for MemoryStore {
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
     ) -> Self::FindIterator<'_> {
-        let data = self.inner_data.read();
+        let state = self.state.read();
         let prefix_bytes = key_prefix.map(|k| k.to_array());
 
-        let mut entries: Vec<_> = data
+        let mut entries: Vec<_> = state
+            .data
             .iter()
             .filter(|(key, _)| {
                 if let Some(prefix) = prefix_bytes.as_ref() {
@@ -120,12 +130,12 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for MemoryStore {
 
 impl WriteStore<Vec<u8>, Vec<u8>> for MemoryStore {
     fn delete(&mut self, key: Vec<u8>) -> crate::error::StorageResult<()> {
-        self.inner_data.write().remove(&key);
+        self.state.write().data.remove(&key);
         Ok(())
     }
 
     fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> crate::error::StorageResult<()> {
-        self.inner_data.write().insert(key, value);
+        self.state.write().data.insert(key, value);
         Ok(())
     }
 }
@@ -138,7 +148,7 @@ impl Store for MemoryStore {
     fn snapshot(&self) -> Arc<Self::Snapshot> {
         Arc::new(MemorySnapshot::new(
             Arc::new(self.clone()),
-            self.inner_data.clone(),
+            self.state.clone(),
         ))
     }
 
@@ -150,14 +160,14 @@ impl Store for MemoryStore {
         &self,
         overlay: &[(Vec<u8>, Option<Vec<u8>>)],
     ) -> crate::error::StorageResult<bool> {
-        let mut guard = self.inner_data.write();
+        let mut state = self.state.write();
         for (key, value) in overlay {
             match value {
                 Some(value) => {
-                    guard.insert(key.clone(), value.clone());
+                    state.data.insert(key.clone(), value.clone());
                 }
                 None => {
-                    guard.remove(key);
+                    state.data.remove(key);
                 }
             }
         }
@@ -188,12 +198,44 @@ impl Store for MemoryStore {
     {
         self.try_commit_borrowed_raw_overlay(overlay_source)
     }
+
+    fn maintenance_metadata(&self, key: &[u8]) -> crate::error::StorageResult<Option<Vec<u8>>> {
+        Ok(self.state.read().metadata.get(key).cloned())
+    }
+
+    fn try_commit_durable_maintenance(
+        &self,
+        maintenance: &StoreMaintenanceBatch,
+    ) -> crate::error::StorageResult<bool> {
+        let mut state = self.state.write();
+        for (key, value) in maintenance.data_operations() {
+            match value {
+                Some(value) => {
+                    state.data.insert(key.to_vec(), value.to_vec());
+                }
+                None => {
+                    state.data.remove(key);
+                }
+            }
+        }
+        for (key, value) in maintenance.metadata_operations() {
+            match value {
+                Some(value) => {
+                    state.metadata.insert(key.to_vec(), value.to_vec());
+                }
+                None => {
+                    state.metadata.remove(key);
+                }
+            }
+        }
+        Ok(true)
+    }
 }
 
 impl Clone for MemoryStore {
     fn clone(&self) -> Self {
         Self {
-            inner_data: self.inner_data.clone(),
+            state: self.state.clone(),
         }
     }
 }
@@ -201,14 +243,14 @@ impl Clone for MemoryStore {
 impl MemoryStore {
     /// Applies a batch of write operations to the underlying store.
     pub fn apply_batch(&self, batch: &std::collections::BTreeMap<Vec<u8>, Option<Vec<u8>>>) {
-        let mut guard = self.inner_data.write();
+        let mut state = self.state.write();
         for (key, value) in batch.iter() {
             match value {
                 Some(v) => {
-                    guard.insert(key.clone(), v.clone());
+                    state.data.insert(key.clone(), v.clone());
                 }
                 None => {
-                    guard.remove(key);
+                    state.data.remove(key);
                 }
             }
         }

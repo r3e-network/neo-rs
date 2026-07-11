@@ -1,4 +1,4 @@
-use super::memory_store::MemoryStore;
+use super::memory_store::{MemoryStore, MemoryStoreState};
 use crate::persistence::{
     read_only_store::{RawReadOnlyStore, ReadOnlyStoreGeneric},
     seek_direction::SeekDirection,
@@ -22,11 +22,8 @@ pub struct MemorySnapshot {
 
 impl MemorySnapshot {
     /// Creates a new MemorySnapshot.
-    pub fn new(
-        store: Arc<MemoryStore>,
-        inner_data: Arc<RwLock<BTreeMap<Vec<u8>, Vec<u8>>>>,
-    ) -> Self {
-        let immutable_data = inner_data.read().clone();
+    pub(super) fn new(store: Arc<MemoryStore>, state: Arc<RwLock<MemoryStoreState>>) -> Self {
+        let immutable_data = state.read().data.clone();
         Self {
             store,
             immutable_data,
