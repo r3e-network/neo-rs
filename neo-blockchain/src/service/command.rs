@@ -22,7 +22,6 @@ use crate::PreverifyCompleted;
 use crate::fill_memory_pool::FillMemoryPool;
 use crate::handle::BlockchainHandle;
 use crate::import::Import;
-use crate::persist_completed::PersistCompleted;
 use crate::relay_result::RelayResult;
 use crate::reverify::Reverify;
 
@@ -76,8 +75,8 @@ pub struct ImportBlocksStats {
     pub transaction_block_clone_elapsed: Duration,
     /// Elapsed time spent inserting transaction-bearing blocks into the hot ledger cache.
     pub transaction_ledger_insert_elapsed: Duration,
-    /// Elapsed time spent running committed hooks for transaction-bearing blocks.
-    pub transaction_committed_hook_elapsed: Duration,
+    /// Elapsed time spent waiting for finalized delivery on transaction-bearing blocks.
+    pub transaction_finalized_delivery_elapsed: Duration,
     /// Elapsed time spent flushing deferred handlers and the durable store.
     pub finalization_elapsed: Duration,
     /// Elapsed time spent waiting for deferred handlers, including StateService workers.
@@ -169,8 +168,6 @@ impl ImportBlocksReply {
 /// channel is that each command is processed exactly once.
 #[derive(Debug)]
 pub enum BlockchainCommand {
-    /// Notification that a block was persisted.
-    PersistCompleted(PersistCompleted),
     /// Request to import blocks.
     Import(Import),
     /// Request to import blocks and report how many directly advanced the tip.

@@ -7,6 +7,11 @@
 //! copy-pasted fixture code that was duplicated between `neo-rpc`'s
 //! integration tests and internal test modules.
 //!
+//! ## Boundary
+//!
+//! This development-only crate constructs canonical test values through public
+//! workspace APIs. Production crates must not depend on it.
+//!
 //! ## Contents
 //!
 //! - [`TestTransactionBuilder`]: fluent builder for Neo transactions with

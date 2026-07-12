@@ -1,6 +1,6 @@
 # neo-rs Architecture Design Document
 
-**Version**: 5.3
+**Version**: 5.4
 **Date**: 2026-07-12
 **Author**: Software Architect
 **Status**: Active
@@ -14,9 +14,9 @@ node implementation. It covers the current state (26 crates, 8 ordered layers), 
 identified issues, and the ADRs that resolve them. The goal is a codebase
 that is professional, consistent, and ready for long-term evolution.
 
-**Architecture health score**: 9.5/10 (up from 9.4 after ADR-027 dead code excision)
+**Architecture health score**: 9.5/10
 
-The ADR log now spans ADR-001 through ADR-038. Beyond the early trait-design,
+The ADR log now spans ADR-001 through ADR-039. Beyond the early trait-design,
 duplication, and async/concurrency audits (ADR-016 through ADR-019), later ADRs
 cover store-surface reduction and trait sealing (ADR-020, ADR-021), dead-code
 excision (ADR-022, ADR-027, ADR-028, ADR-032), hex/KeyBuilder consolidation
@@ -26,7 +26,8 @@ ConsensusSigner deadlock fix (ADR-031), static composition (ADR-034), and the
 staged core/application lifecycle with private service layouts (ADR-035), a
 production-consumed finalized Ledger archive (ADR-036), frozen generic
 StateService providers (ADR-037), and one checker-typed import queue shared by
-staged and live peer sync (ADR-038).
+staged and live peer sync (ADR-038), followed by bounded, acknowledged finalized
+projection delivery (ADR-039).
 
 ---
 
@@ -62,6 +63,9 @@ staged and live peer sync (ADR-038).
 5. **Capability-oriented reads**: Ledger and StateService factories return
    associated concrete provider types; RPC does not open storage engines,
    snapshots, or tries directly
+6. **Three block-outcome channels**: synchronous pre-commit durability hooks,
+   a bounded acknowledged finalized-projection stream, and a lightweight
+   lifecycle broadcast each carry only the semantics their consumers require
 
 ---
 
@@ -1284,7 +1288,7 @@ Validation is split into:
 | doc(html_root_url) versions | All 11 crates at 0.10.0 (ADR-013) |
 | Redundant inline lints | Removed (tokens_tracker module) |
 | reth/polkadot comparison | Documented (8 patterns adopted, 4 deferred) |
-| Evolution roadmap | 4 phases, full ADR log (ADR-001 through ADR-038) |
+| Evolution roadmap | 4 phases, full ADR log (ADR-001 through ADR-039) |
 | Debug trait bounds | Consistent across all service traits (ADR-019) |
 | HSM redeem script | Delegates to canonical neo-vm impl (ADR-016) |
 | Async/concurrency safety | Excellent — 0 Critical/Major issues (ADR audit) |
@@ -2169,3 +2173,85 @@ dBFT witness check.
   still fail closed on invalid or missing consensus witnesses.
 - Neo wire bytes, C# persistence order, native-contract behavior, state roots,
   and storage encoding are unchanged.
+
+### ADR-039: Bounded acknowledged finalized-projection delivery
+
+**Status**: Accepted (implemented)
+
+**Context**: ApplicationLogs and TokensTracker previously split one logical
+projection across the pre-commit `Committing` hook and a post-commit callback.
+The callback carried only `&Block`; the execution records and canonical
+snapshot needed to derive the projection existed only before Ledger durability.
+That staging model was also unsafe across a deferred live batch because each
+plugin starts or resets its private batch per block, so a later block can replace
+uncommitted work from an earlier block. A separate `PersistCompleted` blockchain
+command did not solve the ownership problem: it had no production sender and
+could not carry the exact execution artifacts.
+
+**Decision**:
+
+- Native persistence returns an owned `BlockCommitArtifacts<B>` value. It keeps
+  the canonical `Arc<DataCache<B>>` and exact `Vec<ApplicationExecuted>` alive
+  until the Ledger durability decision is known.
+- After durable canonical commit, `neo-blockchain` converts those artifacts into
+  `FinalizedBlock<B>`, which owns an `Arc<Block>`, optional canonical snapshot,
+  zero-copy `Arc<[ApplicationExecuted]>`, and the frozen `BlockPersistContext`.
+- Replace the fire-and-forget committed callback with
+  `SystemContext::block_finalized`, whose concrete future completes only after
+  application-owned finalized work acknowledges the block.
+- `neo-system` defines the statically dispatched
+  `FinalizedBlockConsumer<B>`, `FinalizedBlockHandle<B>`, and
+  `FinalizedBlockStream<B, C>`. The stream uses a bounded Tokio channel
+  (capacity 64), one oneshot acknowledgement per delivery, and
+  `spawn_blocking` for synchronous projection stores.
+- `neo-node` composes ApplicationLogs and TokensTracker before blockchain
+  startup into one concrete `FinalizedProjectionConsumer<P, L, T>`. The
+  `FinalizedHandler` adapter performs each service's prepare and commit phases
+  wholly after canonical durability.
+- Start the finalized stream as an essential supervised task before the
+  blockchain service. Consumer/worker failure requests a recoverable shutdown;
+  it does not relabel or roll back the already durable canonical block.
+- When finalized projections are active near the live tip,
+  `SyncBatchCommitPolicy` requires per-block durability so every supplied
+  snapshot is fixed at exactly one height. Catch-up and trusted replay continue
+  to skip these optional projections; observer-free batches may retain one
+  shared durable commit and omit per-height snapshots and execution artifacts.
+- Keep three distinct delivery classes. StateService, a persistent indexer, and
+  static-archive staging remain synchronous durability participants before the
+  canonical fence. ApplicationLogs and TokensTracker use the acknowledged
+  finalized stream. `RuntimeEvent` remains a lightweight broadcast for
+  consensus, state-root driving, network-height advertisement, Index-stage
+  wakeups, reverts/tip changes, relay results, and shutdown.
+- Delete the dead blockchain `PersistCompleted` command, message, and handler.
+  The same phrase in dBFT consensus tests describes a separate consensus-round
+  event and is unaffected.
+
+**Trade-offs**:
+
+- **Gaining**: exact execution artifacts survive durability without cloning
+  transaction bodies; optional projection memory is bounded; plugin registration
+  is immutable after composition; and the canonical writer cannot outrun a
+  supplied snapshot or publish `Imported` before projection acknowledgement.
+- **Cost**: enabled live projections add their synchronous store latency to the
+  per-block canonical publication path. This is deliberate backpressure rather
+  than unbounded lag or mutable snapshot races.
+- **Scope**: the finalized projection stream currently emits committed outcomes
+  only. Neo dBFT commits are final; exceptional revert awareness remains on the
+  lightweight lifecycle broadcast. Historical catch-up for optional plugin
+  projections remains an explicit service concern.
+- **Reversibility**: additional concrete consumers can be composed behind the
+  generic consumer trait. Reintroducing mutable registration or a `dyn` callback
+  registry is not a compatibility goal.
+
+**Consequences**:
+
+- For observer-visible blocks the order is canonical durability, acknowledged
+  finalized projection, mempool maintenance, lightweight `Imported`, then
+  parked-child draining.
+- A finalized-delivery failure leaves Ledger authoritative, suppresses later
+  lifecycle publication for that block, marks the active writer fatal, and
+  requests clean restart without the pre-commit poison marker.
+- Deferred inventory and sync batches consult the same commit policy; active
+  finalized projections cannot accidentally span one shared mutable snapshot.
+- Neo N3 v3.10.1 bytes, execution order, native-contract behavior, state roots,
+  witness checks, and canonical storage layout are unchanged.

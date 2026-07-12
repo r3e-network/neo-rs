@@ -3,8 +3,7 @@
 //! These types and free functions are crate-private machinery used by the
 //! blockchain service; they are intentionally kept together rather than
 //! split into vanity files. The public message types live in their own
-//! per-type modules (`persist_completed`, `import`, `reverify`, `command`,
-//! ...).
+//! per-type modules (`import`, `reverify`, `command`, ...).
 
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;

@@ -339,7 +339,8 @@ where
     let transaction_block_import_seconds = composition.transaction_block_import_seconds();
     let transaction_block_clone_seconds = composition.transaction_block_clone_seconds();
     let transaction_ledger_insert_seconds = composition.transaction_ledger_insert_seconds();
-    let transaction_committed_hook_seconds = composition.transaction_committed_hook_seconds();
+    let transaction_finalized_delivery_seconds =
+        composition.transaction_finalized_delivery_seconds();
     let transaction_blocks_per_second = composition.transaction_blocks_per_second();
     let finalization_seconds = composition.finalization_seconds();
     let finalization_commit_handlers_seconds = composition.finalization_commit_handlers_seconds();
@@ -362,7 +363,7 @@ where
         transaction_block_import_seconds,
         transaction_block_clone_seconds,
         transaction_ledger_insert_seconds,
-        transaction_committed_hook_seconds,
+        transaction_finalized_delivery_seconds,
         transaction_blocks_per_second,
         finalization_seconds,
         finalization_commit_handlers_seconds,
@@ -387,7 +388,7 @@ where
         transaction_block_import_seconds,
         transaction_block_clone_seconds,
         transaction_ledger_insert_seconds,
-        transaction_committed_hook_seconds,
+        transaction_finalized_delivery_seconds,
         transaction_blocks_per_second,
         finalization_seconds,
         finalization_commit_handlers_seconds,

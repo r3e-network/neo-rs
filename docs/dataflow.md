@@ -17,8 +17,9 @@ task supervision. The diagrams below name the crate that owns each step.
 The daemon enters through a staged application lifecycle. `neo-node` loads TOML
 configuration and opens storage; `neo-system::NodeCoreBuilder` constructs the
 canonical core graph; the process host supervises the returned blockchain task,
-adds network/consensus/state-root policy, and finalizes the `Node`. After
-composition, `RunningNode` owns startup imports, live services, and shutdown.
+starts the acknowledged finalized-projection worker, adds
+network/consensus/state-root policy, and finalizes the `Node`. After composition,
+`RunningNode` owns startup imports, live services, and shutdown.
 
 ```mermaid
 flowchart TD
@@ -27,7 +28,7 @@ flowchart TD
     C --> D["NodeCoreBuilder&lt;P,S,H&gt;<br/>(neo-system)"]
     D --> E["canonical StoreCache/snapshot<br/>mempool + caches + ledger context"]
     E --> F["NodeCoreLaunch:<br/>NodeCore + BlockchainTask"]
-    F --> G["supervise BlockchainTask<br/>initialize genesis when local"]
+    F --> G["supervise finalized projection stream<br/>then BlockchainTask; initialize genesis"]
     G --> H["build LocalNodeService (neo-network)<br/>+ inventory sink + BlockSource"]
     H --> I{"[consensus].enabled<br/>and key in validator set?"}
     I -- yes --> J["spawn dBFT driver (neo-consensus)"]
@@ -56,6 +57,10 @@ Two startup details matter for correctness:
   daemon waits for genesis staging, backend flush, and ledger-cache publication;
   a persistence failure is returned to startup and prevents the node from
   opening live services on an uninitialized store.
+- **Finalized consumer readiness.** ApplicationLogs and TokensTracker are fixed
+  during composition. Their bounded acknowledged worker starts before the
+  blockchain task, so genesis or the first live block cannot publish into an
+  absent consumer.
 
 ## 2. Block ingestion
 
@@ -155,8 +160,10 @@ sequenceDiagram
     participant NP as native_persist pipeline
     participant AE as ApplicationEngine (neo-execution)
     participant Guard as LocalReplayGuard (neo-node)
-    participant State as StateService / persistent indexer
+    participant State as StateService / persistent indexer / archive
     participant Store as DataCache / StoreCache (neo-storage)
+    participant Final as FinalizedBlockStream (neo-system)
+    participant Proj as ApplicationLogs / TokensTracker
 
     Peer->>RN: block message
     RN->>Fwd: InboundInventory::Block
@@ -185,7 +192,12 @@ sequenceDiagram
         BC->>BC: rewind staged batch tip; publish nothing
     else commit succeeded
         BC->>Guard: remove marker + sync directory
-        BC->>BC: block_committed observers in height order
+        opt finalized projections active
+            BC->>Final: publish FinalizedBlock<br/>(block + snapshot + executions + context)
+            Final->>Proj: consume on spawn_blocking
+            Proj-->>Final: projection complete
+            Final-->>BC: acknowledgement
+        end
     end
     BC->>BC: mempool.block_persisted (drop mined + conflicts)
     BC-->>Fwd: RuntimeEvent::Imported { height }
@@ -199,6 +211,8 @@ Ownership by step:
 | Sequencing, structural + witness verification | neo-blockchain |
 | Native OnPersist / PostPersist + tx execution | neo-blockchain → neo-execution + neo-native-contracts |
 | Per-block atomic staging, durable commit | neo-storage |
+| Critical pre-commit durability policy | neo-node hooks -> StateService / persistent NeoIndexer / static archive |
+| Acknowledged finalized read projections | neo-system stream -> neo-node -> ApplicationLogs / TokensTracker |
 | Mempool eviction of mined/conflicting tx | neo-mempool |
 | Committed block/transaction projection catch-up | neo-node Index stage -> neo-indexer |
 
@@ -207,6 +221,21 @@ the shared snapshot only when every stage succeeds; a fault leaves no partial
 block state. Locally produced blocks use the dedicated
 `submit_consensus_block` capability and skip the peer-witness check; no public
 boolean can grant that trust to peer inventory.
+
+Three channels intentionally leave the commit boundary with different payloads
+and guarantees:
+
+| Channel | Ordering and failure contract | Payload / consumers |
+|---------|-------------------------------|---------------------|
+| Pre-commit durability hooks | Synchronous; failure rejects canonical commit and may leave the recovery marker | StateService, contiguous persistent-index append, static-archive staging |
+| Finalized projection stream | Bounded (64), one acknowledgement per canonical height; failure stops the writer after Ledger durability | `FinalizedBlock<B>` for ApplicationLogs and TokensTracker |
+| Lifecycle broadcast | Lightweight best-effort wakeup after finalized acknowledgement | `Imported`, `Reverted`, `TipChanged`, relay results, shutdown for consensus, state-root, network-height, and Index-stage drivers |
+
+The finalized stream emits committed outcomes only because a dBFT commit is
+final. Exceptional revert awareness remains explicit on the lifecycle stream.
+Catch-up and trusted replay intentionally skip optional finalized projections;
+when those projections are active near tip, batch policy forces one durable
+commit and one stable snapshot per block.
 
 ## 3. Transaction lifecycle
 
@@ -379,7 +408,7 @@ Key points:
   while RocksDB bypasses fast-sync buffering with a WAL-synchronous batch and
   first persists any earlier WAL-disabled prefix.
   A failure discards the uncommitted root overlay; bulk paths also rewind their
-  staged in-memory tip. Post-commit observers, mempool maintenance, and import
+  staged in-memory tip. Finalized delivery, mempool maintenance, and import
   events run only after this fence succeeds. MDBX is the production default,
   RocksDB remains a supported fallback, and the in-memory backend does not
   persist across restarts.
@@ -394,10 +423,14 @@ Key points:
   including the genesis edge case where the chain is uninitialized but
   StateService already has root `0`. Operators must restore matching stores;
   pruning-mode MPT data is never guessed or rolled back automatically.
-  ApplicationLogs and TokensTracker persist post-canonical and do not arm this
-  marker. Even without an auxiliary-store hazard, canonical durability failure
-  cancels the node because the process must not continue on an indeterminate
-  storage result.
+  ApplicationLogs and TokensTracker perform both preparation and private-store
+  commit post-canonical, so they do not arm this marker. Their concrete consumer
+  receives the exact execution artifacts through a bounded acknowledged stream.
+  If that delivery fails, Ledger remains authoritative, the lightweight
+  `Imported` event is suppressed, and the node requests a clean restart rather
+  than claiming rollback. Even without an auxiliary-store hazard, canonical
+  durability failure cancels the node because the process must not continue on
+  an indeterminate storage result.
 - **Storage byte boundary.** `neo-storage` exposes `Store`,
   `RawReadOnlyStore`, `ReadOnlyStoreGeneric`, `DataCache`, and `StoreFactory`
   over existing raw bytes. `StorageKey` still encodes with `to_array()` and

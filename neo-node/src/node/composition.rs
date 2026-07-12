@@ -208,16 +208,27 @@ pub(in crate::node) async fn build_node(
         use_fast_sync_store_mode,
     )?;
 
+    let tokens_tracker = tokens_tracker_runtime.map(|(tracker_settings, tracker_store)| {
+        Arc::new(neo_rpc::plugins::tokens_tracker::TokensTracker::new(
+            tracker_settings,
+            tracker_store,
+            Arc::clone(&settings),
+            Arc::clone(&native_contract_provider),
+        ))
+    });
+
     let replay_guard = Arc::new(LocalReplayGuard::new(replay_marker_path, shutdown.clone()));
-    let daemon_hooks = Arc::new(DaemonCommitHooks::new(
-        settings.network,
-        state_service.clone(),
-        config.state_service.track_during_catchup,
-        indexer_service.clone(),
-        application_logs_service.clone(),
-        static_archive.clone(),
-        Arc::clone(&replay_guard),
-    ));
+    let (daemon_hooks, finalized_block_stream) =
+        DaemonCommitHooks::<_, _, _, _, RuntimeStore>::compose(
+            settings.network,
+            state_service.clone(),
+            config.state_service.track_during_catchup,
+            indexer_service.clone(),
+            application_logs_service.clone(),
+            tokens_tracker,
+            static_archive.clone(),
+            Arc::clone(&replay_guard),
+        );
     if static_archive_enabled {
         daemon_hooks
             .configure_hot_ledger_pruning(Arc::clone(&store), settings.max_traceable_blocks);
@@ -280,6 +291,19 @@ pub(in crate::node) async fn build_node(
     };
 
     let mut handles = Vec::new();
+    spawn_daemon_task_result(
+        &mut handles,
+        observability.as_ref(),
+        &shutdown,
+        TaskKind::Essential,
+        "finalized_block_stream",
+        async move {
+            finalized_block_stream
+                .run()
+                .await
+                .map_err(anyhow::Error::from)
+        },
+    );
     spawn_daemon_task(
         &mut handles,
         observability.as_ref(),
@@ -607,17 +631,6 @@ pub(in crate::node) async fn build_node(
             ),
         );
     }
-    if let Some((tracker_settings, tracker_store)) = tokens_tracker_runtime {
-        daemon_hooks.set_tokens_tracker(Some(Arc::new(
-            neo_rpc::plugins::tokens_tracker::TokensTracker::new(
-                tracker_settings,
-                tracker_store,
-                node.settings(),
-                node.native_contract_provider(),
-            ),
-        )));
-    }
-
     if let Some(indexer) = indexer_service {
         // The indexer runtime is expensive during catch-up, but service
         // provider profiles must start indexing automatically once sync is

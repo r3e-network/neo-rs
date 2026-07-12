@@ -1,4 +1,16 @@
+//! # Fast Sync Tests
+//!
 //! Regression tests for built-in fast-sync package import helpers.
+//!
+//! ## Boundary
+//!
+//! These tests validate node orchestration around package selection, download,
+//! extraction, import proofs, reports, and recovery markers.
+//!
+//! ## Contents
+//!
+//! Fixtures and tests for package caching, preflight, reference verification,
+//! throughput classification, report serialization, and cleanup.
 
 use super::cache_dir::fast_sync_cache_dir;
 use super::local::{
@@ -129,7 +141,7 @@ fn import_report(
         transaction_block_import_seconds: 0.0,
         transaction_block_clone_seconds: 0.0,
         transaction_ledger_insert_seconds: 0.0,
-        transaction_committed_hook_seconds: 0.0,
+        transaction_finalized_delivery_seconds: 0.0,
         transaction_blocks_per_second: 0.0,
         finalization_seconds: 0.0,
         finalization_commit_handlers_seconds: 0.0,
@@ -189,7 +201,7 @@ fn import_report_with_composition(
         },
         transaction_block_clone_seconds: 0.0,
         transaction_ledger_insert_seconds: 0.0,
-        transaction_committed_hook_seconds: 0.0,
+        transaction_finalized_delivery_seconds: 0.0,
         transaction_blocks_per_second: if elapsed_seconds > 0.0 {
             transaction_blocks as f64 / elapsed_seconds
         } else {
@@ -597,7 +609,10 @@ fn write_fast_sync_report_sidecar_serializes_machine_readable_proof() {
     assert_eq!(payload["import"]["transaction_block_import_seconds"], 0.0);
     assert_eq!(payload["import"]["transaction_block_clone_seconds"], 0.0);
     assert_eq!(payload["import"]["transaction_ledger_insert_seconds"], 0.0);
-    assert_eq!(payload["import"]["transaction_committed_hook_seconds"], 0.0);
+    assert_eq!(
+        payload["import"]["transaction_finalized_delivery_seconds"],
+        0.0
+    );
     assert_eq!(payload["import"]["transaction_blocks_per_second"], 0.0);
     assert_eq!(payload["import"]["finalization_seconds"], 0.0);
     assert_eq!(
@@ -722,7 +737,7 @@ fn fast_sync_report_preserves_transaction_bearing_throughput_proof() {
     assert_eq!(report.import.transaction_block_import_seconds, 0.25);
     assert_eq!(report.import.transaction_block_clone_seconds, 0.0);
     assert_eq!(report.import.transaction_ledger_insert_seconds, 0.0);
-    assert_eq!(report.import.transaction_committed_hook_seconds, 0.0);
+    assert_eq!(report.import.transaction_finalized_delivery_seconds, 0.0);
     assert_eq!(report.import.transaction_blocks_per_second, 80.0);
     assert_eq!(report.import.finalization_seconds, 0.0);
     assert_eq!(report.import.finalization_commit_handlers_seconds, 0.0);

@@ -115,18 +115,24 @@ impl SystemContext for VerifiedSyncBatchContext {
         }
     }
 
-    fn block_committed_with_context(
+    async fn block_finalized(
         &self,
-        block: &Block,
-        context: crate::service_context::BlockPersistContext,
-    ) {
-        assert!(!context.is_trusted_replay());
-        self.probe.committed_contexts.lock().push(context);
+        finalized: crate::FinalizedBlock<Self::CacheBacking>,
+    ) -> Result<(), String> {
+        assert!(!finalized.context().is_trusted_replay());
+        self.probe
+            .committed_contexts
+            .lock()
+            .push(finalized.context());
         self.probe
             .commit_counts_at_committed
             .lock()
             .push(self.probe.commit_calls.load(Ordering::SeqCst));
-        self.probe.committed_heights.lock().push(block.index());
+        self.probe
+            .committed_heights
+            .lock()
+            .push(finalized.block().index());
+        Ok(())
     }
 
     fn sync_batch_commit_policy(

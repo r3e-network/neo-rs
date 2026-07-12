@@ -13,8 +13,16 @@ where
     L: Store + 'static,
     T: Store + 'static,
 {
-    core: NodeSystemContext<P, C, DaemonCommitHooks<P, S, L, T>>,
-    hooks: Arc<DaemonCommitHooks<P, S, L, T>>,
+    core: NodeSystemContext<P, C, DaemonCommitHooks<P, S, L, T, C>>,
+    hooks: Arc<DaemonCommitHooks<P, S, L, T, C>>,
+    finalized_stream: parking_lot::Mutex<
+        Option<
+            neo_system::FinalizedBlockStream<
+                neo_storage::persistence::StoreCacheBacking<C>,
+                crate::node::context::FinalizedProjectionConsumer<P, L, T>,
+            >,
+        >,
+    >,
     shutdown: tokio_util::sync::CancellationToken,
 }
 
@@ -26,7 +34,7 @@ where
     L: Store + 'static,
     T: Store + 'static,
 {
-    type Target = NodeSystemContext<P, C, DaemonCommitHooks<P, S, L, T>>;
+    type Target = NodeSystemContext<P, C, DaemonCommitHooks<P, S, L, T, C>>;
 
     fn deref(&self) -> &Self::Target {
         &self.core
@@ -51,6 +59,17 @@ where
         self.hooks
             .block_committing_with_live_tip(block, snapshot, application_executed, live_tip)
     }
+
+    fn spawn_finalized_stream(
+        &self,
+    ) -> tokio::task::JoinHandle<Result<(), neo_system::FinalizedBlockStreamError>> {
+        let stream = self
+            .finalized_stream
+            .lock()
+            .take()
+            .expect("finalized stream has not already started");
+        tokio::spawn(stream.run())
+    }
 }
 
 fn daemon_context<P, C, S, L, T>(
@@ -71,18 +90,19 @@ where
     T: Store + 'static,
 {
     let shutdown = tokio_util::sync::CancellationToken::new();
-    let hooks = Arc::new(DaemonCommitHooks::new(
+    let (hooks, finalized_stream) = DaemonCommitHooks::<P, S, L, T, C>::compose(
         settings.network,
         state_service,
         state_service_track_during_catchup,
         indexer_service,
         application_logs_service,
         None,
+        None,
         Arc::new(crate::node::recovery::LocalReplayGuard::new(
             None,
             shutdown.clone(),
         )),
-    ));
+    );
     let core = NodeSystemContext::new(
         settings,
         snapshot,
@@ -93,6 +113,7 @@ where
     TestDaemonContext {
         core,
         hooks,
+        finalized_stream: parking_lot::Mutex::new(Some(finalized_stream)),
         shutdown,
     }
 }
@@ -111,8 +132,8 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
         genesis_block, persist_block_natives_with_resources,
     };
     use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
-    use neo_storage::EmptyCacheBacking;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
+    use neo_storage::persistence::{StoreCache, StoreCacheBacking};
     use neo_system::BlockCommitHooks;
 
     type Hooks = DaemonCommitHooks<
@@ -121,9 +142,14 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
         MemoryStore,
         MemoryStore,
     >;
+    type Backing = StoreCacheBacking<MemoryStore>;
 
     let settings = ProtocolSettings::default();
-    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let snapshot = Arc::new(
+        StoreCache::new_from_store(Arc::new(MemoryStore::new()), false)
+            .data_cache()
+            .clone(),
+    );
     let provider = Arc::new(neo_native_contracts::StandardNativeProvider::new());
     let resources = NativePersistResources::from_provider(Arc::clone(&provider));
     let block = Arc::new(genesis_block(&settings).expect("genesis block"));
@@ -152,29 +178,27 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
         Arc::new(crate::node::recovery::LocalReplayGuard::new(None, shutdown)),
     );
 
-    assert!(
-        <Hooks as BlockCommitHooks<EmptyCacheBacking>>::block_committing(
-            &hooks,
-            block.as_ref(),
-            snapshot.as_ref(),
-            &outcome.application_executed,
-            0,
-            BlockPersistContext::live(),
-        )
-    );
+    assert!(<Hooks as BlockCommitHooks<Backing>>::block_committing(
+        &hooks,
+        block.as_ref(),
+        snapshot.as_ref(),
+        &outcome.application_executed,
+        0,
+        BlockPersistContext::live(),
+    ));
     assert_eq!(
         archive.tip(),
         None,
         "pre-commit capture must stay in memory"
     );
-    <Hooks as BlockCommitHooks<EmptyCacheBacking>>::fence_precommit_durability(&hooks)
+    <Hooks as BlockCommitHooks<Backing>>::fence_precommit_durability(&hooks)
         .expect("durably stage archive before canonical commit");
     assert_eq!(
         archive.tip(),
         None,
         "the staged cold frame must remain hidden before canonical commit"
     );
-    <Hooks as BlockCommitHooks<EmptyCacheBacking>>::canonical_commit_succeeded(&hooks);
+    <Hooks as BlockCommitHooks<Backing>>::canonical_commit_succeeded(&hooks);
     assert_eq!(archive.tip(), Some(0));
     assert_eq!(
         archive
@@ -204,21 +228,19 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
             tokio_util::sync::CancellationToken::new(),
         )),
     );
-    assert!(
-        <Hooks as BlockCommitHooks<EmptyCacheBacking>>::block_committing(
-            &discarded,
-            block.as_ref(),
-            snapshot.as_ref(),
-            &outcome.application_executed,
-            0,
-            BlockPersistContext::live(),
-        )
-    );
-    <Hooks as BlockCommitHooks<EmptyCacheBacking>>::canonical_commit_failed(
+    assert!(<Hooks as BlockCommitHooks<Backing>>::block_committing(
+        &discarded,
+        block.as_ref(),
+        snapshot.as_ref(),
+        &outcome.application_executed,
+        0,
+        BlockPersistContext::live(),
+    ));
+    <Hooks as BlockCommitHooks<Backing>>::canonical_commit_failed(
         &discarded,
         "injected canonical failure",
     );
-    <Hooks as BlockCommitHooks<EmptyCacheBacking>>::canonical_commit_succeeded(&discarded);
+    <Hooks as BlockCommitHooks<Backing>>::canonical_commit_succeeded(&discarded);
     assert_eq!(discarded_archive.tip(), None);
 
     let ahead_temp = tempfile::tempdir().expect("tempdir");
@@ -240,19 +262,17 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
             tokio_util::sync::CancellationToken::new(),
         )),
     );
-    assert!(
-        <Hooks as BlockCommitHooks<EmptyCacheBacking>>::block_committing(
-            &ahead,
-            block.as_ref(),
-            snapshot.as_ref(),
-            &outcome.application_executed,
-            0,
-            BlockPersistContext::live(),
-        )
-    );
-    <Hooks as BlockCommitHooks<EmptyCacheBacking>>::fence_precommit_durability(&ahead)
+    assert!(<Hooks as BlockCommitHooks<Backing>>::block_committing(
+        &ahead,
+        block.as_ref(),
+        snapshot.as_ref(),
+        &outcome.application_executed,
+        0,
+        BlockPersistContext::live(),
+    ));
+    <Hooks as BlockCommitHooks<Backing>>::fence_precommit_durability(&ahead)
         .expect("publish ahead archive frame");
-    <Hooks as BlockCommitHooks<EmptyCacheBacking>>::canonical_commit_failed(
+    <Hooks as BlockCommitHooks<Backing>>::canonical_commit_failed(
         &ahead,
         "injected failure after cold durability",
     );
@@ -273,13 +293,9 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
         .expect("truncate uncommitted ahead archive frame");
     assert_eq!(recovery.truncated_blocks, 1);
     assert_eq!(recovered_archive.tip(), None);
+    assert!(!<Hooks as BlockCommitHooks<Backing>>::allows_empty_block_fast_forward(&discarded));
     assert!(
-        !<Hooks as BlockCommitHooks<EmptyCacheBacking>>::allows_empty_block_fast_forward(
-            &discarded
-        )
-    );
-    assert!(
-        <Hooks as BlockCommitHooks<EmptyCacheBacking>>::allows_empty_block_committing_fast_forward(
+        <Hooks as BlockCommitHooks<Backing>>::allows_empty_block_committing_fast_forward(
             &discarded
         )
     );
@@ -292,11 +308,12 @@ fn canonical_archive_publication_prunes_hot_ledger_rows_atomically() {
         persist_block_natives_with_resources,
     };
     use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+    use neo_storage::StorageKey;
     use neo_storage::persistence::ReadOnlyStoreGeneric;
     use neo_storage::persistence::providers::RuntimeStore;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
     use neo_storage::persistence::store::Store;
-    use neo_storage::{EmptyCacheBacking, StorageKey};
+    use neo_storage::persistence::{StoreCache, StoreCacheBacking};
     use neo_system::BlockCommitHooks;
 
     type Hooks = DaemonCommitHooks<
@@ -305,9 +322,14 @@ fn canonical_archive_publication_prunes_hot_ledger_rows_atomically() {
         MemoryStore,
         MemoryStore,
     >;
+    type Backing = StoreCacheBacking<MemoryStore>;
 
     let settings = ProtocolSettings::default();
-    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let snapshot = Arc::new(
+        StoreCache::new_from_store(Arc::new(MemoryStore::new()), false)
+            .data_cache()
+            .clone(),
+    );
     let provider = Arc::new(neo_native_contracts::StandardNativeProvider::new());
     let resources = NativePersistResources::from_provider(provider);
     let block = Arc::new(genesis_block(&settings).expect("genesis block"));
@@ -356,19 +378,17 @@ fn canonical_archive_publication_prunes_hot_ledger_rows_atomically() {
     );
     hooks.configure_hot_ledger_pruning(Arc::clone(&store), 0);
 
-    assert!(
-        <Hooks as BlockCommitHooks<EmptyCacheBacking>>::block_committing(
-            &hooks,
-            block.as_ref(),
-            snapshot.as_ref(),
-            &outcome.application_executed,
-            0,
-            BlockPersistContext::live(),
-        )
-    );
-    <Hooks as BlockCommitHooks<EmptyCacheBacking>>::fence_precommit_durability(&hooks)
+    assert!(<Hooks as BlockCommitHooks<Backing>>::block_committing(
+        &hooks,
+        block.as_ref(),
+        snapshot.as_ref(),
+        &outcome.application_executed,
+        0,
+        BlockPersistContext::live(),
+    ));
+    <Hooks as BlockCommitHooks<Backing>>::fence_precommit_durability(&hooks)
         .expect("stage archive");
-    <Hooks as BlockCommitHooks<EmptyCacheBacking>>::canonical_commit_succeeded(&hooks);
+    <Hooks as BlockCommitHooks<Backing>>::canonical_commit_succeeded(&hooks);
 
     let mut block_hash_key = vec![9];
     block_hash_key.extend_from_slice(&0u32.to_be_bytes());
@@ -398,10 +418,10 @@ fn daemon_commit_hooks_do_not_own_core_system_resources() {
         "the application layer should expose only its typed commit-hook policy"
     );
     assert!(
-        !source.contains("StoreCache")
-            && !source.contains("StoreDataCache")
+        !source.contains("\n    store_cache:")
+            && !source.contains("\n    snapshot:")
             && !source.contains("\n    native_contract_provider:"),
-        "application hooks must not own core storage or native-provider mechanics"
+        "application hooks may name the finalized cache backing but must not own core storage or native-provider mechanics"
     );
     assert!(
         system_context_source.contains("pub struct NodeSystemContext<P, S, H>")
@@ -1532,8 +1552,8 @@ fn genesis_policy_init_visible_through_fresh_store_cache_after_commit() {
     );
 }
 
-#[test]
-fn daemon_context_dispatches_application_logs_handlers() {
+#[tokio::test]
+async fn daemon_context_dispatches_application_logs_handlers() {
     use neo_blockchain::SystemContext;
     use neo_payloads::{ApplicationExecuted, Block, Header, NotifyEventArgs, Signer, Transaction};
     use neo_primitives::{TriggerType, UInt160, WitnessScope};
@@ -1565,6 +1585,7 @@ fn daemon_context_dispatches_application_logs_handlers() {
         native_provider(),
         Some(Arc::clone(&logs_service)),
     );
+    let _finalized_stream = ctx.spawn_finalized_stream();
     let signer = UInt160::from_bytes(&[5; UInt160::LENGTH]).expect("signer");
     let contract = UInt160::from_bytes(&[6; UInt160::LENGTH]).expect("contract");
     let mut tx = Transaction::new();
@@ -1595,8 +1616,15 @@ fn daemon_context_dispatches_application_logs_handlers() {
             Vec::new(),
         ));
 
-    assert!(ctx.block_committing(&block, &snapshot, &[executed]));
-    ctx.block_committed(&block);
+    assert!(ctx.block_committing(&block, &snapshot, &[]));
+    ctx.block_finalized(neo_blockchain::FinalizedBlock::new(
+        Arc::new(block),
+        Some(Arc::clone(&snapshot)),
+        vec![executed],
+        neo_blockchain::BlockPersistContext::live(),
+    ))
+    .await
+    .expect("acknowledged finalized projection");
 
     let tx_log = logs_service
         .get_transaction_log(&tx_hash)
@@ -1776,8 +1804,8 @@ fn static_archive_bounds_deferred_commit_staging() {
     );
 }
 
-#[test]
-fn daemon_context_skips_application_logs_committed_handler_during_bulk_sync() {
+#[tokio::test]
+async fn daemon_context_skips_application_logs_finalized_projection_during_bulk_sync() {
     use neo_blockchain::{BlockPersistContext, SystemContext};
     use neo_payloads::{ApplicationExecuted, Block, Header, NotifyEventArgs, Signer, Transaction};
     use neo_primitives::{TriggerType, UInt160, WitnessScope};
@@ -1842,10 +1870,17 @@ fn daemon_context_skips_application_logs_committed_handler_during_bulk_sync() {
     assert!(ctx.block_committing_with_context(
         &block,
         &snapshot,
-        &[executed],
+        std::slice::from_ref(&executed),
         BlockPersistContext::trusted_replay(),
     ));
-    ctx.block_committed_with_context(&block, BlockPersistContext::trusted_replay());
+    ctx.block_finalized(neo_blockchain::FinalizedBlock::new(
+        Arc::new(block),
+        Some(Arc::clone(&snapshot)),
+        vec![executed],
+        BlockPersistContext::trusted_replay(),
+    ))
+    .await
+    .expect("trusted replay finality is intentionally skipped");
 
     assert!(
         logs_service.get_transaction_log(&tx_hash).is_none(),

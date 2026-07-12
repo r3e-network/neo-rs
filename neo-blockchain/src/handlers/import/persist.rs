@@ -20,7 +20,7 @@ where
     /// C# `Blockchain.OnImport` runs `Persist(block)` - the state transition -
     /// before the block becomes the new tip. This helper owns that accepted-block
     /// sequence: native persistence, hot ledger cache insertion, live-store flush,
-    /// committed hooks, mempool maintenance, header cleanup, and parked-child
+    /// acknowledged finalized delivery, mempool maintenance, header cleanup, and parked-child
     /// draining. The outer import loop remains responsible for ordering,
     /// verification, empty-block fast paths, and accepted-prefix accounting.
     pub(crate) async fn persist_import_block_for_command(
@@ -31,7 +31,7 @@ where
         persist_context: BlockPersistContext,
         batch_persist_resources: Option<&BatchPersistResources<S::NativeProvider, S::CacheBacking>>,
         stats: &mut ImportBlocksStats,
-    ) -> Result<(), String> {
+    ) -> Result<Arc<Block>, String> {
         let index = block.index();
         let transaction_block = !block.transactions.is_empty();
         let clone_start = transaction_block.then(Instant::now);
@@ -44,7 +44,7 @@ where
 
         let transaction_block = !block.transactions.is_empty();
         let transaction_start = transaction_block.then(Instant::now);
-        let persisted = if defer_store_commit {
+        let artifacts = (if defer_store_commit {
             if let Some(resources) = batch_persist_resources {
                 self.persist_block_sequence_with_resources(
                     Arc::clone(&block),
@@ -59,12 +59,10 @@ where
         } else {
             self.persist_block_sequence_with_options(Arc::clone(&block), persist_options)
                 .await
-        };
-        if !persisted {
-            return Err(format!(
-                "import aborted at height {index}: native persistence pipeline failed"
-            ));
-        }
+        })
+        .map_err(|error| {
+            format!("import aborted at height {index}: native persistence pipeline failed: {error}")
+        })?;
         if let Some(start) = transaction_start {
             stats.transaction_blocks += 1;
             stats.transaction_elapsed += start.elapsed();
@@ -87,11 +85,17 @@ where
         }
 
         if !defer_store_commit {
-            let committed_hook_start = transaction_block.then(Instant::now);
+            let finalized_delivery_start = transaction_block.then(Instant::now);
             self.system
-                .block_committed_with_context(block.as_ref(), persist_context);
-            if let Some(start) = committed_hook_start {
-                stats.transaction_committed_hook_elapsed += start.elapsed();
+                .block_finalized(artifacts.into_finalized(Arc::clone(&block), persist_context))
+                .await
+                .map_err(|error| {
+                    format!(
+                        "block {index} committed durably but finalized delivery failed: {error}"
+                    )
+                })?;
+            if let Some(start) = finalized_delivery_start {
+                stats.transaction_finalized_delivery_elapsed += start.elapsed();
             }
         }
 
@@ -120,6 +124,6 @@ where
             }
         }
 
-        Ok(())
+        Ok(block)
     }
 }

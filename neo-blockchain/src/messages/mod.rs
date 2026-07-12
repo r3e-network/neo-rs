@@ -15,7 +15,6 @@
 //! - `import`: block import command payload.
 //! - `import_completed`: block import completion event payload.
 //! - `inventory_payload`: inventory relay payload.
-//! - `persist_completed`: persist completion event payload.
 //! - `relay_result`: transaction relay verdict payload.
 //! - `reverify`: transaction reverification command payload.
 
@@ -24,6 +23,5 @@ pub mod fill_memory_pool;
 pub mod import;
 pub mod import_completed;
 pub mod inventory_payload;
-pub mod persist_completed;
 pub mod relay_result;
 pub mod reverify;

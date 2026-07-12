@@ -64,13 +64,23 @@ where
         }
 
         staged.commit();
+        let application_executed = staged.outcome.application_executed;
         self.system
             .commit_to_store()
             .map_err(|error| format!("genesis durable store commit failed: {error}"))?;
         self.ledger
             .insert_block_arc_with_hash(Arc::clone(&genesis), genesis_hash);
         self.system
-            .block_committed_with_context(genesis.as_ref(), BlockPersistContext::live());
+            .block_finalized(crate::FinalizedBlock::new(
+                Arc::clone(&genesis),
+                Some(snapshot),
+                application_executed,
+                BlockPersistContext::live(),
+            ))
+            .await
+            .map_err(|error| {
+                format!("genesis committed durably but finalized delivery failed: {error}")
+            })?;
         if self.system.should_stop_blockchain_service() {
             return Err(
                 "genesis committed durably but canonical writer shutdown was requested".to_string(),

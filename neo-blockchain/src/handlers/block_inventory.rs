@@ -5,8 +5,10 @@ use neo_payloads::block::Block;
 use neo_runtime::CheckedBlockBatch;
 use tracing::{debug, warn};
 
+use crate::block_processing::BlockCommitArtifacts;
 use crate::internal::BlockIntegrity;
 use crate::service::{BlockchainService, MempoolLike};
+use crate::service_context::{BlockPersistContext, SyncBatchCommitPolicy};
 
 impl<S, M> BlockchainService<S, M>
 where
@@ -26,6 +28,7 @@ where
             consensus_witness_verified,
             BlockIntegrity::Unchecked,
             false,
+            BlockPersistContext::live(),
         )
         .await?;
         let drained = self.handle_drain_unverified_blocks().await;
@@ -80,6 +83,22 @@ where
         integrity: BlockIntegrity,
     ) -> CoreResult<usize> {
         let durable_height = self.ledger.current_height();
+        let range_end = blocks
+            .iter()
+            .map(|block| block.index())
+            .max()
+            .unwrap_or(durable_height);
+        let commit_policy = if range_end > durable_height {
+            self.system
+                .sync_batch_commit_policy(durable_height.saturating_add(1), range_end)
+        } else {
+            SyncBatchCommitPolicy::PerBlock
+        };
+        let (defer_store_commit, persist_context) = match commit_policy {
+            SyncBatchCommitPolicy::PerBlock => (false, BlockPersistContext::live()),
+            SyncBatchCommitPolicy::DeferredLive => (true, BlockPersistContext::sync_batch()),
+            SyncBatchCommitPolicy::DeferredCatchUp => (true, BlockPersistContext::catch_up()),
+        };
         let mut imported = 0usize;
         let mut direct_imported = 0usize;
         let mut committed_blocks = Vec::new();
@@ -92,15 +111,18 @@ where
                     relay,
                     consensus_witness_verified,
                     integrity,
-                    true,
+                    defer_store_commit,
+                    persist_context,
                 )
                 .await
             {
                 Ok(()) => {}
                 Err(error) => {
                     if self.system.should_stop_blockchain_service() {
-                        self.system.abort_store_commit();
-                        self.ledger.rewind_to(durable_height);
+                        if defer_store_commit {
+                            self.system.abort_store_commit();
+                            self.ledger.rewind_to(durable_height);
+                        }
                         return Err(error);
                     }
                     warn!(target: "neo", %error, "inventory block rejected in batch");
@@ -114,7 +136,7 @@ where
                 committed_blocks.push(committed_block);
             }
         }
-        if direct_imported > 0 {
+        if defer_store_commit && direct_imported > 0 {
             if let Err(error) = self.system.commit_to_store() {
                 self.ledger.rewind_to(durable_height);
                 return Err(CoreError::other(format!(
@@ -123,7 +145,9 @@ where
             }
             for block in committed_blocks {
                 let hash = Self::try_block_hash(block.as_ref())?;
-                self.publish_persisted_inventory_block(block.as_ref(), hash);
+                let artifacts = BlockCommitArtifacts::without_replay_artifacts(None);
+                self.publish_persisted_inventory_block(block, hash, artifacts, persist_context)
+                    .await?;
             }
         }
         let drained = self.handle_drain_unverified_blocks().await;
@@ -141,6 +165,7 @@ where
         consensus_witness_verified: bool,
         integrity: BlockIntegrity,
         defer_store_commit: bool,
+        persist_context: BlockPersistContext,
     ) -> CoreResult<()> {
         let index = block.index();
         let current_height = self.ledger.current_height();
@@ -174,6 +199,7 @@ where
             consensus_witness_verified,
             integrity,
             defer_store_commit,
+            persist_context,
         )
         .await
     }
@@ -191,6 +217,7 @@ where
             consensus_witness_verified,
             integrity,
             false,
+            BlockPersistContext::live(),
         )
         .await
     }
@@ -202,6 +229,7 @@ where
         consensus_witness_verified: bool,
         integrity: BlockIntegrity,
         defer_store_commit: bool,
+        persist_context: BlockPersistContext,
     ) -> CoreResult<()> {
         let wall_start = std::time::Instant::now();
         let index = block.index();
@@ -266,11 +294,20 @@ where
 
         // C# Blockchain.OnNewBlock → Persist(block): the native-contract
         // state transition runs before the block becomes the new tip.
-        if !self.persist_block_sequence(Arc::clone(&block)).await {
-            return Err(CoreError::other(format!(
-                "native persistence pipeline failed for block {index}"
-            )));
-        }
+        let artifacts = self
+            .persist_block_sequence_with_context(
+                Arc::clone(&block),
+                crate::NativePersistOptions {
+                    capture_replay_artifacts: !persist_context.skips_live_observers(),
+                },
+                persist_context,
+            )
+            .await
+            .map_err(|error| {
+                CoreError::other(format!(
+                    "native persistence pipeline failed for block {index}: {error}"
+                ))
+            })?;
 
         let after_persist = wall_start.elapsed();
 
@@ -289,7 +326,13 @@ where
             .insert_block_arc_with_hash(Arc::clone(&block), hash);
         let after_commit = wall_start.elapsed();
         if !defer_store_commit {
-            self.publish_persisted_inventory_block(block.as_ref(), hash);
+            self.publish_persisted_inventory_block(
+                Arc::clone(&block),
+                hash,
+                artifacts,
+                persist_context,
+            )
+            .await?;
         }
 
         // Per-block timing breakdown (debug-level). Shows where wall-clock
@@ -323,14 +366,27 @@ where
         Ok(())
     }
 
-    fn publish_persisted_inventory_block(&self, block: &Block, hash: neo_primitives::UInt256) {
+    async fn publish_persisted_inventory_block(
+        &self,
+        block: Arc<Block>,
+        hash: neo_primitives::UInt256,
+        artifacts: BlockCommitArtifacts<S::CacheBacking>,
+        persist_context: BlockPersistContext,
+    ) -> CoreResult<()> {
         let index = block.index();
-        self.system.block_committed(block);
+        self.system
+            .block_finalized(artifacts.into_finalized(Arc::clone(&block), persist_context))
+            .await
+            .map_err(|error| {
+                CoreError::other(format!(
+                    "block {index} committed durably but finalized delivery failed: {error}"
+                ))
+            })?;
 
         // C# Blockchain.Persist -> MemPool.UpdatePoolForBlockPersisted: drop the
         // block's transactions from the pool and evict pooled conflicts, so
         // mined txs are no longer served to peers or re-proposed by consensus.
-        self.mempool.block_persisted(block);
+        self.mempool.block_persisted(block.as_ref());
         self.reverify_mempool_after_persist(
             index,
             self.system.settings().max_transactions_per_block as usize,
@@ -344,5 +400,6 @@ where
             })
             .ok();
         self.header_cache.remove_up_to(index);
+        Ok(())
     }
 }

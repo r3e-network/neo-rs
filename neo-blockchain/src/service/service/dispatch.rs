@@ -18,9 +18,6 @@ where
     /// — production callers go through [`Self::run`].
     pub async fn dispatch(&mut self, cmd: BlockchainCommand) {
         match cmd {
-            BlockchainCommand::PersistCompleted(persist) => {
-                self.handle_persist_completed(persist).await;
-            }
             BlockchainCommand::Import(import) => {
                 // Import commands without a reply channel still produce a reply
                 // containing error information. Log errors to avoid silently
@@ -62,7 +59,7 @@ where
             BlockchainCommand::ImportBlock { block, reply } => {
                 let before_height = self.ledger.current_height();
                 let result = self.handle_block_inventory(block, false, false).await;
-                let imported = result.is_ok() && self.ledger.current_height() > before_height;
+                let imported = self.ledger.current_height() > before_height;
                 if let Err(error) = result {
                     tracing::warn!(target: "neo", %error, "import block rejected");
                 }

@@ -93,7 +93,8 @@ pub use application_executed::ApplicationExecuted;
 pub use block::Block;
 pub use conflicts::Conflicts;
 pub use event_handlers::{
-    CommittedHandler, CommittingHandler, PluginEvent, WalletChangedHandler, WitnessType,
+    CommittedHandler, CommittingHandler, FinalizedHandler, PluginEvent, WalletChangedHandler,
+    WitnessType,
 };
 pub use extensible_payload::ExtensiblePayload;
 pub use header::{Header as BlockHeader, Header};

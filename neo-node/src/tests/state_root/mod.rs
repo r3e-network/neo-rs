@@ -1,4 +1,16 @@
+//! # State Root Driver Tests
+//!
 //! Tests for the node-level StateService driver codec and sender rotation.
+//!
+//! ## Boundary
+//!
+//! These tests cover the application driver's typed StateService payload
+//! handling without redefining protocol serialization or cryptography.
+//!
+//! ## Contents
+//!
+//! Vote and StateRoot codec round trips, sender selection, retry rotation, and
+//! signed-root verification scenarios.
 
 use super::*;
 use neo_crypto::{ECPoint, Secp256r1Crypto};

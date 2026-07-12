@@ -133,7 +133,7 @@ The development-only members are not part of the running node:
 tests), and `benches-package` (Criterion benchmarks).
 The pure VM semantics live in `neo-vm-rs`, an external sibling crate referenced
 by path from `neo-vm`. For the full ADR log and evolution roadmap, see
-[`design.md`](../design.md) (38 ADRs covering RPC decoupling, engine integration,
+[`design.md`](../design.md) (39 ADRs covering RPC decoupling, engine integration,
 error unification, oracle decoupling, dead dependency cleanup, pipeline strategy,
 error type policy, MPT layering, and more).
 
@@ -178,7 +178,7 @@ The detailed rules for this style live in
 
 ## Key design decisions
 
-> The full ADR log lives in [`design.md`](../design.md) — 38 ADRs covering
+> The full ADR log lives in [`design.md`](../design.md) — 39 ADRs covering
 > RPC decoupling, engine integration, error unification, oracle decoupling,
 > dead dependency cleanup, pipeline strategy, error type policy, MPT layering,
 > doc management, runtime versioning, and native contract registry. The
@@ -211,6 +211,15 @@ The detailed rules for this style live in
   immutable named fields. There is no `TypeId`/`Any` service locator, so
   mismatched storage backings fail to compile instead of looking like a
   disabled service at runtime.
+
+- **Three block-outcome channels.** Consensus-critical StateService work, a
+  persistent indexer, and static-archive staging participate synchronously in
+  the pre-commit durability protocol. ApplicationLogs and TokensTracker consume
+  an owned `FinalizedBlock<B>` through a bounded, acknowledged, statically
+  dispatched stream only after canonical durability. The separate
+  `RuntimeEvent` broadcast carries lightweight lifecycle wakeups such as
+  `Imported`, `Reverted`, `TipChanged`, relay results, and shutdown; it does not
+  carry snapshots or execution artifacts.
 
 - **Staged core and application lifecycle.** `neo-system::NodeCoreBuilder<P,
   S, H>` constructs the provider-neutral store snapshot, mempool, header cache,
@@ -303,11 +312,12 @@ The detailed rules for this style live in
   checks while suppressing replay-only artifacts and live side effects. Before
   mutation, one immutable `ImportPlan` resolves a range-aware
   `SyncBatchCommitPolicy`. Eligible peer batches share one durable canonical
-  commit while preserving ordered committed hooks, mempool eviction, import
-  events, and one batch-end reverify; unsafe observer configurations fall back
-  to per-block durability. The plan freezes live or catch-up observer behavior
-  for the entire range, so a moving peer tip cannot change plugin staging
-  mid-batch. `neo_system::LiveBlockImportPipeline` shares the exact queue owned
+  commit while preserving ordered pre-commit durability hooks, mempool eviction,
+  lifecycle events, and one batch-end reverify; active finalized projections
+  near the live tip force per-block durability. The plan freezes live or
+  catch-up observer behavior for the entire range, so a moving peer tip cannot
+  change projection policy mid-batch. `neo_system::LiveBlockImportPipeline`
+  shares the exact queue owned
   by `StagedSyncPipeline`, filters malformed unsolicited peer candidates, and
   submits its checker-typed result through
   `BlockchainHandle::submit_checked_inventory_blocks`. The service skips only
@@ -321,9 +331,8 @@ The detailed rules for this style live in
   directly while inventory-specific relay, parking, draining, and mempool
   behavior remains in the service loop. The canonical store commit is fallible:
   failures discard the uncommitted root overlay, rewind a staged batch tip, and
-  suppress post-commit observers and import events. Bulk accepted prefixes are
-  routed through the same durable fence before being returned, and ordered
-  `block_committed` callbacks run before parked-child draining. The canonical
+  suppress finalized delivery and import events. Bulk accepted prefixes are
+  routed through the same durable fence before being returned. The canonical
   Ledger and pre-commit StateService/persistent-indexer stores are separate
   durability domains; they are not presented as one atomic transaction. Before
   either independent observer can publish, `neo-node` writes and fsyncs
@@ -332,11 +341,19 @@ The detailed rules for this style live in
   failure in either observer rejects the block. Canonical success removes the
   marker and syncs its directory; a crash or failed fence leaves it
   in place, requests graceful shutdown, and makes restart refuse the local data
-  set until matching stores are restored. ApplicationLogs and TokensTracker
-  persist only from the post-canonical callback and do not arm the marker. This
-  fail-stop rule is required because pruning can make MPT rollback impossible.
-  Every canonical durability failure is fatal to the running writer, including
-  one detected inside the active batch command.
+  set until matching stores are restored. ApplicationLogs and TokensTracker do
+  no pre-commit staging. After Ledger succeeds, the blockchain service moves the
+  exact `Arc<Block>`, canonical snapshot, execution records, and frozen import
+  context into `FinalizedBlock<B>`. A bounded `FinalizedBlockStream` runs the
+  concrete projection consumer on `spawn_blocking` and acknowledges completion;
+  the canonical writer waits before mempool maintenance, the lightweight
+  `Imported` broadcast, or the next observer-visible block. The stream is an
+  essential task and defaults to capacity 64. A delivery failure cannot roll
+  back the already durable Ledger block, so it marks the writer fatal and
+  requests a clean restart without the pre-commit poison marker. This fail-stop
+  rule is required because pruning can make MPT rollback impossible. Every
+  canonical durability failure is likewise fatal to the active writer,
+  including one detected inside a batch command.
 
 - **Staged-sync policies are shared runtime contracts.**
   `neo_runtime::sync_pipeline` defines stable stage identifiers,
@@ -544,7 +561,10 @@ The detailed rules for this style live in
 At startup the `neo-node` process host (L7) reads TOML and CLI policy, opens the
 configured store, builds optional application services, and enters
 `neo-system::NodeCoreBuilder` (L5). The typed launch creates the canonical core
-state and blockchain task; after network construction,
+state and blockchain task. The process host composes the concrete finalized
+projection consumer, starts its essential acknowledged stream before the
+blockchain service, and then initializes the local chain. After network
+construction,
 `NodeCore::into_node(network)` finalizes the coherent `Node`. `NodeRuntime`
 then delegates startup import, live-service startup, and graceful shutdown to
 `RunningNode::run_requested_mode`. The network host (`neo-network`, L4) dials seeds and accepts
@@ -558,6 +578,6 @@ pipeline stage traits it uses live in `neo-blockchain::pipeline::stage_traits`.
 
 For a step-by-step trace of how a block and a transaction move through these
 services — including the P2P sync path, execution, state-root commit, and RPC
-query path — see [dataflow.md](dataflow.md). For the 38 ADRs documenting every
+query path — see [dataflow.md](dataflow.md). For the 39 ADRs documenting every
 architectural decision and the 4-phase evolution roadmap, see
 [design.md](../design.md).

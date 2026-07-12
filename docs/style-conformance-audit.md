@@ -196,11 +196,12 @@ High-signal clusters found during the first pass:
   map. `sync_metrics/render.rs` owns the operator-facing Prometheus summary
   flow, `sync_metrics/families.rs` owns bounded-label metric-family renderers,
   and `sync_metrics/writer.rs` owns the small text-format label writers.
-- `neo-node/src/node/context/mod.rs` keeps `DaemonContext` construction and
-  node/service handles. `context/system_context.rs` owns the
-  `SystemContext` trait implementation and store-commit policy, while
-  `context/plugins.rs` owns catch-up-aware StateService, indexer,
-  ApplicationLogs, and TokensTracker hook dispatch.
+- `neo-node/src/node/context/mod.rs` owns static `DaemonCommitHooks`
+  composition. `context/plugins.rs` owns catch-up-aware StateService/indexer
+  pre-commit durability and finalized-publication policy, while
+  `context/finality/projections.rs` owns the concrete acknowledged
+  ApplicationLogs/TokensTracker consumer. The generic bounded stream and
+  factory live in `neo-system::composition::finality`.
 - `neo-node/src/node/indexer_runtime.rs` owns activation supervision, canonical
   event handling, and stage logging. `indexer_runtime/stage.rs` owns the generic
   committed-chain `IndexStage<P, N>` and bounded batch execution;

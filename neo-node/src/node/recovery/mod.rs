@@ -1,4 +1,4 @@
-//! Local replay recovery guard.
+//! # Local Replay Recovery
 //!
 //! StateService and a persistent indexer can publish from the blockchain
 //! pre-commit hook, while the canonical ledger reaches durable storage at a
@@ -7,12 +7,22 @@
 //! are explicitly fenced before Ledger. A successful canonical fence removes
 //! and directory-syncs the marker; a crash or failed fence leaves it in place,
 //! requests shutdown, and makes startup refuse the data set until an operator
-//! restores matching stores. ApplicationLogs and TokensTracker commit only
-//! from the post-canonical hook and therefore do not arm this guard. The static
+//! restores matching stores. ApplicationLogs and TokensTracker consume the
+//! post-canonical finalized stream and therefore do not arm this guard. The static
 //! Ledger archive stages durable but provider-invisible bytes before canonical
 //! storage and publishes their index only after hot success. Startup recovers
 //! and truncates any cold-ahead suffix, so this self-reconciling mirror also
 //! does not require the poison marker.
+//!
+//! ## Boundary
+//!
+//! This module owns node-process fail-stop and restart policy. It does not
+//! define canonical storage transactions or projection formats.
+//!
+//! ## Contents
+//!
+//! - Poison-marker path, startup refusal, and durable marker I/O.
+//! - `LocalReplayGuard` state transitions for canonical and recoverable failure.
 
 use std::fs::{File, OpenOptions};
 use std::io::{ErrorKind, Write};

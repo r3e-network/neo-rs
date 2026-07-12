@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use tracing::warn;
 
+use crate::block_processing::BlockCommitArtifacts;
 use crate::command::{ImportBlocksReply, ImportBlocksStats};
 use crate::import::Import;
 use crate::internal::ImportDisposition;
@@ -33,7 +34,7 @@ where
         let persist_options = plan.persist_options();
         let persist_context = plan.persist_context();
         let defer_store_commit = plan.defers_store_commit();
-        let mut deferred_committed_positions = Vec::new();
+        let mut deferred_committed_blocks = Vec::new();
         let mut import_error = None;
         let mut batch_persist_resources = None;
         let mut batch_persist_resources_loaded = false;
@@ -123,7 +124,7 @@ where
                         stats.empty_elapsed += empty_start.elapsed();
                         imported += 1;
                         last_imported_height = Some(index);
-                        deferred_committed_positions.push(position);
+                        deferred_committed_blocks.push(std::sync::Arc::new(block.clone()));
                         position += 1;
                         continue;
                     }
@@ -141,7 +142,7 @@ where
                 }
             }
 
-            if let Err(error) = self
+            let committed_block = match self
                 .persist_import_block_for_command(
                     &blocks[position],
                     defer_store_commit,
@@ -152,14 +153,21 @@ where
                 )
                 .await
             {
-                warn!(target: "neo", %error, height = index, "block import persistence failed");
-                import_error = Some(error);
-                break;
-            }
+                Ok(block) => block,
+                Err(error) => {
+                    if self.ledger.current_height() >= index {
+                        imported += 1;
+                        last_imported_height = Some(index);
+                    }
+                    warn!(target: "neo", %error, height = index, "block import persistence failed");
+                    import_error = Some(error);
+                    break;
+                }
+            };
             imported += 1;
             last_imported_height = Some(index);
             if defer_store_commit {
-                deferred_committed_positions.push(position);
+                deferred_committed_blocks.push(committed_block);
             }
             position += 1;
             if self.system.should_stop_blockchain_service() {
@@ -193,25 +201,32 @@ where
                 self.ledger.rewind_to(durable_height);
                 return ImportBlocksReply::failed_with_stats(already_durable, stats, error);
             }
-            for position in deferred_committed_positions {
-                let committed_hook_start =
-                    (!blocks[position].transactions.is_empty()).then(std::time::Instant::now);
-                self.system
-                    .block_committed_with_context(&blocks[position], persist_context);
+            for block in deferred_committed_blocks {
+                let finalized_delivery_start =
+                    (!block.transactions.is_empty()).then(std::time::Instant::now);
+                let finalized = BlockCommitArtifacts::without_replay_artifacts(None)
+                    .into_finalized(std::sync::Arc::clone(&block), persist_context);
+                if let Err(error) = self.system.block_finalized(finalized).await {
+                    import_error = Some(format!(
+                        "block {} committed durably but finalized delivery failed: {error}",
+                        block.index()
+                    ));
+                    break;
+                }
                 if plan.maintains_live_side_effects() {
-                    self.mempool.block_persisted(&blocks[position]);
-                    if let Ok(hash) = Self::try_block_hash(&blocks[position]) {
+                    self.mempool.block_persisted(block.as_ref());
+                    if let Ok(hash) = Self::try_block_hash(block.as_ref()) {
                         self.event_tx
                             .send(crate::RuntimeEvent::Imported {
                                 hash,
-                                height: blocks[position].index(),
-                                timestamp: blocks[position].timestamp(),
+                                height: block.index(),
+                                timestamp: block.timestamp(),
                             })
                             .ok();
                     }
                 }
-                if let Some(start) = committed_hook_start {
-                    stats.transaction_committed_hook_elapsed += start.elapsed();
+                if let Some(start) = finalized_delivery_start {
+                    stats.transaction_finalized_delivery_elapsed += start.elapsed();
                 }
             }
             self.finish_deferred_import_cache_maintenance(

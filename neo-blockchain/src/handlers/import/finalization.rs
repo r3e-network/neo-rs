@@ -14,9 +14,9 @@ where
     ///
     /// The import loop owns per-block verification and persistence. This helper
     /// owns the batch-level durability boundary: flush deferred pre-commit
-    /// handlers, then atomically commit the canonical store. Ordered
-    /// post-commit observers and transient-cache maintenance run only after
-    /// this method succeeds.
+    /// handlers, then atomically commit the canonical store. Ordered finalized
+    /// delivery and transient-cache maintenance run only after this method
+    /// succeeds.
     pub(crate) fn finalize_deferred_import(
         &self,
         imported: usize,
@@ -59,7 +59,7 @@ where
     }
 
     /// Clean up transient caches after the durable batch and its ordered
-    /// post-commit observer stream have completed.
+    /// finalized delivery have completed.
     pub(crate) async fn finish_deferred_import_cache_maintenance(
         &self,
         last_imported_height: Option<u32>,

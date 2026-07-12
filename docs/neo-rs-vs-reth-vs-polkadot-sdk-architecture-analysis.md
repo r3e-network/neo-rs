@@ -14,8 +14,8 @@ Single `Store` trait with `DataCache` + `StoreCache` overlay. MDBX is the
 production default, RocksDB remains supported, and in-memory providers cover
 tests/ephemeral nodes. The canonical `SystemContext::commit_to_store` boundary
 propagates backend failures from `StoreCache::try_commit_durable`; failed
-overlays are discarded, staged bulk tips are rewound, and post-commit callbacks
-are emitted only after the durable fence succeeds. Accepted bulk prefixes
+overlays are discarded, staged bulk tips are rewound, and finalized outcomes
+are delivered only after the durable fence succeeds. Accepted bulk prefixes
 therefore cannot be reported from an unflushed shared snapshot. MDBX implements
 that fence with its atomic write transaction; RocksDB uses a WAL-synchronous
 overlay batch and persists any earlier WAL-disabled fast-sync prefix first.
@@ -23,10 +23,16 @@ StateService and a persistent indexer remain separate durability domains, so
 neo-rs uses write-ahead fail-stop recovery rather than claiming cross-store
 atomicity: it writes and fsyncs a poison marker before either observer can
 publish, fences both observer stores before Ledger, and removes the marker only
-after canonical success. A crash or failure leaves the marker for startup to reject
-(including the uninitialized-chain/genesis-root mismatch). ApplicationLogs and
-TokensTracker persist post-canonical and avoid this marker cost. Canonical
-durability failure always stops the active writer immediately. The ledger read
+after canonical success. A crash or failure leaves the marker for startup to
+reject (including the uninitialized-chain/genesis-root mismatch). ApplicationLogs
+and TokensTracker now perform both preparation and private-store commit wholly
+post-canonical. They share a generic, bounded, acknowledged finalized-block
+stream carrying the exact block, canonical snapshot, execution records, and
+frozen import context, so they avoid the marker cost without retaining mutable
+pre-commit batches. The writer waits for acknowledgement before lightweight
+`Imported` publication. Canonical durability failure always stops the active
+writer immediately. Finalized-delivery failure also stops the writer, but the
+already durable Ledger block remains authoritative. The ledger read
 boundary now has hot native-record, static-file, optional, and hot/cold routed
 providers behind the same capability traits and GAT factory shape.
 `neo-static-files` supplies versioned append-only height frames, zstd
@@ -366,10 +372,12 @@ happen only inside `neo-blockchain`.
 ### Recommendations for neo-rs
 
 ```rust
-// Proposed BlockImport chain for neo-rs
-let import_chain = VerifiedImportPipeline::new(...) // validate -> dBFT witness
-    .and_then(Box::new(StateVerifier))       // balance, nonce, conflicts
-    .chain(Box::new(ClientBlockImport));     // persist to DB
+// Current statically dispatched boundaries: no boxed stage chain.
+let verified = VerifiedImportPipeline::new(settings, snapshot, native_provider);
+verified.verify(&stage_context, &block)?; // validate -> dBFT witness
+
+let queue = Arc::new(BlockImportQueue::new(blockchain_handle, concurrency));
+queue.push_blocks(blocks, BlockOrigin::Sync).await?;
 ```
 
 Current status: the shared trait, bounded queue, and import-stage sync driver
@@ -402,6 +410,34 @@ independently durable committed-chain Index follower. Header sidecar pruning is
 part of successful body-stage completion; static archive pruning remains owned
 by its existing durability protocol.
 
+### Finalized outcome delivery
+
+The reth ExEx lesson is implemented as a Neo-specific three-channel outcome
+model rather than one overloaded event bus. `neo-blockchain::FinalizedBlock<B>`
+owns an `Arc<Block>`, the optional canonical `Arc<DataCache<B>>`, an
+`Arc<[ApplicationExecuted]>`, and the frozen persistence context. The generic
+`neo_system::FinalizedBlockConsumer<B>` is bound to a concrete consumer by
+`FinalizedBlockStreamFactory`; a bounded Tokio channel (capacity 64) carries one
+delivery with a oneshot acknowledgement, and synchronous projection work runs
+on `spawn_blocking`.
+
+ApplicationLogs and TokensTracker are composed before startup into one
+`FinalizedProjectionConsumer<P, L, T>`. They derive and commit their private
+stores only after Ledger durability. The canonical writer waits for their
+acknowledgement before mempool maintenance, lightweight `Imported` publication,
+or another observer-visible block. Active near-tip projections force per-block
+durability, preventing a deferred batch from exposing one mutable tip snapshot
+as several historical heights. Catch-up and trusted replay intentionally skip
+these optional projections.
+
+This rich finalized stream is distinct from both the synchronous pre-commit
+durability hooks (StateService, persistent index append, static-archive staging)
+and the lightweight reorg-aware `RuntimeEvent` broadcast. Neo's finalized
+projection stream currently needs committed outcomes only because dBFT commits
+are final; `Reverted` and `TipChanged` remain explicit lifecycle wakeups. A
+consumer failure after Ledger durability requests clean restart and suppresses
+the later lifecycle event, but cannot roll back or mislabel the canonical block.
+
 ---
 
 ## 4. Task Manager / Service Lifecycle
@@ -411,7 +447,9 @@ by its existing durability protocol.
 `neo-node` now has explicit daemon task supervision (genuinely done). Essential
 tasks request node shutdown on error or unexpected exit; normal tasks report/log
 failures without terminating the daemon. Metrics use bounded `task_kind` and
-`outcome` labels.
+`outcome` labels. The finalized projection stream is an essential result-bearing
+task and starts before `blockchain_service`, so the canonical writer never
+publishes into an absent consumer.
 
 ```rust
 // neo-node/src/node/tasks/supervision.rs
@@ -688,6 +726,7 @@ pub struct TransactionState {
 | Stage commit policy + checkpoints | ★★★ | - | ★★★★ | ★★ | Import-stage driver done |
 | Compact derive macro | ★★ | ★★★★ | - | ★★ | Small |
 | Task supervision | - | - | ★★★★★ | ★★ | Done |
+| Acknowledged finalized projections | ★★ | - | ★★★★★ | ★★ | Implemented for ApplicationLogs and TokensTracker with bounded backpressure and per-block snapshot stability |
 | BlockDownloader as Stream | ★★★ | - | ★★ | ★★★ | Boundary, coordinator, registry-backed peer fetcher, peer snapshots, and startup driver wired |
 | Essential task monitoring | - | - | ★★★★★ | ★ | Done |
 | State provider/factory boundary | ★ | - | ★★★★ | ★★ | Implemented with concrete associated provider types; all StateService RPC reads are migrated |
@@ -717,5 +756,10 @@ pub struct TransactionState {
    production-wired. Do not split execution/state-root work out of canonical
    `Import`, or create a nominal `Prune` stage around cleanup already owned by
    header completion and static-archive durability.
+9. **Bounded finalized projection delivery** — implemented in `neo-system` and
+   composed by `neo-node`. ApplicationLogs and TokensTracker consume exact
+   post-durability artifacts through one acknowledged generic stream; active
+   live projections force per-block snapshots, while the lightweight lifecycle
+   broadcast remains the reorg/tip-change wakeup channel.
 
 This document is a living reference — update as architecture evolves.

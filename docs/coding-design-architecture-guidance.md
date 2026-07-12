@@ -305,9 +305,13 @@ Priority order for crate refactors:
    fail the canonical write if either persistent observer cannot mutate or
    fence its data. Clear the marker only after Ledger succeeds. A crash or failure leaves
    the marker for startup to reject until store heights match. ApplicationLogs
-   and TokensTracker stage pre-commit data but persist only post-canonical, so
-   they must not pay the marker fsync cost. Do not call MPT rollback as a
-   generic repair because pruning may already have removed required nodes.
+   and TokensTracker must perform both projection preparation and private-store
+   commit after canonical durability, so they do not pay the marker fsync cost.
+   Carry the exact block, canonical snapshot, execution records, and frozen
+   import context across that boundary in an owned finalized outcome; do not
+   reconstruct them or retain a mutable pre-commit batch. Do not call MPT
+   rollback as a generic repair because pruning may already have removed
+   required nodes.
    A self-reconciling immutable mirror may fence before canonical storage
    without the poison marker only when startup validates the shared prefix and
    deterministically truncates every cold-ahead suffix. Do not apply this
@@ -331,14 +335,30 @@ Priority order for crate refactors:
    the registry's ready, advertised-height snapshots for range assignment, and
    leaves ordered release to the coordinator before batches reach the runtime
    import queue.
-2. **One reorg-aware chain event stream.** Indexers, RPC application logs,
-   token trackers, oracle services, and plugins should derive from a single
-   bounded stream of chain outcomes. Because Neo committed blocks are final,
-   revert handling should stay explicit but normally cold.
+2. **Three explicit block-outcome channels.** Do not force durability
+   participants, rich read projections, and lightweight wakeups through one
+   callback shape.
+   Synchronous pre-commit hooks are reserved for work that must fence before
+   Ledger (StateService, a contiguous persistent index write, and crash-safe
+   static-archive staging). Non-consensus projections consume
+   `FinalizedBlock<B>` through the generic `FinalizedBlockConsumer<B>` and a
+   bounded acknowledged stream after Ledger succeeds. The canonical writer
+   waits for acknowledgement before it emits `Imported` or starts another
+   observer-visible block. Lifecycle consumers use the separate lightweight
+   broadcast for `Imported`, `Reverted`, `TipChanged`, relay results, and
+   shutdown; snapshots and execution records do not belong there.
+   Compose finalized consumers before service startup; do not add mutable late
+   registration. An active finalized projection forces per-block durability
+   near tip so its snapshot remains fixed at one height. Observer-free catch-up
+   batches may omit per-height artifacts. A delivery failure after canonical
+   durability requests clean shutdown and must never be described as a Ledger
+   rollback. Neo finalized projection delivery is committed-only; exceptional
+   revert awareness remains explicit on the lifecycle stream.
 3. **One task-supervision layer.** Composition code should distinguish
    essential node tasks from normal background tasks. Essential task failure
    should trigger graceful node shutdown; normal task failure should be logged,
-   metered, and restarted or disabled according to policy.
+   metered, and restarted or disabled according to policy. The finalized
+   projection stream is essential and must start before the blockchain service.
 4. **One provider/factory pattern for reads.** Storage-backed read APIs should
    expose capability traits and factories rather than leaking concrete caches
    or backend handles upward. The live ledger pattern is

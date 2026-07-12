@@ -21,7 +21,7 @@ use crate::service::{BlockchainService, MempoolLike};
 
 mod persist;
 
-pub(crate) use persist::BatchPersistResources;
+pub(crate) use persist::{BatchPersistResources, BlockCommitArtifacts};
 
 const DRAIN_BATCH_SIZE: usize = 500;
 const MAX_UNVERIFIED_CACHE_SIZE: usize = 50_000;

@@ -155,6 +155,40 @@ pub trait CommittingHandler: Send + Sync {
     );
 }
 
+/// High-level adapter for non-consensus projections derived from a finalized block.
+///
+/// The canonical node invokes this only after Ledger durability succeeds and
+/// before it allows the next observer-visible block to mutate the supplied
+/// snapshot. Implementors receive the same execution records as the legacy C#
+/// committing hook, but their private store is prepared and committed as one
+/// post-canonical operation.
+pub trait FinalizedHandler: Send + Sync {
+    /// Derives and commits one projection from a durably finalized block.
+    fn blockchain_finalized_handler<B: neo_storage::CacheRead>(
+        &self,
+        network: u32,
+        block: &Block,
+        snapshot: &DataCache<B>,
+        application_executed_list: &[ApplicationExecuted],
+    );
+}
+
+impl<T> FinalizedHandler for T
+where
+    T: CommittingHandler + CommittedHandler,
+{
+    fn blockchain_finalized_handler<B: neo_storage::CacheRead>(
+        &self,
+        network: u32,
+        block: &Block,
+        snapshot: &DataCache<B>,
+        application_executed_list: &[ApplicationExecuted],
+    ) {
+        self.blockchain_committing_handler(network, block, snapshot, application_executed_list);
+        self.blockchain_committed_handler(network, block);
+    }
+}
+
 /// Implemented by services that need to react to wallet changes
 /// (e.g. open/close/lock/unlock of accounts). Mirrors the C#
 /// `IWalletChangedHandler` interface.

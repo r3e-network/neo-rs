@@ -13,78 +13,21 @@
 //! The trait surface is intentionally narrow: it covers the operations the
 //! service actually uses and keeps node/application wiring outside this crate.
 
+use std::future::Future;
 use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Block};
 
+mod finality;
+
+pub use finality::{BlockPersistContext, FinalizedBlock};
+
 use crate::ledger_provider::{
     ChainTipProvider, EmptyLedgerProvider, HotColdLedgerProvider, LedgerProvider,
     StorageLedgerProvider,
 };
-
-/// Observer semantics for the current block persistence call.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BlockPersistContext {
-    /// Ordinary persistence; daemon hooks may derive catch-up behavior from
-    /// the current peer tip for this individual block.
-    Live,
-    /// A range-level decision to retain live observer behavior for every block
-    /// in a deferred sync batch, independent of later peer-tip changes.
-    SyncBatch,
-    /// A range-level catch-up decision frozen before a deferred sync batch.
-    ///
-    /// Live plugin staging is skipped for every block in the batch even if the
-    /// observed peer tip changes while the batch is executing.
-    CatchUp,
-    /// Trusted local bootstrap/import such as `chain.acc` or built-in fast sync.
-    TrustedReplay,
-}
-
-impl BlockPersistContext {
-    /// Normal live-network/consensus persistence.
-    #[must_use]
-    pub const fn live() -> Self {
-        Self::Live
-    }
-
-    /// Frozen catch-up observer semantics for a verified sync batch.
-    #[must_use]
-    pub const fn catch_up() -> Self {
-        Self::CatchUp
-    }
-
-    /// Frozen live observer semantics for a verified sync batch.
-    #[must_use]
-    pub const fn sync_batch() -> Self {
-        Self::SyncBatch
-    }
-
-    /// Trusted local bootstrap/import persistence.
-    #[must_use]
-    pub const fn trusted_replay() -> Self {
-        Self::TrustedReplay
-    }
-
-    /// Returns whether live observer staging must be skipped.
-    #[must_use]
-    pub const fn skips_live_observers(self) -> bool {
-        matches!(self, Self::CatchUp | Self::TrustedReplay)
-    }
-
-    /// Returns whether daemon hooks may derive catch-up from the current peer tip.
-    #[must_use]
-    pub const fn uses_dynamic_peer_tip(self) -> bool {
-        matches!(self, Self::Live)
-    }
-
-    /// Returns whether this is a trusted local replay path.
-    #[must_use]
-    pub const fn is_trusted_replay(self) -> bool {
-        matches!(self, Self::TrustedReplay)
-    }
-}
 
 /// Composition decision for the durability boundary of a verified sync range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -192,7 +135,7 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
     ///
     /// A commit error must reach the import path, and implementations must
     /// discard the failed root overlay before returning it. Logging and
-    /// continuing would let in-memory tip state and post-commit observers
+    /// continuing would let in-memory tip state and finalized consumers
     /// advance past the last durable block.
     fn commit_to_store(&self) -> Result<(), String> {
         Ok(())
@@ -251,7 +194,7 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
     /// OnPersist/PostPersist engines for an empty block with the
     /// state-equivalent empty-block writer while still invoking
     /// [`SystemContext::block_committing_with_context`] and
-    /// [`SystemContext::block_committed_with_context`] once per block.
+    /// [`SystemContext::block_finalized`] once per block.
     ///
     /// This is narrower than [`SystemContext::allows_empty_block_fast_forward`]:
     /// it keeps the per-block observer stream and is intended for StateService
@@ -263,15 +206,16 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
         false
     }
 
-    /// Called after the block's writes have been committed to the canonical
-    /// store. This mirrors the C# `ICommittedHandler` plugin hook.
-    fn block_committed(&self, _block: &Block) {}
-
-    /// Called after the block's writes have been committed to the canonical
-    /// store, with caller metadata for catch-up decisions. Implementations that
-    /// do not care about the metadata can keep overriding
-    /// [`SystemContext::block_committed`].
-    fn block_committed_with_context(&self, block: &Block, _context: BlockPersistContext) {
-        self.block_committed(block);
+    /// Publishes one block outcome after canonical durability succeeds.
+    ///
+    /// The returned future provides bounded backpressure and acknowledgement:
+    /// the service does not emit the lightweight imported event or begin the
+    /// next observer-visible block until this future completes. Store-less test
+    /// contexts inherit a no-op implementation.
+    fn block_finalized(
+        &self,
+        _finalized: FinalizedBlock<Self::CacheBacking>,
+    ) -> impl Future<Output = Result<(), String>> + Send {
+        async { Ok(()) }
     }
 }

@@ -49,8 +49,8 @@ pub use pipeline::{
 pub(crate) use service::{command, handle, internal, service_context};
 
 pub use messages::{
-    fill_completed, fill_memory_pool, import, import_completed, inventory_payload,
-    persist_completed, relay_result, reverify,
+    fill_completed, fill_memory_pool, import, import_completed, inventory_payload, relay_result,
+    reverify,
 };
 
 // Re-exports for the public surface of the crate.
@@ -85,7 +85,6 @@ pub use native_persist::{
     stage_block_natives_with_resources,
 };
 pub use neo_runtime::BlockchainEvent;
-pub use persist_completed::PersistCompleted;
 // `PreverifyCompleted` is produced by `neo-mempool`'s transaction router and
 // only consumed here; re-export the single canonical definition rather than
 // duplicating the record. (neo-blockchain depends on neo-mempool.)
@@ -93,7 +92,9 @@ pub use neo_mempool::PreverifyCompleted;
 pub use relay_result::RelayResult;
 pub use reverify::{Reverify, ReverifyItem};
 pub use service::{BlockchainService, MempoolLike};
-pub use service_context::{BlockPersistContext, SyncBatchCommitPolicy, SystemContext};
+pub use service_context::{
+    BlockPersistContext, FinalizedBlock, SyncBatchCommitPolicy, SystemContext,
+};
 
 pub use neo_runtime::{BlockchainEvent as RuntimeEvent, ServiceError};
 

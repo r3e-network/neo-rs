@@ -19,6 +19,7 @@
 
 pub mod builder;
 pub mod core;
+pub mod finality;
 pub mod node;
 pub mod sync;
 pub mod system_context;
@@ -27,6 +28,10 @@ pub mod wallet_provider;
 
 pub use builder::NodeBuilder;
 pub use core::{BlockchainTask, NodeCore, NodeCoreBuilder, NodeCoreLaunch};
+pub use finality::{
+    DEFAULT_FINALITY_CAPACITY, FinalizedBlockConsumer, FinalizedBlockHandle, FinalizedBlockStream,
+    FinalizedBlockStreamError, FinalizedBlockStreamFactory,
+};
 pub use node::Node;
 pub use sync::{
     HeaderStageBatchOutcome, HeaderStageProgress, LiveBlockImportPipeline, LiveBlockImportSummary,

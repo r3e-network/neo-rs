@@ -1,4 +1,16 @@
-//! Regression tests for chain.acc import helpers.
+//! # Chain Accumulator Import Tests
+//!
+//! Regression tests for `chain.acc` import helpers.
+//!
+//! ## Boundary
+//!
+//! These tests exercise the node-level stream driver, batching, range checks,
+//! and reports through typed blockchain handles.
+//!
+//! ## Contents
+//!
+//! Fixtures and tests for format validation, batching, throughput accounting,
+//! stop heights, resume behavior, and canonical import failures.
 
 use super::batch::{
     ChainAccImportComposition, PendingChainAccBatch, import_chain_acc_batch, take_import_batch,
@@ -806,7 +818,7 @@ async fn import_chain_acc_report_tracks_empty_and_transaction_bearing_blocks() {
                     transaction_elapsed: std::time::Duration::from_millis(1),
                     transaction_block_clone_elapsed: std::time::Duration::from_millis(3),
                     transaction_ledger_insert_elapsed: std::time::Duration::from_millis(4),
-                    transaction_committed_hook_elapsed: std::time::Duration::from_millis(5),
+                    transaction_finalized_delivery_elapsed: std::time::Duration::from_millis(5),
                     finalization_elapsed: std::time::Duration::from_millis(1),
                     finalization_commit_handlers_elapsed: std::time::Duration::from_micros(600),
                     finalization_store_commit_elapsed: std::time::Duration::from_micros(400),
@@ -838,7 +850,7 @@ async fn import_chain_acc_report_tracks_empty_and_transaction_bearing_blocks() {
     assert_eq!(report.transactions, 1);
     assert_eq!(report.transaction_block_clone_seconds, 0.003);
     assert_eq!(report.transaction_ledger_insert_seconds, 0.004);
-    assert_eq!(report.transaction_committed_hook_seconds, 0.005);
+    assert_eq!(report.transaction_finalized_delivery_seconds, 0.005);
     assert_eq!(report.finalization_seconds, 0.001);
     assert_eq!(report.finalization_commit_handlers_seconds, 0.0006);
     assert_eq!(report.finalization_store_commit_seconds, 0.0004);
@@ -882,7 +894,7 @@ async fn import_chain_acc_report_times_only_transaction_bearing_batches_for_tran
                     transaction_elapsed: std::time::Duration::from_millis(1),
                     transaction_block_clone_elapsed: std::time::Duration::ZERO,
                     transaction_ledger_insert_elapsed: std::time::Duration::ZERO,
-                    transaction_committed_hook_elapsed: std::time::Duration::ZERO,
+                    transaction_finalized_delivery_elapsed: std::time::Duration::ZERO,
                     finalization_elapsed: std::time::Duration::from_millis(1),
                     finalization_commit_handlers_elapsed: std::time::Duration::ZERO,
                     finalization_store_commit_elapsed: std::time::Duration::ZERO,
@@ -964,7 +976,7 @@ async fn import_chain_acc_uses_fast_forward_sized_batches_for_empty_runs() {
                     transaction_elapsed: std::time::Duration::from_millis(1),
                     transaction_block_clone_elapsed: std::time::Duration::ZERO,
                     transaction_ledger_insert_elapsed: std::time::Duration::ZERO,
-                    transaction_committed_hook_elapsed: std::time::Duration::ZERO,
+                    transaction_finalized_delivery_elapsed: std::time::Duration::ZERO,
                     finalization_elapsed: std::time::Duration::from_millis(1),
                     finalization_commit_handlers_elapsed: std::time::Duration::ZERO,
                     finalization_store_commit_elapsed: std::time::Duration::ZERO,
@@ -1022,7 +1034,7 @@ async fn import_chain_acc_keeps_short_empty_prefix_with_transaction_block() {
                     transaction_elapsed: std::time::Duration::from_millis(1),
                     transaction_block_clone_elapsed: std::time::Duration::ZERO,
                     transaction_ledger_insert_elapsed: std::time::Duration::ZERO,
-                    transaction_committed_hook_elapsed: std::time::Duration::ZERO,
+                    transaction_finalized_delivery_elapsed: std::time::Duration::ZERO,
                     finalization_elapsed: std::time::Duration::from_millis(1),
                     finalization_commit_handlers_elapsed: std::time::Duration::ZERO,
                     finalization_store_commit_elapsed: std::time::Duration::ZERO,
@@ -1089,7 +1101,7 @@ async fn import_chain_acc_keeps_short_empty_suffix_after_transaction_block() {
                     transaction_elapsed: std::time::Duration::from_millis(1),
                     transaction_block_clone_elapsed: std::time::Duration::ZERO,
                     transaction_ledger_insert_elapsed: std::time::Duration::ZERO,
-                    transaction_committed_hook_elapsed: std::time::Duration::ZERO,
+                    transaction_finalized_delivery_elapsed: std::time::Duration::ZERO,
                     finalization_elapsed: std::time::Duration::from_millis(1),
                     finalization_commit_handlers_elapsed: std::time::Duration::ZERO,
                     finalization_store_commit_elapsed: std::time::Duration::ZERO,
@@ -1159,7 +1171,7 @@ async fn import_chain_acc_uses_service_timing_without_splitting_mixed_batches() 
                     transaction_elapsed: std::time::Duration::from_millis(5),
                     transaction_block_clone_elapsed: std::time::Duration::ZERO,
                     transaction_ledger_insert_elapsed: std::time::Duration::ZERO,
-                    transaction_committed_hook_elapsed: std::time::Duration::ZERO,
+                    transaction_finalized_delivery_elapsed: std::time::Duration::ZERO,
                     finalization_elapsed: std::time::Duration::from_millis(2),
                     finalization_commit_handlers_elapsed: std::time::Duration::ZERO,
                     finalization_store_commit_elapsed: std::time::Duration::ZERO,

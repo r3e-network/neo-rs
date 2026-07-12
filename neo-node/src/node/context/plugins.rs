@@ -1,14 +1,14 @@
-//! Read-side plugin and deferred commit-hook dispatch for `DaemonContext`.
+//! Durability policy and finalized publication for `DaemonCommitHooks`.
 //!
 //! These hooks are node-local orchestration. They decide when to run expensive
-//! StateService, indexer, ApplicationLogs, and TokensTracker work around bulk
-//! sync, but do not define the underlying protocol or storage semantics.
+//! StateService and indexer work before canonical durability, and when to route
+//! ApplicationLogs and TokensTracker work through acknowledged finalized
+//! delivery. They do not define protocol or storage semantics.
 
-use std::sync::Arc;
-
-use neo_blockchain::{BlockPersistContext, SyncBatchCommitPolicy};
+use neo_blockchain::{BlockPersistContext, FinalizedBlock, SyncBatchCommitPolicy};
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_payloads::{ApplicationExecuted, Block, CommittedHandler, CommittingHandler};
+use neo_payloads::{ApplicationExecuted, Block};
+use neo_storage::persistence::StoreCacheBacking;
 use neo_storage::persistence::store::Store;
 use neo_storage::{CacheRead, DataCache};
 use neo_system::BlockCommitHooks;
@@ -22,52 +22,14 @@ use crate::node::static_files::{
 const COMMITTED_CATCHUP_DISTANCE: u64 = 1_000;
 const COMMITTING_CATCHUP_DISTANCE: u64 = 10_000;
 
-impl<P, S, L, T> DaemonCommitHooks<P, S, L, T>
+impl<P, S, L, T, C> DaemonCommitHooks<P, S, L, T, C>
 where
     P: NativeContractProvider + 'static,
     S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,
+    C: Store + 'static,
 {
-    fn block_committed_with_live_tip_and_context(
-        &self,
-        block: &Block,
-        live_tip: u64,
-        context: BlockPersistContext,
-    ) {
-        // During initial catch-up, skip the application-logs and tokens-tracker
-        // indexing handlers (C# does the same during chain.acc import). These
-        // index every transaction's execution result per block, which is O(N)
-        // expensive and dominates sync time (measured: 30 blocks/min WITH
-        // indexing vs 200+ WITHOUT). Once the node is near the live tip
-        // (within ~1000 blocks), we enable full indexing for live operation.
-        //
-        // These optional plugin projections begin near the live tip. The
-        // durable Index stage independently reconciles block/transaction
-        // indexes; historical plugin rows require their own replay source.
-        let block_index = block.index();
-        let catching_up = context.skips_live_observers()
-            || (context.uses_dynamic_peer_tip()
-                && live_tip > 0
-                && u64::from(block_index).saturating_add(COMMITTED_CATCHUP_DISTANCE) < live_tip);
-        if catching_up {
-            return;
-        }
-
-        let application_logs = self.application_logs_service.as_ref().map(Arc::clone);
-        let tokens_tracker = self.tokens_tracker();
-        if application_logs.is_none() && tokens_tracker.is_none() {
-            return;
-        }
-
-        if let Some(application_logs) = application_logs {
-            application_logs.blockchain_committed_handler(self.network, block);
-        }
-        if let Some(tokens_tracker) = tokens_tracker {
-            tokens_tracker.blockchain_committed_handler(self.network, block);
-        }
-    }
-
     #[cfg(test)]
     pub(in crate::node) fn block_committing_with_live_tip<B: CacheRead>(
         &self,
@@ -128,9 +90,9 @@ where
                 .as_ref()
                 .is_some_and(|indexer| indexer.can_append_contiguous_block(block));
         // StateService and a persistent indexer can make an independent store
-        // durable before Ledger. ApplicationLogs and TokensTracker only stage
-        // here and commit from the post-canonical callback, so they do not arm
-        // the cross-store recovery marker.
+        // durable before Ledger. ApplicationLogs and TokensTracker run wholly
+        // on the acknowledged post-canonical stream, so they do not arm the
+        // cross-store recovery marker.
         let has_persistent_indexer = should_index_live
             && self
                 .indexer_service
@@ -185,54 +147,22 @@ where
                 "deferred live index write until the durable Index stage fills the preceding gap"
             );
         }
-
-        self.commit_plugin_committing_handlers(block, snapshot, application_executed_list);
         true
-    }
-
-    fn commit_plugin_committing_handlers<B: CacheRead>(
-        &self,
-        block: &Block,
-        snapshot: &DataCache<B>,
-        application_executed_list: &[ApplicationExecuted],
-    ) {
-        let application_logs = self.application_logs_service.as_ref().map(Arc::clone);
-        let tokens_tracker = self.tokens_tracker();
-        if application_logs.is_none() && tokens_tracker.is_none() {
-            return;
-        }
-
-        if let Some(application_logs) = application_logs {
-            application_logs.blockchain_committing_handler(
-                self.network,
-                block,
-                snapshot,
-                application_executed_list,
-            );
-        }
-        if let Some(tokens_tracker) = tokens_tracker {
-            tokens_tracker.blockchain_committing_handler(
-                self.network,
-                block,
-                snapshot,
-                application_executed_list,
-            );
-        }
     }
 }
 
-impl<P, S, L, T, B> BlockCommitHooks<B> for DaemonCommitHooks<P, S, L, T>
+impl<P, S, L, T, C> BlockCommitHooks<StoreCacheBacking<C>> for DaemonCommitHooks<P, S, L, T, C>
 where
     P: NativeContractProvider + 'static,
     S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,
-    B: CacheRead,
+    C: Store + 'static,
 {
     fn block_committing(
         &self,
         block: &Block,
-        snapshot: &DataCache<B>,
+        snapshot: &DataCache<StoreCacheBacking<C>>,
         application_executed: &[ApplicationExecuted],
         live_tip: u64,
         context: BlockPersistContext,
@@ -246,8 +176,24 @@ where
         )
     }
 
-    fn block_committed(&self, block: &Block, live_tip: u64, context: BlockPersistContext) {
-        self.block_committed_with_live_tip_and_context(block, live_tip, context);
+    async fn block_finalized(
+        &self,
+        finalized: FinalizedBlock<StoreCacheBacking<C>>,
+        live_tip: u64,
+    ) -> Result<(), String> {
+        let block_index = finalized.block().index();
+        let context = finalized.context();
+        let catching_up = context.skips_live_observers()
+            || (context.uses_dynamic_peer_tip()
+                && live_tip > 0
+                && u64::from(block_index).saturating_add(COMMITTED_CATCHUP_DISTANCE) < live_tip);
+        if catching_up || !self.finalized_projections.has_consumers() {
+            return Ok(());
+        }
+        self.finalized_blocks
+            .publish(finalized)
+            .await
+            .map_err(|error| error.to_string())
     }
 
     fn sync_batch_commit_policy(
@@ -268,8 +214,7 @@ where
         }
         let observers_skipped_for_entire_batch = live_tip > 0
             && u64::from(end_height).saturating_add(COMMITTING_CATCHUP_DISTANCE) < live_tip;
-        let has_post_canonical_staging =
-            self.application_logs_service.is_some() || self.tokens_tracker().is_some();
+        let has_post_canonical_staging = self.finalized_projections.has_consumers();
 
         if has_post_canonical_staging && !observers_skipped_for_entire_batch {
             return SyncBatchCommitPolicy::PerBlock;
@@ -367,6 +312,10 @@ where
         self.replay_guard.canonical_commit_failed(reason);
     }
 
+    fn finalized_delivery_failed(&self, reason: &str) {
+        self.replay_guard.request_recoverable_restart(reason);
+    }
+
     fn should_stop_blockchain_service(&self) -> bool {
         self.replay_guard.shutdown_requested()
     }
@@ -375,14 +324,12 @@ where
         self.static_archive.is_none()
             && self.state_service.is_none()
             && self.indexer_service.is_none()
-            && self.application_logs_service.is_none()
-            && self.tokens_tracker().is_none()
+            && !self.finalized_projections.has_consumers()
     }
 
     fn allows_empty_block_committing_fast_forward(&self) -> bool {
         (self.static_archive.is_some() || self.state_service.is_some())
             && self.indexer_service.is_none()
-            && self.application_logs_service.is_none()
-            && self.tokens_tracker().is_none()
+            && !self.finalized_projections.has_consumers()
     }
 }

@@ -63,7 +63,8 @@ impl FastSyncReport {
                 transaction_block_import_seconds: import.transaction_block_import_seconds,
                 transaction_block_clone_seconds: import.transaction_block_clone_seconds,
                 transaction_ledger_insert_seconds: import.transaction_ledger_insert_seconds,
-                transaction_committed_hook_seconds: import.transaction_committed_hook_seconds,
+                transaction_finalized_delivery_seconds: import
+                    .transaction_finalized_delivery_seconds,
                 transaction_blocks_per_second: import.transaction_blocks_per_second,
                 finalization_seconds: import.finalization_seconds,
                 finalization_commit_handlers_seconds: import.finalization_commit_handlers_seconds,
@@ -143,7 +144,7 @@ pub(in crate::node) struct FastSyncImportReport {
     pub(in crate::node) transaction_block_import_seconds: f64,
     pub(in crate::node) transaction_block_clone_seconds: f64,
     pub(in crate::node) transaction_ledger_insert_seconds: f64,
-    pub(in crate::node) transaction_committed_hook_seconds: f64,
+    pub(in crate::node) transaction_finalized_delivery_seconds: f64,
     pub(in crate::node) transaction_blocks_per_second: f64,
     pub(in crate::node) finalization_seconds: f64,
     pub(in crate::node) finalization_commit_handlers_seconds: f64,

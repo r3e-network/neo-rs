@@ -527,14 +527,25 @@ impl SystemContext for StoreContext {
         }
         Ok(())
     }
-    fn block_committed_with_context(
+    fn sync_batch_commit_policy(
         &self,
-        block: &Block,
-        _context: crate::service_context::BlockPersistContext,
-    ) {
-        if let Some(heights) = &self.committed_heights {
-            heights.lock().push(block.index());
+        _start_height: u32,
+        _end_height: u32,
+    ) -> crate::SyncBatchCommitPolicy {
+        if self.state_service.is_none() && self.committing_application_executed_lengths.is_none() {
+            crate::SyncBatchCommitPolicy::DeferredLive
+        } else {
+            crate::SyncBatchCommitPolicy::PerBlock
         }
+    }
+    async fn block_finalized(
+        &self,
+        finalized: crate::FinalizedBlock<Self::CacheBacking>,
+    ) -> Result<(), String> {
+        if let Some(heights) = &self.committed_heights {
+            heights.lock().push(finalized.block().index());
+        }
+        Ok(())
     }
     fn allows_empty_block_fast_forward(&self) -> bool {
         self.state_service.is_none() && self.committing_application_executed_lengths.is_none()
@@ -869,7 +880,6 @@ fn dispatch_command_variants_is_exhaustive() {
     #[allow(dead_code, unreachable_code)]
     fn exhaustive_dispatch(_cmd: BlockchainCommand) -> std::convert::Infallible {
         match _cmd {
-            BlockchainCommand::PersistCompleted(_) => unreachable!(),
             BlockchainCommand::Import(_) => unreachable!(),
             BlockchainCommand::ImportBlocks { .. } => unreachable!(),
             BlockchainCommand::FillMemoryPool(_) => unreachable!(),
@@ -987,54 +997,6 @@ fn reverify_mempool_after_persist_skips_snapshot_when_no_unverified_transactions
     assert!(!service.reverify_mempool_after_persist(0, 10));
     assert_eq!(store_snapshot_calls.load(Ordering::SeqCst), 0);
     assert_eq!(reverify_calls.load(Ordering::SeqCst), 0);
-}
-
-#[tokio::test]
-async fn persist_completed_updates_hot_caches_and_broadcasts_import() {
-    let snapshot = Arc::new(neo_storage::DataCache::new(false));
-    let commit_calls = Arc::new(AtomicUsize::new(0));
-    let committed_heights = Arc::new(parking_lot::Mutex::new(Vec::new()));
-    let system = Arc::new(StoreContext {
-        snapshot,
-        settings: Arc::new(neo_config::ProtocolSettings::default()),
-        state_service: None,
-        committing_application_executed_lengths: None,
-        committed_heights: Some(Arc::clone(&committed_heights)),
-        store_snapshot_calls: None,
-        commit_to_store_calls: Some(Arc::clone(&commit_calls)),
-    });
-    let ledger = Arc::new(LedgerContext::default());
-    let header_cache = Arc::new(HeaderCache::default());
-    let mempool = Arc::new(TestMempool);
-    let (service, handle) = BlockchainService::with_defaults(system, ledger, header_cache, mempool);
-    let mut events = handle.subscribe();
-
-    let mut header = Header::new();
-    header.set_index(1);
-    header.set_timestamp(1_700_000_001_000);
-    assert!(service.header_cache.add(header.clone()));
-    let block = Arc::new(Block::from_parts(header, vec![]));
-    let hash = block.try_hash().expect("block hash");
-
-    service
-        .handle_persist_completed(crate::PersistCompleted {
-            block: Arc::clone(&block),
-        })
-        .await;
-
-    assert_eq!(service.ledger.block_hash_at(1), Some(hash));
-    assert!(service.ledger.get_block(&hash).is_some());
-    assert_eq!(service.header_cache.count(), 0);
-    assert_eq!(commit_calls.load(Ordering::SeqCst), 1);
-    assert_eq!(committed_heights.lock().as_slice(), &[1]);
-    assert_eq!(
-        events.try_recv().expect("import event"),
-        crate::RuntimeEvent::Imported {
-            hash,
-            height: 1,
-            timestamp: 1_700_000_001_000,
-        }
-    );
 }
 
 #[tokio::test]

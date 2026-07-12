@@ -26,7 +26,7 @@ pub(in crate::node) struct ChainAccImportReport {
     pub(in crate::node) transaction_block_import_seconds: f64,
     pub(in crate::node) transaction_block_clone_seconds: f64,
     pub(in crate::node) transaction_ledger_insert_seconds: f64,
-    pub(in crate::node) transaction_committed_hook_seconds: f64,
+    pub(in crate::node) transaction_finalized_delivery_seconds: f64,
     pub(in crate::node) transaction_blocks_per_second: f64,
     pub(in crate::node) finalization_seconds: f64,
     pub(in crate::node) finalization_commit_handlers_seconds: f64,

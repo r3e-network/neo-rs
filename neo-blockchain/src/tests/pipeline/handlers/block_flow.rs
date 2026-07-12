@@ -82,6 +82,14 @@ impl SystemContext for FailingSecondCommitContext {
         Ok(())
     }
 
+    fn sync_batch_commit_policy(
+        &self,
+        _start_height: u32,
+        _end_height: u32,
+    ) -> crate::SyncBatchCommitPolicy {
+        crate::SyncBatchCommitPolicy::DeferredLive
+    }
+
     fn allows_empty_block_fast_forward(&self) -> bool {
         false
     }
@@ -100,6 +108,72 @@ struct FailingDurableCommitContext {
     fail_commits: Arc<std::sync::atomic::AtomicBool>,
     commit_calls: Arc<AtomicUsize>,
     committed_heights: Arc<parking_lot::Mutex<Vec<u32>>>,
+}
+
+struct FailingFinalizedDeliveryContext {
+    snapshot: Arc<neo_storage::DataCache>,
+    settings: Arc<neo_config::ProtocolSettings>,
+    fail_delivery: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl std::fmt::Debug for FailingFinalizedDeliveryContext {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("FailingFinalizedDeliveryContext")
+            .finish_non_exhaustive()
+    }
+}
+
+impl SystemContext for FailingFinalizedDeliveryContext {
+    type NativeProvider = neo_native_contracts::StandardNativeProvider;
+    type CacheBacking = neo_storage::EmptyCacheBacking;
+
+    fn settings(&self) -> Arc<neo_config::ProtocolSettings> {
+        Arc::clone(&self.settings)
+    }
+
+    fn current_height(&self) -> u32 {
+        0
+    }
+
+    fn store_snapshot(&self) -> Option<Arc<neo_storage::DataCache>> {
+        Some(Arc::clone(&self.snapshot))
+    }
+
+    fn native_contract_provider(&self) -> Option<NativeProviderArc> {
+        Some(standard_native_provider())
+    }
+
+    fn commit_to_store(&self) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn sync_batch_commit_policy(
+        &self,
+        _start_height: u32,
+        _end_height: u32,
+    ) -> crate::SyncBatchCommitPolicy {
+        crate::SyncBatchCommitPolicy::PerBlock
+    }
+
+    async fn block_finalized(
+        &self,
+        _finalized: crate::FinalizedBlock<Self::CacheBacking>,
+    ) -> Result<(), String> {
+        if self.fail_delivery.load(Ordering::SeqCst) {
+            Err("injected finalized delivery failure".to_string())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn allows_empty_block_fast_forward(&self) -> bool {
+        false
+    }
+
+    fn should_stop_blockchain_service(&self) -> bool {
+        self.fail_delivery.load(Ordering::SeqCst)
+    }
 }
 
 struct StopAfterDurableCommitContext {
@@ -146,20 +220,26 @@ impl SystemContext for StopAfterDurableCommitContext {
         Ok(())
     }
 
+    fn sync_batch_commit_policy(
+        &self,
+        _start_height: u32,
+        _end_height: u32,
+    ) -> crate::SyncBatchCommitPolicy {
+        crate::SyncBatchCommitPolicy::DeferredLive
+    }
+
     fn should_stop_blockchain_service(&self) -> bool {
         self.stop_requested.load(Ordering::SeqCst)
     }
 
-    fn block_committed(&self, block: &Block) {
-        self.committed_heights.lock().push(block.index());
-    }
-
-    fn block_committed_with_context(
+    async fn block_finalized(
         &self,
-        block: &Block,
-        _context: crate::service_context::BlockPersistContext,
-    ) {
-        self.block_committed(block);
+        finalized: crate::FinalizedBlock<Self::CacheBacking>,
+    ) -> Result<(), String> {
+        self.committed_heights
+            .lock()
+            .push(finalized.block().index());
+        Ok(())
     }
 
     fn allows_empty_block_fast_forward(&self) -> bool {
@@ -203,16 +283,22 @@ impl SystemContext for FailingDurableCommitContext {
         }
     }
 
-    fn block_committed(&self, block: &Block) {
-        self.committed_heights.lock().push(block.index());
+    fn sync_batch_commit_policy(
+        &self,
+        _start_height: u32,
+        _end_height: u32,
+    ) -> crate::SyncBatchCommitPolicy {
+        crate::SyncBatchCommitPolicy::DeferredLive
     }
 
-    fn block_committed_with_context(
+    async fn block_finalized(
         &self,
-        block: &Block,
-        _context: crate::service_context::BlockPersistContext,
-    ) {
-        self.block_committed(block);
+        finalized: crate::FinalizedBlock<Self::CacheBacking>,
+    ) -> Result<(), String> {
+        self.committed_heights
+            .lock()
+            .push(finalized.block().index());
+        Ok(())
     }
 
     fn allows_empty_block_fast_forward(&self) -> bool {
@@ -603,7 +689,7 @@ async fn live_commit_failure_does_not_publish_or_advance_the_in_memory_tip() {
     assert_eq!(service.ledger.current_height(), 0);
     assert!(
         committed_heights.lock().is_empty(),
-        "post-commit observers must not run after a failed durable commit"
+        "finalized consumers must not run after a failed durable commit"
     );
 }
 
@@ -639,6 +725,41 @@ async fn non_bulk_import_reply_surfaces_durable_commit_failure() {
     );
     assert_eq!(service.ledger.current_height(), 0);
     assert!(committed_heights.lock().is_empty());
+}
+
+#[tokio::test]
+async fn non_bulk_finalized_delivery_failure_reports_the_durable_prefix() {
+    let fail_delivery = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let system = Arc::new(FailingFinalizedDeliveryContext {
+        snapshot: Arc::new(neo_storage::DataCache::new(false)),
+        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        fail_delivery: Arc::clone(&fail_delivery),
+    });
+    let (service, _handle) = BlockchainService::with_defaults(
+        system,
+        Arc::new(LedgerContext::default()),
+        Arc::new(HeaderCache::default()),
+        Arc::new(TestMempool),
+    );
+    service.initialize().await.expect("initialize");
+    fail_delivery.store(true, Ordering::SeqCst);
+
+    let (block, _) = first_two_empty_blocks();
+    let reply = service
+        .handle_import(Import {
+            blocks: vec![block],
+            mode: ImportMode::Live { verify: false },
+        })
+        .await;
+
+    assert_eq!(reply.imported, 1, "the Ledger block is already durable");
+    assert!(
+        reply
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("finalized delivery failed"))
+    );
+    assert_eq!(service.ledger.current_height(), 1);
 }
 
 #[tokio::test]
@@ -1630,7 +1751,7 @@ async fn bulk_import_fast_forwards_short_empty_bursts_around_transaction_blocks(
     assert_eq!(
         committed_heights.lock().as_slice(),
         &[33],
-        "transaction-bearing blocks keep the normal committed callback while surrounding empty bursts are fast-forwarded"
+        "transaction-bearing blocks keep normal finalized delivery while surrounding empty bursts are fast-forwarded"
     );
     assert!(
         service.ledger.block_hash_at(1).is_none(),
@@ -2171,6 +2292,42 @@ async fn fatal_inventory_batch_failure_aborts_without_processing_later_blocks() 
     );
     assert_eq!(abort_store_commit_calls.load(Ordering::SeqCst), 1);
     assert_eq!(service.ledger.current_height(), 0);
+}
+
+#[tokio::test]
+async fn inventory_batch_honors_per_block_observer_durability_policy() {
+    let snapshot = Arc::new(neo_storage::DataCache::new(false));
+    let commit_calls = Arc::new(AtomicUsize::new(0));
+    let artifact_lengths = Arc::new(parking_lot::Mutex::new(Vec::new()));
+    let system = Arc::new(StoreContext {
+        snapshot: Arc::clone(&snapshot),
+        settings: Arc::new(neo_config::ProtocolSettings::default()),
+        state_service: None,
+        committing_application_executed_lengths: Some(Arc::clone(&artifact_lengths)),
+        committed_heights: None,
+        store_snapshot_calls: None,
+        commit_to_store_calls: Some(Arc::clone(&commit_calls)),
+    });
+    let (service, _handle) = BlockchainService::with_defaults(
+        system,
+        Arc::new(LedgerContext::default()),
+        Arc::new(HeaderCache::default()),
+        Arc::new(TestMempool),
+    );
+    service.initialize().await.expect("initialize");
+    commit_calls.store(0, Ordering::SeqCst);
+    artifact_lengths.lock().clear();
+    let (block1, block2) = first_two_empty_blocks();
+
+    assert_eq!(
+        service
+            .handle_block_inventory_batch(vec![Arc::new(block1), Arc::new(block2)], false, true,)
+            .await
+            .expect("inventory batch"),
+        2
+    );
+    assert_eq!(commit_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(artifact_lengths.lock().len(), 2);
 }
 
 #[tokio::test]
@@ -2756,6 +2913,69 @@ async fn handle_import_block_reports_rejection_and_verifies_witness() {
     runner
         .await
         .expect("service exits after command channel closes");
+}
+
+#[tokio::test]
+async fn handle_import_block_reports_durable_tip_after_finalized_delivery_failure() {
+    let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+    let public_key =
+        neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+    let point = neo_crypto::ECPoint::from_bytes(&public_key).expect("point");
+    let mut settings = neo_config::ProtocolSettings::default();
+    settings.standby_committee = vec![point.clone()];
+    settings.validators_count = 1;
+
+    let fail_delivery = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let system = Arc::new(FailingFinalizedDeliveryContext {
+        snapshot: Arc::new(neo_storage::DataCache::new(false)),
+        settings: Arc::new(settings.clone()),
+        fail_delivery: Arc::clone(&fail_delivery),
+    });
+    let ledger = Arc::new(LedgerContext::default());
+    let (service, handle) = BlockchainService::with_defaults(
+        system,
+        Arc::clone(&ledger),
+        Arc::new(HeaderCache::default()),
+        Arc::new(TestMempool),
+    );
+    service.initialize().await.expect("initialize");
+
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp() + 15_000);
+    header.set_primary_index(0);
+    header.set_next_consensus(*genesis.header.next_consensus());
+    let verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            1,
+            &[point],
+        )
+        .expect("multisig script");
+    header.witness = sign_header_for_test(
+        &header,
+        settings.network,
+        &private_key,
+        verification.as_slice(),
+    );
+    let block = Block::from_parts(header, Vec::new());
+    let expected_tip = neo_runtime::ImportedTip::from_block(&block).expect("tip");
+
+    fail_delivery.store(true, Ordering::SeqCst);
+    let runner = tokio::spawn(service.run());
+    let outcome = handle
+        .import_block(block)
+        .await
+        .expect("durable import outcome");
+
+    assert_eq!(
+        outcome,
+        neo_runtime::BlockImportOutcome::Imported(expected_tip)
+    );
+    assert_eq!(ledger.current_height(), 1);
+    drop(handle);
+    runner.await.expect("fatal finalized failure stops service");
 }
 
 /// Sync and consensus should be able to use the shared runtime import

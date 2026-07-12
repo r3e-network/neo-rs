@@ -109,7 +109,7 @@ pub(super) struct ChainAccImportComposition {
     pub(super) transaction_elapsed: Duration,
     pub(super) transaction_block_clone_elapsed: Duration,
     pub(super) transaction_ledger_insert_elapsed: Duration,
-    pub(super) transaction_committed_hook_elapsed: Duration,
+    pub(super) transaction_finalized_delivery_elapsed: Duration,
     pub(super) finalization_elapsed: Duration,
     pub(super) finalization_commit_handlers_elapsed: Duration,
     pub(super) finalization_store_commit_elapsed: Duration,
@@ -146,8 +146,8 @@ impl ChainAccImportComposition {
                     self.transaction_block_clone_elapsed += stats.transaction_block_clone_elapsed;
                     self.transaction_ledger_insert_elapsed +=
                         stats.transaction_ledger_insert_elapsed;
-                    self.transaction_committed_hook_elapsed +=
-                        stats.transaction_committed_hook_elapsed;
+                    self.transaction_finalized_delivery_elapsed +=
+                        stats.transaction_finalized_delivery_elapsed;
                 }
                 self.finalization_elapsed += stats.finalization_elapsed;
                 self.finalization_commit_handlers_elapsed +=
@@ -188,8 +188,8 @@ impl ChainAccImportComposition {
         self.transaction_ledger_insert_elapsed.as_secs_f64()
     }
 
-    pub(super) fn transaction_committed_hook_seconds(&self) -> f64 {
-        self.transaction_committed_hook_elapsed.as_secs_f64()
+    pub(super) fn transaction_finalized_delivery_seconds(&self) -> f64 {
+        self.transaction_finalized_delivery_elapsed.as_secs_f64()
     }
 
     pub(super) fn transaction_blocks_per_second(&self) -> f64 {
@@ -218,7 +218,7 @@ impl ChainAccImportComposition {
             + self.transaction_elapsed
             + self.transaction_block_clone_elapsed
             + self.transaction_ledger_insert_elapsed
-            + self.transaction_committed_hook_elapsed
+            + self.transaction_finalized_delivery_elapsed
             + self.finalization_elapsed
     }
 

@@ -6,12 +6,14 @@
 //! through the statically dispatched `BlockCommitHooks` collaborator.
 
 use std::fmt;
+use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use neo_blockchain::{
-    BlockPersistContext, ChainTipProvider, HotColdLedgerProviderFactory, LedgerProvider,
-    LedgerProviderFactory, OptionalStaticLedgerProvider, SyncBatchCommitPolicy, SystemContext,
+    BlockPersistContext, ChainTipProvider, FinalizedBlock, HotColdLedgerProviderFactory,
+    LedgerProvider, LedgerProviderFactory, OptionalStaticLedgerProvider, SyncBatchCommitPolicy,
+    SystemContext,
 };
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
@@ -41,8 +43,14 @@ where
         true
     }
 
-    /// Notify post-commit observers.
-    fn block_committed(&self, _block: &Block, _live_tip: u64, _context: BlockPersistContext) {}
+    /// Deliver one canonical outcome after the Ledger durability fence.
+    fn block_finalized(
+        &self,
+        _finalized: FinalizedBlock<B>,
+        _live_tip: u64,
+    ) -> impl Future<Output = Result<(), String>> + Send {
+        async { Ok(()) }
+    }
 
     /// Whether a verified peer-sync range may share one durable commit.
     fn sync_batch_commit_policy(
@@ -70,6 +78,9 @@ where
     /// Notify application recovery policy when canonical publication cannot
     /// safely complete after pre-commit observers may have persisted state.
     fn canonical_commit_failed(&self, _reason: &str) {}
+
+    /// Notify recovery policy when finalized delivery fails after Ledger commit.
+    fn finalized_delivery_failed(&self, _reason: &str) {}
 
     /// Whether application recovery policy has made the canonical writer fatal.
     fn should_stop_blockchain_service(&self) -> bool {
@@ -169,6 +180,11 @@ where
     fn mark_fatal_persistence_error(&self, reason: &str) {
         self.fatal_persistence_error.store(true, Ordering::Release);
         self.hooks.canonical_commit_failed(reason);
+    }
+
+    fn mark_fatal_finalized_delivery_error(&self, reason: &str) {
+        self.fatal_persistence_error.store(true, Ordering::Release);
+        self.hooks.finalized_delivery_failed(reason);
     }
 }
 
@@ -318,17 +334,18 @@ where
         self.hooks.allows_empty_block_committing_fast_forward()
     }
 
-    fn block_committed(&self, block: &Block) {
-        self.hooks.block_committed(
-            block,
-            neo_runtime::sync_metrics::peer_live_tip(),
-            BlockPersistContext::live(),
-        );
-    }
-
-    fn block_committed_with_context(&self, block: &Block, context: BlockPersistContext) {
-        self.hooks
-            .block_committed(block, neo_runtime::sync_metrics::peer_live_tip(), context);
+    async fn block_finalized(
+        &self,
+        finalized: FinalizedBlock<Self::CacheBacking>,
+    ) -> Result<(), String> {
+        let result = self
+            .hooks
+            .block_finalized(finalized, neo_runtime::sync_metrics::peer_live_tip())
+            .await;
+        if let Err(error) = &result {
+            self.mark_fatal_finalized_delivery_error(error);
+        }
+        result
     }
 }
 

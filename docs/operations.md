@@ -144,6 +144,27 @@ blockchain service; out-of-order blocks keep their preflight proof while parked
 and are rechecked against chain state when drained. This behavior is automatic
 and has no separate operator setting.
 
+### Finalized projection delivery
+
+When ApplicationLogs or TokensTracker is enabled, the node derives those
+private read stores from an acknowledged post-canonical stream. The stream is
+bounded to 64 deliveries, processes heights serially on Tokio's blocking pool,
+and is supervised as an essential task. The canonical writer waits for each
+acknowledgement before it publishes the lightweight `Imported` event or starts
+another observer-visible block. Near the live tip, active projections therefore
+force per-block canonical durability and a snapshot fixed to that exact height.
+Trusted package replay and distant catch-up intentionally skip these optional
+projections.
+
+A stream closure, dropped acknowledgement, or projection-worker failure occurs
+after the Ledger block is already durable. The node logs a finalized-delivery
+error, marks the writer fatal, and requests a clean shutdown; it does not create
+`.neo-local-replay-poisoned` or claim that Ledger rolled back. Treat the local
+Ledger as authoritative, inspect the ApplicationLogs/TokensTracker service
+stores and logs, then restart or rebuild the affected optional projection as
+needed. Handler-level errors still follow each service's configured exception
+policy.
+
 ### RPC-backed ledger mode
 
 `--remote-ledger-rpc <URL>` starts `neo-node` without opening or creating the
