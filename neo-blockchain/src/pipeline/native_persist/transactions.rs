@@ -26,7 +26,7 @@ use super::{NativePersistOptions, NativePersistOutcome, NativePersistResources};
 pub(super) fn run_transaction_stage<P, B>(
     block_cache: &Arc<DataCache<B>>,
     block: &Arc<Block>,
-    settings: &ProtocolSettings,
+    settings: &Arc<ProtocolSettings>,
     options: NativePersistOptions,
     resources: &NativePersistResources<P>,
     native_contract_cache: Arc<Mutex<NativeContractsCache>>,
@@ -72,7 +72,7 @@ where
                 Some(container),
                 Arc::clone(&tx_cache),
                 Some(Arc::clone(block)),
-                settings.clone(),
+                Arc::clone(settings),
                 tx.system_fee(),
                 HashMap::new(),
                 Arc::clone(&native_contract_cache),

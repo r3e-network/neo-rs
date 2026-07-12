@@ -51,7 +51,6 @@ impl ContractManagement {
         &self,
         engine: &mut ApplicationEngine<P, D, B>,
     ) -> CoreResult<()> {
-        let settings = engine.protocol_settings().clone();
         let block_index = engine
             .persisting_block()
             .map(|block| block.index())
@@ -60,6 +59,21 @@ impl ContractManagement {
                     "ContractManagement::on_persist requires a persisting block",
                 )
             })?;
+
+        // `NativeContract::is_initialize_block` can only match genesis or a
+        // configured hardfork height. Ordinary blocks therefore have no
+        // ContractManagement work and must not rebuild every contract's
+        // method/event hardfork set merely to prove that fact.
+        if block_index != 0
+            && !engine
+                .protocol_settings()
+                .hardforks
+                .values()
+                .any(|height| *height == block_index)
+        {
+            return Ok(());
+        }
+        let settings = engine.protocol_settings().clone();
 
         let native_contracts = standard_native_contracts();
         for contract in native_contracts.iter() {

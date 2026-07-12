@@ -25,7 +25,7 @@ fn consensus_reads_tip_header_and_transaction_from_configured_archive() {
     persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&genesis),
-        &settings,
+        Arc::new(settings.clone()),
         NativePersistOptions::default(),
         &resources,
     )
@@ -45,7 +45,7 @@ fn consensus_reads_tip_header_and_transaction_from_configured_archive() {
     persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&block),
-        &settings,
+        Arc::new(settings.clone()),
         NativePersistOptions::default(),
         &resources,
     )

@@ -7,15 +7,17 @@ use neo_primitives::{TriggerType, UInt256};
 
 use super::LEDGER_CONTRACT_ID;
 
-/// Runs the per-block native hook matching `engine`'s trigger
+/// Runs the eligible per-block native hook matching `engine`'s trigger
 /// (`on_persist` for [`TriggerType::OnPersist`], `post_persist` for
-/// [`TriggerType::PostPersist`]) for every contract in `contracts` that
-/// is active at `block_index`, in the given canonical registration order.
+/// [`TriggerType::PostPersist`]) for contracts that are active at
+/// `block_index`, in the given canonical registration order.
 ///
 /// This is the exact body of C#'s `System.Contract.NativeOnPersist` /
 /// `NativePostPersist` syscalls (`NativeContract.OnPersistAsync` /
-/// `PostPersistAsync` over `Contracts.Where(IsActive)`). A hook error aborts
-/// the block, like the C# native script faulting.
+/// `PostPersistAsync` over `Contracts.Where(IsActive)`). The closed standard
+/// provider may skip a hook only when its default implementation is provably a
+/// no-op for this block; custom providers default to running every hook. A hook
+/// error aborts the block, like the C# native script faulting.
 pub(super) fn run_native_persist_hooks<P, B>(
     contracts: &[P::Contract],
     engine: &mut ApplicationEngine<P, neo_execution::NoDiagnostic, B>,
@@ -40,6 +42,17 @@ where
     };
     for contract in contracts {
         if !contract.is_active(settings, block_index) {
+            continue;
+        }
+        let should_run = match metric_hook {
+            neo_runtime::sync_metrics::NativePersistHook::OnPersist => {
+                contract.should_run_on_persist(settings, block)
+            }
+            neo_runtime::sync_metrics::NativePersistHook::PostPersist => {
+                contract.should_run_post_persist(settings, block)
+            }
+        };
+        if !should_run {
             continue;
         }
         let hook_start = std::time::Instant::now();

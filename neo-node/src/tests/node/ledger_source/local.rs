@@ -36,7 +36,7 @@ fn local_source_with_block(
     neo_blockchain::persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&genesis),
-        &settings,
+        Arc::new(settings.clone()),
         neo_blockchain::NativePersistOptions::default(),
         &resources,
     )
@@ -47,7 +47,7 @@ fn local_source_with_block(
     neo_blockchain::persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::new(block.clone()),
-        &settings,
+        Arc::new(settings.clone()),
         neo_blockchain::NativePersistOptions::default(),
         &resources,
     )
@@ -141,7 +141,7 @@ fn local_ledger_block_source_requests_restart_on_static_archive_io_error() {
     neo_blockchain::persist_block_natives_with_resources(
         Arc::clone(&populated),
         Arc::clone(&genesis),
-        &settings,
+        Arc::new(settings.clone()),
         neo_blockchain::NativePersistOptions::default(),
         &resources,
     )
@@ -150,7 +150,7 @@ fn local_ledger_block_source_requests_restart_on_static_archive_io_error() {
     neo_blockchain::persist_block_natives_with_resources(
         Arc::clone(&populated),
         Arc::new(child.clone()),
-        &settings,
+        Arc::new(settings.clone()),
         neo_blockchain::NativePersistOptions::default(),
         &resources,
     )
@@ -211,7 +211,7 @@ fn local_ledger_block_source_falls_back_to_configured_static_files() {
     neo_blockchain::persist_block_natives_with_resources(
         Arc::clone(&populated),
         Arc::clone(&genesis),
-        &settings,
+        Arc::new(settings.clone()),
         neo_blockchain::NativePersistOptions::default(),
         &resources,
     )
@@ -220,7 +220,7 @@ fn local_ledger_block_source_falls_back_to_configured_static_files() {
     neo_blockchain::persist_block_natives_with_resources(
         Arc::clone(&populated),
         Arc::new(child.clone()),
-        &settings,
+        Arc::new(settings.clone()),
         neo_blockchain::NativePersistOptions::default(),
         &resources,
     )

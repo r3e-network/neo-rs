@@ -9,6 +9,7 @@ use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
 use neo_primitives::CallFlags;
 use neo_vm_rs::Instruction;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::str;
 
@@ -20,7 +21,11 @@ pub type InteropCallback<S = ()> = fn(&mut ExecutionEngine<S>) -> VmResult<()>;
 #[derive(Clone)]
 pub struct VmInteropDescriptor<S = ()> {
     /// Canonical name of the syscall (e.g. `System.Runtime.Platform`).
-    pub name: String,
+    ///
+    /// Protocol descriptors use borrowed static names, avoiding an allocation
+    /// each time an application engine builds its syscall registry. Custom VM
+    /// hosts may still supply an owned name.
+    pub name: Cow<'static, str>,
     /// Optional handler executed directly by the VM. When `None`, the call is delegated
     /// to the configured [`InteropHost`].
     pub handler: Option<InteropCallback<S>>,
@@ -42,7 +47,7 @@ struct RegisteredDescriptor<S = ()> {
 
 impl<S> RegisteredDescriptor<S> {
     fn new(descriptor: VmInteropDescriptor<S>) -> VmResult<Self> {
-        let hash = hash_syscall(&descriptor.name)?;
+        let hash = hash_syscall(descriptor.name.as_ref())?;
         Ok(Self { descriptor, hash })
     }
 }
@@ -163,12 +168,12 @@ impl<S> InteropService<S> {
     /// Registers a host-only descriptor (handled by the execution engine host) and returns its hash.
     pub fn register_host_descriptor(
         &mut self,
-        name: &str,
+        name: &'static str,
         price: i64,
         required_call_flags: CallFlags,
     ) -> VmResult<u32> {
         self.register(VmInteropDescriptor {
-            name: name.to_string(),
+            name: Cow::Borrowed(name),
             handler: None,
             price,
             required_call_flags,
@@ -209,7 +214,7 @@ impl<S> InteropService<S> {
             (
                 entry.descriptor.handler,
                 entry.descriptor.required_call_flags,
-                entry.descriptor.name.clone(),
+                entry.descriptor.name.as_ref(),
             )
         };
 

@@ -41,6 +41,126 @@ fn provider_resolves_cryptolib_by_hash() {
 }
 
 #[test]
+fn standard_persist_hook_capabilities_match_protocol_implementations() {
+    let contracts = StandardNativeProvider::new().all_native_contracts();
+    let on_persist = contracts
+        .iter()
+        .filter(|contract| contract.has_on_persist_hook())
+        .map(StandardNativeContract::name)
+        .collect::<Vec<_>>();
+    let post_persist = contracts
+        .iter()
+        .filter(|contract| contract.has_post_persist_hook())
+        .map(StandardNativeContract::name)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        on_persist,
+        [
+            "ContractManagement",
+            "LedgerContract",
+            "NeoToken",
+            "GasToken",
+            "Notary",
+        ]
+    );
+    assert_eq!(
+        post_persist,
+        ["LedgerContract", "NeoToken", "OracleContract"]
+    );
+
+    let mut transaction = neo_payloads::Transaction::new();
+    transaction.set_script(vec![neo_vm_rs::OpCode::RET.byte()]);
+    let ordinary_block = neo_payloads::Block::from_parts(
+        {
+            let mut header = neo_payloads::Header::new();
+            header.set_index(1);
+            header
+        },
+        vec![transaction],
+    );
+    let settings = neo_config::ProtocolSettings::default();
+    let ordinary_on_persist = contracts
+        .iter()
+        .filter(|contract| {
+            <StandardNativeContract as NativeContract<StandardNativeProvider>>::should_run_on_persist(
+                contract,
+                &settings,
+                &ordinary_block,
+            )
+        })
+        .map(StandardNativeContract::name)
+        .collect::<Vec<_>>();
+    let ordinary_post_persist = contracts
+        .iter()
+        .filter(|contract| {
+            <StandardNativeContract as NativeContract<StandardNativeProvider>>::should_run_post_persist(
+                contract,
+                &settings,
+                &ordinary_block,
+            )
+        })
+        .map(StandardNativeContract::name)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        ordinary_on_persist,
+        ["LedgerContract", "NeoToken", "GasToken"]
+    );
+    assert_eq!(ordinary_post_persist, ["LedgerContract", "NeoToken"]);
+
+    let mut attributed_transaction = neo_payloads::Transaction::new();
+    attributed_transaction.set_script(vec![neo_vm_rs::OpCode::RET.byte()]);
+    attributed_transaction.set_attributes(vec![
+        neo_payloads::TransactionAttribute::NotaryAssisted(neo_payloads::NotaryAssisted::new(1)),
+        neo_payloads::TransactionAttribute::OracleResponse(neo_payloads::OracleResponse::new(
+            7,
+            neo_primitives::OracleResponseCode::Success,
+            Vec::new(),
+        )),
+    ]);
+    let attributed_block = neo_payloads::Block::from_parts(
+        {
+            let mut header = neo_payloads::Header::new();
+            header.set_index(1);
+            header
+        },
+        vec![attributed_transaction],
+    );
+    let attributed_on_persist = contracts
+        .iter()
+        .filter(|contract| {
+            <StandardNativeContract as NativeContract<StandardNativeProvider>>::should_run_on_persist(
+                contract,
+                &settings,
+                &attributed_block,
+            )
+        })
+        .map(StandardNativeContract::name)
+        .collect::<Vec<_>>();
+    let attributed_post_persist = contracts
+        .iter()
+        .filter(|contract| {
+            <StandardNativeContract as NativeContract<StandardNativeProvider>>::should_run_post_persist(
+                contract,
+                &settings,
+                &attributed_block,
+            )
+        })
+        .map(StandardNativeContract::name)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        attributed_on_persist,
+        ["LedgerContract", "NeoToken", "GasToken", "Notary"]
+    );
+    assert_eq!(
+        attributed_post_persist,
+        ["LedgerContract", "NeoToken", "OracleContract"]
+    );
+}
+
+#[test]
 fn provider_current_block_index_feeds_engine_without_persisting_block() {
     use crate::LedgerContract;
     use neo_config::ProtocolSettings;

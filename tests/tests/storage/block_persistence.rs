@@ -42,7 +42,7 @@ async fn native_ledger_records_survive_store_cache_reopen() {
     persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&genesis),
-        &settings,
+        Arc::new(settings.clone()),
         NativePersistOptions::default(),
         &resources,
     )
@@ -53,7 +53,7 @@ async fn native_ledger_records_survive_store_cache_reopen() {
     persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&block_one),
-        &settings,
+        Arc::new(settings.clone()),
         NativePersistOptions::default(),
         &resources,
     )

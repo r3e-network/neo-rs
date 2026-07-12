@@ -158,7 +158,7 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
     let outcome = persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&block),
-        &settings,
+        Arc::new(settings.clone()),
         NativePersistOptions::default(),
         &resources,
     )
@@ -338,7 +338,7 @@ fn canonical_archive_publication_prunes_hot_ledger_rows_atomically() {
     let outcome = persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&block),
-        &settings,
+        Arc::new(settings.clone()),
         NativePersistOptions::default(),
         &resources,
     )
@@ -1530,7 +1530,7 @@ fn genesis_policy_init_visible_through_fresh_store_cache_after_commit() {
     persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&genesis),
-        &settings,
+        Arc::new(settings.clone()),
         NativePersistOptions::default(),
         &resources,
     )

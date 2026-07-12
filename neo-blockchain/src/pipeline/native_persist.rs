@@ -105,7 +105,7 @@ use neo_vm_rs::StackValue;
 pub fn persist_block_natives_with_resources<P, B>(
     snapshot: Arc<DataCache<B>>,
     block: Arc<Block>,
-    settings: &ProtocolSettings,
+    settings: Arc<ProtocolSettings>,
     options: NativePersistOptions,
     resources: &NativePersistResources<P>,
 ) -> CoreResult<NativePersistOutcome>
@@ -119,11 +119,12 @@ where
     Ok(outcome)
 }
 
-/// Runs native block persistence with caller-provided reusable resources.
+/// Runs native block persistence with caller-provided reusable resources and
+/// composition-shared protocol settings.
 pub fn stage_block_natives_with_resources<P, B>(
     snapshot: Arc<DataCache<B>>,
     block: Arc<Block>,
-    settings: &ProtocolSettings,
+    settings: Arc<ProtocolSettings>,
     options: NativePersistOptions,
     resources: &NativePersistResources<P>,
 ) -> CoreResult<StagedNativePersist<B>>
@@ -153,7 +154,7 @@ where
         None,
         Arc::clone(&block_cache),
         Some(Arc::clone(&block)),
-        settings.clone(),
+        Arc::clone(&settings),
         0,
         NoDiagnostic,
         resources.provider(),
@@ -179,7 +180,7 @@ where
     run_native_persist_hooks(
         contracts,
         &mut engine,
-        settings,
+        settings.as_ref(),
         &block,
         &block_hash,
         block_index,
@@ -204,7 +205,7 @@ where
     let tx_us = run_transaction_stage(
         &block_cache,
         &block,
-        settings,
+        &settings,
         options,
         resources,
         native_contract_cache,
@@ -218,7 +219,7 @@ where
         None,
         Arc::clone(&block_cache),
         Some(Arc::clone(&block)),
-        settings.clone(),
+        Arc::clone(&settings),
         0,
         NoDiagnostic,
         resources.provider(),
@@ -226,7 +227,7 @@ where
     run_native_persist_hooks(
         contracts,
         &mut engine,
-        settings,
+        settings.as_ref(),
         &block,
         &block_hash,
         block_index,

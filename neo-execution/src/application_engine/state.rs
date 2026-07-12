@@ -89,11 +89,12 @@ where
         script_container: Option<Arc<VerifiableContainer>>,
         snapshot_cache: Arc<DataCache<B>>,
         persisting_block: Option<Arc<Block>>,
-        protocol_settings: ProtocolSettings,
+        protocol_settings: impl Into<Arc<ProtocolSettings>>,
         gas_limit: i64,
         diagnostic: D,
         native_contract_provider: Arc<P>,
     ) -> CoreResult<Self> {
+        let protocol_settings = protocol_settings.into();
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
         let original_snapshot_cache = Arc::clone(&snapshot_cache);
@@ -102,7 +103,7 @@ where
             snapshot_cache.as_ref(),
             native_contract_provider.as_ref(),
         );
-        let jump_table = Self::select_jump_table(&protocol_settings, current_index);
+        let jump_table = Self::select_jump_table(protocol_settings.as_ref(), current_index);
         let mut engine = ExecutionEngine::new(Some(jump_table));
         // Match C# Neo: no instruction-count cap on the execution path. Bounding
         // is done by gas alone (fee consumption), so a long cheap-instruction
@@ -176,13 +177,14 @@ where
         script_container: Option<Arc<VerifiableContainer>>,
         snapshot_cache: Arc<DataCache<B>>,
         persisting_block: Option<Arc<Block>>,
-        protocol_settings: ProtocolSettings,
+        protocol_settings: impl Into<Arc<ProtocolSettings>>,
         gas_limit: i64,
         contracts: HashMap<UInt160, ContractState>,
         native_contract_cache: Arc<Mutex<NativeContractsCache>>,
         diagnostic: D,
         native_contract_provider: Arc<P>,
     ) -> CoreResult<Self> {
+        let protocol_settings = protocol_settings.into();
         let nonce_data =
             Self::initialize_nonce_data(script_container.as_ref(), persisting_block.as_deref());
         let original_snapshot_cache = Arc::clone(&snapshot_cache);
@@ -191,7 +193,7 @@ where
             snapshot_cache.as_ref(),
             native_contract_provider.as_ref(),
         );
-        let jump_table = Self::select_jump_table(&protocol_settings, current_index);
+        let jump_table = Self::select_jump_table(protocol_settings.as_ref(), current_index);
         let mut engine = ExecutionEngine::new(Some(jump_table));
         // Match C# Neo: no instruction-count cap on the execution path. Bounding
         // is done by gas alone (fee consumption), so a long cheap-instruction
@@ -306,7 +308,7 @@ where
 
     pub(crate) fn register_host_service(
         &mut self,
-        name: &str,
+        name: &'static str,
         price: i64,
         call_flags: CallFlags,
         handler: InteropHandler<P, D, B>,
@@ -328,7 +330,7 @@ where
         // Remember the registration so nested VM execution from a native frame
         // can rebuild the registry while `on_syscall` holds the original.
         self.host_syscall_registrations
-            .push((name.to_string(), price, call_flags));
+            .push((name, price, call_flags));
         Ok(())
     }
 
@@ -564,7 +566,7 @@ where
 
     /// Returns the protocol settings used by this engine.
     pub fn protocol_settings(&self) -> &ProtocolSettings {
-        &self.protocol_settings
+        self.protocol_settings.as_ref()
     }
 
     /// Returns the script container associated with this execution, if any.

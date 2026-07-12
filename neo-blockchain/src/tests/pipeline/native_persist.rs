@@ -10,6 +10,9 @@ use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[path = "native_persist/dynamic_hooks.rs"]
+mod dynamic_hooks;
+
 /// NEO `Prefix_Committee` (C# NeoToken).
 const NEO_PREFIX_COMMITTEE: u8 = 14;
 /// NEO `Prefix_VotersCount`.
@@ -43,7 +46,7 @@ fn persist_with_resources(
     persist_block_natives_with_resources(
         snapshot,
         block,
-        settings,
+        Arc::new(settings.clone()),
         NativePersistOptions::default(),
         resources,
     )
@@ -815,7 +818,7 @@ fn bulk_sync_native_persist_skips_replay_artifacts_but_keeps_vm_state() {
     let staged = stage_block_natives_with_resources(
         Arc::clone(&snapshot),
         block,
-        &settings,
+        Arc::new(settings.clone()),
         NativePersistOptions {
             capture_replay_artifacts: false,
         },
@@ -865,7 +868,7 @@ fn reusable_native_persist_resources_fetch_contract_list_once_for_batch() {
     let staged = stage_block_natives_with_resources(
         Arc::clone(&snapshot),
         genesis,
-        &settings,
+        Arc::new(settings.clone()),
         NativePersistOptions {
             capture_replay_artifacts: false,
         },
@@ -880,7 +883,7 @@ fn reusable_native_persist_resources_fetch_contract_list_once_for_batch() {
     let staged = stage_block_natives_with_resources(
         Arc::clone(&snapshot),
         block,
-        &settings,
+        Arc::new(settings.clone()),
         NativePersistOptions {
             capture_replay_artifacts: false,
         },
@@ -911,7 +914,7 @@ fn reusable_native_persist_resources_keep_provider_consistent_across_blocks() {
     let staged = stage_block_natives_with_resources(
         Arc::clone(&snapshot),
         genesis,
-        &settings,
+        Arc::new(settings.clone()),
         NativePersistOptions {
             capture_replay_artifacts: false,
         },
@@ -930,7 +933,7 @@ fn reusable_native_persist_resources_keep_provider_consistent_across_blocks() {
     let staged = stage_block_natives_with_resources(
         Arc::clone(&snapshot),
         block,
-        &settings,
+        Arc::new(settings.clone()),
         NativePersistOptions::default(),
         &resources,
     )
@@ -1001,7 +1004,7 @@ fn reusable_native_persist_resources_cross_echidna_activation_height() {
     let staged = stage_block_natives_with_resources(
         Arc::clone(&snapshot),
         genesis,
-        &settings,
+        Arc::new(settings.clone()),
         NativePersistOptions {
             capture_replay_artifacts: false,
         },
@@ -1025,7 +1028,7 @@ fn reusable_native_persist_resources_cross_echidna_activation_height() {
     let staged = stage_block_natives_with_resources(
         Arc::clone(&snapshot),
         block,
-        &settings,
+        Arc::new(settings.clone()),
         NativePersistOptions {
             capture_replay_artifacts: false,
         },

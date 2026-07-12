@@ -11,7 +11,7 @@ use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_execution::{
     ApplicationEngine, ContractState, Diagnostic, NativeContract, NativeEvent, NativeMethod,
 };
-use neo_payloads::{TransactionState, TrimmedBlock};
+use neo_payloads::{Block, TransactionAttribute, TransactionState, TrimmedBlock};
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::{CacheRead, DataCache};
 
@@ -184,6 +184,28 @@ impl StandardNativeContract {
     pub fn supports_empty_block_fast_forward(&self) -> bool {
         <Self as NativeContract<StandardNativeProvider>>::supports_empty_block_fast_forward(self)
     }
+
+    /// Returns whether this standard contract has canonical `OnPersist` work.
+    #[must_use]
+    pub const fn has_on_persist_hook(&self) -> bool {
+        matches!(
+            self,
+            Self::ContractManagement(_)
+                | Self::LedgerContract(_)
+                | Self::NeoToken(_)
+                | Self::GasToken(_)
+                | Self::Notary(_)
+        )
+    }
+
+    /// Returns whether this standard contract has canonical `PostPersist` work.
+    #[must_use]
+    pub const fn has_post_persist_hook(&self) -> bool {
+        matches!(
+            self,
+            Self::LedgerContract(_) | Self::NeoToken(_) | Self::OracleContract(_)
+        )
+    }
 }
 
 impl<P> NativeContract<P> for StandardNativeContract
@@ -285,6 +307,45 @@ where
         with_standard_contract!(self, contract => {
             <_ as NativeContract<P>>::post_persist(contract, engine)
         })
+    }
+
+    fn has_on_persist_hook(&self) -> bool {
+        StandardNativeContract::has_on_persist_hook(self)
+    }
+
+    fn has_post_persist_hook(&self) -> bool {
+        StandardNativeContract::has_post_persist_hook(self)
+    }
+
+    fn should_run_on_persist(&self, settings: &ProtocolSettings, block: &Block) -> bool {
+        match self {
+            Self::ContractManagement(_) => {
+                block.index() == 0
+                    || settings
+                        .hardforks
+                        .values()
+                        .any(|height| *height == block.index())
+            }
+            Self::Notary(_) => block.transactions.iter().any(|transaction| {
+                transaction
+                    .attributes()
+                    .iter()
+                    .any(|attribute| matches!(attribute, TransactionAttribute::NotaryAssisted(_)))
+            }),
+            _ => self.has_on_persist_hook(),
+        }
+    }
+
+    fn should_run_post_persist(&self, _settings: &ProtocolSettings, block: &Block) -> bool {
+        match self {
+            Self::OracleContract(_) => block.transactions.iter().any(|transaction| {
+                transaction
+                    .attributes()
+                    .iter()
+                    .any(|attribute| matches!(attribute, TransactionAttribute::OracleResponse(_)))
+            }),
+            _ => self.has_post_persist_hook(),
+        }
     }
 
     fn supports_empty_block_fast_forward(&self) -> bool {

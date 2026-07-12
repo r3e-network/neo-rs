@@ -66,7 +66,7 @@ fn persist_block_with_resources(
     crate::native_persist::persist_block_natives_with_resources(
         snapshot,
         block,
-        settings,
+        Arc::new(settings.clone()),
         NativePersistOptions::default(),
         resources,
     )

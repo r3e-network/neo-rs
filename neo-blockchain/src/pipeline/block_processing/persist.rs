@@ -141,7 +141,7 @@ where
         match crate::native_persist::stage_block_natives_with_resources(
             Arc::clone(&resources.snapshot),
             Arc::clone(&block),
-            resources.settings.as_ref(),
+            Arc::clone(&resources.settings),
             options,
             &resources.native_persist,
         ) {

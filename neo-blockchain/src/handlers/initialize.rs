@@ -50,7 +50,7 @@ where
         let staged = crate::native_persist::stage_block_natives_with_resources(
             Arc::clone(&snapshot),
             Arc::clone(&genesis),
-            settings.as_ref(),
+            Arc::clone(&settings),
             crate::native_persist::NativePersistOptions::default(),
             &native_persist,
         )

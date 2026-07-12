@@ -28,7 +28,7 @@ fn registered_services(engine: &ApplicationEngine) -> Vec<(String, i64, u8)> {
     let mut services: Vec<_> = engine
         .host_syscall_registrations
         .iter()
-        .map(|(name, price, flags)| (name.clone(), *price, flags.bits()))
+        .map(|(name, price, flags)| ((*name).to_string(), *price, flags.bits()))
         .collect();
     services.sort();
     services

@@ -147,7 +147,7 @@ fn seed_store_tip(
     neo_blockchain::persist_block_natives_with_resources(
         Arc::clone(&snapshot),
         Arc::clone(&parent),
-        settings,
+        Arc::new(settings.clone()),
         neo_blockchain::NativePersistOptions::default(),
         &resources,
     )?;
@@ -157,7 +157,7 @@ fn seed_store_tip(
         neo_blockchain::persist_block_natives_with_resources(
             Arc::clone(&snapshot),
             Arc::clone(&block),
-            settings,
+            Arc::new(settings.clone()),
             neo_blockchain::NativePersistOptions::default(),
             &resources,
         )?;

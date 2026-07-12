@@ -21,6 +21,7 @@ use neo_manifest::{
     ContractAbi, ContractEventDescriptor, ContractManifest, ContractMethodDescriptor,
     ContractParameterDefinition, NefFile,
 };
+use neo_payloads::Block;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm_rs::OpCode;
 use serde::{Deserialize, Serialize};
@@ -274,6 +275,42 @@ where
         B: neo_storage::CacheRead,
     {
         Ok(())
+    }
+
+    /// Returns whether this contract participates in the per-block
+    /// `OnPersist` loop.
+    ///
+    /// The conservative default keeps third-party providers compatible: a
+    /// custom contract is called unless it explicitly proves the hook is a
+    /// no-op. Closed protocol providers may override this to skip known
+    /// default implementations without changing hook ordering or state.
+    fn has_on_persist_hook(&self) -> bool {
+        true
+    }
+
+    /// Returns whether this contract participates in the per-block
+    /// `PostPersist` loop.
+    ///
+    /// As with [`NativeContract::has_on_persist_hook`], the default is
+    /// conservative and closed providers may opt known no-op contracts out.
+    fn has_post_persist_hook(&self) -> bool {
+        true
+    }
+
+    /// Returns whether this block can produce `OnPersist` work for the
+    /// contract.
+    ///
+    /// The default follows the static capability. Closed providers may inspect
+    /// protocol heights or transaction attributes to skip a hook only when its
+    /// implementation is provably a no-op for this block.
+    fn should_run_on_persist(&self, _settings: &ProtocolSettings, _block: &Block) -> bool {
+        self.has_on_persist_hook()
+    }
+
+    /// Returns whether this block can produce `PostPersist` work for the
+    /// contract. The conservative default follows the static capability.
+    fn should_run_post_persist(&self, _settings: &ProtocolSettings, _block: &Block) -> bool {
+        self.has_post_persist_hook()
     }
 
     /// Returns whether this contract's empty-block side effects are explicitly
