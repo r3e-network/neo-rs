@@ -797,6 +797,16 @@ detail.
 - Use doc tests for public examples when they are stable and cheap to run.
 - For performance claims, record the command, dataset, release profile, and
   before/after result. Sync-speed claims need BPS evidence, not code inspection.
+- Criterion workloads must be stationary across samples. Reset mutable stores
+  outside the timed interval or prefill every sample to the same explicit
+  height; do not append forever across samples and then interpret the changing
+  database size as one stable estimate. Keep growing-chain soak results
+  separate from fixed-window regression benchmarks.
+- Distinguish synthetic transaction-bearing benchmarks from production replay.
+  A generated transfer workload can protect a hot path, but only a
+  reference-checked MainNet replay with real transactions, matching state
+  roots, and a recorded hardware/dataset profile proves the production BPS
+  target.
 
 ## Repository Hygiene
 

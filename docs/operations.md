@@ -117,6 +117,45 @@ fast-sync stop-height proof.
 use it as a production gate: faster-than-2000 transaction-bearing BPS is valid
 evidence, not a failure.
 
+#### Canonical transaction-import benchmark
+
+The focused Criterion target exercises the same typed composition and canonical
+import boundary used by the node. Each measured batch contains 32 blocks and
+one real `GasToken.transfer` invocation per block. Ledger and StateService use
+separate MDBX stores, MPT roots are durably fenced, and block construction,
+genesis/warmup, optional prefill, shutdown, and database cleanup are outside the
+timed interval:
+
+```bash
+# Caught-up/small-state window; default adaptive MPT ceiling is 8 blocks.
+cargo bench -p neo-benches --bench block_import -- mdbx_blocks --quick
+
+# Repeat the same measured window after 2,048 transaction-bearing prefill blocks.
+NEO_BENCH_PREFILL_BLOCKS=2048 \
+  cargo bench -p neo-benches --bench block_import -- mdbx_blocks --quick
+
+# Compare an explicit StateService backlog ceiling without changing source.
+NEO_BENCH_MPT_APPLY_BATCH_BLOCKS=16 NEO_BENCH_PREFILL_BLOCKS=2048 \
+  cargo bench -p neo-benches --bench block_import -- mdbx_blocks --quick
+```
+
+On the local development host on 2026-07-13, the default adaptive configuration
+measured about 1.93k blocks/s from the initialized small-state fixture and
+1.56k blocks/s after the 2,048-block prefill. An experimental 16-block backlog
+ceiling measured about 1.67k blocks/s at that prefill. The production default
+remains an eight-block ceiling with an eager four-block flush: it starts trie
+work early when the worker catches the producer and consumes larger batches
+only when work is already queued.
+
+These numbers are synthetic regression evidence, not a MainNet production
+claim. The repeated transfer has limited state cardinality, skips P2P download
+and verification, and does not represent the distribution of contracts,
+transactions, witnesses, and storage writes on MainNet. Production release
+proof still requires the reference-checked bounded replay above, sufficient
+transaction-bearing samples, matching Ledger/StateService heights and roots,
+and the configured 1,500 BPS floor. Empty-block throughput remains a separate
+metric.
+
 ### Live P2P staged sync
 
 Local-ledger mode automatically uses a fixed-target `Headers -> Bodies ->

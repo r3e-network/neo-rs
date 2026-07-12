@@ -174,13 +174,14 @@ sequenceDiagram
     Note over BC: checker-typed token skips only<br/>duplicate stateless integrity work
     BC->>Store: load prev TrimmedBlock
     BC->>BC: verify consensus witness vs<br/>prev.NextConsensus (3-GAS cap)
-    BC->>NP: stage_block_natives_with_resources(block)
-    NP->>AE: OnPersist engine (+ native init at activation)
+    BC->>NP: stage_block_natives_with_resources(block, shared settings/resources)
+    NP->>AE: eligible OnPersist hooks (+ native init at activation)
+    Note over NP: standard no-op hooks are statically skipped;<br/>hardfork/attribute gates remain block-aware
     loop each transaction
         AE->>AE: Application engine, gas = tx.SystemFee
         Note over AE: HALT commits per-tx cache; FAULT discards
     end
-    NP->>AE: PostPersist engine
+    NP->>AE: eligible PostPersist hooks
     NP->>Store: stage all writes in child cache, commit on success
     opt independent pre-commit store configured
         BC->>Guard: write + fsync recovery marker
@@ -221,6 +222,23 @@ the shared snapshot only when every stage succeeds; a fault leaves no partial
 block state. Locally produced blocks use the dedicated
 `submit_consensus_block` capability and skip the peer-witness check; no public
 boolean can grant that trust to peer inventory.
+
+Bulk import reuses the composition-owned `Arc<ProtocolSettings>` and typed
+native provider rather than cloning settings or resolving process-global state
+per block. Standard native contracts expose conservative hook capabilities:
+Ledger/NEO/GAS retain their ordinary per-block work, ContractManagement runs
+only at genesis or configured hardfork boundaries, Notary runs only for
+`NotaryAssisted`, and Oracle post-persist runs only for `OracleResponse`.
+Positive-path pipeline tests force each dynamic hook to produce an observable
+error when its downstream state is invalid, preventing a future optimization
+from silently skipping required protocol work.
+
+When StateService participates in a deferred sync batch, block execution
+projects changes into a bounded worker queue. The worker flushes four roots
+when it catches the producer but may consume up to eight already-queued roots
+in one ordered MPT transaction. The batch durability fence waits for that
+worker before the single canonical Ledger commit; live imports still wait for
+their individual root.
 
 Three channels intentionally leave the commit boundary with different payloads
 and guarantees:

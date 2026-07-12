@@ -183,6 +183,8 @@ neo-rs/
 cargo build --release -p neo-node       # the node daemon
 cargo test  --workspace                 # workspace test suite
 cargo clippy --workspace --all-targets  # lints (policy in [workspace.lints])
+cargo bench -p neo-benches --bench block_import -- mdbx_blocks --quick
+                                        # canonical transaction-import regression
 ```
 
 Coding standards and the lint/error/style conventions are in

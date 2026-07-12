@@ -382,6 +382,17 @@ nor `async_trait` future boxing.
 Execution, native persistence, state-root updates, and durable commits still
 happen only inside `neo-blockchain`.
 
+The transaction-bearing path is measured through a canonical Criterion fixture
+rather than an isolated VM loop. It composes `NodeCoreBuilder`, one real GAS
+transfer per block, separate Ledger and StateService MDBX stores, and a
+32-block durable import. Every Criterion sample starts from the same
+genesis/warmup or explicit transaction-block prefill, so mutable database growth
+does not invalidate the estimate. StateService separates queue backpressure
+from the MPT apply ceiling and adaptively flushes four roots when caught up while
+consuming up to eight queued roots under backlog. This is the Reth pipeline
+lesson applied without splitting already-atomic Neo persistence into fake
+stages.
+
 ### Polkadot SDK innovations
 
 1. **Layered `BlockImport` chain** — chain-of-responsibility:
@@ -664,6 +675,14 @@ Policy reads instead of constructing private native handles or a service-local
 native factory. The VM's raw, monomorphized host callback pointer is installed
 only for context-load or execution operations and cleared before those methods
 return, keeping a returned `ApplicationEngine` movable between calls.
+`BatchPersistResources` also retains `Arc<ProtocolSettings>` end to end, so the
+canonical loop no longer deep-clones the hardfork/configuration maps per block.
+The standard native registry exposes explicit OnPersist/PostPersist capability
+metadata and block-aware gates for ContractManagement initialization, Notary
+assistance, and Oracle responses. Custom providers default to conservative
+execution. VM interop descriptors use `Cow<'static, str>` so canonical syscall
+names are borrowed and custom hosts may still register owned names; successful
+syscall dispatch no longer clones a name merely to format a never-taken error.
 
 ### Polkadot SDK innovations
 

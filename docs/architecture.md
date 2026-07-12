@@ -239,6 +239,19 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   `Imported`, `Reverted`, `TipChanged`, relay results, and shutdown; it does not
   carry snapshots or execution artifacts.
 
+- **Measured block-aware persistence.** Canonical import constructs one typed
+  `NativePersistResources<P>` bundle and shares one `Arc<ProtocolSettings>`
+  through every OnPersist/Application/PostPersist engine in the batch. The
+  closed standard-native registry declares which hooks have protocol work;
+  ContractManagement, Notary, and Oracle add block-aware hardfork/attribute
+  gates, while unknown providers retain conservative call-every-hook behavior.
+  Hook order and active-contract checks remain canonical. StateService uses a
+  bounded worker with independent queue and apply limits: an eager four-block
+  batch preserves execution/MPT overlap when the worker catches up, while an
+  eight-block ceiling amortizes MDBX work under backlog. VM syscall descriptors
+  retain borrowed static protocol names, avoiding per-engine and per-syscall
+  name allocation while still allowing owned custom descriptor names.
+
 - **Staged core and application lifecycle.** `neo-system::NodeCoreBuilder<P,
   S, H>` constructs the provider-neutral store snapshot, mempool, header cache,
   ledger context, static `NodeSystemContext`, and blockchain command service.
