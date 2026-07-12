@@ -44,7 +44,7 @@ must remain isolated from the daemon workflow.
 - Add `neo-node/src/node/application/mod.rs`.
 - Add `neo-node/src/node/application/command.rs`.
 - Add `neo-node/src/node/application/runtime.rs`.
-- Reduce `neo-node/src/node/daemon.rs` to the ordered application facade.
+- Reduce `neo-node/src/node/lifecycle/daemon.rs` to the ordered application facade.
 - Add `neo-node/src/tests/node/application.rs` and register it from the node
   test module.
 
@@ -76,7 +76,7 @@ next operation.
 ## Phase 2: Core Composition Ownership (Implemented)
 
 Provider-neutral core assembly moved from
-`neo-node/src/node/composition.rs` to `neo-system`:
+`neo-node/src/node/lifecycle/composition.rs` to `neo-system`:
 
 1. `NodeCoreBuilder<P, S, H>` takes required settings, storage, native provider,
    static commit hooks, persisted height, and optional stop height.

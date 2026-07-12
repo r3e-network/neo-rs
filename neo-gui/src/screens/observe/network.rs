@@ -5,7 +5,7 @@ use egui_extras::{Column, TableBuilder};
 
 use crate::app::NeoGuiApp;
 use crate::rpc::Peer;
-use crate::sync::lock;
+use crate::runtime::sync::lock;
 use crate::theme;
 use crate::widgets;
 

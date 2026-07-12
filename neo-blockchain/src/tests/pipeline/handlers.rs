@@ -288,7 +288,7 @@ fn extensible_verification_uses_system_native_provider() {
         "extensible payload verification must not construct native RoleManagement directly"
     );
 
-    let provider = include_str!("../../handlers/extensible_provider.rs");
+    let provider = include_str!("../../handlers/providers/extensible.rs");
     assert!(provider.contains("trait ExtensibleNativeProvider"));
     assert!(
         provider.contains("struct NativeExtensibleProvider<P>"),
@@ -370,7 +370,7 @@ fn transaction_admission_uses_system_native_provider() {
     );
 
     let provider_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/handlers/transaction_provider.rs");
+        .join("src/handlers/providers/transaction.rs");
     let provider = std::fs::read_to_string(&provider_path)
         .unwrap_or_else(|error| panic!("{}: {error}", provider_path.display()));
     assert!(provider.contains("trait TransactionNativeProvider"));

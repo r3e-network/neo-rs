@@ -1,5 +1,7 @@
-use super::super::ledger_provider::{NativeOracleLedgerProvider, OracleLedgerProvider};
-use super::super::native_provider::{OracleContractReadProvider, OracleServiceNativeProvider};
+use super::super::providers::{
+    NativeOracleLedgerProvider, OracleContractReadProvider, OracleLedgerProvider,
+    OracleServiceNativeProvider,
+};
 use super::super::{OracleRuntimeProvider, OracleService, OracleServiceError};
 use neo_config::ProtocolSettings;
 use neo_crypto::ECPoint;

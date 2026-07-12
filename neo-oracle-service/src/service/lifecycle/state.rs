@@ -1,5 +1,5 @@
 use super::super::OracleRuntimeProvider;
-use super::super::native_provider::OracleContractReadProvider;
+use super::super::providers::OracleContractReadProvider;
 use super::super::{
     ExpiringSet, FINISHED_CACHE_TTL, OracleDedupState, OracleService, OracleServiceError,
     OracleServiceSettings, OracleStatus,

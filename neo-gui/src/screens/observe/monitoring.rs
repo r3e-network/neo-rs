@@ -4,7 +4,7 @@ use egui::Ui;
 
 use crate::app::NeoGuiApp;
 use crate::node::human_bytes;
-use crate::sync::lock;
+use crate::runtime::sync::lock;
 use crate::theme;
 use crate::widgets;
 

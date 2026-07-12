@@ -1,5 +1,5 @@
 use super::super::cache::ExpiryBoundary;
-use super::super::native_provider::{OracleContractReadProvider, OracleServiceNativeProvider};
+use super::super::providers::{OracleContractReadProvider, OracleServiceNativeProvider};
 use super::super::{OracleRuntimeProvider, OracleService};
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_storage::persistence::Store;

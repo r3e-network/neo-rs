@@ -1,6 +1,4 @@
-use super::super::super::native_provider::{
-    OracleContractReadProvider, OracleServiceNativeProvider,
-};
+use super::super::super::providers::{OracleContractReadProvider, OracleServiceNativeProvider};
 use super::super::super::utils::{ledger_height, verify_oracle_signature};
 use super::super::super::{OracleRuntimeProvider, OracleService, OracleServiceError};
 use neo_crypto::ECPoint;

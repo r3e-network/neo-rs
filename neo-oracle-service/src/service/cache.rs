@@ -11,7 +11,7 @@ use std::time::{Duration, SystemTime};
 
 use neo_execution::native_contract_provider::NativeContractProvider;
 
-use super::native_provider::OracleContractReadProvider;
+use super::providers::OracleContractReadProvider;
 use super::{DEDUP_CACHE_TTL, OracleRuntimeProvider, OracleService, OracleServiceError};
 
 pub(in crate::service) struct ExpiringSet<T> {

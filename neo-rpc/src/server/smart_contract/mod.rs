@@ -11,29 +11,23 @@
 //! ## Contents
 //!
 //! - `contract_verify`: smart-contract verification handlers.
-//! - `diagnostics`: Diagnostic invoke-tree and storage-change JSON helpers.
 //! - `helpers`: Shared helper functions for the surrounding module.
-//! - `invocation`: smart-contract invocation handlers.
-//! - `invocation_wallet`: wallet transaction signing for successful invokes.
+//! - `invoke`: script construction, execution, diagnostics, and wallet follow-up.
 //! - `iterators`: Iterator adapters exposed to contract execution and storage
 //!   search.
 //! - `native_provider`: Native-contract read seam used by invocation helpers.
 //! - `request`: Typed request parsing for smart-contract handlers.
 //! - `response`: VM-state, stack-item, and notification JSON projection.
-//! - `script`: Dynamic-call script construction and parameter stack conversion.
 //! - `unclaimed_gas`: unclaimed GAS query handlers.
 //! - `tests`: Module-local tests and regression coverage.
 
 mod contract_verify;
-mod diagnostics;
 mod helpers;
-mod invocation;
-mod invocation_wallet;
+mod invoke;
 mod iterators;
 mod native_provider;
 mod request;
 mod response;
-mod script;
 mod unclaimed_gas;
 
 #[cfg(test)]
@@ -49,8 +43,8 @@ impl RpcServerSmartContract {
     /// Register smart-contract RPC handlers.
     pub fn register_handlers() -> Vec<RpcHandler> {
         super::rpc_handlers![
-            "invokefunction" => invocation::invoke_function,
-            "invokescript" => invocation::invoke_script,
+            "invokefunction" => invoke::invoke_function,
+            "invokescript" => invoke::invoke_script,
             "invokecontractverify" => contract_verify::invoke_contract_verify,
             "traverseiterator" => iterators::traverse_iterator,
             "terminatesession" => iterators::terminate_session,

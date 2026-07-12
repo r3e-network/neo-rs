@@ -156,9 +156,8 @@ mod external_vm;
 mod fees_events_native;
 mod host_state;
 mod interop_host;
-mod load_execute_storage;
 mod state;
-mod storage_low_level;
+mod storage_ops;
 mod witness_and_misc;
 
 use host_state::{

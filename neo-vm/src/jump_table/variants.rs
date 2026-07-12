@@ -5,7 +5,8 @@
 
 use neo_vm_rs::OpCode;
 
-use super::{JumpTable, bitwisee, compound, control, numeric, push, slot, splice, stack, types};
+use super::operations::{bitwisee, numeric, splice, types};
+use super::{JumpTable, compound, control, push, slot, stack};
 
 impl<S> Default for JumpTable<S> {
     fn default() -> Self {

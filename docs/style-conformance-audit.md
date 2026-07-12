@@ -53,9 +53,10 @@ Use this checklist for every crate, file, and trait review.
   concrete reason.
 - **Eager allocation:** replace eager `ok_or`, `unwrap_or`, `map_or`, and
   `or` fallbacks when fallback construction allocates or performs work.
-- **Module organization:** crate roots are maps. Implementation belongs in
-  domain folders; avoid root-level piles of `*_helper`, `*_utils`, `manager`,
-  `runner`, or broad `context` files.
+- **Module organization:** crate roots are maps. A crate `src/` root contains
+  only `lib.rs` or `main.rs`, implementation belongs in domain folders, and no
+  source directory may exceed ten direct Rust files. Avoid piles of
+  `*_helper`, `*_utils`, `manager`, `runner`, or broad `context` files.
 - **Naming:** names should teach the domain operation. Weak verbs such as
   `process`, `handle`, `do_work`, `manager`, and `helper` need a local domain
   noun or narrower module.
@@ -74,6 +75,7 @@ Run:
 
 ```bash
 bash tools/quality/style-audit.sh > /tmp/neo-rs-style-audit.md
+python3 -m unittest scripts.tests.test_repository_hygiene
 ```
 
 The script scans production Rust files for:
@@ -110,6 +112,19 @@ Initial scan coverage: 28 workspace members plus support crates, with roughly
 1,378 Rust files outside ignored build folders.
 
 High-signal clusters found during the first pass:
+
+- Repository layout is now executable policy. Crate roots contain only entry
+  modules, source directories are capped at ten direct Rust files, entry
+  modules cannot recreate flat roots with path shims, and every crate/module
+  entry has the standard `Boundary` / `Contents` rustdoc map. The latest split
+  groups node startup under `node/lifecycle`, RPC invocation under
+  `smart_contract/invoke`, wallet writes under
+  `rpc_server_wallet/transaction`, VM runtime/opcode mechanics under
+  `execution_engine/runtime` and `jump_table/operations`, execution storage
+  mechanics under `application_engine/storage_ops`, and narrow adapters under
+  service-local `providers` folders. Nested moves preserve their former owner
+  with explicit `pub(in crate::...)` visibility where `pub(super)` would now be
+  too narrow.
 
 - The static-dispatch redesign removed service-locator, native-contract, VM,
   storage, signer, wallet, and pipeline trait objects. Production `dyn` matches
@@ -165,18 +180,18 @@ High-signal clusters found during the first pass:
   as `format`, `reader`, `import`, `report`, `package`, `manifest`, and
   `workflow` while keeping behavior locked by tests.
 - `neo-node/src/node/mod.rs` is now the daemon module map and public `run()`
-  facade. `node/daemon.rs` owns the top-level parse, config load, preflight,
+  facade. `node/lifecycle/daemon.rs` owns the top-level parse, config load, preflight,
   node composition, startup-import, live-service, and shutdown sequence. Startup
-  preflight lives in `node/preflight.rs`, which owns config/storage preflight
+  preflight lives in `node/lifecycle/preflight.rs`, which owns config/storage preflight
   checks, remote-ledger preflight skips, operator messages, and the explicit
   continue/exit outcome. Startup import orchestration lives in
-  `node/startup_import.rs`, which owns chain.acc and fast-sync import sequencing,
+  `node/lifecycle/startup_import.rs`, which owns chain.acc and fast-sync import sequencing,
   stop-height handling, durable-mode restore, task abortion, and observability
   error reporting while the lower `chain_acc` and `fast_sync` modules retain
   package/import mechanics. Live service startup has also been moved out:
-  `node/live_services.rs` owns telemetry metrics, P2P listener startup, seed
+  `node/lifecycle/live_services.rs` owns telemetry metrics, P2P listener startup, seed
   dialing, RPC startup/keepalive, and observability heartbeat task spawning.
-  Shutdown coordination now lives in `node/shutdown_flow.rs`, which owns signal
+  Shutdown coordination now lives in `node/lifecycle/shutdown_flow.rs`, which owns signal
   outcome handling, observability reporting for signal failures, task
   cancellation/abort grace, state-service flush, and durable-store restoration.
   Node composition now carries the dBFT validator handle through the same
@@ -365,7 +380,7 @@ High-signal clusters found during the first pass:
   node composition, so the style audit no longer reports `neo-state-service` in
   the production unwrap/expect section.
 - `neo-gui` is outside the workspace, but GUI mutex poison handling is now
-  centralized in `neo-gui/src/sync.rs`; shell, runtime, and screen modules use
+  centralized in `neo-gui/src/runtime/sync.rs`; shell, runtime, and screen modules use
   that helper instead of choosing per-call `unwrap` / `expect` / silent-ignore
   behavior.
 - `neo-oracle-service` has the densest lint-allow count and several
@@ -494,8 +509,9 @@ no-parameter validation for close/list/new-address/unclaimed-GAS methods, so
 the wallet root handler can focus on wallet orchestration, native balance
 queries, and fee calculation. The same request module now also owns transfer,
 `sendmany`, signer, and cancel-transaction parameter decoding, leaving
-`transfers.rs` focused on descriptor lookup, amount conversion, transaction
-construction, and transfer/cancel orchestration. `rpc_server_wallet/signing.rs`
+`rpc_server_wallet/transaction/transfers.rs` focused on descriptor lookup, amount conversion, transaction
+construction, and transfer/cancel orchestration.
+`rpc_server_wallet/transaction/signing.rs`
 owns C# `Wallet.Sign` parity, witness completion, network-fee adjustment, and
 relay result projection. `rpc_server_wallet/lifecycle.rs` owns open/close,
 address creation/listing, and WIF import/export orchestration.
@@ -513,7 +529,7 @@ error projection tests. The root wallet module now keeps only handler
 registration.
 `rpc_server_wallet/balance.rs` owns `getwalletbalance`,
 `getwalletunclaimedgas`, and the native balance/unclaimed-GAS probe logic.
-`rpc_server_wallet/network_fee.rs` owns `calculatenetworkfee` request execution
+`rpc_server_wallet/transaction/network_fee.rs` owns `calculatenetworkfee` request execution
 and wallet-account script projection, while `rpc_server_wallet/response.rs`
 owns lifecycle success/string/account/list shapes plus balance, unclaimed-GAS,
 and network-fee response envelopes.
@@ -706,10 +722,10 @@ verification, iterator-session, and unclaimed-GAS handlers, including
 signer/witness conversion, diagnostic defaults, UUID/count decoding, and
 address/hash normalization. The handler files stay focused on contract lookup,
 VM execution, iterator sessions, and native GAS queries,
-while `smart_contract/invocation_wallet.rs` owns wallet transaction
+while `smart_contract/invoke/invocation_wallet.rs` owns wallet transaction
 materialization, available-account signing, and pending-signature projection for
-successful invokes. `smart_contract/diagnostics.rs` owns invoke diagnostic-tree
-and storage-change JSON projection. `smart_contract/script.rs` owns dynamic-call
+successful invokes. `smart_contract/invoke/diagnostics.rs` owns invoke diagnostic-tree
+and storage-change JSON projection. `smart_contract/invoke/script.rs` owns dynamic-call
 script construction and contract-parameter stack conversion.
 `smart_contract/response.rs` owns invoke/contract-verification result
 envelopes, VM-state, stack-item, iterator-interface, iterator-session,
@@ -753,7 +769,7 @@ from production code.
 the fixed `[u8; 20]` returned by `Crypto::hash160`, matching the fixed-width
 constructor rule and removing the remaining fallible Hash160 conversion shape
 from account-creation helpers.
-`neo-execution/src/application_engine/storage_low_level.rs` now turns a missing
+`neo-execution/src/application_engine/storage_ops/storage_low_level.rs` now turns a missing
 execution-context script hash into a typed invalid-operation error instead of
 asserting the invariant with `expect()` while loading a context.
 `neo-execution/src/interop/application_engine_crypto.rs` now converts

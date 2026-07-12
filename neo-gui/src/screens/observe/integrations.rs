@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use egui::Ui;
 
 use crate::app::NeoGuiApp;
-use crate::sync::lock;
+use crate::runtime::sync::lock;
 use crate::theme;
 use crate::widgets;
 

@@ -18,6 +18,7 @@
 //!   steps for block import.
 //! - `service`: Service loops, handles, lifecycle helpers, and command
 //!   processing.
+//! - `state_root`: Signed StateRoot vote aggregation and witness verification.
 
 #![doc(html_root_url = "https://docs.rs/neo-blockchain/0.10.0")]
 
@@ -28,15 +29,13 @@ pub mod messages;
 pub mod pipeline;
 /// Command-loop implementation hidden behind typed root-level capabilities.
 mod service;
-/// Active signed-StateRoot consensus: StateValidator vote signing + aggregation.
-pub mod state_root_consensus;
-/// Signed StateRoot witness verification against the StateValidators multisig.
-pub mod state_root_verify;
+/// Signed StateRoot vote aggregation and witness verification.
+pub mod state_root;
 
-pub use state_root_consensus::{
+pub use state_root::consensus::{
     StateRootVoteCollector, aggregate_state_root_witness, sign_state_root, validate_state_root_vote,
 };
-pub use state_root_verify::{
+pub use state_root::verification::{
     state_root_verifiers_with_native_provider, verify_state_root_with_native_provider,
 };
 

@@ -15,12 +15,14 @@
 //! - `handle`: Typed handle used to interact with the service task.
 //! - `local_node`: Local peer state and connection behavior.
 //! - `remote_node`: Remote peer state and connection behavior.
+//! - `spawn`: guarded network-task spawning and panic isolation.
 
 pub(crate) mod command;
 pub(crate) mod event;
 pub(crate) mod handle;
 pub(crate) mod local_node;
 pub(crate) mod remote_node;
+pub(crate) mod spawn;
 
 pub use command::NetworkCommand;
 pub use event::NetworkEvent;

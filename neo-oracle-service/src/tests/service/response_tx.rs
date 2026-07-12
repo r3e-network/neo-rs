@@ -159,7 +159,7 @@ fn oracle_service_ledger_reads_use_provider_boundary() {
     let queue = include_str!("../../service/transactions/queue.rs");
     let response = include_str!("../../service/transactions/response.rs");
     let utils = include_str!("../../service/utils.rs");
-    let provider = include_str!("../../service/ledger_provider.rs");
+    let provider = include_str!("../../service/providers/ledger_provider.rs");
 
     assert!(queue.contains("NativeOracleLedgerProvider::new()"));
     assert!(response.contains("NativeOracleLedgerProvider::new()"));
@@ -181,7 +181,7 @@ fn oracle_service_native_reads_use_provider_boundary() {
     let submit = include_str!("../../service/processing/requests/submit.rs");
     let queue = include_str!("../../service/transactions/queue.rs");
     let response = include_str!("../../service/transactions/response.rs");
-    let provider = include_str!("../../service/native_provider.rs");
+    let provider = include_str!("../../service/providers/native_provider.rs");
 
     for source in [
         handlers, lifecycle, loops, cache, process, submit, queue, response,

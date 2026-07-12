@@ -8,7 +8,7 @@ use tracing::debug;
 use crate::ledger_provider::ChainTipProvider;
 use crate::service::{BlockchainService, MempoolLike};
 
-use super::extensible_provider::{ExtensibleNativeProvider, NativeExtensibleProvider};
+use super::providers::{ExtensibleNativeProvider, NativeExtensibleProvider};
 
 impl<S, M> BlockchainService<S, M>
 where

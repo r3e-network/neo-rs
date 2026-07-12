@@ -11,5 +11,7 @@
 //! ## Contents
 //!
 //! - `node`: Daemon composition, CLI modes, and long-running node startup.
+//! - `sync`: poison-tolerant GUI mutex access.
 
 pub mod node;
+pub(crate) mod sync;

@@ -1,6 +1,4 @@
-use super::super::super::native_provider::{
-    OracleContractReadProvider, OracleServiceNativeProvider,
-};
+use super::super::super::providers::{OracleContractReadProvider, OracleServiceNativeProvider};
 use super::super::super::utils::{filter_json, ledger_height, select_oracle_key, sign_transaction};
 use super::super::super::{OracleRuntimeProvider, OracleService, OracleServiceError};
 use neo_execution::native_contract_provider::NativeContractProvider;

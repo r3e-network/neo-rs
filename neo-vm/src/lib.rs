@@ -118,11 +118,7 @@ pub use types::rpc_json::StackItemRpcJson;
 pub use types::script::Script;
 
 /// Verification contract (script + parameter list + cached hash).
-///
-/// Moved here from `neo-execution` so that `neo-wallets` can use `Contract`
-/// without depending on `neo-execution`.
-pub mod contract;
-pub use contract::Contract;
+pub use types::contract::Contract;
 
 /// Decode a VM stack value as a NeoVM integer.
 ///

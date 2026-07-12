@@ -230,6 +230,9 @@ Rules:
   backends, or replacing a concrete service with a trait boundary.
 - Do not leave stale names such as removed crates, old versions, or old module
   paths in top-level crate/module comments.
+- A grouping `mod.rs` must describe its local boundary and child domains; it
+  must not become the new home for the implementation that was moved out of a
+  crowded parent directory.
 - When adding a provider, queue, factory, table, or service boundary, document
   both the capability it exposes and the lower-level mechanics it intentionally
   hides. Call out whether it preserves C# byte formats, store layout, or
@@ -639,19 +642,37 @@ Decode unstructured values at the boundary that understands their meaning.
 
 Crate roots are maps, not implementation dumping grounds.
 
+- A crate `src/` root contains only `lib.rs` or `main.rs`. Put every
+  implementation module under a named domain directory.
 - `lib.rs`, `main.rs`, and `mod.rs` should show module structure, public
-  facades, and deliberate re-exports.
+  facades, and deliberate re-exports. Keep executable implementation in leaf
+  files.
 - Implementation files belong under domain folders such as `fast_sync/`,
   `ledger_source/`, `storage/`, `service/`, `protocol/`, `rpc/`, `network/`,
   `runtime/`, or existing local equivalents.
 - Avoid many loose files directly under a crate root. When a root gains more
   than a few sibling implementation files, create a domain directory.
+- Keep every source directory at ten or fewer direct Rust files. This is a
+  physical-cohesion ceiling, not a target: split earlier when two child domains
+  already have distinct responsibilities.
 - Re-export only the facade types needed by higher layers.
 - Keep `support/` and `test_support/` subordinate to real domains. They must
   not become hidden owners of protocol behavior.
 - Tests should mirror production module structure where possible.
+- Moving a module one level deeper changes what `pub(super)` means. Preserve
+  the previous semantic boundary with the narrowest `pub(in crate::...)`
+  scope; do not widen an internal implementation to `pub(crate)` or `pub`
+  merely to make the move compile.
+- Update `#[path]`, `include_str!`, rustdoc links, architecture documents, and
+  source-inspection tests in the same change as a physical move.
 - If a reorganization changes paths only, avoid behavior edits in the same
   patch unless the behavior change is required and tested.
+
+The repository enforces these rules with:
+
+```bash
+python3 -m unittest scripts.tests.test_repository_hygiene
+```
 
 Preferred shape:
 

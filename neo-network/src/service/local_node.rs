@@ -61,6 +61,7 @@ use neo_config::ProtocolSettings;
 use neo_payloads::{Block, Transaction};
 use neo_runtime::{NetworkEvent as RuntimeNetworkEvent, NetworkService, Service, ServiceError};
 
+use super::spawn::spawn_guarded;
 use crate::command::NetworkCommand;
 use crate::error::{NetworkError, NetworkResult};
 use crate::event::NetworkEvent;
@@ -71,7 +72,6 @@ use crate::peer_registry::PeerRegistry;
 use crate::remote_node::{
     BlockSource, InboundInventory, NoBlockSource, RemoteNodeService, RemoteNodeState,
 };
-use crate::spawn::spawn_guarded;
 
 /// Time we wait for the outbound TCP dial to complete before
 /// declaring the peer unreachable.

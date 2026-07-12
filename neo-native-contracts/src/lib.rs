@@ -35,13 +35,11 @@ pub use neo_execution::{
     NativeEvent, NativeMethod, NativeRegistry, is_active_for,
 };
 
-/// Native-contract catalog, hashes, provider, and role definitions.
 #[macro_use]
-mod macros;
-mod nep;
-pub mod registry;
-mod storage_encoding;
 pub(crate) mod support;
+
+/// Native-contract catalog, hashes, provider, and role definitions.
+pub mod registry;
 mod text;
 
 pub mod contract_management;
@@ -84,7 +82,7 @@ pub use standard::StandardNativeContract;
 pub use std_lib::StdLib;
 pub use treasury::Treasury;
 
-pub(crate) use nep::{
+pub(crate) use support::token::nep::{
     AccountState, NEP17_PAYMENT_METHOD, NEP17_STANDARD, NEP17_TRANSFER_EVENT, NEP26_STANDARD,
     NEP27_STANDARD, NEP30_STANDARD, deserialize_account_state, fungible_token_transfer_event,
     native_supported_standards, nep11_payment_method, nep17_account_key, nep17_balance_of_method,
@@ -94,8 +92,10 @@ pub(crate) use nep::{
     read_nep17_total_supply, serialize_account_state,
 };
 #[cfg(test)]
-pub(crate) use nep::{NEP11_PAYMENT_METHOD, NEP17_PREFIX_ACCOUNT, NEP17_PREFIX_TOTAL_SUPPLY};
-pub(crate) use storage_encoding::bigint_to_storage_bytes;
+pub(crate) use support::token::nep::{
+    NEP11_PAYMENT_METHOD, NEP17_PREFIX_ACCOUNT, NEP17_PREFIX_TOTAL_SUPPLY,
+};
+pub(crate) use support::token::storage_encoding::bigint_to_storage_bytes;
 
 #[cfg(test)]
 #[path = "tests/lib.rs"]

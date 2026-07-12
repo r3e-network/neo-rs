@@ -222,7 +222,7 @@
   }
   ```
 - [ ] D1.2 Implement auto-generated parameter extraction, error wrapping, and JSON serialization
-- [ ] D1.3 Convert the 49 RPC handlers (in `rpc_server_blockchain/mod.rs`, `rpc_server_wallet/mod.rs`, `rpc_server_node/mod.rs`, `rpc_server_tokens_tracker/mod.rs`, `rpc_server_state.rs`, `smart_contract/invocation.rs`) to use the macro
+- [ ] D1.3 Convert the 49 RPC handlers (in `rpc_server_blockchain/mod.rs`, `rpc_server_wallet/mod.rs`, `rpc_server_node/mod.rs`, `rpc_server_tokens_tracker/mod.rs`, `rpc_server_state.rs`, `smart_contract/invoke/invocation.rs`) to use the macro
 - [ ] D1.4 `cargo test -p neo-rpc --lib` passes (6 tests)
 - [ ] D1.5 `cargo test --workspace --lib` passes
 

@@ -1,4 +1,4 @@
-use super::ledger_provider::{NativeOracleLedgerProvider, OracleLedgerProvider};
+use super::providers::{NativeOracleLedgerProvider, OracleLedgerProvider};
 use super::{FILTER_MAX_NEST, OracleServiceError};
 use neo_crypto::ECPoint;
 use neo_execution::Contract;

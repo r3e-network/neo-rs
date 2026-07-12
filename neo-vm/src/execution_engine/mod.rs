@@ -10,16 +10,14 @@
 //!
 //! ## Contents
 //!
-//! - `context`: Runtime context records carried through the local workflow.
 //! - `control_flow`: VM control-flow opcode handlers.
 //! - `core`: Core reader, writer, var-int, and macro helpers for binary IO.
 //! - `drop`: VM drop-stack opcode handlers.
 //! - `exception`: VM exception opcode handlers.
-//! - `execution`: Execution payload records and VM-result domain types.
 //! - `host`: Unsafe host-pointer bridge for allocation-free interop callbacks.
 //! - `interop`: Interop host glue between NeoVM execution and native/runtime
 //!   services.
-//! - `stack`: VM stack opcode handlers.
+//! - `runtime`: execution loop, invocation contexts, stack access, and gas.
 //! - `stubs`: placeholder opcode handlers guarded by tests.
 //! - `tests`: Module-local tests and regression coverage.
 
@@ -94,15 +92,13 @@ pub struct ExecutionEngine<S = ()> {
     pub(crate) gas_limit: u64,
 }
 
-mod context;
 mod control_flow;
 mod core;
 mod drop;
 mod exception;
-mod execution;
 mod host;
 mod interop;
-mod stack;
+mod runtime;
 mod stubs;
 
 pub(crate) use host::HostPtr;

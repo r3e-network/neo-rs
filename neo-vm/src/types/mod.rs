@@ -10,10 +10,12 @@
 //!
 //! ## Contents
 //!
+//! - `contract`: verification contract script, parameter list, and cached hash.
 //! - `error`: Typed error definitions and conversions.
 //! - `rpc_json`: VM RPC JSON conversion helpers.
 //! - `script`: NeoVM script record and byte helpers.
 
+pub mod contract;
 pub mod error;
 pub mod rpc_json;
 pub mod script;

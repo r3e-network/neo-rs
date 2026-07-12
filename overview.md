@@ -42,7 +42,7 @@ All 4 phases complete. Deleted 2 dead crates, 9 dead trait/impl items (6 dead tr
 ### Support Modules Created (6)
 - `neo-blockchain/src/pipeline/stage_traits.rs`
 - `neo-native-contracts/src/support/{codec,engine,settings}.rs`
-- `neo-runtime/src/time.rs`
+- `neo-runtime/src/support/time.rs`
 - `neo-runtime/src/service/nep17.rs`
 
 ### Dependency Changes

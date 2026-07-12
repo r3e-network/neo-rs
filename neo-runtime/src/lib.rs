@@ -12,13 +12,14 @@
 //! - `errors`: Typed errors and result aliases for this crate boundary.
 //! - `service`: Service loops, handles, import queues, durable staged-sync
 //!   providers, lifecycle helpers, and command processing.
+//! - `support`: Protocol-neutral runtime measurement helpers.
 
 #![doc(html_root_url = "https://docs.rs/neo-runtime/0.10.0")]
 
 mod errors;
 pub mod node;
 mod service;
-pub mod time;
+mod support;
 
 // Re-exports for the public surface of the crate.
 //
@@ -42,3 +43,4 @@ pub use service::{
 pub use service::{
     block_import, blockchain, nep17, outcome, services, sync_metrics, sync_pipeline,
 };
+pub use support::time;

@@ -1,5 +1,7 @@
-use super::super::ledger_provider::{NativeOracleLedgerProvider, OracleLedgerProvider};
-use super::super::native_provider::{OracleContractReadProvider, OracleServiceNativeProvider};
+use super::super::providers::{
+    NativeOracleLedgerProvider, OracleContractReadProvider, OracleLedgerProvider,
+    OracleServiceNativeProvider,
+};
 use super::super::utils::{ledger_height, ledger_height_with_provider, verify_oracle_signature};
 use super::super::{OracleRuntimeProvider, OracleService, OracleServiceError, OracleTask};
 use neo_crypto::ECPoint;

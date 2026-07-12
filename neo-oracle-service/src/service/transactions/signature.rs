@@ -1,4 +1,4 @@
-use super::super::native_provider::OracleContractReadProvider;
+use super::super::providers::OracleContractReadProvider;
 use super::super::{OracleRuntimeProvider, OracleService};
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_wallets::KeyPair;

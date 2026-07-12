@@ -8,8 +8,8 @@ use egui::{Context, RichText};
 
 use crate::node::{LocalNode, NodeState, SharedState};
 use crate::rpc::RpcClient;
+use crate::runtime::sync::lock;
 use crate::screens::Screen;
-use crate::sync::lock;
 use crate::theme;
 
 /// Configuration the poller thread reads each tick.

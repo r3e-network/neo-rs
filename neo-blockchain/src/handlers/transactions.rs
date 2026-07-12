@@ -8,7 +8,7 @@ use crate::fill_memory_pool::FillMemoryPool;
 use crate::ledger_provider::{TransactionStateProvider, TxProvider};
 use crate::service::{BlockchainService, MempoolLike};
 
-use super::transaction_provider::{NativeTransactionProvider, TransactionNativeProvider};
+use super::providers::{NativeTransactionProvider, TransactionNativeProvider};
 
 /// C# `Blockchain.MaxTxToReverifyPerIdle`.
 const MAX_TX_TO_REVERIFY_PER_IDLE: usize = 10;

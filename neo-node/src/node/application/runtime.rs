@@ -2,9 +2,9 @@
 
 use crate::node::cli::NodeCli;
 use crate::node::config::NodeConfig;
+use crate::node::lifecycle::workflow::RunningNode;
 use crate::node::logging::LoggingGuards;
 use crate::node::observability::ObservabilityRuntime;
-use crate::node::workflow::RunningNode;
 
 /// Result of opening runtime resources for an operator command.
 pub(in crate::node) enum OpenNodeRuntime {

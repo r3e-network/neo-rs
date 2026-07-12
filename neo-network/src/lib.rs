@@ -28,7 +28,6 @@ mod identity;
 mod peers;
 mod proto;
 mod service;
-mod spawn;
 mod wire;
 
 // -----------------------------------------------------------------------------

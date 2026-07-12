@@ -171,7 +171,7 @@ fn driver_verifies_signed_roots_with_explicit_native_provider() {
         !source.contains("RoleManagement::new()"),
         "StateRootDriver must not construct RoleManagement directly"
     );
-    let verifier = include_str!("../../../../neo-blockchain/src/state_root_verify.rs");
+    let verifier = include_str!("../../../../neo-blockchain/src/state_root/verification.rs");
     assert!(verifier.contains("trait StateRootNativeProvider"));
     assert!(
         verifier.contains("StateRootNativeProviderAdapter"),

@@ -133,7 +133,7 @@ The development-only members are not part of the running node:
 tests), and `benches-package` (Criterion benchmarks).
 The pure VM semantics live in `neo-vm-rs`, an external sibling crate referenced
 by path from `neo-vm`. For the full ADR log and evolution roadmap, see
-[`design.md`](../design.md) (39 ADRs covering RPC decoupling, engine integration,
+[`design.md`](../design.md) (41 ADRs covering RPC decoupling, engine integration,
 error unification, oracle decoupling, dead dependency cleanup, pipeline strategy,
 error type policy, MPT layering, and more).
 
@@ -176,9 +176,27 @@ side effects.
 The detailed rules for this style live in
 [coding-design-architecture-guidance.md](coding-design-architecture-guidance.md).
 
+### Physical module layout
+
+Each crate `src/` root contains only its `lib.rs` or `main.rs` entry point.
+Implementation lives in domain directories, each with at most ten direct Rust
+files and a thin documented `mod.rs` facade. Current examples include
+`neo-node::node::lifecycle`, `neo-rpc::server::smart_contract::invoke`,
+`neo-rpc::server::rpc_server_wallet::transaction`,
+`neo-vm::execution_engine::runtime`, and
+`neo-vm::jump_table::operations`. Provider adapters are grouped below their
+owning service or handler rather than exposed from crate roots.
+
+Physical nesting must not accidentally widen or narrow ownership. A moved
+item that was visible to an owning module uses the narrowest explicit
+`pub(in crate::...)` scope needed to preserve that boundary. Relative test
+mounts, source-inspection paths, module rustdoc, and living architecture docs
+move with the implementation. `scripts.tests.test_repository_hygiene` enforces
+the root, directory-size, entry-facade, and module-rustdoc rules.
+
 ## Key design decisions
 
-> The full ADR log lives in [`design.md`](../design.md) — 39 ADRs covering
+> The full ADR log lives in [`design.md`](../design.md) — 41 ADRs covering
 > RPC decoupling, engine integration, error unification, oracle decoupling,
 > dead dependency cleanup, pipeline strategy, error type policy, MPT layering,
 > doc management, runtime versioning, and native contract registry. The
@@ -596,6 +614,6 @@ pipeline stage traits it uses live in `neo-blockchain::pipeline::stage_traits`.
 
 For a step-by-step trace of how a block and a transaction move through these
 services — including the P2P sync path, execution, state-root commit, and RPC
-query path — see [dataflow.md](dataflow.md). For the 39 ADRs documenting every
+query path — see [dataflow.md](dataflow.md). For the 41 ADRs documenting every
 architectural decision and the 4-phase evolution roadmap, see
 [design.md](../design.md).

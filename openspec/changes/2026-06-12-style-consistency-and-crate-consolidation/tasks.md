@@ -75,8 +75,8 @@
 
 ### 6d. Verify
 
-- [ ] 6d.1 Run `cargo clippy --workspace` and fix or add targeted `#[allow(...)]` with comments for any new warnings
-- [ ] 6d.2 Verify `cargo test --workspace --lib` passes
+- [x] 6d.1 Run `cargo clippy --workspace` and fix or add targeted `#[allow(...)]` with comments for any new warnings
+- [x] 6d.2 Verify `cargo test --workspace --lib` passes
 
 ## 7. Error handling convention
 

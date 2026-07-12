@@ -12,11 +12,9 @@
 //!
 //! - `cache`: request deduplication and expiring finished-request cache state.
 //! - `handlers`: service message handlers.
-//! - `ledger_provider`: ledger read capabilities used by oracle processing.
 //! - `lifecycle`: Service startup, shutdown, and background processing
 //!   lifecycle helpers.
-//! - `native_provider`: native contract read capabilities used by oracle
-//!   processing.
+//! - `providers`: ledger and native-contract capabilities used by processing.
 //! - `processing`: oracle request filtering and processing helpers.
 //! - `status`: service status records.
 //! - `task`: pending response-signature task records.
@@ -27,10 +25,9 @@
 mod cache;
 mod error;
 mod handlers;
-mod ledger_provider;
 mod lifecycle;
-mod native_provider;
 mod processing;
+mod providers;
 mod status;
 mod task;
 mod transactions;
@@ -69,7 +66,7 @@ const DEDUP_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
 
 use cache::{ExpiringSet, OracleDedupState};
 pub use error::OracleServiceError;
-pub use native_provider::OracleContractReadProvider;
+pub use providers::OracleContractReadProvider;
 pub use status::OracleStatus;
 use task::OracleTask;
 

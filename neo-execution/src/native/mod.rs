@@ -15,6 +15,7 @@
 //! - `native_contract_cache`: native contract cache records.
 //! - `native_contract_provider`: native contract provider trait.
 //! - `native_registry`: native contract registry.
+//! - `nep17_reader`: NEP-17 metadata reads through an application engine.
 
 pub mod hardfork_activable;
 pub mod native_contract;
@@ -22,3 +23,4 @@ pub mod native_contract;
 pub mod native_contract_cache;
 pub mod native_contract_provider;
 pub mod native_registry;
+pub mod nep17_reader;

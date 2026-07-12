@@ -16,8 +16,12 @@
 //! - `engine`: ApplicationEngine prelude helpers (persisting block).
 //! - `invoke`: native ABI method binding helpers.
 //! - `keys`: native-contract storage key helpers.
+//! - `macros`: uniform native-contract declarations and dispatch generation.
 //! - `settings`: shared storage-setting read/write helpers.
+//! - `token`: shared NEP descriptors, account codecs, and storage encoding.
 
+#[macro_use]
+mod macros;
 pub(crate) mod args;
 pub(crate) mod codec;
 pub(crate) mod committee;
@@ -25,3 +29,4 @@ pub(crate) mod engine;
 pub(crate) mod invoke;
 pub(crate) mod keys;
 pub(crate) mod settings;
+pub(crate) mod token;

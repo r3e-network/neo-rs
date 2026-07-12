@@ -32,7 +32,7 @@ fn node_command_rejects_conflicting_modes_before_runtime_open() {
 
 #[test]
 fn daemon_entrypoint_stays_at_application_abstraction_level() {
-    let source = include_str!("../../node/daemon.rs");
+    let source = include_str!("../../node/lifecycle/daemon.rs");
 
     for required in [
         "NodeCommand::from_cli",
@@ -62,7 +62,7 @@ fn daemon_entrypoint_stays_at_application_abstraction_level() {
 
 #[test]
 fn node_composition_delegates_provider_neutral_core_assembly() {
-    let source = include_str!("../../node/composition.rs");
+    let source = include_str!("../../node/lifecycle/composition.rs");
 
     assert!(
         source.contains("NodeCoreBuilder::new"),

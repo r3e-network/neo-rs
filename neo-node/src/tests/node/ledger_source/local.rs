@@ -281,7 +281,7 @@ fn operational_ledger_tip_reads_stay_behind_local_provider_boundary() {
     let sources = [
         (
             "node composition",
-            include_str!("../../../node/composition.rs"),
+            include_str!("../../../node/lifecycle/composition.rs"),
         ),
         (
             "config validation",

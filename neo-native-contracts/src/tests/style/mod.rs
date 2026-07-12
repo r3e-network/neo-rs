@@ -415,7 +415,7 @@ fn native_contract_provider_uses_typed_catalog_not_trait_objects() {
     let catalog = include_str!("../../registry/catalog.rs");
     let provider = include_str!("../../registry/provider.rs");
     let standard = include_str!("../../registry/standard.rs");
-    let macros = include_str!("../../macros.rs");
+    let macros = include_str!("../../support/macros.rs");
 
     assert!(
         !catalog.contains("dyn NativeContract"),

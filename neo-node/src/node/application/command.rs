@@ -6,11 +6,11 @@ use tracing::info;
 
 use super::runtime::{NodeRuntime, OpenNodeRuntime};
 use crate::node::cli::{LedgerMode, NodeCli, validate_cli_mode};
-use crate::node::composition::build_node;
 use crate::node::config::{load_config, validate_config_for_ledger_mode};
+use crate::node::lifecycle::composition::build_node;
+use crate::node::lifecycle::preflight::{StartupPreflight, run_startup_preflight};
 use crate::node::logging;
 use crate::node::observability;
-use crate::node::preflight::{StartupPreflight, run_startup_preflight};
 
 /// Validated operator request that has not opened runtime resources yet.
 #[derive(Debug)]

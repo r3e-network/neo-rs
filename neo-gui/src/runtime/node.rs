@@ -5,8 +5,8 @@ use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
+use super::sync::lock;
 use crate::rpc::{NodeStatus, Peers};
-use crate::sync::lock;
 
 /// Shared, poller-updated view of the connected node.
 pub type SharedState = Arc<Mutex<NodeState>>;

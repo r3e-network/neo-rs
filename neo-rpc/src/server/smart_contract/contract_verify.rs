@@ -22,11 +22,11 @@ use crate::server::rpc_server::RpcServer;
 use neo_vm_rs::OpCode;
 
 use super::helpers::internal_error;
+use super::invoke::contract_parameter_to_stack_value;
 use super::request::InvokeContractVerifyRequest;
 use super::response::{
     final_rpc_vm_state_string, insert_stack, invoke_result_base_to_json, stack_item_to_json_limited,
 };
-use super::script::contract_parameter_to_stack_value;
 
 pub(super) fn invoke_contract_verify(
     server: &RpcServer,

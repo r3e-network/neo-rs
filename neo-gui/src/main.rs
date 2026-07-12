@@ -24,7 +24,6 @@ mod client;
 mod runtime;
 mod screens;
 mod shell;
-mod sync;
 mod ui;
 
 use client::rpc;

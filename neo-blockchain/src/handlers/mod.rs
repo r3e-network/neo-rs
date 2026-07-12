@@ -13,16 +13,15 @@
 //! ## Contents
 //!
 //! Modules are grouped by inventory, import, initialization, transaction,
-//! header, verification, and maintenance command families.
+//! header, verification, provider, and maintenance command families.
 
 mod block_inventory;
 mod empty_fast_forward;
 mod extensible;
-mod extensible_provider;
 mod headers;
 mod import;
 mod initialize;
+mod providers;
 mod reverify;
-mod transaction_provider;
 mod transactions;
 mod verification;

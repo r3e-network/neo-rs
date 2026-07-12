@@ -15,12 +15,10 @@
 //! - `ledger_provider`: Ledger read seam used by wallet handlers.
 //! - `lifecycle`: wallet open/close, key import/export, and address listing handlers.
 //! - `native_provider`: Native-contract read seam used by wallet handlers.
-//! - `network_fee`: transaction network-fee estimation handler.
 //! - `request`: Typed JSON-RPC request parsing helpers.
 //! - `response`: Wallet RPC response construction helpers.
-//! - `signing`: C#-compatible wallet signing and relay finalization.
 //! - `support`: Shared support helpers that keep domain modules focused.
-//! - `transfers`: wallet transfer RPC handlers.
+//! - `transaction`: network fees, transfer construction, signing, and relay.
 //! - `tests`: Module-local tests and regression coverage.
 
 use crate::server::rpc_server::RpcHandler;
@@ -30,12 +28,10 @@ mod errors;
 mod ledger_provider;
 mod lifecycle;
 mod native_provider;
-mod network_fee;
 mod request;
 mod response;
-mod signing;
 mod support;
-mod transfers;
+mod transaction;
 
 /// RPC handler group for wallet management and transfer methods.
 pub struct RpcServerWallet;

@@ -10,31 +10,25 @@
 //!
 //! ## Contents
 //!
-//! - `bitwisee`: bitwise opcode handlers.
 //! - `compound`: compound opcode handlers.
 //! - `control`: control-flow opcode handlers.
-//! - `numeric`: Fixed-size numeric wrappers and byte-order conversion helpers.
+//! - `operations`: bitwise, numeric, splice, and type opcode handlers.
 //! - `push`: push opcode handlers.
 //! - `shared`: shared handler helpers for C# stack coercion and context guards.
 //! - `slot`: VM slot records and helpers.
-//! - `splice`: splice opcode handlers.
 //! - `stack`: VM stack opcode handlers.
 //! - `table`: fixed handler storage and hot opcode dispatch accessors.
-//! - `types`: type-conversion and type-test opcode handlers.
 //! - `variants`: default and hardfork-specific jump-table construction.
 //! - `tests`: Module-local tests and regression coverage.
 
-pub mod bitwisee; // Matches JumpTable.Bitwisee.cs
 pub mod compound; // Matches JumpTable.Compound.cs
 pub mod control; // Matches JumpTable.Control.cs
-pub mod numeric; // Matches JumpTable.Numeric.cs
+pub mod operations;
 pub mod push; // Matches JumpTable.Push.cs
 mod shared;
 pub mod slot; // Matches JumpTable.Slot.cs
-pub mod splice; // Matches JumpTable.Splice.cs
 pub mod stack; // Matches JumpTable.Stack.cs
 mod table;
-pub mod types; // Matches JumpTable.Types.cs
 mod variants;
 
 #[cfg(test)]

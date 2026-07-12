@@ -1336,7 +1336,7 @@ Validation is split into:
    3 call sites migrated. `neo-consensus::current_timestamp()` kept as a thin
    delegate to preserve its private API.
 
-2. **`elapsed_us()` / `elapsed_millis()`** — new `neo-runtime/src/time.rs` module
+2. **`elapsed_us()` / `elapsed_millis()`** — new `neo-runtime/src/support/time.rs` module
    with saturating u128→u64 conversion (`.min(u64::MAX as u128) as u64`).
    6 call sites in `neo-blockchain::pipeline` migrated.
 
@@ -1430,7 +1430,7 @@ struct in `neo-consensus` — that's the real implementation.
 with a single `read_metadata(contract_hash) -> Result<Nep17Metadata, ServiceError>`
 method (returns both symbol + decimals in one call to preserve the single-VM-
 execution behavior from C#). The concrete impl `Nep17MetadataReaderImpl` lives
-in `neo-execution/src/nep17_reader.rs` (natural home for `ApplicationEngine`).
+in `neo-execution/src/native/nep17_reader.rs` (natural home for `ApplicationEngine`).
 `neo-wallets` now depends on `neo-runtime` (light, trait-only) instead of
 `neo-execution` (heavy, full VM engine). `neo-execution` gained `neo-runtime`
 as a dependency (one-way, no cycle).

@@ -1,4 +1,4 @@
-use super::native_provider::{OracleContractReadProvider, OracleServiceNativeProvider};
+use super::providers::{OracleContractReadProvider, OracleServiceNativeProvider};
 use super::utils::{ledger_height, wallet_has_oracle_account};
 use super::{OracleRuntimeProvider, OracleService, OracleStatus};
 use neo_execution::native_contract_provider::NativeContractProvider;

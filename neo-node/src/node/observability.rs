@@ -36,7 +36,7 @@ mod payloads;
 pub(in crate::node) use self::ledger_provider::observability_ledger_height;
 
 #[cfg(test)]
-#[path = "../tests/node/observability.rs"]
+#[path = "../tests/node/observability/observability.rs"]
 mod tests;
 
 #[derive(Clone)]

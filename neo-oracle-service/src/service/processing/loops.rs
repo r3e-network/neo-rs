@@ -1,4 +1,4 @@
-use super::super::native_provider::{OracleContractReadProvider, OracleServiceNativeProvider};
+use super::super::providers::{OracleContractReadProvider, OracleServiceNativeProvider};
 use super::super::{OracleRuntimeProvider, OracleService, OracleStatus, REFRESH_INTERVAL};
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_wallets::{Wallet, WalletAccount};

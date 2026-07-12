@@ -96,5 +96,5 @@ pub(super) fn init_tracing(config: &LoggingSection) -> anyhow::Result<LoggingGua
 }
 
 #[cfg(test)]
-#[path = "../../tests/node/logging.rs"]
+#[path = "../../tests/node/observability/logging/tests.rs"]
 mod tests;

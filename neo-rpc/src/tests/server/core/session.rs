@@ -131,7 +131,7 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
         ),
         (
             "smart-contract wallet invocation",
-            include_str!("../../../server/smart_contract/invocation_wallet.rs"),
+            include_str!("../../../server/smart_contract/invoke/invocation_wallet.rs"),
         ),
     ];
 
@@ -215,7 +215,8 @@ fn rpc_server_ledger_reads_use_provider_boundaries() {
         "blockchain transaction-state reads should not bypass the hot/cold provider boundary"
     );
 
-    let wallet_transfers = include_str!("../../../server/rpc_server_wallet/transfers.rs");
+    let wallet_transfers =
+        include_str!("../../../server/rpc_server_wallet/transaction/transfers.rs");
     assert!(
         wallet_transfers.contains("NativeWalletLedgerProviderFactory"),
         "wallet transfers should read transaction state through the wallet ledger provider factory"
@@ -398,7 +399,8 @@ fn smart_contract_wallet_policy_reads_use_composed_native_provider() {
         "smart-contract native provider should be created from the composed provider, not a local factory"
     );
 
-    let invocation_wallet = include_str!("../../../server/smart_contract/invocation_wallet.rs");
+    let invocation_wallet =
+        include_str!("../../../server/smart_contract/invoke/invocation_wallet.rs");
     assert!(
         invocation_wallet
             .contains("NativeSmartContractProvider::new(Arc::clone(&native_contract_provider))"),
@@ -474,7 +476,7 @@ fn rpc_wallet_policy_reads_use_composed_native_provider() {
         "wallet native provider should be created from the composed provider, not a local factory"
     );
 
-    let signing = include_str!("../../../server/rpc_server_wallet/signing.rs");
+    let signing = include_str!("../../../server/rpc_server_wallet/transaction/signing.rs");
     assert!(
         signing.contains("NativeWalletProvider::new(server.system().native_contract_provider())"),
         "wallet signing should adapt the composed native provider"
@@ -520,7 +522,7 @@ fn rpc_deployed_contract_reads_use_shared_provider() {
         "invokecontractverify should not reach into ContractManagement storage directly"
     );
 
-    let signing = include_str!("../../../server/rpc_server_wallet/signing.rs");
+    let signing = include_str!("../../../server/rpc_server_wallet/transaction/signing.rs");
     assert!(
         signing.contains("NativeDeployedContractProviderFactory"),
         "wallet AddWithScriptHash should resolve deployed contracts through the shared provider"
