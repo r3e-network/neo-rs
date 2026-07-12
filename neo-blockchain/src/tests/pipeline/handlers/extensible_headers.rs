@@ -180,7 +180,11 @@ async fn headers_verify_against_the_anchor_next_consensus() {
     let mut bad = header.clone();
     bad.witness =
         neo_payloads::Witness::new_with_scripts(invocation(&tampered_sig), verification.clone());
-    service.handle_headers(vec![bad]);
+    let outcome = service.handle_headers(vec![bad]);
+    assert_eq!(
+        outcome.accepted, 0,
+        "tampered header does not contribute to the accepted prefix"
+    );
     assert_eq!(
         service.header_cache.count(),
         0,
@@ -189,7 +193,11 @@ async fn headers_verify_against_the_anchor_next_consensus() {
 
     // Valid witness -> cached.
     header.witness = neo_payloads::Witness::new_with_scripts(invocation(&signature), verification);
-    service.handle_headers(vec![header]);
+    let outcome = service.handle_headers(vec![header]);
+    assert_eq!(
+        outcome.accepted, 1,
+        "validly signed header contributes one accepted header"
+    );
     assert_eq!(
         service.header_cache.count(),
         1,
@@ -198,11 +206,62 @@ async fn headers_verify_against_the_anchor_next_consensus() {
 }
 
 #[tokio::test]
+async fn canonical_duplicate_keeps_header_validation_prefix_exact() {
+    let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+    let public_key =
+        neo_crypto::Secp256r1Crypto::derive_public_key(&private_key).expect("public key");
+    let point = neo_crypto::ECPoint::from_bytes(&public_key).expect("point");
+    let mut settings = neo_config::ProtocolSettings::default();
+    settings.standby_committee = vec![point.clone()];
+    settings.validators_count = 1;
+    let network = settings.network;
+
+    let (service, _handle, _snapshot) = store_fixture_with(settings.clone());
+    service.initialize().await.expect("initialize");
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+
+    let mut child = Header::new();
+    child.set_index(1);
+    child.set_prev_hash(genesis.hash());
+    child.set_timestamp(genesis.header.timestamp() + 15_000);
+    child.set_next_consensus(*genesis.header.next_consensus());
+    let mut sign_data = Vec::with_capacity(36);
+    sign_data.extend_from_slice(&network.to_le_bytes());
+    sign_data.extend_from_slice(&child.hash().to_bytes());
+    let signature = neo_crypto::Secp256r1Crypto::sign(&sign_data, &private_key).expect("sign");
+    let verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            1,
+            &[point],
+        )
+        .expect("multisig script");
+    let mut invocation = vec![0x0C, 64];
+    invocation.extend_from_slice(&signature);
+    child.witness = neo_payloads::Witness::new_with_scripts(invocation, verification);
+
+    let mut conflicting_genesis = genesis.header.clone();
+    conflicting_genesis.set_nonce(conflicting_genesis.nonce().wrapping_add(1));
+    let rejected = service.handle_headers(vec![conflicting_genesis, child.clone()]);
+    assert_eq!(rejected.accepted, 0);
+    assert_eq!(service.header_cache.count(), 0);
+
+    let accepted = service.handle_headers(vec![genesis.header.clone(), child]);
+    assert_eq!(accepted.accepted, 2);
+    assert_eq!(accepted.frontier.as_ref().map(Header::index), Some(1));
+    assert_eq!(service.header_cache.count(), 1);
+}
+
+#[tokio::test]
 async fn headers_in_sequence_are_accepted() {
     let (service, _handle) = fixture();
     let mut header = Header::new();
     header.set_index(1);
-    service.handle_headers(vec![header]);
+    let outcome = service.handle_headers(vec![header]);
+    assert_eq!(outcome.accepted, 1);
+    assert_eq!(
+        outcome.frontier.as_ref().map(neo_payloads::Header::index),
+        Some(1)
+    );
     assert_eq!(service.header_cache.count(), 1);
 }
 
@@ -213,6 +272,11 @@ async fn headers_with_gap_are_truncated() {
     a.set_index(1);
     let mut b = Header::new();
     b.set_index(3); // gap on index 2
-    service.handle_headers(vec![a, b]);
+    let outcome = service.handle_headers(vec![a, b]);
+    assert_eq!(outcome.accepted, 1);
+    assert_eq!(
+        outcome.frontier.as_ref().map(neo_payloads::Header::index),
+        Some(1)
+    );
     assert_eq!(service.header_cache.count(), 1);
 }

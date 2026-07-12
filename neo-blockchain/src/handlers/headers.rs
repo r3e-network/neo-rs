@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use neo_payloads::header::Header;
 
+use crate::command::HeaderValidationOutcome;
 use crate::ledger_provider::{BlockProvider, ChainTipProvider};
 use crate::service::{BlockchainService, MempoolLike};
 
@@ -10,18 +11,14 @@ where
     S: crate::service_context::SystemContext,
     M: MempoolLike,
 {
-    /// Handle a [`BlockchainCommand::Headers`] batch.
+    /// Handle a [`BlockchainCommand::ValidateHeaders`] batch.
     ///
     /// C# `Blockchain.OnNewHeaders`: each header must chain onto the previous
     /// one and verify (`Header.Verify(settings, snapshot, headerCache)`) before
     /// it is cached; verification failure stops the batch (the C# `break`),
     /// keeping the valid prefix. The anchor for the first header is the last
     /// cached header, or the ledger tip when the cache is empty.
-    pub(crate) fn handle_headers(&self, headers: Vec<Header>) {
-        if headers.is_empty() {
-            return;
-        }
-
+    pub(crate) fn handle_headers(&self, headers: Vec<Header>) -> HeaderValidationOutcome {
         let snapshot = self.system.store_snapshot();
         let settings = self.system.settings();
         let native_contract_provider = self.system.native_contract_provider();
@@ -41,11 +38,28 @@ where
             .as_ref()
             .map(|h| h.index())
             .unwrap_or_else(|| self.ledger.current_height());
+        let mut accepted = 0usize;
 
         for header in headers.into_iter() {
             let index = header.index();
             if index <= header_height {
-                continue;
+                let known_hash = self.header_cache.hash_at(index).or_else(|| {
+                    snapshot.as_ref().and_then(|snap| {
+                        self.system
+                            .ledger_provider(snap.as_ref())
+                            .block_hash_by_index(index)
+                            .ok()
+                            .flatten()
+                    })
+                });
+                match known_hash {
+                    Some(hash) if hash == header.hash() => {
+                        accepted += 1;
+                        continue;
+                    }
+                    Some(_) => break,
+                    None => continue,
+                }
             }
 
             if index != header_height + 1 {
@@ -90,8 +104,11 @@ where
                 break;
             }
 
+            accepted += 1;
             header_height = index;
             prev = Some(header);
         }
+
+        HeaderValidationOutcome::new(accepted, prev)
     }
 }

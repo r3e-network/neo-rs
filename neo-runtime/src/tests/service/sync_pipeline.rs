@@ -3,12 +3,18 @@ use crate::{
     BlockBatchImportOutcome, BlockImport, BlockImportOutcome, BlockImportQueue, BlockOrigin,
     ImportedTip, Service, ServiceError,
 };
-use neo_payloads::{Block, Header};
+use neo_payloads::{Block, Header, Witness};
+use neo_primitives::{UInt160, UInt256};
 use neo_storage::mdbx::MdbxStoreProvider;
 use neo_storage::persistence::providers::MemoryStore;
+use neo_storage::persistence::read_only_store::{
+    RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric,
+};
+use neo_storage::persistence::seek_direction::SeekDirection;
 use neo_storage::persistence::storage::StorageConfig;
-use neo_storage::persistence::{RawReadOnlyStore, Store, WriteStore};
+use neo_storage::persistence::{Store, StoreBackendKind, StoreMaintenanceBatch, WriteStore};
 use neo_storage::rocksdb::RocksDBStoreProvider;
+use neo_storage::types::{StorageItem, StorageKey};
 use parking_lot::Mutex;
 use std::fs;
 use std::path::PathBuf;
@@ -20,6 +26,30 @@ fn block(index: u32) -> Block {
     let mut header = Header::new();
     header.set_index(index);
     Block::from_parts(header, vec![])
+}
+
+fn verified_header(index: u32, prev_hash: UInt256) -> Header {
+    let mut header = Header::new();
+    header.set_index(index);
+    header.set_prev_hash(prev_hash);
+    header.set_merkle_root(UInt256::from_bytes(&[index as u8; 32]).expect("merkle root"));
+    header.set_timestamp(1_700_000_000_000 + u64::from(index));
+    header.set_nonce(0x0102_0304_0506_0708 + u64::from(index));
+    header.set_primary_index((index % 7) as u8);
+    header.set_next_consensus(UInt160::from_bytes(&[index as u8; 20]).expect("next consensus"));
+    header.witness = Witness::new();
+    header
+}
+
+fn linked_headers(start_index: u32, count: u32, prev_hash: UInt256) -> Vec<Header> {
+    let mut headers = Vec::with_capacity(count as usize);
+    let mut previous_hash = prev_hash;
+    for index in start_index..start_index + count {
+        let header = verified_header(index, previous_hash);
+        previous_hash = header.try_hash().expect("header hash");
+        headers.push(header);
+    }
+    headers
 }
 
 #[test]
@@ -135,6 +165,393 @@ fn shared_store_checkpoint_store_round_trips_memory_backend() {
 }
 
 #[test]
+fn in_memory_verified_header_store_preserves_fixed_window_and_target_hash() {
+    let store = InMemoryVerifiedHeaderStore::default();
+    let window = store.begin_window(10, 13).expect("begin window");
+
+    assert_eq!(
+        window,
+        HeaderStageWindow {
+            base_height: 10,
+            target_height: 13,
+            target_hash: None,
+        }
+    );
+    assert_eq!(store.window().expect("window read"), Some(window.clone()));
+    assert_eq!(
+        store
+            .checkpoint(SyncStageKind::Headers)
+            .expect("checkpoint"),
+        Some(SyncStageCheckpoint::new(SyncStageKind::Headers, 10))
+    );
+
+    assert_eq!(
+        store.begin_window(10, 13).expect("idempotent begin"),
+        window
+    );
+
+    let err = store
+        .begin_window(10, 14)
+        .expect_err("different target must not replace the fixed active window");
+    assert!(
+        err.to_string().contains("active header stage window"),
+        "unexpected error: {err}"
+    );
+
+    let prefix = linked_headers(
+        11,
+        2,
+        UInt256::from_bytes(&[0x11; 32]).expect("anchor hash"),
+    );
+    let checkpoint = store
+        .commit_verified_headers(&prefix)
+        .expect("commit verified prefix");
+    assert_eq!(checkpoint.height, 12);
+    assert_eq!(checkpoint.processed_blocks, 2);
+    assert!(checkpoint.changed_bytes > 0);
+    assert_eq!(
+        store.window().expect("window after partial commit"),
+        Some(HeaderStageWindow {
+            base_height: 10,
+            target_height: 13,
+            target_hash: None,
+        })
+    );
+    assert_eq!(
+        store
+            .header(11)
+            .expect("header read")
+            .expect("staged header")
+            .index(),
+        11
+    );
+
+    let final_header = linked_headers(
+        13,
+        1,
+        prefix
+            .last()
+            .expect("prefix tail")
+            .try_hash()
+            .expect("tail hash"),
+    );
+    let final_checkpoint = store
+        .commit_verified_headers(&final_header)
+        .expect("commit final verified header");
+    let final_hash = final_header[0].try_hash().expect("final hash");
+    assert_eq!(final_checkpoint.height, 13);
+    assert_eq!(final_checkpoint.processed_blocks, 3);
+    assert_eq!(
+        store.window().expect("window after target"),
+        Some(HeaderStageWindow {
+            base_height: 10,
+            target_height: 13,
+            target_hash: Some(final_hash),
+        })
+    );
+}
+
+#[test]
+fn verified_header_window_is_bounded_and_must_reach_target_before_finish() {
+    let store = InMemoryVerifiedHeaderStore::default();
+    let err = store
+        .begin_window(10, 10 + MAX_VERIFIED_HEADER_WINDOW + 1)
+        .expect_err("oversized window must be rejected before metadata allocation");
+    assert!(err.to_string().contains("window exceeds"), "{err}");
+
+    store.begin_window(10, 12).expect("begin bounded window");
+    let err = store
+        .finish_window(12)
+        .expect_err("canonical height alone must not complete an unverified window");
+    assert!(err.to_string().contains("incomplete"), "{err}");
+    assert_eq!(
+        store
+            .checkpoint(SyncStageKind::Headers)
+            .expect("checkpoint"),
+        Some(SyncStageCheckpoint::new(SyncStageKind::Headers, 10))
+    );
+
+    let discarded = store
+        .discard_window(12)
+        .expect("canonical reconciliation may discard an incomplete sidecar");
+    assert_eq!(discarded.height, 12);
+    assert_eq!(store.window().expect("window after discard"), None);
+}
+
+#[test]
+fn verified_header_store_rejects_gaps_broken_links_and_target_overflow_without_advancing() {
+    let store = InMemoryVerifiedHeaderStore::default();
+    store.begin_window(20, 22).expect("begin window");
+
+    let first = linked_headers(
+        21,
+        1,
+        UInt256::from_bytes(&[0x21; 32]).expect("anchor hash"),
+    );
+    store
+        .commit_verified_headers(&first)
+        .expect("commit first verified header");
+    let checkpoint = store
+        .checkpoint(SyncStageKind::Headers)
+        .expect("checkpoint")
+        .expect("headers checkpoint");
+
+    let gap = linked_headers(
+        23,
+        1,
+        first
+            .last()
+            .expect("first header")
+            .try_hash()
+            .expect("first hash"),
+    );
+    let err = store
+        .commit_verified_headers(&gap)
+        .expect_err("commit must reject a checkpoint gap");
+    assert!(err.to_string().contains("expected header index 22"));
+    assert_eq!(
+        store
+            .checkpoint(SyncStageKind::Headers)
+            .expect("checkpoint"),
+        Some(checkpoint.clone())
+    );
+
+    let mut broken_link =
+        linked_headers(22, 1, UInt256::from_bytes(&[0x44; 32]).expect("wrong prev"));
+    broken_link[0].set_prev_hash(UInt256::from_bytes(&[0x55; 32]).expect("broken link"));
+    let err = store
+        .commit_verified_headers(&broken_link)
+        .expect_err("commit must reject a broken prev-hash link");
+    assert!(err.to_string().contains("prev-hash"));
+    assert_eq!(
+        store
+            .checkpoint(SyncStageKind::Headers)
+            .expect("checkpoint"),
+        Some(checkpoint.clone())
+    );
+
+    let overflow = linked_headers(
+        22,
+        2,
+        first
+            .last()
+            .expect("first header")
+            .try_hash()
+            .expect("first hash"),
+    );
+    let err = store
+        .commit_verified_headers(&overflow)
+        .expect_err("commit must reject headers beyond the fixed target");
+    assert!(err.to_string().contains("target"));
+    assert_eq!(
+        store
+            .checkpoint(SyncStageKind::Headers)
+            .expect("checkpoint"),
+        Some(checkpoint)
+    );
+}
+
+#[test]
+fn store_verified_header_store_persists_across_memory_reopen_and_finishes_pruned_window() {
+    let backing = MemoryStore::new();
+    let store = StoreVerifiedHeaderStore::new(backing.clone());
+    let headers = linked_headers(
+        31,
+        2,
+        UInt256::from_bytes(&[0x31; 32]).expect("anchor hash"),
+    );
+
+    store.begin_window(30, 32).expect("begin window");
+    store
+        .commit_verified_headers(&headers)
+        .expect("commit verified headers");
+
+    let reopened = StoreVerifiedHeaderStore::new(backing.clone());
+    let final_hash = headers
+        .last()
+        .expect("target header")
+        .try_hash()
+        .expect("target hash");
+    assert_eq!(
+        reopened.window().expect("window after reopen"),
+        Some(HeaderStageWindow {
+            base_height: 30,
+            target_height: 32,
+            target_hash: Some(final_hash),
+        })
+    );
+    assert_eq!(
+        reopened
+            .checkpoint(SyncStageKind::Headers)
+            .expect("checkpoint after reopen"),
+        Some(
+            SyncStageCheckpoint::new(SyncStageKind::Headers, 32).with_counters(
+                2,
+                u64::try_from(
+                    headers
+                        .iter()
+                        .map(|header| header.try_to_bytes().expect("serialize header").len())
+                        .sum::<usize>()
+                )
+                .expect("changed byte count"),
+            )
+        )
+    );
+    assert_eq!(
+        backing.try_get_bytes(&verified_header_key(31)),
+        None,
+        "verified headers must not enter the normal Neo data table"
+    );
+    assert!(
+        backing
+            .maintenance_metadata(&verified_header_key(31))
+            .expect("maintenance metadata read")
+            .is_some()
+    );
+
+    let err = reopened
+        .finish_window(31)
+        .expect_err("finish must reject canonical heights below the target");
+    assert!(
+        err.to_string().contains("canonical height"),
+        "unexpected error: {err}"
+    );
+
+    let finished = reopened.finish_window(34).expect("finish window");
+    assert_eq!(
+        finished,
+        SyncStageCheckpoint::new(SyncStageKind::Headers, 34).with_counters(
+            2,
+            u64::try_from(
+                headers
+                    .iter()
+                    .map(|header| header.try_to_bytes().expect("serialize header").len())
+                    .sum::<usize>()
+            )
+            .expect("changed byte count"),
+        )
+    );
+    assert_eq!(reopened.window().expect("window after finish"), None);
+    assert!(reopened.header(31).expect("read header").is_none());
+    assert!(reopened.header(32).expect("read header").is_none());
+}
+
+#[test]
+fn store_verified_header_store_reset_window_prunes_old_range() {
+    let backing = MemoryStore::new();
+    let store = StoreVerifiedHeaderStore::new(backing);
+    let first = linked_headers(6, 1, UInt256::from_bytes(&[0x06; 32]).expect("anchor hash"));
+
+    store.begin_window(5, 7).expect("begin window");
+    store
+        .commit_verified_headers(&first)
+        .expect("commit first header");
+
+    let reset = store.reset_window(8, 10).expect("reset window");
+    assert_eq!(
+        reset,
+        HeaderStageWindow {
+            base_height: 8,
+            target_height: 10,
+            target_hash: None,
+        }
+    );
+    assert!(store.header(6).expect("header after reset").is_none());
+    assert_eq!(
+        store
+            .checkpoint(SyncStageKind::Headers)
+            .expect("checkpoint"),
+        Some(SyncStageCheckpoint::new(SyncStageKind::Headers, 8))
+    );
+}
+
+#[test]
+fn store_verified_header_window_can_reset_a_corrupt_checkpoint() {
+    let backing = MemoryStore::new();
+    let store = StoreVerifiedHeaderStore::new(backing.clone());
+    store.begin_window(5, 7).expect("begin window");
+
+    let mut corruption = StoreMaintenanceBatch::new();
+    corruption.put_metadata(checkpoint_key(SyncStageKind::Headers), b"corrupt".to_vec());
+    assert!(
+        backing
+            .try_commit_durable_maintenance(&corruption)
+            .expect("inject malformed checkpoint")
+    );
+
+    assert_eq!(
+        store
+            .window()
+            .expect("window remains independently readable"),
+        Some(HeaderStageWindow {
+            base_height: 5,
+            target_height: 7,
+            target_hash: None,
+        })
+    );
+    assert!(
+        store.checkpoint(SyncStageKind::Headers).is_err(),
+        "the malformed checkpoint must still be reported to recovery"
+    );
+
+    let reset = store
+        .reset_window(6, 8)
+        .expect("reset replaces malformed checkpoint atomically");
+    assert_eq!(reset.base_height, 6);
+    assert_eq!(reset.target_height, 8);
+    assert_eq!(
+        store
+            .checkpoint(SyncStageKind::Headers)
+            .expect("checkpoint after reset"),
+        Some(SyncStageCheckpoint::new(SyncStageKind::Headers, 6))
+    );
+}
+
+#[test]
+fn store_verified_header_discard_recovers_a_corrupt_checkpoint() {
+    let backing = MemoryStore::new();
+    let store = StoreVerifiedHeaderStore::new(backing.clone());
+    store.begin_window(5, 7).expect("begin window");
+
+    let mut corruption = StoreMaintenanceBatch::new();
+    corruption.put_metadata(checkpoint_key(SyncStageKind::Headers), b"corrupt".to_vec());
+    assert!(
+        backing
+            .try_commit_durable_maintenance(&corruption)
+            .expect("inject malformed checkpoint")
+    );
+
+    let discarded = store
+        .discard_window(6)
+        .expect("canonical recovery discards malformed checkpoint");
+    assert_eq!(
+        discarded,
+        SyncStageCheckpoint::new(SyncStageKind::Headers, 6)
+    );
+    assert_eq!(store.window().expect("window after discard"), None);
+    assert_eq!(
+        store
+            .checkpoint(SyncStageKind::Headers)
+            .expect("replacement checkpoint"),
+        Some(discarded)
+    );
+}
+
+#[test]
+fn store_verified_header_store_rejects_backends_without_atomic_maintenance() {
+    let store = StoreVerifiedHeaderStore::new(NonAtomicMaintenanceStore::default());
+
+    let err = store
+        .begin_window(1, 2)
+        .expect_err("begin window must reject non-atomic maintenance backends");
+    assert!(
+        err.to_string()
+            .contains("store does not support atomic verified-header maintenance"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn store_checkpoint_store_persists_across_mdbx_reopen() {
     let path = unique_test_path("sync-checkpoint-mdbx");
     let provider = MdbxStoreProvider::new(StorageConfig::default()).with_map_size(64 * 1024 * 1024);
@@ -171,6 +588,116 @@ fn store_checkpoint_store_persists_across_mdbx_reopen() {
     }
 
     let _ = fs::remove_dir_all(path);
+}
+
+#[derive(Clone, Debug, Default)]
+struct NonAtomicMaintenanceStore {
+    inner: MemoryStore,
+}
+
+impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for NonAtomicMaintenanceStore {
+    type FindIterator<'a> =
+        <MemoryStore as ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>>>::FindIterator<'a>;
+
+    fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
+        ReadOnlyStoreGeneric::<Vec<u8>, Vec<u8>>::try_get(&self.inner, key)
+    }
+
+    fn find(
+        &self,
+        key_prefix: Option<&Vec<u8>>,
+        direction: SeekDirection,
+    ) -> Self::FindIterator<'_> {
+        ReadOnlyStoreGeneric::<Vec<u8>, Vec<u8>>::find(&self.inner, key_prefix, direction)
+    }
+}
+
+impl RawReadOnlyStore for NonAtomicMaintenanceStore {
+    fn try_get_bytes(&self, key: &[u8]) -> Option<Vec<u8>> {
+        self.inner.try_get_bytes(key)
+    }
+}
+
+impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for NonAtomicMaintenanceStore {
+    type FindIterator<'a> =
+        <MemoryStore as ReadOnlyStoreGeneric<StorageKey, StorageItem>>::FindIterator<'a>;
+
+    fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
+        ReadOnlyStoreGeneric::<StorageKey, StorageItem>::try_get(&self.inner, key)
+    }
+
+    fn find(
+        &self,
+        key_prefix: Option<&StorageKey>,
+        direction: SeekDirection,
+    ) -> Self::FindIterator<'_> {
+        ReadOnlyStoreGeneric::<StorageKey, StorageItem>::find(&self.inner, key_prefix, direction)
+    }
+}
+
+impl WriteStore<Vec<u8>, Vec<u8>> for NonAtomicMaintenanceStore {
+    fn delete(&mut self, key: Vec<u8>) -> neo_storage::error::StorageResult<()> {
+        self.inner.delete(key)
+    }
+
+    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> neo_storage::error::StorageResult<()> {
+        self.inner.put(key, value)
+    }
+}
+
+impl ReadOnlyStore for NonAtomicMaintenanceStore {}
+
+impl Store for NonAtomicMaintenanceStore {
+    type Snapshot = <MemoryStore as Store>::Snapshot;
+
+    fn snapshot(&self) -> Arc<Self::Snapshot> {
+        self.inner.snapshot()
+    }
+
+    fn backend_kind(&self) -> StoreBackendKind {
+        StoreBackendKind::Custom("non_atomic_maintenance")
+    }
+
+    fn try_commit_raw_overlay(
+        &self,
+        overlay: &[(Vec<u8>, Option<Vec<u8>>)],
+    ) -> neo_storage::error::StorageResult<bool> {
+        self.inner.try_commit_raw_overlay(overlay)
+    }
+
+    fn try_commit_borrowed_raw_overlay<O>(
+        &self,
+        overlay: &mut O,
+    ) -> neo_storage::error::StorageResult<bool>
+    where
+        O: neo_storage::persistence::store::RawOverlaySource + ?Sized,
+    {
+        self.inner.try_commit_borrowed_raw_overlay(overlay)
+    }
+
+    fn try_commit_durable_borrowed_raw_overlay<O>(
+        &self,
+        overlay: &mut O,
+    ) -> neo_storage::error::StorageResult<bool>
+    where
+        O: neo_storage::persistence::store::RawOverlaySource + ?Sized,
+    {
+        self.inner.try_commit_durable_borrowed_raw_overlay(overlay)
+    }
+
+    fn maintenance_metadata(
+        &self,
+        key: &[u8],
+    ) -> neo_storage::error::StorageResult<Option<Vec<u8>>> {
+        self.inner.maintenance_metadata(key)
+    }
+
+    fn try_commit_durable_maintenance(
+        &self,
+        _batch: &neo_storage::persistence::StoreMaintenanceBatch,
+    ) -> neo_storage::error::StorageResult<bool> {
+        Ok(false)
+    }
 }
 
 #[test]

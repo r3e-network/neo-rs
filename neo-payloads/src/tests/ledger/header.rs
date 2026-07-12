@@ -51,3 +51,32 @@ fn header_hash_is_single_sha256_of_unsigned_data() {
         "C# Helper.CalculateHash uses one SHA256 over Header.SerializeUnsigned"
     );
 }
+
+#[test]
+fn header_to_bytes_round_trips_canonical_wire_format() {
+    let header = serializable_header_with_version(0);
+    let bytes = header.try_to_bytes().expect("serialize header");
+    let mut writer = BinaryWriter::new();
+    <Header as Serializable>::serialize(&header, &mut writer).expect("serialize header");
+
+    assert_eq!(bytes, writer.into_bytes());
+
+    let decoded = Header::from_bytes(&bytes).expect("decode header");
+    assert_eq!(
+        decoded.try_to_bytes().expect("serialize decoded header"),
+        bytes
+    );
+    assert_eq!(decoded.index(), header.index());
+    assert_eq!(decoded.prev_hash(), header.prev_hash());
+    assert_eq!(decoded.merkle_root(), header.merkle_root());
+}
+
+#[test]
+fn header_from_bytes_rejects_trailing_data() {
+    let mut bytes = serializable_header_with_version(0)
+        .try_to_bytes()
+        .expect("serialize header");
+    bytes.push(0);
+
+    assert!(Header::from_bytes(&bytes).is_err());
+}

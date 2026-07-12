@@ -1855,7 +1855,8 @@ fn daemon_context_skips_application_logs_committed_handler_during_bulk_sync() {
 
 /// Full daemon restart smoke test: when the durable RocksDB store already
 /// contains a ledger tip, `build_node` must read it before P2P starts,
-/// advertise it in `version`, and request blocks from `tip + 1`.
+/// advertise it in `version`, request verified headers from `tip + 1`, and
+/// request bodies only after that header range passes validation.
 #[tokio::test]
 async fn build_node_restarts_from_durable_rocksdb_tip_and_resumes_sync_cursor() {
     const DURABLE_TIP: u32 = 1;
@@ -1863,7 +1864,14 @@ async fn build_node_restarts_from_durable_rocksdb_tip_and_resumes_sync_cursor() 
 
     let temp = tempfile::tempdir().expect("temp RocksDB root");
     let storage_path = temp.path().join("chain");
-    let settings = Arc::new(ProtocolSettings::default());
+    let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
+    let public_key_bytes = neo_crypto::Secp256r1Crypto::derive_public_key(&private_key)
+        .expect("derive validator public key");
+    let public_key = neo_crypto::ECPoint::from_bytes(&public_key_bytes).expect("validator point");
+    let mut protocol = ProtocolSettings::default();
+    protocol.standby_committee = vec![public_key.clone()];
+    protocol.validators_count = 1;
+    let settings = Arc::new(protocol);
     seed_rocksdb_tip(&storage_path, settings.as_ref(), DURABLE_TIP)
         .expect("seed durable RocksDB tip");
 
@@ -1913,6 +1921,37 @@ async fn build_node_restarts_from_durable_rocksdb_tip_and_resumes_sync_cursor() 
     let verack = recv_frame(&mut fake).await;
     assert_eq!(verack.command, MessageCommand::Verack);
     fake.send(verack_message()).await.expect("send verack");
+
+    let header_request = recv_getheaders(&mut fake).await;
+    assert_eq!(header_request.index_start, DURABLE_TIP + 1);
+    assert_eq!(header_request.count, (PEER_HEIGHT - DURABLE_TIP) as i16);
+
+    let genesis = neo_blockchain::genesis_block(settings.as_ref()).expect("genesis");
+    let durable_parent = empty_child_block(&genesis, DURABLE_TIP);
+    let block_two = signed_empty_child_block(
+        &durable_parent,
+        DURABLE_TIP + 1,
+        settings.network,
+        &private_key,
+        &public_key,
+    );
+    let block_three = signed_empty_child_block(
+        &block_two,
+        PEER_HEIGHT,
+        settings.network,
+        &private_key,
+        &public_key,
+    );
+    let headers = neo_payloads::HeadersPayload::create(vec![
+        block_two.header.clone(),
+        block_three.header.clone(),
+    ]);
+    fake.send(
+        Message::create(MessageCommand::Headers, Some(&headers), false)
+            .expect("encode verified headers"),
+    )
+    .await
+    .expect("send verified headers");
 
     let request = recv_getblockbyindex(&mut fake).await;
     assert_eq!(

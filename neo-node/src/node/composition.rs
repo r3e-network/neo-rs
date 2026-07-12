@@ -596,12 +596,12 @@ pub(in crate::node) async fn build_node(
             &shutdown,
             TaskKind::Normal,
             "p2p_sync_downloader",
-            sync_downloader::run_coordinator_download_import(
+            sync_downloader::run_staged_sync(
                 blockchain.clone(),
-                node.sync_import_pipeline(),
+                node.staged_sync_pipeline(),
                 Arc::clone(&peer_registry),
                 shutdown.clone(),
-                sync_downloader::p2p_block_download_config(static_archive_enabled),
+                sync_downloader::p2p_staged_sync_config(static_archive_enabled),
             ),
         );
     }

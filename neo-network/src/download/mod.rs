@@ -1,16 +1,18 @@
 //! # neo-network::download
 //!
-//! Stream-shaped block download contracts.
+//! Correlated header-range values and stream-shaped body download contracts.
 //!
 //! ## Boundary
 //!
 //! This module belongs to `neo-network`. It owns downloader-facing stream
-//! contracts, peer bias, concurrency, range assignment, and retry policy. It
-//! does not validate blocks, execute transactions, or persist state.
+//! contracts, peer bias, concurrency, body-range assignment, and retry policy.
+//! Header responses are transport-correlated here but protocol validation and
+//! durable staging remain in the upper composition/blockchain layers. This
+//! module does not execute transactions or persist state.
 //!
 //! ## Contents
 //!
-//! - `batch`: contiguous downloaded block batches passed into runtime sync.
+//! - `batch`: contiguous downloaded block/header batches passed into runtime sync.
 //! - `channel`: channel-backed downloader adapter for tests and composition
 //!   roots.
 //! - `config`: bounded request concurrency, batch size, retry, and peer-bias
@@ -18,7 +20,8 @@
 //! - `coordinator`: transport-agnostic scheduler/buffer/fetcher composition.
 //! - `order`: ordered response buffering for multi-peer downloads.
 //! - `range`: cross-peer range assignment and retry scheduling.
-//! - `request`: `GetBlockByIndex` request values and protocol limits.
+//! - `request`: `GetHeaders`/`GetBlockByIndex` request values and protocol
+//!   limits.
 //! - `stream`: stream trait consumed by sync/import drivers.
 
 mod batch;
@@ -30,13 +33,13 @@ mod range;
 mod request;
 mod stream;
 
-pub use batch::BlockDownloadBatch;
+pub use batch::{BlockDownloadBatch, HeaderDownloadBatch};
 pub use channel::ChannelBlockDownloader;
 pub use config::BlockDownloadConfig;
 pub use coordinator::{BlockDownloadCoordinator, BlockRangeFetcher};
 pub use order::OrderedBlockBatchBuffer;
 pub use range::{BlockDownloadPeer, BlockRangeAssignment, CrossPeerBlockRangeScheduler};
-pub use request::BlockRequest;
+pub use request::{BlockRequest, HeaderRequest};
 pub use stream::BlockDownloader;
 
 #[cfg(test)]

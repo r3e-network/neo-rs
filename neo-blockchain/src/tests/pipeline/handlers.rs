@@ -880,7 +880,7 @@ fn dispatch_command_variants_is_exhaustive() {
             BlockchainCommand::ImportBlock { .. } => unreachable!(),
             BlockchainCommand::InventoryExtensible { .. } => unreachable!(),
             BlockchainCommand::PreverifyCompleted(_) => unreachable!(),
-            BlockchainCommand::Headers(_) => unreachable!(),
+            BlockchainCommand::ValidateHeaders { .. } => unreachable!(),
             BlockchainCommand::Idle => unreachable!(),
             BlockchainCommand::DrainUnverified => unreachable!(),
             BlockchainCommand::RelayResult(_) => unreachable!(),
@@ -925,6 +925,11 @@ fn dispatch_command_variants_is_exhaustive() {
         height: 0,
         reply: bhx2,
     };
+    let (vtx, _vrx) = oneshot::channel();
+    let _validate_headers = BlockchainCommand::ValidateHeaders {
+        headers: vec![Header::new()],
+        reply: vtx,
+    };
 
     // Confirm each of the constructed variants has a unique
     // discriminant — a regression test against accidental
@@ -937,6 +942,7 @@ fn dispatch_command_variants_is_exhaustive() {
         &_get_height,
         &_get_block,
         &_get_block_h,
+        &_validate_headers,
     ] {
         assert!(seen.insert(mem::discriminant(cmd)));
     }

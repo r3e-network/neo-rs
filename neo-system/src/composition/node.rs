@@ -5,7 +5,7 @@
 //!
 //! - the typed blockchain handle from `neo-blockchain`,
 //! - the typed network handle from `neo-network`,
-//! - the typed sync import pipeline handle used by downloader composition,
+//! - the typed staged-sync pipeline used by downloader composition,
 //! - a [`WalletProvider`] for the optional node wallet,
 //! - the storage backend, mempool, and header cache,
 //! - the native contract provider owned for NeoVM host calls,
@@ -31,7 +31,8 @@ use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
 use neo_payloads::{Transaction, VerifyResult};
 use neo_runtime::{
-    ConfigProvider, SharedStoreSyncStageCheckpointStore, StoreProvider, TxAdmission,
+    ConfigProvider, SharedStoreSyncStageCheckpointStore, SharedStoreVerifiedHeaderStore,
+    StoreProvider, TxAdmission,
 };
 use neo_storage::DataCache;
 use neo_storage::persistence::providers::MemoryStore;
@@ -39,7 +40,7 @@ use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_cache::StoreCache;
 
 use super::tx_admission_provider::{NativeTxAdmissionProvider, TxAdmissionNativeProvider};
-use crate::sync_import_pipeline::SyncImportPipeline;
+use crate::staged_sync_pipeline::StagedSyncPipeline;
 use crate::wallet_provider::WalletProvider;
 use neo_error::{CoreError, CoreResult};
 
@@ -74,15 +75,17 @@ where
     /// this to broadcast blocks / transactions.
     pub(super) network: NetworkHandle,
 
-    /// Shared sync import pipeline entry point.
+    /// Shared `Headers -> Bodies -> Import` pipeline entry point.
     ///
-    /// The handle owns the bounded preverification queue and durable
-    /// import-stage checkpoint provider over the same blockchain/storage
-    /// handles as the rest of the node. Live inventory still uses the
-    /// inventory-aware blockchain handle directly until downloader
-    /// integration is widened.
-    pub(super) sync_import_pipeline:
-        Arc<SyncImportPipeline<SharedStoreSyncStageCheckpointStore<S>>>,
+    /// The handle owns durable verified-header staging, the body/header gate,
+    /// bounded preverification, and stage checkpoints over the same
+    /// blockchain/cache/storage graph as the rest of the node.
+    pub(super) staged_sync_pipeline: Arc<
+        StagedSyncPipeline<
+            SharedStoreSyncStageCheckpointStore<S>,
+            SharedStoreVerifiedHeaderStore<S>,
+        >,
+    >,
 
     /// Shared memory pool. The same instance the blockchain service /
     /// transaction router admit into; RPC handlers read it for
@@ -117,7 +120,7 @@ where
             .field("wallets", &self.wallets)
             .field("blockchain", &"BlockchainHandle")
             .field("network", &"NetworkHandle")
-            .field("sync_import_pipeline", &self.sync_import_pipeline)
+            .field("staged_sync_pipeline", &self.staged_sync_pipeline)
             .field("mempool", &self.mempool.total_count())
             .field("header_cache", &self.header_cache.count())
             .field(
@@ -160,11 +163,16 @@ where
         self.network.clone()
     }
 
-    /// Returns the composed sync import pipeline handle.
-    pub fn sync_import_pipeline(
+    /// Returns the composed `Headers -> Bodies -> Import` pipeline handle.
+    pub fn staged_sync_pipeline(
         &self,
-    ) -> Arc<SyncImportPipeline<SharedStoreSyncStageCheckpointStore<S>>> {
-        Arc::clone(&self.sync_import_pipeline)
+    ) -> Arc<
+        StagedSyncPipeline<
+            SharedStoreSyncStageCheckpointStore<S>,
+            SharedStoreVerifiedHeaderStore<S>,
+        >,
+    > {
+        Arc::clone(&self.staged_sync_pipeline)
     }
 
     /// Returns the storage backend.

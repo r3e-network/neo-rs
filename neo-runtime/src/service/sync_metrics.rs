@@ -25,12 +25,74 @@ pub fn peer_live_tip() -> u64 {
     PEER_LIVE_TIP.load(Ordering::Relaxed)
 }
 
+/// Record headers received from correlated P2P range responses.
+pub fn record_headers_downloaded(count: u64) {
+    HEADERS_DOWNLOADED.fetch_add(count, Ordering::Relaxed);
+}
+
+/// Record a durably verified header prefix and its checkpoint height.
+pub fn record_headers_verified(count: u64, checkpoint_height: u64) {
+    HEADERS_VERIFIED.fetch_add(count, Ordering::Relaxed);
+    HEADERS_CHECKPOINT_HEIGHT.store(checkpoint_height, Ordering::Relaxed);
+}
+
+/// Record a failed correlated header request or rejected header response.
+pub fn record_header_fetch_failure() {
+    HEADER_FETCH_FAILURES.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Record the highest canonical height completed by the bodies stage.
+pub fn record_bodies_checkpoint(checkpoint_height: u64) {
+    BODIES_CHECKPOINT_HEIGHT.store(checkpoint_height, Ordering::Relaxed);
+}
+
+/// Record a downloaded body whose hash disagreed with its verified header.
+pub fn record_body_header_mismatch() {
+    BODY_HEADER_MISMATCHES.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Total headers received by the staged P2P downloader.
+pub fn headers_downloaded() -> u64 {
+    HEADERS_DOWNLOADED.load(Ordering::Relaxed)
+}
+
+/// Total headers durably accepted by the headers stage.
+pub fn headers_verified() -> u64 {
+    HEADERS_VERIFIED.load(Ordering::Relaxed)
+}
+
+/// Durable headers-stage checkpoint height.
+pub fn headers_checkpoint_height() -> u64 {
+    HEADERS_CHECKPOINT_HEIGHT.load(Ordering::Relaxed)
+}
+
+/// Total failed or rejected header fetches.
+pub fn header_fetch_failures() -> u64 {
+    HEADER_FETCH_FAILURES.load(Ordering::Relaxed)
+}
+
+/// Durable bodies-stage checkpoint height.
+pub fn bodies_checkpoint_height() -> u64 {
+    BODIES_CHECKPOINT_HEIGHT.load(Ordering::Relaxed)
+}
+
+/// Total downloaded blocks rejected for disagreeing with verified headers.
+pub fn body_header_mismatches() -> u64 {
+    BODY_HEADER_MISMATCHES.load(Ordering::Relaxed)
+}
+
 static BLOCKS_PERSISTED: AtomicU64 = AtomicU64::new(0);
 static HEIGHT: AtomicU64 = AtomicU64::new(0);
 static AVG_TOTAL_US: AtomicU64 = AtomicU64::new(0);
 static AVG_VERIFY_US: AtomicU64 = AtomicU64::new(0);
 static AVG_PERSIST_US: AtomicU64 = AtomicU64::new(0);
 static AVG_COMMIT_US: AtomicU64 = AtomicU64::new(0);
+static HEADERS_DOWNLOADED: AtomicU64 = AtomicU64::new(0);
+static HEADERS_VERIFIED: AtomicU64 = AtomicU64::new(0);
+static HEADERS_CHECKPOINT_HEIGHT: AtomicU64 = AtomicU64::new(0);
+static HEADER_FETCH_FAILURES: AtomicU64 = AtomicU64::new(0);
+static BODIES_CHECKPOINT_HEIGHT: AtomicU64 = AtomicU64::new(0);
+static BODY_HEADER_MISMATCHES: AtomicU64 = AtomicU64::new(0);
 static NATIVE_PERSIST_BLOCKS: AtomicU64 = AtomicU64::new(0);
 static NATIVE_PERSIST_HEIGHT: AtomicU64 = AtomicU64::new(0);
 static NATIVE_PERSIST_AVG_TOTAL_US: AtomicU64 = AtomicU64::new(0);

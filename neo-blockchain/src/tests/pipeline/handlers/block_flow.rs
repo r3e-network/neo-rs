@@ -1013,7 +1013,15 @@ async fn future_block_with_cached_header_hash_mismatch_is_rejected_not_parked() 
     header1.set_index(1);
     let mut header2 = Header::new();
     header2.set_index(2);
-    service.handle_headers(vec![header1, header2.clone()]);
+    let outcome = service.handle_headers(vec![header1, header2.clone()]);
+    assert_eq!(
+        outcome.accepted, 2,
+        "both headers are accepted into the cache"
+    );
+    assert_eq!(
+        outcome.frontier.as_ref().map(neo_payloads::Header::index),
+        Some(2)
+    );
     assert_eq!(service.header_cache.count(), 2, "headers cached first");
 
     let mut competing = header2;
@@ -2577,7 +2585,15 @@ async fn peer_block_must_match_cached_header_hash() {
     cached.set_primary_index(0);
     cached.set_next_consensus(*genesis.header.next_consensus());
     cached.witness = sign_header(&cached);
-    service.handle_headers(vec![cached.clone()]);
+    let outcome = service.handle_headers(vec![cached.clone()]);
+    assert_eq!(
+        outcome.accepted, 1,
+        "cached header first enters the validated prefix"
+    );
+    assert_eq!(
+        outcome.frontier.as_ref().map(neo_payloads::Header::hash),
+        Some(cached.hash())
+    );
     assert_eq!(service.header_cache.count(), 1, "header cached first");
 
     let mut competing = cached;

@@ -44,7 +44,8 @@
 //!   shutdown flush helpers.
 //! - `static_files`: Finalized Ledger archive open, watermark recovery, and
 //!   hot-row pruning.
-//! - `sync_downloader`: Coordinator-backed P2P block download startup.
+//! - `sync_downloader`: Fixed-target `Headers -> Bodies -> Import` P2P sync
+//!   startup.
 //! - `sync_metrics`: Sync-speed counters, summaries, and operator-facing
 //!   throughput status.
 //! - `tasks`: Task supervision, shutdown wiring, and background-service

@@ -102,6 +102,8 @@ SPLIT_ENTRYPOINT_PATHS = (
     "neo-network/tests/handshake/limits.rs",
     "neo-network/tests/handshake/rejections.rs",
     "neo-network/tests/handshake/sync_runtime.rs",
+    "neo-network/tests/handshake/sync_runtime/lifecycle.rs",
+    "neo-network/tests/handshake/sync_runtime/range_fetch.rs",
     "neo-network/src/remote_node.rs",
     "neo-network/src/remote_node/session.rs",
     "neo-network/src/remote_node/session/messages.rs",

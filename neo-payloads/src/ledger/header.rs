@@ -340,6 +340,26 @@ impl neo_primitives::SerializablePayload for Header {
 // ============================================================================
 
 impl Header {
+    /// Serializes the full header using the canonical Neo wire format.
+    pub fn try_to_bytes(&self) -> IoResult<Vec<u8>> {
+        let mut writer = BinaryWriter::with_capacity(self.size());
+        <Self as Serializable>::serialize(self, &mut writer)?;
+        Ok(writer.into_bytes())
+    }
+
+    /// Deserializes a full header from the canonical Neo wire format.
+    pub fn from_bytes(bytes: &[u8]) -> IoResult<Self> {
+        let mut reader = MemoryReader::new(bytes);
+        let header = <Self as Serializable>::deserialize(&mut reader)?;
+        if reader.remaining() != 0 {
+            return Err(neo_io::IoError::invalid_data(format!(
+                "header contains {} trailing bytes",
+                reader.remaining()
+            )));
+        }
+        Ok(header)
+    }
+
     /// Returns the unsigned serialization used for hashing.
     pub fn hash_data(&self) -> Vec<u8> {
         match self.try_get_hash_data() {

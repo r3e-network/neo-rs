@@ -7,14 +7,15 @@ use futures::{SinkExt, StreamExt};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 use super::{
     BlockSource, InboundInventory, InventoryItem, PeerFramed, RemoteNodeCommand, RemoteNodeState,
+    validate_range_index_request_count,
 };
 use crate::MessageCommand;
 use crate::connection_timeouts::ConnectionTimeouts;
-use crate::download::{BlockDownloadBatch, BlockRequest};
+use crate::download::{BlockDownloadBatch, BlockRequest, HeaderDownloadBatch, HeaderRequest};
 use crate::error::NetworkError;
 use crate::event::NetworkEvent;
 use crate::local_identity::LocalIdentity;
@@ -25,6 +26,7 @@ use neo_io::{MemoryReader, Serializable};
 use neo_payloads::p2p_payloads::{
     GetBlockByIndexPayload, NodeCapability, PingPayload, VersionPayload,
 };
+use neo_payloads::{Block, Header};
 
 #[path = "session/messages.rs"]
 mod messages;
@@ -104,16 +106,57 @@ pub(super) struct PeerSession<B: BlockSource> {
     pub(super) inbound_tx: Option<mpsc::Sender<InboundInventory>>,
     /// Optional read-only ledger view for serving block requests.
     pub(super) block_source: Option<Arc<B>>,
-    /// Explicit block range fetch currently awaiting `block` responses.
-    pub(super) pending_block_fetch: Option<PendingBlockFetch>,
+    /// Explicit block/header range fetch currently awaiting correlated data.
+    pub(super) pending_range_fetch: Option<PendingRangeFetch>,
+}
+
+pub(super) enum PendingRangeFetch {
+    Blocks(PendingBlockFetch),
+    Headers(PendingHeaderFetch),
 }
 
 pub(super) struct PendingBlockFetch {
     request: BlockRequest,
     next_index: u32,
-    blocks: Vec<neo_payloads::Block>,
+    blocks: Vec<Block>,
     deadline: Instant,
     reply: oneshot::Sender<crate::NetworkResult<BlockDownloadBatch>>,
+}
+
+pub(super) struct PendingHeaderFetch {
+    request: HeaderRequest,
+    deadline: Instant,
+    reply: oneshot::Sender<crate::NetworkResult<HeaderDownloadBatch>>,
+}
+
+impl PendingRangeFetch {
+    fn deadline(&self) -> Instant {
+        match self {
+            Self::Blocks(fetch) => fetch.deadline,
+            Self::Headers(fetch) => fetch.deadline,
+        }
+    }
+
+    fn start(&self) -> u32 {
+        match self {
+            Self::Blocks(fetch) => fetch.request.start,
+            Self::Headers(fetch) => fetch.request.start,
+        }
+    }
+
+    fn count(&self) -> u32 {
+        match self {
+            Self::Blocks(fetch) => fetch.request.count,
+            Self::Headers(fetch) => fetch.request.count,
+        }
+    }
+
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Blocks(_) => "block",
+            Self::Headers(_) => "header",
+        }
+    }
 }
 
 impl<B> PeerSession<B>
@@ -149,9 +192,9 @@ where
             tokio::time::interval_at(Instant::now() + ping_interval, ping_interval);
         loop {
             let fetch_deadline = self
-                .pending_block_fetch
+                .pending_range_fetch
                 .as_ref()
-                .map(|fetch| fetch.deadline);
+                .map(PendingRangeFetch::deadline);
             tokio::select! {
                 _ = shutdown.cancelled() => {
                     return CloseReason::LocalShutdown;
@@ -165,7 +208,7 @@ where
                         None => std::future::pending::<()>().await,
                     }
                 } => {
-                    self.expire_pending_block_fetch(timeouts.block_fetch);
+                    self.expire_pending_range_fetch(timeouts.block_fetch);
                 }
                 // The connection deadline is refreshed by every decoded frame;
                 // the independently captured fetch deadline remains absolute.
@@ -205,21 +248,53 @@ where
                             }));
                             continue;
                         }
-                        if self.pending_block_fetch.is_some() {
+                        if self.pending_range_fetch.is_some() {
                             let _ = reply.send(Err(NetworkError::Protocol(
-                                "block range fetch already in flight for this peer".to_string(),
+                                "range fetch already in flight for this peer".to_string(),
                             )));
                             continue;
                         }
                         match self.send_get_block_by_index(framed, request).await {
                             Ok(()) => {
-                                self.pending_block_fetch = Some(PendingBlockFetch {
+                                self.pending_range_fetch = Some(PendingRangeFetch::Blocks(PendingBlockFetch {
                                     request,
                                     next_index: request.start,
                                     blocks: Vec::with_capacity(request.count as usize),
                                     deadline: Instant::now() + timeouts.block_fetch,
                                     reply,
-                                });
+                                }));
+                            }
+                            Err(reason) => {
+                                let _ = reply.send(Err(self.network_error_for_close_reason(&reason)));
+                                return reason;
+                            }
+                        }
+                    }
+                    Some(RemoteNodeCommand::FetchHeadersByIndex { request, reply }) => {
+                        if self.state != RemoteNodeState::Ready {
+                            let _ = reply.send(Err(NetworkError::RemoteUnavailable {
+                                peer_id: self.peer_id.to_string(),
+                                detail: format!(
+                                    "peer handshake is not complete (state {:?})",
+                                    self.state
+                                ),
+                            }));
+                            continue;
+                        }
+                        if self.pending_range_fetch.is_some() {
+                            let _ = reply.send(Err(NetworkError::Protocol(
+                                "range fetch already in flight for this peer".to_string(),
+                            )));
+                            continue;
+                        }
+                        match self.send_get_headers(framed, request).await {
+                            Ok(()) => {
+                                self.pending_range_fetch =
+                                    Some(PendingRangeFetch::Headers(PendingHeaderFetch {
+                                        request,
+                                        deadline: Instant::now() + timeouts.block_fetch,
+                                        reply,
+                                    }));
                             }
                             Err(reason) => {
                                 let _ = reply.send(Err(self.network_error_for_close_reason(&reason)));
@@ -307,24 +382,17 @@ where
     }
 
     fn validate_get_block_by_index_request(request: BlockRequest) -> Result<i16, CloseReason> {
-        if request.count == 0 {
-            return Err(CloseReason::ProtocolViolation(
-                "GetBlockByIndex request count must be greater than zero".to_string(),
-            ));
-        }
-        if request.count > BlockRequest::MAX_COUNT {
-            return Err(CloseReason::ProtocolViolation(format!(
-                "GetBlockByIndex request count {} exceeds protocol cap {}",
-                request.count,
-                BlockRequest::MAX_COUNT
-            )));
-        }
-        i16::try_from(request.count).map_err(|_| {
-            CloseReason::ProtocolViolation(format!(
-                "GetBlockByIndex request count {} exceeds i16 payload range",
-                request.count
-            ))
-        })
+        validate_range_index_request_count(
+            request.count,
+            BlockRequest::MAX_COUNT,
+            "GetBlockByIndex",
+        )
+        .map_err(CloseReason::ProtocolViolation)
+    }
+
+    fn validate_get_headers_request(request: HeaderRequest) -> Result<i16, CloseReason> {
+        validate_range_index_request_count(request.count, HeaderRequest::MAX_COUNT, "GetHeaders")
+            .map_err(CloseReason::ProtocolViolation)
     }
 
     async fn send_get_block_by_index(
@@ -346,6 +414,25 @@ where
             .map_err(|err| CloseReason::Transport(format!("send getblockbyindex: {err}")))
     }
 
+    async fn send_get_headers(
+        &mut self,
+        framed: &mut PeerFramed,
+        request: HeaderRequest,
+    ) -> Result<(), CloseReason> {
+        let count = Self::validate_get_headers_request(request)?;
+        let payload = GetBlockByIndexPayload::create(request.start, count);
+        let message = Message::create(
+            MessageCommand::GetHeaders,
+            Some(&payload),
+            self.peer_allows_compression,
+        )
+        .map_err(|err| CloseReason::Transport(format!("encode getheaders: {err}")))?;
+        framed
+            .send(message)
+            .await
+            .map_err(|err| CloseReason::Transport(format!("send getheaders: {err}")))
+    }
+
     fn network_error_for_close_reason(&self, reason: &CloseReason) -> NetworkError {
         match reason {
             CloseReason::LocalShutdown | CloseReason::ShutdownRequested => {
@@ -361,44 +448,64 @@ where
         }
     }
 
-    fn expire_pending_block_fetch(&mut self, timeout: Duration) {
-        let Some(fetch) = self.pending_block_fetch.take() else {
+    fn expire_pending_range_fetch(&mut self, timeout: Duration) {
+        let Some(fetch) = self.pending_range_fetch.take() else {
             return;
         };
-        let range_end = fetch.request.start.saturating_add(fetch.request.count);
+        let range_end = fetch.start().saturating_add(fetch.count());
         let detail = format!(
-            "block range [{}, {}) timed out after {timeout:?}",
-            fetch.request.start, range_end
+            "{} range [{}, {}) timed out after {timeout:?}",
+            fetch.kind(),
+            fetch.start(),
+            range_end
         );
         warn!(
             peer = %self.peer_id,
-            start = fetch.request.start,
-            count = fetch.request.count,
+            start = fetch.start(),
+            count = fetch.count(),
             ?timeout,
-            "block range fetch timed out"
+            kind = fetch.kind(),
+            "range fetch timed out"
         );
-        let _ = fetch.reply.send(Err(NetworkError::RemoteUnavailable {
-            peer_id: self.peer_id.to_string(),
-            detail,
-        }));
+        match fetch {
+            PendingRangeFetch::Blocks(fetch) => {
+                let _ = fetch.reply.send(Err(NetworkError::RemoteUnavailable {
+                    peer_id: self.peer_id.to_string(),
+                    detail: detail.clone(),
+                }));
+            }
+            PendingRangeFetch::Headers(fetch) => {
+                let _ = fetch.reply.send(Err(NetworkError::RemoteUnavailable {
+                    peer_id: self.peer_id.to_string(),
+                    detail,
+                }));
+            }
+        }
     }
 
-    pub(super) fn accept_pending_block_fetch(
-        &mut self,
-        block: neo_payloads::Block,
-    ) -> Option<neo_payloads::Block> {
-        let Some(fetch) = self.pending_block_fetch.as_mut() else {
+    pub(super) fn accept_pending_block_fetch(&mut self, block: Block) -> Option<Block> {
+        let Some(PendingRangeFetch::Blocks(fetch)) = self.pending_range_fetch.as_mut() else {
             return Some(block);
         };
         if block.index() != fetch.next_index {
+            if block.index() >= fetch.request.start && block.index() <= fetch.request.end() {
+                let expected = fetch.next_index;
+                let actual = block.index();
+                if let Some(PendingRangeFetch::Blocks(fetch)) = self.pending_range_fetch.take() {
+                    let _ = fetch.reply.send(Err(NetworkError::Protocol(format!(
+                        "block range response expected block {expected}, got {actual}"
+                    ))));
+                }
+                return None;
+            }
             return Some(block);
         }
 
         fetch.next_index = fetch.next_index.saturating_add(1);
         fetch.blocks.push(block);
         if fetch.blocks.len() == fetch.request.count as usize {
-            match self.pending_block_fetch.take() {
-                Some(fetch) => {
+            match self.pending_range_fetch.take() {
+                Some(PendingRangeFetch::Blocks(fetch)) => {
                     let batch = BlockDownloadBatch::new(
                         Some(self.peer_id),
                         fetch.request.start,
@@ -406,7 +513,7 @@ where
                     );
                     let _ = fetch.reply.send(Ok(batch));
                 }
-                None => {
+                Some(PendingRangeFetch::Headers(_)) | None => {
                     warn!(
                         peer = %self.peer_id,
                         "completed block fetch without pending fetch state"
@@ -415,6 +522,94 @@ where
             }
         }
         None
+    }
+
+    pub(super) fn reject_pending_block_fetch(&mut self, detail: String) -> bool {
+        let Some(pending) = self.pending_range_fetch.take() else {
+            return false;
+        };
+        match pending {
+            PendingRangeFetch::Blocks(fetch) => {
+                let _ = fetch.reply.send(Err(NetworkError::Protocol(detail)));
+                true
+            }
+            headers @ PendingRangeFetch::Headers(_) => {
+                self.pending_range_fetch = Some(headers);
+                false
+            }
+        }
+    }
+
+    pub(super) fn reject_pending_header_fetch(&mut self, detail: String) -> bool {
+        let Some(pending) = self.pending_range_fetch.take() else {
+            return false;
+        };
+        match pending {
+            PendingRangeFetch::Headers(fetch) => {
+                let _ = fetch.reply.send(Err(NetworkError::Protocol(detail)));
+                true
+            }
+            blocks @ PendingRangeFetch::Blocks(_) => {
+                self.pending_range_fetch = Some(blocks);
+                false
+            }
+        }
+    }
+
+    pub(super) fn accept_pending_header_fetch(&mut self, headers: Vec<Header>) {
+        let Some(PendingRangeFetch::Headers(_)) = self.pending_range_fetch.as_ref() else {
+            trace!(
+                target: "neo_network",
+                peer_id = %self.peer_id,
+                "dropping unsolicited headers (no header fetch is pending)"
+            );
+            return;
+        };
+        let Some(PendingRangeFetch::Headers(fetch)) = self.pending_range_fetch.take() else {
+            warn!(
+                peer = %self.peer_id,
+                "header fetch state changed while handling correlated headers"
+            );
+            return;
+        };
+
+        if let Err(detail) = Self::validate_header_response(fetch.request, &headers) {
+            let _ = fetch.reply.send(Err(NetworkError::Protocol(detail)));
+            return;
+        }
+
+        let batch = HeaderDownloadBatch::new(Some(self.peer_id), fetch.request.start, headers);
+        let _ = fetch.reply.send(Ok(batch));
+    }
+
+    fn validate_header_response(request: HeaderRequest, headers: &[Header]) -> Result<(), String> {
+        if headers.is_empty() {
+            return Err("headers response must not be empty".to_string());
+        }
+        if headers.len() > request.count as usize {
+            return Err(format!(
+                "headers response length {} exceeds requested count {}",
+                headers.len(),
+                request.count
+            ));
+        }
+        if headers[0].index() != request.start {
+            return Err(format!(
+                "headers response start index {} does not match requested start {}",
+                headers[0].index(),
+                request.start
+            ));
+        }
+        for pair in headers.windows(2) {
+            let expected = pair[0].index().saturating_add(1);
+            if pair[1].index() != expected {
+                return Err(format!(
+                    "headers response must be strictly contiguous: expected index {expected}, got {}",
+                    pair[1].index()
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// C# `RemoteNode.ProtocolHandler.OnVersionMessageReceived` +

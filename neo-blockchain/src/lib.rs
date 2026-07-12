@@ -70,8 +70,8 @@ pub mod blockchain {
 }
 
 pub use command::{
-    AddTransactionReply, BlockReply, BlockchainCommand, HeightReply, ImportBlocksReply,
-    ImportBlocksStats,
+    AddTransactionReply, BlockReply, BlockchainCommand, HeaderValidationOutcome, HeightReply,
+    ImportBlocksReply, ImportBlocksStats,
 };
 pub use fill_completed::FillCompleted;
 pub use fill_memory_pool::FillMemoryPool;

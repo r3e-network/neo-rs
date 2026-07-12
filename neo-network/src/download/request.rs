@@ -25,3 +25,29 @@ impl BlockRequest {
         self.start.saturating_add(self.count.saturating_sub(1))
     }
 }
+
+/// One `GetHeaders` request planned for a peer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HeaderRequest {
+    /// First header index requested.
+    pub start: u32,
+    /// Number of headers requested.
+    pub count: u32,
+}
+
+impl HeaderRequest {
+    /// Maximum headers accepted by one Neo `GetHeaders` request.
+    pub const MAX_COUNT: u32 = neo_payloads::headers_payload::MAX_HEADERS_COUNT as u32;
+
+    /// Construct a header request.
+    #[must_use]
+    pub const fn new(start: u32, count: u32) -> Self {
+        Self { start, count }
+    }
+
+    /// Last header index covered by this request.
+    #[must_use]
+    pub const fn end(self) -> u32 {
+        self.start.saturating_add(self.count.saturating_sub(1))
+    }
+}

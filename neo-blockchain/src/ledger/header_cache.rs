@@ -4,6 +4,7 @@
 //! on the service state rather than in a process-wide singleton.
 
 use neo_payloads::Header;
+use neo_primitives::UInt256;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::collections::VecDeque;
 
@@ -52,7 +53,14 @@ impl HeaderCache {
 
     /// Look up a header by its index.
     pub fn get(&self, index: u32) -> Option<Header> {
-        self.read().iter().find(|h| h.index() == index).cloned()
+        let guard = self.read();
+        Self::find_by_index(&guard, index).cloned()
+    }
+
+    /// Look up the unsigned-header hash at an index without cloning the header.
+    pub fn hash_at(&self, index: u32) -> Option<UInt256> {
+        let guard = self.read();
+        Self::find_by_index(&guard, index).map(|header| header.hash())
     }
 
     /// Append a header to the cache after the current tip. Returns
@@ -80,6 +88,17 @@ impl HeaderCache {
         before - guard.len()
     }
 
+    /// Removes every ahead-of-tip header and returns the number removed.
+    ///
+    /// Durable header-stage recovery uses this only when canonical state has
+    /// invalidated the whole process-local sidecar view.
+    pub fn clear(&self) -> usize {
+        let mut guard = self.write();
+        let removed = guard.len();
+        guard.clear();
+        removed
+    }
+
     #[inline]
     fn read(&self) -> RwLockReadGuard<'_, VecDeque<Header>> {
         self.headers.read()
@@ -88,6 +107,20 @@ impl HeaderCache {
     #[inline]
     fn write(&self) -> RwLockWriteGuard<'_, VecDeque<Header>> {
         self.headers.write()
+    }
+
+    fn find_by_index(headers: &VecDeque<Header>, index: u32) -> Option<&Header> {
+        if let Some(header) = Self::get_by_front_offset(headers, index) {
+            return Some(header);
+        }
+        headers.iter().find(|header| header.index() == index)
+    }
+
+    fn get_by_front_offset(headers: &VecDeque<Header>, index: u32) -> Option<&Header> {
+        let front_index = headers.front()?.index();
+        let offset = index.checked_sub(front_index)? as usize;
+        let header = headers.get(offset)?;
+        (header.index() == index).then_some(header)
     }
 }
 

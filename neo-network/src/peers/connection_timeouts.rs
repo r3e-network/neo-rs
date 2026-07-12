@@ -9,9 +9,9 @@
 //!   it fires.
 //! - `connectionTimeoutLimit` (60 s) — re-armed after every received
 //!   payload.
-//! - block fetch (15 s) — Rust-specific absolute deadline for one
-//!   coordinator-assigned `GetBlockByIndex` range. Unrelated peer traffic
-//!   does not extend it.
+//! - range fetch (15 s) — Rust-specific absolute deadline for one
+//!   coordinator-assigned `GetBlockByIndex` or `GetHeaders` range. Unrelated
+//!   peer traffic does not extend it.
 //!
 //! C# resets the timer on every raw TCP segment; the Rust read loop
 //! resets it on every *decoded frame*. The Rust behaviour is the
@@ -31,8 +31,9 @@ pub struct ConnectionTimeouts {
     /// Idle time allowed between subsequent frames
     /// (C# `connectionTimeoutLimit` = 60 s).
     pub idle: Duration,
-    /// Absolute time allowed to complete one correlated block-range fetch.
-    /// Unlike [`Self::idle`], this deadline is not reset by inbound frames.
+    /// Absolute time allowed to complete one correlated block/header-range
+    /// fetch. Unlike [`Self::idle`], this deadline is not reset by inbound
+    /// frames.
     pub block_fetch: Duration,
 }
 
@@ -41,7 +42,7 @@ impl ConnectionTimeouts {
     pub const DEFAULT_INITIAL: Duration = Duration::from_secs(10);
     /// C# `Connection.connectionTimeoutLimit`.
     pub const DEFAULT_IDLE: Duration = Duration::from_secs(60);
-    /// Rust coordinator policy for one peer-level block-range assignment.
+    /// Rust coordinator policy for one peer-level correlated range assignment.
     pub const DEFAULT_BLOCK_FETCH: Duration = Duration::from_secs(15);
 }
 

@@ -81,6 +81,15 @@ async fn recv_getblockbyindex(fake: &mut FakeFramed) -> GetBlockByIndexPayload {
     }
 }
 
+async fn recv_getheaders(fake: &mut FakeFramed) -> GetBlockByIndexPayload {
+    loop {
+        let frame = recv_frame(fake).await;
+        if frame.command == MessageCommand::GetHeaders {
+            return decode_payload(&frame);
+        }
+    }
+}
+
 fn empty_child_block(parent: &neo_payloads::Block, index: u32) -> neo_payloads::Block {
     let mut header = neo_payloads::Header::new();
     header.set_index(index);
@@ -90,6 +99,31 @@ fn empty_child_block(parent: &neo_payloads::Block, index: u32) -> neo_payloads::
     header.witness =
         neo_payloads::Witness::new_with_scripts(Vec::new(), vec![neo_vm_rs::OpCode::PUSH1.byte()]);
     neo_payloads::Block::from_parts(header, Vec::new())
+}
+
+fn signed_empty_child_block(
+    parent: &neo_payloads::Block,
+    index: u32,
+    network: u32,
+    private_key: &[u8; 32],
+    public_key: &neo_crypto::ECPoint,
+) -> neo_payloads::Block {
+    let mut block = empty_child_block(parent, index);
+    let mut sign_data = Vec::with_capacity(36);
+    sign_data.extend_from_slice(&network.to_le_bytes());
+    sign_data.extend_from_slice(&block.hash().to_bytes());
+    let signature =
+        neo_crypto::Secp256r1Crypto::sign(&sign_data, private_key).expect("sign header");
+    let verification =
+        neo_vm::script_builder::redeem_script::RedeemScript::multi_sig_redeem_script_from_points(
+            1,
+            std::slice::from_ref(public_key),
+        )
+        .expect("single-validator redeem script");
+    let mut invocation = vec![0x0C, 64];
+    invocation.extend_from_slice(&signature);
+    block.header.witness = neo_payloads::Witness::new_with_scripts(invocation, verification);
+    block
 }
 
 fn seed_store_tip(

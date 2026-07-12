@@ -10,8 +10,8 @@
 //! ## Contents
 //!
 //! - `errors`: Typed errors and result aliases for this crate boundary.
-//! - `service`: Service loops, handles, import queues, lifecycle helpers, and
-//!   command processing.
+//! - `service`: Service loops, handles, import queues, durable staged-sync
+//!   providers, lifecycle helpers, and command processing.
 
 #![doc(html_root_url = "https://docs.rs/neo-runtime/0.10.0")]
 
@@ -30,11 +30,13 @@ pub use node::{ConfigProvider, NeoNodeTypes, NodeTypes, StoreProvider, TxAdmissi
 pub use service::{
     BlockBatchImportOutcome, BlockImport, BlockImportOutcome, BlockImportQueue, BlockOrigin,
     BlockchainEvent, CommitPolicy, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY,
-    ExecutionOutcome, ExecutionPayload, ImportQueue, ImportedTip, InMemorySyncStageCheckpointStore,
+    ExecutionOutcome, ExecutionPayload, HeaderStageWindow, ImportQueue, ImportedTip,
+    InMemorySyncStageCheckpointStore, InMemoryVerifiedHeaderStore, MAX_VERIFIED_HEADER_WINDOW,
     Nep17Metadata, Nep17MetadataReader, NetworkEvent, NetworkService, Service,
-    SharedStoreSyncStageCheckpointStore, StageProgress, StoreSyncStageCheckpointStore,
-    SyncBlockBatch, SyncPipelineDriver, SyncPipelineImportOutcome, SyncStageCheckpoint,
-    SyncStageCheckpointStore, SyncStageKind, TxHash, ValidationResult,
+    SharedStoreSyncStageCheckpointStore, SharedStoreVerifiedHeaderStore, StageProgress,
+    StoreSyncStageCheckpointStore, StoreVerifiedHeaderStore, SyncBlockBatch, SyncPipelineDriver,
+    SyncPipelineImportOutcome, SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind,
+    TxHash, ValidationResult, VerifiedHeaderStore,
 };
 pub use service::{
     block_import, blockchain, nep17, outcome, services, sync_metrics, sync_pipeline,

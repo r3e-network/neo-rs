@@ -39,10 +39,10 @@
 //!    connection down: the peer is removed from the shared
 //!    [`PeerRegistry`] and a `PeerDisconnected` event is published —
 //!    this task is the *only* publisher of that event for its peer.
-//! 5. A coordinator-assigned block range has an independent absolute
-//!    deadline and is accepted only after the session reaches `Ready`.
-//!    Correlated requests never enter the generic handshake queue. Expiry
-//!    fails and clears only that fetch so a healthy connection remains
+//! 5. A coordinator-assigned block or header range has an independent
+//!    absolute deadline and is accepted only after the session reaches
+//!    `Ready`. Correlated requests never enter the generic handshake queue.
+//!    Expiry fails and clears only that fetch so a healthy connection remains
 //!    available for a later assignment.
 
 use std::fmt;
@@ -55,7 +55,7 @@ use tokio_util::codec::Framed;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::download::{BlockDownloadBatch, BlockRequest};
+use crate::download::{BlockDownloadBatch, BlockRequest, HeaderDownloadBatch, HeaderRequest};
 use crate::wire::MessageCodec;
 use neo_payloads::{Block, ExtensiblePayload, Header, Transaction};
 use neo_primitives::UInt256;
@@ -71,6 +71,25 @@ use crate::peer_registry::PeerRegistry;
 mod session;
 
 use session::PeerSession;
+
+fn validate_range_index_request_count(
+    count: u32,
+    protocol_cap: u32,
+    command_name: &str,
+) -> Result<i16, String> {
+    if count == 0 {
+        return Err(format!(
+            "{command_name} request count must be greater than zero"
+        ));
+    }
+    if count > protocol_cap {
+        return Err(format!(
+            "{command_name} request count {count} exceeds protocol cap {protocol_cap}"
+        ));
+    }
+    i16::try_from(count)
+        .map_err(|_| format!("{command_name} request count {count} exceeds i16 payload range"))
+}
 
 /// Inbound inventory decoded from a peer and forwarded to the ledger.
 ///
@@ -223,6 +242,13 @@ pub enum RemoteNodeCommand {
         /// Completion signal carrying the collected block batch.
         reply: oneshot::Sender<NetworkResult<BlockDownloadBatch>>,
     },
+    /// Request and collect a contiguous header range from this peer.
+    FetchHeadersByIndex {
+        /// Planned range to request.
+        request: HeaderRequest,
+        /// Completion signal carrying the collected header batch.
+        reply: oneshot::Sender<NetworkResult<HeaderDownloadBatch>>,
+    },
     /// Send a pre-encoded wire frame (a complete `Message` byte
     /// sequence) to the peer.
     SendRaw(Vec<u8>),
@@ -318,25 +344,44 @@ impl RemoteNodeHandle {
             .map_err(|_| crate::error::NetworkError::LocalShuttingDown)?
     }
 
+    /// Ask this peer for a contiguous header range and wait for the matching
+    /// `headers` reply.
+    ///
+    /// Like [`Self::fetch_blocks_by_index`], this is a single in-flight
+    /// correlated range fetch per peer, accepted only after the handshake
+    /// reaches [`RemoteNodeState::Ready`].
+    pub async fn fetch_headers_by_index(
+        &self,
+        request: HeaderRequest,
+    ) -> NetworkResult<HeaderDownloadBatch> {
+        Self::validate_header_index_request(request)?;
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.cmd_tx
+            .send(RemoteNodeCommand::FetchHeadersByIndex {
+                request,
+                reply: reply_tx,
+            })
+            .await
+            .map_err(|_| crate::error::NetworkError::LocalShuttingDown)?;
+        reply_rx
+            .await
+            .map_err(|_| crate::error::NetworkError::LocalShuttingDown)?
+    }
+
     fn validate_block_index_request(request: BlockRequest) -> NetworkResult<()> {
-        if request.count == 0 {
-            return Err(crate::error::NetworkError::Protocol(
-                "GetBlockByIndex request count must be greater than zero".to_string(),
-            ));
-        }
-        if request.count > BlockRequest::MAX_COUNT {
-            return Err(crate::error::NetworkError::Protocol(format!(
-                "GetBlockByIndex request count {} exceeds protocol cap {}",
-                request.count,
-                BlockRequest::MAX_COUNT
-            )));
-        }
-        i16::try_from(request.count).map(|_| ()).map_err(|_| {
-            crate::error::NetworkError::Protocol(format!(
-                "GetBlockByIndex request count {} exceeds i16 payload range",
-                request.count
-            ))
-        })
+        validate_range_index_request_count(
+            request.count,
+            BlockRequest::MAX_COUNT,
+            "GetBlockByIndex",
+        )
+        .map(|_| ())
+        .map_err(crate::error::NetworkError::Protocol)
+    }
+
+    fn validate_header_index_request(request: HeaderRequest) -> NetworkResult<()> {
+        validate_range_index_request_count(request.count, HeaderRequest::MAX_COUNT, "GetHeaders")
+            .map(|_| ())
+            .map_err(crate::error::NetworkError::Protocol)
     }
 
     /// Send a pre-encoded wire frame to the peer.
@@ -518,7 +563,7 @@ where
         (service, handle)
     }
 
-    /// Override connection and block-fetch liveness timeouts.
+    /// Override connection and correlated range-fetch liveness timeouts.
     pub fn with_timeouts(mut self, timeouts: ConnectionTimeouts) -> Self {
         self.timeouts = timeouts;
         self
@@ -594,7 +639,7 @@ where
             get_addr_sent: false,
             inbound_tx,
             block_source,
-            pending_block_fetch: None,
+            pending_range_fetch: None,
         };
 
         let close_reason = session

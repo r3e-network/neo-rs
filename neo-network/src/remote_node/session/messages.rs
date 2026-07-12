@@ -98,12 +98,40 @@ where
                 let block = Block::deserialize(&mut reader).map_err(|err| {
                     CloseReason::ProtocolViolation(format!("invalid block payload: {err}"))
                 })?;
+                if reader.remaining() != 0 {
+                    let detail = format!(
+                        "invalid block payload: trailing {} bytes after payload",
+                        reader.remaining()
+                    );
+                    if self.reject_pending_block_fetch(detail.clone()) {
+                        return Ok(());
+                    }
+                    return Err(CloseReason::ProtocolViolation(detail));
+                }
                 let Some(block) = self.accept_pending_block_fetch(block) else {
                     return Ok(());
                 };
                 if let Some(tx) = &self.inbound_tx {
                     let _ = tx.send(InboundInventory::Block(Arc::new(block))).await;
                 }
+                Ok(())
+            }
+            MessageCommand::Headers => {
+                let mut reader = MemoryReader::new(&message.payload_raw);
+                let payload = HeadersPayload::deserialize(&mut reader).map_err(|err| {
+                    CloseReason::ProtocolViolation(format!("invalid headers payload: {err}"))
+                })?;
+                if reader.remaining() != 0 {
+                    let detail = format!(
+                        "invalid headers payload: trailing {} bytes after payload",
+                        reader.remaining()
+                    );
+                    if self.reject_pending_header_fetch(detail.clone()) {
+                        return Ok(());
+                    }
+                    return Err(CloseReason::ProtocolViolation(detail));
+                }
+                self.accept_pending_header_fetch(payload.headers);
                 Ok(())
             }
             // C# `OnGetBlockByIndexMessageReceived`: serve the requested

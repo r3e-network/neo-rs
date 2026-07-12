@@ -14,9 +14,9 @@
 //! pass the same provider that block import, RPC, consensus, and mempool
 //! admission use. The optional static Ledger fallback is also captured once
 //! and retained by the final node, so historical reads do not reconstruct
-//! runtime policy locally. The sync import pipeline is built by default from
-//! the same blockchain and storage handles, so staged-sync callers use one
-//! explicit import/checkpoint boundary.
+//! runtime policy locally. The staged-sync pipeline is built by default from
+//! the same blockchain, header cache, and storage handles, so downloader code
+//! cannot bypass durable header verification before canonical import.
 
 use std::sync::Arc;
 use tracing::debug;
@@ -26,13 +26,13 @@ use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
-use neo_runtime::SharedStoreSyncStageCheckpointStore;
+use neo_runtime::{SharedStoreSyncStageCheckpointStore, SharedStoreVerifiedHeaderStore};
 use neo_storage::persistence::providers::MemoryStore;
 use neo_storage::persistence::store::Store;
 
 use crate::error::NodeResult;
 use crate::node::Node;
-use crate::sync_import_pipeline::SyncImportPipeline;
+use crate::staged_sync_pipeline::StagedSyncPipeline;
 use crate::wallet_provider::WalletProvider;
 
 /// Fluent builder for [`Node`].
@@ -50,7 +50,14 @@ where
     header_cache: Option<Arc<HeaderCache>>,
     native_contract_provider: Option<Arc<P>>,
     cold_ledger_provider: OptionalStaticLedgerProvider,
-    sync_import_pipeline: Option<Arc<SyncImportPipeline<SharedStoreSyncStageCheckpointStore<S>>>>,
+    staged_sync_pipeline: Option<
+        Arc<
+            StagedSyncPipeline<
+                SharedStoreSyncStageCheckpointStore<S>,
+                SharedStoreVerifiedHeaderStore<S>,
+            >,
+        >,
+    >,
 }
 
 impl<P, S> Default for NodeBuilder<P, S>
@@ -69,7 +76,7 @@ where
             header_cache: None,
             native_contract_provider: None,
             cold_ledger_provider: OptionalStaticLedgerProvider::default(),
-            sync_import_pipeline: None,
+            staged_sync_pipeline: None,
         }
     }
 }
@@ -96,7 +103,7 @@ where
                 "cold_ledger_provider",
                 &self.cold_ledger_provider.is_enabled(),
             )
-            .field("sync_import_pipeline", &self.sync_import_pipeline.is_some())
+            .field("staged_sync_pipeline", &self.staged_sync_pipeline.is_some())
             .finish()
     }
 }
@@ -172,15 +179,20 @@ where
         self
     }
 
-    /// Install a pre-composed sync import pipeline.
+    /// Install a pre-composed staged-sync pipeline.
     ///
     /// When unset, [`Self::build`] creates one over the same blockchain handle
     /// and storage provider installed on the node.
-    pub fn with_sync_import_pipeline(
+    pub fn with_staged_sync_pipeline(
         mut self,
-        pipeline: Arc<SyncImportPipeline<SharedStoreSyncStageCheckpointStore<S>>>,
+        pipeline: Arc<
+            StagedSyncPipeline<
+                SharedStoreSyncStageCheckpointStore<S>,
+                SharedStoreVerifiedHeaderStore<S>,
+            >,
+        >,
     ) -> Self {
-        self.sync_import_pipeline = Some(pipeline);
+        self.staged_sync_pipeline = Some(pipeline);
         self
     }
 
@@ -209,9 +221,11 @@ where
                 Arc::clone(&native_contract_provider),
             ))
         });
-        let sync_import_pipeline = self.sync_import_pipeline.unwrap_or_else(|| {
-            Arc::new(SyncImportPipeline::new(
+        let header_cache = self.header_cache.unwrap_or_default();
+        let staged_sync_pipeline = self.staged_sync_pipeline.unwrap_or_else(|| {
+            Arc::new(StagedSyncPipeline::new(
                 blockchain.clone(),
+                Arc::clone(&header_cache),
                 Arc::clone(&storage),
             ))
         });
@@ -221,9 +235,9 @@ where
             wallets: self.wallets.unwrap_or_default(),
             blockchain,
             network,
-            sync_import_pipeline,
+            staged_sync_pipeline,
             mempool,
-            header_cache: self.header_cache.unwrap_or_default(),
+            header_cache,
             native_contract_provider,
             ledger_provider_factory: neo_blockchain::HotColdLedgerProviderFactory::new(
                 self.cold_ledger_provider,

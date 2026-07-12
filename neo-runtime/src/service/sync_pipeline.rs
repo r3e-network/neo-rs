@@ -1,8 +1,9 @@
-//! Shared staged-sync policy and checkpoint primitives.
+//! Shared staged-sync policy, checkpoint primitives, and verified-header staging.
 //!
 //! This module defines reusable contracts for sync-stage progress, commit
-//! policy, and ordered block-batch import. It intentionally does not download
-//! blocks, execute NeoVM scripts, write storage, or choose a fork.
+//! policy, fixed verified-header sidecar windows, and ordered block-batch
+//! import. It intentionally does not download blocks, execute NeoVM scripts,
+//! write storage, or choose a fork.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -14,8 +15,15 @@ use parking_lot::RwLock;
 use crate::{BlockBatchImportOutcome, BlockOrigin, ImportQueue, ServiceError, ServiceResult};
 
 mod checkpoint_store;
+mod verified_header_store;
 
 pub use checkpoint_store::{SharedStoreSyncStageCheckpointStore, StoreSyncStageCheckpointStore};
+#[cfg(test)]
+pub(crate) use verified_header_store::verified_header_key;
+pub use verified_header_store::{
+    HeaderStageWindow, InMemoryVerifiedHeaderStore, MAX_VERIFIED_HEADER_WINDOW,
+    SharedStoreVerifiedHeaderStore, StoreVerifiedHeaderStore, VerifiedHeaderStore,
+};
 
 /// Stable sync-stage identifiers.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

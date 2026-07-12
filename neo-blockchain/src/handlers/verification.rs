@@ -87,8 +87,7 @@ where
         index: u32,
         hash: neo_primitives::UInt256,
     ) -> CoreResult<()> {
-        if let Some(cached_header) = self.header_cache.get(index) {
-            let cached_hash = cached_header.hash();
+        if let Some(cached_hash) = self.header_cache.hash_at(index) {
             if cached_hash != hash {
                 return Err(CoreError::other(format!(
                     "block {index}: hash does not match cached header"

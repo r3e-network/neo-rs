@@ -77,20 +77,21 @@ fn builder_succeeds_with_required_services_and_native_provider() {
             .is_empty()
     );
 
-    let pipeline = node.sync_import_pipeline();
-    assert!(Arc::ptr_eq(&pipeline, &node.sync_import_pipeline));
-    assert_eq!(pipeline.origin(), BlockOrigin::Sync);
+    let pipeline = node.staged_sync_pipeline();
+    assert!(Arc::ptr_eq(&pipeline, &node.staged_sync_pipeline));
+    let import = pipeline.import();
+    assert_eq!(import.origin(), BlockOrigin::Sync);
     assert!(
-        pipeline.import_queue().max_concurrency() >= 1,
+        import.import_queue().max_concurrency() >= 1,
         "sync import queue must bound preverification without stalling"
     );
     let checkpoint = SyncStageCheckpoint::new(SyncStageKind::Import, 12).with_counters(12, 512);
-    pipeline
+    import
         .checkpoint_store()
         .put_checkpoint(checkpoint.clone())
         .expect("default sync pipeline should persist checkpoints through node storage");
     assert_eq!(
-        pipeline
+        import
             .checkpoint_store()
             .checkpoint(SyncStageKind::Import)
             .expect("read checkpoint"),
@@ -123,12 +124,16 @@ fn builder_keeps_custom_native_contract_provider_local() {
 }
 
 #[test]
-fn builder_keeps_custom_sync_import_pipeline_local() {
+fn builder_keeps_custom_staged_sync_pipeline_local() {
     let storage = memory_store();
     let settings = Arc::new(ProtocolSettings::default());
     let (bc, _rx) = BlockchainHandle::with_capacity();
     let (net, _nrx, _etx) = NetworkHandle::channel(8, 8);
-    let pipeline = Arc::new(SyncImportPipeline::new(bc.clone(), Arc::clone(&storage)));
+    let pipeline = Arc::new(StagedSyncPipeline::new(
+        bc.clone(),
+        Arc::new(HeaderCache::new()),
+        Arc::clone(&storage),
+    ));
     let provider = native_provider();
 
     let node = NodeBuilder::default()
@@ -137,10 +142,10 @@ fn builder_keeps_custom_sync_import_pipeline_local() {
         .with_blockchain(bc)
         .with_network(net)
         .with_native_contract_provider(provider)
-        .with_sync_import_pipeline(Arc::clone(&pipeline))
+        .with_staged_sync_pipeline(Arc::clone(&pipeline))
         .build()
         .expect("required services set");
 
-    assert!(Arc::ptr_eq(&node.sync_import_pipeline(), &pipeline));
-    assert!(Arc::ptr_eq(&node.sync_import_pipeline, &pipeline));
+    assert!(Arc::ptr_eq(&node.staged_sync_pipeline(), &pipeline));
+    assert!(Arc::ptr_eq(&node.staged_sync_pipeline, &pipeline));
 }

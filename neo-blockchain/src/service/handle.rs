@@ -16,7 +16,8 @@
 //!    caller.
 //! 2. **Request/response** ([`BlockchainHandle::import_block`],
 //!    [`BlockchainHandle::get_block`], [`BlockchainHandle::get_block_by_height`],
-//!    [`BlockchainHandle::get_height`]): translate the method call into a
+//!    [`BlockchainHandle::get_height`], [`BlockchainHandle::validate_headers`]):
+//!    translate the method call into a
 //!    `BlockchainCommand::ImportBlock` / `GetBlock` / … command and await the
 //!    `oneshot` reply. These read like normal `async fn`s rather than command
 //!    construction boilerplate.
@@ -34,6 +35,7 @@ use crate::command::BlockchainCommand;
 
 mod construction;
 mod events;
+mod header_validation;
 mod imports;
 mod inventory;
 mod lifecycle;

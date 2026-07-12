@@ -92,6 +92,26 @@ impl ImportBlocksStats {
     }
 }
 
+/// Reply payload for [`BlockchainCommand::ValidateHeaders`].
+#[derive(Debug, Clone)]
+pub struct HeaderValidationOutcome {
+    /// Number of input headers accepted into the verified prefix.
+    pub accepted: usize,
+    /// The resulting verified frontier after processing the input batch.
+    ///
+    /// This is the latest accepted header when the batch advanced the frontier,
+    /// otherwise the existing cache/store anchor when one was available.
+    pub frontier: Option<Header>,
+}
+
+impl HeaderValidationOutcome {
+    /// Construct a header-validation outcome.
+    #[must_use]
+    pub const fn new(accepted: usize, frontier: Option<Header>) -> Self {
+        Self { accepted, frontier }
+    }
+}
+
 impl ImportBlocksReply {
     /// Successful import reply.
     #[must_use]
@@ -200,8 +220,13 @@ pub enum BlockchainCommand {
     },
     /// Preverification completed.
     PreverifyCompleted(PreverifyCompleted),
-    /// Headers received.
-    Headers(Vec<Header>),
+    /// Validate a header batch and report the accepted prefix/frontier.
+    ValidateHeaders {
+        /// Headers to validate and cache.
+        headers: Vec<Header>,
+        /// Reply channel for the validated prefix/frontier outcome.
+        reply: tokio::sync::oneshot::Sender<HeaderValidationOutcome>,
+    },
     /// Idle tick for background processing.
     Idle,
     /// Relay result notification.

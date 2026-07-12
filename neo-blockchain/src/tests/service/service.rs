@@ -1,7 +1,9 @@
 use super::*;
 use crate::command::BlockchainCommand;
 use crate::handle::BlockchainHandle;
+use neo_payloads::Header;
 use neo_primitives::verify_result::VerifyResult;
+use neo_runtime::ServiceError;
 use std::sync::Arc;
 
 /// Trivial in-memory mempool used by the unit tests.
@@ -64,6 +66,26 @@ impl crate::service_context::SystemContext for StopAfterCommandContext {
     fn should_stop_blockchain_service(&self) -> bool {
         true
     }
+}
+
+fn header_fixture(index: u32) -> Header {
+    let mut header = Header::new();
+    header.set_index(index);
+    header
+}
+
+fn service_fixture() -> (
+    BlockchainService<TestContext, TestMempool>,
+    BlockchainHandle,
+    Arc<HeaderCache>,
+) {
+    let system = Arc::new(TestContext);
+    let ledger = Arc::new(LedgerContext::default());
+    let header_cache = Arc::new(HeaderCache::default());
+    let mempool = Arc::new(TestMempool);
+    let (service, handle) =
+        BlockchainService::with_defaults(system, ledger, Arc::clone(&header_cache), mempool);
+    (service, handle, header_cache)
 }
 
 #[test]
@@ -255,6 +277,83 @@ async fn handle_submits_single_inventory_block_without_exposing_command_enum() {
         }
         other => panic!("expected InventoryBlock command, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn handle_validate_headers_returns_valid_prefix_count() {
+    let (service, handle, header_cache) = service_fixture();
+    let task = tokio::spawn(service.run());
+
+    let outcome = handle
+        .validate_headers(vec![header_fixture(1), header_fixture(2)])
+        .await
+        .expect("validate headers");
+
+    assert_eq!(outcome.accepted, 2);
+    assert_eq!(outcome.frontier.as_ref().map(Header::index), Some(2));
+    assert_eq!(header_cache.count(), 2);
+
+    drop(handle);
+    task.await.expect("service task");
+}
+
+#[tokio::test]
+async fn handle_validate_headers_truncates_invalid_suffix() {
+    let (service, handle, header_cache) = service_fixture();
+    let task = tokio::spawn(service.run());
+
+    let outcome = handle
+        .validate_headers(vec![header_fixture(1), header_fixture(3)])
+        .await
+        .expect("validate headers");
+
+    assert_eq!(outcome.accepted, 1);
+    assert_eq!(outcome.frontier.as_ref().map(Header::index), Some(1));
+    assert_eq!(header_cache.count(), 1);
+
+    drop(handle);
+    task.await.expect("service task");
+}
+
+#[tokio::test]
+async fn handle_validate_headers_retries_cached_duplicates_idempotently() {
+    let (service, handle, header_cache) = service_fixture();
+    let task = tokio::spawn(service.run());
+    let headers = vec![header_fixture(1), header_fixture(2)];
+
+    let first = handle
+        .validate_headers(headers.clone())
+        .await
+        .expect("first validation");
+    let second = handle
+        .validate_headers(headers)
+        .await
+        .expect("duplicate retry validation");
+
+    assert_eq!(first.accepted, 2);
+    assert_eq!(second.accepted, 2);
+    assert_eq!(second.frontier.as_ref().map(Header::index), Some(2));
+    assert_eq!(
+        header_cache.count(),
+        2,
+        "retrying an already cached prefix must not duplicate cache entries"
+    );
+
+    drop(handle);
+    task.await.expect("service task");
+}
+
+#[tokio::test]
+async fn handle_validate_headers_reports_command_channel_closure() {
+    let (handle, cmd_rx) = BlockchainHandle::with_capacity();
+    drop(cmd_rx);
+
+    let err = handle
+        .validate_headers(vec![header_fixture(1)])
+        .await
+        .expect_err("closed command channel must surface as ServiceError");
+
+    assert!(matches!(err, ServiceError::ServiceUnavailable(_)));
 }
 
 #[tokio::test]

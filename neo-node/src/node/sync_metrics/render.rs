@@ -28,6 +28,24 @@ pub fn render_prometheus() -> String {
          # HELP neo_sync_blocks_persisted Total blocks persisted since startup\n\
          # TYPE neo_sync_blocks_persisted counter\n\
          neo_sync_blocks_persisted {blocks}\n\
+         # HELP neo_sync_headers_downloaded_total Headers received from correlated P2P range responses\n\
+         # TYPE neo_sync_headers_downloaded_total counter\n\
+         neo_sync_headers_downloaded_total {}\n\
+         # HELP neo_sync_headers_verified_total Headers durably accepted by the headers stage\n\
+         # TYPE neo_sync_headers_verified_total counter\n\
+         neo_sync_headers_verified_total {}\n\
+         # HELP neo_sync_headers_checkpoint_height Durable headers-stage checkpoint height\n\
+         # TYPE neo_sync_headers_checkpoint_height gauge\n\
+         neo_sync_headers_checkpoint_height {}\n\
+         # HELP neo_sync_header_fetch_failures_total Failed or rejected correlated header fetches\n\
+         # TYPE neo_sync_header_fetch_failures_total counter\n\
+         neo_sync_header_fetch_failures_total {}\n\
+         # HELP neo_sync_bodies_checkpoint_height Durable bodies-stage checkpoint height\n\
+         # TYPE neo_sync_bodies_checkpoint_height gauge\n\
+         neo_sync_bodies_checkpoint_height {}\n\
+         # HELP neo_sync_body_header_mismatches_total Downloaded blocks rejected for disagreeing with verified headers\n\
+         # TYPE neo_sync_body_header_mismatches_total counter\n\
+         neo_sync_body_header_mismatches_total {}\n\
          # HELP neo_sync_avg_total_us EWMA total per-block persist time (microseconds)\n\
          # TYPE neo_sync_avg_total_us gauge\n\
          neo_sync_avg_total_us {}\n\
@@ -86,6 +104,12 @@ pub fn render_prometheus() -> String {
          # TYPE neo_state_service_mpt_apply_avg_changes gauge\n\
          neo_state_service_mpt_apply_avg_changes {}\n",
         peer_tip.saturating_sub(height),
+        m::headers_downloaded(),
+        m::headers_verified(),
+        m::headers_checkpoint_height(),
+        m::header_fetch_failures(),
+        m::bodies_checkpoint_height(),
+        m::body_header_mismatches(),
         m::avg_total_us(),
         m::avg_verify_us(),
         m::avg_persist_us(),
@@ -156,6 +180,12 @@ mod tests {
         let output = render_prometheus();
 
         assert!(output.contains("# HELP neo_sync_height Current block height"));
+        assert!(output.contains("neo_sync_headers_downloaded_total "));
+        assert!(output.contains("neo_sync_headers_verified_total "));
+        assert!(output.contains("neo_sync_headers_checkpoint_height "));
+        assert!(output.contains("neo_sync_header_fetch_failures_total "));
+        assert!(output.contains("neo_sync_bodies_checkpoint_height "));
+        assert!(output.contains("neo_sync_body_header_mismatches_total "));
         assert!(
             output.contains("neo_state_service_mpt_apply_stage_calls_total{stage=\"root_hash\"} "),
             "state-root stage labels should stay Prometheus-compatible"

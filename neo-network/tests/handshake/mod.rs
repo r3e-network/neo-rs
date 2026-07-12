@@ -230,6 +230,17 @@ async fn recv_getblockbyindex(fake: &mut FakeFramed) -> GetBlockByIndexPayload {
     }
 }
 
+async fn recv_getheaders(fake: &mut FakeFramed) -> GetBlockByIndexPayload {
+    loop {
+        let frame = recv_frame(fake).await.expect("getheaders frame");
+        if frame.command == MessageCommand::GetHeaders {
+            let mut reader = neo_io::MemoryReader::new(&frame.payload_raw);
+            return <GetBlockByIndexPayload as neo_io::Serializable>::deserialize(&mut reader)
+                .expect("decode getheaders");
+        }
+    }
+}
+
 #[path = "block_source.rs"]
 mod block_source;
 #[path = "discovery.rs"]

@@ -1,7 +1,7 @@
 //! # neo-system
 //!
-//! Composition root for building node services, wallets, and runtime
-//! dependencies.
+//! Composition root for building node services, staged sync, wallets, and
+//! runtime dependencies.
 //!
 //! ## Boundary
 //!
@@ -21,12 +21,13 @@ mod errors;
 
 // Public re-exports for the crate's public surface.
 pub use composition::{
-    BlockCommitHooks, BlockchainTask, Node, NodeBuilder, NodeCore, NodeCoreBuilder, NodeCoreLaunch,
-    NodeSystemContext, NoopBlockCommitHooks, SyncDownloadImportDriver, SyncDownloadImportSummary,
-    SyncImportPipeline, WalletProvider,
+    BlockCommitHooks, BlockchainTask, HeaderStageBatchOutcome, HeaderStageProgress, Node,
+    NodeBuilder, NodeCore, NodeCoreBuilder, NodeCoreLaunch, NodeSystemContext,
+    NoopBlockCommitHooks, StagedSyncPipeline, SyncDownloadImportDriver, SyncDownloadImportSummary,
+    SyncHeaderPipeline, SyncImportPipeline, VerifiedBlockRangeFetcher, WalletProvider,
 };
 pub use composition::{
-    builder, core, node, sync_download_import, sync_import_pipeline, system_context,
-    wallet_provider,
+    builder, core, node, staged_sync_pipeline, sync_download_import, sync_header_pipeline,
+    sync_import_pipeline, system_context, verified_block_fetcher, wallet_provider,
 };
 pub use errors::{NodeError, NodeResult, error};

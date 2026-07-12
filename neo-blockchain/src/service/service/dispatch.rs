@@ -85,8 +85,9 @@ where
             BlockchainCommand::PreverifyCompleted(preverify) => {
                 self.handle_preverify_completed(preverify).await;
             }
-            BlockchainCommand::Headers(headers) => {
-                self.handle_headers(headers);
+            BlockchainCommand::ValidateHeaders { headers, reply } => {
+                let outcome = self.handle_headers(headers);
+                let _ = reply.send(outcome);
             }
             BlockchainCommand::Idle => {
                 self.handle_idle().await;

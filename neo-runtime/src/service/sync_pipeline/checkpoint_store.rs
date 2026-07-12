@@ -83,7 +83,7 @@ impl<S: Store> SyncStageCheckpointStore for SharedStoreSyncStageCheckpointStore<
     }
 }
 
-fn read_checkpoint<S: Store>(
+pub(crate) fn read_checkpoint<S: Store>(
     store: &S,
     stage: SyncStageKind,
 ) -> ServiceResult<Option<SyncStageCheckpoint>> {
@@ -97,14 +97,22 @@ fn read_checkpoint<S: Store>(
     decode_checkpoint(stage, &bytes).map(Some)
 }
 
-fn write_checkpoint<S: Store>(store: &S, checkpoint: SyncStageCheckpoint) -> ServiceResult<()> {
+pub(crate) fn write_checkpoint<S: Store>(
+    store: &S,
+    checkpoint: SyncStageCheckpoint,
+) -> ServiceResult<()> {
     let mut maintenance = StoreMaintenanceBatch::new();
     maintenance.delete_data(legacy_checkpoint_key(checkpoint.stage));
     maintenance.put_metadata(
         checkpoint_key(checkpoint.stage),
         encode_checkpoint(&checkpoint),
     );
-    commit_maintenance(store, &maintenance, "write sync checkpoint")
+    commit_maintenance(
+        store,
+        &maintenance,
+        "write sync checkpoint",
+        "store does not support atomic sync-checkpoint maintenance",
+    )
 }
 
 fn discard_legacy_checkpoint<S: Store>(store: &S, stage: SyncStageKind) -> ServiceResult<()> {
@@ -114,25 +122,29 @@ fn discard_legacy_checkpoint<S: Store>(store: &S, stage: SyncStageKind) -> Servi
     }
     let mut maintenance = StoreMaintenanceBatch::new();
     maintenance.delete_data(legacy_key);
-    commit_maintenance(store, &maintenance, "discard legacy sync checkpoint")
+    commit_maintenance(
+        store,
+        &maintenance,
+        "discard legacy sync checkpoint",
+        "store does not support atomic sync-checkpoint maintenance",
+    )
 }
 
-fn commit_maintenance<S: Store>(
+pub(crate) fn commit_maintenance<S: Store>(
     store: &S,
     maintenance: &StoreMaintenanceBatch,
     operation: &'static str,
+    unsupported_message: &'static str,
 ) -> ServiceResult<()> {
     if !store
         .try_commit_durable_maintenance(maintenance)
         .map_err(|error| storage_error(operation, error))?
     {
-        return Err(ServiceError::invalid_state(
-            "store does not support atomic sync-checkpoint maintenance",
-        ));
+        return Err(ServiceError::invalid_state(unsupported_message));
     }
     Ok(())
 }
 
-fn storage_error(context: &'static str, error: impl std::fmt::Display) -> ServiceError {
+pub(crate) fn storage_error(context: &'static str, error: impl std::fmt::Display) -> ServiceError {
     ServiceError::internal(format!("{context}: {error}"))
 }

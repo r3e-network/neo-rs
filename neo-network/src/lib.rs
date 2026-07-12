@@ -9,7 +9,8 @@
 //!
 //! ## Contents
 //!
-//! - `download`: Stream-shaped block download contracts for sync drivers.
+//! - `download`: Correlated header ranges plus stream-shaped body download
+//!   contracts for staged sync drivers.
 //! - `errors`: Typed errors and result aliases for this crate boundary.
 //! - `identity`: Peer identity, node keys, and advertised endpoint helpers.
 //! - `peers`: Peer registry, scoring, and connection tracking logic.
@@ -37,7 +38,7 @@ mod wire;
 pub use download::{
     BlockDownloadBatch, BlockDownloadConfig, BlockDownloadCoordinator, BlockDownloadPeer,
     BlockDownloader, BlockRangeAssignment, BlockRangeFetcher, BlockRequest, ChannelBlockDownloader,
-    CrossPeerBlockRangeScheduler, OrderedBlockBatchBuffer,
+    CrossPeerBlockRangeScheduler, HeaderDownloadBatch, HeaderRequest, OrderedBlockBatchBuffer,
 };
 pub use errors::{NetworkError, NetworkResult, error};
 pub use identity::{LocalIdentity, local_identity};

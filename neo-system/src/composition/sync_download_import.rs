@@ -1,20 +1,20 @@
 //! Download-stream to import-pipeline bridge.
 //!
-//! This composition helper owns no peer scheduling and no block validation
-//! rules. It consumes any `neo-network` downloader stream, converts downloaded
-//! batches into runtime sync batches, and delegates import/checkpoint semantics
-//! to [`SyncImportPipeline`].
+//! This composition helper owns no peer scheduling or protocol validation
+//! rules. It consumes a body downloader stream, applies the composed durable
+//! header gate, converts matching batches into runtime sync batches, and
+//! delegates canonical import/checkpoint semantics to [`StagedSyncPipeline`].
 
 use std::pin::Pin;
 use std::sync::Arc;
 
 use neo_network::BlockDownloader;
 use neo_runtime::{
-    ServiceResult, SharedStoreSyncStageCheckpointStore, SyncPipelineImportOutcome,
-    SyncStageCheckpoint, SyncStageCheckpointStore,
+    ServiceResult, SharedStoreSyncStageCheckpointStore, SharedStoreVerifiedHeaderStore,
+    SyncPipelineImportOutcome, SyncStageCheckpoint, SyncStageCheckpointStore, VerifiedHeaderStore,
 };
 
-use crate::sync_import_pipeline::SyncImportPipeline;
+use crate::staged_sync_pipeline::StagedSyncPipeline;
 
 /// Aggregate result for draining a downloader into the sync import pipeline.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -26,11 +26,13 @@ pub struct SyncDownloadImportSummary {
     /// Blocks reported as processed by the canonical import path.
     pub imported_blocks: u64,
     /// Import-stage checkpoints written while draining the stream.
-    pub checkpoints_written: u64,
+    pub import_checkpoints_written: u64,
     /// Highest block height reported as imported, when at least one block was processed.
     pub last_imported_height: Option<u32>,
-    /// Last checkpoint written while draining the stream.
-    pub last_checkpoint: Option<SyncStageCheckpoint>,
+    /// Last import-stage checkpoint written while draining the stream.
+    pub last_import_checkpoint: Option<SyncStageCheckpoint>,
+    /// Bodies-stage checkpoint written after the fixed target became canonical.
+    pub body_checkpoint: Option<SyncStageCheckpoint>,
 }
 
 impl SyncDownloadImportSummary {
@@ -46,8 +48,8 @@ impl SyncDownloadImportSummary {
             self.last_imported_height = outcome.next_height.map(|height| height.saturating_sub(1));
         }
         if let Some(checkpoint) = outcome.checkpoint {
-            self.checkpoints_written = self.checkpoints_written.saturating_add(1);
-            self.last_checkpoint = Some(checkpoint);
+            self.import_checkpoints_written = self.import_checkpoints_written.saturating_add(1);
+            self.last_import_checkpoint = Some(checkpoint);
         }
     }
 }
@@ -56,20 +58,22 @@ impl SyncDownloadImportSummary {
 pub struct SyncDownloadImportDriver<
     D: BlockDownloader,
     C: SyncStageCheckpointStore = SharedStoreSyncStageCheckpointStore,
+    H: VerifiedHeaderStore = SharedStoreVerifiedHeaderStore,
 > {
-    pipeline: Arc<SyncImportPipeline<C>>,
+    pipeline: Arc<StagedSyncPipeline<C, H>>,
     downloader: D,
     chain_tip_height: Option<u32>,
 }
 
-impl<D, C> SyncDownloadImportDriver<D, C>
+impl<D, C, H> SyncDownloadImportDriver<D, C, H>
 where
     D: BlockDownloader,
     C: SyncStageCheckpointStore,
+    H: VerifiedHeaderStore,
 {
     /// Create a driver over the shared sync import pipeline and a downloader.
     #[must_use]
-    pub fn new(pipeline: Arc<SyncImportPipeline<C>>, downloader: D) -> Self {
+    pub fn new(pipeline: Arc<StagedSyncPipeline<C, H>>, downloader: D) -> Self {
         Self {
             pipeline,
             downloader,
@@ -84,7 +88,7 @@ where
     /// the node's authoritative local tip before draining the downloader.
     #[must_use]
     pub fn new_at_chain_tip(
-        pipeline: Arc<SyncImportPipeline<C>>,
+        pipeline: Arc<StagedSyncPipeline<C, H>>,
         downloader: D,
         chain_tip_height: u32,
     ) -> Self {
@@ -97,7 +101,7 @@ where
 
     /// Returns the sync import pipeline used by this driver.
     #[must_use]
-    pub fn pipeline(&self) -> Arc<SyncImportPipeline<C>> {
+    pub fn pipeline(&self) -> Arc<StagedSyncPipeline<C, H>> {
         Arc::clone(&self.pipeline)
     }
 
@@ -114,7 +118,8 @@ where
     /// partial import result stops the loop and returns the corresponding
     /// runtime service error.
     pub async fn import_all(&mut self) -> ServiceResult<SyncDownloadImportSummary> {
-        let mut import_driver = self.pipeline.driver()?;
+        let import_pipeline = self.pipeline.import();
+        let mut import_driver = import_pipeline.driver()?;
         if let Some(chain_tip_height) = self.chain_tip_height {
             import_driver.align_next_height_to_chain_tip(chain_tip_height);
         }
@@ -122,9 +127,23 @@ where
 
         while let Some(downloaded) = next_download_batch(&mut self.downloader).await {
             let batch = downloaded.map_err(neo_runtime::ServiceError::from)?;
+            self.pipeline.headers().verify_body_batch(&batch)?;
             let downloaded_blocks = batch.blocks.len();
             let outcome = import_driver.push_batch(batch.into()).await?;
             summary.record(downloaded_blocks, outcome);
+        }
+
+        if let Some(height) = summary.last_imported_height {
+            summary.body_checkpoint = self
+                .pipeline
+                .headers()
+                .finish_imported_window(height)
+                .await?;
+            if summary.body_checkpoint.is_none() {
+                return Err(neo_runtime::ServiceError::invalid_state(
+                    "body import completed without an active header-stage window",
+                ));
+            }
         }
 
         Ok(summary)
