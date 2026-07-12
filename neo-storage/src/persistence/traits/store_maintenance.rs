@@ -7,6 +7,9 @@
 
 use std::collections::BTreeMap;
 
+use crate::persistence::table::{IntoTableBytes, Table, TableEncode, TableNamespace};
+use crate::{StorageError, StorageResult};
+
 /// Ordered data and node-local metadata operations committed atomically.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct StoreMaintenanceBatch {
@@ -28,6 +31,27 @@ impl StoreMaintenanceBatch {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.data.is_empty() && self.metadata.is_empty()
+    }
+
+    /// Inserts or replaces one statically typed logical-table value.
+    pub fn put<T: Table>(&mut self, key: &T::Key, value: &T::Value) -> StorageResult<()> {
+        let key = <T::KeyCodec as TableEncode<T::Key>>::encode(key)
+            .map_err(|error| table_codec_error::<T>("encode key", error))?
+            .into_table_bytes();
+        let value = <T::ValueCodec as TableEncode<T::Value>>::encode(value)
+            .map_err(|error| table_codec_error::<T>("encode value", error))?
+            .into_table_bytes();
+        self.operations_mut(T::NAMESPACE).insert(key, Some(value));
+        Ok(())
+    }
+
+    /// Deletes one statically typed logical-table value.
+    pub fn delete<T: Table>(&mut self, key: &T::Key) -> StorageResult<()> {
+        let key = <T::KeyCodec as TableEncode<T::Key>>::encode(key)
+            .map_err(|error| table_codec_error::<T>("encode key", error))?
+            .into_table_bytes();
+        self.operations_mut(T::NAMESPACE).insert(key, None);
+        Ok(())
     }
 
     /// Inserts or replaces one normal data-table value.
@@ -63,4 +87,18 @@ impl StoreMaintenanceBatch {
             .iter()
             .map(|(key, value)| (key.as_slice(), value.as_deref()))
     }
+
+    fn operations_mut(
+        &mut self,
+        namespace: TableNamespace,
+    ) -> &mut BTreeMap<Vec<u8>, Option<Vec<u8>>> {
+        match namespace {
+            TableNamespace::Data => &mut self.data,
+            TableNamespace::Maintenance => &mut self.metadata,
+        }
+    }
+}
+
+fn table_codec_error<T: Table>(operation: &'static str, error: StorageError) -> StorageError {
+    StorageError::serialization(format!("{operation} for table {}: {error}", T::NAME))
 }

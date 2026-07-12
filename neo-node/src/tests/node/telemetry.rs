@@ -188,7 +188,9 @@ fn seed_ledger_height(node: &neo_system::Node, height: u32) {
         neo_storage::StorageKey::new(neo_native_contracts::LedgerContract::ID, vec![12]),
         neo_storage::StorageItem::from_bytes(pointer),
     );
-    store.commit();
+    store
+        .try_commit()
+        .expect("commit telemetry-test Ledger height");
 }
 
 fn indexed_service_at(height: u32) -> Arc<neo_indexer::IndexerService> {

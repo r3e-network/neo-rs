@@ -1,19 +1,16 @@
 //! Store-backed sync-stage checkpoint adapters.
 //!
-//! Versioned checkpoint records live in backend-isolated maintenance metadata.
-//! Obsolete short-key records from the normal Neo data table are discarded,
-//! not migrated: they are operational hints, while the canonical chain tip is
-//! authoritative and production sync realigns its cursor to that tip.
+//! Versioned checkpoint records live in a typed table inside backend-isolated
+//! maintenance metadata. The canonical chain tip remains authoritative and
+//! production sync realigns its cursor to that tip.
 
 use std::sync::Arc;
 
 use neo_storage::persistence::providers::memory_store::MemoryStore;
-use neo_storage::persistence::{Store, StoreMaintenanceBatch};
+use neo_storage::persistence::{Store, StoreMaintenanceBatch, TableProvider};
 
-use super::{
-    SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind, checkpoint_key,
-    decode_checkpoint, encode_checkpoint, legacy_checkpoint_key,
-};
+use super::tables::SyncCheckpointTable;
+use super::{SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind};
 use crate::{ServiceError, ServiceResult};
 
 /// Store-backed checkpoint provider for crash-resumable sync stages.
@@ -87,14 +84,19 @@ pub(crate) fn read_checkpoint<S: Store>(
     store: &S,
     stage: SyncStageKind,
 ) -> ServiceResult<Option<SyncStageCheckpoint>> {
-    discard_legacy_checkpoint(store, stage)?;
-    let Some(bytes) = store
-        .maintenance_metadata(&checkpoint_key(stage))
-        .map_err(|error| storage_error("read sync checkpoint", error))?
-    else {
-        return Ok(None);
-    };
-    decode_checkpoint(stage, &bytes).map(Some)
+    let checkpoint = store
+        .table_get::<SyncCheckpointTable>(&stage)
+        .map_err(|error| table_read_error("read sync checkpoint", error))?;
+    if let Some(checkpoint) = &checkpoint
+        && checkpoint.stage != stage
+    {
+        return Err(ServiceError::invalid_state(format!(
+            "sync checkpoint stage mismatch: requested {}, stored {}",
+            stage.as_str(),
+            checkpoint.stage.as_str()
+        )));
+    }
+    Ok(checkpoint)
 }
 
 pub(crate) fn write_checkpoint<S: Store>(
@@ -102,30 +104,13 @@ pub(crate) fn write_checkpoint<S: Store>(
     checkpoint: SyncStageCheckpoint,
 ) -> ServiceResult<()> {
     let mut maintenance = StoreMaintenanceBatch::new();
-    maintenance.delete_data(legacy_checkpoint_key(checkpoint.stage));
-    maintenance.put_metadata(
-        checkpoint_key(checkpoint.stage),
-        encode_checkpoint(&checkpoint),
-    );
+    maintenance
+        .put::<SyncCheckpointTable>(&checkpoint.stage, &checkpoint)
+        .map_err(|error| storage_error("encode sync checkpoint", error))?;
     commit_maintenance(
         store,
         &maintenance,
         "write sync checkpoint",
-        "store does not support atomic sync-checkpoint maintenance",
-    )
-}
-
-fn discard_legacy_checkpoint<S: Store>(store: &S, stage: SyncStageKind) -> ServiceResult<()> {
-    let legacy_key = legacy_checkpoint_key(stage);
-    if store.try_get_bytes(&legacy_key).is_none() {
-        return Ok(());
-    }
-    let mut maintenance = StoreMaintenanceBatch::new();
-    maintenance.delete_data(legacy_key);
-    commit_maintenance(
-        store,
-        &maintenance,
-        "discard legacy sync checkpoint",
         "store does not support atomic sync-checkpoint maintenance",
     )
 }
@@ -147,4 +132,16 @@ pub(crate) fn commit_maintenance<S: Store>(
 
 pub(crate) fn storage_error(context: &'static str, error: impl std::fmt::Display) -> ServiceError {
     ServiceError::internal(format!("{context}: {error}"))
+}
+
+pub(crate) fn table_read_error(
+    context: &'static str,
+    error: neo_storage::StorageError,
+) -> ServiceError {
+    match error {
+        neo_storage::StorageError::Serialization { .. } => {
+            ServiceError::invalid_state(format!("{context}: {error}"))
+        }
+        _ => storage_error(context, error),
+    }
 }

@@ -203,7 +203,7 @@ fn store_cache_commits_mdbx_store_without_snapshot_overlay() {
     let mut seed = StoreCache::new_from_store(store.clone(), false);
     seed.add(key_keep.clone(), StorageItem::from_bytes(vec![0x10]));
     seed.add(key_delete.clone(), StorageItem::from_bytes(vec![0x20]));
-    seed.commit();
+    seed.try_commit().expect("seed MDBX store cache");
 
     let mut writer = StoreCache::new_from_store(store.clone(), false);
     writer.update(key_keep.clone(), StorageItem::from_bytes(vec![0x11]));

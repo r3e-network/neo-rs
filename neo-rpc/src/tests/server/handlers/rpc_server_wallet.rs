@@ -230,7 +230,7 @@ fn persist_transaction_record<S>(
     key_bytes.extend_from_slice(&tx.hash().to_bytes());
     let key = StorageKey::new(LedgerContract::ID, key_bytes);
     store.add(key, StorageItem::from_bytes(record));
-    store.commit();
+    store.try_commit().expect("commit test store");
 }
 
 #[path = "../rpc_server_wallet/cancel_transaction.rs"]

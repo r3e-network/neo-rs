@@ -50,7 +50,7 @@ async fn submit_block_accepts_valid_block() {
         account,
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let tx = build_signed_transaction_custom(
         &settings,
@@ -91,7 +91,7 @@ async fn submit_block_reports_already_exists() {
         account,
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let tx = build_signed_transaction_custom(
         &settings,
@@ -130,7 +130,7 @@ async fn submit_block_reports_invalid_block() {
         account,
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let tx = build_signed_transaction_custom(
         &settings,
@@ -169,7 +169,7 @@ async fn submit_block_reports_invalid_prev_hash() {
         account,
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let tx = build_signed_transaction_custom(
         &settings,
@@ -208,7 +208,7 @@ async fn submit_block_reports_invalid_index() {
         account,
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let tx = build_signed_transaction_custom(
         &settings,

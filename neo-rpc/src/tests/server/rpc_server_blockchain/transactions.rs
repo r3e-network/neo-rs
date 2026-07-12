@@ -18,7 +18,7 @@ async fn get_raw_transaction_from_mempool() {
         account,
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let tx = build_signed_transaction(&settings, &keypair, 1);
     let pool = system.mempool();

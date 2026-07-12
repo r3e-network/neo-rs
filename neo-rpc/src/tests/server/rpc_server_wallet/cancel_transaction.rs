@@ -95,7 +95,7 @@ async fn cancel_transaction_returns_transaction_json() {
         keypair.script_hash(),
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let params = [
         Value::String(path.clone()),
@@ -225,7 +225,7 @@ async fn cancel_transaction_rejects_invalid_extra_fee() {
             .expect("script hash"),
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let params = [
         Value::String(path.clone()),
@@ -265,7 +265,7 @@ async fn cancel_transaction_rejects_wallet_fee_limit() {
         keypair.script_hash(),
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let params = [
         Value::String(path.clone()),
@@ -306,7 +306,7 @@ async fn cancel_transaction_applies_extra_fee() {
         keypair.script_hash(),
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let params = [
         Value::String(path.clone()),
@@ -374,7 +374,7 @@ async fn cancel_transaction_bumps_fee_for_mempool_conflict() {
         keypair.script_hash(),
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let conflict_tx = build_signed_transaction_custom(
         &server.system().settings(),

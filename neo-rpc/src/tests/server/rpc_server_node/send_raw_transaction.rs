@@ -76,7 +76,7 @@ async fn send_raw_transaction_accepts_valid_transaction() {
         account,
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let tx = build_signed_transaction(&settings, &keypair, 1, 0);
     let payload = BASE64_STANDARD.encode(tx.to_bytes());
@@ -123,7 +123,7 @@ async fn send_raw_transaction_reports_invalid_signature() {
         account,
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let mut tx = build_signed_transaction(&settings, &keypair, 4, 0);
     let mut witnesses = tx.witnesses().to_vec();
@@ -218,7 +218,7 @@ async fn send_raw_transaction_reports_invalid_attribute() {
         account,
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let attributes = vec![TransactionAttribute::not_valid_before(5)];
     let tx = build_signed_transaction_with(
@@ -280,7 +280,7 @@ async fn send_raw_transaction_reports_policy_failed() {
     let mut store = system.store_cache();
     let key = StorageKey::create_with_uint160(policy.id(), 15, &account);
     store.add(key, StorageItem::from_bytes(Vec::new()));
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let tx = build_signed_transaction_with(
         &settings,
@@ -317,7 +317,7 @@ async fn send_raw_transaction_reports_already_in_pool() {
         account,
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let tx = build_signed_transaction(&settings, &keypair, 12, 0);
     let mempool = system.mempool();

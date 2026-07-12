@@ -304,7 +304,7 @@ where
             StorageItem::from_bytes(state.hash.to_bytes().to_vec()),
         );
     }
-    store.commit();
+    store.try_commit().expect("commit test store");
 }
 
 /// `FungibleToken.PREFIX_ACCOUNT` — the per-account NEP-17 balance
@@ -562,7 +562,7 @@ where
         StorageItem::from_bytes(pointer),
     );
 
-    store.commit();
+    store.try_commit().expect("commit test store");
 }
 
 /// Seeds a GAS balance for `account` directly into `store`, writing

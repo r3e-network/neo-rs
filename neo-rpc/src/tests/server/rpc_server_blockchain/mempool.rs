@@ -121,7 +121,7 @@ async fn get_raw_mem_pool_mixed_verified_and_unverified() {
     mint_gas(&mut store, &settings, account_a, funded.clone());
     mint_gas(&mut store, &settings, account_b, funded.clone());
     mint_gas(&mut store, &settings, account_c, funded);
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let tx1 = build_signed_transaction(&settings, &keypair_a, 1);
     let tx2 = build_signed_transaction(&settings, &keypair_b, 2);

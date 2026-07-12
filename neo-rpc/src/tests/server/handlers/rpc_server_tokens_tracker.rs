@@ -70,7 +70,7 @@ where
     snapshot
         .put(key_bytes, value_bytes)
         .expect("storage put failed");
-    snapshot.commit();
+    snapshot.try_commit().expect("commit test snapshot");
 }
 
 fn system_with_tokens_tracker(
@@ -131,7 +131,7 @@ fn store_contract_state(system: &Arc<NodeContext>, contract: &ContractState) {
         legacy_key,
         StorageItem::from_bytes(contract.hash.to_bytes().to_vec()),
     );
-    store_cache.commit();
+    store_cache.try_commit().expect("commit test store cache");
 }
 
 fn emit_map_entry_string(builder: &mut ScriptBuilder, key: &str, value: &str) {

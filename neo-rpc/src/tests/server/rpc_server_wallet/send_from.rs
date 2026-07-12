@@ -70,7 +70,7 @@ async fn send_from_returns_transaction_json() {
         keypair.script_hash(),
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let params = [
         Value::String(path.clone()),
@@ -199,7 +199,7 @@ async fn send_from_multisig_collects_member_signatures() {
         multisig_hash,
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let multisig_address =
         wallet_helper::to_address(&multisig_hash, system.settings().address_version);

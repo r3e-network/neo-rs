@@ -22,6 +22,7 @@
 //! - `store_maintenance`: isolated node metadata and atomic maintenance batches.
 //! - `store_provider`: backend provider trait implemented by concrete stores.
 //! - `store_snapshot`: snapshot store trait.
+//! - `table`: Statically dispatched logical tables and byte codecs.
 //! - `track_state`: tracked mutation state enum.
 //! - `transaction`: Transaction body, signer, witness, and fee records.
 //! - `write_store`: write store trait.
@@ -55,6 +56,8 @@ pub mod store_provider;
 /// Mutable point-in-time store snapshots.
 #[path = "traits/store_snapshot.rs"]
 pub mod store_snapshot;
+/// Typed logical-table definitions, codecs, and provider reads.
+pub mod table;
 /// Track states used by cached storage entries.
 #[path = "cache/track_state.rs"]
 pub mod track_state;
@@ -76,6 +79,10 @@ pub use store_factory::StoreFactory;
 pub use store_maintenance::StoreMaintenanceBatch;
 pub use store_provider::StoreProvider;
 pub use store_snapshot::StoreSnapshot;
+pub use table::{
+    BytesCodec, FixedBytesCodec, IntoTableBytes, StorageItemCodec, StorageKeyCodec, Table,
+    TableCodec, TableDecode, TableEncode, TableNamespace, TableProvider, U32BeCodec, U64BeCodec,
+};
 pub use track_state::TrackState;
 pub use transaction::StoreTransaction;
 pub use write_store::WriteStore;

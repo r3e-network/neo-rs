@@ -936,3 +936,39 @@ fn hot_pruning_rejects_hot_cold_byte_mismatch_without_advancing_watermark() {
     assert!(error.to_string().contains("mismatch"), "{error}");
     assert_eq!(archive.hot_pruned_through(store.as_ref()).unwrap(), None);
 }
+
+#[test]
+fn hot_prune_watermark_rejects_malformed_typed_value() {
+    use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+    use neo_storage::persistence::StoreMaintenanceBatch;
+    use neo_storage::persistence::providers::MemoryStore;
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let files = StaticFileArchiveFactory::default()
+        .open(&temp.path().join("watermark-corruption.static"))
+        .expect("archive");
+    let archive = StaticLedgerArchive::new(files);
+    let store = MemoryStore::new();
+    let mut corruption = StoreMaintenanceBatch::new();
+    corruption.put_metadata(
+        b"neo.ledger.hot-pruned-through.v1".to_vec(),
+        vec![0x01, 0x02],
+    );
+    assert!(
+        store
+            .try_commit_durable_maintenance(&corruption)
+            .expect("inject malformed prune watermark")
+    );
+
+    let error = archive
+        .hot_pruned_through(&store)
+        .expect_err("malformed typed watermark must fail closed");
+    assert!(
+        error.to_string().contains("HotLedgerPruneWatermark"),
+        "typed table identity missing from error: {error}"
+    );
+    assert!(
+        error.to_string().contains("4-byte big-endian u32"),
+        "typed codec detail missing from error: {error}"
+    );
+}

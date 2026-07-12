@@ -34,7 +34,7 @@ async fn get_transaction_height_rejects_mempool_transaction() {
         account,
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let tx = build_signed_transaction(&settings, &keypair, 1);
     let pool = system.mempool();

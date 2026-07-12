@@ -80,7 +80,7 @@ fn archived_block_fixture(nonce: u32) -> ArchivedBlockFixture {
             &transaction.hash(),
         ));
     }
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let cold = OptionalStaticLedgerProvider::from_option(Some(archive.provider()));
     drop(archive);

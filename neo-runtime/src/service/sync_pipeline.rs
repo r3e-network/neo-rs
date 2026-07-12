@@ -15,11 +15,12 @@ use parking_lot::RwLock;
 use crate::{BlockBatchImportOutcome, BlockOrigin, ImportQueue, ServiceError, ServiceResult};
 
 mod checkpoint_store;
+mod tables;
 mod verified_header_store;
 
 pub use checkpoint_store::{SharedStoreSyncStageCheckpointStore, StoreSyncStageCheckpointStore};
 #[cfg(test)]
-pub(crate) use verified_header_store::verified_header_key;
+use tables::{checkpoint_key, decode_checkpoint, encode_checkpoint, verified_header_key};
 pub use verified_header_store::{
     HeaderStageWindow, InMemoryVerifiedHeaderStore, MAX_VERIFIED_HEADER_WINDOW,
     SharedStoreVerifiedHeaderStore, StoreVerifiedHeaderStore, VerifiedHeaderStore,
@@ -241,104 +242,6 @@ impl SyncStageCheckpointStore for InMemorySyncStageCheckpointStore {
             .insert(checkpoint.stage, checkpoint);
         Ok(())
     }
-}
-
-const STORE_CHECKPOINT_METADATA_KEY_PREFIX: &[u8] = b"neo.sync.stage-checkpoint.v1.";
-const LEGACY_STORE_CHECKPOINT_KEY_PREFIX: [u8; 2] = [0xF8, b's'];
-const STORE_CHECKPOINT_VALUE_MAGIC: &[u8; 6] = b"NRSCP1";
-const STORE_CHECKPOINT_VALUE_LEN: usize = STORE_CHECKPOINT_VALUE_MAGIC.len() + 1 + 4 + 8 + 8;
-
-fn checkpoint_key(stage: SyncStageKind) -> Vec<u8> {
-    let mut key = Vec::with_capacity(STORE_CHECKPOINT_METADATA_KEY_PREFIX.len() + 1);
-    key.extend_from_slice(STORE_CHECKPOINT_METADATA_KEY_PREFIX);
-    key.push(stage.code());
-    key
-}
-
-fn legacy_checkpoint_key(stage: SyncStageKind) -> Vec<u8> {
-    vec![
-        LEGACY_STORE_CHECKPOINT_KEY_PREFIX[0],
-        LEGACY_STORE_CHECKPOINT_KEY_PREFIX[1],
-        stage.code(),
-    ]
-}
-
-fn encode_checkpoint(checkpoint: &SyncStageCheckpoint) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(STORE_CHECKPOINT_VALUE_LEN);
-    bytes.extend_from_slice(STORE_CHECKPOINT_VALUE_MAGIC);
-    bytes.push(checkpoint.stage.code());
-    bytes.extend_from_slice(&checkpoint.height.to_be_bytes());
-    bytes.extend_from_slice(&checkpoint.processed_blocks.to_be_bytes());
-    bytes.extend_from_slice(&checkpoint.changed_bytes.to_be_bytes());
-    bytes
-}
-
-fn decode_checkpoint(
-    expected_stage: SyncStageKind,
-    bytes: &[u8],
-) -> ServiceResult<SyncStageCheckpoint> {
-    if bytes.len() != STORE_CHECKPOINT_VALUE_LEN
-        || &bytes[..STORE_CHECKPOINT_VALUE_MAGIC.len()] != STORE_CHECKPOINT_VALUE_MAGIC
-    {
-        return Err(ServiceError::invalid_state(format!(
-            "invalid sync checkpoint payload for stage {}: {} bytes",
-            expected_stage.as_str(),
-            bytes.len()
-        )));
-    }
-
-    let mut cursor = STORE_CHECKPOINT_VALUE_MAGIC.len();
-    let stage_code = bytes[cursor];
-    cursor += 1;
-    let stage = SyncStageKind::from_code(stage_code).ok_or_else(|| {
-        ServiceError::invalid_state(format!("invalid sync checkpoint stage code {stage_code}"))
-    })?;
-    if stage != expected_stage {
-        return Err(ServiceError::invalid_state(format!(
-            "sync checkpoint stage mismatch: requested {}, stored {}",
-            expected_stage.as_str(),
-            stage.as_str()
-        )));
-    }
-
-    let height = read_checkpoint_u32(bytes, &mut cursor)?;
-    let processed_blocks = read_checkpoint_u64(bytes, &mut cursor)?;
-    let changed_bytes = read_checkpoint_u64(bytes, &mut cursor)?;
-
-    Ok(SyncStageCheckpoint::new(stage, height).with_counters(processed_blocks, changed_bytes))
-}
-
-fn read_checkpoint_u32(bytes: &[u8], cursor: &mut usize) -> ServiceResult<u32> {
-    let slice = take_checkpoint_bytes(bytes, cursor, 4)?;
-    let mut out = [0u8; 4];
-    out.copy_from_slice(slice);
-    Ok(u32::from_be_bytes(out))
-}
-
-fn read_checkpoint_u64(bytes: &[u8], cursor: &mut usize) -> ServiceResult<u64> {
-    let slice = take_checkpoint_bytes(bytes, cursor, 8)?;
-    let mut out = [0u8; 8];
-    out.copy_from_slice(slice);
-    Ok(u64::from_be_bytes(out))
-}
-
-fn take_checkpoint_bytes<'a>(
-    bytes: &'a [u8],
-    cursor: &mut usize,
-    len: usize,
-) -> ServiceResult<&'a [u8]> {
-    let start = *cursor;
-    let end = start.checked_add(len).ok_or_else(|| {
-        ServiceError::invalid_state("sync checkpoint cursor overflow while decoding payload")
-    })?;
-    let slice = bytes.get(start..end).ok_or_else(|| {
-        ServiceError::invalid_state(format!(
-            "truncated sync checkpoint payload: need {len} bytes at offset {start}, got {} bytes",
-            bytes.len()
-        ))
-    })?;
-    *cursor = end;
-    Ok(slice)
 }
 
 /// One contiguous block batch entering a staged sync/import driver.

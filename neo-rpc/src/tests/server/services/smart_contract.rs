@@ -58,7 +58,7 @@ fn signature_contract_for_keypair(key_pair: &KeyPair) -> Contract {
 fn fund_gas(system: &Arc<crate::server::NodeContext>, account: UInt160, amount: i64) {
     let mut store = system.store_cache();
     crate::server::test_support::seed_gas_balance(&mut store, &account, BigInt::from(amount));
-    store.commit();
+    store.try_commit().expect("commit test store");
 }
 
 fn deploy_verify_contract(system: &Arc<crate::server::NodeContext>) -> UInt160 {
@@ -124,7 +124,7 @@ fn deploy_verify_contract(system: &Arc<crate::server::NodeContext>) -> UInt160 {
 
     let tracked = engine.snapshot_cache().tracked_items();
     store_cache.apply_tracked_items(tracked);
-    store_cache.commit();
+    store_cache.try_commit().expect("commit test store cache");
 
     contract.hash
 }

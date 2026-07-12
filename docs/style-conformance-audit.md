@@ -116,10 +116,12 @@ High-signal clusters found during the first pass:
   are now limited to standard-library panic payload boundaries and comments
   explaining that invariant.
 
-- Staged-sync checkpoints use backend-isolated maintenance metadata instead of
-  magic keys in the normal Neo data table. Checkpoint advancement and legacy-row
-  cleanup share one durable `StoreMaintenanceBatch`, so operational state cannot
-  leak into typed scans, deterministic dumps, or state-root calculation.
+- Staged-sync checkpoints and verified-header sidecars use typed logical tables
+  in backend-isolated maintenance metadata instead of magic keys in the normal
+  Neo data table. The hot-Ledger prune watermark uses the same generic
+  `TableProvider`/`StoreMaintenanceBatch` contract. Operational state cannot
+  leak into contract scans, deterministic dumps, or state-root calculation,
+  and backend-facing commit errors can no longer be silently swallowed.
 
 - P2P range sync has one production owner. `BlockDownloadCoordinator` composes
   cross-peer assignment, ordered buffering, and correlated peer fetches; the

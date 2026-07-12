@@ -8,12 +8,38 @@ use neo_native_contracts::ledger_contract::storage::{
     PREFIX_BLOCK, PREFIX_BLOCK_HASH, PREFIX_CURRENT_BLOCK, PREFIX_TRANSACTION,
 };
 use neo_static_files::StaticFileProvider;
-use neo_storage::StorageKey;
-use neo_storage::persistence::{Store, StoreMaintenanceBatch};
+use neo_storage::persistence::{
+    Store, StoreMaintenanceBatch, Table, TableEncode, TableNamespace, TableProvider, U32BeCodec,
+};
+use neo_storage::{StorageKey, StorageResult};
 
 use super::StaticLedgerArchive;
 
 const PRUNED_THROUGH_KEY: &[u8] = b"neo.ledger.hot-pruned-through.v1";
+
+#[derive(Debug)]
+struct HotLedgerPruneWatermarkKeyCodec;
+
+impl TableEncode<()> for HotLedgerPruneWatermarkKeyCodec {
+    type Encoded<'a> = &'static [u8];
+
+    fn encode(_: &()) -> StorageResult<Self::Encoded<'_>> {
+        Ok(PRUNED_THROUGH_KEY)
+    }
+}
+
+#[derive(Debug)]
+struct HotLedgerPruneWatermarkTable;
+
+impl Table for HotLedgerPruneWatermarkTable {
+    type Key = ();
+    type Value = u32;
+    type KeyCodec = HotLedgerPruneWatermarkKeyCodec;
+    type ValueCodec = U32BeCodec;
+
+    const NAME: &'static str = "HotLedgerPruneWatermark";
+    const NAMESPACE: TableNamespace = TableNamespace::Maintenance;
+}
 
 /// Result of one bounded hot-Ledger pruning transaction.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -31,19 +57,9 @@ pub struct HotLedgerPruneOutcome {
 impl StaticLedgerArchive {
     /// Reads and strictly decodes the node-local hot-pruning watermark.
     pub fn hot_pruned_through<S: Store>(&self, store: &S) -> CoreResult<Option<u32>> {
-        let Some(bytes) = store
-            .maintenance_metadata(PRUNED_THROUGH_KEY)
-            .map_err(storage_error("read hot Ledger prune watermark"))?
-        else {
-            return Ok(None);
-        };
-        let encoded: [u8; 4] = bytes.try_into().map_err(|bytes: Vec<u8>| {
-            CoreError::invalid_data(format!(
-                "hot Ledger prune watermark must be 4 bytes, got {}",
-                bytes.len()
-            ))
-        })?;
-        Ok(Some(u32::from_be_bytes(encoded)))
+        store
+            .table_get::<HotLedgerPruneWatermarkTable>(&())
+            .map_err(|error| table_read_error("read hot Ledger prune watermark", error))
     }
 
     /// Prunes at most `max_frames` archived heights through `target`.
@@ -156,7 +172,9 @@ impl StaticLedgerArchive {
             batch.delete_data(raw_key.clone());
             deleted_rows = deleted_rows.saturating_add(1);
         }
-        batch.put_metadata(PRUNED_THROUGH_KEY.to_vec(), frontier.to_be_bytes().to_vec());
+        batch
+            .put::<HotLedgerPruneWatermarkTable>(&(), &frontier)
+            .map_err(storage_error("encode hot Ledger prune watermark"))?;
         let committed = store
             .try_commit_durable_maintenance(&batch)
             .map_err(storage_error("commit hot Ledger prune batch"))?;
@@ -197,6 +215,15 @@ fn validate_prunable_ledger_key(raw_key: &[u8]) -> CoreResult<()> {
 
 fn storage_error(context: &'static str) -> impl FnOnce(neo_storage::StorageError) -> CoreError {
     move |error| CoreError::io(format!("{context}: {error}"))
+}
+
+fn table_read_error(context: &'static str, error: neo_storage::StorageError) -> CoreError {
+    match error {
+        neo_storage::StorageError::Serialization { .. } => {
+            CoreError::invalid_data(format!("{context}: {error}"))
+        }
+        _ => CoreError::io(format!("{context}: {error}")),
+    }
 }
 
 fn static_file_error(

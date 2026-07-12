@@ -12,7 +12,9 @@ use neo_storage::persistence::read_only_store::{
 };
 use neo_storage::persistence::seek_direction::SeekDirection;
 use neo_storage::persistence::storage::StorageConfig;
-use neo_storage::persistence::{Store, StoreBackendKind, StoreMaintenanceBatch, WriteStore};
+use neo_storage::persistence::{
+    IntoTableBytes, Store, StoreBackendKind, StoreMaintenanceBatch, TableEncode, WriteStore,
+};
 use neo_storage::rocksdb::RocksDBStoreProvider;
 use neo_storage::types::{StorageItem, StorageKey};
 use parking_lot::Mutex;
@@ -127,21 +129,20 @@ fn store_checkpoint_store_round_trips_and_overwrites_memory_backend() {
 }
 
 #[test]
-fn store_checkpoint_store_discards_legacy_raw_metadata_keys() {
+fn store_checkpoint_reads_do_not_touch_normal_data_rows() {
     let mut backing = MemoryStore::new();
-    let legacy_key = legacy_checkpoint_key(SyncStageKind::Import);
-    let legacy_checkpoint =
-        SyncStageCheckpoint::new(SyncStageKind::Import, 8).with_counters(8, 512);
+    let unrelated_key = vec![0xF8, b's', SyncStageKind::Import.code()];
+    let unrelated_value = b"normal-data-row".to_vec();
     backing
-        .put(legacy_key.clone(), encode_checkpoint(&legacy_checkpoint))
-        .expect("seed legacy normal-table checkpoint");
+        .put(unrelated_key.clone(), unrelated_value.clone())
+        .expect("seed normal data row");
     let store = StoreSyncStageCheckpointStore::new(backing.clone());
 
     assert_eq!(store.checkpoint(SyncStageKind::Import).expect("get"), None);
     assert_eq!(
-        backing.try_get_bytes(&legacy_key),
-        None,
-        "legacy checkpoint bytes must be removed from the normal data table"
+        backing.try_get_bytes(&unrelated_key),
+        Some(unrelated_value),
+        "typed maintenance reads must not inspect or mutate normal Neo data"
     );
 }
 
@@ -752,6 +753,52 @@ fn store_checkpoint_payload_rejects_wrong_stage() {
         err.to_string().contains("stage mismatch"),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn sync_metadata_tables_preserve_v1_key_and_value_bytes() {
+    use super::tables::{TargetHashKeyCodec, VerifiedWindowKeyCodec, VerifiedWindowValueCodec};
+
+    let checkpoint = SyncStageCheckpoint::new(SyncStageKind::Import, 7).with_counters(3, 4);
+    let mut expected_checkpoint_key = b"neo.sync.stage-checkpoint.v1.".to_vec();
+    expected_checkpoint_key.push(SyncStageKind::Import.code());
+    assert_eq!(
+        checkpoint_key(SyncStageKind::Import),
+        expected_checkpoint_key
+    );
+
+    let mut expected_checkpoint = b"NRSCP1".to_vec();
+    expected_checkpoint.push(SyncStageKind::Import.code());
+    expected_checkpoint.extend_from_slice(&7_u32.to_be_bytes());
+    expected_checkpoint.extend_from_slice(&3_u64.to_be_bytes());
+    expected_checkpoint.extend_from_slice(&4_u64.to_be_bytes());
+    assert_eq!(encode_checkpoint(&checkpoint), expected_checkpoint);
+
+    let mut expected_header_key = b"neo.sync.verified-header.v1.header.".to_vec();
+    expected_header_key.extend_from_slice(&0x0102_0304_u32.to_be_bytes());
+    assert_eq!(verified_header_key(0x0102_0304), expected_header_key);
+
+    let window_key = VerifiedWindowKeyCodec::encode(&())
+        .expect("encode window key")
+        .into_table_bytes();
+    assert_eq!(window_key, b"neo.sync.verified-header.v1.window");
+    let target_key = TargetHashKeyCodec::encode(&())
+        .expect("encode target key")
+        .into_table_bytes();
+    assert_eq!(target_key, b"neo.sync.verified-header.v1.target-hash");
+
+    let window = HeaderStageWindow {
+        base_height: 10,
+        target_height: 20,
+        target_hash: None,
+    };
+    let encoded_window = VerifiedWindowValueCodec::encode(&window)
+        .expect("encode header window")
+        .into_table_bytes();
+    let mut expected_window = b"NRSHW1".to_vec();
+    expected_window.extend_from_slice(&10_u32.to_be_bytes());
+    expected_window.extend_from_slice(&20_u32.to_be_bytes());
+    assert_eq!(encoded_window, expected_window);
 }
 
 #[derive(Debug, Default)]

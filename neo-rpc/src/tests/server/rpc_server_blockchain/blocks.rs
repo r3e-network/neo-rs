@@ -93,7 +93,7 @@ async fn get_best_block_hash_reflects_current_state() {
         .expect("serialize HashIndexState pointer");
     let key = StorageKey::new(LedgerContract::ID, vec![0x0c]);
     store.add(key, StorageItem::from_bytes(current_bytes));
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let result = (handler.callback())(&server, &[]).expect("get best block hash");
     assert_eq!(result.as_str().expect("hash"), hash.to_string());

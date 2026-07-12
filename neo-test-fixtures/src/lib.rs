@@ -22,7 +22,7 @@
 //!   transaction, and hash-index entries into a `StoreCache`, matching the
 //!   on-disk format the `LedgerContract` reader expects.
 
-use neo_error::CoreResult;
+use neo_error::{CoreError, CoreResult};
 use neo_io::SerializableExtensions;
 use neo_native_contracts::LedgerContract;
 use neo_payloads::TrimmedBlock;
@@ -228,7 +228,7 @@ where
 /// - `Prefix_Transaction` (tx hash → `TransactionState` record),
 /// - `Prefix_CurrentBlock` (hash + index pointer),
 ///
-/// then calls `store.commit()`.
+/// then commits the store and propagates any backend failure.
 pub fn try_store_block_with_vmstate<S>(
     store: &mut StoreCache<S>,
     block: &Block,
@@ -272,6 +272,8 @@ where
     let current_bytes = LedgerContract::new().serialize_hash_index_state(&hash, index)?;
     let current_key = StorageKey::new(LedgerContract::ID, vec![prefix::CURRENT_BLOCK]);
     store.add(current_key, StorageItem::from_bytes(current_bytes));
-    store.commit();
+    store
+        .try_commit()
+        .map_err(|error| CoreError::io(format!("commit fixture block: {error}")))?;
     Ok(())
 }

@@ -259,7 +259,7 @@ fn seed_policy_dynamic_values(
             StorageItem::from_bytes(BigInt::from(value).to_signed_bytes_le()),
         );
     }
-    store.commit();
+    store.try_commit().expect("commit test store");
 }
 
 /// Reads the (msperblock, maxtraceableblocks, maxvaliduntilblockincrement)
@@ -387,7 +387,7 @@ async fn get_version_falls_back_to_settings_when_ledger_pointer_absent() {
         LedgerContract::ID,
         vec![LEDGER_PREFIX_CURRENT_BLOCK],
     ));
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let server = RpcServer::new(system, RpcServerConfig::default());
     let handlers = RpcServerNode::register_handlers();

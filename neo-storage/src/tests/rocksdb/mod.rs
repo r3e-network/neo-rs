@@ -180,7 +180,7 @@ fn snapshot_commit_invalidates_read_cache_for_updated_keys() {
 
     let mut writer = StoreCache::new_from_store(store.clone(), false);
     writer.add(key.clone(), value1.clone());
-    writer.commit();
+    writer.try_commit().expect("write initial cached value");
 
     let reader = StoreCache::new_from_store(store.clone(), false);
     assert_eq!(
@@ -193,7 +193,7 @@ fn snapshot_commit_invalidates_read_cache_for_updated_keys() {
 
     let mut writer2 = StoreCache::new_from_store(store.clone(), false);
     writer2.update(key.clone(), value2.clone());
-    writer2.commit();
+    writer2.try_commit().expect("write updated cached value");
 
     let reader2 = StoreCache::new_from_store(store, false);
     assert_eq!(
@@ -225,7 +225,7 @@ fn snapshot_reads_ignore_pending_writes_until_reopened_after_commit() {
         StorageKey::from_bytes(&existing_key),
         StorageItem::from_bytes(vec![0xAA]),
     );
-    writer.commit();
+    writer.try_commit().expect("seed RocksDB snapshot rows");
 
     let mut snapshot = store.snapshot();
     {
@@ -322,7 +322,7 @@ fn store_cache_commits_rocksdb_store_without_snapshot_overlay() {
     let mut seed = StoreCache::new_from_store(store.clone(), false);
     seed.add(key_keep.clone(), StorageItem::from_bytes(vec![0x10]));
     seed.add(key_delete.clone(), StorageItem::from_bytes(vec![0x20]));
-    seed.commit();
+    seed.try_commit().expect("seed RocksDB store cache");
 
     let mut writer = StoreCache::new_from_store(store.clone(), false);
     writer.update(key_keep.clone(), StorageItem::from_bytes(vec![0x11]));
@@ -686,7 +686,7 @@ fn backward_prefix_find_returns_expected_rows_in_store_and_snapshot_views() {
     writer.add(key_a.clone(), StorageItem::from_bytes(vec![0x01]));
     writer.add(key_b.clone(), StorageItem::from_bytes(vec![0x02]));
     writer.add(key_other, StorageItem::from_bytes(vec![0x03]));
-    writer.commit();
+    writer.try_commit().expect("seed RocksDB prefix rows");
 
     let prefix = StorageKey::create(-5, 0x1d);
     let forward_expected = vec![key_a.to_array(), key_b.to_array()];

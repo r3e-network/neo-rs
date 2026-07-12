@@ -434,12 +434,17 @@ Key points:
 - **Storage byte boundary.** `neo-storage` exposes `Store`,
   `RawReadOnlyStore`, `ReadOnlyStoreGeneric`, `DataCache`, and `StoreFactory`
   over existing raw bytes. `StorageKey` still encodes with `to_array()` and
-  `StorageItem` with `to_value()`. No typed table/codec API is currently
-  exported; any future one must preserve these C#-compatible bytes.
-  `StoreMaintenanceBatch` is a separate operational path: MDBX stores its
-  metadata in a named table and RocksDB in a column family, allowing one
-  durable transaction to delete ordinary rows and advance a node checkpoint
-  without exposing metadata to contract scans or state roots.
+  `StorageItem` with `to_value()`. `Table` binds typed keys/values and concrete
+  GAT codecs to `Data` or `Maintenance`; every concrete store implements
+  `TableProvider`, and `StoreMaintenanceBatch::put/delete::<T>` applies the
+  matching typed write. Sync checkpoints, verified headers/windows/target hash,
+  and the hot-Ledger prune watermark use that path. Their established bytes are
+  unchanged. MDBX stores maintenance metadata in a named table and RocksDB in a
+  column family, allowing one durable transaction to delete ordinary rows and
+  advance a typed checkpoint without exposing metadata to contract scans or
+  state roots. Backend-facing cache/snapshot commits always return `Result`;
+  only child `DataCache::commit()` remains infallible because it merges memory
+  into its parent without claiming database durability.
 - **Ledger provider boundary.** `neo-blockchain` exposes `BlockProvider` and
   `TxProvider` capability traits. `StorageLedgerProviderFactory` creates hot
   providers over native Ledger records; `HotColdLedgerProviderFactory` composes

@@ -368,11 +368,16 @@ Priority order for crate refactors:
    `MptStore`, snapshots, tries, and resolution caches. Keep associated concrete
    provider types for static dispatch. Do not let RPC or another upper layer
    reopen the MPT directly; add a capability to the provider instead.
-5. **Typed tables may only adapt existing bytes.** The current live storage API
-   is `Store`/`RawReadOnlyStore`/`ReadOnlyStoreGeneric` over
-   `StorageKey`/`StorageItem`; no typed table codec is exported. If one is added,
-   it must adapt existing persisted bytes and must not invent a new consensus
-   serialization format.
+5. **Typed tables only adapt established bytes.** Define a zero-sized `Table`
+   marker in the domain that owns a persisted record, with concrete
+   `TableEncode`/`TableDecode` codecs and the correct `TableNamespace`. Read it
+   through `TableProvider::table_get::<T>` and write it through
+   `StoreMaintenanceBatch::put/delete::<T>`. Prefer borrowed or fixed-array GAT
+   outputs to avoid allocations. `StorageKeyCodec`/`StorageItemCodec` are the
+   consensus-data baseline: a table abstraction must not invent a different
+   Neo serialization. Compact derives are limited to explicitly versioned
+   node-local records unless byte parity with the established Neo codec is
+   proven.
 6. **Operational metadata must be physically isolated.** Prune watermarks,
    checkpoints, schema versions, and repair state must not use magic keys in
    the normal Neo data table: typed scans can interpret them as `StorageKey`
@@ -383,6 +388,11 @@ Priority order for crate refactors:
    version, verify hot/cold byte equality, and only then delete and advance the
    watermark atomically. Recovery must fail closed if canonical, archive, and
    watermark truth cannot all agree.
+7. **Database commits are always fallible.** Backend snapshots and
+   `StoreCache` expose `try_commit`/`try_commit_durable`; callers must propagate
+   or deliberately classify the error. Never add a convenience `commit()` that
+   logs and continues. `DataCache::commit()` is different: it only merges a
+   child overlay into its in-memory parent and does not assert durability.
 
 Do not copy reth's heavy memory-chain reorg overlay or Polkadot's Wasm
 meta-runtime into Neo just for symmetry. Keep the part that matters here:

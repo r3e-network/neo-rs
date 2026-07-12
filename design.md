@@ -1,6 +1,6 @@
 # neo-rs Architecture Design Document
 
-**Version**: 5.4
+**Version**: 5.5
 **Date**: 2026-07-12
 **Author**: Software Architect
 **Status**: Active
@@ -16,7 +16,7 @@ that is professional, consistent, and ready for long-term evolution.
 
 **Architecture health score**: 9.5/10
 
-The ADR log now spans ADR-001 through ADR-039. Beyond the early trait-design,
+The ADR log now spans ADR-001 through ADR-040. Beyond the early trait-design,
 duplication, and async/concurrency audits (ADR-016 through ADR-019), later ADRs
 cover store-surface reduction and trait sealing (ADR-020, ADR-021), dead-code
 excision (ADR-022, ADR-027, ADR-028, ADR-032), hex/KeyBuilder consolidation
@@ -26,8 +26,8 @@ ConsensusSigner deadlock fix (ADR-031), static composition (ADR-034), and the
 staged core/application lifecycle with private service layouts (ADR-035), a
 production-consumed finalized Ledger archive (ADR-036), frozen generic
 StateService providers (ADR-037), and one checker-typed import queue shared by
-staged and live peer sync (ADR-038), followed by bounded, acknowledged finalized
-projection delivery (ADR-039).
+staged and live peer sync (ADR-038), bounded acknowledged finalized projection
+delivery (ADR-039), and typed storage tables with fail-closed commits (ADR-040).
 
 ---
 
@@ -432,10 +432,11 @@ This section documents which patterns are adopted, adapted, or deferred.
 | Pattern | reth location | neo-rs location | Status |
 |---------|---------------|-----------------|--------|
 | Provider traits | `reth-provider` | `neo-runtime` (StoreProvider, ConfigProvider, TxAdmission; `BlockchainProvider` deleted in ADR-032) | Adopted (BlockchainProvider removed) |
+| Typed storage tables/codecs | `reth-db-api::Table` | `neo-storage::persistence::{Table, TableProvider}` | Adapted over unchanged Neo bytes (ADR-040) |
 | NodeTypes sealed seam | `reth-node-api` | `neo-runtime/src/node/types.rs` | Adopted (single-impl sealed seam) |
 | NodeComponents / FullNode type-state | `reth-node-api` | (removed) | Removed (ADR-032) |
 | Engine API trait | `reth-engine` `Engine` | (removed) `EngineApi` | Removed/Superseded (ADR-033) |
-| Pipeline stage abstraction | `reth-stages` | `neo-engine` `PipelineStage` | Scaffolded (ADR-010) |
+| Pipeline/import stages | `reth-stages` | `neo-runtime::sync_pipeline` + `neo-blockchain::pipeline` | Production-wired without the deleted scaffold crate (ADR-027, ADR-038) |
 | Service trait vocabulary | `reth-interfaces` | `neo-runtime` `Service` (surviving); `BlockExecutor` etc. removed | Removed/Superseded (ADR-033) |
 | `anyhow` in binary, typed errors in libs | `reth-node` | `neo-node` (anyhow), all libs (typed) | Adopted |
 | Composition root builder | `reth-node-builder` | `neo-system` `NodeBuilder` | Adopted |
@@ -705,10 +706,14 @@ When triggered, the migration path is:
 
 ---
 
-## Long-Term Evolution Roadmap
+## Historical Evolution Roadmap (Superseded)
 
-The roadmap is organized into 4 phases, ordered by dependency and urgency.
-Each phase is independently shippable.
+This four-phase plan records the state before ADR-027 removed `neo-engine` and
+the production sync/import architecture was composed in `neo-runtime`,
+`neo-system`, and `neo-blockchain`. It is not an implementation backlog. The
+living status and next candidates are maintained in
+`docs/neo-rs-vs-reth-vs-polkadot-sdk-architecture-analysis.md`; later ADRs in
+this document are authoritative when they conflict with this history.
 
 ### Phase 1: Polish (Immediate — this session)
 
@@ -720,36 +725,16 @@ Each phase is independently shippable.
 | Formalize error type policy | ADR-011 | Docs only | Done |
 | reth/polkadot comparison analysis | — | Analysis | Done |
 
-### Phase 2: Pipeline Foundation (Near-term — when staged sync is prioritized)
+### Superseding Outcomes
 
-| Item | ADR | Effort | Dependency |
-|------|-----|--------|------------|
-| Extract `ValidateStage` from neo-blockchain | ADR-010 P1 | Low | None |
-| Extract `ExecuteStage` from neo-blockchain | ADR-010 P2 | Medium | P1 |
-| Make `neo-engine::Pipeline` the production driver | ADR-010 | Medium | P1+P2 |
-
-This phase unifies the two pipeline vocabularies. After completion,
-`neo-blockchain::pipeline` modules implement `neo-engine::PipelineStage`
-traits, and the `Pipeline` driver orchestrates them.
-
-### Phase 3: Infrastructure Hardening (Mid-term)
-
-| Item | ADR | Effort | Dependency |
-|------|-----|--------|------------|
-| Extract `PersistStage` + `CommitStage` | ADR-010 P3 | High | Phase 2 |
-| Add `IndexStage` | ADR-010 P4 | Low | P3 |
-| Add `RuntimeVersion` type | ADR-014 | Low | Triggered by need |
-| `neo-serialization` domain error (Priority 3) | — | Low | None |
-| 3-crate RPC split | ADR-001 | Medium | Triggered by need |
-
-### Phase 4: Extensibility (Long-term — when ecosystem demands)
-
-| Item | ADR | Effort | Dependency |
-|------|-----|--------|------------|
-| Native contract registry builder | ADR-015 | Medium | Triggered by need |
-| Full staged sync (parallel stages) | ADR-010 | High | Phase 3 |
-| Plugin system for L6 services | — | High | Triggered by need |
-| Stateless block validation | — | High | Phase 3 |
+| Historical plan | Current outcome |
+|-----------------|-----------------|
+| Make `neo-engine::Pipeline` the driver | `neo-engine` was deleted in ADR-027; durable `Headers -> Bodies -> Import -> Index` ownership is production-wired through `neo-runtime` and `neo-system`. |
+| Extract independent execute/persist/commit stages | Execution, native persistence, state-root work, and the Ledger fence intentionally remain one canonical import transaction; splitting them would create dishonest checkpoints. |
+| Add `IndexStage` | Implemented as a hash-verified, resumable committed-chain follower with its own durability domain. |
+| Full staged sync and stateless validation | Implemented with fixed-target verified headers, coordinated body download, checker-typed concurrent preflight, and one ordered canonical import queue. |
+| Native contract registry builder | Superseded by immutable composition plus generated descriptor/binding-table dispatch; mutable late registration is intentionally rejected. |
+| Plugin system for L6 services | Replaced for current consumers by explicit pre-commit durability hooks, acknowledged finalized projections, and lightweight lifecycle events. |
 
 ### Decision Framework for New Crates
 
@@ -768,10 +753,10 @@ When adding a new crate, apply this checklist:
 
 ---
 
-## Remaining Work (Legacy — superseded by Roadmap above)
+## Historical Remaining Work (Superseded)
 
-> The priorities below are preserved for reference. The phased roadmap
-> above is the authoritative plan.
+> The priorities below are preserved only as historical ADR context. The
+> architecture comparison and accepted ADRs after ADR-027 are authoritative.
 
 ### Priority 1: Full 3-crate RPC split (ADR-001)
 Split `neo-rpc` into `neo-rpc-api` (traits) / `neo-rpc` (server) /
@@ -781,10 +766,10 @@ a correctness issue. Defers until the workspace grows or client-only
 consumers need a lighter dependency.
 
 ### Priority 2: Staged sync pipeline (ADR-009 → ADR-010)
-Extract `neo-blockchain`'s pipeline stages into `neo-engine::PipelineStage`
-implementations. The `BlockchainEngineAdapter` bridge is in place; the
-refactoring can be done incrementally when fast sync is prioritized.
-See ADR-010 for the 4-phase migration plan.
+Resolved through a different production design. ADR-027 deleted `neo-engine`;
+the current pipeline uses `neo-runtime::sync_pipeline`, the checker-typed import
+queue, `neo-system::StagedSyncPipeline`, and the canonical
+`neo-blockchain` import transaction. Do not recreate the old adapter plan.
 
 ### Priority 3: neo-serialization domain error
 Give `neo-serialization` its own `SerializationError` type (matching
@@ -1287,14 +1272,15 @@ Validation is split into:
 | MPT layering | Documented (ADR-012) — not duplication |
 | doc(html_root_url) versions | All 11 crates at 0.10.0 (ADR-013) |
 | Redundant inline lints | Removed (tokens_tracker module) |
-| reth/polkadot comparison | Documented (8 patterns adopted, 4 deferred) |
-| Evolution roadmap | 4 phases, full ADR log (ADR-001 through ADR-039) |
+| reth/polkadot comparison | Living implementation matrix, including typed tables and staged/finalized delivery |
+| Evolution roadmap | 4 phases, full ADR log (ADR-001 through ADR-040) |
 | Debug trait bounds | Consistent across all service traits (ADR-019) |
 | HSM redeem script | Delegates to canonical neo-vm impl (ADR-016) |
 | Async/concurrency safety | Excellent — 0 Critical/Major issues (ADR audit) |
 | Backpressure handling | Bounded channels + try_send slow-peer isolation |
 | Mempool TOCTOU safety | Atomic check-verify-act under write lock |
 | Store trait surface | Direct generic capability methods; no Store downcast or dynamic extension traits (ADR-020) |
+| Typed table boundary | GAT codecs + generic providers/batches; sync/prune metadata migrated without byte changes (ADR-040) |
 | Trait sealing | NodeTypes, NodeComponents, EngineApi sealed (ADR-021) |
 | Dead KeyBuilder wrapper | Removed (ADR-022) |
 | NodeComponents type-state | Documented as scaffolded, not functional (ADR-023) |
@@ -2255,3 +2241,79 @@ could not carry the exact execution artifacts.
   finalized projections cannot accidentally span one shared mutable snapshot.
 - Neo N3 v3.10.1 bytes, execution order, native-contract behavior, state roots,
   witness checks, and canonical storage layout are unchanged.
+
+### ADR-040: Typed logical tables and fail-closed storage commits
+
+**Status**: Accepted (implemented)
+
+**Context**: `Store` already kept backend selection generic and concrete, but
+node-local records still repeated raw key construction, value framing, and
+corruption handling in their consumers. Sync checkpoints, verified headers,
+header-window metadata, target hashes, and the hot-Ledger prune watermark all
+used the same isolated maintenance namespace without a compile-time contract
+connecting a key layout to its value codec. The architecture comparison
+therefore still marked Reth-style typed tables as unimplemented. Separately,
+`StoreSnapshot::commit` and `StoreCache::commit` logged backend failures and
+returned `()`, allowing a caller to continue after data had not been persisted.
+
+**Decision**:
+
+- Add `Table`, `TableNamespace`, `TableEncode`, `TableDecode`, and
+  `TableCodec` to `neo-storage`. A table marker binds its key/value Rust types,
+  concrete codecs, stable diagnostic name, and either the consensus `Data` or
+  node-local `Maintenance` namespace.
+- Make encoding allocation-aware. `TableEncode` has a GAT output that can be a
+  borrowed slice, fixed-size stack array, `Cow`, or owned vector.
+  `IntoTableBytes` moves an owned vector directly into a batch and copies only
+  when persistence genuinely needs ownership.
+- Blanket-implement `TableProvider` for every concrete `Store`. Runtime backend
+  selection remains the concrete `RuntimeStore` enum; table and codec dispatch
+  remains monomorphized and introduces no `dyn` provider or boxed iterator.
+- Add `StoreMaintenanceBatch::put::<T>` and `delete::<T>`. Reads and atomic
+  writes now derive namespace and codecs from the same table marker.
+- Migrate `SyncCheckpointTable`, `VerifiedHeaderTable`,
+  `VerifiedHeaderWindowTable`, `VerifiedHeaderTargetHashTable`, and
+  `HotLedgerPruneWatermarkTable` as production consumers. Verified-header
+  staging retains the canonical bytes produced during validation and borrows
+  them into the batch, avoiding a second serialization.
+- Keep `StorageKeyCodec` and `StorageItemCodec` byte-identical to C# Neo. Typed
+  table identity does not authorize compacting Ledger, native-contract,
+  transaction-state, or MPT records. Future compact derives are limited to
+  explicitly versioned node-local records unless exact established-byte parity
+  is proven.
+- Remove obsolete normal-data checkpoint migration. Node-local hints from
+  intermediate layouts are unsupported and never read; sync starts from the
+  authoritative canonical tip.
+- Delete the error-swallowing `StoreSnapshot::commit` and
+  `StoreCache::commit` methods. Backend-reaching commits return `Result` and
+  every caller must propagate or explicitly classify failure. In-memory
+  `DataCache::commit` remains infallible because it only merges a child overlay
+  into its parent and makes no durability claim.
+
+**Trade-offs**:
+
+- **Gaining**: compile-time table identity, one corruption boundary, explicit
+  namespace isolation, allocation-aware key/value encoding, and no silent
+  database failure path.
+- **Cost**: each persisted domain record needs a small marker and codec type.
+  This is deliberate ownership documentation rather than backend boilerplate.
+- **Constraint**: the initial provider supports typed point reads and typed
+  atomic batch mutations. Cursor APIs should be added only when a real domain
+  scan needs them; maintenance backends do not currently expose a shared raw
+  cursor contract.
+- **Reversibility**: additional table markers and codecs are additive. Changing
+  established Neo bytes requires a separate protocol/schema decision and is
+  not implied by this abstraction.
+
+**Consequences**:
+
+- Sync sidecars and the prune watermark no longer call
+  `maintenance_metadata`, `put_metadata`, or `delete_metadata` directly in
+  normal production flow.
+- Malformed typed values report their table name and are classified as corrupt
+  persisted state rather than as a missing record.
+- Backend parity tests cover maintenance and consensus-data namespaces,
+  deletion, order-preserving integer keys, exact `StorageKey`/`StorageItem`
+  bytes, and malformed-value rejection.
+- Neo N3 v3.10.1 protocol bytes, state-root input, key ordering, and backend
+  selection are unchanged.

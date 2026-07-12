@@ -196,7 +196,7 @@ async fn send_many_returns_transaction_json() {
         keypair.script_hash(),
         BigInt::from(50_0000_0000i64),
     );
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let params = [
         Value::String(path.clone()),

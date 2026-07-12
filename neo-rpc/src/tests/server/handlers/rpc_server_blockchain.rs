@@ -156,7 +156,7 @@ fn store_contract_state<S>(
         StorageItem::from_bytes(contract.hash.to_bytes().to_vec()),
     );
 
-    store.commit();
+    store.try_commit().expect("commit test store");
 }
 
 fn store_storage_item<S>(
@@ -169,7 +169,7 @@ fn store_storage_item<S>(
 {
     let storage_key = StorageKey::new(contract_id, key.to_vec());
     store.add(storage_key, StorageItem::from_bytes(value.to_vec()));
-    store.commit();
+    store.try_commit().expect("commit test store");
 }
 
 fn serialize_test_stack_value(value: &StackValue) -> Vec<u8> {
@@ -201,7 +201,7 @@ fn store_committee<S>(
     let bytes = serialize_test_stack_value(&StackValue::Array(items));
     let key = StorageKey::create(neo_token_id, PREFIX_COMMITTEE);
     store.add(key, StorageItem::from_bytes(bytes));
-    store.commit();
+    store.try_commit().expect("commit test store");
 }
 
 fn store_candidate_state<S>(
@@ -237,7 +237,7 @@ fn store_candidate_state_raw<S>(
     key_bytes.extend_from_slice(candidate.as_bytes());
     let key = StorageKey::new(neo_token_id, key_bytes);
     store.add(key, StorageItem::from_bytes(bytes));
-    store.commit();
+    store.try_commit().expect("commit test store");
 }
 
 fn store_blocked_account<S>(store: &mut neo_storage::persistence::StoreCache<S>, account: &UInt160)
@@ -251,7 +251,7 @@ where
         .id();
     let key = StorageKey::create_with_uint160(policy_id, PREFIX_BLOCKED_ACCOUNT, account);
     store.add(key, StorageItem::from_bytes(vec![1u8]));
-    store.commit();
+    store.try_commit().expect("commit test store");
 }
 
 fn make_contract_state(id: i32, hash: UInt160, name: &str) -> ContractState {

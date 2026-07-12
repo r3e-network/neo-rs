@@ -112,13 +112,6 @@ where
         &self.data_cache
     }
 
-    /// Commits all changes.
-    pub fn commit(&mut self) {
-        if let Err(err) = self.try_commit() {
-            warn!(target: "neo", error = ?err, "store cache commit failed");
-        }
-    }
-
     /// Commits all changes, returning an error if read-only.
     pub fn try_commit(&mut self) -> DataCacheResult {
         if self.data_cache.is_read_only() {

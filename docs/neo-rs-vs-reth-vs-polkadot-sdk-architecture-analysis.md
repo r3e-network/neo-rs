@@ -124,9 +124,19 @@ trait-object dispatch.
 Raw key/value bytes remain C# compatible through `StorageKey` / `StorageItem`,
 and `StorageKey` / `KeyBuilder` over those raw bytes is the live encoding on
 every storage access path. `Store`, `RawReadOnlyStore`,
-`ReadOnlyStoreGeneric`, and `StoreFactory` are the implemented backend seams;
-a Reth-style typed table/codec layer remains future work and must adapt these
-existing bytes rather than redefine them.
+`ReadOnlyStoreGeneric`, and `StoreFactory` are the backend seams. A Reth-style
+typed layer now binds logical `Table` marker types to allocation-aware
+`TableEncode` / `TableDecode` codecs and either the consensus `Data` namespace
+or isolated `Maintenance` namespace. Every concrete `Store` implements the
+blanket `TableProvider`; `StoreMaintenanceBatch::put/delete::<T>` uses the same
+table identity for atomic writes. Sync checkpoints, verified-header rows and
+window metadata, target hashes, and the hot-Ledger prune watermark have been
+migrated as production consumers of this boundary. Their keys and values are
+byte-for-byte unchanged.
+`StorageKeyCodec` / `StorageItemCodec` prove the same adapter can represent
+consensus rows without authorizing compact or alternate Neo encodings. Backend
+commits expose only fallible `try_commit` APIs; no snapshot/cache API can log
+and swallow a failed database commit.
 
 ```rust
 pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync {
@@ -140,7 +150,7 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync {
 | Aspect | neo-rs | Reth | Polkadot SDK |
 |--------|--------|------|-------------|
 | Abstraction | `Store` with an associated concrete snapshot; `RuntimeStore` enum for config selection | `Database` trait with GATs | `kvdb` trait, 3-level stack |
-| Table encoding | Live: `StorageKey` / `KeyBuilder` over raw C#-compatible bytes; no separate typed-table API yet | Per-table `Encode`/`Decode` + `Compact` derive | Per-column encoding (parity-scale-codec) |
+| Table encoding | Generic `Table` + GAT codecs over unchanged Neo/maintenance bytes; typed sync and prune metadata are live | Per-table `Encode`/`Decode` + `Compact` derive | Per-column encoding (parity-scale-codec) |
 | Tiering | Hot MDBX/RocksDB plus opt-in compressed static Ledger archive; provider routing, atomic pruning, and watermark-aware recovery are wired | Hot (MDBX) / Cold (RocksDB) / Static (NippyJar) | Single DB (parity-db or RocksDB) |
 | Overlay | `DataCache` with `Arc<RwLock<HashMap>>` | MDBX transaction | `OverlayedChanges` |
 | Pruning | Static Ledger rows automatically prune beyond the initial `MaxTraceableBlocks` window; state/MPT pruning remains separately configured | Per-segment config (4 profiles) | `PruningMode` enum |
@@ -174,9 +184,10 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync {
 
 | Priority | Change | Benefit |
 |----------|--------|---------|
+| Implemented | Typed table/codec/provider boundary | Compile-time key/value identity, strict corruption errors, allocation-aware codecs, unchanged persisted bytes |
 | Implemented phase | Atomic hot-row pruning and replay/recovery parity | Disk savings with latest-version filtering, byte parity checks, isolated watermarks, and fail-closed startup |
 | Implemented phase | Frozen StateService provider/factory boundary | Root/height-addressed snapshot isolation, pruning gates, and proof/state RPC without MPT mechanics in the API layer |
-| P1 | Compact derive macro for Neo types | 15-25% storage savings, fewer bytes |
+| P1 | Compact derive for versioned node-local tables only | Fewer operational bytes without changing Neo consensus/storage codecs |
 | Implemented phase | Static Ledger archive and provider routing | Format, exact row capture, cold-first batch publication, startup reconciliation, shared runtime cold reads, and hot pruning are wired |
 | P3 | `OverlayedChanges`-style transactional overlay | Cleaner per-tx isolation |
 
@@ -327,11 +338,12 @@ durability. The plan freezes live or catch-up observer behavior for the range.
 height gaps, calls the import queue, and writes import-stage checkpoints only
 after durable progress and according to `CommitPolicy`. Store-backed checkpoint
 providers use the backend's isolated maintenance metadata rather than magic
-keys in the normal Neo data table. Versioned checkpoint updates and obsolete
-normal-table key discard use durable `StoreMaintenanceBatch` transactions,
-keeping operational metadata out of typed scans, store dumps, and state-root
-input. Old checkpoint hints are deliberately not migrated because production
-sync realigns to the authoritative canonical tip before downloading.
+keys in the normal Neo data table. `SyncCheckpointTable` and the verified-header
+table family encode those records through the generic storage table boundary;
+one durable `StoreMaintenanceBatch` updates all sidecar rows and checkpoint
+progress. Obsolete normal-table checkpoint hints are unsupported and never
+read: production sync realigns to the authoritative canonical tip before
+downloading.
 `SyncDownloadImportDriver` seeds its cursor from the canonical tip and surfaces
 downloader, checkpoint-read/write, gap, and partial-import errors.
 `neo_system::StagedSyncPipeline` is an explicit node field. It composes a
@@ -681,8 +693,30 @@ return, keeping a returned `ApplicationEngine` movable between calls.
 
 ### neo-rs (current)
 
-`StorageKey` + `StorageItem` with `KeyBuilder` for encoding. Binary/JSON
-serializers in `neo-serialization`.
+`neo-storage::persistence::Table` binds a logical name, physical namespace,
+typed key/value, and concrete key/value codecs. `TableEncode` uses a GAT output
+so codecs can return borrowed slices, stack arrays, or owned vectors;
+`IntoTableBytes` avoids copying an already-owned vector into a write batch.
+`TableProvider` supplies statically dispatched typed reads for every `Store`,
+and `StoreMaintenanceBatch` supplies typed atomic writes. Domain crates own
+domain codecs. Built-in `StorageKeyCodec` and `StorageItemCodec` preserve C#
+bytes exactly; binary/wire serializers remain in their existing protocol
+crates rather than being duplicated in storage.
+
+```rust
+pub trait Table: Debug + Send + Sync + 'static {
+    type Key;
+    type Value;
+    type KeyCodec: TableEncode<Self::Key>;
+    type ValueCodec: TableCodec<Self::Value>;
+    const NAME: &'static str;
+    const NAMESPACE: TableNamespace;
+}
+
+if let Some(checkpoint) = store.table_get::<SyncCheckpointTable>(&stage)? {
+    batch.put::<SyncCheckpointTable>(&stage, &checkpoint)?;
+}
+```
 
 ### Reth innovations
 
@@ -697,22 +731,11 @@ serializers in `neo-serialization`.
 
 ### Recommendations for neo-rs
 
-```rust
-// Proposed Table trait
-pub trait Table: Send + Sync + 'static {
-    type Key: Encode + Decode;
-    type Value: Encode + Decode;
-    const NAME: &'static str;
-}
-
-// Compact derive for Neo types
-#[derive(Compact)]
-pub struct TransactionState {
-    pub block_index: u32,
-    pub vm_state: VMState,          // 1 byte
-    pub transaction: Option<Transaction>,  // optional → 0 bytes when None
-}
-```
+Reth's compact derive is not directly applicable to consensus-visible Neo
+records: `TransactionState`, native-contract storage, MPT nodes, and Ledger
+rows must retain C# bytes. A future derive is valid only for explicitly
+versioned node-local tables or as a generated implementation that reproduces an
+already established Neo codec byte-for-byte.
 
 ---
 
@@ -724,7 +747,8 @@ pub struct TransactionState {
 | Static archive/recovery/provider propagation/hot pruning | ★★★ | ★★★★ | ★★★★ | ★★★ | Implemented; segment rotation remains |
 | Import queue + concurrent verify | ★★★★ | - | ★★★ | ★★★ | Runtime queue and production download-to-import bridge wired |
 | Stage commit policy + checkpoints | ★★★ | - | ★★★★ | ★★ | Import-stage driver done |
-| Compact derive macro | ★★ | ★★★★ | - | ★★ | Small |
+| Typed table/codec provider | ★★ | - | ★★★★ | ★★ | Implemented for sync and prune metadata over unchanged bytes |
+| Compact derive macro | ★★ | ★★★ | - | ★★ | Deferred to versioned node-local records; forbidden for incompatible Neo bytes |
 | Task supervision | - | - | ★★★★★ | ★★ | Done |
 | Acknowledged finalized projections | ★★ | - | ★★★★★ | ★★ | Implemented for ApplicationLogs and TokensTracker with bounded backpressure and per-block snapshot stability |
 | BlockDownloader as Stream | ★★★ | - | ★★ | ★★★ | Boundary, coordinator, registry-backed peer fetcher, peer snapshots, and startup driver wired |
@@ -737,14 +761,17 @@ pub struct TransactionState {
 ## Implementation Order (Recommended)
 
 1. **Essential task supervision + metrics** — implemented in `neo-node`.
-2. **Typed table boundary** — not implemented. The live encoding remains
-   `StorageKey` / `KeyBuilder` over raw C#-compatible bytes; any future typed
-   adapter and compact derive must preserve those bytes.
+2. **Typed table boundary** — implemented in `neo-storage`. Generic GAT codecs,
+   `TableProvider`, namespace identity, and typed atomic batch operations are
+   production-consumed by sync checkpoints, verified-header sidecars, and the
+   hot-Ledger prune watermark. `StorageKey` / `StorageItem` codecs preserve raw
+   C#-compatible bytes; compact encoding remains restricted to versioned
+   node-local records.
 3. **State provider/factory boundary** — implemented in `neo-state-service`.
    `StateStore` creates a concrete `MptStateProviderFactory`; all StateService
    RPC root, state, scan, and proof reads use its statically dispatched views.
 4. **Block import queue with concurrent verification** — reusable runtime boundary implemented by `SyncImportPipeline` and composed inside `neo_system::StagedSyncPipeline`.
-5. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`; durable store-backed checkpoints are available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, persist in isolated maintenance metadata through atomic `StoreMaintenanceBatch` commits, node composition creates the import-stage queue/checkpoint handle, and `SyncDownloadImportDriver` now receives production P2P coordinator batches.
+5. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`; durable store-backed checkpoints are available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, persist through the typed `SyncCheckpointTable` in isolated maintenance metadata and atomic `StoreMaintenanceBatch` commits, node composition creates the import-stage queue/checkpoint handle, and `SyncDownloadImportDriver` now receives production P2P coordinator batches.
 6. **Headers-first `BlockDownloader` composition** — implemented in `neo-network` and `neo-system`; correlated `GetHeaders` requests durably stage a fixed target before the body coordinator starts, body batches convert to `SyncBlockBatch`, and `VerifiedBlockRangeFetcher` rejects hash disagreement while coordinator retry is still possible. `BlockDownloadCoordinator` is the single body-range owner and composes `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) with `OrderedBlockBatchBuffer` (contiguous response release) behind a transport-agnostic `BlockRangeFetcher`; `Arc<PeerRegistry>` implements live peer fetching through correlated `RemoteNodeHandle` header/body APIs. Each fetch is Ready-only, bypasses the generic handshake queue, has an absolute deadline independent of connection-idle traffic, and clears its correlation state on expiry. Node composition starts the staged-sync task. The unused network task manager, per-peer timer scheduler, ownership mode, and fire-and-forget request API were removed.
 7. **Hot/Cold/Static tiering integration** — append-only archive, exact Ledger
    adapter, cold-first precommit publication, recovery, persistent archive

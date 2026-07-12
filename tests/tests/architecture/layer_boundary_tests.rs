@@ -1115,6 +1115,70 @@ async fn test_neo_v3101_release_delta_has_source_guards() {
     );
 }
 
+#[test]
+fn test_operational_metadata_uses_typed_tables_and_commits_remain_fallible() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let typed_consumers = [
+        "neo-runtime/src/service/sync_pipeline/checkpoint_store.rs",
+        "neo-runtime/src/service/sync_pipeline/verified_header_store.rs",
+        "neo-blockchain/src/ledger/static_archive/pruning.rs",
+    ];
+    let mut violations = Vec::new();
+
+    for relative_path in typed_consumers {
+        let path = workspace_root.join(relative_path);
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+        for forbidden in [
+            ".maintenance_metadata(",
+            ".put_metadata(",
+            ".delete_metadata(",
+        ] {
+            if source.contains(forbidden) {
+                violations.push(format!("{relative_path} contains `{forbidden}`"));
+            }
+        }
+        if !source.contains("table_get::<") || !source.contains(".put::<") {
+            violations.push(format!(
+                "{relative_path} must read and write through typed table identities"
+            ));
+        }
+    }
+
+    let table_api =
+        fs::read_to_string(workspace_root.join("neo-storage/src/persistence/table/definition.rs"))
+            .expect("read typed table API");
+    for marker in [
+        "pub trait Table:",
+        "type KeyCodec:",
+        "type ValueCodec:",
+        "const NAMESPACE: TableNamespace",
+    ] {
+        if !table_api.contains(marker) {
+            violations.push(format!("typed table API missing `{marker}`"));
+        }
+    }
+
+    for relative_path in [
+        "neo-storage/src/persistence/traits/store_snapshot.rs",
+        "neo-storage/src/persistence/cache/store_cache.rs",
+    ] {
+        let source = fs::read_to_string(workspace_root.join(relative_path))
+            .unwrap_or_else(|error| panic!("failed to read {relative_path}: {error}"));
+        if source.contains("pub fn commit(&mut self)") || source.contains("fn commit(&mut self)") {
+            violations.push(format!(
+                "{relative_path} reintroduces a backend commit API that can discard errors"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "typed storage architecture regressed:\n{}",
+        violations.join("\n")
+    );
+}
+
 #[tokio::test]
 async fn test_no_circular_dependencies() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();

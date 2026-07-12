@@ -11,22 +11,19 @@ use std::sync::Arc;
 use neo_payloads::Header;
 use neo_primitives::UInt256;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
-use neo_storage::persistence::{Store, StoreMaintenanceBatch};
+use neo_storage::persistence::{Store, StoreMaintenanceBatch, TableProvider};
 use parking_lot::RwLock;
 
-use super::checkpoint_store::{commit_maintenance, read_checkpoint, write_checkpoint};
-use super::{
-    SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind, checkpoint_key,
-    encode_checkpoint, legacy_checkpoint_key,
+use super::checkpoint_store::{
+    commit_maintenance, read_checkpoint, table_read_error, write_checkpoint,
 };
+use super::tables::{
+    StoredVerifiedHeader, SyncCheckpointTable, VerifiedHeaderTable, VerifiedHeaderTargetHashTable,
+    VerifiedHeaderWindowTable,
+};
+use super::{SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind};
 use crate::{ServiceError, ServiceResult};
 
-const STORE_VERIFIED_HEADER_METADATA_KEY_PREFIX: &[u8] = b"neo.sync.verified-header.v1.";
-const STORE_VERIFIED_HEADER_KEY_SUFFIX: &[u8] = b"header.";
-const STORE_VERIFIED_HEADER_WINDOW_KEY_SUFFIX: &[u8] = b"window";
-const STORE_VERIFIED_HEADER_TARGET_HASH_KEY_SUFFIX: &[u8] = b"target-hash";
-const STORE_VERIFIED_HEADER_WINDOW_MAGIC: &[u8; 6] = b"NRSHW1";
-const STORE_VERIFIED_HEADER_WINDOW_LEN: usize = STORE_VERIFIED_HEADER_WINDOW_MAGIC.len() + 4 + 4;
 const ATOMIC_MAINTENANCE_ERROR: &str = "store does not support atomic verified-header maintenance";
 
 /// Maximum verified headers retained ahead of the canonical tip.
@@ -174,7 +171,9 @@ impl VerifiedHeaderStore for InMemoryVerifiedHeaderStore {
             prepare_verified_commit(&window, &checkpoint, previous_header.as_ref(), headers)?;
 
         for staged in &prepared.headers {
-            state.headers.insert(staged.height, staged.header.clone());
+            state
+                .headers
+                .insert(staged.height, staged.stored.header().clone());
         }
         state
             .checkpoints
@@ -415,8 +414,7 @@ impl<S: Store> VerifiedHeaderStore for SharedStoreVerifiedHeaderStore<S> {
 
 struct PreparedStagedHeader {
     height: u32,
-    header: Header,
-    bytes: Vec<u8>,
+    stored: StoredVerifiedHeader,
 }
 
 struct PreparedCommit {
@@ -465,32 +463,30 @@ fn begin_or_reset_store_window<S: Store>(
 
     let mut maintenance = StoreMaintenanceBatch::new();
     if let Some(active) = read_window(store)? {
-        delete_window_range(&mut maintenance, &active);
+        delete_window_range(&mut maintenance, &active)?;
     }
-    maintenance.delete_data(legacy_checkpoint_key(SyncStageKind::Headers));
-    maintenance.put_metadata(
-        checkpoint_key(SyncStageKind::Headers),
-        encode_checkpoint(&SyncStageCheckpoint::new(
-            SyncStageKind::Headers,
-            base_height,
-        )),
-    );
-    maintenance.put_metadata(
-        verified_header_window_key(),
-        encode_window(base_height, target_height),
-    );
-    maintenance.delete_metadata(verified_header_target_hash_key());
+    let checkpoint = SyncStageCheckpoint::new(SyncStageKind::Headers, base_height);
+    maintenance
+        .put::<SyncCheckpointTable>(&SyncStageKind::Headers, &checkpoint)
+        .map_err(|error| table_read_error("encode Headers checkpoint", error))?;
+    let window = HeaderStageWindow {
+        base_height,
+        target_height,
+        target_hash: None,
+    };
+    maintenance
+        .put::<VerifiedHeaderWindowTable>(&(), &window)
+        .map_err(|error| table_read_error("encode verified-header window", error))?;
+    maintenance
+        .delete::<VerifiedHeaderTargetHashTable>(&())
+        .map_err(|error| table_read_error("encode verified-header target deletion", error))?;
     commit_maintenance(
         store,
         &maintenance,
         "begin verified-header window",
         ATOMIC_MAINTENANCE_ERROR,
     )?;
-    Ok(HeaderStageWindow {
-        base_height,
-        target_height,
-        target_hash: None,
-    })
+    Ok(window)
 }
 
 fn commit_store_verified_headers<S: Store>(
@@ -518,21 +514,22 @@ fn commit_store_verified_headers<S: Store>(
         prepare_verified_commit(&window, &checkpoint, previous_header.as_ref(), headers)?;
 
     let mut maintenance = StoreMaintenanceBatch::new();
-    maintenance.delete_data(legacy_checkpoint_key(SyncStageKind::Headers));
-    maintenance.put_metadata(
-        checkpoint_key(SyncStageKind::Headers),
-        encode_checkpoint(&prepared.checkpoint),
-    );
+    maintenance
+        .put::<SyncCheckpointTable>(&SyncStageKind::Headers, &prepared.checkpoint)
+        .map_err(|error| table_read_error("encode Headers checkpoint", error))?;
     if let Some(target_hash) = prepared.target_hash {
-        maintenance.put_metadata(
-            verified_header_target_hash_key(),
-            target_hash.to_bytes().to_vec(),
-        );
+        maintenance
+            .put::<VerifiedHeaderTargetHashTable>(&(), &target_hash)
+            .map_err(|error| table_read_error("encode verified-header target hash", error))?;
     } else {
-        maintenance.delete_metadata(verified_header_target_hash_key());
+        maintenance
+            .delete::<VerifiedHeaderTargetHashTable>(&())
+            .map_err(|error| table_read_error("encode verified-header target deletion", error))?;
     }
     for staged in prepared.headers {
-        maintenance.put_metadata(verified_header_key(staged.height), staged.bytes);
+        maintenance
+            .put::<VerifiedHeaderTable>(&staged.height, &staged.stored)
+            .map_err(|error| table_read_error("encode verified header", error))?;
     }
     commit_maintenance(
         store,
@@ -561,12 +558,10 @@ fn finish_store_window<S: Store>(
     let finished = finished_checkpoint(&checkpoint, canonical_height);
 
     let mut maintenance = StoreMaintenanceBatch::new();
-    delete_window_range(&mut maintenance, &window);
-    maintenance.delete_data(legacy_checkpoint_key(SyncStageKind::Headers));
-    maintenance.put_metadata(
-        checkpoint_key(SyncStageKind::Headers),
-        encode_checkpoint(&finished),
-    );
+    delete_window_range(&mut maintenance, &window)?;
+    maintenance
+        .put::<SyncCheckpointTable>(&SyncStageKind::Headers, &finished)
+        .map_err(|error| table_read_error("encode finished Headers checkpoint", error))?;
     commit_maintenance(
         store,
         &maintenance,
@@ -592,13 +587,11 @@ fn discard_store_window<S: Store>(
 
     let mut maintenance = StoreMaintenanceBatch::new();
     if let Some(window) = window {
-        delete_window_range(&mut maintenance, &window);
+        delete_window_range(&mut maintenance, &window)?;
     }
-    maintenance.delete_data(legacy_checkpoint_key(SyncStageKind::Headers));
-    maintenance.put_metadata(
-        checkpoint_key(SyncStageKind::Headers),
-        encode_checkpoint(&discarded),
-    );
+    maintenance
+        .put::<SyncCheckpointTable>(&SyncStageKind::Headers, &discarded)
+        .map_err(|error| table_read_error("encode discarded Headers checkpoint", error))?;
     commit_maintenance(
         store,
         &maintenance,
@@ -719,8 +712,7 @@ fn prepare_verified_commit(
         }
         staged_headers.push(PreparedStagedHeader {
             height: header.index(),
-            header: header.clone(),
-            bytes,
+            stored: StoredVerifiedHeader::new(header.clone(), bytes),
         });
         expected_index = expected_index
             .checked_add(1)
@@ -775,126 +767,47 @@ fn hash_header(header: &Header) -> ServiceResult<UInt256> {
     })
 }
 
-fn encode_window(base_height: u32, target_height: u32) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(STORE_VERIFIED_HEADER_WINDOW_LEN);
-    bytes.extend_from_slice(STORE_VERIFIED_HEADER_WINDOW_MAGIC);
-    bytes.extend_from_slice(&base_height.to_be_bytes());
-    bytes.extend_from_slice(&target_height.to_be_bytes());
-    bytes
-}
-
-fn decode_window(bytes: &[u8]) -> ServiceResult<HeaderStageWindow> {
-    if bytes.len() != STORE_VERIFIED_HEADER_WINDOW_LEN {
-        return Err(ServiceError::invalid_state(format!(
-            "invalid verified-header window payload: {} bytes",
-            bytes.len()
-        )));
-    }
-    let (magic, payload) = bytes.split_at(STORE_VERIFIED_HEADER_WINDOW_MAGIC.len());
-    if magic != STORE_VERIFIED_HEADER_WINDOW_MAGIC {
-        return Err(ServiceError::invalid_state(
-            "invalid verified-header window magic",
-        ));
-    }
-    let mut base_bytes = [0u8; 4];
-    base_bytes.copy_from_slice(&payload[..4]);
-    let mut target_bytes = [0u8; 4];
-    target_bytes.copy_from_slice(&payload[4..8]);
-    let base_height = u32::from_be_bytes(base_bytes);
-    let target_height = u32::from_be_bytes(target_bytes);
-    validate_window_bounds(base_height, target_height)?;
-    Ok(HeaderStageWindow {
-        base_height,
-        target_height,
-        target_hash: None,
-    })
-}
-
 fn read_window<S: Store>(store: &S) -> ServiceResult<Option<HeaderStageWindow>> {
-    let window_bytes = store
-        .maintenance_metadata(&verified_header_window_key())
-        .map_err(|error| {
-            ServiceError::internal(format!("read verified-header window metadata: {error}"))
-        })?;
-    let target_hash_bytes = store
-        .maintenance_metadata(&verified_header_target_hash_key())
-        .map_err(|error| {
-            ServiceError::internal(format!(
-                "read verified-header target hash metadata: {error}"
-            ))
-        })?;
+    let window = store
+        .table_get::<VerifiedHeaderWindowTable>(&())
+        .map_err(|error| table_read_error("read verified-header window", error))?;
+    let target_hash = store
+        .table_get::<VerifiedHeaderTargetHashTable>(&())
+        .map_err(|error| table_read_error("read verified-header target hash", error))?;
 
-    let Some(window_bytes) = window_bytes else {
-        if target_hash_bytes.is_some() {
+    let Some(mut window) = window else {
+        if target_hash.is_some() {
             return Err(ServiceError::invalid_state(
                 "verified-header target hash exists without an active window",
             ));
         }
         return Ok(None);
     };
-
-    let mut window = decode_window(&window_bytes)?;
-    window.target_hash = match target_hash_bytes {
-        Some(bytes) => Some(UInt256::from_bytes(&bytes).map_err(|error| {
-            ServiceError::invalid_state(format!("invalid verified-header target hash: {error}"))
-        })?),
-        None => None,
-    };
-
+    window.target_hash = target_hash;
     Ok(Some(window))
 }
 
 fn read_verified_header<S: Store>(store: &S, height: u32) -> ServiceResult<Option<Header>> {
-    let Some(bytes) = store
-        .maintenance_metadata(&verified_header_key(height))
-        .map_err(|error| {
-            ServiceError::internal(format!("read verified header {height}: {error}"))
-        })?
-    else {
-        return Ok(None);
-    };
-    Header::from_bytes(&bytes).map(Some).map_err(|error| {
-        ServiceError::invalid_state(format!("decode verified header {height}: {error}"))
-    })
+    store
+        .table_get::<VerifiedHeaderTable>(&height)
+        .map(|header| header.map(StoredVerifiedHeader::into_header))
+        .map_err(|error| table_read_error("read verified header", error))
 }
 
-fn delete_window_range(maintenance: &mut StoreMaintenanceBatch, window: &HeaderStageWindow) {
+fn delete_window_range(
+    maintenance: &mut StoreMaintenanceBatch,
+    window: &HeaderStageWindow,
+) -> ServiceResult<()> {
     for height in window.base_height.saturating_add(1)..=window.target_height {
-        maintenance.delete_metadata(verified_header_key(height));
+        maintenance
+            .delete::<VerifiedHeaderTable>(&height)
+            .map_err(|error| table_read_error("encode verified-header deletion", error))?;
     }
-    maintenance.delete_metadata(verified_header_window_key());
-    maintenance.delete_metadata(verified_header_target_hash_key());
-}
-
-fn verified_header_window_key() -> Vec<u8> {
-    let mut key = Vec::with_capacity(
-        STORE_VERIFIED_HEADER_METADATA_KEY_PREFIX.len()
-            + STORE_VERIFIED_HEADER_WINDOW_KEY_SUFFIX.len(),
-    );
-    key.extend_from_slice(STORE_VERIFIED_HEADER_METADATA_KEY_PREFIX);
-    key.extend_from_slice(STORE_VERIFIED_HEADER_WINDOW_KEY_SUFFIX);
-    key
-}
-
-fn verified_header_target_hash_key() -> Vec<u8> {
-    let mut key = Vec::with_capacity(
-        STORE_VERIFIED_HEADER_METADATA_KEY_PREFIX.len()
-            + STORE_VERIFIED_HEADER_TARGET_HASH_KEY_SUFFIX.len(),
-    );
-    key.extend_from_slice(STORE_VERIFIED_HEADER_METADATA_KEY_PREFIX);
-    key.extend_from_slice(STORE_VERIFIED_HEADER_TARGET_HASH_KEY_SUFFIX);
-    key
-}
-
-/// Stable height-ordered key for one staged verified header.
-pub(crate) fn verified_header_key(height: u32) -> Vec<u8> {
-    let mut key = Vec::with_capacity(
-        STORE_VERIFIED_HEADER_METADATA_KEY_PREFIX.len()
-            + STORE_VERIFIED_HEADER_KEY_SUFFIX.len()
-            + 4,
-    );
-    key.extend_from_slice(STORE_VERIFIED_HEADER_METADATA_KEY_PREFIX);
-    key.extend_from_slice(STORE_VERIFIED_HEADER_KEY_SUFFIX);
-    key.extend_from_slice(&height.to_be_bytes());
-    key
+    maintenance
+        .delete::<VerifiedHeaderWindowTable>(&())
+        .map_err(|error| table_read_error("encode verified-header window deletion", error))?;
+    maintenance
+        .delete::<VerifiedHeaderTargetHashTable>(&())
+        .map_err(|error| table_read_error("encode verified-header target deletion", error))?;
+    Ok(())
 }

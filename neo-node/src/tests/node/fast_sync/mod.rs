@@ -85,7 +85,7 @@ fn memory_store_with_ledger_tip(tip: u32) -> Arc<MemoryStore> {
         StorageKey::new(neo_native_contracts::LedgerContract::ID, vec![12]),
         StorageItem::from_bytes(current),
     );
-    cache.commit();
+    cache.try_commit().expect("commit test Ledger tip");
     store
 }
 

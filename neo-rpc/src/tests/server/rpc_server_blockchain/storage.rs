@@ -211,7 +211,7 @@ async fn find_storage_paginates_results() {
             StorageItem::from_bytes(value),
         );
     }
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let prefix = BASE64_STANDARD.encode([0xAAu8]);
     let params = [
@@ -278,7 +278,7 @@ async fn find_storage_returns_empty_page_at_end() {
             StorageItem::from_bytes(value),
         );
     }
-    store.commit();
+    store.try_commit().expect("commit test store");
 
     let prefix_b64 = BASE64_STANDARD.encode(prefix);
     let params = [

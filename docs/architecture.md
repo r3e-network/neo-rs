@@ -468,14 +468,21 @@ The detailed rules for this style live in
   pattern.
 
 - **Pluggable storage behind `Store` and provider traits.** `neo-storage`
-  exposes `Store`, `DataCache`, raw/typed read traits, and `StoreFactory` over
-  the existing `StorageKey`/`StorageItem` bytes. Node-local maintenance
-  checkpoints are physically separate: MDBX uses a named table and RocksDB a
-  column family, while `StoreMaintenanceBatch` atomically combines ordinary
-  row mutations with metadata updates. Those bytes cannot enter typed scans,
-  store dumps, or state-root calculation. MDBX is the production default,
-  RocksDB remains a supported fallback, and memory providers are used for tests. Higher
-  crates read through capability providers: `neo-blockchain` has
+  exposes `Store`, `DataCache`, raw reads, `StoreFactory`, and a statically
+  dispatched `Table`/`TableProvider` layer over existing bytes. GAT codecs can
+  borrow input, return stack arrays, or retain owned vectors; table markers bind
+  key/value types to either consensus `Data` or node-local `Maintenance`.
+  `StoreMaintenanceBatch::put/delete::<T>` applies the same identity on writes.
+  Sync checkpoints, verified-header sidecars, and the hot-Ledger prune
+  watermark use this boundary in production. Node-local metadata remains
+  physically separate: MDBX uses a named table and RocksDB a column family,
+  while one batch can atomically combine ordinary row mutations with metadata
+  updates. Those bytes cannot enter contract scans, store dumps, or state-root
+  calculation. `StorageKeyCodec` and `StorageItemCodec` preserve exact C# bytes;
+  compact encodings cannot replace protocol storage formats. Backend-reaching
+  snapshots and caches expose only fallible commits. MDBX is the production
+  default, RocksDB remains a supported fallback, and memory providers are used
+  for tests. Higher crates read through capability providers: `neo-blockchain` has
   `BlockProvider`/`TxProvider` plus `LedgerProviderFactory`,
   `StorageLedgerProviderFactory`, `StaticLedgerProviderFactory`,
   `StaticLedgerArchiveFactory`, and a generic `HotColdLedgerProviderFactory`.
