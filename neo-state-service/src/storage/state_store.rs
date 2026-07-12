@@ -11,11 +11,14 @@
 //!   state roots from the candidate set to the validated set.
 //! - [`StateStore::get_state_root`] - look up a state root by
 //!   `(block_index)` or by `trie_root_hash`.
+//! - [`StateStore::state_provider_factory`] - create the frozen read-side
+//!   provider boundary when an MPT backend is enabled.
 //!
 //! Mirrors the C# `StateService.Storage.StateStore` shape.
 
 use crate::StateRootApplyMetrics;
 use crate::mpt_store::{MptBlockChanges, MptChange, MptStore};
+use crate::providers::MptStateProviderFactory;
 use crate::state_root::StateRoot;
 use neo_crypto::mpt_trie::{MptError, MptResult};
 use neo_primitives::UInt256;
@@ -156,6 +159,19 @@ where
     /// Returns the persisted MPT backend, if this store maintains one.
     pub fn mpt(&self) -> Option<Arc<MptStore<S>>> {
         self.mpt.clone()
+    }
+
+    /// Creates the immutable state-view factory for this service, when an MPT
+    /// backend is enabled.
+    ///
+    /// Read-side consumers should prefer this capability boundary over opening
+    /// [`MptReadSnapshot`](crate::MptReadSnapshot) and [`Trie`](neo_crypto::mpt_trie::Trie)
+    /// values themselves. The factory centralizes pruning-mode gates and keeps
+    /// each selected root tied to one frozen MPT generation.
+    pub fn state_provider_factory(&self) -> Option<MptStateProviderFactory<S>> {
+        self.mpt
+            .as_ref()
+            .map(|mpt| MptStateProviderFactory::new(Arc::clone(mpt)))
     }
 
     /// Applies the storage changes tracked in `snapshot` to the persisted MPT

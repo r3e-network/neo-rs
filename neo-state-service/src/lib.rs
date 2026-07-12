@@ -9,6 +9,7 @@
 //!
 //! ## Contents
 //!
+//! - `providers`: Frozen, statically dispatched state views and factories.
 //! - `protocol`: Protocol enums, versioned records, and chain-level domain
 //!   constants.
 //! - `service`: Service loops, handles, lifecycle helpers, and command
@@ -18,6 +19,7 @@
 #![doc(html_root_url = "https://docs.rs/neo-state-service/0.10.0")]
 
 mod protocol;
+pub mod providers;
 mod service;
 mod storage;
 
@@ -29,6 +31,11 @@ pub use protocol::{
     CURRENT_VERSION, Keys, MessageType, StateRoot, StateRootApplyMetrics, StateRootApplyStats,
     StateRootIngestMetrics, StateRootIngestStats, Vote, keys, message_type, metrics, state_root,
     vote,
+};
+
+pub use providers::{
+    MptStateProvider, MptStateProviderFactory, StateEntry, StateProof, StateProviderError,
+    StateProviderFactory, StateProviderResult, StateView, verify_state_proof,
 };
 
 pub use service::commit_handlers;

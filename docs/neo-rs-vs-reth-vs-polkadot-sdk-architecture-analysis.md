@@ -106,6 +106,15 @@ Current-tip reads are exposed as the separate
 conflict stubs) are exposed as `TransactionStateProvider`, keeping RPC and
 peer-serving code on the same provider seam instead of reaching into the native
 Ledger contract directly.
+StateService reads now follow the same pattern. `StateProviderFactory` has an
+associated concrete `StateView`; `MptStateProviderFactory` freezes one MPT
+generation when selecting `latest`, `state_at`, or `state_by_root`, enforces the
+pruning-mode root gate there, and returns a request-scoped provider for `get`,
+bounded `find`, and `proof`. Root metadata remains separately available through
+`latest_root`/`root_at`, including after historical trie nodes are pruned. RPC
+state handlers and proof verification use this facade and do not construct an
+MPT snapshot or trie. The boundary is monomorphized and introduces no boxed
+trait-object dispatch.
 Raw key/value bytes remain C# compatible through `StorageKey` / `StorageItem`,
 and `StorageKey` / `KeyBuilder` over those raw bytes is the live encoding on
 every storage access path. `Store`, `RawReadOnlyStore`,
@@ -160,6 +169,7 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync {
 | Priority | Change | Benefit |
 |----------|--------|---------|
 | Implemented phase | Atomic hot-row pruning and replay/recovery parity | Disk savings with latest-version filtering, byte parity checks, isolated watermarks, and fail-closed startup |
+| Implemented phase | Frozen StateService provider/factory boundary | Root/height-addressed snapshot isolation, pruning gates, and proof/state RPC without MPT mechanics in the API layer |
 | P1 | Compact derive macro for Neo types | 15-25% storage savings, fewer bytes |
 | Implemented phase | Static Ledger archive and provider routing | Format, exact row capture, cold-first batch publication, startup reconciliation, shared runtime cold reads, and hot pruning are wired |
 | P3 | `OverlayedChanges`-style transactional overlay | Cleaner per-tx isolation |
@@ -673,6 +683,7 @@ pub struct TransactionState {
 | Task supervision | - | - | ★★★★★ | ★★ | Done |
 | BlockDownloader as Stream | ★★★ | - | ★★ | ★★★ | Boundary, coordinator, registry-backed peer fetcher, peer snapshots, and startup driver wired |
 | Essential task monitoring | - | - | ★★★★★ | ★ | Done |
+| State provider/factory boundary | ★ | - | ★★★★ | ★★ | Implemented with concrete associated provider types; all StateService RPC reads are migrated |
 | Metrics infrastructure | - | - | ★★★★ | ★★ | Medium |
 
 ---
@@ -683,15 +694,18 @@ pub struct TransactionState {
 2. **Typed table boundary** — not implemented. The live encoding remains
    `StorageKey` / `KeyBuilder` over raw C#-compatible bytes; any future typed
    adapter and compact derive must preserve those bytes.
-3. **Block import queue with concurrent verification** — reusable runtime boundary implemented by `SyncImportPipeline` and composed inside `neo_system::StagedSyncPipeline`.
-4. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`; durable store-backed checkpoints are available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, persist in isolated maintenance metadata through atomic `StoreMaintenanceBatch` commits, node composition creates the import-stage queue/checkpoint handle, and `SyncDownloadImportDriver` now receives production P2P coordinator batches.
-5. **Headers-first `BlockDownloader` composition** — implemented in `neo-network` and `neo-system`; correlated `GetHeaders` requests durably stage a fixed target before the body coordinator starts, body batches convert to `SyncBlockBatch`, and `VerifiedBlockRangeFetcher` rejects hash disagreement while coordinator retry is still possible. `BlockDownloadCoordinator` is the single body-range owner and composes `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) with `OrderedBlockBatchBuffer` (contiguous response release) behind a transport-agnostic `BlockRangeFetcher`; `Arc<PeerRegistry>` implements live peer fetching through correlated `RemoteNodeHandle` header/body APIs. Each fetch is Ready-only, bypasses the generic handshake queue, has an absolute deadline independent of connection-idle traffic, and clears its correlation state on expiry. Node composition starts the staged-sync task. The unused network task manager, per-peer timer scheduler, ownership mode, and fire-and-forget request API were removed.
-6. **Hot/Cold/Static tiering integration** — append-only archive, exact Ledger
+3. **State provider/factory boundary** — implemented in `neo-state-service`.
+   `StateStore` creates a concrete `MptStateProviderFactory`; all StateService
+   RPC root, state, scan, and proof reads use its statically dispatched views.
+4. **Block import queue with concurrent verification** — reusable runtime boundary implemented by `SyncImportPipeline` and composed inside `neo_system::StagedSyncPipeline`.
+5. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`; durable store-backed checkpoints are available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, persist in isolated maintenance metadata through atomic `StoreMaintenanceBatch` commits, node composition creates the import-stage queue/checkpoint handle, and `SyncDownloadImportDriver` now receives production P2P coordinator batches.
+6. **Headers-first `BlockDownloader` composition** — implemented in `neo-network` and `neo-system`; correlated `GetHeaders` requests durably stage a fixed target before the body coordinator starts, body batches convert to `SyncBlockBatch`, and `VerifiedBlockRangeFetcher` rejects hash disagreement while coordinator retry is still possible. `BlockDownloadCoordinator` is the single body-range owner and composes `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) with `OrderedBlockBatchBuffer` (contiguous response release) behind a transport-agnostic `BlockRangeFetcher`; `Arc<PeerRegistry>` implements live peer fetching through correlated `RemoteNodeHandle` header/body APIs. Each fetch is Ready-only, bypasses the generic handshake queue, has an absolute deadline independent of connection-idle traffic, and clears its correlation state on expiry. Node composition starts the staged-sync task. The unused network task manager, per-peer timer scheduler, ownership mode, and fire-and-forget request API were removed.
+7. **Hot/Cold/Static tiering integration** — append-only archive, exact Ledger
    adapter, cold-first precommit publication, recovery, persistent archive
    offsets, archive-aware offline tooling, and shared runtime cold reads are
    implemented. Latest-version-aware hot deletion and atomic prune watermarks
    are also implemented; segment rotation remains optional future work.
-7. **Staged sync pipeline integration** — durable `Headers`, header-gated
+8. **Staged sync pipeline integration** — durable `Headers`, header-gated
    `Bodies`, canonical `Import`, and the committed-chain `Index` follower are
    production-wired. Do not split execution/state-root work out of canonical
    `Import`, or create a nominal `Prune` stage around cleanup already owned by

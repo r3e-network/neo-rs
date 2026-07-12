@@ -291,7 +291,7 @@ transactions) a backup requests a view change, rotating to the next primary.
 
 JSON-RPC requests are served by a jsonrpsee server. A request is parsed, the
 method is resolved (case-insensitive) against a registry, and the handler reads
-from the ledger snapshot, MPT/state store, or mempool to build the response.
+from a ledger provider, frozen state provider, or mempool to build the response.
 
 ```mermaid
 sequenceDiagram
@@ -329,7 +329,7 @@ relay handlers forward to the blockchain service over its command channel.
 |---------------|-----------------|------------|
 | blockchain | getblock, getblockcount, getrawtransaction, getcontractstate | ledger snapshot |
 | node | getversion, getpeers, getconnectioncount | network handle |
-| state | getstateroot, getstateheight, getproof, getstate, findstates | state store / MPT |
+| state | getstateroot, getstateheight, getproof, getstate, findstates | `StateProviderFactory` / `StateView` |
 | state / mempool | getrawmempool | mempool |
 | smart-contract | invokefunction, invokescript, calculatenetworkfee | snapshot + ApplicationEngine |
 | relay | sendrawtransaction, submitblock | blockchain service |
@@ -353,8 +353,10 @@ flowchart TD
 
     Snap -.->|block change set| MPT["MptStore (neo-state-service)<br/>Trie over change set → state root"]
     MPT --> SS["StateStore root records<br/>by index / by hash"]
-    SS -->|getstateroot / getstateheight| RPC1["state RPC"]
-    MPT -->|getproof / getstate / findstates| RPC2["proof RPC"]
+    MPT --> SPF["MptStateProviderFactory<br/>freeze snapshot + select root"]
+    SS --> SPF
+    SPF -->|latest_root / root_at| RPC1["getstateroot / getstateheight"]
+    SPF -->|StateView get / find / proof| RPC2["getproof / getstate / findstates"]
 ```
 
 Key points:
@@ -429,14 +431,22 @@ Key points:
   Ledger replay and raw Ledger-row inspection after canonical reconciliation,
   reads the maintenance watermark when a hot store is opened, and can scrub an
   existing archive without opening the hot store.
-- **State read boundary.** `neo-state-service` exposes `MptReadSnapshot`,
-  `MptStore`, `StateStore`, and `StateStoreLookup`. RPC proof/state paths use
-  concrete immutable `MptReadSnapshot` values. A general
-  `StateProviderFactory`/`StateView` capability is not exported yet.
+- **State read boundary.** `neo-state-service` exposes the associated-type
+  `StateProviderFactory` and mutable-cache/read-only `StateView` capabilities.
+  `StateStore::state_provider_factory` creates a concrete
+  `MptStateProviderFactory`; `latest`, `state_at`, and `state_by_root` freeze one
+  `MptReadSnapshot`, apply the pruning-mode root gate against that same
+  generation, and return `MptStateProvider` without trait-object allocation.
+  The view owns request-local trie resolution and exposes only `get`, bounded
+  `find`, and `proof`. `latest_root`/`root_at` expose root metadata separately,
+  so historical `getstateroot` remains valid when pruning has removed the
+  corresponding historical trie nodes. RPC state handlers depend on these
+  capabilities and never construct `MptStore`, `MptReadSnapshot`, or `Trie`.
 - **State root.** The MPT root is computed from a block's storage change set and
-  stored under the C# `StateRoot` wire layout (`neo-state-service/src/mpt_store.rs`),
+  stored under the C# `StateRoot` wire layout
+  (`neo-state-service/src/storage/mpt_store.rs`),
   with per-block records by index and by hash. `getstateroot`/`getstateheight`
-  serve from the `StateStore` verification cache and fall back to the live
-  `MptStore`; `getproof`/`getstate`/`findstates` walk the persisted MPT, and
-  return a clean `UnsupportedState` error if no MPT backend is registered
-  (`neo-rpc/src/server/rpc_server_state.rs`).
+  serve from the `StateStore` verification cache and fall back to provider root
+  metadata; `getproof`/`getstate`/`findstates` use one frozen provider view and
+  return a clean `UnsupportedState` error if no MPT-backed factory is available
+  (`neo-rpc/src/server/rpc_server_state/`).

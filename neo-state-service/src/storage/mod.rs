@@ -1,7 +1,6 @@
 //! # neo-state-service::storage
 //!
-//! MPT storage, state-root cache, durable state records, and immutable
-//! provider views.
+//! MPT storage, state-root cache, and durable state records.
 //!
 //! ## Boundary
 //!

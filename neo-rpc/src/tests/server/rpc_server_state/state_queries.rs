@@ -122,3 +122,28 @@ async fn state_queries_report_resolution_failure_for_unknown_root() {
     let rpc_error: RpcError = err.into();
     assert_eq!(rpc_error.code(), RpcError::internal_server_error().code());
 }
+
+#[test]
+fn state_handlers_depend_on_provider_capabilities_not_mpt_mechanics() {
+    let handlers = [
+        include_str!("../../../server/rpc_server_state/proof.rs"),
+        include_str!("../../../server/rpc_server_state/roots.rs"),
+        include_str!("../../../server/rpc_server_state/state_queries.rs"),
+        include_str!("../../../server/rpc_server_state/support.rs"),
+    ]
+    .join("\n");
+
+    assert!(handlers.contains("state_provider_factory"));
+    for forbidden in [
+        "use neo_state_service::mpt_store",
+        "MptReadSnapshot",
+        ".open_trie(",
+        "Self::mpt_store(",
+        "Trie::<",
+    ] {
+        assert!(
+            !handlers.contains(forbidden),
+            "RPC state handlers must not bypass StateProviderFactory with {forbidden}"
+        );
+    }
+}

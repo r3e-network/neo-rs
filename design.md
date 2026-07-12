@@ -1,7 +1,7 @@
 # neo-rs Architecture Design Document
 
-**Version**: 5.1
-**Date**: 2026-07-10
+**Version**: 5.2
+**Date**: 2026-07-12
 **Author**: Software Architect
 **Status**: Active
 
@@ -16,15 +16,16 @@ that is professional, consistent, and ready for long-term evolution.
 
 **Architecture health score**: 9.5/10 (up from 9.4 after ADR-027 dead code excision)
 
-The ADR log now spans ADR-001 through ADR-036. Beyond the early trait-design,
+The ADR log now spans ADR-001 through ADR-037. Beyond the early trait-design,
 duplication, and async/concurrency audits (ADR-016 through ADR-019), later ADRs
 cover store-surface reduction and trait sealing (ADR-020, ADR-021), dead-code
 excision (ADR-022, ADR-027, ADR-028, ADR-032), hex/KeyBuilder consolidation
 (ADR-024, ADR-025), cross-crate helpers and test fixtures (ADR-029), the
 neo-hsm default flip and ConsensusApi rename (ADR-030), and the async
 ConsensusSigner deadlock fix (ADR-031), static composition (ADR-034), and the
-staged core/application lifecycle with private service layouts (ADR-035), and
-a production-consumed finalized Ledger archive (ADR-036).
+staged core/application lifecycle with private service layouts (ADR-035), a
+production-consumed finalized Ledger archive (ADR-036), and frozen generic
+StateService providers (ADR-037).
 
 ---
 
@@ -57,6 +58,9 @@ a production-consumed finalized Ledger archive (ADR-036).
    `BlockImport`, bounded import queue, validation pipeline, and ordered persist
 4. **Unified error handling**: all library crates use `CoreError` with `From`
    impls; application crates use `anyhow::Result`
+5. **Capability-oriented reads**: Ledger and StateService factories return
+   associated concrete provider types; RPC does not open storage engines,
+   snapshots, or tries directly
 
 ---
 
@@ -2046,3 +2050,56 @@ framing in `neo-blockchain` would mix protocol semantics with infrastructure.
 - Trusted empty-block bulk fast-forward cannot skip commit hooks while the
   archive is enabled; the committing fast path remains available and preserves
   per-height Ledger history.
+
+### ADR-037: Frozen generic StateService provider boundary
+
+**Status**: Accepted (implemented)
+
+**Context**: Ledger reads already used capability traits and an associated-type
+factory, but StateService RPC handlers reached through `StateStore` into
+`MptStore`, opened `MptReadSnapshot` and `Trie` directly, repeated pruning-mode
+root gates, and defined a dummy MPT store solely to select proof verification's
+generic type. That leaked infrastructure vocabulary into the RPC layer and made
+snapshot isolation a convention each endpoint had to reproduce.
+
+**Decision**:
+
+- Add `StateProviderFactory` with one associated concrete `Provider` and the
+  `StateView` capability. No `Box<dyn StateView>` or erased provider registry is
+  permitted on this read path.
+- Implement `MptStateProviderFactory<S>` over `Arc<MptStore<S>>`. Every
+  `latest`, `state_at`, or `state_by_root` call freezes one MPT generation,
+  applies the pruning-mode root gate against that generation, and returns an
+  `MptStateProvider<S>` that owns its request-local trie cache.
+- Limit `StateView` to root identity plus raw `get`, bounded `find`, and `proof`.
+  The methods take `&mut self` only because trie node resolution caches data;
+  they cannot mutate persisted state or the frozen generation.
+- Keep root metadata independent through `latest_root` and `root_at`.
+  Pruning historical trie nodes must not make historical StateRoot records
+  unavailable to `getstateroot`.
+- Put proof verification and MPT error classification behind
+  `neo-state-service`. `StateProviderError` keeps its implementation kind
+  private and exposes only provider-level classification needed by RPC.
+- Create the factory through `StateStore::state_provider_factory` and migrate
+  every StateService RPC endpoint to it. RPC remains responsible for request
+  parsing, C# proof payload framing, response projection, and JSON-RPC error
+  mapping only.
+
+**Trade-offs**:
+
+- **Gaining**: one enforced snapshot/root-selection invariant, no direct MPT
+  mechanics in RPC, statically dispatched state reads, reusable height/root
+  views, and a narrow seam for future remote or alternate state providers.
+- **Giving up**: endpoint-specific access to trie internals. New state read
+  behavior must be added deliberately to the capability contract.
+- **Cost**: one small provider value and one trie resolution cache per request,
+  matching the snapshot-per-request behavior already required for correctness.
+
+**Consequences**:
+
+- RPC source guards reject `MptReadSnapshot`, `open_trie`, and raw `MptStore`
+  access in StateService handlers.
+- Full-history mode preserves historical root reads; pruning mode accepts only
+  the current state view while retaining old root metadata.
+- Existing C# storage keys, MPT node encoding, root hashes, proof bytes, and
+  StateService RPC behavior are unchanged.

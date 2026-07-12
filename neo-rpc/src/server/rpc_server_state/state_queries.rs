@@ -1,15 +1,13 @@
 //! Historical state-query handlers for StateService RPC.
 //!
 //! `getstate` and `findstates` both resolve the contract id through the
-//! historical MPT root before reading storage entries. Keeping that trie
-//! workflow here leaves the root module as the handler map while support owns
-//! StateService/MPT lookup.
+//! historical MPT root before reading storage entries. The endpoint layer uses
+//! the frozen state-provider capability and does not construct snapshots or
+//! tries itself.
 
-use neo_crypto::mpt_trie::{MptError, Trie};
 use neo_execution::contract_state::ContractState;
-use neo_primitives::{UInt160, UInt256};
-use neo_state_service::mpt_store::MptReadSnapshot;
-use neo_storage::persistence::Store;
+use neo_primitives::UInt160;
+use neo_state_service::{StateProviderError, StateProviderFactory, StateView};
 use serde_json::Value;
 
 use crate::server::rpc_error::RpcError;
@@ -39,17 +37,17 @@ impl RpcServerState {
     /// `UnknownStorageItem` (-104) instead — the code the C# plugin
     /// itself uses for the identical condition in `getproof`.
     pub(super) fn get_state(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let mpt = Self::mpt_store(server)?;
+        let factory = Self::state_provider_factory(server)?;
         let request = StateKeyRequest::parse_get_state(params)?;
 
-        let snapshot = mpt.snapshot();
-        Self::check_root_hash(&snapshot, &request.root_hash)?;
-        let mut trie = snapshot.open_trie(Some(request.root_hash));
-        let contract_id = Self::historical_contract_id(&mut trie, &request.script_hash)?;
+        let mut state = factory
+            .state_by_root(request.root_hash)
+            .map_err(|error| Self::state_provider_error("getstate", error))?;
+        let contract_id = Self::historical_contract_id(&mut state, &request.script_hash)?;
         let storage_key = Self::storage_key_bytes(contract_id, &request.key);
-        let value = trie
-            .try_get_value(&storage_key)
-            .map_err(|err| Self::trie_lookup_error("getstate", &err))?
+        let value = state
+            .get(&storage_key)
+            .map_err(|error| Self::state_provider_error("getstate", error))?
             .ok_or_else(|| RpcException::from(RpcError::unknown_storage_item()))?;
         Ok(base64_state_value_to_json(&value))
     }
@@ -62,13 +60,13 @@ impl RpcServerState {
     /// `truncated`, and Merkle proofs for the first (and, when the
     /// page has more than one entry, last) returned key.
     pub(super) fn find_states(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let mpt = Self::mpt_store(server)?;
+        let factory = Self::state_provider_factory(server)?;
         let request = FindStatesRequest::parse(params)?;
 
-        let snapshot = mpt.snapshot();
-        Self::check_root_hash(&snapshot, &request.root_hash)?;
-        let mut trie = snapshot.open_trie(Some(request.root_hash));
-        let contract_id = Self::historical_contract_id(&mut trie, &request.script_hash)?;
+        let mut state = factory
+            .state_by_root(request.root_hash)
+            .map_err(|error| Self::state_provider_error("findstates", error))?;
+        let contract_id = Self::historical_contract_id(&mut state, &request.script_hash)?;
 
         let prefix_key = Self::storage_key_bytes(contract_id, &request.prefix);
         let from_storage_key = request
@@ -83,8 +81,8 @@ impl RpcServerState {
         // `find_limited` is that early break: request exactly
         // `count + 1` entries — the probe's only job is to tell us
         // whether the page is truncated.
-        let mut entries = trie
-            .find_limited(&prefix_key, from_storage_key.as_deref(), request.count + 1)
+        let mut entries = state
+            .find(&prefix_key, from_storage_key.as_deref(), request.count + 1)
             .map_err(Self::find_error)?;
         let truncated = entries.len() > request.count;
         entries.truncate(request.count);
@@ -98,12 +96,12 @@ impl RpcServerState {
 
         let first_proof = results
             .first()
-            .map(|(first_key, _)| Self::proof_payload(&mut trie, contract_id, first_key))
+            .map(|(first_key, _)| Self::proof_payload(&mut state, contract_id, first_key))
             .transpose()?;
         let last_proof = if results.len() > 1 {
             results
                 .last()
-                .map(|(last_key, _)| Self::proof_payload(&mut trie, contract_id, last_key))
+                .map(|(last_key, _)| Self::proof_payload(&mut state, contract_id, last_key))
                 .transpose()?
         } else {
             None
@@ -111,46 +109,17 @@ impl RpcServerState {
         Ok(FindStatesResponse::new(first_proof, last_proof, truncated, results).into_json())
     }
 
-    /// C# `StatePlugin.CheckRootHash`: without `FullState`, only the
-    /// current local root may be queried (`UnsupportedState`
-    /// otherwise, with the same diagnostic data string — C#
-    /// interpolates `bool.ToString()`, so the flag reads
-    /// `True`/`False`).
-    ///
-    /// The check runs against the request's own store snapshot (C#
-    /// reads the live `CurrentLocalRootHash` just before opening the
-    /// snapshot; gating on the snapshot's value closes that race
-    /// window without changing the accepted set).
-    pub(super) fn check_root_hash<S>(
-        snapshot: &MptReadSnapshot<S>,
-        root_hash: &UInt256,
-    ) -> Result<(), RpcException>
-    where
-        S: Store,
-    {
-        let full_state = snapshot.full_state();
-        let current = snapshot.current_local_root_hash();
-        if !full_state && current.as_ref() != Some(root_hash) {
-            let full_state_text = if full_state { "True" } else { "False" };
-            let current_text = current.map(|hash| hash.to_string()).unwrap_or_default();
-            return Err(RpcException::from(RpcError::unsupported_state().with_data(
-                format!("fullState:{full_state_text},current:{current_text},rootHash:{root_hash}"),
-            )));
-        }
-        Ok(())
-    }
-
     /// C# `StatePlugin.GetHistoricalContractState`: reads the
     /// `ContractManagement` per-contract record
     /// (`KeyBuilder(-1, 8).Add(scriptHash)`) out of the historical
     /// trie and decodes the interoperable `ContractState` to obtain
     /// the contract id (`UnknownContract` when absent).
-    pub(super) fn historical_contract_id<S>(
-        trie: &mut Trie<MptReadSnapshot<S>>,
+    pub(super) fn historical_contract_id<V>(
+        state: &mut V,
         script_hash: &UInt160,
     ) -> Result<i32, RpcException>
     where
-        S: Store,
+        V: StateView,
     {
         // Build the raw storage key bytes: id (LE) + prefix + script_hash.
         // Uses StorageKey::create_with_uint160 (ADR-025) instead of hand-rolling
@@ -162,9 +131,9 @@ impl RpcServerState {
         )
         .to_array();
 
-        let record = trie
-            .try_get_value(&key)
-            .map_err(|err| Self::trie_lookup_error("contract lookup", &err))?
+        let record = state
+            .get(&key)
+            .map_err(|error| Self::state_provider_error("contract lookup", error))?
             .ok_or_else(|| RpcException::from(RpcError::unknown_contract()))?;
         let contract = ContractState::deserialize_contract_record(&record).map_err(|err| {
             RpcException::from(
@@ -184,29 +153,14 @@ impl RpcServerState {
         bytes
     }
 
-    /// Maps a trie resolution failure (e.g. a root hash this store has
-    /// never persisted) to an internal error.
-    ///
-    /// C# surfaces the same condition as an uncaught
-    /// `InvalidOperationException` converted to a raw `HResult` custom
-    /// error; a named internal error with the MPT message is this
-    /// port's equivalent.
-    pub(super) fn trie_lookup_error(context: &str, err: &MptError) -> RpcException {
-        RpcException::from(
-            RpcError::internal_server_error()
-                .with_data(format!("{context}: MPT resolution failed: {err}")),
-        )
-    }
-
-    /// Maps `Trie::find` argument failures (`from` not under the
+    /// Maps state-view scan argument failures (`from` not under the
     /// prefix, oversized keys) to `InvalidParams`; anything else is a
     /// resolution failure.
-    fn find_error(err: MptError) -> RpcException {
-        match err {
-            MptError::InvalidOperation(message) | MptError::Key(message) => {
-                RpcException::from(RpcError::invalid_params().with_data(message))
-            }
-            other => Self::trie_lookup_error("findstates", &other),
+    fn find_error(error: StateProviderError) -> RpcException {
+        if let Some(message) = error.invalid_argument_message() {
+            RpcException::from(RpcError::invalid_params().with_data(message.to_owned()))
+        } else {
+            Self::state_provider_error("findstates", error)
         }
     }
 }

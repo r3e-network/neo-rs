@@ -455,18 +455,26 @@ The detailed rules for this style live in
   `BlockProvider`/`TxProvider` plus `LedgerProviderFactory`,
   `StorageLedgerProviderFactory`, `StaticLedgerProviderFactory`,
   `StaticLedgerArchiveFactory`, and a generic `HotColdLedgerProviderFactory`.
-  `neo-state-service` currently exposes concrete `MptReadSnapshot`, `MptStore`,
-  `StateStore`, and `StateStoreLookup` surfaces; a general state-view factory
-  remains future work. These live boundaries preserve C#-compatible key/value
-  bytes.
+  `neo-state-service` exposes `StateProviderFactory` with an associated concrete
+  provider and the `StateView` read capability. `StateStore` creates
+  `MptStateProviderFactory`, whose `latest`, `state_at`, and `state_by_root`
+  operations bind root selection and pruning policy to one immutable
+  `MptReadSnapshot`. The returned `MptStateProvider` hides trie construction and
+  its request-local resolution cache behind `get`, bounded `find`, and `proof`;
+  root metadata has separate `latest_root`/`root_at` methods so pruning does not
+  hide historical StateRoot records. RPC uses this boundary without boxing or
+  direct MPT storage access. These live boundaries preserve C#-compatible
+  key/value bytes.
 
 - **MPT layering.** The Merkle-Patricia Trie is split across two crates
   (ADR-012): `neo-crypto::mpt_trie` owns the generic data structure (`Node`,
   `Trie`, `MptCache`, `MptStoreSnapshot` trait) with no durable backend;
   `neo-state-service::storage::mpt_store` owns the durable store (`MptStore`,
   `MptChange`, `MptReadSnapshot`) built on top of `neo-crypto::mpt_trie` and
-  `neo-storage`. `neo-rpc` also uses `neo-crypto::mpt_trie` directly for proof
-  verification. This is layered design, not duplication.
+  `neo-storage`. `neo-state-service::providers` adapts that mechanism into the
+  application-facing state capability and owns proof verification;
+  `neo-rpc` only parses/encodes the C# proof payload and maps provider errors.
+  This is layered design, not duplication.
 
 - **Cold ledger routing and publication are explicit.**
   `HotColdLedgerProviderFactory` composes hot native Ledger reads with any cold

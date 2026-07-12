@@ -69,3 +69,20 @@ async fn unsupported_state_data_uses_csharp_bool_casing() {
         )
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pruning_keeps_historical_root_metadata_queryable() {
+    let fixture = make_server_with_mpt(false);
+
+    let historical = call(&fixture.server, "getstateroot", &[json!(1)])
+        .expect("historical root metadata remains available");
+    assert_eq!(historical.get("index"), Some(&json!(1)));
+    assert_eq!(
+        historical.get("roothash").and_then(Value::as_str),
+        Some(fixture.root1.to_string().as_str())
+    );
+
+    let height = call(&fixture.server, "getstateheight", &[]).expect("latest state height");
+    assert_eq!(height.get("localrootindex"), Some(&json!(2)));
+    assert_eq!(height.get("validatedrootindex"), Some(&json!(2)));
+}

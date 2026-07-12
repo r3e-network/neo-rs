@@ -2,8 +2,7 @@
 
 use std::sync::Arc;
 
-use neo_state_service::StateStore;
-use neo_state_service::mpt_store::MptStore;
+use neo_state_service::{MptStateProviderFactory, StateProviderError, StateStore};
 use neo_storage::persistence::providers::RuntimeStore;
 
 use super::RpcServerState;
@@ -26,13 +25,29 @@ impl RpcServerState {
         })
     }
 
-    /// Resolves the persisted MPT backend, or reports the same
+    /// Creates the frozen state-view factory, or reports the same
     /// `UnsupportedState` error the MPT-less build always served.
-    pub(super) fn mpt_store(
+    pub(super) fn state_provider_factory(
         server: &RpcServer,
-    ) -> Result<Arc<MptStore<RuntimeStore>>, RpcException> {
+    ) -> Result<MptStateProviderFactory<RuntimeStore>, RpcException> {
         let state_store = Self::state_store(server)?;
-        state_store.mpt().ok_or_else(Self::proofs_unsupported)
+        state_store
+            .state_provider_factory()
+            .ok_or_else(Self::proofs_unsupported)
+    }
+
+    /// Maps provider selection and trie-resolution failures to StateService RPC
+    /// errors without exposing snapshot or trie implementation types to
+    /// endpoint handlers.
+    pub(super) fn state_provider_error(context: &str, error: StateProviderError) -> RpcException {
+        if error.is_unsupported_state() {
+            RpcException::from(RpcError::unsupported_state().with_data(error.to_string()))
+        } else {
+            RpcException::from(
+                RpcError::internal_server_error()
+                    .with_data(format!("{context}: MPT resolution failed: {error}")),
+            )
+        }
     }
 
     /// The state-root cache does not persist the MPT trie, so queries

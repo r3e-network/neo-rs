@@ -333,9 +333,12 @@ Priority order for crate refactors:
 4. **One provider/factory pattern for reads.** Storage-backed read APIs should
    expose capability traits and factories rather than leaking concrete caches
    or backend handles upward. The live ledger pattern is
-   `BlockProvider`/`TxProvider` plus `LedgerProviderFactory`; state reads
-   currently use concrete immutable `MptReadSnapshot` values, so add a state
-   factory only when a real second implementation or consumer boundary needs it.
+   `BlockProvider`/`TxProvider` plus `LedgerProviderFactory`. State reads use
+   `StateProviderFactory` plus `StateView`: factories select a root/height and
+   freeze storage, while views expose `get`/bounded `find`/`proof` and hide
+   `MptStore`, snapshots, tries, and resolution caches. Keep associated concrete
+   provider types for static dispatch. Do not let RPC or another upper layer
+   reopen the MPT directly; add a capability to the provider instead.
 5. **Typed tables may only adapt existing bytes.** The current live storage API
    is `Store`/`RawReadOnlyStore`/`ReadOnlyStoreGeneric` over
    `StorageKey`/`StorageItem`; no typed table codec is exported. If one is added,

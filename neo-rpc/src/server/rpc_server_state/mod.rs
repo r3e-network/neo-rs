@@ -14,8 +14,8 @@
 //! - `request`: Typed JSON-RPC request parsing helpers.
 //! - `response`: Typed JSON-RPC response construction helpers.
 //! - `roots`: State-root and StateService height RPC handlers.
-//! - `state_queries`: Historical state lookup and `findstates` trie workflows.
-//! - `support`: Shared StateService lookup and error contracts.
+//! - `state_queries`: Historical state lookup through frozen provider views.
+//! - `support`: State-provider factory lookup and RPC error projection.
 //! - `tests`: Module-local tests and regression coverage.
 
 use crate::server::rpc_server::RpcHandler;

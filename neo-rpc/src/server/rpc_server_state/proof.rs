@@ -4,14 +4,10 @@
 //! format. Keeping that logic here leaves the root state module focused on
 //! handler registration while support and query modules own runtime mechanics.
 
-use std::collections::HashSet;
-
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use neo_crypto::mpt_trie::{MptResult, MptStoreSnapshot, Trie};
 use neo_io::MemoryReader;
-use neo_state_service::mpt_store::MptReadSnapshot;
-use neo_storage::persistence::Store;
+use neo_state_service::{StateProof, StateProviderFactory, StateView, verify_state_proof};
 use serde_json::Value;
 
 use crate::server::rpc_error::RpcError;
@@ -31,25 +27,6 @@ const MAX_PROOF_KEY_LENGTH: usize = 64 + std::mem::size_of::<i32>();
 /// 1 KiB C# `Node.MaxLength` by far; allow ample slack).
 const MAX_PROOF_NODE_LENGTH: usize = 4096;
 
-/// Zero-state snapshot used purely to pin `Trie`'s type parameter for
-/// the associated [`Trie::verify_proof`] call (which builds its own
-/// internal proof store and never touches the parameter type).
-struct ProofVerifySnapshot;
-
-impl MptStoreSnapshot for ProofVerifySnapshot {
-    fn try_get(&self, _key: &[u8]) -> MptResult<Option<Vec<u8>>> {
-        Ok(None)
-    }
-
-    fn put(&self, _key: Vec<u8>, _value: Vec<u8>) -> MptResult<()> {
-        Ok(())
-    }
-
-    fn delete(&self, _key: Vec<u8>) -> MptResult<()> {
-        Ok(())
-    }
-}
-
 impl RpcServerState {
     /// `getproof(roothash, scripthash, key)` — C#
     /// `StatePlugin.GetProof`: resolves the contract id under the
@@ -57,17 +34,16 @@ impl RpcServerState {
     /// returns the Base64 proof payload (`VarBytes(storage_key)` +
     /// `VarInt(count)` + `VarBytes` per node).
     pub(super) fn get_proof(server: &RpcServer, params: &[Value]) -> Result<Value, RpcException> {
-        let mpt = Self::mpt_store(server)?;
+        let factory = Self::state_provider_factory(server)?;
         let request = StateKeyRequest::parse_get_proof(params)?;
 
-        // One frozen view per request (C# `GetStoreSnapshot()`): the
-        // root gate and the trie walk read the same generation, so a
-        // concurrent block commit cannot prune nodes mid-walk.
-        let snapshot = mpt.snapshot();
-        Self::check_root_hash(&snapshot, &request.root_hash)?;
-        let mut trie = snapshot.open_trie(Some(request.root_hash));
-        let contract_id = Self::historical_contract_id(&mut trie, &request.script_hash)?;
-        let payload = Self::proof_payload(&mut trie, contract_id, &request.key)?;
+        // The factory binds the pruning-mode gate and all lookups to one frozen
+        // generation, so a concurrent commit cannot prune nodes mid-request.
+        let mut state = factory
+            .state_by_root(request.root_hash)
+            .map_err(|error| Self::state_provider_error("getproof", error))?;
+        let contract_id = Self::historical_contract_id(&mut state, &request.script_hash)?;
+        let payload = Self::proof_payload(&mut state, contract_id, &request.key)?;
         Ok(proof_payload_to_json(payload))
     }
 
@@ -79,32 +55,31 @@ impl RpcServerState {
         let (key, nodes) = Self::decode_proof_payload(&request.proof_bytes).ok_or_else(|| {
             RpcException::from(RpcError::invalid_params().with_data("invalid proof payload"))
         })?;
-        let proof: HashSet<Vec<u8>> = nodes.into_iter().collect();
-        let value = Trie::<ProofVerifySnapshot>::verify_proof(request.root_hash, &key, &proof)
-            .map_err(|_| {
-                RpcException::from(
-                    RpcError::verification_failed()
-                        .with_data("failed to verify state proof against supplied root"),
-                )
-            })?;
+        let proof: StateProof = nodes.into_iter().collect();
+        let value = verify_state_proof(request.root_hash, &key, &proof).map_err(|_| {
+            RpcException::from(
+                RpcError::verification_failed()
+                    .with_data("failed to verify state proof against supplied root"),
+            )
+        })?;
         Ok(base64_state_value_to_json(&value))
     }
 
     /// C# `StatePlugin.GetProof(Trie, int, byte[])`: builds the proof
     /// for `(contract_id, key)` and serializes the payload
     /// (`UnknownStorageItem` when the key is not in the trie).
-    pub(super) fn proof_payload<S>(
-        trie: &mut Trie<MptReadSnapshot<S>>,
+    pub(super) fn proof_payload<V>(
+        state: &mut V,
         contract_id: i32,
         key: &[u8],
     ) -> Result<String, RpcException>
     where
-        S: Store,
+        V: StateView,
     {
         let storage_key = Self::storage_key_bytes(contract_id, key);
-        let proof = trie
-            .try_get_proof(&storage_key)
-            .map_err(|err| Self::trie_lookup_error("proof query", &err))?
+        let proof = state
+            .proof(&storage_key)
+            .map_err(|error| Self::state_provider_error("proof query", error))?
             .ok_or_else(|| RpcException::from(RpcError::unknown_storage_item()))?;
         let nodes: Vec<Vec<u8>> = proof.into_iter().collect();
         Ok(BASE64_STANDARD.encode(Self::encode_proof_payload(&storage_key, &nodes)?))
