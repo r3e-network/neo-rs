@@ -679,7 +679,9 @@ return, keeping a returned `ApplicationEngine` movable between calls.
 canonical loop no longer deep-clones the hardfork/configuration maps per block.
 Transaction script containers retain `(Arc<Block>, transaction index)` and
 resolve the immutable payload in place, avoiding a second owned copy of each
-transaction during Application execution.
+transaction during Application execution. The transaction loop also reuses one
+resettable child cache per block; the existing FAULT-then-HALT regression pins
+isolation and final Ledger VM states across reuse.
 The standard native registry exposes explicit OnPersist/PostPersist capability
 metadata and block-aware gates for ContractManagement initialization, Notary
 assistance, and Oracle responses. Custom providers default to conservative

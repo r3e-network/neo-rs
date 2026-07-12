@@ -231,7 +231,9 @@ only at genesis or configured hardfork boundaries, Notary runs only for
 `NotaryAssisted`, and Oracle post-persist runs only for `OracleResponse`.
 Each Application engine uses a validated block-backed transaction container;
 the shared immutable block keeps the payload alive without a per-transaction
-deep clone.
+deep clone. One child transaction cache is lazily allocated per block and reset
+between transactions, preserving HALT/FAULT isolation while avoiding repeated
+cache-control allocations in dense blocks.
 Positive-path pipeline tests force each dynamic hook to produce an observable
 error when its downstream state is invalid, preventing a future optimization
 from silently skipping required protocol work.

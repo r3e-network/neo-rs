@@ -121,10 +121,11 @@ evidence, not a failure.
 
 The focused Criterion target exercises the same typed composition and canonical
 import boundary used by the node. Each measured batch contains 32 blocks and
-one real `GasToken.transfer` invocation per block. Ledger and StateService use
-separate MDBX stores, MPT roots are durably fenced, and block construction,
-genesis/warmup, optional prefill, shutdown, and database cleanup are outside the
-timed interval:
+one real `GasToken.transfer` invocation per block by default. Set
+`NEO_BENCH_TRANSACTIONS_PER_BLOCK` from 1 through 512 to evaluate denser blocks.
+Ledger and StateService use separate MDBX stores, MPT roots are durably fenced,
+and block construction, genesis/warmup, optional prefill, shutdown, and database
+cleanup are outside the timed interval:
 
 ```bash
 # Caught-up/small-state window; default adaptive MPT ceiling is 8 blocks.
@@ -137,6 +138,10 @@ NEO_BENCH_PREFILL_BLOCKS=2048 \
 # Compare an explicit StateService backlog ceiling without changing source.
 NEO_BENCH_MPT_APPLY_BATCH_BLOCKS=16 NEO_BENCH_PREFILL_BLOCKS=2048 \
   cargo bench -p neo-benches --bench block_import -- mdbx_blocks --quick
+
+# Exercise denser transaction-bearing blocks through the same import path.
+NEO_BENCH_TRANSACTIONS_PER_BLOCK=8 NEO_BENCH_PREFILL_BLOCKS=256 \
+  cargo bench -p neo-benches --bench block_import -- mdbx_blocks --quick
 ```
 
 On the local development host on 2026-07-13, the corrected stationary quick
@@ -148,6 +153,10 @@ an eight-block ceiling with an eager four-block flush: it starts trie work early
 when the worker catches the producer and consumes larger batches only when work
 is already queued. The Application path also retains transactions through the
 shared immutable block instead of deep-cloning them into script containers.
+With eight transfers per block and 256 prefill blocks (the same 2,048 prefill
+transactions), the reusable per-block transaction cache measured about 2.42k
+blocks/s, or 19.4k transactions/s. The allocate-per-transaction A/B measured
+about 2.34k blocks/s under the same quick workload.
 
 These numbers are synthetic regression evidence, not a MainNet production
 claim. The repeated transfer has limited state cardinality, skips P2P download

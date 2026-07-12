@@ -253,7 +253,9 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   name allocation while still allowing owned custom descriptor names.
   Application-trigger engines retain their transaction through the immutable
   shared block, so script-container setup does not deep-clone transaction
-  scripts, signers, attributes, or witnesses.
+  scripts, signers, attributes, or witnesses. Transactions in the same block
+  also reuse one resettable child `DataCache`; HALT commits it into the block
+  overlay and FAULT discards it before the next transaction.
 
 - **Staged core and application lifecycle.** `neo-system::NodeCoreBuilder<P,
   S, H>` constructs the provider-neutral store snapshot, mempool, header cache,

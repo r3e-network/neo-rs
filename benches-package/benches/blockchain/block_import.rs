@@ -32,6 +32,8 @@ use support::make_mdbx_store;
 
 const BLOCKS_PER_BATCH: usize = 32;
 const DEFAULT_MPT_APPLY_BATCH_BLOCKS: usize = 8;
+const DEFAULT_TRANSACTIONS_PER_BLOCK: usize = 1;
+const MAX_TRANSACTIONS_PER_BLOCK: usize = 512;
 const TRANSFER_AMOUNT: i64 = 1;
 const SYSTEM_FEE: i64 = 1_0000_0000;
 const INITIAL_GAS_BALANCE: i64 = 1_000_000_000_000_000_000;
@@ -65,6 +67,14 @@ fn benchmark_prefill_blocks() -> usize {
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(0)
+}
+
+fn benchmark_transactions_per_block() -> usize {
+    std::env::var("NEO_BENCH_TRANSACTIONS_PER_BLOCK")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|value| (1..=MAX_TRANSACTIONS_PER_BLOCK).contains(value))
+        .unwrap_or(DEFAULT_TRANSACTIONS_PER_BLOCK)
 }
 
 fn benchmark_stage_metrics_enabled() -> bool {
@@ -141,12 +151,26 @@ impl ChainCursor {
         }
     }
 
-    fn gas_transfer_blocks(&mut self, count: usize, sender: &UInt160, script: &[u8]) -> Vec<Block> {
+    fn gas_transfer_blocks(
+        &mut self,
+        count: usize,
+        transactions_per_block: usize,
+        sender: &UInt160,
+        script: &[u8],
+    ) -> Vec<Block> {
         let mut blocks = Vec::with_capacity(count);
         for _ in 0..count {
             let index = self.next_index;
-            let transaction =
-                gas_transfer_transaction(self.next_nonce, index, *sender, script.to_vec());
+            let mut transactions = Vec::with_capacity(transactions_per_block);
+            for _ in 0..transactions_per_block {
+                transactions.push(gas_transfer_transaction(
+                    self.next_nonce,
+                    index,
+                    *sender,
+                    script.to_vec(),
+                ));
+                self.next_nonce = self.next_nonce.saturating_add(1);
+            }
             let mut header = Header::new();
             self.timestamp = self.timestamp.saturating_add(self.block_interval_ms);
             header.set_index(index);
@@ -154,13 +178,12 @@ impl ChainCursor {
             header.set_timestamp(self.timestamp);
             header.set_next_consensus(self.next_consensus);
 
-            let mut block = Block::from_parts(header, vec![transaction]);
+            let mut block = Block::from_parts(header, transactions);
             block
                 .try_rebuild_merkle_root()
                 .expect("rebuild benchmark block Merkle root");
             self.previous_hash = block.hash();
             self.next_index = self.next_index.saturating_add(1);
-            self.next_nonce = self.next_nonce.saturating_add(1);
             blocks.push(block);
         }
         blocks
@@ -317,6 +340,7 @@ fn prepare_canonical_import_fixture<S, T, G>(
     storage_guard: G,
     mpt_apply_batch_blocks: usize,
     prefill_blocks: usize,
+    transactions_per_block: usize,
 ) -> CanonicalImportFixture<G>
 where
     S: TransactionalStore,
@@ -357,7 +381,7 @@ where
     let transfer_script = gas_transfer_script(&sender, &recipient);
     let mut cursor = ChainCursor::after_genesis(settings.as_ref());
 
-    let warmup = cursor.gas_transfer_blocks(1, &sender, &transfer_script);
+    let warmup = cursor.gas_transfer_blocks(1, transactions_per_block, &sender, &transfer_script);
     let warmup_reply = runtime
         .block_on(blockchain.import_blocks_bulk_detailed(warmup, false))
         .expect("import benchmark warmup block");
@@ -365,14 +389,19 @@ where
     assert!(warmup_reply.error.is_none(), "{:?}", warmup_reply.error);
     assert_eq!(
         GasToken::balance_of(snapshot.as_ref(), &recipient).expect("read recipient GAS balance"),
-        BigInt::from(TRANSFER_AMOUNT),
+        BigInt::from(TRANSFER_AMOUNT)
+            * BigInt::from(
+                u64::try_from(transactions_per_block)
+                    .expect("benchmark transaction count fits u64"),
+            ),
         "benchmark GAS transfer must execute successfully before measurement"
     );
 
     let mut remaining_prefill = prefill_blocks;
     while remaining_prefill > 0 {
         let count = remaining_prefill.min(BLOCKS_PER_BATCH);
-        let blocks = cursor.gas_transfer_blocks(count, &sender, &transfer_script);
+        let blocks =
+            cursor.gas_transfer_blocks(count, transactions_per_block, &sender, &transfer_script);
         let reply = runtime
             .block_on(blockchain.import_blocks_bulk_detailed(blocks, false))
             .expect("import benchmark prefill batch");
@@ -385,7 +414,12 @@ where
         runtime,
         blockchain,
         service_task: Some(service_task),
-        blocks: cursor.gas_transfer_blocks(BLOCKS_PER_BATCH, &sender, &transfer_script),
+        blocks: cursor.gas_transfer_blocks(
+            BLOCKS_PER_BATCH,
+            transactions_per_block,
+            &sender,
+            &transfer_script,
+        ),
         _storage_guard: storage_guard,
     }
 }
@@ -395,6 +429,7 @@ fn benchmark_canonical_import<S, T, G, F>(
     backend: &str,
     mpt_apply_batch_blocks: usize,
     prefill_blocks: usize,
+    transactions_per_block: usize,
     mut storage_factory: F,
 ) where
     S: TransactionalStore,
@@ -411,6 +446,7 @@ fn benchmark_canonical_import<S, T, G, F>(
                 storage_guard,
                 mpt_apply_batch_blocks,
                 prefill_blocks,
+                transactions_per_block,
             )
         },
         |mut fixture| {
@@ -443,10 +479,13 @@ fn bench_canonical_transaction_import(c: &mut Criterion) {
     group.throughput(criterion::Throughput::Elements(BLOCKS_PER_BATCH as u64));
     let mpt_apply_batch_blocks = benchmark_mpt_apply_batch_blocks();
     let prefill_blocks = benchmark_prefill_blocks();
+    let transactions_per_block = benchmark_transactions_per_block();
 
     group.bench_with_input(
         BenchmarkId::new(
-            format!("memory_blocks_mpt_{mpt_apply_batch_blocks}_prefill_{prefill_blocks}"),
+            format!(
+                "memory_blocks_mpt_{mpt_apply_batch_blocks}_prefill_{prefill_blocks}_txs_{transactions_per_block}"
+            ),
             BLOCKS_PER_BATCH,
         ),
         &(),
@@ -456,6 +495,7 @@ fn bench_canonical_transaction_import(c: &mut Criterion) {
                 "memory",
                 mpt_apply_batch_blocks,
                 prefill_blocks,
+                transactions_per_block,
                 || {
                     (
                         Arc::new(MemoryStore::new()),
@@ -469,7 +509,9 @@ fn bench_canonical_transaction_import(c: &mut Criterion) {
 
     group.bench_with_input(
         BenchmarkId::new(
-            format!("mdbx_blocks_mpt_{mpt_apply_batch_blocks}_prefill_{prefill_blocks}"),
+            format!(
+                "mdbx_blocks_mpt_{mpt_apply_batch_blocks}_prefill_{prefill_blocks}_txs_{transactions_per_block}"
+            ),
             BLOCKS_PER_BATCH,
         ),
         &(),
@@ -479,6 +521,7 @@ fn bench_canonical_transaction_import(c: &mut Criterion) {
                 "mdbx",
                 mpt_apply_batch_blocks,
                 prefill_blocks,
+                transactions_per_block,
                 || {
                     let (canonical_store, canonical_tempdir) =
                         make_mdbx_store("neo-canonical-import-mdbx-bench");

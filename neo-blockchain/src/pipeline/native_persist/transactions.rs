@@ -40,6 +40,7 @@ where
     let tx_start = std::time::Instant::now();
     let trace_tx_filter = TraceTxFilter::from_env();
     let native_contract_provider = resources.provider();
+    let mut reusable_tx_cache: Option<Arc<DataCache<B>>> = None;
 
     for (transaction_index, tx) in block.transactions.iter().enumerate() {
         let stage_start = std::time::Instant::now();
@@ -52,9 +53,18 @@ where
         );
 
         let stage_start = std::time::Instant::now();
-        let tx_cache = Arc::new(block_cache.clone_cache());
+        if let Some(tx_cache) = reusable_tx_cache.as_ref() {
+            tx_cache.reset();
+        } else {
+            reusable_tx_cache = Some(Arc::new(block_cache.clone_cache()));
+        }
+        let Some(tx_cache) = reusable_tx_cache.as_ref() else {
+            return Err(CoreError::invalid_operation(
+                "persist: failed to initialize transaction cache",
+            ));
+        };
         record_tx_stage(
-            neo_runtime::sync_metrics::NativePersistTxStage::CloneCache,
+            neo_runtime::sync_metrics::NativePersistTxStage::CachePrepare,
             stage_start,
         );
 
@@ -77,7 +87,7 @@ where
             ApplicationEngine::new_with_preloaded_native_and_native_contract_provider(
                 TriggerType::Application,
                 Some(container),
-                Arc::clone(&tx_cache),
+                Arc::clone(tx_cache),
                 Some(Arc::clone(block)),
                 Arc::clone(settings),
                 tx.system_fee(),
