@@ -2242,14 +2242,22 @@ version = "0.10.0"
 dependencies = [
  "criterion",
  "hex",
+ "neo-blockchain",
+ "neo-config",
  "neo-crypto",
  "neo-io",
+ "neo-manifest",
+ "neo-native-contracts",
  "neo-payloads",
  "neo-primitives",
+ "neo-runtime",
  "neo-state-service",
  "neo-storage",
+ "neo-system",
  "neo-vm",
  "neo-vm-rs",
+ "num-bigint",
+ "tokio",
 ]
 
 [[package]]

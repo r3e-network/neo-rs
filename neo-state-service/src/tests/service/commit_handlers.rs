@@ -98,6 +98,64 @@ fn async_deferred_committing_coalesces_short_gap_applies() {
 }
 
 #[test]
+fn async_apply_limit_is_independent_from_queue_backpressure_capacity() {
+    let store = Arc::new(StateStore::with_mpt(false));
+    let handlers = StateServiceCommitHandlers::new_async_with_limits(Arc::clone(&store), 8, 2);
+    let snapshots = (0u8..8)
+        .map(|index| {
+            let snapshot = DataCache::new(false);
+            snapshot.add(
+                StorageKey::new(5, vec![index]),
+                StorageItem::from_bytes(vec![index]),
+            );
+            snapshot
+        })
+        .collect::<Vec<_>>();
+
+    for (index, snapshot) in snapshots.iter().enumerate() {
+        assert!(handlers.on_committing_deferred(index as u32, snapshot));
+    }
+    assert!(handlers.flush());
+
+    assert_eq!(handlers.async_queue_capacity(), Some(8));
+    assert_eq!(handlers.async_apply_batch_limit(), Some(2));
+    assert_eq!(handlers.applied_batch_sizes(), vec![2, 2, 2, 2]);
+    assert_eq!(
+        store.mpt().expect("MPT backend").current_local_root_index(),
+        Some(7)
+    );
+}
+
+#[test]
+fn async_worker_flushes_eager_batch_before_backlog_ceiling() {
+    let store = Arc::new(StateStore::with_mpt(false));
+    let handlers = StateServiceCommitHandlers::new_async_with_limits(Arc::clone(&store), 16, 8);
+    let snapshots = (0u8..4)
+        .map(|index| {
+            let snapshot = DataCache::new(false);
+            snapshot.add(
+                StorageKey::new(5, vec![index]),
+                StorageItem::from_bytes(vec![index]),
+            );
+            snapshot
+        })
+        .collect::<Vec<_>>();
+
+    for (index, snapshot) in snapshots.iter().enumerate() {
+        assert!(handlers.on_committing_deferred(index as u32, snapshot));
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(handlers.flush());
+
+    assert_eq!(handlers.async_apply_batch_limit(), Some(8));
+    assert_eq!(handlers.applied_batch_sizes(), vec![4]);
+    assert_eq!(
+        store.mpt().expect("MPT backend").current_local_root_index(),
+        Some(3)
+    );
+}
+
+#[test]
 fn async_live_committing_waits_for_mpt_apply_before_returning() {
     let store = Arc::new(StateStore::with_mpt(false));
     let handlers = StateServiceCommitHandlers::new_async_with_capacity(Arc::clone(&store), 4);

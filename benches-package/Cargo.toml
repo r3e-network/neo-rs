@@ -12,15 +12,28 @@ description = "Criterion benchmarks for the neo-rs workspace"
 
 [dependencies]
 criterion = { workspace = true }
+neo-blockchain = { workspace = true }
+neo-config = { workspace = true }
 neo-crypto = { workspace = true }
 neo-io = { workspace = true }
+neo-manifest = { workspace = true }
+neo-native-contracts = { workspace = true }
 neo-primitives = { workspace = true }
+neo-runtime = { workspace = true }
 neo-state-service = { workspace = true }
 neo-storage = { workspace = true }
+neo-system = { workspace = true }
 neo-vm = { workspace = true }
 neo-vm-rs = { workspace = true }
 neo-payloads = { workspace = true }
 hex = { workspace = true }
+num-bigint = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync"] }
+
+[[bench]]
+name = "block_import"
+path = "benches/blockchain/block_import.rs"
+harness = false
 
 [[bench]]
 name = "block_processing"

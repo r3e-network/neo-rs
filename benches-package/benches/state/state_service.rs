@@ -1,15 +1,20 @@
 #![allow(missing_docs)] // benchmark/integration-test harness: not public API
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use neo_state_service::{StateStore, commit_handlers::StateServiceCommitHandlers};
+use criterion::{BatchSize, BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use neo_state_service::{
+    StateRootApplyMetrics, StateStore, commit_handlers::StateServiceCommitHandlers,
+};
 use neo_storage::{
     DataCache, StorageItem, StorageKey,
-    mdbx::{MdbxStore, MdbxStoreProvider},
+    mdbx::MdbxStore,
     persistence::{Store, storage::StorageConfig},
     rocksdb::{RocksDBStoreProvider, RocksDbStore},
 };
-use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+
+#[path = "../support/mod.rs"]
+mod support;
+
+use support::{BenchTempDir, make_mdbx_store};
 
 fn make_snapshot(change_count: usize) -> DataCache {
     let snapshot = DataCache::new(false);
@@ -23,36 +28,76 @@ fn make_snapshot(change_count: usize) -> DataCache {
     snapshot
 }
 
-static ROCKSDB_BENCH_SEQ: AtomicU64 = AtomicU64::new(0);
-static MDBX_BENCH_SEQ: AtomicU64 = AtomicU64::new(0);
-
-struct BenchTempDir {
-    path: PathBuf,
+fn make_transaction_batch(
+    block_count: usize,
+    changes_per_block: usize,
+    generation: u8,
+) -> Vec<DataCache> {
+    (0..block_count)
+        .map(|block| {
+            let snapshot = DataCache::new(false);
+            for change in 0..changes_per_block {
+                let key_index = block
+                    .checked_mul(changes_per_block)
+                    .and_then(|base| base.checked_add(change))
+                    .expect("benchmark key index stays in range");
+                let key = StorageKey::new(5, (key_index as u32).to_le_bytes().to_vec());
+                let value = StorageItem::from_bytes(vec![
+                    generation,
+                    block as u8,
+                    change as u8,
+                    0xAA,
+                    0x55,
+                ]);
+                snapshot.add(key, value);
+            }
+            snapshot
+        })
+        .collect()
 }
 
-impl BenchTempDir {
-    fn new(prefix: &str, sequence: &AtomicU64) -> Self {
-        let path = std::env::temp_dir().join(format!(
-            "{prefix}-{}-{}",
-            std::process::id(),
-            sequence.fetch_add(1, Ordering::Relaxed)
-        ));
-        let _ = std::fs::remove_dir_all(&path);
-        Self { path }
+struct TransactionBatchWorkload<S: Store, G> {
+    store: Arc<StateStore<S>>,
+    handlers: StateServiceCommitHandlers<S>,
+    snapshots: Vec<DataCache>,
+    _storage_guard: G,
+}
+
+impl<S: Store, G> TransactionBatchWorkload<S, G> {
+    fn new(
+        store: StateStore<S>,
+        storage_guard: G,
+        block_count: usize,
+        changes_per_block: usize,
+    ) -> Self {
+        let store = Arc::new(store);
+        let handlers =
+            StateServiceCommitHandlers::new_async_with_capacity(Arc::clone(&store), block_count);
+        Self {
+            store,
+            handlers,
+            snapshots: make_transaction_batch(block_count, changes_per_block, 0x11),
+            _storage_guard: storage_guard,
+        }
     }
-}
 
-impl Drop for BenchTempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.path);
+    fn apply_batch(&self) -> Option<u32> {
+        for (offset, snapshot) in self.snapshots.iter().enumerate() {
+            assert!(
+                self.handlers
+                    .on_committing_deferred(offset as u32, snapshot,)
+            );
+        }
+        assert!(self.handlers.flush());
+        self.store.current_local_index()
     }
 }
 
 fn make_rocksdb_state_store() -> (StateStore<RocksDbStore>, BenchTempDir) {
-    let tempdir = BenchTempDir::new("neo-state-service-rocksdb-bench", &ROCKSDB_BENCH_SEQ);
+    let tempdir = BenchTempDir::new("neo-state-service-rocksdb-bench");
     let backing = Arc::new(
         RocksDBStoreProvider::new(StorageConfig {
-            path: tempdir.path.clone(),
+            path: tempdir.path().to_path_buf(),
             ..Default::default()
         })
         .with_read_ahead(true)
@@ -66,17 +111,7 @@ fn make_rocksdb_state_store() -> (StateStore<RocksDbStore>, BenchTempDir) {
 }
 
 fn make_mdbx_state_store() -> (StateStore<MdbxStore>, BenchTempDir) {
-    let tempdir = BenchTempDir::new("neo-state-service-mdbx-bench", &MDBX_BENCH_SEQ);
-    let backing = Arc::new(
-        MdbxStoreProvider::new(StorageConfig {
-            path: tempdir.path.clone(),
-            mdbx_geometry_upper_bytes: Some(8 * 1024 * 1024 * 1024),
-            mdbx_geometry_growth_bytes: Some(64 * 1024 * 1024),
-            ..Default::default()
-        })
-        .get_mdbx_store("")
-        .expect("open mdbx"),
-    );
+    let (backing, tempdir) = make_mdbx_store("neo-state-service-mdbx-bench");
     (
         StateStore::with_mpt_store(false, backing).expect("mdbx-backed state store"),
         tempdir,
@@ -203,6 +238,67 @@ fn bench_state_service_empty_continuation_batches(c: &mut Criterion) {
     mdbx_group.finish();
 }
 
+fn bench_state_service_transaction_bearing_batches(c: &mut Criterion) {
+    const BLOCK_COUNT: usize = 32;
+    const CHANGES_PER_BLOCK: usize = 16;
+
+    let mut group = c.benchmark_group("state_service/transaction_bearing_batches");
+    group.throughput(criterion::Throughput::Elements(BLOCK_COUNT as u64));
+    group.bench_with_input(
+        BenchmarkId::new("memory_blocks", BLOCK_COUNT),
+        &CHANGES_PER_BLOCK,
+        |b, &changes_per_block| {
+            b.iter_batched(
+                || {
+                    TransactionBatchWorkload::new(
+                        StateStore::with_mpt(false),
+                        (),
+                        BLOCK_COUNT,
+                        changes_per_block,
+                    )
+                },
+                |workload| {
+                    let root = black_box(workload.apply_batch());
+                    (workload, root)
+                },
+                BatchSize::PerIteration,
+            );
+        },
+    );
+    group.bench_with_input(
+        BenchmarkId::new("mdbx_blocks", BLOCK_COUNT),
+        &CHANGES_PER_BLOCK,
+        |b, &changes_per_block| {
+            b.iter_batched(
+                || {
+                    let (store, tempdir) = make_mdbx_state_store();
+                    TransactionBatchWorkload::new(store, tempdir, BLOCK_COUNT, changes_per_block)
+                },
+                |workload| {
+                    let root = black_box(workload.apply_batch());
+                    (workload, root)
+                },
+                BatchSize::PerIteration,
+            );
+        },
+    );
+    group.finish();
+
+    eprintln!("StateService transaction-bearing batch stage EWMA:");
+    for stage in StateRootApplyMetrics::state_root_apply_stage_stats() {
+        eprintln!(
+            "  {:>20}: {:>8} us over {} observations",
+            stage.stage, stage.avg_us, stage.calls
+        );
+    }
+    for count in StateRootApplyMetrics::state_root_apply_count_stats() {
+        eprintln!(
+            "  {:>20}: avg {:>8}, total {} over {} samples",
+            count.kind, count.avg, count.total, count.samples
+        );
+    }
+}
+
 fn apply_empty_batch<S: Store>(
     handlers: &StateServiceCommitHandlers<S>,
     empty: &DataCache,
@@ -221,5 +317,6 @@ criterion_group!(
     benches,
     bench_state_service_apply_snapshot_changes,
     bench_state_service_empty_continuation_batches,
+    bench_state_service_transaction_bearing_batches,
 );
 criterion_main!(benches);

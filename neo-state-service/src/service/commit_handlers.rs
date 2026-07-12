@@ -32,6 +32,8 @@ use std::time::Duration;
 use tracing::{debug, warn};
 
 const DEFAULT_ASYNC_QUEUE_CAPACITY: usize = 256;
+const DEFAULT_ASYNC_APPLY_BATCH_BLOCKS: usize = 8;
+const ASYNC_EAGER_APPLY_BATCH_BLOCKS: usize = 4;
 const ASYNC_BATCH_COALESCE_WAIT: Duration = Duration::from_millis(10);
 
 /// Handlers for wiring state-root MPT persistence into block persistence.
@@ -59,18 +61,50 @@ where
     /// is full, so a sync burst can overlap native persistence with MPT writes
     /// without allowing unbounded memory growth.
     pub fn new_async(state_store: Arc<StateStore<S>>) -> Self {
-        Self::new_async_with_capacity(state_store, DEFAULT_ASYNC_QUEUE_CAPACITY)
+        Self::new_async_with_limits(
+            state_store,
+            DEFAULT_ASYNC_QUEUE_CAPACITY,
+            DEFAULT_ASYNC_APPLY_BATCH_BLOCKS,
+        )
     }
 
     /// Constructs an async pipeline, returning the worker spawn failure instead
     /// of falling back to synchronous mode.
     pub fn try_new_async(state_store: Arc<StateStore<S>>) -> io::Result<Self> {
-        Self::try_new_async_with_capacity(state_store, DEFAULT_ASYNC_QUEUE_CAPACITY)
+        Self::try_new_async_with_limits(
+            state_store,
+            DEFAULT_ASYNC_QUEUE_CAPACITY,
+            DEFAULT_ASYNC_APPLY_BATCH_BLOCKS,
+        )
     }
 
-    /// Constructs an async pipeline with an explicit queue capacity.
+    /// Constructs an async pipeline with an explicit queue capacity and the
+    /// default pipelined MPT apply limit.
     pub fn new_async_with_capacity(state_store: Arc<StateStore<S>>, queue_capacity: usize) -> Self {
-        match Self::try_new_async_with_capacity(Arc::clone(&state_store), queue_capacity) {
+        Self::new_async_with_limits(
+            state_store,
+            queue_capacity,
+            DEFAULT_ASYNC_APPLY_BATCH_BLOCKS,
+        )
+    }
+
+    /// Constructs an async pipeline with independent backpressure and MPT
+    /// apply limits.
+    ///
+    /// The apply limit is a backlog ceiling. The worker flushes a smaller
+    /// eager batch when it catches the producer, preserving pipeline overlap,
+    /// and consumes up to this limit when queued work is already available.
+    /// Queue capacity remains independent and large enough to absorb bursts.
+    pub fn new_async_with_limits(
+        state_store: Arc<StateStore<S>>,
+        queue_capacity: usize,
+        max_apply_batch_blocks: usize,
+    ) -> Self {
+        match Self::try_new_async_with_limits(
+            Arc::clone(&state_store),
+            queue_capacity,
+            max_apply_batch_blocks,
+        ) {
             Ok(handlers) => handlers,
             Err(err) => {
                 warn!(
@@ -89,7 +123,25 @@ where
         state_store: Arc<StateStore<S>>,
         queue_capacity: usize,
     ) -> io::Result<Self> {
-        let worker = AsyncStateRootWorker::spawn(Arc::clone(&state_store), queue_capacity)?;
+        Self::try_new_async_with_limits(
+            state_store,
+            queue_capacity,
+            DEFAULT_ASYNC_APPLY_BATCH_BLOCKS,
+        )
+    }
+
+    /// Constructs an async pipeline with independent queue and apply limits,
+    /// returning worker spawn failures to the caller.
+    pub fn try_new_async_with_limits(
+        state_store: Arc<StateStore<S>>,
+        queue_capacity: usize,
+        max_apply_batch_blocks: usize,
+    ) -> io::Result<Self> {
+        let worker = AsyncStateRootWorker::spawn(
+            Arc::clone(&state_store),
+            queue_capacity,
+            max_apply_batch_blocks,
+        )?;
         Ok(Self {
             state_store,
             worker: Some(worker),
@@ -111,6 +163,13 @@ where
         self.worker
             .as_ref()
             .map(AsyncStateRootWorker::queue_capacity)
+    }
+
+    /// Maximum consecutive roots applied in one worker trie batch.
+    pub fn async_apply_batch_limit(&self) -> Option<usize> {
+        self.worker
+            .as_ref()
+            .map(AsyncStateRootWorker::max_apply_batch_blocks)
     }
 
     /// Number of reusable async projection buffers currently parked.
@@ -327,6 +386,7 @@ enum AsyncCommand {
 struct AsyncStateRootWorker {
     tx: SyncSender<AsyncCommand>,
     queue_capacity: usize,
+    max_apply_batch_blocks: usize,
     failed: Arc<AtomicBool>,
     recycled_change_buffers: Arc<parking_lot::Mutex<Vec<Vec<crate::mpt_store::MptChange>>>>,
     #[cfg(test)]
@@ -335,11 +395,16 @@ struct AsyncStateRootWorker {
 }
 
 impl AsyncStateRootWorker {
-    fn spawn<S>(state_store: Arc<StateStore<S>>, queue_capacity: usize) -> io::Result<Self>
+    fn spawn<S>(
+        state_store: Arc<StateStore<S>>,
+        queue_capacity: usize,
+        max_apply_batch_blocks: usize,
+    ) -> io::Result<Self>
     where
         S: Store + 'static,
     {
         let capacity = queue_capacity.max(1);
+        let max_apply_batch_blocks = max_apply_batch_blocks.max(1).min(capacity);
         let (tx, rx) = std::sync::mpsc::sync_channel(capacity);
         let failed = Arc::new(AtomicBool::new(false));
         let worker_failed = Arc::clone(&failed);
@@ -355,7 +420,7 @@ impl AsyncStateRootWorker {
                 worker_loop(
                     state_store,
                     rx,
-                    capacity,
+                    max_apply_batch_blocks,
                     worker_failed,
                     worker_recycled_change_buffers,
                     #[cfg(test)]
@@ -374,6 +439,7 @@ impl AsyncStateRootWorker {
         Ok(Self {
             tx,
             queue_capacity: capacity,
+            max_apply_batch_blocks,
             failed,
             recycled_change_buffers,
             #[cfg(test)]
@@ -384,6 +450,10 @@ impl AsyncStateRootWorker {
 
     fn queue_capacity(&self) -> usize {
         self.queue_capacity
+    }
+
+    fn max_apply_batch_blocks(&self) -> usize {
+        self.max_apply_batch_blocks
     }
 
     fn is_healthy(&self) -> bool {
@@ -541,6 +611,7 @@ fn collect_apply_batch(
     batch: &mut Vec<AsyncApplyRequest>,
     max_batch_blocks: usize,
 ) {
+    let eager_batch_blocks = ASYNC_EAGER_APPLY_BATCH_BLOCKS.min(max_batch_blocks.max(1));
     while batch.len() < max_batch_blocks.max(1) {
         match rx.try_recv() {
             Ok(AsyncCommand::Apply(next)) => {
@@ -551,14 +622,19 @@ fn collect_apply_batch(
                 return;
             }
             Err(TryRecvError::Disconnected) => return,
-            Err(TryRecvError::Empty) => match rx.recv_timeout(ASYNC_BATCH_COALESCE_WAIT) {
-                Ok(AsyncCommand::Apply(next)) => batch.push(next),
-                Ok(other) => {
-                    *pending_command = Some(other);
+            Err(TryRecvError::Empty) => {
+                if batch.len() >= eager_batch_blocks {
                     return;
                 }
-                Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => return,
-            },
+                match rx.recv_timeout(ASYNC_BATCH_COALESCE_WAIT) {
+                    Ok(AsyncCommand::Apply(next)) => batch.push(next),
+                    Ok(other) => {
+                        *pending_command = Some(other);
+                        return;
+                    }
+                    Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => return,
+                }
+            }
         }
     }
 }
