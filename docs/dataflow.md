@@ -60,14 +60,18 @@ Two startup details matter for correctness:
 ## 2. Block ingestion
 
 A block arriving from a peer is decoded by its per-peer task, buffered by
-`neo-node`, and submitted through
-`neo_blockchain::BlockchainHandle::submit_inventory_blocks`. Consensus-produced
-blocks use `submit_inventory_block`; extensible payloads use
+`neo-node`, and checked by `neo_system::LiveBlockImportPipeline`. That adapter
+uses the exact `BlockImportQueue` owned by staged sync, retains valid
+`Arc<Block>` candidates in arrival order, filters malformed candidates with
+input-positioned diagnostics, and submits the checker-typed batch through
+`neo_blockchain::BlockchainHandle::submit_checked_inventory_blocks`.
+Consensus-produced blocks use `submit_consensus_block`; extensible payloads use
 `submit_inventory_extensible`; startup genesis bootstrapping uses `initialize`.
 The node composition code does not construct private `BlockchainCommand`
-variants directly. The blockchain service then structurally and
-witness-verifies blocks, runs the C# `Blockchain.Persist` pipeline, and commits
-them durably. Out-of-order blocks are parked and drained when their parent
+variants directly. The blockchain service trusts only that exact checker token
+for the already-completed stateless integrity pass, then witness-verifies the
+blocks, runs the C# `Blockchain.Persist` pipeline, and commits them durably.
+Out-of-order blocks are parked with their proof and drained when their parent
 lands. The parked-block cache tracks its exact size under one lock and evicts
 only the configured fraction of farthest-future candidates under pressure.
 The typed inventory handle methods deliberately preserve
@@ -75,10 +79,11 @@ inventory-specific behavior (relay policy, parking, draining, and live mempool
 maintenance) instead of routing peer blocks through the generic bulk-import
 command.
 
-Downloaded block batches may first pass through `neo_runtime::BlockImportQueue`:
-the queue runs `BlockImport::check` with bounded concurrency and then calls
-`BlockImport::import_many` in the original order. That queue is a preflight
-boundary, not a second import path. `neo_network::BlockDownloader` is the
+Downloaded block batches pass through the same `neo_runtime::BlockImportQueue`.
+The staged path is strict: after bounded `BlockImport::check` calls it invokes
+`BlockImport::import_many` in original order only when every candidate passed.
+That queue is a preflight boundary, not a second import path.
+`neo_network::BlockDownloader` is the
 stream-shaped source boundary for peer schedulers; its `BlockDownloadBatch`
 converts into `neo_runtime::SyncBlockBatch`. `SyncPipelineDriver` validates
 contiguous heights, pushes those batches through the import queue, and persists
@@ -155,12 +160,11 @@ sequenceDiagram
 
     Peer->>RN: block message
     RN->>Fwd: InboundInventory::Block
-    opt batch preflight
-        Fwd->>Fwd: BlockImportQueue::push_blocks<br/>(bounded check concurrency)
-    end
-    Fwd->>BC: submit_inventory_blocks / submit_inventory_block
+    Fwd->>Fwd: LiveBlockImportPipeline::submit_peer_blocks<br/>shared BlockImportQueue::check_blocks
+    Note over Fwd: malformed candidates filtered;<br/>valid Arc&lt;Block&gt; order preserved
+    Fwd->>BC: submit_checked_inventory_blocks
     Note over BC: index == height + 1?<br/>else park / ignore
-    BC->>BC: structural checks (version, tx count,<br/>merkle root, no duplicate tx)
+    Note over BC: checker-typed token skips only<br/>duplicate stateless integrity work
     BC->>Store: load prev TrimmedBlock
     BC->>BC: verify consensus witness vs<br/>prev.NextConsensus (3-GAS cap)
     BC->>NP: stage_block_natives_with_resources(block)
@@ -200,8 +204,9 @@ Ownership by step:
 
 The whole `Persist` sequence is staged in a child `DataCache` and merged into
 the shared snapshot only when every stage succeeds; a fault leaves no partial
-block state. Locally produced (consensus) blocks set `pre_verified = true` and
-skip the peer-witness check.
+block state. Locally produced blocks use the dedicated
+`submit_consensus_block` capability and skip the peer-witness check; no public
+boolean can grant that trust to peer inventory.
 
 ## 3. Transaction lifecycle
 
@@ -249,7 +254,8 @@ followed by `VerifyStateDependent`.
 When `[consensus]` is enabled and this node's key is in the validator set, the
 dBFT driver participates in single-block rounds. The primary proposes a block;
 backups respond; once `M = N - (N-1)/3` commits are collected the block is
-assembled and handed to the blockchain service as a pre-verified block.
+assembled and handed to the blockchain service through the dedicated consensus
+capability.
 
 ```mermaid
 sequenceDiagram
@@ -266,7 +272,7 @@ sequenceDiagram
     Primary->>Backups: Commit (signature over block header)
     Backups->>Primary: Commit
     Note over Primary,Backups: M commits reached
-    Primary->>BC: assembled block (pre_verified)
+    Primary->>BC: submit_consensus_block(assembled block)
     BC->>BC: persist (section 2), advance tip
 ```
 

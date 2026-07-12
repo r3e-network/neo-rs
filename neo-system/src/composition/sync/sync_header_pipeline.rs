@@ -520,5 +520,5 @@ fn hash_block(block: &Block) -> ServiceResult<UInt256> {
 }
 
 #[cfg(test)]
-#[path = "../tests/composition/sync_header_pipeline.rs"]
+#[path = "../../tests/composition/sync_header_pipeline.rs"]
 mod tests;

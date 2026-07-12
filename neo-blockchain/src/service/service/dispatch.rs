@@ -46,25 +46,14 @@ where
             BlockchainCommand::Reverify(reverify) => {
                 self.handle_reverify(reverify).await;
             }
-            BlockchainCommand::InventoryBlock {
-                block,
-                relay,
-                pre_verified,
-            } => {
-                if let Err(error) = self
-                    .handle_block_inventory(block, relay, pre_verified)
-                    .await
-                {
-                    tracing::warn!(target: "neo", %error, "inventory block rejected");
+            BlockchainCommand::ConsensusBlock { block, relay } => {
+                if let Err(error) = self.handle_block_inventory(block, relay, true).await {
+                    tracing::warn!(target: "neo", %error, "consensus block rejected");
                 }
             }
-            BlockchainCommand::InventoryBlocks {
-                blocks,
-                relay,
-                pre_verified,
-            } => {
+            BlockchainCommand::CheckedInventoryBlocks { checked, relay } => {
                 if let Err(error) = self
-                    .handle_block_inventory_batch(blocks, relay, pre_verified)
+                    .handle_checked_block_inventory_batch(checked, relay)
                     .await
                 {
                     tracing::error!(target: "neo", %error, "inventory block batch failed");

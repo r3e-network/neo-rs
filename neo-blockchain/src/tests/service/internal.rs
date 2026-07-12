@@ -7,6 +7,7 @@ fn parked_block(index: u32) -> UnverifiedBlock {
         Arc::new(neo_payloads::Block::from_parts(header, vec![])),
         false,
         false,
+        BlockIntegrity::Unchecked,
     )
 }
 

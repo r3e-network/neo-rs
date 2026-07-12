@@ -160,5 +160,5 @@ async fn next_download_batch<D: BlockDownloader>(
 }
 
 #[cfg(test)]
-#[path = "../tests/composition/sync_download_import.rs"]
+#[path = "../../tests/composition/sync_download_import.rs"]
 mod tests;

@@ -6,6 +6,7 @@
 //! - the typed blockchain handle from `neo-blockchain`,
 //! - the typed network handle from `neo-network`,
 //! - the typed staged-sync pipeline used by downloader composition,
+//! - the live peer-import adapter sharing that pipeline's bounded queue,
 //! - a [`WalletProvider`] for the optional node wallet,
 //! - the storage backend, mempool, and header cache,
 //! - the native contract provider owned for NeoVM host calls,
@@ -40,6 +41,7 @@ use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_cache::StoreCache;
 
 use super::tx_admission_provider::{NativeTxAdmissionProvider, TxAdmissionNativeProvider};
+use crate::live_block_import_pipeline::LiveBlockImportPipeline;
 use crate::staged_sync_pipeline::StagedSyncPipeline;
 use crate::wallet_provider::WalletProvider;
 use neo_error::{CoreError, CoreResult};
@@ -87,6 +89,9 @@ where
         >,
     >,
 
+    /// Live peer-inventory preflight sharing the staged-sync import queue.
+    pub(super) live_block_import_pipeline: Arc<LiveBlockImportPipeline>,
+
     /// Shared memory pool. The same instance the blockchain service /
     /// transaction router admit into; RPC handlers read it for
     /// `getrawmempool` / conflict checks.
@@ -121,6 +126,10 @@ where
             .field("blockchain", &"BlockchainHandle")
             .field("network", &"NetworkHandle")
             .field("staged_sync_pipeline", &self.staged_sync_pipeline)
+            .field(
+                "live_block_import_pipeline",
+                &self.live_block_import_pipeline,
+            )
             .field("mempool", &self.mempool.total_count())
             .field("header_cache", &self.header_cache.count())
             .field(
@@ -173,6 +182,11 @@ where
         >,
     > {
         Arc::clone(&self.staged_sync_pipeline)
+    }
+
+    /// Returns the live peer block-import adapter.
+    pub fn live_block_import_pipeline(&self) -> Arc<LiveBlockImportPipeline> {
+        Arc::clone(&self.live_block_import_pipeline)
     }
 
     /// Returns the storage backend.

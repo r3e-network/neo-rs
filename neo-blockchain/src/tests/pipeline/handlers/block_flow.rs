@@ -870,11 +870,21 @@ fn unverified_cache_evicts_exact_block_fraction_when_one_height_is_flooded() {
     let block = Arc::new(Block::from_parts(header, vec![]));
 
     for _ in 0..CACHE_CAPACITY {
-        assert!(service.park_unverified_block(Arc::clone(&block), false, false));
+        assert!(service.park_unverified_block(
+            Arc::clone(&block),
+            false,
+            false,
+            crate::internal::BlockIntegrity::Unchecked,
+        ));
     }
     assert_eq!(service.unverified_block_count(), CACHE_CAPACITY);
 
-    assert!(service.park_unverified_block(block, false, false));
+    assert!(service.park_unverified_block(
+        block,
+        false,
+        false,
+        crate::internal::BlockIntegrity::Unchecked,
+    ));
     assert_eq!(
         service.unverified_block_count(),
         CACHE_CAPACITY - CACHE_CAPACITY / 4 + 1,
@@ -962,6 +972,51 @@ async fn inventory_block_batch_continues_after_rejected_block_like_individual_co
             .expect("ledger current index"),
         1
     );
+}
+
+#[tokio::test]
+async fn checked_peer_batch_still_requires_consensus_witness_verification() {
+    let (service, handle, _snapshot) = store_fixture();
+    service.initialize().await.expect("initialize");
+    let (unsigned_block, _) = first_two_empty_blocks();
+    let queue = neo_runtime::BlockImportQueue::new(Arc::new(handle), 1);
+    let checked = queue
+        .check_blocks(vec![Arc::new(unsigned_block)])
+        .await
+        .expect("stateless preflight");
+
+    let imported = service
+        .handle_checked_block_inventory_batch(checked, false)
+        .await
+        .expect("witness rejection is isolated within the live batch");
+
+    assert_eq!(imported, 0);
+    assert_eq!(service.ledger.current_height(), 0);
+}
+
+#[tokio::test]
+async fn checked_future_block_keeps_preflight_proof_while_parked() {
+    let (service, handle, _snapshot) = store_fixture();
+    service.initialize().await.expect("initialize");
+    let (_, future_block) = first_two_empty_blocks();
+    let queue = neo_runtime::BlockImportQueue::new(Arc::new(handle), 1);
+    let checked = queue
+        .check_blocks(vec![Arc::new(future_block)])
+        .await
+        .expect("stateless preflight");
+
+    let imported = service
+        .handle_checked_block_inventory_batch(checked, false)
+        .await
+        .expect("future block should park");
+
+    assert_eq!(imported, 0);
+    let parked = service
+        .unverified_blocks
+        .lock()
+        .pop_front(2)
+        .expect("future block remains parked");
+    assert_eq!(parked.integrity, crate::internal::BlockIntegrity::Checked);
 }
 
 #[tokio::test]

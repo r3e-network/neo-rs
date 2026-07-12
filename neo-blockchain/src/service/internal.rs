@@ -22,6 +22,25 @@ pub enum ImportDisposition {
     FutureGap,
 }
 
+/// Whether canonical stateless block-integrity checks still need to run.
+///
+/// `Checked` is created only when dispatch receives a checker-typed
+/// `CheckedBlockBatch`; it is separate from consensus-witness trust because
+/// peer blocks must always verify their dBFT witness against the previous tip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BlockIntegrity {
+    /// Run version, Merkle-root, and duplicate-transaction validation.
+    Unchecked,
+    /// The exact production [`crate::BlockchainHandle`] checker already ran.
+    Checked,
+}
+
+impl BlockIntegrity {
+    pub(crate) const fn requires_check(self) -> bool {
+        matches!(self, Self::Unchecked)
+    }
+}
+
 impl ImportDisposition {
     /// Classify an incoming import block relative to the current chain height.
     pub(crate) fn classify_import_block(
@@ -43,15 +62,22 @@ impl ImportDisposition {
 pub(crate) struct UnverifiedBlock {
     pub(crate) block: Arc<Block>,
     pub(crate) relay: bool,
-    pub(crate) pre_verified: bool,
+    pub(crate) consensus_witness_verified: bool,
+    pub(crate) integrity: BlockIntegrity,
 }
 
 impl UnverifiedBlock {
-    pub(crate) fn new(block: Arc<Block>, relay: bool, pre_verified: bool) -> Self {
+    pub(crate) fn new(
+        block: Arc<Block>,
+        relay: bool,
+        consensus_witness_verified: bool,
+        integrity: BlockIntegrity,
+    ) -> Self {
         Self {
             block,
             relay,
-            pre_verified,
+            consensus_witness_verified,
+            integrity,
         }
     }
 }

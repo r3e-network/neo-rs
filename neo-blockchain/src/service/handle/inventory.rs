@@ -1,58 +1,52 @@
 //! Blockchain handle live-inventory submission methods.
 //!
-//! These one-way methods preserve the live peer/consensus path's service-loop
-//! semantics: relay policy, future-block parking, unverified draining, deferred
-//! store commits, and mempool maintenance remain inside `BlockchainService`.
+//! These one-way methods preserve the live peer and local-consensus paths'
+//! service-loop semantics: relay policy, future-block parking, unverified
+//! draining, deferred store commits, and mempool maintenance remain inside
+//! `BlockchainService`.
 
 use std::sync::Arc;
 
 use neo_payloads::{Block, ExtensiblePayload};
-use neo_runtime::ServiceError;
+use neo_runtime::{CheckedBlockBatch, ServiceError};
 
 use super::BlockchainHandle;
 use crate::command::BlockchainCommand;
 
 impl BlockchainHandle {
-    /// Submit a peer-relayed inventory block burst to the live sync path.
+    /// Submit a preflight-checked peer block burst to the live inventory path.
     ///
-    /// This keeps callers on a typed API while preserving the blockchain
-    /// service's inventory-specific semantics.
-    pub async fn submit_inventory_blocks(
+    /// The checker marker prevents a batch accepted by an arbitrary verifier
+    /// from skipping this service's stateless integrity checks. Consensus
+    /// witness verification remains mandatory after submission; the token
+    /// proves only [`neo_runtime::BlockImport::check`] completed successfully.
+    pub async fn submit_checked_inventory_blocks(
         &self,
-        blocks: Vec<Arc<Block>>,
+        checked: CheckedBlockBatch<Arc<Block>, BlockchainHandle>,
         relay: bool,
-        pre_verified: bool,
     ) -> Result<(), ServiceError> {
-        if blocks.is_empty() {
+        if checked.is_empty() {
             return Ok(());
         }
         self.cmd_tx
-            .send(BlockchainCommand::InventoryBlocks {
-                blocks,
-                relay,
-                pre_verified,
-            })
+            .send(BlockchainCommand::CheckedInventoryBlocks { checked, relay })
             .await
             .map_err(|_| ServiceError::unavailable("blockchain command channel closed"))
     }
 
-    /// Submit one block to the peer/consensus inventory path.
+    /// Submit a block committed by the local consensus engine.
     ///
-    /// Use this for live inventory semantics. RPC and local package imports
-    /// should use [`Self::import_block`] or [`Self::import_blocks_bulk`]
-    /// instead.
-    pub async fn submit_inventory_block(
+    /// This is the only public path that skips dBFT witness verification inside
+    /// the blockchain service. Peer blocks must use
+    /// [`Self::submit_checked_inventory_blocks`]; RPC and local packages use
+    /// [`Self::import_block`] or [`Self::import_blocks_bulk`].
+    pub async fn submit_consensus_block(
         &self,
         block: Arc<Block>,
         relay: bool,
-        pre_verified: bool,
     ) -> Result<(), ServiceError> {
         self.cmd_tx
-            .send(BlockchainCommand::InventoryBlock {
-                block,
-                relay,
-                pre_verified,
-            })
+            .send(BlockchainCommand::ConsensusBlock { block, relay })
             .await
             .map_err(|_| ServiceError::unavailable("blockchain command channel closed"))
     }

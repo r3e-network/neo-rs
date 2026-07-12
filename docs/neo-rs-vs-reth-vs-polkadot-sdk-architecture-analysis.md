@@ -225,18 +225,20 @@ fake stages for work already durably completed there. A separate generic
 sidecar cleanup and the static-archive hot-row pruning protocol.
 
 Live path: P2P Block -> `InboundInventory::Block` -> `neo-node` buffering ->
-`BlockchainHandle::submit_inventory_blocks` -> neo-blockchain
-`handle_block_inventory_batch` / `persist_block_sequence`. Consensus-produced
-blocks use `submit_inventory_block`; extensible payloads use
+`neo_system::LiveBlockImportPipeline` -> shared
+`BlockImportQueue::check_blocks` ->
+`BlockchainHandle::submit_checked_inventory_blocks` -> neo-blockchain
+`handle_checked_block_inventory_batch` / `persist_block_sequence`.
+Consensus-produced blocks use `submit_consensus_block`; extensible payloads use
 `submit_inventory_extensible`; local replay startup uses `initialize`. These
 typed handle methods keep `BlockchainCommand` construction inside
-`neo-blockchain` while the live path intentionally bypasses the generic
-queue/driver layer for now. That bypass remains until the queue has an
-inventory-aware adapter: the live inventory path owns relay policy,
-future-block parking, unverified draining, and mempool maintenance, while
-`SyncPipelineDriver` remains a reusable import-stage primitive; production P2P
-range sync now feeds only header-gated peer batches into that bridge through the
-staged-sync task.
+`neo-blockchain`. The live adapter reuses the exact queue owned by staged sync,
+preserves `Arc<Block>` allocations, and filters malformed candidates so one
+mixed-peer failure does not discard valid neighbors. Its checker-typed token
+allows the service to skip only duplicate stateless integrity work; dBFT
+witness verification, future-block parking, draining, durable batching,
+events, and mempool maintenance remain service-owned. `SyncPipelineDriver`
+keeps strict all-or-nothing staged semantics for header-gated range batches.
 
 ```rust
 // Sequential: verify → persist → commit per block
@@ -292,8 +294,10 @@ while let Some(cmd) = cmd_rx.recv().await {
 
 `neo_runtime::BlockImport` is the canonical import trait. `BlockchainHandle`
 implements it and routes to the `neo-blockchain` service loop. The reusable
-`neo_runtime::BlockImportQueue` runs bounded concurrent `check` calls, then
-submits the verified batch to `BlockImport::import_many` in original order.
+`neo_runtime::BlockImportQueue` runs bounded concurrent `check` calls. Strict
+`push_blocks` submits the fully verified batch to `BlockImport::import_many` in
+original order; generic `check_blocks<B>` returns a checker-typed accepted set
+plus ordered rejection records without changing candidate ownership.
 `BlockchainHandle::check` now performs the live path's stateless import-integrity
 checks (hash serialization, block version, transaction merkle root, and duplicate
 transaction hashes), so queued preverification rejects malformed blocks before
@@ -324,15 +328,17 @@ input. Old checkpoint hints are deliberately not migrated because production
 sync realigns to the authoritative canonical tip before downloading.
 `SyncDownloadImportDriver` seeds its cursor from the canonical tip and surfaces
 downloader, checkpoint-read/write, gap, and partial-import errors.
-`neo_system::StagedSyncPipeline` is the explicit node field. It composes a
+`neo_system::StagedSyncPipeline` is an explicit node field. It composes a
 durable fixed-target header stage over the shared `HeaderCache`/store with the
 bounded import queue and durable import checkpoint provider. Production P2P
 range sync completes and freezes the verified header target before creating a
-coordinator-backed body downloader over live peer handles. The live
-inventory path still calls
-`BlockImport` directly via
-`BlockchainHandle::import_many`, driven by neo-blockchain's
-`handle_block_inventory`.
+coordinator-backed body downloader over live peer handles.
+`neo_system::LiveBlockImportPipeline` is derived from that staged pipeline's
+exact queue and is the sole unsolicited peer-block adapter. It uses lossy
+candidate filtering, then submits a
+`CheckedBlockBatch<Arc<Block>, BlockchainHandle>` through the canonical live
+inventory command. This retains inventory semantics while making the shared
+preflight boundary production-complete.
 `BlockImport`, `ImportQueue`, and `NetworkService` return concrete
 `impl Future + Send` values. Validation and consensus-witness stages are
 synchronous. The hot import path therefore has neither trait-object dispatch
@@ -367,8 +373,9 @@ let import_chain = VerifiedImportPipeline::new(...) // validate -> dBFT witness
 ```
 
 Current status: the shared trait, bounded queue, and import-stage sync driver
-exist as primitives; node composition constructs one generic
-`StagedSyncPipeline` containing the durable header and import components, while
+are production-consumed. Node composition constructs one generic
+`StagedSyncPipeline` containing the durable header and import components plus a
+`LiveBlockImportPipeline` that shares its queue, while
 `SyncDownloadImportDriver` drains production coordinator-backed, header-gated
 body batches into the import-stage driver.
 `neo-network::BlockDownloadBatch` converts into `neo_runtime::SyncBlockBatch`,

@@ -28,15 +28,16 @@ pub mod time;
 pub use errors::{ServiceError, ServiceResult, error};
 pub use node::{ConfigProvider, NeoNodeTypes, NodeTypes, StoreProvider, TxAdmission};
 pub use service::{
-    BlockBatchImportOutcome, BlockImport, BlockImportOutcome, BlockImportQueue, BlockOrigin,
-    BlockchainEvent, CommitPolicy, DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY,
-    ExecutionOutcome, ExecutionPayload, HeaderStageWindow, ImportQueue, ImportedTip,
-    InMemorySyncStageCheckpointStore, InMemoryVerifiedHeaderStore, MAX_VERIFIED_HEADER_WINDOW,
-    Nep17Metadata, Nep17MetadataReader, NetworkEvent, NetworkService, Service,
-    SharedStoreSyncStageCheckpointStore, SharedStoreVerifiedHeaderStore, StageProgress,
-    StoreSyncStageCheckpointStore, StoreVerifiedHeaderStore, SyncBlockBatch, SyncPipelineDriver,
-    SyncPipelineImportOutcome, SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind,
-    TxHash, ValidationResult, VerifiedHeaderStore,
+    BlockBatchImportOutcome, BlockCheckRejection, BlockImport, BlockImportOutcome,
+    BlockImportQueue, BlockOrigin, BlockchainEvent, CheckedBlockBatch, CommitPolicy,
+    DEFAULT_COMMAND_CAPACITY, DEFAULT_EVENT_CAPACITY, ExecutionOutcome, ExecutionPayload,
+    HeaderStageWindow, ImportQueue, ImportedTip, InMemorySyncStageCheckpointStore,
+    InMemoryVerifiedHeaderStore, MAX_VERIFIED_HEADER_WINDOW, Nep17Metadata, Nep17MetadataReader,
+    NetworkEvent, NetworkService, Service, SharedStoreSyncStageCheckpointStore,
+    SharedStoreVerifiedHeaderStore, StageProgress, StoreSyncStageCheckpointStore,
+    StoreVerifiedHeaderStore, SyncBlockBatch, SyncPipelineDriver, SyncPipelineImportOutcome,
+    SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind, TxHash, ValidationResult,
+    VerifiedHeaderStore,
 };
 pub use service::{
     block_import, blockchain, nep17, outcome, services, sync_metrics, sync_pipeline,

@@ -16,7 +16,7 @@ use std::sync::Arc;
 use neo_payloads::Block;
 use tracing::warn;
 
-use crate::internal::UnverifiedBlock;
+use crate::internal::{BlockIntegrity, UnverifiedBlock};
 use crate::service::{BlockchainService, MempoolLike};
 
 mod persist;
@@ -35,7 +35,8 @@ where
         &self,
         block: Arc<Block>,
         relay: bool,
-        pre_verified: bool,
+        consensus_witness_verified: bool,
+        integrity: BlockIntegrity,
     ) -> bool {
         let index = block.index();
         let dropped = {
@@ -50,7 +51,12 @@ where
             } else {
                 0
             };
-            cache.push(UnverifiedBlock::new(block, relay, pre_verified));
+            cache.push(UnverifiedBlock::new(
+                block,
+                relay,
+                consensus_witness_verified,
+                integrity,
+            ));
             dropped
         };
         if dropped > 0 {
@@ -88,10 +94,11 @@ where
             };
             let index = candidate.block.index();
             match self
-                .persist_next_expected_block(
+                .persist_next_expected_block_with_integrity(
                     candidate.block,
                     candidate.relay,
-                    candidate.pre_verified,
+                    candidate.consensus_witness_verified,
+                    candidate.integrity,
                 )
                 .await
             {

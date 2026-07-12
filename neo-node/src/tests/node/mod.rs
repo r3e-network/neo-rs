@@ -389,24 +389,26 @@ fn shutdown_flush_reports_failed_state_service_worker() {
 #[tokio::test]
 async fn inventory_block_batch_flush_sends_one_batch_command_and_clears_buffer() {
     let (handle, mut cmd_rx, _event_tx) = neo_blockchain::BlockchainHandle::channel(4, 4);
+    let import_queue = Arc::new(neo_runtime::BlockImportQueue::new(
+        Arc::new(handle.clone()),
+        2,
+    ));
+    let live_import = neo_system::LiveBlockImportPipeline::new(handle, import_queue);
     let block = Arc::new(neo_payloads::Block::new());
     let mut pending = vec![Arc::clone(&block)];
 
-    flush_inventory_block_batch(&handle, &mut pending).await;
+    flush_inventory_block_batch(&live_import, &mut pending).await;
 
     assert!(pending.is_empty(), "flushed blocks must leave the buffer");
     match cmd_rx.recv().await.expect("batch command") {
-        neo_blockchain::BlockchainCommand::InventoryBlocks {
-            blocks,
-            relay,
-            pre_verified,
-        } => {
+        neo_blockchain::BlockchainCommand::CheckedInventoryBlocks { checked, relay } => {
+            let (blocks, rejected) = checked.into_parts();
             assert_eq!(blocks.len(), 1);
             assert!(Arc::ptr_eq(&blocks[0], &block));
+            assert!(rejected.is_empty());
             assert!(relay);
-            assert!(!pre_verified);
         }
-        other => panic!("expected InventoryBlocks command, got {other:?}"),
+        other => panic!("expected CheckedInventoryBlocks command, got {other:?}"),
     }
 }
 

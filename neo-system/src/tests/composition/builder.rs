@@ -85,6 +85,10 @@ fn builder_succeeds_with_required_services_and_native_provider() {
         import.import_queue().max_concurrency() >= 1,
         "sync import queue must bound preverification without stalling"
     );
+    assert!(Arc::ptr_eq(
+        &import.import_queue(),
+        &node.live_block_import_pipeline().import_queue(),
+    ));
     let checkpoint = SyncStageCheckpoint::new(SyncStageKind::Import, 12).with_counters(12, 512);
     import
         .checkpoint_store()
@@ -148,4 +152,8 @@ fn builder_keeps_custom_staged_sync_pipeline_local() {
 
     assert!(Arc::ptr_eq(&node.staged_sync_pipeline(), &pipeline));
     assert!(Arc::ptr_eq(&node.staged_sync_pipeline, &pipeline));
+    assert!(Arc::ptr_eq(
+        &pipeline.import().import_queue(),
+        &node.live_block_import_pipeline().import_queue(),
+    ));
 }

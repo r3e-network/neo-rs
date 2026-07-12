@@ -16,7 +16,9 @@
 //! and retained by the final node, so historical reads do not reconstruct
 //! runtime policy locally. The staged-sync pipeline is built by default from
 //! the same blockchain, header cache, and storage handles, so downloader code
-//! cannot bypass durable header verification before canonical import.
+//! cannot bypass durable header verification before canonical import. The live
+//! peer adapter is then derived from that staged pipeline's exact bounded queue,
+//! preventing a parallel preflight policy from appearing at composition time.
 
 use std::sync::Arc;
 use tracing::debug;
@@ -31,6 +33,7 @@ use neo_storage::persistence::providers::MemoryStore;
 use neo_storage::persistence::store::Store;
 
 use crate::error::NodeResult;
+use crate::live_block_import_pipeline::LiveBlockImportPipeline;
 use crate::node::Node;
 use crate::staged_sync_pipeline::StagedSyncPipeline;
 use crate::wallet_provider::WalletProvider;
@@ -229,6 +232,10 @@ where
                 Arc::clone(&storage),
             ))
         });
+        let live_block_import_pipeline = Arc::new(LiveBlockImportPipeline::new(
+            blockchain.clone(),
+            staged_sync_pipeline.import().import_queue(),
+        ));
         Ok(Node {
             settings,
             storage,
@@ -236,6 +243,7 @@ where
             blockchain,
             network,
             staged_sync_pipeline,
+            live_block_import_pipeline,
             mempool,
             header_cache,
             native_contract_provider,

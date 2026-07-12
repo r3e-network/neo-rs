@@ -133,7 +133,7 @@ The development-only members are not part of the running node:
 tests), and `benches-package` (Criterion benchmarks).
 The pure VM semantics live in `neo-vm-rs`, an external sibling crate referenced
 by path from `neo-vm`. For the full ADR log and evolution roadmap, see
-[`design.md`](../design.md) (36 ADRs covering RPC decoupling, engine integration,
+[`design.md`](../design.md) (38 ADRs covering RPC decoupling, engine integration,
 error unification, oracle decoupling, dead dependency cleanup, pipeline strategy,
 error type policy, MPT layering, and more).
 
@@ -178,7 +178,7 @@ The detailed rules for this style live in
 
 ## Key design decisions
 
-> The full ADR log lives in [`design.md`](../design.md) — 36 ADRs covering
+> The full ADR log lives in [`design.md`](../design.md) — 38 ADRs covering
 > RPC decoupling, engine integration, error unification, oracle decoupling,
 > dead dependency cleanup, pipeline strategy, error type policy, MPT layering,
 > doc management, runtime versioning, and native contract registry. The
@@ -281,8 +281,10 @@ The detailed rules for this style live in
 - **Canonical block import plus bounded preverification.**
   `neo_runtime::BlockImport` is the shared import trait for consensus, sync, RPC,
   and fast-sync callers. `neo_runtime::BlockImportQueue` runs cheap preflight
-  checks with bounded concurrency and then submits the verified batch to
-  `BlockImport::import_many` in original order. `BlockchainHandle::check`
+  checks with bounded concurrency. Its strict `push_blocks` path submits a
+  completely verified staged batch to `BlockImport::import_many`; its generic
+  `check_blocks<B>` path preserves `Arc<Block>` ownership and returns accepted
+  candidates plus ordered rejection records. `BlockchainHandle::check`
   shares the live import path's stateless integrity checks (hash serialization,
   block version, transaction merkle root, and duplicate transaction hashes), so
   the queue is no longer a hash-only placeholder. Execution, native
@@ -305,10 +307,15 @@ The detailed rules for this style live in
   events, and one batch-end reverify; unsafe observer configurations fall back
   to per-block durability. The plan freezes live or catch-up observer behavior
   for the entire range, so a moving peer tip cannot change plugin staging
-  mid-batch. Peer-relayed block bursts
-  enter the live inventory path through
-  `BlockchainHandle::submit_inventory_blocks`,
-  consensus-produced blocks use `submit_inventory_block`, extensible payloads
+  mid-batch. `neo_system::LiveBlockImportPipeline` shares the exact queue owned
+  by `StagedSyncPipeline`, filters malformed unsolicited peer candidates, and
+  submits its checker-typed result through
+  `BlockchainHandle::submit_checked_inventory_blocks`. The service skips only
+  the duplicate stateless integrity pass; dBFT witness verification, parking,
+  draining, durable persistence, events, and mempool maintenance remain
+  mandatory. The checker type on `CheckedBlockBatch<Arc<Block>,
+  BlockchainHandle>` prevents an arbitrary verifier from forging that proof.
+  Consensus-produced blocks use `submit_consensus_block`, extensible payloads
   use `submit_inventory_extensible`, and startup genesis bootstrapping uses
   `initialize`. Node composition does not construct `BlockchainCommand` variants
   directly while inventory-specific relay, parking, draining, and mempool
@@ -551,6 +558,6 @@ pipeline stage traits it uses live in `neo-blockchain::pipeline::stage_traits`.
 
 For a step-by-step trace of how a block and a transaction move through these
 services — including the P2P sync path, execution, state-root commit, and RPC
-query path — see [dataflow.md](dataflow.md). For the 36 ADRs documenting every
+query path — see [dataflow.md](dataflow.md). For the 38 ADRs documenting every
 architectural decision and the 4-phase evolution roadmap, see
 [design.md](../design.md).

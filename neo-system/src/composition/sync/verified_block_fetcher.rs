@@ -82,5 +82,5 @@ where
 }
 
 #[cfg(test)]
-#[path = "../tests/composition/verified_block_fetcher.rs"]
+#[path = "../../tests/composition/verified_block_fetcher.rs"]
 mod tests;

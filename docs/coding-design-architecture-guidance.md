@@ -257,6 +257,15 @@ Priority order for crate refactors:
    store-backed sync checkpoints, and import-stage commit policy. Keep it as one
    explicit `Node` field so downloader and service consumers clone the same
    `Arc` instead of composing parallel queues or bypassing the header stage.
+   Unsolicited peer bursts must use the `neo_system::LiveBlockImportPipeline`
+   derived from that staged pipeline. Use `CheckedBlockBatch<B, I>` as the
+   proof boundary: staged sync treats any rejection as an all-or-nothing error,
+   while live inventory may filter rejected candidates and retain valid
+   `Arc<Block>` values. Never replace the checker type marker with a
+   `prechecked: bool`, and never use stateless preflight to skip previous-tip or
+   dBFT witness validation. Locally committed blocks use the dedicated
+   `submit_consensus_block` capability; do not reintroduce a public
+   `pre_verified` boolean.
    Downloader code should expose `neo_network::BlockDownloader` streams and use
    `neo_system::SyncDownloadImportDriver` to convert downloaded batches into
    ordered `neo_runtime::SyncPipelineDriver` submissions. Stage flushing and

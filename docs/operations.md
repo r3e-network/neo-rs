@@ -136,6 +136,14 @@ removed because Ledger is then authoritative. On restart, the node resumes the
 durable prefix, revalidates it from the canonical tip, and resets an incomplete
 or divergent sidecar before redownloading. No operator flag is required.
 
+Unsolicited block inventory uses the same bounded preflight queue through the
+node's live-import adapter. A malformed candidate is logged and filtered
+without discarding valid blocks in the same relay burst. Accepted candidates
+still undergo previous-tip and dBFT witness validation inside the canonical
+blockchain service; out-of-order blocks keep their preflight proof while parked
+and are rechecked against chain state when drained. This behavior is automatic
+and has no separate operator setting.
+
 ### RPC-backed ledger mode
 
 `--remote-ledger-rpc <URL>` starts `neo-node` without opening or creating the

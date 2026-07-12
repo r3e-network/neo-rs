@@ -8,8 +8,8 @@
 //! The handle has *two* styles of typed API:
 //!
 //! 1. **Inventory/lifecycle commands**
-//!    ([`BlockchainHandle::submit_inventory_blocks`],
-//!    [`BlockchainHandle::submit_inventory_block`],
+//!    ([`BlockchainHandle::submit_checked_inventory_blocks`],
+//!    [`BlockchainHandle::submit_consensus_block`],
 //!    [`BlockchainHandle::submit_inventory_extensible`],
 //!    [`BlockchainHandle::initialize`], [`BlockchainHandle::shutdown`]): send
 //!    one-way service work without exposing [`crate::BlockchainCommand`] to the

@@ -33,7 +33,7 @@ fn batch_outcome_preserves_processed_count() {
 struct QueueRecordingImport {
     checked: Mutex<Vec<u32>>,
     imported: Mutex<Vec<u32>>,
-    fail_check_at: Option<u32>,
+    fail_checks: Vec<u32>,
     import_calls: AtomicUsize,
 }
 
@@ -41,7 +41,7 @@ impl Service for QueueRecordingImport {}
 
 impl BlockImport for QueueRecordingImport {
     async fn check(&self, block: &Block) -> Result<(), ServiceError> {
-        if self.fail_check_at == Some(block.index()) {
+        if self.fail_checks.contains(&block.index()) {
             return Err(ServiceError::invalid_input(format!(
                 "reject block {}",
                 block.index()
@@ -94,7 +94,7 @@ async fn block_import_queue_checks_then_imports_in_original_order() {
 #[tokio::test]
 async fn block_import_queue_check_failure_skips_import() {
     let importer = Arc::new(QueueRecordingImport {
-        fail_check_at: Some(2),
+        fail_checks: vec![2],
         ..QueueRecordingImport::default()
     });
     let queue = BlockImportQueue::new(importer.clone(), 2);
@@ -107,4 +107,49 @@ async fn block_import_queue_check_failure_skips_import() {
     assert!(err.to_string().contains("reject block 2"), "{err}");
     assert!(importer.imported.lock().is_empty());
     assert_eq!(importer.import_calls.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn block_import_queue_empty_batch_is_a_noop() {
+    let importer = Arc::new(QueueRecordingImport::default());
+    let queue = BlockImportQueue::new(importer.clone(), 2);
+
+    let outcome = queue
+        .push_blocks(Vec::new(), BlockOrigin::Sync)
+        .await
+        .expect("empty queue import");
+
+    assert_eq!(outcome.processed, 0);
+    assert_eq!(importer.import_calls.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn block_import_queue_filters_arc_candidates_without_cloning_blocks() {
+    let importer = Arc::new(QueueRecordingImport {
+        fail_checks: vec![2, 4],
+        ..QueueRecordingImport::default()
+    });
+    let queue = BlockImportQueue::new(importer, 2);
+    let first = Arc::new(block(1));
+    let rejected = Arc::new(block(2));
+    let third = Arc::new(block(3));
+    let rejected_fourth = Arc::new(block(4));
+
+    let checked = queue
+        .check_blocks(vec![
+            Arc::clone(&first),
+            Arc::clone(&rejected),
+            Arc::clone(&third),
+            rejected_fourth,
+        ])
+        .await
+        .expect("lossy preflight");
+
+    assert_eq!(checked.accepted_len(), 2);
+    assert_eq!(checked.rejected_len(), 2);
+    assert!(Arc::ptr_eq(&checked.blocks()[0], &first));
+    assert!(Arc::ptr_eq(&checked.blocks()[1], &third));
+    assert_eq!(checked.rejected()[0].position(), 1);
+    assert_eq!(checked.rejected()[0].error().category(), "invalid_input");
+    assert_eq!(checked.rejected()[1].position(), 3);
 }

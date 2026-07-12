@@ -1,6 +1,6 @@
 # neo-rs Architecture Design Document
 
-**Version**: 5.2
+**Version**: 5.3
 **Date**: 2026-07-12
 **Author**: Software Architect
 **Status**: Active
@@ -16,7 +16,7 @@ that is professional, consistent, and ready for long-term evolution.
 
 **Architecture health score**: 9.5/10 (up from 9.4 after ADR-027 dead code excision)
 
-The ADR log now spans ADR-001 through ADR-037. Beyond the early trait-design,
+The ADR log now spans ADR-001 through ADR-038. Beyond the early trait-design,
 duplication, and async/concurrency audits (ADR-016 through ADR-019), later ADRs
 cover store-surface reduction and trait sealing (ADR-020, ADR-021), dead-code
 excision (ADR-022, ADR-027, ADR-028, ADR-032), hex/KeyBuilder consolidation
@@ -24,8 +24,9 @@ excision (ADR-022, ADR-027, ADR-028, ADR-032), hex/KeyBuilder consolidation
 neo-hsm default flip and ConsensusApi rename (ADR-030), and the async
 ConsensusSigner deadlock fix (ADR-031), static composition (ADR-034), and the
 staged core/application lifecycle with private service layouts (ADR-035), a
-production-consumed finalized Ledger archive (ADR-036), and frozen generic
-StateService providers (ADR-037).
+production-consumed finalized Ledger archive (ADR-036), frozen generic
+StateService providers (ADR-037), and one checker-typed import queue shared by
+staged and live peer sync (ADR-038).
 
 ---
 
@@ -1283,7 +1284,7 @@ Validation is split into:
 | doc(html_root_url) versions | All 11 crates at 0.10.0 (ADR-013) |
 | Redundant inline lints | Removed (tokens_tracker module) |
 | reth/polkadot comparison | Documented (8 patterns adopted, 4 deferred) |
-| Evolution roadmap | 4 phases, full ADR log (ADR-001 through ADR-036) |
+| Evolution roadmap | 4 phases, full ADR log (ADR-001 through ADR-038) |
 | Debug trait bounds | Consistent across all service traits (ADR-019) |
 | HSM redeem script | Delegates to canonical neo-vm impl (ADR-016) |
 | Async/concurrency safety | Excellent — 0 Critical/Major issues (ADR audit) |
@@ -2103,3 +2104,68 @@ snapshot isolation a convention each endpoint had to reproduce.
   the current state view while retaining old root metadata.
 - Existing C# storage keys, MPT node encoding, root hashes, proof bytes, and
   StateService RPC behavior are unchanged.
+
+### ADR-038: Checker-typed live block-import preflight
+
+**Status**: Accepted (implemented)
+
+**Context**: Production range sync owned a bounded `BlockImportQueue`, but
+unsolicited `InboundInventory::Block` bursts bypassed it and submitted
+`Arc<Block>` values directly to the blockchain command loop. Moving those
+bursts through the existing strict `ImportQueue::push_blocks` would let one
+malformed block discard valid candidates that merely shared a mixed-peer relay
+batch. Rechecking every accepted block serially in `BlockchainService` would
+also erase the benefit of concurrent preflight. A plain boolean claiming that
+preflight ran would be forgeable and could accidentally suppress the separate
+dBFT witness check.
+
+**Decision**:
+
+- Generalize bounded preflight to `check_blocks<B: AsRef<Block> + Send +
+  'static>`. It preserves owned `Block` values for staged sync and shared
+  `Arc<Block>` allocations for live inventory without cloning block bodies.
+- Return `CheckedBlockBatch<B, I>`, containing accepted candidates in original
+  relative order plus input-positioned `BlockCheckRejection` records. The
+  zero-sized `I` marker identifies the exact checker implementation.
+- Keep `ImportQueue::push_blocks` strict: it imports nothing when any staged
+  candidate fails. `LiveBlockImportPipeline` instead filters rejected peer
+  candidates and submits the accepted subset.
+- Compose `LiveBlockImportPipeline` from the exact `Arc<BlockImportQueue<
+  BlockchainHandle>>` already owned by `StagedSyncPipeline`; `NodeBuilder`
+  cannot create a parallel live queue.
+- Replace the unchecked public burst command with
+  `submit_checked_inventory_blocks`. Its command requires
+  `CheckedBlockBatch<Arc<Block>, BlockchainHandle>`, so a token from an
+  arbitrary permissive `BlockImport` cannot suppress canonical checks.
+- Replace the public single-block `pre_verified: bool` with the semantic
+  `submit_consensus_block` capability. Only that local-consensus command skips
+  dBFT witness verification; it still runs stateless integrity checks.
+- Inside the service, map that proof to `BlockIntegrity::Checked` and preserve
+  it while future blocks are parked and drained. Only duplicate stateless
+  version/Merkle/transaction checks are skipped. Previous-tip lookup, dBFT
+  witness verification, persistence, durable commit, hooks, events, relay
+  policy, and mempool maintenance remain unchanged.
+
+**Trade-offs**:
+
+- **Gaining**: one bounded preflight implementation for both P2P paths,
+  allocation-preserving live batches, deterministic rejection diagnostics,
+  malformed-candidate isolation, and a compile-time trust boundary instead of
+  a boolean assertion.
+- **Giving up**: strict staged batches now finish the already-bounded candidate
+  checks before returning the first input-ordered error rather than aborting on
+  whichever task fails first. This spends bounded extra work for deterministic
+  behavior.
+- **Constraint**: preflight proves only stateless import integrity. It never
+  proves chain position, parent state, or consensus authorization.
+
+**Consequences**:
+
+- The live relay can no longer bypass `BlockImportQueue`, and staged/live queue
+  identity is covered by composition tests.
+- A malformed candidate cannot poison unrelated valid candidates in one live
+  burst, while a malformed staged batch remains all-or-nothing.
+- Checked future blocks retain their proof across parking, but peer blocks
+  still fail closed on invalid or missing consensus witnesses.
+- Neo wire bytes, C# persistence order, native-contract behavior, state roots,
+  and storage encoding are unchanged.

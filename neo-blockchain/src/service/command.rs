@@ -16,9 +16,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use neo_payloads::{Block, Transaction, extensible_payload::ExtensiblePayload, header::Header};
+use neo_runtime::CheckedBlockBatch;
 
 use crate::PreverifyCompleted;
 use crate::fill_memory_pool::FillMemoryPool;
+use crate::handle::BlockchainHandle;
 use crate::import::Import;
 use crate::persist_completed::PersistCompleted;
 use crate::relay_result::RelayResult;
@@ -186,23 +188,21 @@ pub enum BlockchainCommand {
     FillCompleted,
     /// Request to reverify inventories.
     Reverify(Reverify),
-    /// Inventory block received.
-    InventoryBlock {
-        /// The block.
+    /// Block produced and authenticated by the local consensus engine.
+    ConsensusBlock {
+        /// Locally committed block.
         block: Arc<Block>,
         /// Whether to relay.
         relay: bool,
-        /// Whether state-independent verification (signatures) was already performed.
-        pre_verified: bool,
     },
-    /// Inventory blocks received as one peer/network burst.
-    InventoryBlocks {
-        /// Blocks.
-        blocks: Vec<Arc<Block>>,
+    /// Preflight-checked inventory blocks received as one peer/network burst.
+    CheckedInventoryBlocks {
+        /// Checked candidates, including ordered rejection diagnostics. The
+        /// checker marker proves the accepted candidates passed this service's
+        /// concrete [`BlockchainHandle`] preflight implementation.
+        checked: CheckedBlockBatch<Arc<Block>, BlockchainHandle>,
         /// Whether to relay.
         relay: bool,
-        /// Whether state-independent verification (signatures) was already performed.
-        pre_verified: bool,
     },
     /// Request/response import path for externally supplied blocks.
     ImportBlock {

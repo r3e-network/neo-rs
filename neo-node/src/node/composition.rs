@@ -378,6 +378,10 @@ pub(in crate::node) async fn build_node(
         channels_config,
         Arc::clone(&peer_registry),
     );
+    let node = Arc::new(
+        core.into_node(network.clone())
+            .map_err(|e| anyhow::anyhow!("node build failed: {e}"))?,
+    );
     let net_service = if ledger_mode.uses_local_replay_services() {
         net_service.with_inventory_sink(inv_tx)
     } else {
@@ -399,6 +403,7 @@ pub(in crate::node) async fn build_node(
 
     if ledger_mode.uses_local_replay_services() {
         let blockchain = blockchain.clone();
+        let live_import = node.live_block_import_pipeline();
         let relay = network.clone();
         let consensus_decode = consensus_decode.clone();
         let consensus_inbound_tx = consensus_inbound_tx.clone();
@@ -423,12 +428,13 @@ pub(in crate::node) async fn build_node(
                     tokio::select! {
                         maybe_item = inv_rx.recv() => {
                             let Some(item) = maybe_item else {
-                                flush_inventory_block_batch(&blockchain, &mut pending_blocks).await;
+                                flush_inventory_block_batch(&live_import, &mut pending_blocks).await;
                                 break;
                             };
                             handle_inbound_inventory_item(
                                 item,
                                 &blockchain,
+                                &live_import,
                                 &relay,
                                 &consensus_decode,
                                 &consensus_inbound_tx,
@@ -438,7 +444,7 @@ pub(in crate::node) async fn build_node(
                             ).await;
                         }
                         _ = flush_timer.tick() => {
-                            flush_inventory_block_batch(&blockchain, &mut pending_blocks).await;
+                            flush_inventory_block_batch(&live_import, &mut pending_blocks).await;
                         }
                     }
                 }
@@ -585,10 +591,6 @@ pub(in crate::node) async fn build_node(
         remote_ledger,
     ));
 
-    let node = Arc::new(
-        core.into_node(network.clone())
-            .map_err(|e| anyhow::anyhow!("node build failed: {e}"))?,
-    );
     if ledger_mode.uses_local_replay_services() {
         spawn_daemon_task_result(
             &mut handles,

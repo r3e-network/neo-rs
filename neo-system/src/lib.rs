@@ -21,13 +21,15 @@ mod errors;
 
 // Public re-exports for the crate's public surface.
 pub use composition::{
-    BlockCommitHooks, BlockchainTask, HeaderStageBatchOutcome, HeaderStageProgress, Node,
-    NodeBuilder, NodeCore, NodeCoreBuilder, NodeCoreLaunch, NodeSystemContext,
-    NoopBlockCommitHooks, StagedSyncPipeline, SyncDownloadImportDriver, SyncDownloadImportSummary,
-    SyncHeaderPipeline, SyncImportPipeline, VerifiedBlockRangeFetcher, WalletProvider,
+    BlockCommitHooks, BlockchainTask, HeaderStageBatchOutcome, HeaderStageProgress,
+    LiveBlockImportPipeline, LiveBlockImportSummary, Node, NodeBuilder, NodeCore, NodeCoreBuilder,
+    NodeCoreLaunch, NodeSystemContext, NoopBlockCommitHooks, StagedSyncPipeline,
+    SyncDownloadImportDriver, SyncDownloadImportSummary, SyncHeaderPipeline, SyncImportPipeline,
+    VerifiedBlockRangeFetcher, WalletProvider,
 };
 pub use composition::{
-    builder, core, node, staged_sync_pipeline, sync_download_import, sync_header_pipeline,
-    sync_import_pipeline, system_context, verified_block_fetcher, wallet_provider,
+    builder, core, live_block_import_pipeline, node, staged_sync_pipeline, sync_download_import,
+    sync_header_pipeline, sync_import_pipeline, system_context, verified_block_fetcher,
+    wallet_provider,
 };
 pub use errors::{NodeError, NodeResult, error};

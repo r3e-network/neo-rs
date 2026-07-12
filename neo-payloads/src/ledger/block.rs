@@ -177,6 +177,13 @@ impl Block {
         self.transactions.iter().map(|tx| tx.try_hash()).collect()
     }
 }
+
+impl AsRef<Block> for Block {
+    fn as_ref(&self) -> &Block {
+        self
+    }
+}
+
 impl neo_primitives::BlockLike for Block {
     type Transaction = Transaction;
 

@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::block::Block;
+use neo_runtime::CheckedBlockBatch;
 use tracing::{debug, warn};
 
+use crate::internal::BlockIntegrity;
 use crate::service::{BlockchainService, MempoolLike};
 
 impl<S, M> BlockchainService<S, M>
@@ -11,15 +13,21 @@ where
     S: crate::service_context::SystemContext,
     M: MempoolLike,
 {
-    /// Handle a [`BlockchainCommand::InventoryBlock`] command.
+    /// Handle a single canonical block with explicit consensus-witness trust.
     pub(crate) async fn handle_block_inventory(
         &self,
         block: Arc<Block>,
         relay: bool,
-        pre_verified: bool,
+        consensus_witness_verified: bool,
     ) -> CoreResult<()> {
-        self.handle_block_inventory_without_drain(block, relay, pre_verified, false)
-            .await?;
+        self.handle_block_inventory_without_drain(
+            block,
+            relay,
+            consensus_witness_verified,
+            BlockIntegrity::Unchecked,
+            false,
+        )
+        .await?;
         let drained = self.handle_drain_unverified_blocks().await;
         if drained > 0 {
             debug!(target: "neo", drained, "drained parked unverified blocks");
@@ -30,11 +38,46 @@ where
     /// Handle a contiguous burst of inventory blocks without requiring one
     /// command-channel round trip per block. Each block still goes through the
     /// normal inventory validation/persist path.
+    #[cfg(test)]
     pub(crate) async fn handle_block_inventory_batch(
         &self,
         blocks: Vec<Arc<Block>>,
         relay: bool,
-        pre_verified: bool,
+        consensus_witness_verified: bool,
+    ) -> CoreResult<usize> {
+        self.handle_block_inventory_batch_with_integrity(
+            blocks,
+            relay,
+            consensus_witness_verified,
+            BlockIntegrity::Unchecked,
+        )
+        .await
+    }
+
+    /// Handle candidates proven to have passed this service's concrete
+    /// stateless preflight while retaining normal peer witness verification,
+    /// parking, persistence, relay, event, and mempool semantics.
+    pub(crate) async fn handle_checked_block_inventory_batch(
+        &self,
+        checked: CheckedBlockBatch<Arc<Block>, crate::BlockchainHandle>,
+        relay: bool,
+    ) -> CoreResult<usize> {
+        let (blocks, _rejected) = checked.into_parts();
+        self.handle_block_inventory_batch_with_integrity(
+            blocks,
+            relay,
+            false,
+            BlockIntegrity::Checked,
+        )
+        .await
+    }
+
+    async fn handle_block_inventory_batch_with_integrity(
+        &self,
+        blocks: Vec<Arc<Block>>,
+        relay: bool,
+        consensus_witness_verified: bool,
+        integrity: BlockIntegrity,
     ) -> CoreResult<usize> {
         let durable_height = self.ledger.current_height();
         let mut imported = 0usize;
@@ -44,7 +87,13 @@ where
             let committed_block = Arc::clone(&block);
             let before_height = self.ledger.current_height();
             match self
-                .handle_block_inventory_without_drain(block, relay, pre_verified, true)
+                .handle_block_inventory_without_drain(
+                    block,
+                    relay,
+                    consensus_witness_verified,
+                    integrity,
+                    true,
+                )
                 .await
             {
                 Ok(()) => {}
@@ -89,7 +138,8 @@ where
         &self,
         block: Arc<Block>,
         relay: bool,
-        pre_verified: bool,
+        consensus_witness_verified: bool,
+        integrity: BlockIntegrity,
         defer_store_commit: bool,
     ) -> CoreResult<()> {
         let index = block.index();
@@ -114,34 +164,43 @@ where
                 current_height,
                 "inventory block is ahead of the chain tip; parking"
             );
-            self.park_unverified_block(block, relay, pre_verified);
+            self.park_unverified_block(block, relay, consensus_witness_verified, integrity);
             return Ok(());
         }
 
         self.persist_next_expected_block_with_commit_policy(
             block,
             relay,
-            pre_verified,
+            consensus_witness_verified,
+            integrity,
             defer_store_commit,
         )
         .await
     }
 
-    pub(crate) async fn persist_next_expected_block(
+    pub(crate) async fn persist_next_expected_block_with_integrity(
         &self,
         block: Arc<Block>,
         relay: bool,
-        pre_verified: bool,
+        consensus_witness_verified: bool,
+        integrity: BlockIntegrity,
     ) -> CoreResult<()> {
-        self.persist_next_expected_block_with_commit_policy(block, relay, pre_verified, false)
-            .await
+        self.persist_next_expected_block_with_commit_policy(
+            block,
+            relay,
+            consensus_witness_verified,
+            integrity,
+            false,
+        )
+        .await
     }
 
     async fn persist_next_expected_block_with_commit_policy(
         &self,
         block: Arc<Block>,
         relay: bool,
-        pre_verified: bool,
+        consensus_witness_verified: bool,
+        integrity: BlockIntegrity,
         defer_store_commit: bool,
     ) -> CoreResult<()> {
         let wall_start = std::time::Instant::now();
@@ -178,25 +237,28 @@ where
         // Stateless block-integrity pre-checks before persisting a peer-relayed
         // block (the structural half of C# `Block.Verify`): version, transaction
         // merkle root, and duplicate transaction hashes.
-        if let Err(error) =
-            crate::block_validation::BlockValidator::validate_import_integrity(block.as_ref())
-        {
-            return Err(CoreError::other(format!(
-                "block {index} failed import-integrity validation: {error}"
-            )));
+        if integrity.requires_check() {
+            if let Err(error) =
+                crate::block_validation::BlockValidator::validate_import_integrity(block.as_ref())
+            {
+                return Err(CoreError::other(format!(
+                    "block {index} failed import-integrity validation: {error}"
+                )));
+            }
         }
 
         // C# Header.Verify (Blockchain.OnNewBlock runs block.Verify before
         // Persist): a peer-relayed block must pass the structural header checks
         // and carry a consensus witness that satisfies the PREVIOUS block's
         // NextConsensus (the committee/validators multisig address). Locally
-        // produced (pre-verified) blocks from the consensus driver skip this.
+        // produced blocks submitted through the dedicated consensus capability
+        // skip this.
         //
         // Trusted offline imports can explicitly set `verify = false` through
         // the import path. Peer-relayed blocks do not get that shortcut: live
         // sync must use the same consensus-witness rule at height 1 and at
         // height 10 million.
-        if !pre_verified {
+        if !consensus_witness_verified {
             self.verify_consensus_witness_against_store(block.as_ref())?;
         }
 
@@ -214,9 +276,8 @@ where
 
         if !defer_store_commit {
             // Flush the block's native-persist writes through to the durable store.
-            // Per-block commit is memory-safe (no unbounded DataCache growth) and
-            // with fast-sync store mode (WAL disabled) the RocksDB write is only
-            // ~17us - negligible compared to the 0.5ms native-contract persist.
+            // Per-block commit bounds DataCache growth; backend-specific live and
+            // catch-up durability policy remains inside the configured Store.
             self.system.commit_to_store().map_err(|error| {
                 CoreError::other(format!(
                     "block {index} durable store commit failed: {error}"
@@ -233,7 +294,7 @@ where
 
         // Per-block timing breakdown (debug-level). Shows where wall-clock
         // time goes: hash, verify (signature), persist (native contracts),
-        // or commit (RocksDB write). Enable with RUST_LOG=neo::sync=debug.
+        // or commit (durable backend write). Enable with RUST_LOG=neo::sync=debug.
         let total_us = neo_runtime::time::elapsed_us(after_commit);
         let verify_us = neo_runtime::time::elapsed_us(after_verify - after_hash);
         let persist_us = neo_runtime::time::elapsed_us(after_persist - after_verify);

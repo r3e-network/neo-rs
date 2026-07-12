@@ -485,9 +485,9 @@ where
                         // validators already signed, so it is pre-verified.
                         let _ = self
                             .blockchain
-                            .submit_inventory_block(Arc::clone(&block), true, true)
+                            .submit_consensus_block(Arc::clone(&block), true)
                             .await;
-                        // The InventoryBlock handler does not relay, so broadcast
+                        // The consensus-block handler does not relay, so broadcast
                         // the new block to peers explicitly.
                         let _ = self.network.broadcast_block((*block).clone()).await;
                         info!(target: "neo", block_index, "consensus produced + submitted block");

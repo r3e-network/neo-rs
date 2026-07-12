@@ -2,31 +2,38 @@
 //!
 //! The network crate decodes peer inventory but does not own the ledger,
 //! mempool, consensus, or state-root services. This module is the node-layer
-//! adapter that batches blocks into the blockchain service and forwards
-//! transaction/extensible payload side effects to their owning services.
+//! adapter that batches blocks through the node-composed live import pipeline
+//! and forwards transaction/extensible payload side effects to their owning
+//! services.
 
 use std::sync::Arc;
+use tracing::warn;
 
 pub(super) const FAST_SYNC_BURST_CAPACITY: usize = 4096;
 pub(super) const FAST_SYNC_BLOCK_BATCH_SIZE: usize = 500;
 pub(super) const FAST_SYNC_BLOCK_BATCH_FLUSH_MS: u64 = 5;
 
 pub(super) async fn flush_inventory_block_batch(
-    blockchain: &neo_blockchain::BlockchainHandle,
+    live_import: &neo_system::LiveBlockImportPipeline,
     pending_blocks: &mut Vec<Arc<neo_payloads::Block>>,
 ) {
     if pending_blocks.is_empty() {
         return;
     }
     let blocks = std::mem::take(pending_blocks);
-    let _ = blockchain
-        .submit_inventory_blocks(blocks, true, false)
-        .await;
+    if let Err(error) = live_import.submit_peer_blocks(blocks).await {
+        warn!(
+            target: "neo::sync",
+            %error,
+            "failed to submit checked peer block burst"
+        );
+    }
 }
 
 pub(super) async fn handle_inbound_inventory_item(
     item: neo_network::InboundInventory,
     blockchain: &neo_blockchain::BlockchainHandle,
+    live_import: &neo_system::LiveBlockImportPipeline,
     relay: &neo_network::NetworkHandle,
     consensus_decode: &Option<(
         Arc<parking_lot::RwLock<Vec<neo_consensus::ValidatorInfo>>>,
@@ -45,11 +52,11 @@ pub(super) async fn handle_inbound_inventory_item(
         InboundInventory::Block(block) => {
             pending_blocks.push(block);
             if pending_blocks.len() >= FAST_SYNC_BLOCK_BATCH_SIZE {
-                flush_inventory_block_batch(blockchain, pending_blocks).await;
+                flush_inventory_block_batch(live_import, pending_blocks).await;
             }
         }
         InboundInventory::Transaction(tx) => {
-            flush_inventory_block_batch(blockchain, pending_blocks).await;
+            flush_inventory_block_batch(live_import, pending_blocks).await;
             // Admit the peer's transaction to the mempool; the C# `Transaction.Verify`
             // pipeline runs inside the blockchain service. On a fresh accept (Succeed),
             // re-announce it to peers via `Inv` so it propagates.
@@ -69,7 +76,7 @@ pub(super) async fn handle_inbound_inventory_item(
             }
         }
         InboundInventory::Extensible(payload) => {
-            flush_inventory_block_batch(blockchain, pending_blocks).await;
+            flush_inventory_block_batch(live_import, pending_blocks).await;
             // dBFT consensus messages: when this node is a validator, decode +
             // authenticate the payload and feed it to the consensus driver.
             // (`extensible_to_consensus` returns `None` for non-dBFT or spoofed payloads.)

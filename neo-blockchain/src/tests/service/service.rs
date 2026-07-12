@@ -231,51 +231,51 @@ async fn handle_block_import_check_rejects_bad_empty_block_merkle_root() {
 }
 
 #[tokio::test]
-async fn handle_submits_inventory_block_batches_without_exposing_command_enum() {
+async fn handle_submits_checker_typed_inventory_batches_without_exposing_command_enum() {
     let (handle, mut cmd_rx, _event_tx) = BlockchainHandle::channel(4, 4);
     let block = Arc::new(neo_payloads::Block::new());
+    let queue = neo_runtime::BlockImportQueue::new(Arc::new(handle.clone()), 1);
+    let checked = queue
+        .check_blocks(vec![Arc::clone(&block)])
+        .await
+        .expect("check inventory blocks");
 
     handle
-        .submit_inventory_blocks(vec![Arc::clone(&block)], true, false)
+        .submit_checked_inventory_blocks(checked, true)
         .await
         .expect("submit inventory blocks");
 
     match cmd_rx.recv().await.expect("inventory command") {
-        BlockchainCommand::InventoryBlocks {
-            blocks,
-            relay,
-            pre_verified,
-        } => {
+        BlockchainCommand::CheckedInventoryBlocks { checked, relay } => {
+            let (blocks, rejected) = checked.into_parts();
             assert_eq!(blocks.len(), 1);
             assert!(Arc::ptr_eq(&blocks[0], &block));
+            assert!(rejected.is_empty());
             assert!(relay);
-            assert!(!pre_verified);
         }
-        other => panic!("expected InventoryBlocks command, got {other:?}"),
+        other => panic!("expected CheckedInventoryBlocks command, got {other:?}"),
     }
 }
 
 #[tokio::test]
-async fn handle_submits_single_inventory_block_without_exposing_command_enum() {
+async fn handle_submits_consensus_block_without_exposing_command_enum() {
     let (handle, mut cmd_rx, _event_tx) = BlockchainHandle::channel(4, 4);
     let block = Arc::new(neo_payloads::Block::new());
 
     handle
-        .submit_inventory_block(Arc::clone(&block), true, true)
+        .submit_consensus_block(Arc::clone(&block), true)
         .await
-        .expect("submit inventory block");
+        .expect("submit consensus block");
 
-    match cmd_rx.recv().await.expect("inventory command") {
-        BlockchainCommand::InventoryBlock {
+    match cmd_rx.recv().await.expect("consensus command") {
+        BlockchainCommand::ConsensusBlock {
             block: submitted,
             relay,
-            pre_verified,
         } => {
             assert!(Arc::ptr_eq(&submitted, &block));
             assert!(relay);
-            assert!(pre_verified);
         }
-        other => panic!("expected InventoryBlock command, got {other:?}"),
+        other => panic!("expected ConsensusBlock command, got {other:?}"),
     }
 }
 
