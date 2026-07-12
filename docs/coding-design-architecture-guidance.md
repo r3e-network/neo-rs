@@ -251,17 +251,27 @@ Priority order for crate refactors:
    validation, execution, native-persist, state-root, and durable-store
    implementation behind that trait. Use `neo_runtime::BlockImportQueue` for
    bounded concurrent preverification, but keep ordered import in
-   `BlockImport::import_many`. Use `neo_system::SyncImportPipeline` as the
-   node-composed handle that binds the canonical blockchain importer, bounded
-   queue, shared store-backed sync checkpoints, and import-stage commit policy;
-   keep it as one explicit `Node` field so downloader and service consumers
-   clone the same `Arc` instead of composing parallel queues.
+   `BlockImport::import_many`. Use `neo_system::StagedSyncPipeline` as the
+   node-composed handle that binds durable verified-header staging, the
+   body/header gate, canonical blockchain importer, bounded queue, shared
+   store-backed sync checkpoints, and import-stage commit policy. Keep it as one
+   explicit `Node` field so downloader and service consumers clone the same
+   `Arc` instead of composing parallel queues or bypassing the header stage.
    Downloader code should expose `neo_network::BlockDownloader` streams and use
    `neo_system::SyncDownloadImportDriver` to convert downloaded batches into
    ordered `neo_runtime::SyncPipelineDriver` submissions. Stage flushing and
    crash-resume markers belong in
    `neo_runtime::sync_pipeline::{CommitPolicy, SyncStageCheckpointStore}`
    instead of ad hoc thresholds inside service loops.
+   A `Headers` checkpoint ahead of canonical `Import` is truthful only when
+   every claimed header is durable in isolated maintenance storage in the same
+   atomic transaction. Fix one bounded target per window, persist its hash when
+   reached, and revalidate the sidecar from the canonical tip after restart.
+   Never write ahead headers into Ledger rows. Gate every body hash against the
+   verified sidecar/cache before import, and perform the gate inside the range
+   fetch future when peer retry should handle a mismatch. Advance `Bodies` only
+   after the fixed target is canonical; then prune sidecar headers because
+   Ledger becomes their durable source.
    A committed-chain read projection may use its own durable status as its
    checkpoint when it lives in a separate store. Do not write a duplicate
    generic checkpoint that can disagree after a partial cross-store failure.
@@ -299,9 +309,10 @@ Priority order for crate refactors:
    `neo_network::CrossPeerBlockRangeScheduler` so downloader policy stays
    independent from wire transport. Assign at most one live range to each peer,
    matching the peer session's single correlated-response state. Session code
-   must only serialize an explicitly assigned `BlockRequest` and correlate its
-   response after the peer reaches `Ready`; correlated requests must never enter
-   a generic pre-handshake queue. Enforce an absolute per-fetch deadline that
+   must only serialize an explicitly assigned `HeaderRequest` or `BlockRequest`
+   and correlate its response after the peer reaches `Ready`; correlated
+   requests must never enter a generic pre-handshake queue. Enforce an absolute
+   per-fetch deadline that
    unrelated traffic cannot refresh, clear timed-out correlation state without
    closing a healthy connection, and do not run an autonomous request-window
    scheduler. Use `neo_network::BlockDownloadCoordinator` to compose that

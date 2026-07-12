@@ -184,17 +184,24 @@ candidates at one height no longer cause the whole bucket to be dropped.
 `SharedStoreSyncStageCheckpointStore<S>` for node-composed `Arc<S>` shared
 stores, preserving concrete backend types when composition knows them and using
 the concrete `RuntimeStore` enum at runtime-selected backend boundaries.
-`neo_system::SyncImportPipeline` binds `BlockchainHandle`,
-`BlockImportQueue`, durable checkpoint storage, and the import-stage
-`CommitPolicy` at node construction time. `Node` owns that handle as an
-explicit typed field. `SyncPipelineDriver`, which imports
-contiguous `SyncBlockBatch` values through
-the shared `ImportQueue` and checkpoints the import stage when policy fires,
-can be created from that handle.
-The queue/checkpoint handle is now part of production node composition.
-Production node startup runs a coordinator-backed P2P
-`BlockDownloader` over the live `PeerRegistry` and feeds it through
-`SyncDownloadImportDriver` into the composed import pipeline. `Import` is now
+`VerifiedHeaderStore` adds in-memory, owned-store, and shared-store providers
+for a fixed, at-most-10,000-header sidecar. Verified header bytes, window
+metadata, target hash, and the `Headers` checkpoint commit atomically in the
+backend's isolated maintenance namespace. `neo_system::StagedSyncPipeline`
+binds that durable `SyncHeaderPipeline` to `SyncImportPipeline`, whose bounded
+`BlockImportQueue`, import checkpoint provider, and `CommitPolicy` remain the
+single ordered canonical-import component. `Node` owns the staged pipeline as
+one explicit generic field.
+
+Production startup automatically runs `Headers -> Bodies -> Import`: correlated
+`GetHeaders` ranges are validated through the blockchain service's canonical
+valid-prefix logic and persisted before body scheduling; body ranges are hash
+gated against the durable header chain inside the coordinator fetch future and
+again at the import boundary. A body mismatch therefore participates in normal
+cross-peer retry and cannot reach execution. The fixed target hash is retained
+when advertised peer tips change, the `Bodies` checkpoint advances only after
+that target is canonical, and the consumed header sidecar is then pruned.
+`Import` is
 followed by one honest production-consumed `Index` stage in `neo-node`. That
 statically dispatched stage snapshots a canonical target, resumes from the
 indexer's hash-verified contiguous `IndexerStatus`, processes committed blocks
@@ -203,8 +210,9 @@ durably clears a divergent/incomplete projection before rebuilding. The
 indexer's own status remains authoritative because its service store cannot be
 atomically checkpointed with canonical Ledger storage. Execution, native
 persistence, and state-root work remain inside `Import`; neo-rs does not invent
-fake stages for work already durably completed there. Separate headers/bodies
-and pruning stages remain future work.
+fake stages for work already durably completed there. A separate generic
+`Prune` stage is intentionally not introduced for work already owned by header
+sidecar cleanup and the static-archive hot-row pruning protocol.
 
 Live path: P2P Block -> `InboundInventory::Block` -> `neo-node` buffering ->
 `BlockchainHandle::submit_inventory_blocks` -> neo-blockchain
@@ -217,8 +225,8 @@ queue/driver layer for now. That bypass remains until the queue has an
 inventory-aware adapter: the live inventory path owns relay policy,
 future-block parking, unverified draining, and mempool maintenance, while
 `SyncPipelineDriver` remains a reusable import-stage primitive; production P2P
-range sync now feeds real peer batches into that bridge through the
-coordinator-backed downloader/import task.
+range sync now feeds only header-gated peer batches into that bridge through the
+staged-sync task.
 
 ```rust
 // Sequential: verify → persist → commit per block
@@ -261,7 +269,8 @@ while let Some(cmd) = cmd_rx.recv().await {
 | Priority | Change | Benefit |
 |----------|--------|---------|
 | Implemented | Promote `Index` as the next production-consumed stage after `Import` | Durable bounded projection resume without inventing fake execution/state-root stages or a cross-store checkpoint |
-| Composed / P2P Wired | Import queue boundary with bounded concurrent `check` | Reusable preverification surface; `BlockchainHandle::check` now shares live stateless import-integrity checks, `neo_system::SyncImportPipeline` constructs/registers the queue, and production P2P sync drains coordinator batches into it |
+| Implemented / P2P wired | Durable `Headers -> Bodies -> Import` ownership | Fixed-target, crash-resumable header verification; body/hash gating before import; cross-peer retry on mismatches; canonical import remains the only execution path |
+| Composed / P2P Wired | Import queue boundary with bounded concurrent `check` | Reusable preverification surface; `BlockchainHandle::check` now shares live stateless import-integrity checks, `SyncImportPipeline` owns the queue inside `neo_system::StagedSyncPipeline`, and production P2P sync drains verified coordinator batches into it |
 | Composed / P2P Wired | Commit policy/checkpoint primitives plus import-stage driver | Tunable memory/i-o; durable checkpoint storage is available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, node composition creates the import-stage checkpoint handle, and the coordinator-backed P2P download bridge drives `SyncPipelineDriver` |
 | P2 | Warp sync / state sync | Minutes to sync instead of hours |
 
@@ -305,11 +314,11 @@ input. Old checkpoint hints are deliberately not migrated because production
 sync realigns to the authoritative canonical tip before downloading.
 `SyncDownloadImportDriver` seeds its cursor from the canonical tip and surfaces
 downloader, checkpoint-read/write, gap, and partial-import errors.
-`neo_system::SyncImportPipeline` now composes the
-bounded import queue and durable checkpoint provider from the node's
-`BlockchainHandle` and shared storage handle as one explicit node field;
-production P2P range sync now creates a coordinator-backed
-downloader over live peer handles and drives that runtime driver. The live
+`neo_system::StagedSyncPipeline` is the explicit node field. It composes a
+durable fixed-target header stage over the shared `HeaderCache`/store with the
+bounded import queue and durable import checkpoint provider. Production P2P
+range sync completes and freezes the verified header target before creating a
+coordinator-backed body downloader over live peer handles. The live
 inventory path still calls
 `BlockImport` directly via
 `BlockchainHandle::import_many`, driven by neo-blockchain's
@@ -348,13 +357,16 @@ let import_chain = VerifiedImportPipeline::new(...) // validate -> dBFT witness
 ```
 
 Current status: the shared trait, bounded queue, and import-stage sync driver
-exist as primitives; node composition constructs a `SyncImportPipeline` handle
-with the queue and store-backed checkpoints and registers it for service
-lookup, while `SyncDownloadImportDriver` drains production coordinator-backed
-peer batches into the import-stage driver.
+exist as primitives; node composition constructs one generic
+`StagedSyncPipeline` containing the durable header and import components, while
+`SyncDownloadImportDriver` drains production coordinator-backed, header-gated
+body batches into the import-stage driver.
 `neo-network::BlockDownloadBatch` converts into `neo_runtime::SyncBlockBatch`,
 preserving the single ordered import path. `BlockRequest` carries the protocol
-cap, while the transport-agnostic `BlockDownloadCoordinator` composes the sole
+cap and `HeaderRequest` carries Neo's 2,000-header cap. Correlated header fetches
+share the peer session's one pending-range state with body fetches and are
+Ready-only, absolutely timed, and retryable. The transport-agnostic
+`BlockDownloadCoordinator` composes the sole
 `CrossPeerBlockRangeScheduler` with the ordered response buffer behind the
 `BlockDownloader` stream boundary. `PeerSession` only executes correlated
 range assignments, and the scheduler limits each peer to one in-flight range to
@@ -368,9 +380,10 @@ were removed.
 peer handle, issuing `GetBlockByIndex`, and collecting matching block frames
 into a `BlockDownloadBatch`; node composition shares/registers that registry
 and the registry exposes ready, advertised-height download snapshots.
-Production startup now runs a supervised coordinator-backed downloader/import
-task and an independently durable committed-chain Index follower. Separate
-headers/bodies and pruning stages remain future work.
+Production startup now runs a supervised headers-first staged-sync task and an
+independently durable committed-chain Index follower. Header sidecar pruning is
+part of successful body-stage completion; static archive pruning remains owned
+by its existing durability protocol.
 
 ---
 
@@ -450,28 +463,30 @@ pub struct NodeTaskManager {
 
 `LocalNodeService` owns the TCP accept loop and spawns one `RemoteNodeService`
 per peer. Relayed blocks route through `mpsc` to the blockchain service, while
-coordinator-assigned bodies are correlated inside the peer session and returned
-as download batches. The
+coordinator-assigned header and body ranges are correlated inside the peer
+session and returned as typed batches. The
 `neo_network::BlockDownloader` stream boundary and `BlockDownloadConfig` policy
 records now exist, with a channel-backed adapter for tests/composition roots.
 `BlockDownloadBatch` converts into `neo_runtime::SyncBlockBatch`, which the
 runtime sync driver can feed into the import queue. `neo_system` provides
-`SyncDownloadImportDriver`, which drains any `BlockDownloader` stream into the
-node-composed `SyncImportPipeline` and surfaces downloader/import errors through
-the shared runtime error vocabulary. `BlockRequest` owns the Neo 500-block wire
-cap; there is no autonomous per-peer scheduler.
+`SyncDownloadImportDriver`, which drains any `BlockDownloader` stream through
+the node-composed `StagedSyncPipeline` and surfaces downloader/import errors
+through the shared runtime error vocabulary. `HeaderRequest` owns the Neo
+2,000-header wire cap and `BlockRequest` owns the 500-block cap; there is no
+autonomous per-peer scheduler.
 `CrossPeerBlockRangeScheduler` (cross-peer selection, peer bias, bounded
 in-flight range assignment with one range per peer, retry accounting) and
 `OrderedBlockBatchBuffer`
 (holds out-of-order peer responses until the next contiguous height is
 available) are composed by `BlockDownloadCoordinator`, a transport-agnostic
 `BlockDownloader` stream over any `BlockRangeFetcher`. Live peer transport now
-has a registry-backed fetcher that uses
-`RemoteNodeHandle::fetch_blocks_by_index`; `PeerRegistry::download_peers`
+has registry-backed correlated APIs for
+`RemoteNodeHandle::fetch_headers_by_index` and `fetch_blocks_by_index`;
+`PeerRegistry::download_peers`
 provides ready, advertised-height peer snapshots, and the node composition root
 registers the shared registry. `ChannelBlockDownloader` remains available for
-tests and composition roots. Node startup runs the coordinator-backed
-downloader/import driver as the only owner of P2P range sync. The earlier
+tests and composition roots. Node startup runs the headers-first staged-sync
+driver as the only owner of P2P range sync. The earlier
 uncomposed network task manager and per-peer compatibility request loop were
 deleted.
 
@@ -510,8 +525,10 @@ pub trait BlockDownloader:
 // WIRED: contiguous response release (OrderedBlockBatchBuffer).
 // WIRED: transport-agnostic coordinator stream (BlockDownloadCoordinator).
 // WIRED: live peer fetching through Arc<PeerRegistry>: BlockRangeFetcher.
-// WIRED: SyncDownloadImportDriver drains BlockDownloader into SyncImportPipeline.
-// Node startup owns range sync through the coordinator-backed downloader/import task.
+// WIRED: correlated HeaderRequest ranges commit to VerifiedHeaderStore first.
+// WIRED: VerifiedBlockRangeFetcher rejects body/header disagreement before success.
+// WIRED: SyncDownloadImportDriver drains bodies through StagedSyncPipeline.
+// Node startup owns range sync through the headers-first staged-sync task.
 ```
 
 ---
@@ -648,7 +665,7 @@ pub struct TransactionState {
 
 | Change | Speed | Storage | Reliability | Complexity | Effort |
 |--------|-------|---------|-------------|------------|--------|
-| Staged sync pipeline integration | ★★★★★ | ★★ | ★★★★ | ★★★★ | Import and committed-chain Index stages are live; headers/bodies/prune remain |
+| Staged sync pipeline integration | ★★★★★ | ★★ | ★★★★ | ★★★★ | Durable Headers, header-gated Bodies, canonical Import, and committed-chain Index are live; standalone Prune is intentionally not split from existing owners |
 | Static archive/recovery/provider propagation/hot pruning | ★★★ | ★★★★ | ★★★★ | ★★★ | Implemented; segment rotation remains |
 | Import queue + concurrent verify | ★★★★ | - | ★★★ | ★★★ | Runtime queue and production download-to-import bridge wired |
 | Stage commit policy + checkpoints | ★★★ | - | ★★★★ | ★★ | Import-stage driver done |
@@ -666,17 +683,18 @@ pub struct TransactionState {
 2. **Typed table boundary** — not implemented. The live encoding remains
    `StorageKey` / `KeyBuilder` over raw C#-compatible bytes; any future typed
    adapter and compact derive must preserve those bytes.
-3. **Block import queue with concurrent verification** — reusable runtime boundary implemented and composed by `neo_system::SyncImportPipeline`.
+3. **Block import queue with concurrent verification** — reusable runtime boundary implemented by `SyncImportPipeline` and composed inside `neo_system::StagedSyncPipeline`.
 4. **Commit policy/checkpoint primitives and import driver** — implemented in `neo-runtime::sync_pipeline`; durable store-backed checkpoints are available through `StoreSyncStageCheckpointStore` and `SharedStoreSyncStageCheckpointStore`, persist in isolated maintenance metadata through atomic `StoreMaintenanceBatch` commits, node composition creates the import-stage queue/checkpoint handle, and `SyncDownloadImportDriver` now receives production P2P coordinator batches.
-5. **BlockDownloader as Stream** — implemented in `neo-network`; batches convert to `SyncBlockBatch`; `neo-system` has the download-to-import bridge; `BlockDownloadCoordinator` is the single range owner and composes `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) with `OrderedBlockBatchBuffer` (contiguous response release) behind a transport-agnostic `BlockRangeFetcher`; `Arc<PeerRegistry>` implements live peer fetching through the correlated `RemoteNodeHandle::fetch_blocks_by_index` API; each peer fetch is ready-only, bypasses the generic handshake queue, has an absolute deadline independent of connection-idle traffic, and clears its correlation state on expiry; `PeerRegistry::download_peers` exposes ready, advertised-height peer snapshots; node composition registers the shared registry and starts the coordinator-backed downloader/import task. The unused network task manager, per-peer timer scheduler, ownership mode, and fire-and-forget request API were removed.
+5. **Headers-first `BlockDownloader` composition** — implemented in `neo-network` and `neo-system`; correlated `GetHeaders` requests durably stage a fixed target before the body coordinator starts, body batches convert to `SyncBlockBatch`, and `VerifiedBlockRangeFetcher` rejects hash disagreement while coordinator retry is still possible. `BlockDownloadCoordinator` is the single body-range owner and composes `CrossPeerBlockRangeScheduler` (cross-peer assignment/retry policy) with `OrderedBlockBatchBuffer` (contiguous response release) behind a transport-agnostic `BlockRangeFetcher`; `Arc<PeerRegistry>` implements live peer fetching through correlated `RemoteNodeHandle` header/body APIs. Each fetch is Ready-only, bypasses the generic handshake queue, has an absolute deadline independent of connection-idle traffic, and clears its correlation state on expiry. Node composition starts the staged-sync task. The unused network task manager, per-peer timer scheduler, ownership mode, and fire-and-forget request API were removed.
 6. **Hot/Cold/Static tiering integration** — append-only archive, exact Ledger
    adapter, cold-first precommit publication, recovery, persistent archive
    offsets, archive-aware offline tooling, and shared runtime cold reads are
    implemented. Latest-version-aware hot deletion and atomic prune watermarks
    are also implemented; segment rotation remains optional future work.
-7. **Staged sync pipeline integration** — `Import` plus the durable
-   committed-chain `Index` follower are production-wired. Add only real
-   remaining ownership boundaries (headers/bodies and pruning); do not split
-   execution or state-root work out of canonical `Import` for symmetry.
+7. **Staged sync pipeline integration** — durable `Headers`, header-gated
+   `Bodies`, canonical `Import`, and the committed-chain `Index` follower are
+   production-wired. Do not split execution/state-root work out of canonical
+   `Import`, or create a nominal `Prune` stage around cleanup already owned by
+   header completion and static-archive durability.
 
 This document is a living reference — update as architecture evolves.

@@ -117,6 +117,25 @@ fast-sync stop-height proof.
 use it as a production gate: faster-than-2000 transaction-bearing BPS is valid
 evidence, not a failure.
 
+### Live P2P staged sync
+
+Local-ledger mode automatically uses a fixed-target `Headers -> Bodies ->
+Import` pipeline after startup imports complete. The node first requests at most
+2,000 headers per correlated peer response, validates them through the canonical
+blockchain header verifier, and atomically stores each accepted prefix with its
+`Headers` checkpoint in backend maintenance metadata. A window is capped at
+10,000 headers and keeps the target selected at window creation even when peer
+advertisements change.
+
+Only a complete verified header window can start body download. Every returned
+block must match the durable header hash before the coordinator accepts the
+range, so a mismatching peer is retried without reaching execution. Ordered
+batches then enter the sole canonical import path. The `Bodies` checkpoint is
+written only after the fixed target is canonical; consumed sidecar headers are
+removed because Ledger is then authoritative. On restart, the node resumes the
+durable prefix, revalidates it from the canonical tip, and resets an incomplete
+or divergent sidecar before redownloading. No operator flag is required.
+
 ### RPC-backed ledger mode
 
 `--remote-ledger-rpc <URL>` starts `neo-node` without opening or creating the
@@ -534,7 +553,12 @@ process-wide Prometheus metrics already registered by RPC such as request and
 error counters. Keep RPC health probes too: metrics show local process state,
 while RPC probes prove the externally served JSON-RPC path answers correctly.
 During long sync or state-root replay, also watch the built-in sync pipeline
-metrics: `neo_sync_avg_verify_us`, `neo_sync_avg_persist_us`,
+metrics: `neo_sync_headers_downloaded_total`,
+`neo_sync_headers_verified_total`, `neo_sync_headers_checkpoint_height`,
+`neo_sync_header_fetch_failures_total`,
+`neo_sync_bodies_checkpoint_height`,
+`neo_sync_body_header_mismatches_total`, `neo_sync_avg_verify_us`,
+`neo_sync_avg_persist_us`,
 `neo_sync_avg_commit_us`, the native-persistence substage gauges
 `neo_sync_native_persist_avg_onpersist_us`,
 `neo_sync_native_persist_avg_tx_us`,
@@ -582,6 +606,7 @@ pay the ECPoint decode cost on the committee scan hot path.
 |--------|--------|---------------|
 | Block height | `/metrics` `neo_node_ledger_height` and `getblockcount` | Lag vs. a trusted seed RPC/explorer |
 | Peer count | `/metrics` `neo_node_connected_peers`, `getconnectioncount`, `getpeers` | Below-threshold or churning connections |
+| Staged P2P sync | `/metrics` `neo_sync_headers_*`, `neo_sync_bodies_checkpoint_height`, `neo_sync_body_header_mismatches_total` | Header checkpoint not advancing, repeated fetch rejection, body checkpoint lag, or peers serving bodies from a different header chain |
 | Mempool | `/metrics` mempool gauges and `getrawmempool` | Size stuck at 0 or growing past a cap |
 | Indexer | `/metrics` `neo_node_service_enabled{service="indexer"}`, `neo_node_indexer_up`, `neo_node_indexer_blocks_behind`, `neo_node_indexer_synced`, `listservices`, `getindexerstatus` | Disabled unexpectedly, status read failures, height lag |
 | Native hooks | `/metrics` `neo_sync_native_contract_hook_*{trigger=...,contract=...}` | Single native contract dominating OnPersist/PostPersist latency |

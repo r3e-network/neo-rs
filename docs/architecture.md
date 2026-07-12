@@ -335,46 +335,56 @@ The detailed rules for this style live in
   `neo_runtime::sync_pipeline` defines stable stage identifiers,
   `CommitPolicy` thresholds, `SyncStageCheckpointStore`,
   `StoreSyncStageCheckpointStore`, `SharedStoreSyncStageCheckpointStore`, and
-  `SyncPipelineDriver`. `neo_system::SyncImportPipeline` composes the node's
-  `BlockchainHandle`, bounded `BlockImportQueue`, shared store-backed
-  checkpoint provider, and import-stage commit policy so production downloader
-  integration has one handle to drive. The same `Arc<SyncImportPipeline>` is
-  owned directly by `neo_system::Node`; no erased provider lookup is involved.
-  `neo_system::SyncDownloadImportDriver` seeds the driver from the canonical
-  tip and drains any `neo_network::BlockDownloader` stream into that handle. It
-  stops on downloader, checkpoint-read/write, height-gap, or partial-import
-  errors. Downloaded `SyncBlockBatch` values are checked for contiguous
-  heights, imported through the canonical `ImportQueue`, and checkpointed only
-  after durable import progress and when policy fires. The store-backed
-  checkpoint adapters persist versioned runtime metadata in the backend's
-  isolated maintenance namespace. Checkpoint advancement and discard of any
-  obsolete normal-table checkpoint row use durable `StoreMaintenanceBatch`
-  transactions, so sync metadata cannot enter `StorageKey` scans, store dumps,
-  or state-root calculation. Legacy checkpoint hints are not migrated because
-  the canonical chain tip is authoritative and production sync realigns its
-  cursor before downloading. `neo_network::BlockDownloader` is the
-  stream-shaped download boundary; its `BlockDownloadBatch` converts into the
-  runtime batch type. `BlockRequest` owns the Neo 500-block wire cap.
+  `SyncPipelineDriver`. `VerifiedHeaderStore` adds fixed, at-most-10,000-header
+  sidecar windows with in-memory, owned-store, and shared-store providers.
+  Ahead-of-tip headers, target metadata, target hash, and the `Headers`
+  checkpoint live only in isolated maintenance metadata. Each accepted prefix
+  and its checkpoint advance in one durable `StoreMaintenanceBatch`; no staged
+  header can appear as a canonical Ledger row or enter state-root input.
+  Restart recovery treats the canonical tip as authoritative, verifies the
+  sidecar chain back to that tip, rehydrates the bounded `HeaderCache`, and
+  resets a missing, corrupt, or divergent prefix before redownload. Once the
+  fixed target is canonical, sidecar records are pruned because Ledger can
+  reconstruct those headers.
+
+  `neo_system::StagedSyncPipeline` is the single typed node field that composes
+  `SyncHeaderPipeline` with the existing bounded `SyncImportPipeline`.
+  `BlockchainHandle::validate_headers` preserves Neo's valid-prefix header
+  checks in the blockchain service. Body ranges are rejected when they exceed
+  the durable header frontier or disagree with the verified hash. A statically
+  dispatched `VerifiedBlockRangeFetcher` performs that check inside the fetch
+  future so `BlockDownloadCoordinator` can retry the exact range on another
+  peer; `SyncDownloadImportDriver` checks again before canonical import. The
+  `Bodies` checkpoint advances only after the fixed target is durably canonical.
+  `Import` remains the only execution, native-persistence, state-root, Ledger,
+  and event-publication path.
+
+  `neo_network::HeaderRequest` owns the Neo 2,000-header wire cap and
+  `BlockRequest` owns the 500-block cap. `RemoteNodeHandle` exposes correlated
+  `fetch_headers_by_index` and `fetch_blocks_by_index` operations. Each
+  `PeerSession` has one pending range enum, so header and body assignments
+  cannot overlap ambiguously. Both require `Ready`, bypass the generic
+  handshake queue, and use an absolute deadline unaffected by unrelated peer
+  traffic. `HeadersPayload` replies must be nonempty, begin at the requested
+  index, remain contiguous, and not exceed the requested count.
+
   `CrossPeerBlockRangeScheduler` is the sole owner of peer selection, bias,
   bounded in-flight range assignment, and retry accounting. It permits at most
   one in-flight range per peer, matching `PeerSession`'s single correlated-fetch
-  invariant. `PeerSession` serializes only explicitly assigned requests and
-  correlates their block responses. Correlated fetches are accepted only in the
-  `Ready` state and never enter the generic handshake queue. Each correlation
-  has an absolute fetch deadline independent of connection-idle traffic; expiry
-  clears the assignment without closing a healthy peer so coordinator retry
-  policy can reassign it.
+  invariant. Expiry clears the assignment without closing a healthy peer so
+  coordinator retry policy can reassign it.
   `OrderedBlockBatchBuffer` holds
   out-of-order peer responses until the next contiguous height is available.
   `BlockDownloadCoordinator` composes the cross-peer scheduler, ordered buffer,
-  and a transport-provided `BlockRangeFetcher` into a `BlockDownloader` stream.
+  verified fetch adapter, and transport-provided `BlockRangeFetcher` into a
+  `BlockDownloader` stream.
   `PeerRegistry` implements the live-peer fetcher by resolving the assigned
   `RemoteNodeHandle`, sending `GetBlockByIndex`, and collecting matching block
   frames into a batch. The node composition root shares and registers that
   registry, and the registry exposes ready peers with advertised heights for
   range scheduling. Local-ledger node startup runs one supervised
-  coordinator-backed downloader/import task as the production P2P range-sync
-  owner; peer sessions never initiate autonomous sync windows.
+  headers-first staged-sync task as the production P2P range-sync owner; peer
+  sessions never initiate autonomous sync windows.
 
 - **Native dispatch is explicit at composition.** `neo-execution` still owns the
   low-level `NativeContractProvider` seam so the engine does not depend on

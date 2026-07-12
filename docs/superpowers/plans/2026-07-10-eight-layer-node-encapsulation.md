@@ -100,8 +100,9 @@ composition result.
 
 `RunningNode` owns the process resources and orders the existing typed stages:
 
-- `SyncImportPipeline` and `SyncDownloadImportDriver` download/import through
-  the canonical `BlockImport`, checkpoint, and report progress.
+- `StagedSyncPipeline` composes durable header verification with
+  `SyncImportPipeline`; `SyncDownloadImportDriver` admits only header-matching
+  bodies to canonical `BlockImport`, checkpoints progress, and reports results.
 - `run_startup_imports(StartupImportContext)` selects chain.acc or built-in
   fast sync, restores durability, and returns `StartupImportOutcome`.
 - `start_live_services` starts P2P, RPC, telemetry, and optional read services

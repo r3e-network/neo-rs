@@ -84,43 +84,50 @@ converts into `neo_runtime::SyncBlockBatch`. `SyncPipelineDriver` validates
 contiguous heights, pushes those batches through the import queue, and persists
 import-stage checkpoints through
 `neo_runtime::sync_pipeline::{CommitPolicy, SyncStageCheckpointStore}`. The
-node-level `neo_system::SyncImportPipeline` now composes the queue and durable
-checkpoint provider over the same blockchain and storage handles used by the
-rest of the node and is owned directly by `neo_system::Node`. Store-backed
-checkpoint adapters read and write the backend's isolated maintenance
-namespace. Each versioned checkpoint update and any obsolete normal-table key
-discard are committed through durable `StoreMaintenanceBatch` transactions;
-checkpoint bytes therefore remain outside typed Neo storage scans, dumps, and
-state roots. Obsolete checkpoint hints are not migrated: production sync
-realigns to the authoritative canonical tip before consuming peer batches.
-`neo_system::SyncDownloadImportDriver` seeds the driver from the canonical tip,
-drains any `BlockDownloader` stream into that handle, and stops on downloader,
-contiguity, partial-import, or checkpoint errors. `BlockOrigin::Sync` maps to
+node-level `neo_system::StagedSyncPipeline` composes a durable
+`SyncHeaderPipeline` with the bounded queue and import checkpoint provider over
+the same blockchain, `HeaderCache`, and storage handles used by the rest of the
+node. A fixed header window is capped at 10,000 entries. Each verified prefix,
+its exact canonical header bytes, target metadata, and the `Headers` checkpoint
+commit atomically in isolated maintenance metadata. Recovery revalidates that
+sidecar from the canonical tip and rehydrates the cache; divergent or missing
+prefixes are cleared before redownload.
+
+Production first issues correlated `HeaderRequest` ranges of at most 2,000
+headers. Only after the target hash is durable does it create the body
+coordinator. `VerifiedBlockRangeFetcher` checks every returned block against the
+verified header before the coordinator records success, allowing peer retry on
+body mismatch. `SyncDownloadImportDriver` repeats the gate at the import
+boundary, seeds the import cursor from the canonical tip, and stops on
+downloader, contiguity, partial-import, or checkpoint errors. The `Bodies`
+checkpoint and header-sidecar pruning occur only after the fixed target is
+canonical. `BlockOrigin::Sync` maps to
 `ImportMode::Sync`: full verification and live artifacts are mandatory, while
 a range-aware `SyncBatchCommitPolicy` may collapse canonical writes to one
 durable commit. The resolved `ImportPlan` freezes observer behavior, publishes
 ordered hooks/mempool updates/import events only after durability, removes
 stale headers before one batch-end reverify, and falls back to per-block
 durability when plugin staging is not batch-safe. Production local-ledger node
-startup now feeds it from the coordinator-backed P2P downloader over live peer
-handles. `BlockRequest` owns the Neo 500-block wire cap. Cross-peer range
+startup now feeds it from the headers-first staged P2P task over live peer
+handles. `HeaderRequest` owns the Neo 2,000-header wire cap; `BlockRequest` owns
+the 500-block cap. Cross-peer body-range
 assignment, peer bias, and retry accounting are owned only by
 `neo_network::CrossPeerBlockRangeScheduler`;
 the scheduler assigns at most one live range per peer. `PeerSession` serializes
-assigned `GetBlockByIndex` requests only after the handshake reaches `Ready`
-and never places them in the generic handshake queue. It correlates matching
-block frames under an absolute fetch deadline. Unrelated frames do not extend
-that deadline; expiry clears only the correlation so the coordinator can retry
-another peer. The transport-agnostic
+assigned `GetHeaders` or `GetBlockByIndex` requests only after the handshake
+reaches `Ready` and never places them in the generic handshake queue. One
+pending range enum serializes header/body work per peer. Matching responses use
+an absolute fetch deadline that unrelated frames do not extend; expiry clears
+only the correlation so another assignment can proceed. The transport-agnostic
 `neo_network::BlockDownloadCoordinator` composes that scheduler with
 `neo_network::OrderedBlockBatchBuffer` and yields ordered `BlockDownloadBatch`
 values from any `BlockRangeFetcher`. `Arc<neo_network::PeerRegistry>` now
-implements that fetcher by resolving the assigned peer handle, sending
-`GetBlockByIndex`, and collecting the matching block frames into a batch; the
+implements the body fetcher by resolving the assigned peer handle, sending
+`GetBlockByIndex`, and collecting matching block frames into a batch; the
 same registry records advertised peer heights but exposes downloader snapshots
 only after version/verack processing completes. It is registered by the node
-composition root. Local-ledger node startup runs the coordinator-driven
-downloader/import task as the only P2P range-sync owner.
+composition root. Local-ledger node startup runs the headers-first staged-sync
+task as the only P2P range-sync owner.
 The canonical execution/persist path remains the `neo-blockchain` service loop.
 
 After the indexer runtime activates, it first runs the same durable Index stage
