@@ -29,8 +29,8 @@ use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
 use neo_runtime::{SharedStoreSyncStageCheckpointStore, SharedStoreVerifiedHeaderStore};
+use neo_storage::persistence::TransactionalStore;
 use neo_storage::persistence::providers::MemoryStore;
-use neo_storage::persistence::store::Store;
 
 use crate::error::NodeResult;
 use crate::live_block_import_pipeline::LiveBlockImportPipeline;
@@ -42,7 +42,7 @@ use crate::wallet_provider::WalletProvider;
 pub struct NodeBuilder<P = neo_native_contracts::StandardNativeProvider, S = MemoryStore>
 where
     P: NativeContractProvider,
-    S: Store,
+    S: TransactionalStore,
 {
     settings: Option<Arc<ProtocolSettings>>,
     storage: Option<Arc<S>>,
@@ -66,7 +66,7 @@ where
 impl<P, S> Default for NodeBuilder<P, S>
 where
     P: NativeContractProvider,
-    S: Store,
+    S: TransactionalStore,
 {
     fn default() -> Self {
         Self {
@@ -87,7 +87,7 @@ where
 impl<P, S> std::fmt::Debug for NodeBuilder<P, S>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NodeBuilder")
@@ -114,7 +114,7 @@ where
 impl<P, S> NodeBuilder<P, S>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     /// Install the protocol settings.
     pub fn with_settings(mut self, settings: Arc<ProtocolSettings>) -> Self {

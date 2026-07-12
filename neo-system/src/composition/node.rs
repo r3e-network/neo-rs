@@ -36,8 +36,8 @@ use neo_runtime::{
     StoreProvider, TxAdmission,
 };
 use neo_storage::DataCache;
+use neo_storage::persistence::TransactionalStore;
 use neo_storage::persistence::providers::MemoryStore;
-use neo_storage::persistence::store::Store;
 use neo_storage::persistence::store_cache::StoreCache;
 
 use super::tx_admission_provider::{NativeTxAdmissionProvider, TxAdmissionNativeProvider};
@@ -54,14 +54,14 @@ use neo_error::{CoreError, CoreResult};
 pub struct Node<P = neo_native_contracts::StandardNativeProvider, S = MemoryStore>
 where
     P: NativeContractProvider,
-    S: Store,
+    S: TransactionalStore,
 {
     /// Protocol settings the node is running with.
     pub(super) settings: Arc<ProtocolSettings>,
 
     /// Shared storage backend.
     ///
-    /// The node keeps the concrete `S: Store` type throughout composition.
+    /// The node keeps the concrete `S: TransactionalStore` type throughout composition.
     /// Runtime-selected startup uses `RuntimeStore`, a concrete enum over the
     /// supported backends.
     pub(super) storage: Arc<S>,
@@ -116,7 +116,7 @@ where
 impl<P, S> std::fmt::Debug for Node<P, S>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
@@ -147,7 +147,7 @@ where
 impl<P, S> Node<P, S>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     /// Returns a fresh [`crate::NodeBuilder`].
     pub fn builder() -> crate::NodeBuilder<P, S> {
@@ -394,7 +394,7 @@ where
 impl<P, S> StoreProvider for Node<P, S>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     type Store = S;
 
@@ -410,7 +410,7 @@ where
 impl<P, S> ConfigProvider for Node<P, S>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     fn settings(&self) -> Arc<ProtocolSettings> {
         Arc::clone(&self.settings)
@@ -424,7 +424,7 @@ where
 impl<P, S> TxAdmission for Node<P, S>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     fn try_enqueue_preverify<B: neo_storage::CacheRead>(
         &self,

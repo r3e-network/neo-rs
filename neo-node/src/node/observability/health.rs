@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_storage::persistence::Store;
+use neo_storage::persistence::{Store, TransactionalStore};
 
 use super::super::services::NodeServiceHandles;
 use super::observability_ledger_height;
@@ -14,7 +14,7 @@ pub(super) fn node_health_payload<P, S>(
 ) -> Value
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     let ledger_height = observability_ledger_height(node, services);
     let remote_ledger = services.remote_ledger();

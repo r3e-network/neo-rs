@@ -1,6 +1,6 @@
 # neo-rs Architecture Design Document
 
-**Version**: 5.5
+**Version**: 5.6
 **Date**: 2026-07-12
 **Author**: Software Architect
 **Status**: Active
@@ -16,7 +16,7 @@ that is professional, consistent, and ready for long-term evolution.
 
 **Architecture health score**: 9.5/10
 
-The ADR log now spans ADR-001 through ADR-040. Beyond the early trait-design,
+The ADR log now spans ADR-001 through ADR-041. Beyond the early trait-design,
 duplication, and async/concurrency audits (ADR-016 through ADR-019), later ADRs
 cover store-surface reduction and trait sealing (ADR-020, ADR-021), dead-code
 excision (ADR-022, ADR-027, ADR-028, ADR-032), hex/KeyBuilder consolidation
@@ -28,6 +28,8 @@ production-consumed finalized Ledger archive (ADR-036), frozen generic
 StateService providers (ADR-037), and one checker-typed import queue shared by
 staged and live peer sync (ADR-038), bounded acknowledged finalized projection
 delivery (ADR-039), and typed storage tables with fail-closed commits (ADR-040).
+ADR-041 makes atomic canonical and maintenance transactions a compile-time
+store capability and records `DataCache` as the node's transactional overlay.
 
 ---
 
@@ -433,6 +435,7 @@ This section documents which patterns are adopted, adapted, or deferred.
 |---------|---------------|-----------------|--------|
 | Provider traits | `reth-provider` | `neo-runtime` (StoreProvider, ConfigProvider, TxAdmission; `BlockchainProvider` deleted in ADR-032) | Adopted (BlockchainProvider removed) |
 | Typed storage tables/codecs | `reth-db-api::Table` | `neo-storage::persistence::{Table, TableProvider}` | Adapted over unchanged Neo bytes (ADR-040) |
+| Mandatory canonical DB capability | provider/database capability bounds | `neo-storage::TransactionalStore` + `neo-system` composition | Adopted (ADR-041) |
 | NodeTypes sealed seam | `reth-node-api` | `neo-runtime/src/node/types.rs` | Adopted (single-impl sealed seam) |
 | NodeComponents / FullNode type-state | `reth-node-api` | (removed) | Removed (ADR-032) |
 | Engine API trait | `reth-engine` `Engine` | (removed) `EngineApi` | Removed/Superseded (ADR-033) |
@@ -449,6 +452,7 @@ This section documents which patterns are adopted, adapted, or deferred.
 | Bounded context separation | Parachain runtimes | Layer hierarchy (L0-L7) | Adopted |
 | Service trait composition | `sc-service` | `neo-runtime` service traits + `neo-system` composition | Adopted |
 | Error type per pallet | `pallet::*::Error` | Domain error per crate (ADR-011) | Adopted (formalized) |
+| Transactional execution overlay | `OverlayedChanges` | child/parent `DataCache` overlays with sorted durable emission | Adapted (ADR-041) |
 
 ### Patterns Deferred (Not Yet Needed)
 
@@ -1273,14 +1277,15 @@ Validation is split into:
 | doc(html_root_url) versions | All 11 crates at 0.10.0 (ADR-013) |
 | Redundant inline lints | Removed (tokens_tracker module) |
 | reth/polkadot comparison | Living implementation matrix, including typed tables and staged/finalized delivery |
-| Evolution roadmap | 4 phases, full ADR log (ADR-001 through ADR-040) |
+| Evolution roadmap | 4 phases, full ADR log (ADR-001 through ADR-041) |
 | Debug trait bounds | Consistent across all service traits (ADR-019) |
 | HSM redeem script | Delegates to canonical neo-vm impl (ADR-016) |
 | Async/concurrency safety | Excellent — 0 Critical/Major issues (ADR audit) |
 | Backpressure handling | Bounded channels + try_send slow-peer isolation |
 | Mempool TOCTOU safety | Atomic check-verify-act under write lock |
-| Store trait surface | Direct generic capability methods; no Store downcast or dynamic extension traits (ADR-020) |
+| Store trait surface | General `Store` plus mandatory generic `TransactionalStore` for canonical composition; no downcast or dynamic extension traits (ADR-020, ADR-041) |
 | Typed table boundary | GAT codecs + generic providers/batches; sync/prune metadata migrated without byte changes (ADR-040) |
+| Transactional overlay | `DataCache` child isolation, drop rollback, one parent merge, and sorted backend emission (ADR-041) |
 | Trait sealing | NodeTypes, NodeComponents, EngineApi sealed (ADR-021) |
 | Dead KeyBuilder wrapper | Removed (ADR-022) |
 | NodeComponents type-state | Documented as scaffolded, not functional (ADR-023) |
@@ -2266,7 +2271,8 @@ returned `()`, allowing a caller to continue after data had not been persisted.
   borrowed slice, fixed-size stack array, `Cow`, or owned vector.
   `IntoTableBytes` moves an owned vector directly into a batch and copies only
   when persistence genuinely needs ownership.
-- Blanket-implement `TableProvider` for every concrete `Store`. Runtime backend
+- Blanket-implement `TableProvider` for every concrete `TransactionalStore`
+  (the stronger capability was formalized in ADR-041). Runtime backend
   selection remains the concrete `RuntimeStore` enum; table and codec dispatch
   remains monomorphized and introduces no `dyn` provider or boxed iterator.
 - Add `StoreMaintenanceBatch::put::<T>` and `delete::<T>`. Reads and atomic
@@ -2317,3 +2323,65 @@ returned `()`, allowing a caller to continue after data had not been persisted.
   bytes, and malformed-value rejection.
 - Neo N3 v3.10.1 protocol bytes, state-root input, key ordering, and backend
   selection are unchanged.
+
+### ADR-041: Mandatory transactional stores and canonical overlay contract
+
+**Status**: Accepted (implemented)
+
+**Context**: Canonical node composition previously accepted any `S: Store`,
+while the atomic canonical-overlay and maintenance methods on `Store` had
+default `Ok(false)` implementations. An invalid custom backend therefore
+compiled, started, and failed only when the first block or maintenance
+checkpoint reached persistence. Callers repeated boolean capability checks and
+backend-specific "unsupported" errors. The architecture comparison also listed
+a Polkadot-style transactional overlay as future work even though `DataCache`
+already supplied child isolation, rollback by dropping a child, and one-way
+parent merge.
+
+**Decision**:
+
+- Add `TransactionalStore: Store` with three mandatory statically dispatched
+  operations: `commit_canonical_overlay`, `maintenance_metadata`, and
+  `commit_maintenance`. These methods return `Result<()>`; there is no runtime
+  capability boolean or default implementation.
+- Remove canonical durability and isolated-maintenance methods from `Store`.
+  Plain `Store` remains the broad contract for read paths, auxiliary service
+  stores, snapshots, and optional throughput fast paths.
+- Implement `TransactionalStore` for `MdbxStore`, `RocksDbStore`,
+  `MemoryStore`, and the concrete `RuntimeStore` backend-selection enum. MDBX
+  uses one write transaction, RocksDB uses a synchronous write batch after
+  fencing any WAL-disabled prefix, and memory storage provides atomic
+  process-local visibility for tests and explicitly ephemeral nodes.
+- Require `TransactionalStore` throughout canonical composition:
+  `NodeBuilder`, `NodeCoreBuilder`, `NodeCore`, `NodeSystemContext`, `Node`,
+  staged-sync sidecars, typed maintenance tables, and hot-Ledger pruning.
+  Side-service stores that do not publish canonical state retain `Store` bounds.
+- Treat the existing `DataCache` hierarchy as the Neo adaptation of
+  `OverlayedChanges`. `clone_cache` creates an isolated child over its parent;
+  a failed operation drops or resets that child; success performs one parent
+  merge; durable visitors emit tracked entries in byte-key order. No second
+  overlay wrapper is introduced.
+
+**Trade-offs**:
+
+- **Gaining**: unsupported canonical stores fail at compile time, commit APIs no
+  longer carry capability booleans, and generic node code states its durability
+  requirement directly.
+- **Cost**: a custom backend intended for canonical use must implement all three
+  transaction operations and prove their atomicity. This is required work, not
+  compatibility boilerplate.
+- **Constraint**: `MemoryStore` satisfies atomic visibility but not restart
+  durability. Production configuration continues to default to MDBX.
+- **Reversibility**: auxiliary consumers can remain on `Store`; weakening
+  canonical composition back to runtime probing is intentionally unsupported.
+
+**Consequences**:
+
+- There is no supported path for a composed node to discover at block N that
+  its backend cannot atomically publish canonical state.
+- Sync checkpoints, verified headers, and hot-prune watermarks call mandatory
+  maintenance transactions without unsupported-backend branches.
+- Architecture guards keep optional canonical methods out of `Store`, require
+  the stronger bound in composition, and preserve the child-overlay mechanics.
+- Neo N3 v3.10.1 bytes, execution order, state roots, backend selection, and
+  on-disk layouts are unchanged.

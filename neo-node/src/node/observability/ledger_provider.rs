@@ -9,7 +9,7 @@ use neo_blockchain::{
     ChainTipProvider, EmptyLedgerProvider, HotColdLedgerProviderFactory, LedgerProviderFactory,
 };
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_storage::persistence::Store;
+use neo_storage::persistence::TransactionalStore;
 
 use super::super::services::NodeServiceHandles;
 
@@ -23,7 +23,7 @@ pub(in crate::node) fn observability_ledger_height<P, S>(
 ) -> Option<u32>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     if let Some(remote_ledger) = services.remote_ledger() {
         return remote_ledger.advertised_height;

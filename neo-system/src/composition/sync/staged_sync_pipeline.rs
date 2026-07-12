@@ -12,7 +12,7 @@ use neo_runtime::{
     SharedStoreSyncStageCheckpointStore, SharedStoreVerifiedHeaderStore, SyncStageCheckpointStore,
     VerifiedHeaderStore,
 };
-use neo_storage::persistence::Store;
+use neo_storage::persistence::TransactionalStore;
 
 use crate::sync_header_pipeline::SyncHeaderPipeline;
 use crate::sync_import_pipeline::SyncImportPipeline;
@@ -44,7 +44,7 @@ where
 impl<S>
     StagedSyncPipeline<SharedStoreSyncStageCheckpointStore<S>, SharedStoreVerifiedHeaderStore<S>>
 where
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     /// Compose all production sync stages over the canonical blockchain handle,
     /// shared header cache, and shared storage backend.

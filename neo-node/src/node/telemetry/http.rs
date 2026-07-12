@@ -6,7 +6,7 @@ use std::sync::Arc;
 use hyper::header::CONTENT_TYPE;
 use hyper::{Body, Request, Response, StatusCode};
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_storage::persistence::Store;
+use neo_storage::persistence::TransactionalStore;
 use prometheus::{Encoder, TextEncoder};
 use serde_json::json;
 use tracing::warn;
@@ -21,7 +21,7 @@ pub(super) async fn serve_metrics_request<P, S>(
 ) -> Result<Response<Body>, Infallible>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     let request_path = request.uri().path();
     if request_path != path

@@ -18,8 +18,9 @@ use neo_blockchain::{
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Block};
-use neo_storage::persistence::store::Store;
-use neo_storage::persistence::{CacheRead, StoreCache, StoreCacheBacking, StoreDataCache};
+use neo_storage::persistence::{
+    CacheRead, StoreCache, StoreCacheBacking, StoreDataCache, TransactionalStore,
+};
 use parking_lot::Mutex;
 
 /// Application-owned behavior around a canonical block commit.
@@ -120,7 +121,7 @@ where
 pub struct NodeSystemContext<P, S, H>
 where
     P: NativeContractProvider,
-    S: Store,
+    S: TransactionalStore,
     H: BlockCommitHooks<StoreCacheBacking<S>>,
 {
     settings: Arc<ProtocolSettings>,
@@ -135,7 +136,7 @@ where
 impl<P, S, H> NodeSystemContext<P, S, H>
 where
     P: NativeContractProvider,
-    S: Store,
+    S: TransactionalStore,
     H: BlockCommitHooks<StoreCacheBacking<S>>,
 {
     /// Compose a blockchain context over one canonical store cache.
@@ -191,7 +192,7 @@ where
 impl<P, S, H> fmt::Debug for NodeSystemContext<P, S, H>
 where
     P: NativeContractProvider,
-    S: Store,
+    S: TransactionalStore,
     H: BlockCommitHooks<StoreCacheBacking<S>>,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -206,7 +207,7 @@ where
 impl<P, S, H> SystemContext for NodeSystemContext<P, S, H>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
     H: BlockCommitHooks<StoreCacheBacking<S>> + 'static,
 {
     type NativeProvider = P;

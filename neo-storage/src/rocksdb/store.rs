@@ -8,6 +8,7 @@ use crate::persistence::{
     store::{RawOverlaySource, RocksDbBatchMetrics, Store, StoreBackendKind},
     store_maintenance::StoreMaintenanceBatch,
     store_snapshot::StoreSnapshot,
+    transactional_store::TransactionalStore,
     write_store::WriteStore,
 };
 use crate::rocksdb::write_batch_buffer::{WriteBatchConfig, WriteBatchStatsSnapshot};
@@ -565,8 +566,10 @@ impl Store for RocksDbStore {
         })?;
         Ok(true)
     }
+}
 
-    fn try_commit_durable_borrowed_raw_overlay<O>(&self, overlay: &mut O) -> StorageResult<bool>
+impl TransactionalStore for RocksDbStore {
+    fn commit_canonical_overlay<O>(&self, overlay: &mut O) -> StorageResult<()>
     where
         O: RawOverlaySource + ?Sized,
     {
@@ -590,7 +593,7 @@ impl Store for RocksDbStore {
         overlay.visit_raw_overlay(&mut sink);
 
         if !has_entries {
-            return Ok(true);
+            return Ok(());
         }
 
         let mut write_options = WriteOptions::default();
@@ -599,7 +602,7 @@ impl Store for RocksDbStore {
             error!(target: "neo", error = %error, "rocksdb durable overlay commit failed");
             StorageError::commit_failed(format!("RocksDB durable overlay commit failed: {error}"))
         })?;
-        Ok(true)
+        Ok(())
     }
 
     fn maintenance_metadata(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
@@ -612,12 +615,9 @@ impl Store for RocksDbStore {
         })
     }
 
-    fn try_commit_durable_maintenance(
-        &self,
-        maintenance: &StoreMaintenanceBatch,
-    ) -> StorageResult<bool> {
+    fn commit_maintenance(&self, maintenance: &StoreMaintenanceBatch) -> StorageResult<()> {
         if maintenance.is_empty() {
-            return Ok(true);
+            return Ok(());
         }
         if self.fast_sync_buffering.load(Ordering::Acquire) || self.has_pending_fast_sync_writes() {
             self.flush()?;
@@ -651,7 +651,7 @@ impl Store for RocksDbStore {
                 "RocksDB durable maintenance commit failed: {error}"
             ))
         })?;
-        Ok(true)
+        Ok(())
     }
 }
 

@@ -1,8 +1,8 @@
 use crate::persistence::providers::MemoryStore;
 use crate::persistence::read_only_store::RawReadOnlyStore;
 use crate::persistence::{
-    StorageItemCodec, StorageKeyCodec, Store, StoreMaintenanceBatch, Table, TableEncode,
-    TableNamespace, TableProvider, U32BeCodec, U64BeCodec,
+    StorageItemCodec, StorageKeyCodec, StoreMaintenanceBatch, Table, TableEncode, TableNamespace,
+    TableProvider, TransactionalStore, U32BeCodec, U64BeCodec,
 };
 use crate::{StorageItem, StorageKey, StorageResult};
 
@@ -53,11 +53,9 @@ fn typed_maintenance_table_round_trips_without_changing_bytes() {
     let store = MemoryStore::new();
     let mut batch = StoreMaintenanceBatch::new();
     batch.put::<CounterTable>(&7, &42).expect("encode counter");
-    assert!(
-        store
-            .try_commit_durable_maintenance(&batch)
-            .expect("commit typed counter")
-    );
+    store
+        .commit_maintenance(&batch)
+        .expect("commit typed counter");
 
     assert_eq!(store.table_get::<CounterTable>(&7).unwrap(), Some(42));
     assert!(store.table_contains::<CounterTable>(&7).unwrap());
@@ -71,11 +69,9 @@ fn typed_maintenance_table_round_trips_without_changing_bytes() {
 
     let mut delete = StoreMaintenanceBatch::new();
     delete.delete::<CounterTable>(&7).expect("encode deletion");
-    assert!(
-        store
-            .try_commit_durable_maintenance(&delete)
-            .expect("commit typed deletion")
-    );
+    store
+        .commit_maintenance(&delete)
+        .expect("commit typed deletion");
     assert_eq!(store.table_get::<CounterTable>(&7).unwrap(), None);
 }
 
@@ -88,11 +84,7 @@ fn typed_data_table_preserves_neo_storage_key_and_item_bytes() {
     batch
         .put::<ContractStorageTable>(&key, &value)
         .expect("encode Neo row");
-    assert!(
-        store
-            .try_commit_durable_maintenance(&batch)
-            .expect("commit Neo row")
-    );
+    store.commit_maintenance(&batch).expect("commit Neo row");
 
     assert_eq!(
         store
@@ -111,7 +103,9 @@ fn typed_table_reports_value_corruption_with_table_identity() {
     raw_key.extend_from_slice(&9_u32.to_be_bytes());
     let mut corruption = StoreMaintenanceBatch::new();
     corruption.put_metadata(raw_key, vec![0x01, 0x02]);
-    assert!(store.try_commit_durable_maintenance(&corruption).unwrap());
+    store
+        .commit_maintenance(&corruption)
+        .expect("write malformed typed row");
 
     let error = store
         .table_get::<CounterTable>(&9)

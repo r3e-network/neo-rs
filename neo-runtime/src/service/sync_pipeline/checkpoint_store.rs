@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use neo_storage::persistence::providers::memory_store::MemoryStore;
-use neo_storage::persistence::{Store, StoreMaintenanceBatch, TableProvider};
+use neo_storage::persistence::{StoreMaintenanceBatch, TableProvider, TransactionalStore};
 
 use super::tables::SyncCheckpointTable;
 use super::{SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind};
@@ -18,11 +18,11 @@ use crate::{ServiceError, ServiceResult};
 /// Checkpoint bytes live in the backend's isolated maintenance namespace and
 /// therefore cannot enter Neo contract scans, store dumps, or state roots.
 #[derive(Debug)]
-pub struct StoreSyncStageCheckpointStore<S: Store> {
+pub struct StoreSyncStageCheckpointStore<S: TransactionalStore> {
     store: S,
 }
 
-impl<S: Store> StoreSyncStageCheckpointStore<S> {
+impl<S: TransactionalStore> StoreSyncStageCheckpointStore<S> {
     /// Creates a checkpoint store over a concrete storage backend handle.
     #[must_use]
     pub const fn new(store: S) -> Self {
@@ -36,7 +36,7 @@ impl<S: Store> StoreSyncStageCheckpointStore<S> {
     }
 }
 
-impl<S: Store> SyncStageCheckpointStore for StoreSyncStageCheckpointStore<S> {
+impl<S: TransactionalStore> SyncStageCheckpointStore for StoreSyncStageCheckpointStore<S> {
     fn checkpoint(&self, stage: SyncStageKind) -> ServiceResult<Option<SyncStageCheckpoint>> {
         read_checkpoint(&self.store, stage)
     }
@@ -52,11 +52,11 @@ impl<S: Store> SyncStageCheckpointStore for StoreSyncStageCheckpointStore<S> {
 /// services. This adapter keeps the concrete backend type and uses the same
 /// maintenance transaction as the owned adapter.
 #[derive(Debug)]
-pub struct SharedStoreSyncStageCheckpointStore<S: Store = MemoryStore> {
+pub struct SharedStoreSyncStageCheckpointStore<S: TransactionalStore = MemoryStore> {
     store: Arc<S>,
 }
 
-impl<S: Store> SharedStoreSyncStageCheckpointStore<S> {
+impl<S: TransactionalStore> SharedStoreSyncStageCheckpointStore<S> {
     /// Creates a checkpoint store over a shared storage backend.
     #[must_use]
     pub const fn new(store: Arc<S>) -> Self {
@@ -70,7 +70,7 @@ impl<S: Store> SharedStoreSyncStageCheckpointStore<S> {
     }
 }
 
-impl<S: Store> SyncStageCheckpointStore for SharedStoreSyncStageCheckpointStore<S> {
+impl<S: TransactionalStore> SyncStageCheckpointStore for SharedStoreSyncStageCheckpointStore<S> {
     fn checkpoint(&self, stage: SyncStageKind) -> ServiceResult<Option<SyncStageCheckpoint>> {
         read_checkpoint(self.store.as_ref(), stage)
     }
@@ -80,7 +80,7 @@ impl<S: Store> SyncStageCheckpointStore for SharedStoreSyncStageCheckpointStore<
     }
 }
 
-pub(crate) fn read_checkpoint<S: Store>(
+pub(crate) fn read_checkpoint<S: TransactionalStore>(
     store: &S,
     stage: SyncStageKind,
 ) -> ServiceResult<Option<SyncStageCheckpoint>> {
@@ -99,7 +99,7 @@ pub(crate) fn read_checkpoint<S: Store>(
     Ok(checkpoint)
 }
 
-pub(crate) fn write_checkpoint<S: Store>(
+pub(crate) fn write_checkpoint<S: TransactionalStore>(
     store: &S,
     checkpoint: SyncStageCheckpoint,
 ) -> ServiceResult<()> {
@@ -107,26 +107,17 @@ pub(crate) fn write_checkpoint<S: Store>(
     maintenance
         .put::<SyncCheckpointTable>(&checkpoint.stage, &checkpoint)
         .map_err(|error| storage_error("encode sync checkpoint", error))?;
-    commit_maintenance(
-        store,
-        &maintenance,
-        "write sync checkpoint",
-        "store does not support atomic sync-checkpoint maintenance",
-    )
+    commit_maintenance(store, &maintenance, "write sync checkpoint")
 }
 
-pub(crate) fn commit_maintenance<S: Store>(
+pub(crate) fn commit_maintenance<S: TransactionalStore>(
     store: &S,
     maintenance: &StoreMaintenanceBatch,
     operation: &'static str,
-    unsupported_message: &'static str,
 ) -> ServiceResult<()> {
-    if !store
-        .try_commit_durable_maintenance(maintenance)
-        .map_err(|error| storage_error(operation, error))?
-    {
-        return Err(ServiceError::invalid_state(unsupported_message));
-    }
+    store
+        .commit_maintenance(maintenance)
+        .map_err(|error| storage_error(operation, error))?;
     Ok(())
 }
 

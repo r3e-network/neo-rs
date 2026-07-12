@@ -15,7 +15,7 @@ use crate::persistence::store::{
 };
 use crate::persistence::{
     RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric, Store, StoreMaintenanceBatch,
-    StoreSnapshot, WriteStore,
+    StoreSnapshot, TransactionalStore, WriteStore,
 };
 use crate::rocksdb::{RocksDbSnapshot, RocksDbStore};
 use crate::types::{SeekDirection, StorageItem, StorageKey};
@@ -485,15 +485,17 @@ impl Store for RuntimeStore {
             Self::RocksDb(store) => store.try_commit_borrowed_raw_overlay(overlay),
         }
     }
+}
 
-    fn try_commit_durable_borrowed_raw_overlay<O>(&self, overlay: &mut O) -> StorageResult<bool>
+impl TransactionalStore for RuntimeStore {
+    fn commit_canonical_overlay<O>(&self, overlay: &mut O) -> StorageResult<()>
     where
         O: RawOverlaySource + ?Sized,
     {
         match self {
-            Self::Memory(store) => store.try_commit_durable_borrowed_raw_overlay(overlay),
-            Self::Mdbx(store) => store.try_commit_durable_borrowed_raw_overlay(overlay),
-            Self::RocksDb(store) => store.try_commit_durable_borrowed_raw_overlay(overlay),
+            Self::Memory(store) => store.commit_canonical_overlay(overlay),
+            Self::Mdbx(store) => store.commit_canonical_overlay(overlay),
+            Self::RocksDb(store) => store.commit_canonical_overlay(overlay),
         }
     }
 
@@ -505,11 +507,11 @@ impl Store for RuntimeStore {
         }
     }
 
-    fn try_commit_durable_maintenance(&self, batch: &StoreMaintenanceBatch) -> StorageResult<bool> {
+    fn commit_maintenance(&self, batch: &StoreMaintenanceBatch) -> StorageResult<()> {
         match self {
-            Self::Memory(store) => store.try_commit_durable_maintenance(batch),
-            Self::Mdbx(store) => store.try_commit_durable_maintenance(batch),
-            Self::RocksDb(store) => store.try_commit_durable_maintenance(batch),
+            Self::Memory(store) => store.commit_maintenance(batch),
+            Self::Mdbx(store) => store.commit_maintenance(batch),
+            Self::RocksDb(store) => store.commit_maintenance(batch),
         }
     }
 }

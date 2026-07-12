@@ -9,7 +9,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_storage::persistence::Store;
+use neo_storage::persistence::TransactionalStore;
 use neo_storage::persistence::providers::RuntimeStore;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -81,7 +81,7 @@ fn start_metrics_endpoint<P, S>(
 ) -> anyhow::Result<()>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     match telemetry::metrics_server_task(
         &config.telemetry.metrics,
@@ -148,7 +148,7 @@ fn start_seed_dialing<P, S>(
     observability: Option<&ObservabilityRuntime>,
 ) where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     if ledger_mode.uses_local_replay_services() {
         let seed_nodes = if config.p2p.seed_nodes.is_empty() {

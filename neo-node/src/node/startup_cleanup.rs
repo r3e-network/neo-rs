@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use neo_storage::persistence::Store;
+use neo_storage::persistence::{Store, TransactionalStore};
 
 use super::observability;
 use super::services::NodeServiceHandles;
@@ -78,7 +78,7 @@ pub(super) fn abort_startup_after_import_failure<S, ServiceS>(
     err: anyhow::Error,
 ) -> anyhow::Error
 where
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
     ServiceS: Store + 'static,
 {
     let mut cleanup_errors = Vec::new();

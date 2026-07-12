@@ -8,7 +8,7 @@ use anyhow::Context;
 use hyper::Server;
 use hyper::service::{make_service_fn, service_fn};
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_storage::persistence::Store;
+use neo_storage::persistence::TransactionalStore;
 use tracing::info;
 
 use self::exporter::MetricsExporter;
@@ -31,7 +31,7 @@ pub(super) fn metrics_server_task<P, S>(
 ) -> anyhow::Result<Option<impl std::future::Future<Output = anyhow::Result<()>> + Send + 'static>>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     if !config.enabled {
         return Ok(None);

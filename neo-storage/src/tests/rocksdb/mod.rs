@@ -16,6 +16,7 @@ use super::*;
 use crate::persistence::RawReadOnlyStore;
 use crate::persistence::StoreCache;
 use crate::persistence::StoreMaintenanceBatch;
+use crate::persistence::TransactionalStore;
 use crate::persistence::read_only_store::ReadOnlyStoreGeneric;
 use crate::persistence::seek_direction::SeekDirection;
 use crate::persistence::storage::StorageConfig;
@@ -94,11 +95,9 @@ fn maintenance_commit_is_atomic_and_metadata_is_not_in_the_default_column_family
         let mut batch = StoreMaintenanceBatch::new();
         batch.delete_data(data_key.clone());
         batch.put_metadata(metadata_key.clone(), 42u32.to_be_bytes().to_vec());
-        assert!(
-            store
-                .try_commit_durable_maintenance(&batch)
-                .expect("maintenance commit")
-        );
+        store
+            .commit_maintenance(&batch)
+            .expect("maintenance commit");
 
         assert_eq!(store.try_get_bytes(&data_key), None);
         assert_eq!(store.try_get_bytes(&metadata_key), None);

@@ -10,15 +10,23 @@
 
 ### neo-rs (current)
 
-Single `Store` trait with `DataCache` + `StoreCache` overlay. MDBX is the
-production default, RocksDB remains supported, and in-memory providers cover
-tests/ephemeral nodes. The canonical `SystemContext::commit_to_store` boundary
-propagates backend failures from `StoreCache::try_commit_durable`; failed
-overlays are discarded, staged bulk tips are rewound, and finalized outcomes
-are delivered only after the durable fence succeeds. Accepted bulk prefixes
-therefore cannot be reported from an unflushed shared snapshot. MDBX implements
-that fence with its atomic write transaction; RocksDB uses a WAL-synchronous
-overlay batch and persists any earlier WAL-disabled fast-sync prefix first.
+`Store` is the broad backend contract; the stronger `TransactionalStore` trait
+makes canonical-overlay publication and isolated maintenance transactions
+mandatory for composed nodes. MDBX is the production default, RocksDB remains
+supported, and in-memory providers cover tests/ephemeral nodes. `DataCache` is
+the execution overlay: `clone_cache` creates an isolated child, dropping/resetting
+the child rolls it back, success performs one parent merge, and durable visitors
+emit tracked entries in byte-key order. This is the Neo adaptation of
+Polkadot's `OverlayedChanges`, so another overlay wrapper is unnecessary. The
+canonical `SystemContext::commit_to_store` boundary propagates backend failures
+from `StoreCache::try_commit_durable`; failed overlays are discarded, staged
+bulk tips are rewound, and finalized outcomes are delivered only after the
+durable fence succeeds. Accepted bulk prefixes therefore cannot be reported
+from an unflushed shared snapshot. MDBX implements that fence with its atomic
+write transaction; RocksDB uses a WAL-synchronous overlay batch and persists
+any earlier WAL-disabled fast-sync prefix first. Canonical composition is
+generic over `S: TransactionalStore`, so an unsupported backend cannot start a
+node and fail only at the first block.
 StateService and a persistent indexer remain separate durability domains, so
 neo-rs uses write-ahead fail-stop recovery rather than claiming cross-store
 atomicity: it writes and fsyncs a poison marker before either observer can
@@ -127,9 +135,10 @@ every storage access path. `Store`, `RawReadOnlyStore`,
 `ReadOnlyStoreGeneric`, and `StoreFactory` are the backend seams. A Reth-style
 typed layer now binds logical `Table` marker types to allocation-aware
 `TableEncode` / `TableDecode` codecs and either the consensus `Data` namespace
-or isolated `Maintenance` namespace. Every concrete `Store` implements the
-blanket `TableProvider`; `StoreMaintenanceBatch::put/delete::<T>` uses the same
-table identity for atomic writes. Sync checkpoints, verified-header rows and
+or isolated `Maintenance` namespace. Every concrete `TransactionalStore`
+implements the blanket `TableProvider`;
+`StoreMaintenanceBatch::put/delete::<T>` uses the same table identity for
+atomic writes. Sync checkpoints, verified-header rows and
 window metadata, target hashes, and the hot-Ledger prune watermark have been
 migrated as production consumers of this boundary. Their keys and values are
 byte-for-byte unchanged.
@@ -145,14 +154,23 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync {
     fn snapshot(&self) -> Arc<Self::Snapshot>;
     fn try_commit_raw_overlay(&self, overlay: &[(Vec<u8>, Option<Vec<u8>>)]) -> ...;
 }
+
+pub trait TransactionalStore: Store {
+    fn commit_canonical_overlay<O: RawOverlaySource + ?Sized>(
+        &self,
+        overlay: &mut O,
+    ) -> StorageResult<()>;
+    fn maintenance_metadata(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>>;
+    fn commit_maintenance(&self, batch: &StoreMaintenanceBatch) -> StorageResult<()>;
+}
 ```
 
 | Aspect | neo-rs | Reth | Polkadot SDK |
 |--------|--------|------|-------------|
-| Abstraction | `Store` with an associated concrete snapshot; `RuntimeStore` enum for config selection | `Database` trait with GATs | `kvdb` trait, 3-level stack |
+| Abstraction | General `Store`, mandatory `TransactionalStore` for canonical composition, associated concrete snapshots, and `RuntimeStore` enum selection | `Database` trait with GATs | `kvdb` trait, 3-level stack |
 | Table encoding | Generic `Table` + GAT codecs over unchanged Neo/maintenance bytes; typed sync and prune metadata are live | Per-table `Encode`/`Decode` + `Compact` derive | Per-column encoding (parity-scale-codec) |
 | Tiering | Hot MDBX/RocksDB plus opt-in compressed static Ledger archive; provider routing, atomic pruning, and watermark-aware recovery are wired | Hot (MDBX) / Cold (RocksDB) / Static (NippyJar) | Single DB (parity-db or RocksDB) |
-| Overlay | `DataCache` with `Arc<RwLock<HashMap>>` | MDBX transaction | `OverlayedChanges` |
+| Overlay | Child/parent `DataCache`: isolated mutation, drop/reset rollback, one-way merge, sorted backend emission | MDBX transaction | `OverlayedChanges` |
 | Pruning | Static Ledger rows automatically prune beyond the initial `MaxTraceableBlocks` window; state/MPT pruning remains separately configured | Per-segment config (4 profiles) | `PruningMode` enum |
 | Static files | Versioned per-height zstd frames, opaque exact Ledger rows, checksums, LRU reads, continuity and torn-tail recovery; cold-first bytes with post-hot index visibility | NippyJar columnar (mandatory, mmap) | None |
 
@@ -189,7 +207,7 @@ pub trait Store: ReadOnlyStore + RawReadOnlyStore + WriteStore + Send + Sync {
 | Implemented phase | Frozen StateService provider/factory boundary | Root/height-addressed snapshot isolation, pruning gates, and proof/state RPC without MPT mechanics in the API layer |
 | P1 | Compact derive for versioned node-local tables only | Fewer operational bytes without changing Neo consensus/storage codecs |
 | Implemented phase | Static Ledger archive and provider routing | Format, exact row capture, cold-first batch publication, startup reconciliation, shared runtime cold reads, and hot pruning are wired |
-| P3 | `OverlayedChanges`-style transactional overlay | Cleaner per-tx isolation |
+| Implemented | `OverlayedChanges`-style transactional overlay and mandatory canonical store capability | Child isolation, rollback by discard, ordered emission, and compile-time durability requirements |
 
 ---
 
@@ -697,8 +715,9 @@ return, keeping a returned `ApplicationEngine` movable between calls.
 typed key/value, and concrete key/value codecs. `TableEncode` uses a GAT output
 so codecs can return borrowed slices, stack arrays, or owned vectors;
 `IntoTableBytes` avoids copying an already-owned vector into a write batch.
-`TableProvider` supplies statically dispatched typed reads for every `Store`,
-and `StoreMaintenanceBatch` supplies typed atomic writes. Domain crates own
+`TableProvider` supplies statically dispatched typed reads for every
+`TransactionalStore`, and `StoreMaintenanceBatch` supplies typed atomic writes.
+Domain crates own
 domain codecs. Built-in `StorageKeyCodec` and `StorageItemCodec` preserve C#
 bytes exactly; binary/wire serializers remain in their existing protocol
 crates rather than being duplicated in storage.
@@ -748,6 +767,7 @@ already established Neo codec byte-for-byte.
 | Import queue + concurrent verify | ★★★★ | - | ★★★ | ★★★ | Runtime queue and production download-to-import bridge wired |
 | Stage commit policy + checkpoints | ★★★ | - | ★★★★ | ★★ | Import-stage driver done |
 | Typed table/codec provider | ★★ | - | ★★★★ | ★★ | Implemented for sync and prune metadata over unchanged bytes |
+| Transactional store + execution overlay | ★★ | - | ★★★★★ | ★★ | Implemented; canonical capability is compile-time and `DataCache` supplies child isolation/rollback/merge |
 | Compact derive macro | ★★ | ★★★ | - | ★★ | Deferred to versioned node-local records; forbidden for incompatible Neo bytes |
 | Task supervision | - | - | ★★★★★ | ★★ | Done |
 | Acknowledged finalized projections | ★★ | - | ★★★★★ | ★★ | Implemented for ApplicationLogs and TokensTracker with bounded backpressure and per-block snapshot stability |
@@ -766,7 +786,10 @@ already established Neo codec byte-for-byte.
    production-consumed by sync checkpoints, verified-header sidecars, and the
    hot-Ledger prune watermark. `StorageKey` / `StorageItem` codecs preserve raw
    C#-compatible bytes; compact encoding remains restricted to versioned
-   node-local records.
+   node-local records. Canonical composition requires `TransactionalStore`, so
+   table maintenance and canonical overlay publication have no runtime
+   unsupported-capability branch. The existing child/parent `DataCache` is the
+   adopted `OverlayedChanges` pattern.
 3. **State provider/factory boundary** — implemented in `neo-state-service`.
    `StateStore` creates a concrete `MptStateProviderFactory`; all StateService
    RPC root, state, scan, and proof reads use its statically dispatched views.

@@ -7,6 +7,7 @@ use super::{
     store::Store,
     store_snapshot::StoreSnapshot,
     track_state::TrackState,
+    transactional_store::TransactionalStore,
 };
 use crate::error::StorageResult;
 use crate::persistence::providers::memory_store::MemoryStore;
@@ -154,66 +155,6 @@ where
         Ok(())
     }
 
-    /// Commits the canonical overlay as one backend durability boundary.
-    ///
-    /// The backing store must implement atomic durable-overlay commit whenever
-    /// this cache has pending canonical changes. MDBX uses one write
-    /// transaction. RocksDB first persists any earlier fast-sync prefix and
-    /// then writes this overlay with synchronous WAL. Callers that publish a
-    /// canonical tip must use this method rather than treating
-    /// [`Self::try_commit`] or commit-then-flush as a durability fence.
-    pub fn try_commit_durable(&mut self) -> DataCacheResult {
-        if self.data_cache.is_read_only() {
-            return Err(DataCacheError::ReadOnly);
-        }
-
-        if self.data_cache.pending_change_count() > 0 {
-            match self.try_commit_durable_store_overlay() {
-                Ok(true) => return Ok(()),
-                Ok(false) => {
-                    self.discard_pending_changes();
-                    return Err(DataCacheError::CommitFailed(
-                        "storage backend does not support atomic durable overlay commits"
-                            .to_string(),
-                    ));
-                }
-                Err(error) => {
-                    self.discard_pending_changes();
-                    return Err(error);
-                }
-            }
-        }
-
-        let flush_result = match &self.backing {
-            StoreCacheBacking::Store(store) => store.flush(),
-            StoreCacheBacking::Snapshot(snapshot) => snapshot.store().flush(),
-        };
-        if let Err(error) = flush_result {
-            self.discard_pending_changes();
-            return Err(DataCacheError::CommitFailed(format!(
-                "storage flush failed: {error}"
-            )));
-        }
-        Ok(())
-    }
-
-    fn try_commit_durable_store_overlay(&self) -> DataCacheResult<bool> {
-        let StoreCacheBacking::Store(store) = &self.backing else {
-            return Ok(false);
-        };
-
-        let mut source = &self.data_cache;
-        let committed = store
-            .try_commit_durable_borrowed_raw_overlay(&mut source)
-            .map_err(|error| {
-                DataCacheError::CommitFailed(format!("durable storage write failed: {error}"))
-            })?;
-        if committed {
-            self.data_cache.commit();
-        }
-        Ok(committed)
-    }
-
     /// Discards changes that have not reached a durable backend commit.
     ///
     /// This is the failure-side counterpart to [`Self::try_commit_durable`]. It clears
@@ -310,6 +251,62 @@ where
                 TrackState::None | TrackState::NotFound => {}
             }
         }
+    }
+}
+
+impl<S> StoreCache<S>
+where
+    S: TransactionalStore + 'static,
+{
+    /// Commits the canonical overlay as one backend durability boundary.
+    ///
+    /// The `TransactionalStore` bound makes atomic publication a compile-time
+    /// capability. MDBX uses one write transaction. RocksDB first persists any
+    /// earlier fast-sync prefix and then writes this overlay with synchronous
+    /// WAL. Callers that publish a canonical tip must use this method rather
+    /// than treating [`Self::try_commit`] or commit-then-flush as a durability
+    /// fence.
+    pub fn try_commit_durable(&mut self) -> DataCacheResult {
+        if self.data_cache.is_read_only() {
+            return Err(DataCacheError::ReadOnly);
+        }
+
+        if self.data_cache.pending_change_count() > 0 {
+            if let Err(error) = self.commit_canonical_store_overlay() {
+                self.discard_pending_changes();
+                return Err(error);
+            }
+            return Ok(());
+        }
+
+        let flush_result = match &self.backing {
+            StoreCacheBacking::Store(store) => store.flush(),
+            StoreCacheBacking::Snapshot(snapshot) => snapshot.store().flush(),
+        };
+        if let Err(error) = flush_result {
+            self.discard_pending_changes();
+            return Err(DataCacheError::CommitFailed(format!(
+                "storage flush failed: {error}"
+            )));
+        }
+        Ok(())
+    }
+
+    fn commit_canonical_store_overlay(&self) -> DataCacheResult {
+        let StoreCacheBacking::Store(store) = &self.backing else {
+            return Err(DataCacheError::CommitFailed(
+                "canonical commit requires a directly store-backed cache".to_string(),
+            ));
+        };
+
+        let mut source = &self.data_cache;
+        store
+            .commit_canonical_overlay(&mut source)
+            .map_err(|error| {
+                DataCacheError::CommitFailed(format!("durable storage write failed: {error}"))
+            })?;
+        self.data_cache.commit();
+        Ok(())
     }
 }
 

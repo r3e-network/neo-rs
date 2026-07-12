@@ -2,13 +2,15 @@ use super::*;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_storage::persistence::StoreDataCache;
 use neo_storage::persistence::providers::MemoryStore;
-use neo_storage::persistence::{Store, StoreBackendKind, StoreSnapshot, WriteStore};
+use neo_storage::persistence::{
+    Store, StoreBackendKind, StoreSnapshot, TransactionalStore, WriteStore,
+};
 use neo_system::NodeSystemContext;
 
 struct TestDaemonContext<P, C = MemoryStore, S = MemoryStore, L = MemoryStore, T = MemoryStore>
 where
     P: NativeContractProvider + 'static,
-    C: Store + 'static,
+    C: TransactionalStore + 'static,
     S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,
@@ -29,7 +31,7 @@ where
 impl<P, C, S, L, T> std::ops::Deref for TestDaemonContext<P, C, S, L, T>
 where
     P: NativeContractProvider + 'static,
-    C: Store + 'static,
+    C: TransactionalStore + 'static,
     S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,
@@ -44,7 +46,7 @@ where
 impl<P, C, S, L, T> TestDaemonContext<P, C, S, L, T>
 where
     P: NativeContractProvider + 'static,
-    C: Store + 'static,
+    C: TransactionalStore + 'static,
     S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,
@@ -84,7 +86,7 @@ fn daemon_context<P, C, S, L, T>(
 ) -> TestDaemonContext<P, C, S, L, T>
 where
     P: NativeContractProvider + 'static,
-    C: Store + 'static,
+    C: TransactionalStore + 'static,
     S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,

@@ -6,7 +6,7 @@ use std::time::Instant;
 use anyhow::Context;
 use hyper::{Body, Response};
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_storage::persistence::{MdbxEnvironmentInfo, RocksDbBatchMetrics, Store};
+use neo_storage::persistence::{MdbxEnvironmentInfo, RocksDbBatchMetrics, TransactionalStore};
 use prometheus::{Encoder, Gauge, IntGauge, IntGaugeVec, Opts, Registry, TextEncoder};
 use tracing::warn;
 
@@ -20,7 +20,7 @@ pub(super) struct MetricsExporter<
     S = neo_storage::persistence::providers::MemoryStore,
 > where
     P: NativeContractProvider,
-    S: Store,
+    S: TransactionalStore,
 {
     registry: Registry,
     node: Arc<neo_system::Node<P, S>>,
@@ -51,7 +51,7 @@ pub(super) struct MetricsExporter<
 impl<P, S> MetricsExporter<P, S>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     pub(super) fn new(
         node: Arc<neo_system::Node<P, S>>,
@@ -299,7 +299,7 @@ fn render_rocksdb_metrics(metrics: RocksDbBatchMetrics) -> String {
 impl<P, S> MetricsExporter<P, S>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     pub(super) fn readiness_response(&self) -> Response<Body> {
         let ledger_height = self.ledger_height();

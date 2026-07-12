@@ -23,6 +23,7 @@
 //! - `store_provider`: backend provider trait implemented by concrete stores.
 //! - `store_snapshot`: snapshot store trait.
 //! - `table`: Statically dispatched logical tables and byte codecs.
+//! - `transactional_store`: Mandatory atomic commit capabilities for node stores.
 //! - `track_state`: tracked mutation state enum.
 //! - `transaction`: Transaction body, signer, witness, and fee records.
 //! - `write_store`: write store trait.
@@ -63,6 +64,9 @@ pub mod table;
 pub mod track_state;
 #[path = "transactions/transaction.rs"]
 pub mod transaction;
+/// Atomic canonical and maintenance transaction capabilities.
+#[path = "traits/transactional_store.rs"]
+pub mod transactional_store;
 /// Write-only store trait.
 #[path = "traits/write_store.rs"]
 pub mod write_store;
@@ -85,4 +89,5 @@ pub use table::{
 };
 pub use track_state::TrackState;
 pub use transaction::StoreTransaction;
+pub use transactional_store::TransactionalStore;
 pub use write_store::WriteStore;

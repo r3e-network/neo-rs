@@ -7,6 +7,7 @@ use crate::persistence::{
     seek_direction::SeekDirection,
     store::{MdbxEnvironmentInfo, RawOverlaySource, Store, StoreBackendKind},
     store_maintenance::StoreMaintenanceBatch,
+    transactional_store::TransactionalStore,
     write_store::WriteStore,
 };
 use crate::{StorageError, StorageItem, StorageKey, StorageResult};
@@ -163,6 +164,37 @@ impl MdbxStore {
                 .iter()
                 .map(|(key, value)| (key.as_slice(), value.as_deref())),
         )
+    }
+
+    fn commit_borrowed_overlay<O>(&self, overlay: &mut O) -> StorageResult<()>
+    where
+        O: RawOverlaySource + ?Sized,
+    {
+        let tx = self.db.begin_rw_txn().map_err(mdbx_error)?;
+        let table = tx
+            .create_table(None, TableFlags::empty())
+            .map_err(mdbx_error)?;
+        let mut has_entries = false;
+        let mut apply_result = Ok(());
+        let mut sink = |key: &[u8], value: Option<&[u8]>| {
+            if apply_result.is_err() {
+                return;
+            }
+            has_entries = true;
+            apply_result = match value {
+                Some(value) => tx
+                    .put(&table, key, value, WriteFlags::UPSERT)
+                    .map_err(mdbx_error),
+                None => tx.del(&table, key, None).map(|_| ()).map_err(mdbx_error),
+            };
+        };
+        overlay.visit_raw_overlay(&mut sink);
+        apply_result?;
+
+        if has_entries {
+            tx.commit().map_err(mdbx_commit_error)?;
+        }
+        Ok(())
     }
 }
 
@@ -382,38 +414,17 @@ impl Store for MdbxStore {
     where
         O: RawOverlaySource + ?Sized,
     {
-        let tx = self.db.begin_rw_txn().map_err(mdbx_error)?;
-        let table = tx
-            .create_table(None, TableFlags::empty())
-            .map_err(mdbx_error)?;
-        let mut has_entries = false;
-        let mut apply_result = Ok(());
-        let mut sink = |key: &[u8], value: Option<&[u8]>| {
-            if apply_result.is_err() {
-                return;
-            }
-            has_entries = true;
-            apply_result = match value {
-                Some(value) => tx
-                    .put(&table, key, value, WriteFlags::UPSERT)
-                    .map_err(mdbx_error),
-                None => tx.del(&table, key, None).map(|_| ()).map_err(mdbx_error),
-            };
-        };
-        overlay.visit_raw_overlay(&mut sink);
-        apply_result?;
-
-        if has_entries {
-            tx.commit().map_err(mdbx_commit_error)?;
-        }
+        self.commit_borrowed_overlay(overlay)?;
         Ok(true)
     }
+}
 
-    fn try_commit_durable_borrowed_raw_overlay<O>(&self, overlay: &mut O) -> StorageResult<bool>
+impl TransactionalStore for MdbxStore {
+    fn commit_canonical_overlay<O>(&self, overlay: &mut O) -> StorageResult<()>
     where
         O: RawOverlaySource + ?Sized,
     {
-        self.try_commit_borrowed_raw_overlay(overlay)
+        self.commit_borrowed_overlay(overlay)
     }
 
     fn maintenance_metadata(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
@@ -426,9 +437,9 @@ impl Store for MdbxStore {
         tx.get::<Vec<u8>>(&table, key).map_err(mdbx_error)
     }
 
-    fn try_commit_durable_maintenance(&self, batch: &StoreMaintenanceBatch) -> StorageResult<bool> {
+    fn commit_maintenance(&self, batch: &StoreMaintenanceBatch) -> StorageResult<()> {
         if batch.is_empty() {
-            return Ok(true);
+            return Ok(());
         }
 
         let tx = self.db.begin_rw_txn().map_err(mdbx_error)?;
@@ -459,7 +470,7 @@ impl Store for MdbxStore {
             }
         }
         tx.commit().map_err(mdbx_commit_error)?;
-        Ok(true)
+        Ok(())
     }
 }
 

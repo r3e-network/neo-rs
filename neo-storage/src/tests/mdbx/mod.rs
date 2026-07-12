@@ -14,7 +14,7 @@
 use super::*;
 use crate::persistence::{
     RawReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, Store, StoreCache,
-    StoreMaintenanceBatch, StoreSnapshot, WriteStore, storage::StorageConfig,
+    StoreMaintenanceBatch, StoreSnapshot, TransactionalStore, WriteStore, storage::StorageConfig,
 };
 use crate::{StorageItem, StorageKey};
 use std::fs;
@@ -324,11 +324,9 @@ fn maintenance_commit_is_atomic_and_metadata_is_not_in_the_data_table() {
         let mut batch = StoreMaintenanceBatch::new();
         batch.delete_data(data_key.clone());
         batch.put_metadata(metadata_key.clone(), 42u32.to_be_bytes().to_vec());
-        assert!(
-            store
-                .try_commit_durable_maintenance(&batch)
-                .expect("maintenance commit")
-        );
+        store
+            .commit_maintenance(&batch)
+            .expect("maintenance commit");
 
         assert_eq!(store.try_get_bytes(&data_key), None);
         assert_eq!(

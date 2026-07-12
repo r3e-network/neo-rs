@@ -16,8 +16,7 @@ use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
-use neo_storage::persistence::store::Store;
-use neo_storage::persistence::{StoreCache, StoreCacheBacking, StoreDataCache};
+use neo_storage::persistence::{StoreCache, StoreCacheBacking, StoreDataCache, TransactionalStore};
 
 use crate::{BlockCommitHooks, Node, NodeBuilder, NodeResult, NodeSystemContext};
 
@@ -31,7 +30,7 @@ type CoreBlockchainService<P, S, H> = BlockchainService<NodeSystemContext<P, S, 
 pub struct NodeCoreBuilder<P, S, H>
 where
     P: NativeContractProvider,
-    S: Store,
+    S: TransactionalStore,
     H: BlockCommitHooks<StoreCacheBacking<S>>,
 {
     settings: Arc<ProtocolSettings>,
@@ -46,7 +45,7 @@ where
 impl<P, S, H> NodeCoreBuilder<P, S, H>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
     H: BlockCommitHooks<StoreCacheBacking<S>> + 'static,
 {
     /// Start core composition from its required concrete collaborators.
@@ -135,7 +134,7 @@ where
 pub struct NodeCoreLaunch<P, S, H>
 where
     P: NativeContractProvider,
-    S: Store,
+    S: TransactionalStore,
     H: BlockCommitHooks<StoreCacheBacking<S>>,
 {
     core: NodeCore<P, S>,
@@ -145,7 +144,7 @@ where
 impl<P, S, H> NodeCoreLaunch<P, S, H>
 where
     P: NativeContractProvider,
-    S: Store,
+    S: TransactionalStore,
     H: BlockCommitHooks<StoreCacheBacking<S>>,
 {
     /// Separate shareable core handles from the owned service task.
@@ -158,7 +157,7 @@ where
 pub struct BlockchainTask<P, S, H>
 where
     P: NativeContractProvider,
-    S: Store,
+    S: TransactionalStore,
     H: BlockCommitHooks<StoreCacheBacking<S>>,
 {
     service: CoreBlockchainService<P, S, H>,
@@ -167,7 +166,7 @@ where
 impl<P, S, H> BlockchainTask<P, S, H>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
     H: BlockCommitHooks<StoreCacheBacking<S>> + 'static,
 {
     /// Drive blockchain commands until the handle requests shutdown.
@@ -184,7 +183,7 @@ where
 pub struct NodeCore<P, S>
 where
     P: NativeContractProvider,
-    S: Store,
+    S: TransactionalStore,
 {
     settings: Arc<ProtocolSettings>,
     storage: Arc<S>,
@@ -201,7 +200,7 @@ where
 impl<P, S> NodeCore<P, S>
 where
     P: NativeContractProvider + 'static,
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     /// Height represented by the durable store when this core was composed.
     pub fn persisted_height(&self) -> u32 {

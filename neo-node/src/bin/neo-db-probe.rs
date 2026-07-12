@@ -30,7 +30,8 @@ use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::storage::StorageConfig;
 use neo_storage::persistence::store::Store;
 use neo_storage::persistence::{
-    ReadOnlyStoreGeneric, SeekDirection, StoreCache, StoreFactory, StoreSnapshot, WriteStore,
+    ReadOnlyStoreGeneric, SeekDirection, StoreCache, StoreFactory, StoreSnapshot,
+    TransactionalStore, WriteStore,
 };
 use neo_storage::{CacheRead, DataCache, StorageKey};
 use neo_vm::stack_value_as_bigint;
@@ -935,7 +936,7 @@ fn open_existing_static_ledger_archive(directory: &Path) -> Result<StaticLedgerA
         .map_err(|error| anyhow!("open static Ledger archive: {error}"))
 }
 
-fn open_reconciled_static_ledger_archive<B: CacheRead, S: Store>(
+fn open_reconciled_static_ledger_archive<B: CacheRead, S: TransactionalStore>(
     directory: &Path,
     store: &S,
     snapshot: &DataCache<B>,
@@ -964,7 +965,7 @@ fn open_reconciled_static_ledger_archive<B: CacheRead, S: Store>(
     Ok(archive)
 }
 
-fn open_offline_ledger_factory<B: CacheRead, S: Store>(
+fn open_offline_ledger_factory<B: CacheRead, S: TransactionalStore>(
     static_files_dir: Option<&Path>,
     store: &S,
     snapshot: &DataCache<B>,

@@ -103,7 +103,7 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-io | Infrastructure | Binary and variable-length integer reader/writer (mirrors `Neo.IO`). |
 | neo-error | Infrastructure | Authoritative `CoreError` / `CoreResult` error types for the workspace. |
 | neo-crypto | Infrastructure | Hashing, secp256r1 ECC, signatures, BLS12-381. |
-| neo-storage | Infrastructure | `Store` traits, `DataCache`, C#-compatible raw key/value codecs, isolated node-maintenance metadata, MDBX/RocksDB adapters, and in-memory providers. |
+| neo-storage | Infrastructure | General `Store` and canonical `TransactionalStore` traits, child/parent `DataCache` overlays, C#-compatible raw key/value codecs, isolated node-maintenance metadata, MDBX/RocksDB adapters, and in-memory providers. |
 | neo-static-files | Infrastructure | Versioned genesis-first static records with zstd compression, checksums, a derived MDBX versioned-offset index, payload-free frame-key lookup, bounded suffix recovery, strict scrubbing, kernel writer ownership, and LRU frame caching. |
 | neo-config | Infrastructure | Node and protocol configuration (TOML-backed settings). |
 | neo-vm | Infrastructure | Stateful NeoVM host (execution engine, contexts, reference-counted stack items) over `neo-vm-rs`. |
@@ -332,7 +332,10 @@ The detailed rules for this style live in
   behavior remains in the service loop. The canonical store commit is fallible:
   failures discard the uncommitted root overlay, rewind a staged batch tip, and
   suppress finalized delivery and import events. Bulk accepted prefixes are
-  routed through the same durable fence before being returned. The canonical
+  routed through the same durable fence before being returned. `NodeBuilder`,
+  `NodeCore`, `NodeSystemContext`, and `Node` all require
+  `S: TransactionalStore`; atomic canonical-overlay and maintenance methods are
+  mandatory trait operations rather than optional `Store` probes. The canonical
   Ledger and pre-commit StateService/persistent-indexer stores are separate
   durability domains; they are not presented as one atomic transaction. Before
   either independent observer can publish, `neo-node` writes and fsyncs
@@ -467,9 +470,15 @@ The detailed rules for this style live in
   (`neo-node`, `neo-gui`) use `anyhow::Result` — matching reth's `reth-node`
   pattern.
 
-- **Pluggable storage behind `Store` and provider traits.** `neo-storage`
-  exposes `Store`, `DataCache`, raw reads, `StoreFactory`, and a statically
-  dispatched `Table`/`TableProvider` layer over existing bytes. GAT codecs can
+- **Pluggable storage behind explicit store capabilities.** `neo-storage`
+  exposes broad `Store` behavior for auxiliary/read paths and the stronger
+  `TransactionalStore` contract for canonical composition. `DataCache` provides
+  the transactional execution overlay: children are isolated over a parent,
+  failed children are dropped/reset, successful children merge once, and the
+  backend visitor emits changed keys in byte order. This is the adopted
+  `OverlayedChanges` pattern, not a second wrapper. The crate also exposes raw
+  reads, `StoreFactory`, and a statically dispatched `Table`/`TableProvider`
+  layer over existing bytes. GAT codecs can
   borrow input, return stack arrays, or retain owned vectors; table markers bind
   key/value types to either consensus `Data` or node-local `Maintenance`.
   `StoreMaintenanceBatch::put/delete::<T>` applies the same identity on writes.
@@ -480,9 +489,11 @@ The detailed rules for this style live in
   updates. Those bytes cannot enter contract scans, store dumps, or state-root
   calculation. `StorageKeyCodec` and `StorageItemCodec` preserve exact C# bytes;
   compact encodings cannot replace protocol storage formats. Backend-reaching
-  snapshots and caches expose only fallible commits. MDBX is the production
-  default, RocksDB remains a supported fallback, and memory providers are used
-  for tests. Higher crates read through capability providers: `neo-blockchain` has
+  snapshots and caches expose only fallible commits. `TableProvider` is blanket
+  implemented for `TransactionalStore`, because maintenance-table reads require
+  that isolated namespace. MDBX is the production default, RocksDB remains a
+  supported fallback, and memory providers are used for tests. Higher crates
+  read through capability providers: `neo-blockchain` has
   `BlockProvider`/`TxProvider` plus `LedgerProviderFactory`,
   `StorageLedgerProviderFactory`, `StaticLedgerProviderFactory`,
   `StaticLedgerArchiveFactory`, and a generic `HotColdLedgerProviderFactory`.

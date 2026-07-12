@@ -230,7 +230,7 @@ impl ObservabilityRuntime {
     ) -> Vec<JoinHandle<()>>
     where
         P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
-        S: neo_storage::persistence::Store + 'static,
+        S: neo_storage::persistence::TransactionalStore + 'static,
     {
         self.inner
             .config
@@ -373,7 +373,7 @@ impl ObservabilityInner {
     ) -> anyhow::Result<()>
     where
         P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
-        S: neo_storage::persistence::Store + 'static,
+        S: neo_storage::persistence::TransactionalStore + 'static,
     {
         let url = heartbeat_endpoint_url(endpoint)?;
         let method = endpoint

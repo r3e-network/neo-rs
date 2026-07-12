@@ -940,8 +940,8 @@ fn hot_pruning_rejects_hot_cold_byte_mismatch_without_advancing_watermark() {
 #[test]
 fn hot_prune_watermark_rejects_malformed_typed_value() {
     use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
-    use neo_storage::persistence::StoreMaintenanceBatch;
     use neo_storage::persistence::providers::MemoryStore;
+    use neo_storage::persistence::{StoreMaintenanceBatch, TransactionalStore};
 
     let temp = tempfile::tempdir().expect("tempdir");
     let files = StaticFileArchiveFactory::default()
@@ -954,11 +954,9 @@ fn hot_prune_watermark_rejects_malformed_typed_value() {
         b"neo.ledger.hot-pruned-through.v1".to_vec(),
         vec![0x01, 0x02],
     );
-    assert!(
-        store
-            .try_commit_durable_maintenance(&corruption)
-            .expect("inject malformed prune watermark")
-    );
+    store
+        .commit_maintenance(&corruption)
+        .expect("inject malformed prune watermark");
 
     let error = archive
         .hot_pruned_through(&store)

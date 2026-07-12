@@ -19,7 +19,7 @@ use neo_primitives::UInt160;
 use neo_primitives::verify_result::VerifyResult;
 use neo_storage::persistence::providers::{MemoryStore, RuntimeStore};
 use neo_storage::persistence::store::Store;
-use neo_storage::persistence::{StoreCache, StoreCacheBacking};
+use neo_storage::persistence::{StoreCache, StoreCacheBacking, TransactionalStore};
 use neo_storage::{StorageItem, StorageKey};
 use neo_system::Node;
 use num_bigint::BigInt;
@@ -276,7 +276,7 @@ const POLICY_DEFAULT_STORAGE_PRICE: i64 = 100_000;
 /// chain).
 fn seed_native_contract_records<S>(node: &Node<neo_native_contracts::StandardNativeProvider, S>)
 where
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     let settings = node.settings();
     let mut store = node.store_cache();
@@ -391,7 +391,7 @@ fn genesis_header(settings: &ProtocolSettings) -> neo_payloads::Header {
 /// `neo-native-contracts` reader.
 fn seed_genesis_state<S>(node: &Node<neo_native_contracts::StandardNativeProvider, S>)
 where
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     use neo_io::Serializable;
     use neo_vm::StackItem;

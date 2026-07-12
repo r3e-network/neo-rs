@@ -123,6 +123,14 @@ High-signal clusters found during the first pass:
   leak into contract scans, deterministic dumps, or state-root calculation,
   and backend-facing commit errors can no longer be silently swallowed.
 
+- Canonical composition now requires `S: TransactionalStore` from
+  `NodeBuilder` through `NodeSystemContext` and `Node`. Atomic overlay and
+  maintenance methods have no optional `Store` defaults or capability booleans,
+  while auxiliary service stores keep the narrower `Store` bound. `DataCache`
+  already supplies isolated child overlays, discard rollback, one parent merge,
+  and sorted durable emission, so the Polkadot `OverlayedChanges` recommendation
+  is implemented without another wrapper.
+
 - P2P range sync has one production owner. `BlockDownloadCoordinator` composes
   cross-peer assignment, ordered buffering, and correlated peer fetches; the
   per-peer correlation is ready-only, bypasses the generic handshake queue, has
@@ -341,10 +349,10 @@ High-signal clusters found during the first pass:
   accounting, conflict helpers, oracle-response tracking, and C# parity rules
   used while the pool lock is held.
 - `neo-state-service` keeps provider-neutral storage through generic `S: Store`
-  backends on `StateStore` and `MptStore`; runtime-selected callers may still
-  instantiate `S = dyn Store`, but concrete composition should keep the backend
-  type visible. Erased compatibility surfaces such as
-  `Verifier<C = Arc<dyn StateRootCalculator>>` should be named explicitly.
+  backends on `StateStore` and `MptStore`; production composition retains the
+  concrete backend type, and the provider factory exposes an associated concrete
+  `StateView`. No `dyn Store`, `Arc<dyn StateView>`, or erased state-root
+  calculator remains in this path.
   `storage/root_cache.rs` now normalizes zero capacity through a panic-free
   `NonZeroUsize` helper while preserving the one-entry minimum. The MPT
   known-empty continuation test also documents the current provider behavior:

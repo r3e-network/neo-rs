@@ -8,7 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use neo_storage::persistence::Store;
+use neo_storage::persistence::{Store, TransactionalStore};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -27,7 +27,7 @@ pub(in crate::node) async fn run_daemon_shutdown<S, ServiceS>(
     observability: Option<&ObservabilityRuntime>,
 ) -> anyhow::Result<()>
 where
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
     ServiceS: Store + 'static,
 {
     // Wait for a shutdown signal, handling SIGTERM as well as Ctrl-C (SIGINT)

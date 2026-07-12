@@ -4,6 +4,7 @@ use crate::persistence::{
     seek_direction::SeekDirection,
     store::{RawOverlaySource, Store, StoreBackendKind},
     store_maintenance::StoreMaintenanceBatch,
+    transactional_store::TransactionalStore,
     write_store::WriteStore,
 };
 use crate::types::{StorageItem, storage_key::StorageKey};
@@ -39,6 +40,23 @@ impl MemoryStore {
     /// Resets the store, clearing normal data and maintenance metadata.
     pub fn reset(&self) {
         *self.state.write() = MemoryStoreState::default();
+    }
+
+    fn commit_borrowed_overlay<O>(&self, overlay_source: &mut O) -> crate::error::StorageResult<()>
+    where
+        O: RawOverlaySource + ?Sized,
+    {
+        let mut state = self.state.write();
+        let mut sink = |key: &[u8], value: Option<&[u8]>| match value {
+            Some(value) => {
+                state.data.insert(key.to_vec(), value.to_vec());
+            }
+            None => {
+                state.data.remove(key);
+            }
+        };
+        overlay_source.visit_raw_overlay(&mut sink);
+        Ok(())
     }
 }
 
@@ -181,32 +199,27 @@ impl Store for MemoryStore {
     where
         O: RawOverlaySource + ?Sized,
     {
-        let mut overlay = Vec::new();
-        let mut sink = |key: &[u8], value: Option<&[u8]>| {
-            overlay.push((key.to_vec(), value.map(<[u8]>::to_vec)));
-        };
-        overlay_source.visit_raw_overlay(&mut sink);
-        self.try_commit_raw_overlay(&overlay)
+        self.commit_borrowed_overlay(overlay_source)?;
+        Ok(true)
     }
+}
 
-    fn try_commit_durable_borrowed_raw_overlay<O>(
-        &self,
-        overlay_source: &mut O,
-    ) -> crate::error::StorageResult<bool>
+impl TransactionalStore for MemoryStore {
+    fn commit_canonical_overlay<O>(&self, overlay_source: &mut O) -> crate::error::StorageResult<()>
     where
         O: RawOverlaySource + ?Sized,
     {
-        self.try_commit_borrowed_raw_overlay(overlay_source)
+        self.commit_borrowed_overlay(overlay_source)
     }
 
     fn maintenance_metadata(&self, key: &[u8]) -> crate::error::StorageResult<Option<Vec<u8>>> {
         Ok(self.state.read().metadata.get(key).cloned())
     }
 
-    fn try_commit_durable_maintenance(
+    fn commit_maintenance(
         &self,
         maintenance: &StoreMaintenanceBatch,
-    ) -> crate::error::StorageResult<bool> {
+    ) -> crate::error::StorageResult<()> {
         let mut state = self.state.write();
         for (key, value) in maintenance.data_operations() {
             match value {
@@ -228,7 +241,7 @@ impl Store for MemoryStore {
                 }
             }
         }
-        Ok(true)
+        Ok(())
     }
 }
 

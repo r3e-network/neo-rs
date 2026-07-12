@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use neo_storage::persistence::Store;
+use neo_storage::persistence::{Store, TransactionalStore};
 use tracing::{info, warn};
 
 use super::chain_acc;
@@ -34,7 +34,7 @@ pub(in crate::node) enum StartupImportOutcome {
 /// Shared inputs for startup import orchestration.
 pub(in crate::node) struct StartupImportContext<'a, S, ServiceS>
 where
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
     ServiceS: Store + 'static,
 {
     pub(in crate::node) cli: &'a NodeCli,
@@ -54,7 +54,7 @@ pub(in crate::node) async fn run_startup_imports<S, ServiceS>(
     mut ctx: StartupImportContext<'_, S, ServiceS>,
 ) -> anyhow::Result<StartupImportOutcome>
 where
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
     ServiceS: Store + 'static,
 {
     if run_chain_acc_import(&mut ctx).await? == StartupImportOutcome::StopHeightReached {
@@ -67,7 +67,7 @@ async fn run_chain_acc_import<S, ServiceS>(
     ctx: &mut StartupImportContext<'_, S, ServiceS>,
 ) -> anyhow::Result<StartupImportOutcome>
 where
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
     ServiceS: Store + 'static,
 {
     let Some(import_path) = &ctx.cli.import_chain else {
@@ -130,7 +130,7 @@ async fn run_fast_sync_import<S, ServiceS>(
     ctx: &mut StartupImportContext<'_, S, ServiceS>,
 ) -> anyhow::Result<StartupImportOutcome>
 where
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
     ServiceS: Store + 'static,
 {
     if !ctx.cli.fast_sync {
@@ -208,7 +208,7 @@ fn finish_stop_height_import<S, ServiceS>(
     ctx: &mut StartupImportContext<'_, S, ServiceS>,
 ) -> anyhow::Result<()>
 where
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
     ServiceS: Store + 'static,
 {
     flush_state_service_for_shutdown(ctx.services)?;

@@ -11,7 +11,7 @@ use neo_runtime::{
     BlockImportQueue, BlockOrigin, CommitPolicy, SharedStoreSyncStageCheckpointStore,
     SyncPipelineDriver, SyncStageCheckpointStore,
 };
-use neo_storage::persistence::store::Store;
+use neo_storage::persistence::TransactionalStore;
 
 /// Default number of concurrent stateless block checks for sync import.
 ///
@@ -62,7 +62,7 @@ where
 
 impl<S> SyncImportPipeline<SharedStoreSyncStageCheckpointStore<S>>
 where
-    S: Store + 'static,
+    S: TransactionalStore + 'static,
 {
     /// Compose the sync import pipeline from the canonical blockchain handle
     /// and shared node storage.

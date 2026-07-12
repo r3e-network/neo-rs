@@ -1,4 +1,5 @@
 use super::*;
+use crate::persistence::TransactionalStore;
 use crate::persistence::store_cache::StoreCache;
 use crate::persistence::store_snapshot::StoreSnapshot;
 
@@ -149,11 +150,9 @@ fn maintenance_batch_is_atomic_and_metadata_is_isolated() {
     let mut batch = StoreMaintenanceBatch::new();
     batch.delete_data(data_key.clone());
     batch.put_metadata(metadata_key.clone(), b"checkpoint".to_vec());
-    assert!(
-        store
-            .try_commit_durable_maintenance(&batch)
-            .expect("maintenance commit")
-    );
+    store
+        .commit_maintenance(&batch)
+        .expect("maintenance commit");
 
     assert_eq!(store.try_get_bytes(&data_key), None);
     assert_eq!(store.try_get_bytes(&metadata_key), None);

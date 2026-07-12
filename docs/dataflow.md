@@ -384,7 +384,7 @@ flowchart TD
     end
     Child -->|commit on success| Snap["shared DataCache snapshot"]
     Snap -->|commit_to_store| SC["StoreCache"]
-    SC -->|flush| Store["Store backend<br/>MDBX / RocksDB / in-memory (neo-storage)"]
+    SC -->|atomic canonical fence| Store["TransactionalStore backend<br/>MDBX / RocksDB / in-memory (neo-storage)"]
 
     Snap -.->|block change set| MPT["MptStore (neo-state-service)<br/>Trie over change set → state root"]
     MPT --> SS["StateStore root records<br/>by index / by hash"]
@@ -397,16 +397,18 @@ flowchart TD
 Key points:
 
 - **Overlay model.** A `DataCache` records adds/changes/deletes over a parent
-  store; `commit()` merges a child into its parent atomically, and dropping a
-  child discards its writes. This is the per-block atomicity mechanism
-  (`neo-blockchain/src/native_persist.rs`).
+  store. `clone_cache()` creates an isolated child, `commit()` performs one
+  parent merge, and dropping or resetting a failed child discards its writes.
+  Commit-facing visitors sort changed byte keys before backend emission. This
+  is the node's `OverlayedChanges`-style per-transaction/per-block atomicity
+  mechanism (`neo-blockchain/src/native_persist.rs`).
 - **Durability.** `commit_to_store()` is fallible and flushes the snapshot's
   tracked writes through `StoreCache::try_commit_durable()` to the configured
-  backend. Every canonical backend must implement the atomic durable borrowed-
-  overlay capability; the writer rejects unsupported stores instead of using
-  an unsafe commit-then-flush fallback. MDBX uses one atomic write transaction,
-  while RocksDB bypasses fast-sync buffering with a WAL-synchronous batch and
-  first persists any earlier WAL-disabled prefix.
+  backend. `NodeBuilder`, `NodeCore`, `NodeSystemContext`, and `Node` require
+  `S: TransactionalStore`, whose canonical-overlay operation is mandatory and
+  returns `Result<()>`; an unsupported backend cannot compose a node. MDBX uses
+  one atomic write transaction, while RocksDB bypasses fast-sync buffering with
+  a WAL-synchronous batch and first persists any earlier WAL-disabled prefix.
   A failure discards the uncommitted root overlay; bulk paths also rewind their
   staged in-memory tip. Finalized delivery, mempool maintenance, and import
   events run only after this fence succeeds. MDBX is the production default,
@@ -431,11 +433,12 @@ Key points:
   than claiming rollback. Even without an auxiliary-store hazard, canonical
   durability failure cancels the node because the process must not continue on
   an indeterminate storage result.
-- **Storage byte boundary.** `neo-storage` exposes `Store`,
+- **Storage byte boundary.** `neo-storage` exposes general `Store` behavior,
+  mandatory canonical/maintenance transactions through `TransactionalStore`,
   `RawReadOnlyStore`, `ReadOnlyStoreGeneric`, `DataCache`, and `StoreFactory`
   over existing raw bytes. `StorageKey` still encodes with `to_array()` and
   `StorageItem` with `to_value()`. `Table` binds typed keys/values and concrete
-  GAT codecs to `Data` or `Maintenance`; every concrete store implements
+  GAT codecs to `Data` or `Maintenance`; every transactional store implements
   `TableProvider`, and `StoreMaintenanceBatch::put/delete::<T>` applies the
   matching typed write. Sync checkpoints, verified headers/windows/target hash,
   and the hot-Ledger prune watermark use that path. Their established bytes are

@@ -9,7 +9,8 @@ use neo_native_contracts::ledger_contract::storage::{
 };
 use neo_static_files::StaticFileProvider;
 use neo_storage::persistence::{
-    Store, StoreMaintenanceBatch, Table, TableEncode, TableNamespace, TableProvider, U32BeCodec,
+    StoreMaintenanceBatch, Table, TableEncode, TableNamespace, TableProvider, TransactionalStore,
+    U32BeCodec,
 };
 use neo_storage::{StorageKey, StorageResult};
 
@@ -56,7 +57,7 @@ pub struct HotLedgerPruneOutcome {
 
 impl StaticLedgerArchive {
     /// Reads and strictly decodes the node-local hot-pruning watermark.
-    pub fn hot_pruned_through<S: Store>(&self, store: &S) -> CoreResult<Option<u32>> {
+    pub fn hot_pruned_through<S: TransactionalStore>(&self, store: &S) -> CoreResult<Option<u32>> {
         store
             .table_get::<HotLedgerPruneWatermarkTable>(&())
             .map_err(|error| table_read_error("read hot Ledger prune watermark", error))
@@ -67,7 +68,7 @@ impl StaticLedgerArchive {
     /// A row is deleted only when its latest archived version is no newer than
     /// the bounded transaction frontier and the hot and cold bytes match. Row
     /// deletions and watermark advancement share one backend transaction.
-    pub fn prune_hot_through<S: Store>(
+    pub fn prune_hot_through<S: TransactionalStore>(
         &self,
         store: &S,
         target: u32,
@@ -175,14 +176,9 @@ impl StaticLedgerArchive {
         batch
             .put::<HotLedgerPruneWatermarkTable>(&(), &frontier)
             .map_err(storage_error("encode hot Ledger prune watermark"))?;
-        let committed = store
-            .try_commit_durable_maintenance(&batch)
+        store
+            .commit_maintenance(&batch)
             .map_err(storage_error("commit hot Ledger prune batch"))?;
-        if !committed {
-            return Err(CoreError::invalid_operation(
-                "storage backend does not support atomic hot Ledger maintenance",
-            ));
-        }
 
         Ok(HotLedgerPruneOutcome {
             previous_watermark,

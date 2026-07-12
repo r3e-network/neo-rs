@@ -7,16 +7,12 @@ use neo_payloads::{Block, Header, Witness};
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::mdbx::MdbxStoreProvider;
 use neo_storage::persistence::providers::MemoryStore;
-use neo_storage::persistence::read_only_store::{
-    RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric,
-};
-use neo_storage::persistence::seek_direction::SeekDirection;
+use neo_storage::persistence::read_only_store::RawReadOnlyStore;
 use neo_storage::persistence::storage::StorageConfig;
 use neo_storage::persistence::{
-    IntoTableBytes, Store, StoreBackendKind, StoreMaintenanceBatch, TableEncode, WriteStore,
+    IntoTableBytes, StoreMaintenanceBatch, TableEncode, TransactionalStore, WriteStore,
 };
 use neo_storage::rocksdb::RocksDBStoreProvider;
-use neo_storage::types::{StorageItem, StorageKey};
 use parking_lot::Mutex;
 use std::fs;
 use std::path::PathBuf;
@@ -474,11 +470,9 @@ fn store_verified_header_window_can_reset_a_corrupt_checkpoint() {
 
     let mut corruption = StoreMaintenanceBatch::new();
     corruption.put_metadata(checkpoint_key(SyncStageKind::Headers), b"corrupt".to_vec());
-    assert!(
-        backing
-            .try_commit_durable_maintenance(&corruption)
-            .expect("inject malformed checkpoint")
-    );
+    backing
+        .commit_maintenance(&corruption)
+        .expect("inject malformed checkpoint");
 
     assert_eq!(
         store
@@ -516,11 +510,9 @@ fn store_verified_header_discard_recovers_a_corrupt_checkpoint() {
 
     let mut corruption = StoreMaintenanceBatch::new();
     corruption.put_metadata(checkpoint_key(SyncStageKind::Headers), b"corrupt".to_vec());
-    assert!(
-        backing
-            .try_commit_durable_maintenance(&corruption)
-            .expect("inject malformed checkpoint")
-    );
+    backing
+        .commit_maintenance(&corruption)
+        .expect("inject malformed checkpoint");
 
     let discarded = store
         .discard_window(6)
@@ -535,20 +527,6 @@ fn store_verified_header_discard_recovers_a_corrupt_checkpoint() {
             .checkpoint(SyncStageKind::Headers)
             .expect("replacement checkpoint"),
         Some(discarded)
-    );
-}
-
-#[test]
-fn store_verified_header_store_rejects_backends_without_atomic_maintenance() {
-    let store = StoreVerifiedHeaderStore::new(NonAtomicMaintenanceStore::default());
-
-    let err = store
-        .begin_window(1, 2)
-        .expect_err("begin window must reject non-atomic maintenance backends");
-    assert!(
-        err.to_string()
-            .contains("store does not support atomic verified-header maintenance"),
-        "unexpected error: {err}"
     );
 }
 
@@ -589,116 +567,6 @@ fn store_checkpoint_store_persists_across_mdbx_reopen() {
     }
 
     let _ = fs::remove_dir_all(path);
-}
-
-#[derive(Clone, Debug, Default)]
-struct NonAtomicMaintenanceStore {
-    inner: MemoryStore,
-}
-
-impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for NonAtomicMaintenanceStore {
-    type FindIterator<'a> =
-        <MemoryStore as ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>>>::FindIterator<'a>;
-
-    fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
-        ReadOnlyStoreGeneric::<Vec<u8>, Vec<u8>>::try_get(&self.inner, key)
-    }
-
-    fn find(
-        &self,
-        key_prefix: Option<&Vec<u8>>,
-        direction: SeekDirection,
-    ) -> Self::FindIterator<'_> {
-        ReadOnlyStoreGeneric::<Vec<u8>, Vec<u8>>::find(&self.inner, key_prefix, direction)
-    }
-}
-
-impl RawReadOnlyStore for NonAtomicMaintenanceStore {
-    fn try_get_bytes(&self, key: &[u8]) -> Option<Vec<u8>> {
-        self.inner.try_get_bytes(key)
-    }
-}
-
-impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for NonAtomicMaintenanceStore {
-    type FindIterator<'a> =
-        <MemoryStore as ReadOnlyStoreGeneric<StorageKey, StorageItem>>::FindIterator<'a>;
-
-    fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
-        ReadOnlyStoreGeneric::<StorageKey, StorageItem>::try_get(&self.inner, key)
-    }
-
-    fn find(
-        &self,
-        key_prefix: Option<&StorageKey>,
-        direction: SeekDirection,
-    ) -> Self::FindIterator<'_> {
-        ReadOnlyStoreGeneric::<StorageKey, StorageItem>::find(&self.inner, key_prefix, direction)
-    }
-}
-
-impl WriteStore<Vec<u8>, Vec<u8>> for NonAtomicMaintenanceStore {
-    fn delete(&mut self, key: Vec<u8>) -> neo_storage::error::StorageResult<()> {
-        self.inner.delete(key)
-    }
-
-    fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> neo_storage::error::StorageResult<()> {
-        self.inner.put(key, value)
-    }
-}
-
-impl ReadOnlyStore for NonAtomicMaintenanceStore {}
-
-impl Store for NonAtomicMaintenanceStore {
-    type Snapshot = <MemoryStore as Store>::Snapshot;
-
-    fn snapshot(&self) -> Arc<Self::Snapshot> {
-        self.inner.snapshot()
-    }
-
-    fn backend_kind(&self) -> StoreBackendKind {
-        StoreBackendKind::Custom("non_atomic_maintenance")
-    }
-
-    fn try_commit_raw_overlay(
-        &self,
-        overlay: &[(Vec<u8>, Option<Vec<u8>>)],
-    ) -> neo_storage::error::StorageResult<bool> {
-        self.inner.try_commit_raw_overlay(overlay)
-    }
-
-    fn try_commit_borrowed_raw_overlay<O>(
-        &self,
-        overlay: &mut O,
-    ) -> neo_storage::error::StorageResult<bool>
-    where
-        O: neo_storage::persistence::store::RawOverlaySource + ?Sized,
-    {
-        self.inner.try_commit_borrowed_raw_overlay(overlay)
-    }
-
-    fn try_commit_durable_borrowed_raw_overlay<O>(
-        &self,
-        overlay: &mut O,
-    ) -> neo_storage::error::StorageResult<bool>
-    where
-        O: neo_storage::persistence::store::RawOverlaySource + ?Sized,
-    {
-        self.inner.try_commit_durable_borrowed_raw_overlay(overlay)
-    }
-
-    fn maintenance_metadata(
-        &self,
-        key: &[u8],
-    ) -> neo_storage::error::StorageResult<Option<Vec<u8>>> {
-        self.inner.maintenance_metadata(key)
-    }
-
-    fn try_commit_durable_maintenance(
-        &self,
-        _batch: &neo_storage::persistence::StoreMaintenanceBatch,
-    ) -> neo_storage::error::StorageResult<bool> {
-        Ok(false)
-    }
 }
 
 #[test]

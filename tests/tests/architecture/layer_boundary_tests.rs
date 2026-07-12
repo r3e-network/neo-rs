@@ -1179,6 +1179,85 @@ fn test_operational_metadata_uses_typed_tables_and_commits_remain_fallible() {
     );
 }
 
+#[test]
+fn test_canonical_storage_requires_transactional_store_and_uses_data_cache_overlay() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let mut violations = Vec::new();
+
+    let store_source =
+        fs::read_to_string(workspace_root.join("neo-storage/src/persistence/traits/store.rs"))
+            .expect("read Store trait");
+    for forbidden in [
+        "try_commit_durable_borrowed_raw_overlay",
+        "try_commit_durable_maintenance",
+        "fn maintenance_metadata",
+    ] {
+        if store_source.contains(forbidden) {
+            violations.push(format!(
+                "Store reintroduces runtime-optional canonical capability `{forbidden}`"
+            ));
+        }
+    }
+
+    let transactional_source = fs::read_to_string(
+        workspace_root.join("neo-storage/src/persistence/traits/transactional_store.rs"),
+    )
+    .expect("read TransactionalStore trait");
+    for required in [
+        "pub trait TransactionalStore: Store",
+        "fn commit_canonical_overlay",
+        "fn maintenance_metadata",
+        "fn commit_maintenance",
+    ] {
+        if !transactional_source.contains(required) {
+            violations.push(format!("TransactionalStore is missing `{required}`"));
+        }
+    }
+
+    let table_provider =
+        fs::read_to_string(workspace_root.join("neo-storage/src/persistence/table/provider.rs"))
+            .expect("read TableProvider trait");
+    if !table_provider.contains("pub trait TableProvider: TransactionalStore") {
+        violations
+            .push("TableProvider must require the maintenance transaction capability".to_string());
+    }
+
+    for relative_path in [
+        "neo-system/src/composition/builder.rs",
+        "neo-system/src/composition/core.rs",
+        "neo-system/src/composition/node.rs",
+        "neo-system/src/composition/system_context.rs",
+    ] {
+        let source = fs::read_to_string(workspace_root.join(relative_path))
+            .unwrap_or_else(|error| panic!("failed to read {relative_path}: {error}"));
+        if !source.contains("S: TransactionalStore") {
+            violations.push(format!(
+                "{relative_path} does not enforce transactional canonical storage"
+            ));
+        }
+    }
+
+    let cache_source =
+        fs::read_to_string(workspace_root.join("neo-storage/src/persistence/data_cache/cache.rs"))
+            .expect("read DataCache overlay");
+    for required in [
+        "pub fn clone_cache(&self)",
+        "CacheBacking::Parent",
+        "parent.merge_tracked_items_from(self)",
+        "pub fn visit_tracked_items_sorted",
+    ] {
+        if !cache_source.contains(required) {
+            violations.push(format!("DataCache overlay is missing `{required}`"));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "canonical transactional-storage architecture regressed:\n{}",
+        violations.join("\n")
+    );
+}
+
 #[tokio::test]
 async fn test_no_circular_dependencies() {
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();

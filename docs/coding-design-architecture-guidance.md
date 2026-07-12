@@ -296,14 +296,17 @@ Priority order for crate refactors:
    run post-commit observers, or advance externally visible in-memory state
    until it succeeds. On failure, discard the canonical overlay and rewind any
    batch-local tip before returning the error.
-   Canonical stores must implement the atomic durable-overlay capability;
-   never substitute commit-then-flush because a failed flush cannot roll back
-   the already-applied overlay. Never claim atomicity across independently
-   committed stores. StateService and a persistent indexer may persist before
-   the canonical Ledger fence. Write and fsync an operator-visible marker
-   *before* entering either observer, durably fence both before Ledger, and
-   fail the canonical write if either persistent observer cannot mutate or
-   fence its data. Clear the marker only after Ledger succeeds. A crash or failure leaves
+   Canonical stores must satisfy `TransactionalStore` at the composition type
+   boundary. Its canonical-overlay and maintenance methods are mandatory and
+   return `Result<()>`; do not add optional capability booleans or defaults back
+   to `Store`. Never substitute commit-then-flush because a failed flush cannot
+   roll back the already-applied overlay. Never claim atomicity across
+   independently committed stores. StateService and a persistent indexer may
+   persist before the canonical Ledger fence. Write and fsync an
+   operator-visible marker *before* entering either observer, durably fence both
+   before Ledger, and fail the canonical write if either persistent observer
+   cannot mutate or fence its data. Clear the marker only after Ledger succeeds.
+   A crash or failure leaves
    the marker for startup to reject until store heights match. ApplicationLogs
    and TokensTracker must perform both projection preparation and private-store
    commit after canonical durability, so they do not pay the marker fsync cost.
@@ -371,13 +374,13 @@ Priority order for crate refactors:
 5. **Typed tables only adapt established bytes.** Define a zero-sized `Table`
    marker in the domain that owns a persisted record, with concrete
    `TableEncode`/`TableDecode` codecs and the correct `TableNamespace`. Read it
-   through `TableProvider::table_get::<T>` and write it through
-   `StoreMaintenanceBatch::put/delete::<T>`. Prefer borrowed or fixed-array GAT
-   outputs to avoid allocations. `StorageKeyCodec`/`StorageItemCodec` are the
-   consensus-data baseline: a table abstraction must not invent a different
-   Neo serialization. Compact derives are limited to explicitly versioned
-   node-local records unless byte parity with the established Neo codec is
-   proven.
+   through `TableProvider::table_get::<T>` on a `TransactionalStore` and write
+   it through `StoreMaintenanceBatch::put/delete::<T>`. Prefer borrowed or
+   fixed-array GAT outputs to avoid allocations.
+   `StorageKeyCodec`/`StorageItemCodec` are the consensus-data baseline: a table
+   abstraction must not invent a different Neo serialization. Compact derives
+   are limited to explicitly versioned node-local records unless byte parity
+   with the established Neo codec is proven.
 6. **Operational metadata must be physically isolated.** Prune watermarks,
    checkpoints, schema versions, and repair state must not use magic keys in
    the normal Neo data table: typed scans can interpret them as `StorageKey`
@@ -393,6 +396,12 @@ Priority order for crate refactors:
    or deliberately classify the error. Never add a convenience `commit()` that
    logs and continues. `DataCache::commit()` is different: it only merges a
    child overlay into its in-memory parent and does not assert durability.
+8. **Use the existing transactional overlay.** `DataCache::clone_cache()` is
+   the project equivalent of Polkadot's `OverlayedChanges`: mutate an isolated
+   child, drop/reset it on failure, merge it into exactly one parent on success,
+   and let the sorted raw visitor feed the durable transaction. Do not add a
+   second wrapper or clone a full change vector unless a backend API proves it
+   cannot consume the borrowed visitor.
 
 Do not copy reth's heavy memory-chain reorg overlay or Polkadot's Wasm
 meta-runtime into Neo just for symmetry. Keep the part that matters here:

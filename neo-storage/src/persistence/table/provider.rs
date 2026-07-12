@@ -2,15 +2,15 @@
 
 use super::codec::{TableDecode, TableEncode};
 use super::{Table, TableNamespace};
-use crate::persistence::Store;
+use crate::persistence::TransactionalStore;
 use crate::{StorageError, StorageResult};
 
-/// Typed logical-table reads available on every concrete [`Store`].
+/// Typed logical-table reads available on every transactional store.
 ///
 /// This blanket capability remains statically dispatched. Runtime backend
 /// selection can use the concrete `RuntimeStore` enum while downstream table
 /// accesses still monomorphize over the table and its codecs.
-pub trait TableProvider: Store {
+pub trait TableProvider: TransactionalStore {
     /// Reads and strictly decodes one logical-table value.
     fn table_get<T: Table>(&self, key: &T::Key) -> StorageResult<Option<T::Value>> {
         let encoded = <T::KeyCodec as TableEncode<T::Key>>::encode(key)
@@ -33,7 +33,7 @@ pub trait TableProvider: Store {
     }
 }
 
-impl<S: Store> TableProvider for S {}
+impl<S: TransactionalStore> TableProvider for S {}
 
 fn table_codec_error<T: Table>(operation: &'static str, error: StorageError) -> StorageError {
     StorageError::serialization(format!("{operation} for table {}: {error}", T::NAME))

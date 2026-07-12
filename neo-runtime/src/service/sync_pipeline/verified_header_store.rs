@@ -11,7 +11,7 @@ use std::sync::Arc;
 use neo_payloads::Header;
 use neo_primitives::UInt256;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
-use neo_storage::persistence::{Store, StoreMaintenanceBatch, TableProvider};
+use neo_storage::persistence::{StoreMaintenanceBatch, TableProvider, TransactionalStore};
 use parking_lot::RwLock;
 
 use super::checkpoint_store::{
@@ -23,8 +23,6 @@ use super::tables::{
 };
 use super::{SyncStageCheckpoint, SyncStageCheckpointStore, SyncStageKind};
 use crate::{ServiceError, ServiceResult};
-
-const ATOMIC_MAINTENANCE_ERROR: &str = "store does not support atomic verified-header maintenance";
 
 /// Maximum verified headers retained ahead of the canonical tip.
 ///
@@ -278,11 +276,11 @@ fn clear_in_memory_window(state: &mut InMemoryVerifiedHeaderState, window: &Head
 
 /// Store-backed verified-header store over a concrete backend handle.
 #[derive(Debug)]
-pub struct StoreVerifiedHeaderStore<S: Store> {
+pub struct StoreVerifiedHeaderStore<S: TransactionalStore> {
     store: S,
 }
 
-impl<S: Store> StoreVerifiedHeaderStore<S> {
+impl<S: TransactionalStore> StoreVerifiedHeaderStore<S> {
     /// Creates a verified-header store over one concrete backend handle.
     #[must_use]
     pub const fn new(store: S) -> Self {
@@ -296,7 +294,7 @@ impl<S: Store> StoreVerifiedHeaderStore<S> {
     }
 }
 
-impl<S: Store> SyncStageCheckpointStore for StoreVerifiedHeaderStore<S> {
+impl<S: TransactionalStore> SyncStageCheckpointStore for StoreVerifiedHeaderStore<S> {
     fn checkpoint(&self, stage: SyncStageKind) -> ServiceResult<Option<SyncStageCheckpoint>> {
         read_checkpoint(&self.store, stage)
     }
@@ -306,7 +304,7 @@ impl<S: Store> SyncStageCheckpointStore for StoreVerifiedHeaderStore<S> {
     }
 }
 
-impl<S: Store> VerifiedHeaderStore for StoreVerifiedHeaderStore<S> {
+impl<S: TransactionalStore> VerifiedHeaderStore for StoreVerifiedHeaderStore<S> {
     fn window(&self) -> ServiceResult<Option<HeaderStageWindow>> {
         read_window(&self.store)
     }
@@ -346,11 +344,11 @@ impl<S: Store> VerifiedHeaderStore for StoreVerifiedHeaderStore<S> {
 
 /// Store-backed verified-header store over a shared backend handle.
 #[derive(Debug)]
-pub struct SharedStoreVerifiedHeaderStore<S: Store = MemoryStore> {
+pub struct SharedStoreVerifiedHeaderStore<S: TransactionalStore = MemoryStore> {
     store: Arc<S>,
 }
 
-impl<S: Store> SharedStoreVerifiedHeaderStore<S> {
+impl<S: TransactionalStore> SharedStoreVerifiedHeaderStore<S> {
     /// Creates a verified-header store over a shared storage backend.
     #[must_use]
     pub const fn new(store: Arc<S>) -> Self {
@@ -364,7 +362,7 @@ impl<S: Store> SharedStoreVerifiedHeaderStore<S> {
     }
 }
 
-impl<S: Store> SyncStageCheckpointStore for SharedStoreVerifiedHeaderStore<S> {
+impl<S: TransactionalStore> SyncStageCheckpointStore for SharedStoreVerifiedHeaderStore<S> {
     fn checkpoint(&self, stage: SyncStageKind) -> ServiceResult<Option<SyncStageCheckpoint>> {
         read_checkpoint(self.store.as_ref(), stage)
     }
@@ -374,7 +372,7 @@ impl<S: Store> SyncStageCheckpointStore for SharedStoreVerifiedHeaderStore<S> {
     }
 }
 
-impl<S: Store> VerifiedHeaderStore for SharedStoreVerifiedHeaderStore<S> {
+impl<S: TransactionalStore> VerifiedHeaderStore for SharedStoreVerifiedHeaderStore<S> {
     fn window(&self) -> ServiceResult<Option<HeaderStageWindow>> {
         read_window(self.store.as_ref())
     }
@@ -445,7 +443,7 @@ fn active_window_error(window: &HeaderStageWindow) -> ServiceError {
     ))
 }
 
-fn begin_or_reset_store_window<S: Store>(
+fn begin_or_reset_store_window<S: TransactionalStore>(
     store: &S,
     base_height: u32,
     target_height: u32,
@@ -480,16 +478,11 @@ fn begin_or_reset_store_window<S: Store>(
     maintenance
         .delete::<VerifiedHeaderTargetHashTable>(&())
         .map_err(|error| table_read_error("encode verified-header target deletion", error))?;
-    commit_maintenance(
-        store,
-        &maintenance,
-        "begin verified-header window",
-        ATOMIC_MAINTENANCE_ERROR,
-    )?;
+    commit_maintenance(store, &maintenance, "begin verified-header window")?;
     Ok(window)
 }
 
-fn commit_store_verified_headers<S: Store>(
+fn commit_store_verified_headers<S: TransactionalStore>(
     store: &S,
     headers: &[Header],
 ) -> ServiceResult<SyncStageCheckpoint> {
@@ -531,16 +524,11 @@ fn commit_store_verified_headers<S: Store>(
             .put::<VerifiedHeaderTable>(&staged.height, &staged.stored)
             .map_err(|error| table_read_error("encode verified header", error))?;
     }
-    commit_maintenance(
-        store,
-        &maintenance,
-        "commit verified headers",
-        ATOMIC_MAINTENANCE_ERROR,
-    )?;
+    commit_maintenance(store, &maintenance, "commit verified headers")?;
     Ok(prepared.checkpoint)
 }
 
-fn finish_store_window<S: Store>(
+fn finish_store_window<S: TransactionalStore>(
     store: &S,
     canonical_height: u32,
 ) -> ServiceResult<SyncStageCheckpoint> {
@@ -562,16 +550,11 @@ fn finish_store_window<S: Store>(
     maintenance
         .put::<SyncCheckpointTable>(&SyncStageKind::Headers, &finished)
         .map_err(|error| table_read_error("encode finished Headers checkpoint", error))?;
-    commit_maintenance(
-        store,
-        &maintenance,
-        "finish verified-header window",
-        ATOMIC_MAINTENANCE_ERROR,
-    )?;
+    commit_maintenance(store, &maintenance, "finish verified-header window")?;
     Ok(finished)
 }
 
-fn discard_store_window<S: Store>(
+fn discard_store_window<S: TransactionalStore>(
     store: &S,
     canonical_height: u32,
 ) -> ServiceResult<SyncStageCheckpoint> {
@@ -592,12 +575,7 @@ fn discard_store_window<S: Store>(
     maintenance
         .put::<SyncCheckpointTable>(&SyncStageKind::Headers, &discarded)
         .map_err(|error| table_read_error("encode discarded Headers checkpoint", error))?;
-    commit_maintenance(
-        store,
-        &maintenance,
-        "discard verified-header window",
-        ATOMIC_MAINTENANCE_ERROR,
-    )?;
+    commit_maintenance(store, &maintenance, "discard verified-header window")?;
     Ok(discarded)
 }
 
@@ -767,7 +745,7 @@ fn hash_header(header: &Header) -> ServiceResult<UInt256> {
     })
 }
 
-fn read_window<S: Store>(store: &S) -> ServiceResult<Option<HeaderStageWindow>> {
+fn read_window<S: TransactionalStore>(store: &S) -> ServiceResult<Option<HeaderStageWindow>> {
     let window = store
         .table_get::<VerifiedHeaderWindowTable>(&())
         .map_err(|error| table_read_error("read verified-header window", error))?;
@@ -787,7 +765,10 @@ fn read_window<S: Store>(store: &S) -> ServiceResult<Option<HeaderStageWindow>> 
     Ok(Some(window))
 }
 
-fn read_verified_header<S: Store>(store: &S, height: u32) -> ServiceResult<Option<Header>> {
+fn read_verified_header<S: TransactionalStore>(
+    store: &S,
+    height: u32,
+) -> ServiceResult<Option<Header>> {
     store
         .table_get::<VerifiedHeaderTable>(&height)
         .map(|header| header.map(StoredVerifiedHeader::into_header))

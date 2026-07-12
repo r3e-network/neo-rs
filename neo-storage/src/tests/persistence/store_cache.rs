@@ -5,6 +5,7 @@ use crate::persistence::read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadO
 use crate::persistence::seek_direction::SeekDirection;
 use crate::persistence::store::Store;
 use crate::persistence::write_store::WriteStore;
+use crate::persistence::{StoreMaintenanceBatch, TransactionalStore};
 use crate::types::{StorageItem, StorageKey};
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -175,11 +176,10 @@ impl Store for OverlayContractStore {
         overlay_source.visit_raw_overlay(&mut collect);
         Ok(true)
     }
+}
 
-    fn try_commit_durable_borrowed_raw_overlay<O>(
-        &self,
-        overlay_source: &mut O,
-    ) -> crate::StorageResult<bool>
+impl TransactionalStore for OverlayContractStore {
+    fn commit_canonical_overlay<O>(&self, overlay_source: &mut O) -> crate::StorageResult<()>
     where
         O: crate::persistence::RawOverlaySource + ?Sized,
     {
@@ -187,7 +187,7 @@ impl Store for OverlayContractStore {
             return Err(StorageError::backend("durable overlay failed"));
         }
         if !matches!(self.mode, OverlayMode::DurableBorrowed) {
-            return Ok(false);
+            return self.inner.commit_canonical_overlay(overlay_source);
         }
 
         let mut overlay = self.durable_overlay.lock();
@@ -195,7 +195,15 @@ impl Store for OverlayContractStore {
             overlay.push((key.to_vec(), value.map(<[u8]>::to_vec)));
         };
         overlay_source.visit_raw_overlay(&mut collect);
-        Ok(true)
+        Ok(())
+    }
+
+    fn maintenance_metadata(&self, key: &[u8]) -> crate::StorageResult<Option<Vec<u8>>> {
+        self.inner.maintenance_metadata(key)
+    }
+
+    fn commit_maintenance(&self, batch: &StoreMaintenanceBatch) -> crate::StorageResult<()> {
+        self.inner.commit_maintenance(batch)
     }
 }
 
@@ -312,26 +320,6 @@ fn durable_commit_clears_overlay_when_overlay_transaction_fails() {
     assert!(error.to_string().contains("durable overlay failed"));
     assert_eq!(writer.data_cache().pending_change_count(), 0);
     assert!(writer.get(&key).is_none());
-    assert!(store.try_get(&key).is_none());
-}
-
-#[test]
-fn durable_commit_rejects_backend_without_atomic_overlay_capability() {
-    let store = Arc::new(OverlayContractStore::new(OverlayMode::Materialized));
-    let key = StorageKey::new(7, vec![0x26]);
-    let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
-    writer.add(key.clone(), StorageItem::from_bytes(vec![0xEF]));
-
-    let error = writer
-        .try_commit_durable()
-        .expect_err("canonical commit must require an atomic durable overlay");
-
-    assert!(
-        error.to_string().contains("atomic durable overlay"),
-        "unexpected error: {error}"
-    );
-    assert_eq!(store.cloned_raw_overlay_attempts(), 0);
-    assert_eq!(writer.data_cache().pending_change_count(), 0);
     assert!(store.try_get(&key).is_none());
 }
 
