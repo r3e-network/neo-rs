@@ -139,13 +139,15 @@ NEO_BENCH_MPT_APPLY_BATCH_BLOCKS=16 NEO_BENCH_PREFILL_BLOCKS=2048 \
   cargo bench -p neo-benches --bench block_import -- mdbx_blocks --quick
 ```
 
-On the local development host on 2026-07-13, the default adaptive configuration
-measured about 1.93k blocks/s from the initialized small-state fixture and
-1.56k blocks/s after the 2,048-block prefill. An experimental 16-block backlog
-ceiling measured about 1.67k blocks/s at that prefill. The production default
-remains an eight-block ceiling with an eager four-block flush: it starts trie
-work early when the worker catches the producer and consumes larger batches
-only when work is already queued.
+On the local development host on 2026-07-13, the corrected stationary quick
+benchmark measured about 6.04k blocks/s from the initialized small-state fixture
+and 5.46k blocks/s after the 2,048-block prefill. The fixture and database
+teardown are outside the timed closure; earlier numbers that included teardown
+are invalid and must not be used as a baseline. The production default remains
+an eight-block ceiling with an eager four-block flush: it starts trie work early
+when the worker catches the producer and consumes larger batches only when work
+is already queued. The Application path also retains transactions through the
+shared immutable block instead of deep-cloning them into script containers.
 
 These numbers are synthetic regression evidence, not a MainNet production
 claim. The repeated transfer has limited state cardinality, skips P2P download

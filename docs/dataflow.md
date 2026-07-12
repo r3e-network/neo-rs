@@ -229,6 +229,9 @@ per block. Standard native contracts expose conservative hook capabilities:
 Ledger/NEO/GAS retain their ordinary per-block work, ContractManagement runs
 only at genesis or configured hardfork boundaries, Notary runs only for
 `NotaryAssisted`, and Oracle post-persist runs only for `OracleResponse`.
+Each Application engine uses a validated block-backed transaction container;
+the shared immutable block keeps the payload alive without a per-transaction
+deep clone.
 Positive-path pipeline tests force each dynamic hook to produce an observable
 error when its downstream state is invalid, preventing a future optimization
 from silently skipping required protocol work.

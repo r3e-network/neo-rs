@@ -37,11 +37,41 @@ impl VerifiableHashContainer {
     }
 }
 
+/// Validated reference to a transaction owned by an immutable shared block.
+///
+/// Fields are private so the transaction position can only be created after a
+/// bounds check. Holding the block through [`Arc`] keeps the referenced payload
+/// stable without a self-referential borrow.
+#[derive(Clone, Debug)]
+pub struct BlockTransactionContainer {
+    block: Arc<Block>,
+    index: usize,
+}
+
+impl BlockTransactionContainer {
+    fn new(block: Arc<Block>, index: usize) -> Option<Self> {
+        block.transactions.get(index)?;
+        Some(Self { block, index })
+    }
+
+    fn transaction(&self) -> &Transaction {
+        // `new` validates the position and the block cannot be mutated while
+        // this container owns an Arc to it.
+        &self.block.transactions[self.index]
+    }
+}
+
 /// Closed set of Neo script containers observed by `ApplicationEngine`.
 #[derive(Clone, Debug)]
 pub enum VerifiableContainer {
     /// Transaction script container.
     Transaction(Arc<Transaction>),
+    /// Transaction borrowed from an immutable block owned by the container.
+    ///
+    /// Use [`VerifiableContainer::transaction_in_block`] to construct this
+    /// variant. The representation lets block import retain the transaction
+    /// without cloning its script, signers, attributes, and witnesses.
+    TransactionInBlock(BlockTransactionContainer),
     /// Block script container.
     Block(Arc<Block>),
     /// Header script container.
@@ -58,10 +88,20 @@ impl VerifiableContainer {
         Self::Hash(VerifiableHashContainer::new(hash, hash_data))
     }
 
+    /// Creates a transaction container borrowing the payload owned by `block`.
+    ///
+    /// Returns `None` when `index` is outside the block transaction list. The
+    /// block is immutable behind [`Arc`], so a validated position remains
+    /// valid for the lifetime of the container.
+    pub fn transaction_in_block(block: Arc<Block>, index: usize) -> Option<Self> {
+        BlockTransactionContainer::new(block, index).map(Self::TransactionInBlock)
+    }
+
     /// Returns the inner transaction when this is a transaction container.
     pub fn as_transaction(&self) -> Option<&Transaction> {
         match self {
             Self::Transaction(tx) => Some(tx.as_ref()),
+            Self::TransactionInBlock(transaction) => Some(transaction.transaction()),
             _ => None,
         }
     }
@@ -136,6 +176,7 @@ impl Verifiable for VerifiableContainer {
     fn verify(&self) -> bool {
         match self {
             Self::Transaction(tx) => tx.verify(),
+            Self::TransactionInBlock(transaction) => transaction.transaction().verify(),
             Self::Block(block) => block.verify(),
             Self::Header(header) => header.verify(),
             Self::ExtensiblePayload(payload) => payload.verify(),
@@ -146,6 +187,7 @@ impl Verifiable for VerifiableContainer {
     fn hash(&self) -> PrimitiveResult<UInt256> {
         match self {
             Self::Transaction(tx) => Verifiable::hash(tx.as_ref()),
+            Self::TransactionInBlock(transaction) => Verifiable::hash(transaction.transaction()),
             Self::Block(block) => Verifiable::hash(block.as_ref()),
             Self::Header(header) => Verifiable::hash(header.as_ref()),
             Self::ExtensiblePayload(payload) => Verifiable::hash(payload.as_ref()),
@@ -156,6 +198,7 @@ impl Verifiable for VerifiableContainer {
     fn hash_data(&self) -> Vec<u8> {
         match self {
             Self::Transaction(tx) => tx.hash_data(),
+            Self::TransactionInBlock(transaction) => transaction.transaction().hash_data(),
             Self::Block(block) => block.hash_data(),
             Self::Header(header) => header.hash_data(),
             Self::ExtensiblePayload(payload) => payload.hash_data(),

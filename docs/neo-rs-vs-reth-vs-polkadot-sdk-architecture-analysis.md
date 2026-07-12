@@ -677,6 +677,9 @@ only for context-load or execution operations and cleared before those methods
 return, keeping a returned `ApplicationEngine` movable between calls.
 `BatchPersistResources` also retains `Arc<ProtocolSettings>` end to end, so the
 canonical loop no longer deep-clones the hardfork/configuration maps per block.
+Transaction script containers retain `(Arc<Block>, transaction index)` and
+resolve the immutable payload in place, avoiding a second owned copy of each
+transaction during Application execution.
 The standard native registry exposes explicit OnPersist/PostPersist capability
 metadata and block-aware gates for ContractManagement initialization, Notary
 assistance, and Oracle responses. Custom providers default to conservative

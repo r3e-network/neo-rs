@@ -292,7 +292,7 @@ const NEO_TOKEN_COMMITTEE_CANDIDATE_COUNT_ORDER: [NeoTokenCommitteeCandidateCoun
 const NATIVE_PERSIST_TX_STAGE_ORDER: [NativePersistTxStage; 10] = [
     NativePersistTxStage::Hash,
     NativePersistTxStage::CloneCache,
-    NativePersistTxStage::ContainerClone,
+    NativePersistTxStage::ContainerPrepare,
     NativePersistTxStage::EngineCreate,
     NativePersistTxStage::LoadExecute,
     NativePersistTxStage::LoadScript,
@@ -310,7 +310,7 @@ pub enum NativePersistTxStage {
     /// Create the per-transaction cloned cache.
     CloneCache,
     /// Build the transaction script container.
-    ContainerClone,
+    ContainerPrepare,
     /// Construct the Application-trigger engine.
     EngineCreate,
     /// Load and execute the transaction script.
@@ -332,7 +332,7 @@ impl NativePersistTxStage {
         match self {
             Self::Hash => "hash",
             Self::CloneCache => "clone_cache",
-            Self::ContainerClone => "container_clone",
+            Self::ContainerPrepare => "container_prepare",
             Self::EngineCreate => "engine_create",
             Self::LoadExecute => "load_execute",
             Self::LoadScript => "load_script",
@@ -347,7 +347,7 @@ impl NativePersistTxStage {
         match self {
             Self::Hash => 0,
             Self::CloneCache => 1,
-            Self::ContainerClone => 2,
+            Self::ContainerPrepare => 2,
             Self::EngineCreate => 3,
             Self::LoadExecute => 4,
             Self::LoadScript => 5,

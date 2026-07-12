@@ -251,6 +251,9 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   eight-block ceiling amortizes MDBX work under backlog. VM syscall descriptors
   retain borrowed static protocol names, avoiding per-engine and per-syscall
   name allocation while still allowing owned custom descriptor names.
+  Application-trigger engines retain their transaction through the immutable
+  shared block, so script-container setup does not deep-clone transaction
+  scripts, signers, attributes, or witnesses.
 
 - **Staged core and application lifecycle.** `neo-system::NodeCoreBuilder<P,
   S, H>` constructs the provider-neutral store snapshot, mempool, header cache,

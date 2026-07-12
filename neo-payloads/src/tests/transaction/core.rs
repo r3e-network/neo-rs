@@ -1,6 +1,8 @@
 use super::*;
+use crate::{Block, Header, VerifiableContainer};
 use neo_primitives::WitnessScope;
 use neo_vm_rs::OpCode;
+use std::sync::Arc;
 
 fn transaction_with_script(script: Vec<u8>) -> Transaction {
     let mut tx = Transaction::new();
@@ -39,6 +41,25 @@ fn transaction_is_its_own_verifiable_container() {
         1,
         "verification helpers must see Transaction.Witnesses like C#"
     );
+}
+
+#[test]
+fn block_backed_transaction_container_borrows_payload_without_cloning() {
+    let transaction = transaction_with_script(vec![OpCode::RET.byte()]);
+    let block = Arc::new(Block::from_parts(Header::new(), vec![transaction]));
+    let expected = &block.transactions[0];
+    let container = VerifiableContainer::transaction_in_block(Arc::clone(&block), 0)
+        .expect("transaction at block position zero");
+    let actual = container
+        .as_transaction()
+        .expect("block-backed container is a transaction");
+
+    assert!(std::ptr::eq(actual, expected));
+    assert_eq!(
+        neo_primitives::Verifiable::hash(&container).expect("container hash"),
+        expected.try_hash().expect("transaction hash")
+    );
+    assert!(VerifiableContainer::transaction_in_block(block, 1).is_none());
 }
 
 #[test]

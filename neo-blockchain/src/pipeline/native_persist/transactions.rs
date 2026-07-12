@@ -41,7 +41,7 @@ where
     let trace_tx_filter = TraceTxFilter::from_env();
     let native_contract_provider = resources.provider();
 
-    for tx in &block.transactions {
+    for (transaction_index, tx) in block.transactions.iter().enumerate() {
         let stage_start = std::time::Instant::now();
         let tx_hash = tx
             .try_hash()
@@ -59,9 +59,16 @@ where
         );
 
         let stage_start = std::time::Instant::now();
-        let container = Arc::new(VerifiableContainer::from(tx.clone()));
+        let container = Arc::new(
+            VerifiableContainer::transaction_in_block(Arc::clone(block), transaction_index)
+                .ok_or_else(|| {
+                    CoreError::invalid_operation(
+                        "persist: transaction position disappeared from immutable block",
+                    )
+                })?,
+        );
         record_tx_stage(
-            neo_runtime::sync_metrics::NativePersistTxStage::ContainerClone,
+            neo_runtime::sync_metrics::NativePersistTxStage::ContainerPrepare,
             stage_start,
         );
 
