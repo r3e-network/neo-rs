@@ -53,6 +53,9 @@ FUZZ_TRIGGER_PATHS = [
     "fuzz/**",
     ".github/workflows/fuzz.yml",
 ]
+RUST_TOOLCHAIN_ACTION = (
+    "dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88"
+)
 
 
 def workflow_block(text: str, key: str, indent: int) -> str:
@@ -109,27 +112,34 @@ class ProtocolTargetDocsTests(unittest.TestCase):
 
         expected_markers = {
             "fmt": [
-                "dtolnay/rust-toolchain@1.89.0",
+                RUST_TOOLCHAIN_ACTION,
+                "toolchain: 1.89.0",
                 "cargo metadata --locked --no-deps --format-version 1",
             ],
             "clippy": [
-                "dtolnay/rust-toolchain@1.89.0",
+                RUST_TOOLCHAIN_ACTION,
+                "toolchain: 1.89.0",
                 "cargo clippy --workspace --all-targets --profile test --locked -- -D warnings",
             ],
             "test": [
-                "dtolnay/rust-toolchain@1.89.0",
+                RUST_TOOLCHAIN_ACTION,
+                "toolchain: 1.89.0",
                 "tool: cargo-nextest@0.9.128",
                 "cargo test --workspace --no-run --locked",
                 "cargo nextest run --workspace --no-fail-fast --locked",
                 "cargo test --workspace --doc --locked",
             ],
             "dependency-policy": [
-                "dtolnay/rust-toolchain@1.89.0",
+                RUST_TOOLCHAIN_ACTION,
+                "toolchain: 1.89.0",
                 "tool: cargo-deny@0.18.9",
                 "cargo metadata --locked --no-deps --format-version 1",
                 "cargo metadata --manifest-path fuzz/Cargo.toml --locked --no-deps --format-version 1",
-                "cargo deny check advisories licenses sources --hide-inclusion-graph",
-                "cargo deny --manifest-path fuzz/Cargo.toml check advisories licenses sources --hide-inclusion-graph",
+                "cargo deny --locked check advisories bans licenses sources --hide-inclusion-graph",
+                "cargo deny --manifest-path fuzz/Cargo.toml --locked check advisories bans licenses sources --hide-inclusion-graph",
+            ],
+            "repository-policy": [
+                "python3 -m unittest discover -s scripts/tests -p 'test_*.py'",
             ],
         }
         for job, markers in expected_markers.items():
@@ -152,7 +162,7 @@ class ProtocolTargetDocsTests(unittest.TestCase):
         assert_block_contains_once(
             self,
             job,
-            ["dtolnay/rust-toolchain@1.89.0"],
+            [RUST_TOOLCHAIN_ACTION, "toolchain: 1.89.0"],
         )
         self.assertRegex(
             job,
@@ -191,7 +201,8 @@ class ProtocolTargetDocsTests(unittest.TestCase):
                 self.assertEqual(workflow_trigger_paths(text, trigger), FUZZ_TRIGGER_PATHS)
 
         markers = [
-            "dtolnay/rust-toolchain@nightly-2025-11-30",
+            RUST_TOOLCHAIN_ACTION,
+            "toolchain: nightly-2025-11-30",
             "cargo install cargo-fuzz --version 0.13.1 --locked",
             "cargo metadata --locked --no-deps --format-version 1",
             'lock_before="$(sha256sum Cargo.lock',
@@ -206,6 +217,20 @@ class ProtocolTargetDocsTests(unittest.TestCase):
         ):
             with self.subTest(job=job):
                 assert_block_contains_once(self, workflow_block(text, job, 2), markers)
+
+    def test_protocol_workflows_pin_actions_and_limit_token_permissions(self):
+        for relative in (
+            ".github/workflows/ci.yml",
+            ".github/workflows/compatibility-v310.yml",
+            ".github/workflows/fuzz.yml",
+        ):
+            with self.subTest(workflow=relative):
+                text = (REPO_ROOT / relative).read_text(encoding="utf-8")
+                self.assertRegex(text, re.compile(r"(?m)^permissions:\n  contents: read$"))
+                action_refs = re.findall(r"(?m)^\s*uses:\s+[^\s@]+@([^\s#]+)", text)
+                self.assertGreater(len(action_refs), 0)
+                for action_ref in action_refs:
+                    self.assertRegex(action_ref, re.compile(r"^[0-9a-f]{40}$"))
 
     def test_release_guide_names_current_neo_n3_target(self):
         text = (REPO_ROOT / "docs" / "RELEASE.md").read_text(encoding="utf-8")

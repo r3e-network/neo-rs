@@ -8,6 +8,8 @@ name: CI
     branches:
     - main
     - master
+permissions:
+  contents: read
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -20,9 +22,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-    - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+    - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
       with:
+        toolchain: 1.89.0
         components: rustfmt
     # Check only this workspace's members. The locked `cargo metadata --no-deps`
     # query excludes the separately released `neo-vm-rs` Git dependency and its
@@ -37,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
     - name: Reclaim runner disk space
       run: 'sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
 
@@ -45,16 +48,17 @@ jobs:
 
         '
     - name: Cache APT packages
-      uses: awalsh128/cache-apt-pkgs-action@latest
+      uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # latest
       with:
         packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev
           libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
         version: 1.0
-    - uses: dtolnay/rust-toolchain@1.89.0
+    - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
       with:
+        toolchain: 1.89.0
         components: clippy
     - name: Setup sccache
-      uses: mozilla-actions/sccache-action@v0.0.7
+      uses: mozilla-actions/sccache-action@054db53350805f83040bf3e6e9b8cf5a139aa7c9 # v0.0.7
       continue-on-error: true
     - name: Enable sccache (best-effort)
       run: "if sccache --start-server 2>/dev/null && sccache --show-stats 2>/dev/null;\
@@ -62,7 +66,7 @@ jobs:
         \ >> \"$GITHUB_ENV\"\n  echo \"::notice::sccache enabled\"\nelse\n  echo \"\
         ::warning::sccache unavailable — falling back to direct compilation\"\nfi\n"
     - name: Cache cargo registry & git
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       with:
         shared-key: ci-lint
     - name: Clippy
@@ -75,7 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
     - name: Reclaim runner disk space
       run: 'sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
 
@@ -83,14 +87,16 @@ jobs:
 
         '
     - name: Cache APT packages
-      uses: awalsh128/cache-apt-pkgs-action@latest
+      uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # latest
       with:
         packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev
           libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
         version: 1.0
-    - uses: dtolnay/rust-toolchain@1.89.0
+    - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+      with:
+        toolchain: 1.89.0
     - name: Setup sccache
-      uses: mozilla-actions/sccache-action@v0.0.7
+      uses: mozilla-actions/sccache-action@054db53350805f83040bf3e6e9b8cf5a139aa7c9 # v0.0.7
       continue-on-error: true
     - name: Enable sccache (best-effort)
       run: "if sccache --start-server 2>/dev/null && sccache --show-stats 2>/dev/null;\
@@ -98,11 +104,11 @@ jobs:
         \ >> \"$GITHUB_ENV\"\n  echo \"::notice::sccache enabled\"\nelse\n  echo \"\
         ::warning::sccache unavailable — falling back to direct compilation\"\nfi\n"
     - name: Install cargo-nextest
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
       with:
         tool: cargo-nextest@0.9.128
     - name: Cache cargo registry & git
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       with:
         shared-key: ci-test
     - name: Build tests
@@ -116,10 +122,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-    - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@1.89.0
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+    - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+      with:
+        toolchain: 1.89.0
     - name: Install cargo-deny
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
       with:
         tool: cargo-deny@0.18.9
     - name: Validate locked dependency graphs
@@ -127,6 +135,14 @@ jobs:
         cargo metadata --locked --no-deps --format-version 1 >/dev/null
         cargo metadata --manifest-path fuzz/Cargo.toml --locked --no-deps --format-version 1 >/dev/null
     - name: Check root dependency policy
-      run: cargo deny check advisories licenses sources --hide-inclusion-graph
+      run: cargo deny --locked check advisories bans licenses sources --hide-inclusion-graph
     - name: Check fuzz dependency policy
-      run: cargo deny --manifest-path fuzz/Cargo.toml check advisories licenses sources --hide-inclusion-graph
+      run: cargo deny --manifest-path fuzz/Cargo.toml --locked check advisories bans licenses sources --hide-inclusion-graph
+  repository-policy:
+    name: Repository Policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+    - name: Run repository policy guards
+      run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'

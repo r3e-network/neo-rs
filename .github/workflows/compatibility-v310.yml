@@ -94,6 +94,8 @@ on:
         - dev
         - release
         default: dev
+permissions:
+  contents: read
 jobs:
   consistency:
     name: ${{ matrix.network }} consistency
@@ -107,7 +109,7 @@ jobs:
         - testnet
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
     - name: Install system dependencies
       run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
         \n  build-essential \\\n  clang \\\n  cmake \\\n  curl \\\n  jq \\\n  libbz2-dev\
@@ -115,9 +117,11 @@ jobs:
         \ \\\n  libssl-dev \\\n  libzstd-dev \\\n  pkg-config \\\n  python3 \\\n \
         \ python3-pip \\\n  python3-venv \\\n  zlib1g-dev\n"
     - name: Set up Rust
-      uses: dtolnay/rust-toolchain@1.89.0
+      uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+      with:
+        toolchain: 1.89.0
     - name: Cache cargo
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
     - name: Run Neo v3.10.1 consistency validation
       env:
         TARGET_NETWORK: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.network
@@ -157,7 +161,7 @@ jobs:
         exit "$rc"
     - name: Upload consistency artifacts
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: v310-consistency-${{ matrix.network }}
         path: 'reports/compat-v310/**
