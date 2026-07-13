@@ -10,9 +10,7 @@ where
         if let Some(entry) = self.interop_handlers.get(&hash).copied() {
             // C# `ApplicationEngine.System_Contract_Call` equivalent: check that
             // the current execution context has the required call flags before
-            // charging and dispatching. The external VM fast path
-            // (`external_vm.rs`) already checks flags; this ensures the native
-            // interop host path enforces the same contract.
+            // charging and dispatching through the canonical local VM host.
             if entry.required_call_flags != CallFlags::NONE
                 && !self.has_call_flags(entry.required_call_flags)
             {

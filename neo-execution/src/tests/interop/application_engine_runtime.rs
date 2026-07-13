@@ -593,7 +593,7 @@ fn pointer_result_halts_like_neo_vm_v3101() {
 }
 
 #[test]
-fn canonical_execution_does_not_dispatch_to_external_interpreter() {
+fn canonical_execution_uses_local_vm() {
     let source = include_str!("../../application_engine/storage_ops/load_execute_storage.rs");
     let start = source
         .find("pub fn execute_allow_fault")
@@ -605,14 +605,13 @@ fn canonical_execution_does_not_dispatch_to_external_interpreter() {
     let execute_allow_fault = &source[start..end];
 
     assert!(execute_allow_fault.contains("self.vm_engine.engine_mut().execute()"));
-    assert!(!execute_allow_fault.contains("try_execute_with_external_vm"));
 }
 
 #[test]
 fn zero_shift_coerces_boolean_result_to_integer_like_neo_vm_v3101() {
     // NeoVM v3.10.1 unconditionally integer-coerces SHL's value operand,
-    // including when the shift is zero. Older/external interpreters have
-    // preserved the Boolean here, which changes the consensus stack type.
+    // including when the shift is zero. Preserving the Boolean here would
+    // change the consensus stack type.
     let script = vec![
         OpCode::PUSHT.byte(),
         OpCode::PUSH0.byte(),

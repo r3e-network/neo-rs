@@ -1,4 +1,4 @@
-//! Alias-preserving conversion from external `neo-vm-rs` stack graphs.
+//! Alias-preserving conversion from serialization values into runtime stack items.
 
 use std::collections::HashMap;
 
@@ -17,20 +17,6 @@ impl TryFrom<StackValue> for StackItem {
 
     fn try_from(value: StackValue) -> VmResult<Self> {
         StackValueConversion::default().convert(value)
-    }
-}
-
-impl StackItem {
-    /// Converts one external stack graph while preserving compound aliases
-    /// shared across top-level values.
-    pub fn try_from_stack_values(
-        values: impl IntoIterator<Item = StackValue>,
-    ) -> VmResult<Vec<Self>> {
-        let mut conversion = StackValueConversion::default();
-        values
-            .into_iter()
-            .map(|value| conversion.convert(value))
-            .collect()
     }
 }
 

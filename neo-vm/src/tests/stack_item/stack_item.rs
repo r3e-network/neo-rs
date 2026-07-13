@@ -206,21 +206,6 @@ fn stack_value_conversion_rejects_conflicting_compound_definitions() {
 }
 
 #[test]
-fn stack_value_batch_conversion_preserves_top_level_aliases() {
-    let external = neo_vm_rs::StackValue::Array(304, vec![neo_vm_rs::StackValue::Integer(1)]);
-    let converted = StackItem::try_from_stack_values([external.clone(), external])
-        .expect("convert external result stack");
-    let (StackItem::Array(first), StackItem::Array(second)) = (&converted[0], &converted[1]) else {
-        panic!("expected repeated arrays");
-    };
-
-    first
-        .push(StackItem::from_i64(2))
-        .expect("mutate first top-level alias");
-    assert_eq!(second.len(), 2);
-}
-
-#[test]
 fn test_bytestring_stack_item() {
     let bytes = vec![1, 2, 3];
     let byte_string = StackItem::from_byte_string(bytes.clone());

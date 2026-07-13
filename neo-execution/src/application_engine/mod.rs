@@ -13,7 +13,6 @@
 //! - `contracts`: Contract metadata, manifests, deployed-state records, and
 //!   contract parameter types.
 //! - `drop`: VM drop-stack opcode handlers.
-//! - `external_vm`: external VM execution bridge.
 //! - `fees_events_native`: fee, event, and native-contract syscall handlers.
 //! - `host_state`: host-side VM wrapper, syscall metadata, and queued native calls.
 //! - `interop_host`: ApplicationEngine interop host.
@@ -27,7 +26,7 @@ use crate::execution_context_state::{
     ApplicationJumpTable as JumpTable,
 };
 use neo_config::hardfork::Hardfork;
-use neo_crypto::{Crypto, ECCurve, ECPoint, murmur};
+use neo_crypto::{Crypto, ECCurve, ECPoint};
 use neo_error::{CoreError, CoreResult};
 use neo_payloads::Block;
 use neo_primitives::constants::HASH_SIZE;
@@ -66,12 +65,7 @@ use neo_storage::StorageItem;
 use neo_storage::StorageKey;
 use neo_vm_rs::ExecutionEngineLimits;
 use neo_vm_rs::Instruction;
-use neo_vm_rs::OpCode;
-use neo_vm_rs::StackValue as VmStackValue;
-use neo_vm_rs::SyscallProvider;
 use neo_vm_rs::VmState as VMState;
-use neo_vm_rs::interpret_with_stack_and_syscalls_at;
-use neo_vm_rs::interpret_with_stack_and_syscalls_at_with_result_limit;
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
@@ -152,10 +146,6 @@ where
 
 mod contracts;
 mod drop;
-// Retained for differential experiments; canonical execution does not dispatch
-// here until hardfork-aware NeoVM parity is proven.
-#[allow(dead_code)]
-mod external_vm;
 mod fees_events_native;
 mod host_state;
 mod interop_host;

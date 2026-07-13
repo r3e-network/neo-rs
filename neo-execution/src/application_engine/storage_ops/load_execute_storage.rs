@@ -91,11 +91,9 @@ where
         // movable after this method returns.
         let attached_here = self.attach_host();
 
-        // Canonical application execution must use the local engine: it owns
-        // the height-selected Neo N3 jump table and enforces the stateful VM's
-        // invocation, reference, exception, and result-stack limits. Keep the
-        // external interpreter out of this path until differential testing has
-        // proven parity for every supported hardfork and fault boundary.
+        // The local neo-vm engine is the sole execution authority. It owns the
+        // height-selected Neo N3 jump table and the invocation, reference,
+        // exception, and result-stack limits used by consensus execution.
         let state = self.vm_engine.engine_mut().execute();
         self.detach_host(attached_here);
         if state == VMState::FAULT {
