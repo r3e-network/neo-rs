@@ -136,3 +136,27 @@ fn rejects_manifest_package_with_cleartext_http_url() {
         "unexpected error: {err}"
     );
 }
+
+#[test]
+fn rejects_non_https_final_response_url() {
+    let url = url::Url::parse("http://packages.example/chain.0.acc.zip").unwrap();
+    let err = ensure_https_url(&url, "fast-sync package")
+        .expect_err("a redirect target must remain HTTPS");
+
+    assert!(
+        err.to_string().contains("resolved to non-HTTPS URL"),
+        "unexpected error: {err}"
+    );
+}
+
+#[tokio::test]
+async fn secure_client_rejects_cleartext_requests_before_connecting() {
+    let err = secure_http_client()
+        .expect("secure client")
+        .get("http://127.0.0.1:1/chain.0.acc.zip")
+        .send()
+        .await
+        .expect_err("HTTPS-only client must reject cleartext URLs");
+
+    assert!(err.is_builder(), "unexpected error: {err}");
+}

@@ -6,11 +6,14 @@ use std::future::Future;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use sysinfo::{DiskExt, System, SystemExt};
 use tracing::{info, warn};
 
-use super::FastSyncPackage;
+use super::{FastSyncPackage, ensure_https_url, secure_http_client};
 
 const FAST_SYNC_DOWNLOAD_ATTEMPTS: usize = 3;
+const DEFAULT_MAX_FAST_SYNC_PACKAGE_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
+const MAX_PACKAGE_BYTES_ENV: &str = "NEO_FAST_SYNC_MAX_PACKAGE_BYTES";
 
 pub(in crate::node::fast_sync) async fn ensure_package_cached(
     package: &FastSyncPackage,
@@ -72,11 +75,16 @@ fn remove_partial_download(partial_path: &Path) -> anyhow::Result<()> {
 }
 
 async fn download_package(url: &str, destination: &Path) -> anyhow::Result<()> {
+    let client = secure_http_client()?;
+    let max_bytes = configured_package_byte_limit()?;
     download_package_with_retries(
         url,
         destination,
         FAST_SYNC_DOWNLOAD_ATTEMPTS,
-        |url, destination| async move { download_package_once(&url, &destination).await },
+        move |url, destination| {
+            let client = client.clone();
+            async move { download_package_once(&client, &url, &destination, max_bytes).await }
+        },
     )
     .await
 }
@@ -123,12 +131,23 @@ where
         })
 }
 
-async fn download_package_once(url: &str, destination: &Path) -> anyhow::Result<()> {
-    let response = reqwest::get(url)
+async fn download_package_once(
+    client: &reqwest::Client,
+    url: &str,
+    destination: &Path,
+    configured_max_bytes: u64,
+) -> anyhow::Result<()> {
+    let response = client
+        .get(url)
+        .send()
         .await
         .with_context(|| format!("downloading fast-sync package {url}"))?
         .error_for_status()
         .with_context(|| format!("fast-sync package download returned an error: {url}"))?;
+    ensure_https_url(response.url(), "fast-sync package")?;
+    let available_bytes = available_space_for(destination)?;
+    let byte_limit = configured_max_bytes.min(available_bytes);
+    validate_download_limits(url, response.content_length(), byte_limit)?;
     let mut file = std::fs::File::create(destination).with_context(|| {
         format!(
             "creating downloaded fast-sync package {}",
@@ -141,7 +160,14 @@ async fn download_package_once(url: &str, destination: &Path) -> anyhow::Result<
     while let Some(chunk) = stream.next().await {
         let chunk =
             chunk.with_context(|| format!("reading fast-sync package response body: {url}"))?;
-        downloaded_bytes += chunk.len() as u64;
+        downloaded_bytes = downloaded_bytes
+            .checked_add(chunk.len() as u64)
+            .ok_or_else(|| anyhow::anyhow!("fast-sync package size overflow for {url}"))?;
+        if downloaded_bytes > byte_limit {
+            anyhow::bail!(
+                "fast-sync package exceeds the {byte_limit}-byte download limit for {url}"
+            );
+        }
         file.write_all(&chunk).with_context(|| {
             format!(
                 "writing downloaded fast-sync package {}",
@@ -156,6 +182,68 @@ async fn download_package_once(url: &str, destination: &Path) -> anyhow::Result<
             destination.display()
         )
     })?;
+    Ok(())
+}
+
+fn configured_package_byte_limit() -> anyhow::Result<u64> {
+    parse_package_byte_limit(std::env::var_os(MAX_PACKAGE_BYTES_ENV).as_deref())
+}
+
+fn parse_package_byte_limit(raw: Option<&std::ffi::OsStr>) -> anyhow::Result<u64> {
+    let Some(raw) = raw else {
+        return Ok(DEFAULT_MAX_FAST_SYNC_PACKAGE_BYTES);
+    };
+    let value = raw
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("{MAX_PACKAGE_BYTES_ENV} is not valid UTF-8"))?
+        .parse::<u64>()
+        .with_context(|| format!("parsing {MAX_PACKAGE_BYTES_ENV} as bytes"))?;
+    if value == 0 {
+        anyhow::bail!("{MAX_PACKAGE_BYTES_ENV} must be greater than zero");
+    }
+    Ok(value)
+}
+
+fn available_space_for(destination: &Path) -> anyhow::Result<u64> {
+    let parent = destination
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("fast-sync destination has no parent directory"))?;
+    let canonical_parent = parent.canonicalize().with_context(|| {
+        format!(
+            "resolving fast-sync destination directory {}",
+            parent.display()
+        )
+    })?;
+    let mut system = System::new();
+    system.refresh_disks_list();
+    system.refresh_disks();
+    system
+        .disks()
+        .iter()
+        .filter(|disk| canonical_parent.starts_with(disk.mount_point()))
+        .max_by_key(|disk| disk.mount_point().components().count())
+        .map(DiskExt::available_space)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "unable to determine available space for {}",
+                canonical_parent.display()
+            )
+        })
+}
+
+fn validate_download_limits(
+    url: &str,
+    expected_content_length: Option<u64>,
+    byte_limit: u64,
+) -> anyhow::Result<()> {
+    if byte_limit == 0 {
+        anyhow::bail!("no disk space is available for fast-sync package {url}");
+    }
+    if expected_content_length.is_some_and(|length| length > byte_limit) {
+        anyhow::bail!(
+            "fast-sync package content length exceeds the {byte_limit}-byte download limit for {url}"
+        );
+    }
     Ok(())
 }
 

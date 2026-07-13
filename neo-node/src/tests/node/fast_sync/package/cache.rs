@@ -79,6 +79,41 @@ fn downloaded_content_length_mismatch_is_an_error() {
 }
 
 #[test]
+fn package_content_length_must_fit_the_configured_and_disk_limit() {
+    let err = validate_download_limits("https://example.invalid/chain.zip", Some(13), 12)
+        .expect_err("oversized package must fail before download");
+    assert!(err.to_string().contains("12-byte download limit"));
+
+    let err = validate_download_limits("https://example.invalid/chain.zip", None, 0)
+        .expect_err("zero available bytes must fail before download");
+    assert!(err.to_string().contains("no disk space"));
+}
+
+#[test]
+fn package_byte_limit_is_finite_and_rejects_invalid_configuration() {
+    assert_eq!(
+        parse_package_byte_limit(None).expect("default limit"),
+        DEFAULT_MAX_FAST_SYNC_PACKAGE_BYTES
+    );
+    assert_eq!(
+        parse_package_byte_limit(Some(std::ffi::OsStr::new("4096"))).expect("configured limit"),
+        4096
+    );
+    assert!(parse_package_byte_limit(Some(std::ffi::OsStr::new("0"))).is_err());
+    assert!(parse_package_byte_limit(Some(std::ffi::OsStr::new("many"))).is_err());
+}
+
+#[test]
+fn cache_volume_space_is_detected_before_download() {
+    let temp = tempfile::tempdir().expect("temp");
+    let destination = temp.path().join("chain.0.acc.zip.part");
+    assert!(
+        available_space_for(&destination).expect("available space") > 0,
+        "test volume should report usable space"
+    );
+}
+
+#[test]
 fn parses_md5sum_digest_output() {
     let digest = parse_md5_digest_output(
         "md5sum",
