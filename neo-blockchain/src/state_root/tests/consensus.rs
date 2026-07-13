@@ -76,3 +76,151 @@ fn a_vote_with_a_wrong_signature_is_rejected() {
         "no votes -> no witness"
     );
 }
+
+#[test]
+fn votes_for_competing_roots_at_the_same_index_cannot_mix() {
+    let vs = validators(4); // N=4 -> M=3
+    let pubkeys: Vec<ECPoint> = vs.iter().map(|(_, p)| p.clone()).collect();
+    let mut root_a = StateRoot::new_current(7, UInt256::from([0xAA; 32]));
+    let mut root_b = StateRoot::new_current(7, UInt256::from([0xBB; 32]));
+    let mut collector = StateRootVoteCollector::new();
+
+    for (idx, (sk, _)) in vs.iter().enumerate().take(2) {
+        let sig = sign_state_root(&mut root_a, sk, NETWORK).expect("sign root A");
+        assert!(
+            collector
+                .add_vote(&mut root_a, idx, sig.to_vec(), &pubkeys, NETWORK)
+                .is_none()
+        );
+    }
+
+    // This is the third signature at index 7, but only the first for root B.
+    // A height-only pool would combine it with root A's signatures.
+    let sig = sign_state_root(&mut root_b, &vs[2].0, NETWORK).expect("sign root B");
+    assert!(
+        collector
+            .add_vote(&mut root_b, 2, sig.to_vec(), &pubkeys, NETWORK)
+            .is_none(),
+        "signatures for a competing root must not satisfy the threshold"
+    );
+
+    let sig = sign_state_root(&mut root_a, &vs[2].0, NETWORK).expect("sign root A");
+    let signed_a = collector
+        .add_vote(&mut root_a, 2, sig.to_vec(), &pubkeys, NETWORK)
+        .expect("root A has three matching signatures");
+    assert_eq!(signed_a.root_hash(), root_a.root_hash());
+
+    for (idx, (sk, _)) in vs.iter().enumerate().take(2) {
+        let sig = sign_state_root(&mut root_b, sk, NETWORK).expect("sign root B");
+        let result = collector.add_vote(&mut root_b, idx, sig.to_vec(), &pubkeys, NETWORK);
+        if idx == 0 {
+            assert!(result.is_none());
+        } else {
+            let signed_b = result.expect("root B has three matching signatures");
+            assert_eq!(signed_b.root_hash(), root_b.root_hash());
+        }
+    }
+}
+
+#[test]
+fn votes_for_distinct_root_versions_cannot_mix() {
+    let vs = validators(4); // N=4 -> M=3
+    let pubkeys: Vec<ECPoint> = vs.iter().map(|(_, p)| p.clone()).collect();
+    let root_hash = UInt256::from([0xAA; 32]);
+    let mut version_zero = StateRoot::new(0, 7, root_hash);
+    let mut version_one = StateRoot::new(1, 7, root_hash);
+    let mut collector = StateRootVoteCollector::new();
+
+    for (idx, (sk, _)) in vs.iter().enumerate().take(2) {
+        let sig = sign_state_root(&mut version_zero, sk, NETWORK).expect("sign version zero");
+        assert!(
+            collector
+                .add_vote(&mut version_zero, idx, sig.to_vec(), &pubkeys, NETWORK,)
+                .is_none()
+        );
+    }
+
+    let sig = sign_state_root(&mut version_one, &vs[2].0, NETWORK).expect("sign version one");
+    assert!(
+        collector
+            .add_vote(&mut version_one, 2, sig.to_vec(), &pubkeys, NETWORK,)
+            .is_none(),
+        "signatures for a different wire version must not satisfy the threshold"
+    );
+}
+
+#[test]
+fn votes_for_distinct_block_indexes_cannot_mix() {
+    let vs = validators(4); // N=4 -> M=3
+    let pubkeys: Vec<ECPoint> = vs.iter().map(|(_, p)| p.clone()).collect();
+    let root_hash = UInt256::from([0xAA; 32]);
+    let mut index_seven = StateRoot::new_current(7, root_hash);
+    let mut index_eight = StateRoot::new_current(8, root_hash);
+    let mut collector = StateRootVoteCollector::new();
+
+    for (idx, (sk, _)) in vs.iter().enumerate().take(2) {
+        let sig = sign_state_root(&mut index_seven, sk, NETWORK).expect("sign index seven");
+        assert!(
+            collector
+                .add_vote(&mut index_seven, idx, sig.to_vec(), &pubkeys, NETWORK)
+                .is_none()
+        );
+    }
+
+    let sig = sign_state_root(&mut index_eight, &vs[2].0, NETWORK).expect("sign index eight");
+    assert!(
+        collector
+            .add_vote(&mut index_eight, 2, sig.to_vec(), &pubkeys, NETWORK)
+            .is_none(),
+        "signatures for a different block index must not satisfy the threshold"
+    );
+
+    let sig = sign_state_root(&mut index_seven, &vs[2].0, NETWORK).expect("sign index seven");
+    assert!(
+        collector
+            .add_vote(&mut index_seven, 2, sig.to_vec(), &pubkeys, NETWORK)
+            .is_some(),
+        "three signatures for the same block index must aggregate"
+    );
+}
+
+#[test]
+fn pruning_removes_every_competing_root_below_the_index() {
+    let vs = validators(4); // N=4 -> M=3
+    let pubkeys: Vec<ECPoint> = vs.iter().map(|(_, p)| p.clone()).collect();
+    let mut old_a = StateRoot::new_current(7, UInt256::from([0xAA; 32]));
+    let mut old_b = StateRoot::new_current(7, UInt256::from([0xBB; 32]));
+    let mut retained = StateRoot::new_current(8, UInt256::from([0xCC; 32]));
+    let mut collector = StateRootVoteCollector::new();
+
+    for (idx, (private_key, _)) in vs.iter().enumerate().take(2) {
+        for root in [&mut old_a, &mut old_b, &mut retained] {
+            let sig = sign_state_root(root, private_key, NETWORK).expect("sign root");
+            assert!(
+                collector
+                    .add_vote(root, idx, sig.to_vec(), &pubkeys, NETWORK)
+                    .is_none()
+            );
+        }
+    }
+
+    collector.prune_below(8);
+
+    for root in [&mut old_a, &mut old_b] {
+        let sig = sign_state_root(root, &vs[2].0, NETWORK).expect("sign old root");
+        assert!(
+            collector
+                .add_vote(root, 2, sig.to_vec(), &pubkeys, NETWORK)
+                .is_none(),
+            "every pool below the pruning index must be discarded"
+        );
+    }
+
+    let sig = sign_state_root(&mut retained, &vs[2].0, NETWORK).expect("sign retained root");
+    assert!(
+        collector
+            .add_vote(&mut retained, 2, sig.to_vec(), &pubkeys, NETWORK)
+            .is_some(),
+        "pools at the pruning index must be retained"
+    );
+}

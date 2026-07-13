@@ -91,9 +91,12 @@ where
         // movable after this method returns.
         let attached_here = self.attach_host();
 
-        let state = self
-            .try_execute_with_external_vm()
-            .unwrap_or_else(|| self.vm_engine.engine_mut().execute());
+        // Canonical application execution must use the local engine: it owns
+        // the height-selected Neo N3 jump table and enforces the stateful VM's
+        // invocation, reference, exception, and result-stack limits. Keep the
+        // external interpreter out of this path until differential testing has
+        // proven parity for every supported hardfork and fault boundary.
+        let state = self.vm_engine.engine_mut().execute();
         self.detach_host(attached_here);
         if state == VMState::FAULT {
             self.capture_fault_exception_from_vm();

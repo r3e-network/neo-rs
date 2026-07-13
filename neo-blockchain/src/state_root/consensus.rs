@@ -94,12 +94,29 @@ pub fn aggregate_state_root_witness(
     ))
 }
 
-/// Collects StateRoot votes per root index and aggregates them into a signed
-/// root once `M` valid votes exist. The node layer holds one of these, feeding
-/// it inbound votes and broadcasting the returned signed root.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct StateRootIdentity {
+    version: u8,
+    index: u32,
+    root_hash: neo_primitives::UInt256,
+}
+
+impl From<&StateRoot> for StateRootIdentity {
+    fn from(state_root: &StateRoot) -> Self {
+        Self {
+            version: state_root.version(),
+            index: state_root.index(),
+            root_hash: *state_root.root_hash(),
+        }
+    }
+}
+
+/// Collects StateRoot votes per complete root identity and aggregates them into
+/// a signed root once `M` valid votes exist. The node layer holds one of these,
+/// feeding it inbound votes and broadcasting the returned signed root.
 #[derive(Default)]
 pub struct StateRootVoteCollector {
-    votes: HashMap<u32, HashMap<usize, Vec<u8>>>,
+    votes: HashMap<StateRootIdentity, HashMap<usize, Vec<u8>>>,
 }
 
 impl StateRootVoteCollector {
@@ -124,7 +141,10 @@ impl StateRootVoteCollector {
         if !validate_state_root_vote(state_root, validator_index, &signature, validators, network) {
             return None;
         }
-        let entry = self.votes.entry(state_root.index()).or_default();
+        let entry = self
+            .votes
+            .entry(StateRootIdentity::from(&*state_root))
+            .or_default();
         entry.insert(validator_index, signature);
         let witness = aggregate_state_root_witness(entry, validators)?;
         Some(state_root.clone().with_witness(witness))
@@ -133,7 +153,8 @@ impl StateRootVoteCollector {
     /// Drops vote pools for roots below `index` (called after a signed root is
     /// finalized/persisted) to bound memory.
     pub fn prune_below(&mut self, index: u32) {
-        self.votes.retain(|root_index, _| *root_index >= index);
+        self.votes
+            .retain(|root_identity, _| root_identity.index >= index);
     }
 }
 

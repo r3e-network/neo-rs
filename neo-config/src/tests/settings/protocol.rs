@@ -84,7 +84,8 @@ fn load_mainnet_json_matches_neo_node_v3101_protocol_configuration() {
                 "HF_Cockatrice": 5450000,
                 "HF_Domovoi": 5570000,
                 "HF_Echidna": 7300000,
-                "HF_Faun": 8800000
+                "HF_Faun": 8800000,
+                "HF_Gorgon": 12020000
             },
             "InitialGasDistribution": 5200000000000000,
             "ValidatorsCount": 7,
@@ -143,7 +144,8 @@ fn load_testnet_json_matches_neo_node_v3101_protocol_configuration() {
                 "HF_Cockatrice": 3967000,
                 "HF_Domovoi": 4144000,
                 "HF_Echidna": 5870000,
-                "HF_Faun": 12960000
+                "HF_Faun": 12960000,
+                "HF_Gorgon": 17960000
             },
             "InitialGasDistribution": 5200000000000000,
             "ValidatorsCount": 7,
@@ -202,11 +204,14 @@ fn mainnet_preset_matches_neo_n3_v3101_protocol_limits() {
     assert_eq!(settings.network, constants::MAINNET_MAGIC);
     assert_eq!(settings.max_transactions_per_block, 200);
     assert_eq!(settings.hardforks.get(&Hardfork::HfFaun), Some(&8_800_000));
-    // The production preset follows the explicit MainNet schedule embedded in
-    // neo-rs. Unlike C# ProtocolSettings.Default / `Hardforks: {}`, omitted
-    // trailing hardforks are disabled until a loaded network config schedules
-    // them.
-    assert!(!settings.hardforks.contains_key(&Hardfork::HfGorgon));
+    assert_eq!(
+        settings.hardforks.get(&Hardfork::HfGorgon),
+        Some(&12_020_000)
+    );
+    assert!(!settings.is_hardfork_enabled(Hardfork::HfGorgon, 12_019_999));
+    assert!(settings.is_hardfork_enabled(Hardfork::HfGorgon, 12_020_000));
+    // The official v3.10.1 MainNet schedule ends at Gorgon; Huyao is omitted
+    // and therefore disabled in this operational preset.
     assert!(!settings.hardforks.contains_key(&Hardfork::HfHuyao));
 }
 
@@ -217,8 +222,13 @@ fn testnet_preset_matches_neo_n3_v3101_protocol_limits() {
     assert_eq!(settings.network, constants::TESTNET_MAGIC);
     assert_eq!(settings.max_transactions_per_block, 5_000);
     assert_eq!(settings.hardforks.get(&Hardfork::HfFaun), Some(&12_960_000));
-    // See the MainNet test above: explicit network presets leave trailing
-    // hardforks unscheduled unless the loaded config declares them.
-    assert!(!settings.hardforks.contains_key(&Hardfork::HfGorgon));
+    assert_eq!(
+        settings.hardforks.get(&Hardfork::HfGorgon),
+        Some(&17_960_000)
+    );
+    assert!(!settings.is_hardfork_enabled(Hardfork::HfGorgon, 17_959_999));
+    assert!(settings.is_hardfork_enabled(Hardfork::HfGorgon, 17_960_000));
+    // The official v3.10.1 TestNet schedule ends at Gorgon; Huyao is omitted
+    // and therefore disabled in this operational preset.
     assert!(!settings.hardforks.contains_key(&Hardfork::HfHuyao));
 }

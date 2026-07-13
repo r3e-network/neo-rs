@@ -18,42 +18,44 @@ fn test_hardfork_manager() {
 #[test]
 fn test_mainnet_hardforks() {
     let manager = HardforkManager::mainnet();
-    assert!(manager.is_enabled(Hardfork::HfAspidochelone, 1730000));
-    assert!(!manager.is_enabled(Hardfork::HfAspidochelone, 1729999));
-    assert!(manager.is_enabled(Hardfork::HfBasilisk, 4120000));
-    assert!(!manager.is_enabled(Hardfork::HfBasilisk, 4119999));
-    assert!(manager.is_enabled(Hardfork::HfEchidna, 7300000));
-    assert!(!manager.is_enabled(Hardfork::HfEchidna, 7299999));
-    assert!(manager.is_enabled(Hardfork::HfFaun, 8800000));
-    assert!(!manager.is_enabled(Hardfork::HfFaun, 8799999));
-    assert_eq!(
-        manager.get_hardforks().get(&Hardfork::HfFaun),
-        Some(&8_800_000)
-    );
-    // Built-in MainNet scheduling is explicit through Faun. C# loader defaults
-    // (`Hardforks: {}`) enable every known hardfork at height 0; that behavior
-    // is covered by ProtocolSettings tests, not this operational preset.
-    assert!(!manager.is_enabled(Hardfork::HfGorgon, u32::MAX));
+    let expected = [
+        (Hardfork::HfAspidochelone, 1_730_000),
+        (Hardfork::HfBasilisk, 4_120_000),
+        (Hardfork::HfCockatrice, 5_450_000),
+        (Hardfork::HfDomovoi, 5_570_000),
+        (Hardfork::HfEchidna, 7_300_000),
+        (Hardfork::HfFaun, 8_800_000),
+        (Hardfork::HfGorgon, 12_020_000),
+    ];
+    assert_eq!(manager.get_hardforks().len(), expected.len());
+    for (hardfork, height) in expected {
+        assert_eq!(manager.get_hardforks().get(&hardfork), Some(&height));
+        assert!(!manager.is_enabled(hardfork, height - 1));
+        assert!(manager.is_enabled(hardfork, height));
+    }
+    // Neo Node v3.10.1 schedules MainNet through Gorgon. Huyao is not present
+    // in the operational config and must remain disabled at every height.
     assert!(!manager.is_enabled(Hardfork::HfHuyao, u32::MAX));
 }
 #[test]
 fn test_testnet_hardforks() {
     let manager = HardforkManager::testnet();
-    assert!(manager.is_enabled(Hardfork::HfAspidochelone, 210000));
-    assert!(!manager.is_enabled(Hardfork::HfAspidochelone, 209999));
-    assert!(manager.is_enabled(Hardfork::HfBasilisk, 2680000));
-    assert!(!manager.is_enabled(Hardfork::HfBasilisk, 2679999));
-    assert!(manager.is_enabled(Hardfork::HfEchidna, 5870000));
-    assert!(!manager.is_enabled(Hardfork::HfEchidna, 5869999));
-    assert!(manager.is_enabled(Hardfork::HfFaun, 12960000));
-    assert!(!manager.is_enabled(Hardfork::HfFaun, 12959999));
-    assert_eq!(
-        manager.get_hardforks().get(&Hardfork::HfFaun),
-        Some(&12_960_000)
-    );
-    // Built-in TestNet scheduling is explicit through Faun. C# loader defaults
-    // (`Hardforks: {}`) enable every known hardfork at height 0; that behavior
-    // is covered by ProtocolSettings tests, not this operational preset.
-    assert!(!manager.is_enabled(Hardfork::HfGorgon, u32::MAX));
+    let expected = [
+        (Hardfork::HfAspidochelone, 210_000),
+        (Hardfork::HfBasilisk, 2_680_000),
+        (Hardfork::HfCockatrice, 3_967_000),
+        (Hardfork::HfDomovoi, 4_144_000),
+        (Hardfork::HfEchidna, 5_870_000),
+        (Hardfork::HfFaun, 12_960_000),
+        (Hardfork::HfGorgon, 17_960_000),
+    ];
+    assert_eq!(manager.get_hardforks().len(), expected.len());
+    for (hardfork, height) in expected {
+        assert_eq!(manager.get_hardforks().get(&hardfork), Some(&height));
+        assert!(!manager.is_enabled(hardfork, height - 1));
+        assert!(manager.is_enabled(hardfork, height));
+    }
+    // Neo Node v3.10.1 schedules TestNet through Gorgon. Huyao is not present
+    // in the operational config and must remain disabled at every height.
     assert!(!manager.is_enabled(Hardfork::HfHuyao, u32::MAX));
 }

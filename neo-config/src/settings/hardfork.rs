@@ -72,7 +72,7 @@ impl HardforkManager {
         Self { hardforks }
     }
 
-    /// Creates a new HardforkManager with MainNet hardfork heights (matches C# config.mainnet.json exactly).
+    /// Creates a manager with the Neo N3 v3.10.1 MainNet hardfork schedule.
     pub fn mainnet() -> Self {
         let mut hardforks = HashMap::new();
         hardforks.insert(Hardfork::HfAspidochelone, 1730000);
@@ -81,14 +81,15 @@ impl HardforkManager {
         hardforks.insert(Hardfork::HfDomovoi, 5570000);
         hardforks.insert(Hardfork::HfEchidna, 7300000);
         hardforks.insert(Hardfork::HfFaun, 8800000);
+        hardforks.insert(Hardfork::HfGorgon, 12020000);
         // The built-in MainNet preset is an explicit operational schedule
-        // through Faun. Loader defaults such as `Hardforks: {}` are handled by
-        // ProtocolSettings::ensure_omitted_hardforks and enable all known
-        // hardforks at height 0, matching C# v3.10.1.
+        // through Gorgon. Huyao is absent from the official v3.10.1 config and
+        // therefore remains disabled. Loader defaults such as `Hardforks: {}`
+        // are handled separately by ProtocolSettings::ensure_omitted_hardforks.
         Self { hardforks }
     }
 
-    /// Creates a new HardforkManager with TestNet hardfork heights (matches C# config.testnet.json exactly).
+    /// Creates a manager with the Neo N3 v3.10.1 TestNet hardfork schedule.
     pub fn testnet() -> Self {
         let mut hardforks = HashMap::new();
         hardforks.insert(Hardfork::HfAspidochelone, 210000);
@@ -97,10 +98,11 @@ impl HardforkManager {
         hardforks.insert(Hardfork::HfDomovoi, 4144000);
         hardforks.insert(Hardfork::HfEchidna, 5870000);
         hardforks.insert(Hardfork::HfFaun, 12960000);
+        hardforks.insert(Hardfork::HfGorgon, 17960000);
         // The built-in TestNet preset is an explicit operational schedule
-        // through Faun. Loader defaults such as `Hardforks: {}` are handled by
-        // ProtocolSettings::ensure_omitted_hardforks and enable all known
-        // hardforks at height 0, matching C# v3.10.1.
+        // through Gorgon. Huyao is absent from the official v3.10.1 config and
+        // therefore remains disabled. Loader defaults such as `Hardforks: {}`
+        // are handled separately by ProtocolSettings::ensure_omitted_hardforks.
         Self { hardforks }
     }
 

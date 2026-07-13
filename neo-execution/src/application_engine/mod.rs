@@ -152,6 +152,9 @@ where
 
 mod contracts;
 mod drop;
+// Retained for differential experiments; canonical execution does not dispatch
+// here until hardfork-aware NeoVM parity is proven.
+#[allow(dead_code)]
 mod external_vm;
 mod fees_events_native;
 mod host_state;
