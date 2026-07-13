@@ -176,6 +176,24 @@ class RunBoundedReplayTests(unittest.TestCase):
                 runtime_config.read_text(encoding="utf-8"),
             )
 
+    def test_materialize_state_service_config_keeps_mdbx_config_unchanged(self):
+        module = load_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = root / "node.toml"
+            config.write_text("[state_service]\nenabled = true\n", encoding="utf-8")
+
+            runtime_config = module.materialize_state_service_config(
+                config,
+                root / "chain",
+                root / "runtime",
+                "mdbx",
+            )
+
+            self.assertEqual(runtime_config, config)
+            self.assertNotIn("path =", config.read_text(encoding="utf-8"))
+
     def test_node_command_can_import_chain_acc_before_syncing(self):
         module = load_module()
 
@@ -279,7 +297,7 @@ class RunBoundedReplayTests(unittest.TestCase):
         self.assertEqual(progress["fast_sync_chain_path"], "chain.0.acc/chain.0.acc")
         self.assertEqual(progress["fast_sync_chain_bytes"], len(b"extracted-chain"))
 
-    def test_fast_sync_with_stateroot_db_requires_height_match_by_default(self):
+    def test_fast_sync_with_mdbx_db_requires_height_match_by_default(self):
         module = load_module()
         original_argv = module.sys.argv
         try:
@@ -290,16 +308,17 @@ class RunBoundedReplayTests(unittest.TestCase):
                 "--target-height",
                 "100000",
                 "--fast-sync",
-                "--stateroot-db",
-                "bounded/state-root-334F454E",
+                "--db",
+                "bounded/chain",
             ]
             args = module.parse_args()
         finally:
             module.sys.argv = original_argv
 
         self.assertTrue(args.require_stateroot_height_match)
+        self.assertEqual(args.stateroot_db, Path("bounded/chain"))
 
-    def test_import_chain_with_stateroot_db_requires_height_match_by_default(self):
+    def test_import_chain_with_mdbx_db_requires_height_match_by_default(self):
         module = load_module()
         original_argv = module.sys.argv
         try:
@@ -311,14 +330,37 @@ class RunBoundedReplayTests(unittest.TestCase):
                 "100000",
                 "--import-chain",
                 "chain.0.100k.acc",
-                "--stateroot-db",
-                "bounded/state-root-334F454E",
+                "--db",
+                "bounded/chain",
             ]
             args = module.parse_args()
         finally:
             module.sys.argv = original_argv
 
         self.assertTrue(args.require_stateroot_height_match)
+        self.assertEqual(args.stateroot_db, Path("bounded/chain"))
+
+    def test_parse_args_rejects_separate_mdbx_stateroot_db(self):
+        module = load_module()
+        original_argv = module.sys.argv
+        try:
+            module.sys.argv = [
+                "run-bounded-mainnet-replay.py",
+                "--config",
+                "bounded.toml",
+                "--target-height",
+                "100000",
+                "--db",
+                "bounded/chain",
+                "--stateroot-db",
+                "bounded/state-root-334F454E",
+            ]
+            with self.assertRaises(SystemExit) as raised:
+                module.parse_args()
+        finally:
+            module.sys.argv = original_argv
+
+        self.assertEqual(raised.exception.code, 2)
 
     def test_fast_sync_uses_short_poll_interval_when_not_overridden(self):
         module = load_module()

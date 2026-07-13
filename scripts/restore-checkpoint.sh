@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Restore live mainnet chain DB + StateRoot DB from a previously-taken
-# checkpoint. Chain-only checkpoints created for bounded replay DBs are also
-# supported when CHECKPOINT_INFO records state_root_included=false. RocksDB
-# restores hardlink immutable SST files when possible. MDBX restores must not
-# hardlink mutable environment files, so they use provider-aware copy/reflink
-# semantics.
+# Restore live mainnet Ledger + StateService data from a checkpoint. MDBX keeps
+# both in one environment; RocksDB checkpoints use separate mainnet/ and
+# StateRoot/ directories. Chain-only checkpoints remain supported when
+# CHECKPOINT_INFO records state_root_included=false.
 #
 # Usage:
 #   scripts/restore-checkpoint.sh <height|latest|--at-or-below N> [options]
@@ -15,7 +13,7 @@ set -euo pipefail
 #   --root <path>           checkpoint root (default <data-dir>/checkpoints)
 #   --data-dir <path>       neo-rs data root (default ./data)
 #   --chain-db <path>       explicit chain store target (default <data-dir>/mainnet)
-#   --stateroot-db <path>   explicit StateRoot store target (default <data-dir>/Plugins/mainnet/StateRoot)
+#   --stateroot-db <path>   RocksDB StateRoot target (MDBX uses --chain-db)
 #   --keep-current          keep current data/mainnet & StateRoot as
 #                           data/mainnet.prerestore-<TS> instead of deleting
 #   --dry-run               print what would happen, do nothing
@@ -102,6 +100,14 @@ metadata_value_for_dir() {
 
 checkpoint_has_stateroot_dir() {
   local dir="$1"
+  local provider layout included
+  provider=$(metadata_value_for_dir "$dir" storage_provider || true)
+  layout=$(metadata_value_for_dir "$dir" state_root_layout || true)
+  included=$(metadata_value_for_dir "$dir" state_root_included || true)
+  if [[ "${provider,,}" == "mdbx" && "$layout" == "coordinated_mdbx" ]]; then
+    [[ "${included,,}" == "true" ]]
+    return
+  fi
   if [[ -d "$dir/StateRoot" ]]; then
     return 0
   fi
@@ -209,19 +215,30 @@ if [[ -z "$SOURCE_HEIGHT" ]]; then
 fi
 
 SOURCE_STORAGE_PROVIDER=$(metadata_value storage_provider || true)
-SOURCE_STORAGE_PROVIDER="${SOURCE_STORAGE_PROVIDER:-mdbx}"
+SOURCE_STORAGE_PROVIDER="${SOURCE_STORAGE_PROVIDER:-rocksdb}"
+SOURCE_STATE_ROOT_LAYOUT=$(metadata_value state_root_layout || true)
 if [[ -z "$SOURCE_HEIGHT" ]]; then
   echo "checkpoint $SOURCE is missing a numeric height in its name or CHECKPOINT_INFO" >&2; exit 1
 fi
 
 SOURCE_HAS_STATEROOT=1
 SOURCE_CHAIN_DIR=""
+SOURCE_COORDINATED_MDBX=0
 if [[ -d "$SOURCE/mainnet" ]]; then
   SOURCE_CHAIN_DIR="$SOURCE/mainnet"
 else
   echo "checkpoint $SOURCE is incomplete (missing mainnet/)" >&2; exit 1
 fi
-if [[ ! -d "$SOURCE/StateRoot" ]]; then
+if [[ "${SOURCE_STORAGE_PROVIDER,,}" == "mdbx" ]]; then
+  if [[ "$SOURCE_STATE_ROOT_LAYOUT" != "coordinated_mdbx" ]]; then
+    echo "checkpoint $SOURCE uses an unsupported ambiguous MDBX StateService layout" >&2
+    exit 1
+  fi
+  SOURCE_COORDINATED_MDBX=1
+  if [[ -f "$SOURCE/CHECKPOINT_INFO" ]] && grep -qx 'state_root_included=false' "$SOURCE/CHECKPOINT_INFO"; then
+    SOURCE_HAS_STATEROOT=0
+  fi
+elif [[ ! -d "$SOURCE/StateRoot" ]]; then
   if [[ -f "$SOURCE/CHECKPOINT_INFO" ]] && {
     grep -qx 'state_root_included=false' "$SOURCE/CHECKPOINT_INFO"
   }; then
@@ -229,6 +246,10 @@ if [[ ! -d "$SOURCE/StateRoot" ]]; then
   else
     echo "checkpoint $SOURCE is incomplete (missing StateRoot/)" >&2; exit 1
   fi
+fi
+if [[ "$SOURCE_COORDINATED_MDBX" -eq 1 && -n "$STATEROOT_DB_OVERRIDE" && "$STATEROOT_DB_OVERRIDE" != "$CHAIN_DB" ]]; then
+  echo "MDBX StateService restores with --chain-db; omit --stateroot-db or use the same path" >&2
+  exit 1
 fi
 if [[ -f "$SOURCE/CHECKPOINT_IN_PROGRESS" ]]; then
   echo "checkpoint $SOURCE was not finalized (CHECKPOINT_IN_PROGRESS marker present)" >&2; exit 1
@@ -293,7 +314,11 @@ lock_is_held() {
 
 # Refuse only when the target store's lock file is actively held. Other
 # neo-node processes may legitimately be running against unrelated data dirs.
-for lock in "$CHAIN_DB/LOCK" "$STATEROOT_DB/LOCK"; do
+LOCK_PATHS=("$CHAIN_DB/LOCK")
+if [[ "$SOURCE_COORDINATED_MDBX" -eq 0 ]]; then
+  LOCK_PATHS+=("$STATEROOT_DB/LOCK")
+fi
+for lock in "${LOCK_PATHS[@]}"; do
   if [[ -f "$lock" ]] && lock_is_held "$lock"; then
     echo "ERROR: $lock is held by another process; refusing to restore." >&2
     exit 1
@@ -303,7 +328,11 @@ done
 echo "restoring from checkpoint h${SOURCE_HEIGHT} (${SOURCE})"
 echo "  -> $CHAIN_DB"
 if [[ "$SOURCE_HAS_STATEROOT" -eq 1 ]]; then
-  echo "  -> $STATEROOT_DB"
+  if [[ "$SOURCE_COORDINATED_MDBX" -eq 1 ]]; then
+    echo "  -> StateService table included in $CHAIN_DB"
+  else
+    echo "  -> $STATEROOT_DB"
+  fi
 else
   echo "  -> state DB skipped (chain-only checkpoint); stale target StateRoot will be removed"
 fi
@@ -333,7 +362,9 @@ stash_or_rm() {
 }
 
 stash_or_rm "$CHAIN_DB"
-stash_or_rm "$STATEROOT_DB"
+if [[ "$SOURCE_COORDINATED_MDBX" -eq 0 ]]; then
+  stash_or_rm "$STATEROOT_DB"
+fi
 
 copy_store_dir() {
   local src="$1"
@@ -354,7 +385,7 @@ copy_store_dir() {
 
 mkdir -p "$(dirname "$CHAIN_DB")"
 copy_store_dir "$SOURCE_CHAIN_DIR" "$CHAIN_DB"
-if [[ "$SOURCE_HAS_STATEROOT" -eq 1 ]]; then
+if [[ "$SOURCE_HAS_STATEROOT" -eq 1 && "$SOURCE_COORDINATED_MDBX" -eq 0 ]]; then
   mkdir -p "$(dirname "$STATEROOT_DB")"
   copy_store_dir "$SOURCE/StateRoot" "$STATEROOT_DB"
 fi

@@ -150,19 +150,17 @@ class RestoreCheckpointTests(unittest.TestCase):
             checkpoint_root = root / "checkpoints"
             checkpoint = checkpoint_root / "h700000"
             source_chain = checkpoint / "mainnet"
-            source_stateroot = checkpoint / "StateRoot"
             target_chain = root / "restore" / "mainnet"
-            target_stateroot = root / "restore" / "StateRoot"
 
             source_chain.mkdir(parents=True)
-            source_stateroot.mkdir()
-            (source_chain / "data.mdbx").write_text("chain", encoding="utf-8")
-            (source_stateroot / "data.mdbx").write_text("state", encoding="utf-8")
+            (source_chain / "data.mdbx").write_text("chain-and-state", encoding="utf-8")
             (checkpoint / "CHECKPOINT_INFO").write_text(
                 "\n".join(
                     [
                         "height=700000",
                         "storage_provider=mdbx",
+                        "state_root_layout=coordinated_mdbx",
+                        "state_root_included=true",
                         "restore_verified=true",
                         "verified_height=700000",
                         "verified_stateroot_root=0xroot700000",
@@ -181,8 +179,6 @@ class RestoreCheckpointTests(unittest.TestCase):
                     str(checkpoint_root),
                     "--chain-db",
                     str(target_chain),
-                    "--stateroot-db",
-                    str(target_stateroot),
                     "--yes",
                 ],
                 cwd=REPO_ROOT,
@@ -197,11 +193,7 @@ class RestoreCheckpointTests(unittest.TestCase):
                 (target_chain / "data.mdbx").stat().st_ino,
                 "MDBX restore must not share checkpoint DB inodes",
             )
-            self.assertNotEqual(
-                (source_stateroot / "data.mdbx").stat().st_ino,
-                (target_stateroot / "data.mdbx").stat().st_ino,
-                "MDBX StateRoot restore must not share checkpoint DB inodes",
-            )
+            self.assertIn("StateService table included", result.stdout)
 
     def test_restore_rejects_non_height_label_checkpoint(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -34,6 +34,46 @@ fn mpt_current_local_root_index_key_matches_state_service_keyspace() {
 }
 
 #[test]
+fn mdbx_mpt_probe_reads_the_canonical_state_service_namespace() {
+    let temp = tempfile::tempdir().expect("temporary MDBX directory");
+    {
+        let canonical = open_store(StorageProviderArg::Mdbx, temp.path(), false)
+            .expect("open canonical MDBX store");
+        let state_service = canonical
+            .open_coordinated_namespace(MDBX_STATE_SERVICE_NAMESPACE)
+            .expect("open StateService namespace");
+        let mut snapshot = state_service.snapshot();
+        let writer = Arc::get_mut(&mut snapshot).expect("exclusive StateService snapshot");
+        writer
+            .put_sync(
+                mpt_current_local_root_index_key(),
+                42u32.to_le_bytes().to_vec(),
+            )
+            .expect("write StateService height");
+        writer.try_commit().expect("commit StateService height");
+    }
+
+    let output = probe_mpt_state(
+        StorageProviderArg::Mdbx,
+        temp.path(),
+        true,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        1,
+        DecodeMode::Hex,
+    )
+    .expect("probe coordinated StateService namespace");
+
+    assert_eq!(output["namespace"], MDBX_STATE_SERVICE_NAMESPACE);
+    assert_eq!(output["height"]["decoded"]["current_local_root_index"], 42);
+}
+
+#[test]
 fn ledger_transaction_key_reverses_display_hash_for_storage() {
     let key = ledger_transaction_key_from_hash(
         "0xc68d5cad0e02197dd66623373751b84b2cadf742e79aaf836b53c6999a8d264d",

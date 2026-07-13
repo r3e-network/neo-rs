@@ -240,9 +240,10 @@ def materialize_state_service_config(
     config: Path,
     stateroot_db: Path | None,
     output_dir: Path,
+    storage_provider: str = "rocksdb",
 ) -> Path:
-    """Return a config whose [state_service].path points at stateroot_db."""
-    if stateroot_db is None:
+    """Point separate-store backends at stateroot_db; MDBX uses the chain DB."""
+    if stateroot_db is None or storage_provider == "mdbx":
         return config
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -289,6 +290,24 @@ def materialize_state_service_config(
 
 
 DEFAULT_STORAGE_PROVIDER = "mdbx"
+
+
+def resolve_stateroot_db(
+    chain_db: Path | None,
+    stateroot_db: Path | None,
+    storage_provider: str,
+) -> Path | None:
+    """Resolve the physical StateService store for the selected backend."""
+    if storage_provider != "mdbx":
+        return stateroot_db
+    if stateroot_db is not None and chain_db is None:
+        raise ValueError("MDBX --stateroot-db requires --db and must name the same directory")
+    if stateroot_db is not None and chain_db is not None:
+        if stateroot_db.resolve() != chain_db.resolve():
+            raise ValueError(
+                "MDBX stores StateService in --db; --stateroot-db must be omitted or equal --db"
+            )
+    return chain_db
 
 
 def probe_command_prefix(probe_bin: Path, db_path: Path, storage_provider: str) -> list[str]:
@@ -1557,7 +1576,10 @@ def parse_args() -> argparse.Namespace:
         "--stateroot-db",
         default=None,
         type=Path,
-        help="Optional StateService MPT RocksDB path to probe after the node stops.",
+        help=(
+            "StateService MPT path for RocksDB. MDBX uses --db's "
+            "neo_state_service table; omit this option or pass the same path as --db."
+        ),
     )
     parser.add_argument(
         "--require-stateroot-height-match",
@@ -1620,6 +1642,14 @@ def parse_args() -> argparse.Namespace:
         parser.error("--import-chain and --fast-sync are mutually exclusive")
     if args.fast_sync_cache is not None and not args.fast_sync:
         parser.error("--fast-sync-cache requires --fast-sync")
+    try:
+        args.stateroot_db = resolve_stateroot_db(
+            args.db,
+            args.stateroot_db,
+            args.storage_provider,
+        )
+    except ValueError as error:
+        parser.error(str(error))
     if (
         args.sync_speed_floor_bps is not None
         and args.sync_speed_floor_bps < DEFAULT_SYNC_SPEED_FLOOR_BPS
@@ -1705,6 +1735,7 @@ def main() -> int:
         args.config,
         args.stateroot_db,
         runtime_config_dir,
+        args.storage_provider,
     )
     if args.node_output_log is not None:
         args.node_output_log.parent.mkdir(parents=True, exist_ok=True)

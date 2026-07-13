@@ -30,6 +30,8 @@ class CheckpointOnHeightTests(unittest.TestCase):
             str(stateroot_db),
             "--root",
             str(checkpoint_root),
+            "--storage-provider",
+            "rocksdb",
         ]
         if extra_args:
             command.extend(extra_args)
@@ -72,17 +74,14 @@ class CheckpointOnHeightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             chain_db = root / "chain-mdbx"
-            stateroot_db = root / "state-mdbx"
             checkpoint_root = root / "checkpoints"
             chain_db.mkdir()
-            stateroot_db.mkdir()
-            (chain_db / "data.mdbx").write_text("chain", encoding="utf-8")
-            (stateroot_db / "data.mdbx").write_text("state", encoding="utf-8")
+            (chain_db / "data.mdbx").write_text("chain-and-state", encoding="utf-8")
 
             result = self.run_checkpoint(
                 height=42,
                 chain_db=chain_db,
-                stateroot_db=stateroot_db,
+                stateroot_db=chain_db,
                 checkpoint_root=checkpoint_root,
                 extra_args=["--storage-provider", "mdbx"],
             )
@@ -93,11 +92,12 @@ class CheckpointOnHeightTests(unittest.TestCase):
                 (checkpoint_root / "h42" / "mainnet" / "data.mdbx").stat().st_ino,
                 "MDBX checkpoint must not share live DB inodes",
             )
-            self.assertNotEqual(
-                (stateroot_db / "data.mdbx").stat().st_ino,
-                (checkpoint_root / "h42" / "StateRoot" / "data.mdbx").stat().st_ino,
-                "MDBX StateRoot checkpoint must not share live DB inodes",
+            self.assertFalse((checkpoint_root / "h42" / "StateRoot").exists())
+            info = (checkpoint_root / "h42" / "CHECKPOINT_INFO").read_text(
+                encoding="utf-8"
             )
+            self.assertIn("state_root_layout=coordinated_mdbx", info)
+            self.assertIn("state_root_included=true", info)
 
     def test_retention_prunes_oldest_by_checkpoint_height_not_path_text(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Snapshot the live mainnet chain DB + StateRoot DB every <interval>
-# blocks. Polls block height via JSON-RPC (default http://localhost:10332/).
+# Snapshot the live mainnet Ledger + StateService state every <interval> blocks.
+# Polls block height via JSON-RPC (default http://localhost:10332/).
 #
 # Snapshots are stored as:
 #   <checkpoint_root>/h<height>/mainnet/
-#   <checkpoint_root>/h<height>/StateRoot/
+#   <checkpoint_root>/h<height>/StateRoot/  (RocksDB only)
 #
 # RocksDB snapshots use hardlinks for immutable SST files when possible. MDBX
 # snapshots must not hardlink the mutable environment files, so they use
@@ -21,7 +21,7 @@ set -euo pipefail
 #   --rpc <url>             RPC endpoint (default http://localhost:10332/)
 #   --data-dir <path>       neo-rs data root (default ./data)
 #   --chain-db <path>       explicit chain store path (default <data-dir>/mainnet)
-#   --stateroot-db <path>   explicit StateRoot store path (default <data-dir>/Plugins/mainnet/StateRoot)
+#   --stateroot-db <path>   RocksDB StateRoot path (MDBX uses --chain-db)
 #   --storage-provider <P>  storage backend encoded in the snapshot (default mdbx)
 #   --chain-only            snapshot only the chain DB (for bounded replay DBs without StateService)
 #   --root <path>           checkpoint root (default <data-dir>/checkpoints)
@@ -91,11 +91,25 @@ fi
 CHAIN_DB="${CHAIN_DB_OVERRIDE:-${DATA_DIR}/mainnet}"
 STATEROOT_DB="${STATEROOT_DB_OVERRIDE:-${DATA_DIR}/Plugins/mainnet/StateRoot}"
 CHECKPOINT_ROOT="${CHECKPOINT_ROOT:-${DATA_DIR}/checkpoints}"
+COORDINATED_MDBX=0
+
+case "${STORAGE_PROVIDER,,}" in
+  mdbx)
+    COORDINATED_MDBX=1
+    if [[ -n "$STATEROOT_DB_OVERRIDE" && "$STATEROOT_DB_OVERRIDE" != "$CHAIN_DB" ]]; then
+      echo "MDBX StateService is stored in --chain-db; omit --stateroot-db or use the same path" >&2
+      exit 1
+    fi
+    STATEROOT_DB="$CHAIN_DB"
+    ;;
+  rocksdb) ;;
+  *) echo "unsupported storage provider: ${STORAGE_PROVIDER}" >&2; exit 1;;
+esac
 
 if [[ ! -d "$CHAIN_DB" ]]; then
   echo "chain DB not found: $CHAIN_DB" >&2; exit 1
 fi
-if [[ "$CHAIN_ONLY" -eq 0 && ! -d "$STATEROOT_DB" ]]; then
+if [[ "$CHAIN_ONLY" -eq 0 && "$COORDINATED_MDBX" -eq 0 && ! -d "$STATEROOT_DB" ]]; then
   echo "StateRoot DB not found: $STATEROOT_DB" >&2; exit 1
 fi
 
@@ -235,7 +249,7 @@ take_snapshot() {
   fi
 
   copy_store_dir "$CHAIN_DB" "${tmp}/mainnet"
-  if [[ "$CHAIN_ONLY" -eq 0 ]]; then
+  if [[ "$CHAIN_ONLY" -eq 0 && "$COORDINATED_MDBX" -eq 0 ]]; then
     copy_store_dir "$STATEROOT_DB" "${tmp}/StateRoot"
   fi
 
@@ -251,10 +265,21 @@ take_snapshot() {
     echo "chain_db=${CHAIN_DB}"
     echo "storage_provider=${STORAGE_PROVIDER}"
     if [[ "$CHAIN_ONLY" -eq 0 ]]; then
-      echo "stateroot_db=${STATEROOT_DB}"
+      if [[ "$COORDINATED_MDBX" -eq 1 ]]; then
+        echo "stateroot_db=${CHAIN_DB}:neo_state_service"
+        echo "state_root_layout=coordinated_mdbx"
+      else
+        echo "stateroot_db=${STATEROOT_DB}"
+        echo "state_root_layout=separate"
+      fi
       echo "state_root_included=true"
     else
       echo "stateroot_db=none"
+      if [[ "$COORDINATED_MDBX" -eq 1 ]]; then
+        echo "state_root_layout=coordinated_mdbx"
+      else
+        echo "state_root_layout=separate"
+      fi
       echo "state_root_included=false"
     fi
     if [[ "$RESTORE_VERIFIED" -eq 1 ]]; then
@@ -293,14 +318,20 @@ checkpoint_is_restore_verified() {
   local dir="$1"
   local info="${dir}/CHECKPOINT_INFO"
   local restore_verified verified_height verified_stateroot_root verified_against_reference
-  local info_height
+  local info_height storage_provider state_root_layout
 
   [[ -d "${dir}/mainnet" ]] || return 1
-  [[ -d "${dir}/StateRoot" ]] || return 1
   [[ -f "$info" ]] || return 1
   [[ ! -e "${dir}/CHECKPOINT_IN_PROGRESS" ]] || return 1
 
   info_height=$(sed -n 's/^height=//p' "$info" | head -1)
+  storage_provider=$(sed -n 's/^storage_provider=//p' "$info" | head -1)
+  state_root_layout=$(sed -n 's/^state_root_layout=//p' "$info" | head -1)
+  if [[ "${storage_provider,,}" == "mdbx" ]]; then
+    [[ "$state_root_layout" == "coordinated_mdbx" ]] || return 1
+  else
+    [[ -d "${dir}/StateRoot" ]] || return 1
+  fi
   restore_verified=$(sed -n 's/^restore_verified=//p' "$info" | head -1)
   verified_height=$(sed -n 's/^verified_height=//p' "$info" | head -1)
   verified_stateroot_root=$(sed -n 's/^verified_stateroot_root=//p' "$info" | head -1)

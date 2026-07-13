@@ -24,7 +24,7 @@ use neo_native_contracts::{GasToken, LedgerContract, StandardNativeProvider};
 use neo_payloads::{Block, Transaction, TransactionState, VerifiableContainer};
 use neo_primitives::{TriggerType, UInt160, UInt256};
 use neo_serialization::BinarySerializer;
-use neo_state_service::MptStore;
+use neo_state_service::{MDBX_STATE_SERVICE_NAMESPACE, MptStore};
 use neo_static_files::StaticFileProvider;
 use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::storage::StorageConfig;
@@ -646,13 +646,24 @@ fn probe_mpt_state(
     dump_limit: usize,
     decode: DecodeMode,
 ) -> Result<Value> {
-    let store = open_store(storage_provider, db_path, true)?;
+    let canonical_store = open_store(storage_provider, db_path, true)?;
+    let store = match storage_provider {
+        StorageProviderArg::Mdbx => Arc::new(
+            canonical_store
+                .open_coordinated_namespace(MDBX_STATE_SERVICE_NAMESPACE)
+                .context("open coordinated MDBX StateService namespace")?,
+        ),
+        StorageProviderArg::Rocksdb => canonical_store,
+    };
     let snapshot = store.snapshot();
     let mut output = json!({
         "db": db_path,
         "storage_provider": storage_provider.as_provider_name(),
         "mode": "state-service-mpt",
     });
+    if matches!(storage_provider, StorageProviderArg::Mdbx) {
+        output["namespace"] = json!(MDBX_STATE_SERVICE_NAMESPACE);
+    }
 
     if include_height {
         let key = mpt_current_local_root_index_key();

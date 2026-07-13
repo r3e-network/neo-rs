@@ -172,7 +172,7 @@ class MaintainStateRootCheckpointsTests(unittest.TestCase):
             self.assertIn("--root", latest["command"])
             self.assertEqual(
                 latest["command"][latest["command"].index("--storage-provider") + 1],
-                "mdbx",
+                "rocksdb",
             )
 
     def test_plan_waits_until_status_contains_validated_checkpoint_stages(self):
@@ -940,7 +940,7 @@ path = "Data_MPT_validate_{0}"
             self.assertEqual(paths["chain_db"], Path("./data/mainnet-validate"))
             self.assertEqual(
                 paths["stateroot_db"],
-                Path("Data_MPT_validate_334F454E"),
+                Path("./data/mainnet-validate"),
             )
 
     def test_execute_plan_runs_only_create_actions(self):

@@ -147,14 +147,14 @@ def bounded_command(
         str(max_seconds),
         "--db",
         str(chain_db),
-        "--stateroot-db",
-        str(stateroot_db),
         "--probe-bin",
         str(probe_bin),
         "--storage-provider",
         storage_provider,
         "--require-stateroot-height-match",
     ]
+    if storage_provider == "rocksdb":
+        command.extend(["--stateroot-db", str(stateroot_db)])
     if fast_sync:
         command.append("--fast-sync")
         if fast_sync_cache is not None:
@@ -191,7 +191,7 @@ def checkpoint_command(
     script: Path,
     storage_provider: str = DEFAULT_STORAGE_PROVIDER,
 ) -> list[str]:
-    return [
+    command = [
         str(script),
         "none",
         "--once",
@@ -201,13 +201,14 @@ def checkpoint_command(
         str(data_dir),
         "--chain-db",
         str(chain_db),
-        "--stateroot-db",
-        str(stateroot_db),
         "--storage-provider",
         storage_provider,
         "--root",
         str(checkpoint_root),
     ]
+    if storage_provider == "rocksdb":
+        command.extend(["--stateroot-db", str(stateroot_db)])
+    return command
 
 
 def checkpoint_restore_root(checkpoint_root: Path, height: int) -> Path:
@@ -219,19 +220,21 @@ def checkpoint_restore_command(
     height: int,
     checkpoint_root: Path,
     script: Path,
+    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
 ) -> list[str]:
     restore_root = checkpoint_restore_root(checkpoint_root, height)
-    return [
+    command = [
         str(script),
         str(height),
         "--root",
         str(checkpoint_root),
         "--chain-db",
         str(restore_root / "mainnet"),
-        "--stateroot-db",
-        str(restore_root / "StateRoot"),
         "--yes",
     ]
+    if storage_provider == "rocksdb":
+        command.extend(["--stateroot-db", str(restore_root / "StateRoot")])
+    return command
 
 
 def checkpoint_plan_summary(milestones: list[int], minimum_checkpoint_count: int) -> dict:
@@ -627,6 +630,8 @@ def build_plan(
     fast_sync_cache: Path | None = None,
     initial_height: int | None = None,
 ) -> dict:
+    if storage_provider == "mdbx":
+        stateroot_db = chain_db
     steps = []
     for height in milestones:
         is_fast_sync_step = fast_sync
@@ -670,6 +675,7 @@ def build_plan(
                     height=height,
                     checkpoint_root=checkpoint_root,
                     script=restore_script,
+                    storage_provider=storage_provider,
                 ),
             }
         )

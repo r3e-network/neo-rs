@@ -101,7 +101,6 @@ python3 scripts/run-bounded-mainnet-replay.py \
   --fast-sync-cache data/mainnet-stateroot-clean/fast-sync-cache \
   --initial-height 0 \
   --db data/mainnet-stateroot-clean/mainnet \
-  --stateroot-db data/mainnet-stateroot-clean/StateRoot_334F454E \
   --require-stateroot-height-match \
   --require-reference-stateroot-match \
   --sync-speed-floor-bps 1500
@@ -109,10 +108,11 @@ python3 scripts/run-bounded-mainnet-replay.py \
 
 When the imported package already satisfies `--stop-at-height`, `neo-node` can
 shut down before RPC and telemetry are started. Treat that as expected for this
-bounded proof: rely on the post-run `--db` / `--stateroot-db` probes, reference
-`getstateroot` comparison, and `--initial-height` throughput math. Metrics can
-still be sampled when available, but do not require metrics samples for this
-fast-sync stop-height proof.
+bounded proof: rely on the post-run storage probes, reference `getstateroot`
+comparison, and `--initial-height` throughput math. Metrics can still be sampled
+when available, but do not require metrics samples for this fast-sync
+stop-height proof. For MDBX, both Ledger and StateService probes use
+`--db`; `--stateroot-db` is only needed for the separate RocksDB layout.
 `--sync-speed-ceiling-bps` is available for controlled experiments, but do not
 use it as a production gate: faster-than-2000 transaction-bearing BPS is valid
 evidence, not a failure.
@@ -123,36 +123,37 @@ The focused Criterion target exercises the same typed composition and canonical
 import boundary used by the node. Each measured batch contains 32 blocks and
 one real `GasToken.transfer` invocation per block by default. Set
 `NEO_BENCH_TRANSACTIONS_PER_BLOCK` from 1 through 512 to evaluate denser blocks.
-Ledger and StateService use separate MDBX stores, MPT roots are durably fenced,
-and block construction, genesis/warmup, optional prefill, shutdown, and database
-cleanup are outside the timed interval:
+Ledger and StateService use separate tables in one MDBX environment and publish
+through one atomic transaction, matching production composition. Block
+construction, genesis/warmup, optional prefill, shutdown, and database cleanup
+are outside the timed interval:
 
 ```bash
 # Caught-up/small-state window; default adaptive MPT ceiling is 8 blocks.
-cargo bench -p neo-benches --bench block_import -- mdbx_blocks --quick
+cargo bench -p neo-benches --bench block_import -- mdbx_coordinated --quick
 
 # Repeat the same measured window after 2,048 transaction-bearing prefill blocks.
 NEO_BENCH_PREFILL_BLOCKS=2048 \
-  cargo bench -p neo-benches --bench block_import -- mdbx_blocks --quick
+  cargo bench -p neo-benches --bench block_import -- mdbx_coordinated --quick
 
-# Compare an explicit StateService backlog ceiling without changing source.
+# Compare the legacy asynchronous MPT ceiling on the in-memory fixture.
 NEO_BENCH_MPT_APPLY_BATCH_BLOCKS=16 NEO_BENCH_PREFILL_BLOCKS=2048 \
-  cargo bench -p neo-benches --bench block_import -- mdbx_blocks --quick
+  cargo bench -p neo-benches --bench block_import -- memory_blocks --quick
 
 # Exercise denser transaction-bearing blocks through the same import path.
 NEO_BENCH_TRANSACTIONS_PER_BLOCK=8 NEO_BENCH_PREFILL_BLOCKS=256 \
-  cargo bench -p neo-benches --bench block_import -- mdbx_blocks --quick
+  cargo bench -p neo-benches --bench block_import -- mdbx_coordinated --quick
 ```
 
-On the local development host on 2026-07-13, the corrected stationary quick
-benchmark measured about 6.04k blocks/s from the initialized small-state fixture
-and 5.46k blocks/s after the 2,048-block prefill. The fixture and database
-teardown are outside the timed closure; earlier numbers that included teardown
-are invalid and must not be used as a baseline. The production default remains
-an eight-block ceiling with an eager four-block flush: it starts trie work early
-when the worker catches the producer and consumes larger batches only when work
-is already queued. The Application path also retains transactions through the
-shared immutable block instead of deep-cloning them into script containers.
+On the local development host on 2026-07-13, the coordinated quick benchmark
+measured about 7.48k blocks/s from the initialized fixture and 5.68-5.79k
+blocks/s after 2,048 transaction-bearing prefill blocks. These are synthetic
+regression signals, not the 1,500-2,000 BPS production proof, which still
+requires transaction-bearing replay and reference state-root parity.
+Coordinated StateService currently projects each block during import and
+computes the queued MPT batch at the canonical durability boundary. The
+Application path retains transactions through the shared immutable block
+instead of deep-cloning them into script containers.
 With eight transfers per block and 256 prefill blocks (the same 2,048 prefill
 transactions), the reusable per-block transaction cache measured about 2.42k
 blocks/s, or 19.4k transactions/s. The allocate-per-transaction A/B measured
@@ -357,7 +358,7 @@ docker inspect --format='{{.State.Health.Status}}' neo-node
 | `[consensus]` | `enabled`, `private_key_hex`, `hsm`, `auto_start` | Off by default; consensus participation starts when `enabled` or `auto_start` is true and requires validator key material. |
 | `[blockchain]` | `block_time`, `max_transactions_per_block` | |
 | `[mempool]` | `max_transactions` | |
-| `[state_service]` | `enabled`, `full_state`, `path` | Enables the StateService MPT store used by state proofs and state-root RPC. |
+| `[state_service]` | `enabled`, `full_state`, `path` | Enables the StateService MPT store used by state proofs and state-root RPC. MDBX uses the canonical `neo_state_service` table and ignores `path`; RocksDB uses the separate path. |
 | `[indexer]` | `enabled`, `store_path` | Enables NeoIndexer RPC methods and durable read-side indexes that resume their canonical Index stage automatically. |
 | `[application_logs]` | `enabled`, `path`, `debug`, `exception_policy` | Enables C# ApplicationLogs-compatible plugin storage. |
 | `[tokens_tracker]` | `enabled`, `db_path`, `enabled_trackers` | Enables NEP-11/NEP-17 token tracker services. |
@@ -384,7 +385,11 @@ so service-provider nodes do not need a manual restart after initial sync.
 
 Persistent node storage requires fast, durable, local storage. Avoid NAS for primary data, spinning disks (insufficient IOPS), and ephemeral/tmpfs volumes.
 
-The exact on-disk size depends on the chain height at the time you sync and on whether you enable `[state_service]` (the state-root MPT trie adds a separate `StateRoot` directory). Size the volume with comfortable headroom and monitor free space; both MainNet and TestNet grow steadily with chain height.
+The exact on-disk size depends on the chain height at the time you sync and on
+whether you enable `[state_service]`. With MDBX, the MPT occupies the canonical
+environment's `neo_state_service` named table; RocksDB uses the configured
+separate StateRoot directory. Size the volume with comfortable headroom and
+monitor free space; both MainNet and TestNet grow steadily with chain height.
 
 ### Static Ledger archive recovery
 
@@ -758,7 +763,7 @@ only chain-only checkpoints are available.
 
 Startup also refuses a persistent storage root containing
 `.neo-local-replay-poisoned`. The node fsyncs this write-ahead marker before a
-StateService or persistent-indexer pre-commit write, fences those stores, and
+non-coordinated StateService or persistent-indexer pre-commit write, fences those stores, and
 removes it only after the canonical Ledger commit is durable. Its presence
 therefore means the process crashed or lost durability inside a cross-store
 commit window. Do not delete it and continue with unverified data. Restore a
@@ -766,10 +771,10 @@ checkpoint containing the matching chain, StateService, and persistent-indexer
 stores (or prepare a clean replay), verify their heights, and only then remove
 the marker before preflight.
 
-MDBX now has a tested named-table/coordinated-transaction storage primitive,
-but the daemon does not yet place StateService MPT publication in the Ledger
-transaction. Do not remove or bypass this marker because both configured paths
-use MDBX; separate MDBX environments are still separate durability domains.
+MDBX StateService uses the canonical environment's `neo_state_service` named
+table and commits Ledger + MPT overlays in one transaction, so StateService
+alone does not create this marker. A persistent indexer still does. RocksDB
+StateService remains a separate durability domain and also retains the marker.
 
 For a clean replay, prepare a fresh isolated config instead of reusing the
 mismatched directories:
@@ -961,6 +966,7 @@ python3 scripts/maintain-stateroot-checkpoints.py \
   --data-dir ./data \
   --chain-db ./data/mainnet-validate \
   --stateroot-db ./Data_MPT_validate_334F454E \
+  --storage-provider rocksdb \
   --writer-pid none
 ```
 
@@ -1204,24 +1210,26 @@ Helper scripts in `scripts/` automate this:
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/run-bounded-mainnet-replay.py --config <toml> --target-height <N>` | Runs `neo-node` with `--stop-at-height`; add `--fast-sync` to validate the built-in fast-sync package path or `--import-chain <chain.acc>` to validate an extracted package. With `--db`, `--stateroot-db`, `--require-stateroot-height-match`, `--reference`, and `--require-reference-stateroot-match`, also verifies the post-run chain Ledger height matches the StateService MPT height and the local root matches reference `getstateroot`. |
+| `scripts/run-bounded-mainnet-replay.py --config <toml> --target-height <N>` | Runs `neo-node` with `--stop-at-height`; add `--fast-sync` to validate the built-in fast-sync package path or `--import-chain <chain.acc>` to validate an extracted package. With `--db`, `--require-stateroot-height-match`, `--reference`, and `--require-reference-stateroot-match`, also verifies the post-run Ledger height matches the MDBX StateService table and the local root matches reference `getstateroot`. RocksDB additionally requires `--stateroot-db`. |
 | `scripts/run-stateroot-milestones.py --config <toml> --milestone <N>` | Runs multiple reference-checked bounded replay milestones in order and creates a full chain + StateRoot checkpoint after each successful height. Add `--fast-sync --initial-height 0` when the proof must exercise the built-in package importer; each milestone resumes through the cached official package until its target height. Defaults to compact JSON with a throughput/root summary; use `--summary-jsonl <path>` to append run history and `--include-command-output` for raw child stdout/stderr. |
 | `scripts/analyze-stateroot-milestone-history.py <milestone-summary.jsonl>` | Reads milestone history and reports latest root/height, average throughput, slowest/fastest milestones, adjacent throughput trend/regressions, and reference/state mismatch counts. Add `--checkpoint-root <dir>` to include the current on-disk full-state checkpoint inventory and rotated-out history heights. |
 | `scripts/backup-rocksdb.sh <rocksdb_path> [backup_dir]` | One-shot archive of the RocksDB directory (also via `make backup-rocksdb`). |
 | `scripts/maintain-stateroot-checkpoints.py [options]` | Reads the continuous state-root status file and keeps the reported `base`, `mid`, and `latest` checkpoints present; defaults to dry-run, use `--execute` to create missing phases. Use `--node-config` to derive paths, or `--chain-db` / `--stateroot-db` for manual validation/replay layouts. |
-| `scripts/checkpoint-on-height.sh <writer_pid or none> [options]` | Height-labelled chain + StateRoot checkpoint; use `--once --height <height>` for the `base`, `mid`, and `latest` recovery stages reported by continuous state-root validation. Accepts explicit `--chain-db` / `--stateroot-db` paths; pass `--chain-only` for bounded replay checkpoints that do not include a StateRoot DB. |
-| `scripts/restore-checkpoint.sh <height|latest|--at-or-below N> [options]` | Restores a height-labelled `h<height>` checkpoint. Accepts `--chain-db` / `--stateroot-db` targets for validation or bounded replay directories instead of only restoring into `data/mainnet`. |
+| `scripts/checkpoint-on-height.sh <writer_pid or none> [options]` | Height-labelled Ledger + StateService checkpoint; use `--once --height <height>` for the recovery stages reported by continuous validation. MDBX writes one `mainnet/` snapshot with `state_root_layout=coordinated_mdbx`; RocksDB additionally writes `StateRoot/`. |
+| `scripts/restore-checkpoint.sh <height|latest|--at-or-below N> [options]` | Restores a height-labelled `h<height>` checkpoint using its recorded backend/layout. MDBX restores one combined environment; RocksDB accepts separate `--chain-db` / `--stateroot-db` targets. |
 | `scripts/compare-offline-gas-storage.py --db <store_path> --address <ADDR>` | Uses `neo-db-probe` plus official state-root RPCs to compare selected offline GAS AccountState balances before promoting a checkpoint. Defaults to MDBX; pass `--storage-provider rocksdb` for legacy stores. |
 | `scripts/checkpoint-live-rocksdb.sh <writer_pid> <rocksdb_path> [root]` | Live checkpoint with a short pause, then resume. |
 | `scripts/checkpoint-live-rocksdb-loop.sh <writer_pid> <rocksdb_path> [interval] [max] [root]` | Periodic live checkpoints with rotation (default interval 1800s, retention 8). |
 
 `scripts/restore-checkpoint.sh` can restore a chain-only checkpoint when its
-`CHECKPOINT_INFO` contains `state_root_included=false`. In that mode it restores
-only the chain DB and removes or stashes the target StateRoot directory so an
-old MPT database cannot be mixed with the restored chain. `latest` and
-`--at-or-below N` consider only production `h<height>` checkpoint directories.
+`CHECKPOINT_INFO` contains `state_root_included=false`. MDBX keeps StateService
+in the canonical environment's `neo_state_service` table, so a full-state MDBX
+checkpoint records `state_root_layout=coordinated_mdbx` and must validate that
+table at the same height; no duplicate `StateRoot/` directory is created.
+`latest` and `--at-or-below N` consider only production `h<height>` checkpoint
+directories.
 
-To restore: stop any service that is writing the target chain or StateRoot DB,
+To restore: stop any service that is writing the target Ledger/StateService data,
 extract the archive into the configured storage path, fix ownership for the
 `neo` user, then start the service. Restoring into a separate validation or
 bounded-replay directory can run while unrelated `neo-node` processes use other
