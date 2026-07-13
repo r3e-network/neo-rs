@@ -262,7 +262,7 @@ All code examples in documentation must be testable:
 | Static variables | `SCREAMING_SNAKE_CASE` | `GLOBAL_CONTEXT` |
 | Type parameters | `PascalCase`, single letter preferred | `T`, `K`, `V`, `Item` |
 | Lifetimes | `snake_case`, starts with `'` | `'a`, `'de`, `'static` |
-| Features | `kebab-case` or `snake_case` | `runtime`, `client`, `rocksdb-storage` |
+| Features | `kebab-case` or `snake_case` | `runtime`, `client`, `mdbx-storage` |
 
 ### C# Compatibility Exceptions
 

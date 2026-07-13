@@ -12,8 +12,8 @@
 
 `Store` is the broad backend contract; the stronger `TransactionalStore` trait
 makes canonical-overlay publication and isolated maintenance transactions
-mandatory for composed nodes. MDBX is the production default, RocksDB remains
-supported, and in-memory providers cover tests/ephemeral nodes. `DataCache` is
+mandatory for composed nodes. MDBX is the persistent backend, and the in-memory
+provider covers tests, ephemeral nodes, and remote-ledger mode. `DataCache` is
 the execution overlay: `clone_cache` creates an isolated child, dropping/resetting
 the child rolls it back, success performs one parent merge, and durable visitors
 emit tracked entries in byte-key order. This is the Neo adaptation of
@@ -23,8 +23,7 @@ from `StoreCache::try_commit_durable`; failed overlays are discarded, staged
 bulk tips are rewound, and finalized outcomes are delivered only after the
 durable fence succeeds. Accepted bulk prefixes therefore cannot be reported
 from an unflushed shared snapshot. MDBX implements that fence with its atomic
-write transaction; RocksDB uses a WAL-synchronous overlay batch and persists
-any earlier WAL-disabled fast-sync prefix first. Canonical composition is
+write transaction. Canonical composition is
 generic over `S: TransactionalStore`, so an unsupported backend cannot start a
 node and fail only at the first block.
 MDBX also implements the stronger, statically selected
@@ -36,10 +35,10 @@ advance, rollback after a secondary write failure, restart persistence, and
 rejection of cross-environment commits before partial writes. StateService now
 queues projected blocks, prepares one ordered MPT overlay, and publishes it with
 Ledger through that callback before advancing its visible root.
-RocksDB StateService and a persistent indexer remain separate durability domains, so
-neo-rs uses write-ahead fail-stop recovery rather than claiming cross-store
-atomicity: it writes and fsyncs a poison marker before either observer can
-publish, fences both observer stores before Ledger, and removes the marker only
+The persistent indexer remains a separate durability domain, so neo-rs uses
+write-ahead fail-stop recovery rather than claiming cross-store atomicity: it
+writes and fsyncs a poison marker before that observer can publish, fences the
+observer store before Ledger, and removes the marker only
 after canonical success. A crash or failure leaves the marker for startup to
 reject (including the uninitialized-chain/genesis-root mismatch). ApplicationLogs
 and TokensTracker now perform both preparation and private-store commit wholly
@@ -69,7 +68,7 @@ complete compressed frame before returning bytes, and explicit strict scrub
 checks every frame and index entry. `StaticLedgerArchive` captures exact
 C#-compatible Ledger rows after execution; node commit hooks keep those rows in
 memory until the precommit durability fence writes and syncs the whole accepted
-batch without publishing its index, then commit canonical MDBX/RocksDB state
+batch without publishing its index, then commit canonical MDBX state
 and expose the staged frames through one sidecar transaction. Startup validates
 every still-hot overlapping block hash against the canonical suffix, truncates
 a recovered cold-ahead suffix, and repairs archive lag above the prune
@@ -84,8 +83,7 @@ frame's keys without payload decompression and batch-resolves the latest height
 for each key in one sidecar MDBX read transaction. Only keys whose latest
 version is at or below the bounded frontier are eligible, and hot/cold bytes
 must match before deletion. MDBX uses one transaction across its data and
-node-metadata tables; RocksDB uses one synchronous batch across its default and
-metadata column families. The initial protocol `MaxTraceableBlocks` is the hot
+node-metadata tables. The initial protocol `MaxTraceableBlocks` is the hot
 retention floor, while `CurrentBlock` remains hot. The delete set and
 `hot-pruned-through` watermark become durable atomically. Startup rejects a
 watermark above canonical/archive truth or archive lag below a pruned prefix,
@@ -178,7 +176,7 @@ pub trait TransactionalStore: Store {
 |--------|--------|------|-------------|
 | Abstraction | General `Store`, mandatory `TransactionalStore` for canonical composition, associated concrete snapshots, and `RuntimeStore` enum selection | `Database` trait with GATs | `kvdb` trait, 3-level stack |
 | Table encoding | Generic `Table` + GAT codecs over unchanged Neo/maintenance bytes; typed sync and prune metadata are live | Per-table `Encode`/`Decode` + `Compact` derive | Per-column encoding (parity-scale-codec) |
-| Tiering | Hot MDBX/RocksDB plus opt-in compressed static Ledger archive; provider routing, atomic pruning, and watermark-aware recovery are wired | Hot (MDBX) / Cold (RocksDB) / Static (NippyJar) | Single DB (parity-db or RocksDB) |
+| Tiering | Hot MDBX plus an opt-in compressed static Ledger archive; provider routing, atomic pruning, and watermark-aware recovery are wired | Hot (MDBX) / Cold (RocksDB) / Static (NippyJar) | Single DB (parity-db or RocksDB) |
 | Overlay | Child/parent `DataCache`: isolated mutation, drop/reset rollback, one-way merge, sorted backend emission | MDBX transaction | `OverlayedChanges` |
 | Pruning | Static Ledger rows automatically prune beyond the initial `MaxTraceableBlocks` window; state/MPT pruning remains separately configured | Per-segment config (4 profiles) | `PruningMode` enum |
 | Static files | Versioned per-height zstd frames, opaque exact Ledger rows, checksums, LRU reads, continuity and torn-tail recovery; cold-first bytes with post-hot index visibility | NippyJar columnar (mandatory, mmap) | None |
@@ -189,8 +187,9 @@ pub trait TransactionalStore: Store {
    struct. Removes zero bytes from empty hashes/optionals. Saves 15-30% on
    storage.
 
-2. **Hot/Cold/Static three-tier** — MDBX for hot state, RocksDB for indices,
-   NippyJar columnar files for old data. Different mount points (NVMe/HDD).
+2. **Database/static-file tiering** — MDBX stores mutable state and indexes;
+   NippyJar-style columnar files store finalized history and can use a separate
+   mount class.
 
 3. **NippyJar** — append-only, mmap-friendly, columnar compression. Block-
    aligned segments (8K blocks per file). Zero-copy reads.

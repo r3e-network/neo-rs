@@ -10,8 +10,9 @@ protocol parity with the C# node is a hard design constraint — a block accepte
 by one node must be accepted by the other, and the two implementations must
 agree on every hash, signature, fee, and storage value. neo-rs is organized as a
 workspace of focused crates arranged in explicit dependency layers, with
-`tokio`-based async services, a `jsonrpsee` JSON-RPC interface, MDBX as the
-default store, RocksDB as a supported fallback, and in-memory storage for tests.
+`tokio`-based async services, a `jsonrpsee` JSON-RPC interface, MDBX for
+persistent storage, and in-memory storage for tests, ephemeral nodes, and
+remote-ledger mode.
 
 ## Layered architecture
 
@@ -103,7 +104,7 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-io | Infrastructure | Binary and variable-length integer reader/writer (mirrors `Neo.IO`). |
 | neo-error | Infrastructure | Authoritative `CoreError` / `CoreResult` error types for the workspace. |
 | neo-crypto | Infrastructure | Hashing, secp256r1 ECC, signatures, BLS12-381. |
-| neo-storage | Infrastructure | General `Store`, canonical `TransactionalStore`, and cross-namespace `CoordinatedTransactionalStore` capabilities; child/parent `DataCache` overlays; C#-compatible raw key/value codecs; isolated node-maintenance metadata; MDBX/RocksDB adapters; and in-memory providers. |
+| neo-storage | Infrastructure | General `Store`, canonical `TransactionalStore`, and cross-namespace `CoordinatedTransactionalStore` capabilities; child/parent `DataCache` overlays; C#-compatible raw key/value codecs; isolated node-maintenance metadata; the MDBX persistent provider; and the in-memory provider. |
 | neo-static-files | Infrastructure | Versioned genesis-first static records with zstd compression, checksums, a derived MDBX versioned-offset index, payload-free frame-key lookup, bounded suffix recovery, strict scrubbing, kernel writer ownership, and LRU frame caching. |
 | neo-config | Infrastructure | Node and protocol configuration (TOML-backed settings). |
 | neo-vm | Infrastructure | Stateful NeoVM host (execution engine, contexts, reference-counted stack items) over `neo-vm-rs`. |
@@ -400,8 +401,8 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   for StateService: per-block changes remain ordered, the MPT prepares one batch
   overlay under its writer gate, and Ledger + MPT root metadata publish in one
   transaction before the visible root advances.
-  RocksDB StateService and the persistent indexer remain independent durability
-  domains. Before either independent observer can publish, `neo-node` writes and
+  The persistent indexer remains an independent durability domain. Before that
+  independent observer can publish, `neo-node` writes and
   fsyncs `.neo-local-replay-poisoned`, then fences it before the canonical Ledger
   transaction; mutation or fence failure rejects the block. Canonical success removes the
   marker and syncs its directory; a crash or failed fence leaves it
@@ -549,21 +550,22 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   `StoreMaintenanceBatch::put/delete::<T>` applies the same identity on writes.
   Sync checkpoints, verified-header sidecars, and the hot-Ledger prune
   watermark use this boundary in production. Node-local metadata remains
-  physically separate: MDBX uses a named table and RocksDB a column family,
-  while one batch can atomically combine ordinary row mutations with metadata
-  updates. Those bytes cannot enter contract scans, store dumps, or state-root
+  physically separate in an MDBX named table, while one transaction can
+  atomically combine ordinary row mutations with metadata updates. Those bytes
+  cannot enter contract scans, store dumps, or state-root
   calculation. `StorageKeyCodec` and `StorageItemCodec` preserve exact C# bytes;
   `CoordinatedTransactionalStore` is a separate static capability for service
   domains that can prove one physical transaction. MDBX implements it with
   collision-free named-table store views and rejects views from different
   environments before visiting either overlay. StateService consumes the named
-  `neo_state_service` view through a prepared-overlay callback; RocksDB retains
-  the separate-store durability fence and recovery marker.
-  compact encodings cannot replace protocol storage formats. Backend-reaching
+  `neo_state_service` view through a prepared-overlay callback. Independent
+  persistent observers retain the separate-store durability fence and recovery
+  marker. Compact encodings cannot replace protocol storage formats. Backend-reaching
   snapshots and caches expose only fallible commits. `TableProvider` is blanket
   implemented for `TransactionalStore`, because maintenance-table reads require
-  that isolated namespace. MDBX is the production default, RocksDB remains a
-  supported fallback, and memory providers are used for tests. Higher crates
+  that isolated namespace. `StoreFactory` exposes the fixed `mdbx` and `memory`
+  provider set; memory is used for tests, ephemeral nodes, and remote-ledger
+  mode. Higher crates
   read through capability providers: `neo-blockchain` has
   `BlockProvider`/`TxProvider` plus `LedgerProviderFactory`,
   `StorageLedgerProviderFactory`, `StaticLedgerProviderFactory`,
@@ -607,7 +609,7 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   C#-compatible block-hash,
   trimmed-block, final transaction-state, and signer-conflict rows in memory;
   `fence_precommit_durability` appends and syncs the whole accepted batch before
-  the canonical MDBX/RocksDB transaction, but leaves those frames absent from
+  the canonical MDBX transaction, but leaves those frames absent from
   the provider-visible index. `canonical_commit_succeeded` then publishes frame
   boundaries, all versioned row locations, tip, archive identity, and indexed
   length in one sidecar MDBX transaction. Failure before the cold fence discards

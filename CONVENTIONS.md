@@ -133,7 +133,7 @@ hand-written.
 - Top-level orchestration should read as domain flow and push mechanics down to
   lower modules. See `docs/coding-design-architecture-guidance.md` for the
   chained workflow, abstraction, generics, and `dyn Trait` rules.
-- Keep runtime data out of git. Local ledgers, RocksDB state, checkpoints,
+- Keep runtime data out of git. Local ledgers, MDBX environments, checkpoints,
   downloaded fast-sync archives, replay output, and logs are generated
   artifacts; commit only source, docs, scripts, and small deterministic fixtures
   with an explicit test purpose.

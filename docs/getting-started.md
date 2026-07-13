@@ -28,12 +28,12 @@ flowchart TD
 | Requirement | Version / Notes |
 |-------------|-----------------|
 | Rust toolchain | 1.89 or newer (the workspace uses edition 2024 and standard-library file locking). Install via [rustup](https://rustup.rs). |
-| Native storage build dependencies | The production storage provider is MDBX, and RocksDB remains compiled as an explicit fallback/test backend. On Ubuntu/Debian: `build-essential cmake clang libclang-dev libsnappy-dev liblz4-dev libzstd-dev zlib1g-dev libbz2-dev`. |
+| Native storage build dependencies | MDBX is built from its bundled C source and its bindings are generated with bindgen. On Ubuntu/Debian: `build-essential clang libclang-dev`. |
 | Disk | A full MainNet persistent store grows large (hundreds of GB over time). Use a durable volume. |
 | OS | Linux or macOS. |
 
-You do not need a system RocksDB library installed; the build compiles RocksDB
-from source, which is why a C++ toolchain and `clang` are listed above.
+You do not need a system MDBX library. The build compiles bundled MDBX source;
+`libclang` is required to generate the FFI bindings.
 
 ## Clone and build
 
@@ -45,8 +45,8 @@ cd neo-rs
 cargo build --release -p neo-node
 ```
 
-This builds the full node — MDBX storage, the RocksDB fallback backend, and the
-RPC server are included by default. The only optional feature is `tee` (Trusted Execution Environment
+This builds the full node with MDBX persistence and the RPC server. The only
+optional feature is `tee` (Trusted Execution Environment
 support), enabled with `--features tee`.
 
 The resulting binary is at `target/release/neo-node`.
@@ -81,7 +81,7 @@ See [configuration.md](./configuration.md) for the full key reference.
 On startup the node:
 
 1. Loads protocol settings from the TOML (or the matching built-in preset).
-2. Opens the storage backend (MDBX by default, RocksDB when explicitly configured, or in-memory).
+2. Opens MDBX persistence, or the in-memory provider for an explicitly ephemeral node.
 3. Starts the blockchain service and begins persisting blocks.
 4. Starts the P2P listener and dials the configured seed nodes.
 5. Starts the JSON-RPC server if `[rpc] enabled = true`.

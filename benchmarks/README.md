@@ -101,7 +101,7 @@ into `results/TEMPLATE.md`.
 - [ ] Same hardware, same disk, nothing else running (close editors/CI).
 - [ ] Same `.acc` file and same `--target-height` for the import benchmark.
 - [ ] Same protocol config (mainnet vs testnet) on all three.
-- [ ] Storage engine noted (neo-rs: RocksDB; neo-cli: LevelDB/RocksDB plugin;
+- [ ] Storage engine noted (neo-rs: MDBX; neo-cli: LevelDB/RocksDB plugin;
       neo-go: LevelDB/BoltDB) — storage choice affects import speed, so record it.
 - [ ] Release/optimized builds only (`--release`; .NET `Release`; Go default).
 - [ ] Warm up RPC benchmarks (the client does 3s by default) before measuring.

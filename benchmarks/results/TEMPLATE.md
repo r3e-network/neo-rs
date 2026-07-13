@@ -19,7 +19,7 @@
 
 | Impl | Version / commit | Storage engine | Build |
 |------|------------------|----------------|-------|
-| neo-rs | `<git sha>` | RocksDB | `--release` |
+| neo-rs | `<git sha>` | MDBX | `--release` |
 | neo-cli | `vX.Y.Z` | LevelDB | Release |
 | neo-go | `vX.Y.Z` | LevelDB | default |
 

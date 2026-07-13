@@ -934,44 +934,41 @@ formatted with `{:#?}` in logs.
 - `EnginePipeline` (neo-engine)
 - `SyncStageCheckpointStore` (neo-runtime)
 
-Added manual `Debug` impls to all concrete implementations: `MemoryStore`,
-`MemorySnapshot`, `MdbxStore`, `MdbxSnapshot`, `RocksDbStore`,
-`RocksDbSnapshot`, `Pipeline`, and test `OverlayContractStore`.
+Added manual `Debug` impls to the concrete storage implementations:
+`MemoryStore`, `MemorySnapshot`, `MdbxStore`, and `MdbxSnapshot`, plus the
+pipeline and test implementations that participate in these trait bounds.
 
 **Trade-offs**:
 - **Gaining**: All `Arc<dyn Trait>` service objects can now be logged with
   `{:#?}`. Consistent trait bounds across all layers. Better observability.
 - **Giving up**: Every concrete implementation must implement `Debug`. For
-  types wrapping non-Debug FFI types (MDBX `Database`, RocksDB `DB`), manual
+  types wrapping non-Debug FFI types (MDBX `Database`), manual
   `finish_non_exhaustive()` impls are needed. This is a small one-time cost.
 - **Reversibility**: High — removing a supertrait bound is additive.
 
 **Consequences**:
 - All 5 traits now require `Debug`
-- All 8 concrete implementations now have `Debug` impls
+- All participating concrete implementations have `Debug` impls
 - `Arc<dyn Store>`, `Arc<dyn EnginePipeline>`, etc. can be logged uniformly
 
 ---
 
 ### ADR-020: Store capabilities without dynamic extension traits
 
-**Status**: Accepted (implemented)
+**Status**: Accepted, amended by ADR-041 and ADR-042
 
 **Context**: The earlier ADR-020 split fast-sync and raw-overlay behavior into
 `FastSyncStore` / `RawOverlayStore` extension traits exposed through
 `as_*() -> Option<&dyn ...>` accessors. That reduced the original store surface,
 but it also reintroduced dynamic dispatch and downcast-like capability probing
-on a hot storage boundary. The storage backends are a fixed production set
-(`memory`, `mdbx`, `rocksdb`) behind `StoreFactory`, so dynamic extension
-objects were unnecessary.
+on a hot storage boundary. The storage backends are a fixed built-in set
+(`memory`, `mdbx`) behind `StoreFactory`, so dynamic extension objects are
+unnecessary.
 
 **Decision**: Keep one generic `Store` boundary and expose optional backend
 capabilities as direct default methods:
-- `backend_kind()`, `mdbx_environment_info()`, and `rocksdb_batch_metrics()`
-  replace concrete-store downcasts for diagnostics.
-- `supports_fast_sync_mode()`, `enable_fast_sync_mode()`,
-  `disable_fast_sync_mode()`, `discard_pending_fast_sync_writes()`, and
-  `has_pending_fast_sync_writes()` replace `FastSyncStore`.
+- `backend_kind()` and `mdbx_environment_info()` replace concrete-store
+  downcasts for diagnostics.
 - `try_commit_raw_overlay()` and `try_commit_borrowed_raw_overlay()` replace
   `RawOverlayStore`.
 - Unsupported backends keep no-op/`Ok(false)` defaults; concrete stores
@@ -981,8 +978,8 @@ capabilities as direct default methods:
 
 **Trade-offs**:
 - **Gaining**: Callers remain generic over `S: Store` and no longer ask for
-  `&dyn` extension handles. Backend metrics and fast-sync/overlay behavior use
-  one consistent provider/capability pattern.
+  `&dyn` extension handles. Backend diagnostics and overlay behavior use one
+  consistent provider/capability pattern.
 - **Giving up**: The `Store` trait is larger than the temporary extension-trait
   split, but the methods are all no-op defaults and remove runtime capability
   object plumbing.
@@ -992,7 +989,7 @@ capabilities as direct default methods:
 
 **Consequences**:
 - Storage callers use direct generic methods instead of `as_*()` accessors.
-- MDBX and RocksDB telemetry no longer downcast concrete stores.
+- MDBX telemetry no longer downcasts concrete stores.
 - `RuntimeStore` forwards capabilities through enum dispatch.
 - Test and benchmark stores implement the same `Store` methods as production
   stores.
@@ -2004,7 +2001,7 @@ framing in `neo-blockchain` would mix protocol semantics with infrastructure.
   post-execution snapshot. `StaticLedgerProvider` decodes those same bytes
   through the canonical Ledger codecs and implements the existing provider
   capabilities.
-- Publish static rows **after** canonical MDBX/RocksDB success. The pre-commit
+- Publish static rows **after** canonical MDBX success. The pre-commit
   hook only buffers immutable rows; one canonical-success callback appends the
   accepted batch with one sync. Canonical failure discards the buffer.
 - Treat archive publication failure as recoverable canonical lag, not as a
@@ -2347,10 +2344,9 @@ parent merge.
 - Remove canonical durability and isolated-maintenance methods from `Store`.
   Plain `Store` remains the broad contract for read paths, auxiliary service
   stores, snapshots, and optional throughput fast paths.
-- Implement `TransactionalStore` for `MdbxStore`, `RocksDbStore`,
-  `MemoryStore`, and the concrete `RuntimeStore` backend-selection enum. MDBX
-  uses one write transaction, RocksDB uses a synchronous write batch after
-  fencing any WAL-disabled prefix, and memory storage provides atomic
+- Implement `TransactionalStore` for `MdbxStore`, `MemoryStore`, and the
+  concrete `RuntimeStore` backend-selection enum. MDBX uses one write
+  transaction, and memory storage provides atomic
   process-local visibility for tests and explicitly ephemeral nodes.
 - Require `TransactionalStore` throughout canonical composition:
   `NodeBuilder`, `NodeCoreBuilder`, `NodeCore`, `NodeSystemContext`, `Node`,
@@ -2385,3 +2381,56 @@ parent merge.
   the stronger bound in composition, and preserve the child-overlay mechanics.
 - Neo N3 v3.10.1 bytes, execution order, state roots, backend selection, and
   on-disk layouts are unchanged.
+
+### ADR-042: MDBX-only persistent storage and factory-owned construction
+
+**Status**: Accepted (implemented)
+
+**Context**: Supporting multiple persistent engines preserved duplicate
+configuration, transaction, telemetry, checkpoint, and recovery paths. The
+alternate engine also kept an LSM-specific buffered fast-sync mode beside the
+canonical transactional import path. That complexity no longer served a
+production deployment target and allowed node and tool behavior to diverge by
+backend.
+
+**Decision**:
+
+- MDBX is the only built-in persistent provider. `MemoryStore` remains for
+  tests, explicitly ephemeral nodes, and remote-ledger mode.
+- `StoreFactory` is the only name-based construction boundary. Its static
+  `StoreProviderKind` set contains `Mdbx` and `Memory`; unknown and empty names
+  fail closed. `RuntimeStore` and `RuntimeSnapshot` use the same two variants.
+- Canonical Ledger data, isolated maintenance metadata, and StateService MPT
+  state share one MDBX environment. StateService uses the
+  `neo_state_service` named table, and `CoordinatedTransactionalStore`
+  publishes Ledger and MPT overlays in one write transaction.
+- Remove the alternate backend dependency, source, buffering APIs, metrics,
+  configuration values, operational scripts, and backend-only tests. Do not
+  add no-op compatibility shims.
+- Height checkpoints contain one `mainnet/` MDBX environment and declare
+  `storage_provider=mdbx` plus `state_root_layout=coordinated_mdbx`.
+  Restore and probe tooling accept one database path.
+- Existing alternate-engine databases are not migrated. Operators must resync
+  or import through the supported node paths.
+
+**Trade-offs**:
+
+- **Gaining**: one durability model, one recovery protocol, fewer native
+  dependencies, smaller builds, and simpler operational tooling.
+- **Cost**: an existing deployment using the removed engine cannot open its old
+  database directly.
+- **Constraint**: adding another persistent provider requires a new ADR plus
+  parity proofs for canonical transactions, coordinated StateService commits,
+  checkpoints, crash recovery, and production replay.
+
+**Consequences**:
+
+- Persistent node composition always reaches `MdbxStore` through
+  `StoreFactory`; direct backend construction is confined to provider
+  implementation and focused tests.
+- Storage-level fast-sync buffering is gone. Fast sync retains import batching
+  and bounded StateService work, then crosses the same MDBX durability fence as
+  live import.
+- The deleted backend name is rejected by configuration and factory tests.
+- Neo key/value bytes, MPT node encoding, state-root inputs, and protocol
+  behavior are unchanged.

@@ -428,7 +428,7 @@ flowchart TD
     end
     Child -->|commit on success| Snap["shared DataCache snapshot"]
     Snap -->|commit_to_store| SC["StoreCache"]
-    SC -->|atomic canonical fence| Store["TransactionalStore backend<br/>MDBX / RocksDB / in-memory (neo-storage)"]
+    SC -->|atomic canonical fence| Store["TransactionalStore backend<br/>MDBX / in-memory (neo-storage)"]
 
     Snap -.->|block change set| MPT["MptStore (neo-state-service)<br/>Trie over change set → state root"]
     MPT --> SS["StateStore root records<br/>by index / by hash"]
@@ -454,13 +454,12 @@ Key points:
   `NodeBuilder`, `NodeCore`, `NodeSystemContext`, and `Node` require
   `S: TransactionalStore`, whose canonical-overlay operation is mandatory and
   returns `Result<()>`; an unsupported backend cannot compose a node. MDBX uses
-  one atomic write transaction, while RocksDB bypasses fast-sync buffering with
-  a WAL-synchronous batch and first persists any earlier WAL-disabled prefix.
+  one atomic write transaction.
   A failure discards the uncommitted root overlay; bulk paths also rewind their
   staged in-memory tip. Finalized delivery, mempool maintenance, and import
-  events run only after this fence succeeds. MDBX is the production default,
-  RocksDB remains a supported fallback, and the in-memory backend does not
-  persist across restarts.
+  events run only after this fence succeeds. MDBX is the persistent backend;
+  the in-memory backend is reserved for tests, ephemeral nodes, and
+  remote-ledger mode and does not persist across restarts.
 - **Coordinated MDBX commit.** `CoordinatedTransactionalStore` is an explicit
   stronger capability above `TransactionalStore`. MDBX named-table views share
   one environment but isolate raw keyspaces, and its coordinated commit applies
@@ -472,11 +471,10 @@ Key points:
   publication; backend parity tests prove that contract. Ledger and MPT bytes
   become durable in one transaction; only then does the visible local root
   advance.
-- **Cross-store recovery.** RocksDB StateService and a persistent indexer do not
-  share a transaction with the canonical Ledger store. The node writes and
-  fsyncs `.neo-local-replay-poisoned` before either independent pre-commit store
-  can publish, then durably fences those observer backends before committing
-  Ledger. A persistent
+- **Cross-store recovery.** A persistent indexer does not share a transaction
+  with the canonical Ledger store. The node writes and fsyncs
+  `.neo-local-replay-poisoned` before that independent pre-commit store can
+  publish, then durably fences the observer backend before committing Ledger. A persistent
   observer mutation or fence failure rejects the block. Canonical success
   removes the marker and syncs its directory. A crash, deferred-hook
   failure, or Ledger commit failure leaves the marker for startup to reject.
@@ -503,8 +501,8 @@ Key points:
   `TableProvider`, and `StoreMaintenanceBatch::put/delete::<T>` applies the
   matching typed write. Sync checkpoints, verified headers/windows/target hash,
   and the hot-Ledger prune watermark use that path. Their established bytes are
-  unchanged. MDBX stores maintenance metadata in a named table and RocksDB in a
-  column family, allowing one durable transaction to delete ordinary rows and
+  unchanged. MDBX stores maintenance metadata in a named table, allowing one
+  durable transaction to delete ordinary rows and
   advance a typed checkpoint without exposing metadata to contract scans or
   state roots. Backend-facing cache/snapshot commits always return `Result`;
   only child `DataCache::commit()` remains infallible because it merges memory

@@ -25,7 +25,7 @@ neo-rs is a production node implementation that speaks Neo N3's wire protocol,
 executes its virtual machine, and maintains its ledger and state exactly as the
 canonical C# node does — so the two are interchangeable on the same network. It
 is organized as an 8-layer Rust workspace of 28 focused crates, built on mature
-libraries (MDBX, RocksDB, jsonrpsee, the RustCrypto suite) with the protocol-defining
+libraries (MDBX, jsonrpsee, the RustCrypto suite) with the protocol-defining
 parts (NeoVM, var-int wire format, MPT, dBFT) implemented from the specification.
 
 ## What it supports
@@ -40,7 +40,7 @@ parts (NeoVM, var-int wire format, MPT, dBFT) implemented from the specification
 | **Standards** | NEP-17 (tokens), NEP-11 (NFTs), NEP-6 (wallets), NEP-2 keys |
 | **Hardforks** | Full Neo N3 hardfork enum through v3.10.1, with MainNet/TestNet activation schedules |
 | **JSON-RPC** | ~55 methods (blockchain, state, invocation, governance, wallet, oracle) |
-| **Storage** | MDBX by default, RocksDB fallback, append-only static Ledger archives, hot/cold provider factories, or in-memory |
+| **Storage** | MDBX, append-only static Ledger archives, hot/cold provider factories, or ephemeral in-memory storage |
 | **Oracle** | HTTPS + NeoFS request fulfilment |
 
 See [docs/protocol-compatibility.md](./docs/protocol-compatibility.md) for the parity details.

@@ -410,9 +410,9 @@ High-signal clusters found during the first pass:
   node `getversion` now follows it for dynamic Policy protocol fields. The RPC
   Policy providers now share one adapter for native-registry lookup and
   downcasting instead of repeating that code per endpoint group.
-- Existing git hygiene rules exclude local ledgers, RocksDB state,
+- Existing git hygiene rules exclude local ledgers, MDBX state,
   checkpoints, logs, and build outputs. A scan did not find obvious tracked
-  chain.acc/RocksDB artifacts, but runtime-data checks should stay in CI.
+  chain.acc/MDBX artifacts, but runtime-data checks should stay in CI.
 
 ## Remediation Plan
 
@@ -830,7 +830,7 @@ instead of asserting the full-list invariant through `expect`.
 `neo-native-contracts/src/registry/hashes.rs` stores canonical native contract
 hashes as fixed little-endian byte arrays, avoiding runtime hex parsing and
 `expect` in native contract registry initialization.
-`neo-storage` RocksDB/MDBX store and snapshot read paths now log backend read
+`neo-storage` MDBX store and snapshot read paths now log backend read
 errors and return `None` consistently in all build modes instead of panicking
 under debug assertions. This keeps storage API behavior aligned with `Option`
 returns and avoids `panic=abort` process exits on read-error paths.

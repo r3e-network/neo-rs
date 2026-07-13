@@ -4,7 +4,7 @@ Thanks for helping improve the Neo Rust node. Please follow these guidelines for
 
 ## Development setup
 - Use the stable Rust toolchain (`rustup default stable`).
-- Install RocksDB development headers on your platform (e.g., `sudo apt-get install librocksdb-dev` on Debian/Ubuntu) to build and run tests.
+- Install a C/C++ toolchain plus Clang/libclang for the bundled MDBX bindings.
 
 ## Checks before opening a PR
 - Format: `cargo fmt --all`
@@ -16,7 +16,7 @@ Thanks for helping improve the Neo Rust node. Please follow these guidelines for
 ## Code style
 - Prefer small, focused commits with descriptive messages.
 - Add targeted comments when behaviour is non-obvious; avoid restating the code.
-- Keep configuration defaults sensible for production where applicable (e.g., rocksdb backend, non-root containers).
+- Keep configuration defaults sensible for production where applicable (e.g., MDBX backend, non-root containers).
 - Follow the high-level flow guidance in `docs/coding-design-architecture-guidance.md`: top-level code should read as domain intent, with protocol/storage/RPC/runtime details hidden behind lower-layer operations.
 
 ## Security

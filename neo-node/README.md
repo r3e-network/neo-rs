@@ -7,7 +7,7 @@ Standalone Neo N3 blockchain node daemon with built-in RPC server.
 `neo-node` is a standalone daemon that runs the Neo N3 blockchain node. It:
 - Synchronizes with the Neo network over the Neo P2P protocol
 - Provides a JSON-RPC API for external clients
-- Manages the blockchain database (MDBX default, RocksDB fallback)
+- Manages the blockchain database through MDBX
 - Supports built-in services (RpcServer, NeoIndexer, ApplicationLogs, TokensTracker, StateService, OracleService when enabled)
 - Consensus (dBFT 2.0) can be enabled via DBFTPlugin settings and a validator wallet
 - Optional TEE support (SGX/Nitro) and HSM-backed consensus signing

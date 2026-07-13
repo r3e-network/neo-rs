@@ -55,8 +55,8 @@ Persistence backend.
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
-| `backend` | string | `"memory"` unless a persistent path is supplied | `"mdbx"` for the production persistent store, `"rocksdb"` for the supported fallback/test backend, or `"memory"` for in-memory (state lost on restart). Alias: `Engine`. Any other value is rejected. |
-| `data_dir` | path | none | Database directory for persistent storage. Required when `backend = "mdbx"` or `"rocksdb"` unless `--storage-path` is passed. |
+| `backend` | string | `"memory"` unless a persistent path is supplied | `"mdbx"` for the production persistent store or `"memory"` for ephemeral and remote-ledger nodes (state lost on restart). Any other value is rejected. |
+| `data_dir` | path | none | MDBX environment directory. Required for persistent storage unless `--storage-path` is passed. |
 | `read_only` | bool | `false` | Open the primary store read-only when the selected backend supports it. Alias: `ReadOnly`. Use only for offline inspection/query modes; a normal syncing node must write genesis, blocks, headers, indexes, and service state. |
 | `mdbx_geometry_upper_gb` | integer | backend default | MDBX map upper bound in GiB. Shipped MainNet/TestNet configs pin this so the mmap geometry is explicit. |
 | `mdbx_geometry_growth_mb` | integer | backend default | MDBX map growth step in MiB. |
@@ -68,21 +68,19 @@ Persistence backend.
 
 Notes:
 
-- The CLI `--storage-path <DIR>` overrides the directory and uses the default
-  persistent backend (`mdbx`) unless `[storage].backend` explicitly selects
-  `rocksdb`.
-- A persistent backend (`mdbx` or `rocksdb`) with no directory and no
-  `--storage-path` is an error.
+- The CLI `--storage-path <DIR>` overrides the directory and selects the MDBX
+  persistent backend even when the TOML omits `[storage].backend`.
+- MDBX with no directory and no `--storage-path` is an error.
 - Static files are a **precommit-durable cold archive**. The node captures the exact
   Ledger rows, writes and syncs provider-invisible frames before the canonical
-  MDBX/RocksDB transaction, and publishes their sidecar index only after hot
+  MDBX transaction, and publishes their sidecar index only after hot
   success. Startup verifies the still-hot overlapping block-hash suffix,
   recovers and truncates a cold-ahead suffix left by a failed hot commit,
   repairs archive lag only where hot rows still exist, and serves clean hot
   misses through the same provider traits. After publication, rows older than
   the initial protocol `MaxTraceableBlocks` retention window are pruned from
-  the hot store. An MDBX named table or RocksDB column family stores the
-  node-local watermark outside Neo contract storage; row deletes and watermark
+  the hot store. An MDBX named table stores the node-local watermark outside
+  Neo contract storage; row deletes and watermark
   advancement are one durable backend transaction. `Prefix_CurrentBlock (12)`
   always remains hot.
 - Opening `ledger.static` takes an exclusive OS lock on the archive file
@@ -263,7 +261,7 @@ State-root/MPT support used by Neo's StateService RPC methods.
 | `enabled` | bool | `false` | Start the state-root service and register its state store. Alias: `Enabled`. |
 | `full_state` | bool | `false` | Retain historical trie nodes for old-root proofs/state reads. Alias: `FullState`. |
 | `track_during_catchup` | bool | `false` | Keep computing local MPT state roots even while the node is far behind the peer tip. Enable this for full MainNet state-root validation or bootstrap jobs that must produce every historical root. Alias: `TrackDuringCatchup`. |
-| `path` | path | `StateRoot_{0}` | State-service store directory for non-MDBX backends. `{0}` is replaced with uppercase 8-digit network magic. MDBX uses the canonical environment's `neo_state_service` named table and ignores this path. Alias: `Path`. |
+| `path` | path | none | Optional auxiliary MDBX directory when the canonical node itself is using the in-memory provider. Persistent MDBX nodes use the canonical environment's `neo_state_service` named table and ignore this path. `{0}` is replaced with uppercase 8-digit network magic. Alias: `Path`. |
 
 The service is updated during block persistence through the daemon's commit
 handlers, so it follows the same canonical-chain lifecycle as the ledger. By
@@ -272,7 +270,7 @@ configs set `track_during_catchup = true` so `getstateheight` and
 `getstateroot` advance from genesis instead of only near the live tip. A
 StateService data must be contiguous with the chain store: if the chain has
 already advanced without matching MPT roots, restore a checkpoint that includes
-the matching MPT namespace/directory or replay from genesis with
+the matching coordinated MPT namespace or replay from genesis with
 `track_during_catchup = true`.
 
 ### `[indexer]`
@@ -526,7 +524,7 @@ the native binary.
 The primary store directory can be set two ways, in increasing precedence:
 
 1. `[storage] data_dir = "..."`
-2. `--storage-path <DIR>` on the command line (uses the default persistent backend, MDBX, unless `[storage].backend` explicitly selects RocksDB)
+2. `--storage-path <DIR>` on the command line (selects the MDBX persistent backend)
 
 Legacy `[storage].path` is not used for the primary chain store. Keep primary
 storage configs canonical with `data_dir`; service-specific stores may still
@@ -541,7 +539,7 @@ A minimal, persistent TestNet node with RPC enabled on loopback:
 network_type = "testnet"
 
 [storage]
-backend = "rocksdb"
+backend = "mdbx"
 data_dir = "./data/testnet"
 static_files_dir = "./data/testnet-static"
 

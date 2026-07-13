@@ -17,7 +17,6 @@ crate owns and emits the metric.
 | `neo_sync_` | `neo-node` sync/persistence metrics (`neo-node/src/node/sync_metrics`) | `neo_sync_height`, `neo_sync_blocks_persisted`, `neo_sync_avg_commit_us` |
 | `neo_state_service_` | `neo-state-service` (MPT apply pipeline) | `neo_state_service_mpt_apply_height`, `neo_state_service_mpt_apply_avg_total_us` |
 | `neo_storage_mdbx_` | `neo-storage` MDBX backend (production default environment diagnostics) | `neo_storage_mdbx_map_size_bytes`, `neo_storage_mdbx_reader_slots_used` |
-| `neo_storage_rocksdb_` | `neo-storage` RocksDB backend (batch writer) | `neo_storage_rocksdb_batch_bytes_written_total`, `neo_storage_rocksdb_batch_pending_operations` |
 | `neo_rpc_` | `neo-rpc` (JSON-RPC request/error counters) | `neo_rpc_requests_total`, `neo_rpc_errors_total` |
 
 When adding a metric, pick the prefix that matches the emitting crate/subsystem
@@ -27,15 +26,14 @@ and keep the rest of the name descriptive.
 
 - **Counters end in `_total`.** A monotonically increasing counter should carry
   the `_total` suffix (e.g. `neo_rpc_requests_total`,
-  `neo_storage_rocksdb_batch_batches_flushed_total`).
+  `neo_node_daemon_task_spawned_total`).
 
   Known deviation: `neo_sync_blocks_persisted` is declared `# TYPE ... counter`
   but does **not** carry the `_total` suffix. Do **not** rename it — see
   "Frozen names" below.
 
 - **Gauges** carry no `_total` suffix (e.g. `neo_sync_height`,
-  `neo_node_ledger_height`, `neo_storage_mdbx_map_size_bytes`,
-  `neo_storage_rocksdb_batch_pending_operations`).
+  `neo_node_ledger_height`, `neo_storage_mdbx_map_size_bytes`).
 
 - **Duration metrics use the `_us` suffix** (microseconds). This is the
   established convention across the sync and state-service metrics

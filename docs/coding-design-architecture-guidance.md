@@ -70,7 +70,7 @@ rules are:
   and small deterministic fixtures only.
 
 A change can be rejected even if it compiles when it forces readers to
-understand RocksDB keys, JSON-RPC transport, VM stack encoding, MPT node layout,
+understand storage-engine keys, JSON-RPC transport, VM stack encoding, MPT node layout,
 and node orchestration in the same function.
 
 ## Blockchain Node Priorities
@@ -309,8 +309,8 @@ Priority order for crate refactors:
    `CoordinatedTransactionalStore`
    only when both namespaces share one proven physical transaction; MDBX
    StateService is the production example. Never claim atomicity across
-   independently committed stores. RocksDB StateService and a persistent indexer
-   may persist before the canonical Ledger fence. Write and fsync an
+   independently committed stores. A persistent indexer may persist before the
+   canonical Ledger fence. Write and fsync an
    operator-visible marker *before* entering either observer, durably fence each
    before Ledger, and fail the canonical write if either persistent observer
    cannot mutate or fence its data. Clear the marker only after Ledger succeeds.
@@ -838,7 +838,7 @@ Only source-controlled artifacts belong in git.
 
 Keep these out of the repository:
 
-- local ledgers and RocksDB directories
+- local ledgers and MDBX environments
 - downloaded fast-sync packages
 - extracted `chain.acc` files
 - checkpoints and replay outputs
