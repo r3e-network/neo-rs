@@ -185,6 +185,108 @@ fn votes_for_distinct_block_indexes_cannot_mix() {
 }
 
 #[test]
+fn votes_for_different_networks_cannot_mix() {
+    let vs = validators(4);
+    let pubkeys: Vec<ECPoint> = vs.iter().map(|(_, point)| point.clone()).collect();
+    let mut root = StateRoot::new_current(7, UInt256::from([0xAA; 32]));
+    let mut collector = StateRootVoteCollector::new();
+
+    for (index, (private_key, _)) in vs.iter().enumerate().take(2) {
+        let signature = sign_state_root(&mut root, private_key, NETWORK).expect("sign root");
+        assert!(
+            collector
+                .add_vote(&mut root, index, signature.to_vec(), &pubkeys, NETWORK)
+                .is_none()
+        );
+    }
+
+    let other_network = NETWORK ^ 1;
+    let signature =
+        sign_state_root(&mut root, &vs[2].0, other_network).expect("sign other network");
+    assert!(
+        collector
+            .add_vote(&mut root, 2, signature.to_vec(), &pubkeys, other_network,)
+            .is_none(),
+        "votes accepted under another network must not enter the existing pool"
+    );
+
+    let signature = sign_state_root(&mut root, &vs[2].0, NETWORK).expect("sign root");
+    assert!(
+        collector
+            .add_vote(&mut root, 2, signature.to_vec(), &pubkeys, NETWORK)
+            .is_some()
+    );
+}
+
+#[test]
+fn votes_for_reordered_validators_cannot_mix() {
+    let vs = validators(4);
+    let pubkeys: Vec<ECPoint> = vs.iter().map(|(_, point)| point.clone()).collect();
+    let mut root = StateRoot::new_current(7, UInt256::from([0xAA; 32]));
+    let mut collector = StateRootVoteCollector::new();
+
+    for (index, (private_key, _)) in vs.iter().enumerate().take(2) {
+        let signature = sign_state_root(&mut root, private_key, NETWORK).expect("sign root");
+        assert!(
+            collector
+                .add_vote(&mut root, index, signature.to_vec(), &pubkeys, NETWORK)
+                .is_none()
+        );
+    }
+
+    let mut reordered = pubkeys.clone();
+    reordered.swap(2, 3);
+    let signature = sign_state_root(&mut root, &vs[3].0, NETWORK).expect("sign reordered slot");
+    assert!(
+        collector
+            .add_vote(&mut root, 2, signature.to_vec(), &reordered, NETWORK)
+            .is_none(),
+        "a reordered validator context must not enter the existing pool"
+    );
+
+    let signature = sign_state_root(&mut root, &vs[2].0, NETWORK).expect("sign root");
+    assert!(
+        collector
+            .add_vote(&mut root, 2, signature.to_vec(), &pubkeys, NETWORK)
+            .is_some()
+    );
+}
+
+#[test]
+fn votes_for_changed_validators_cannot_mix() {
+    let vs = validators(5);
+    let pubkeys: Vec<ECPoint> = vs[..4].iter().map(|(_, point)| point.clone()).collect();
+    let mut root = StateRoot::new_current(7, UInt256::from([0xAA; 32]));
+    let mut collector = StateRootVoteCollector::new();
+
+    for (index, (private_key, _)) in vs.iter().enumerate().take(2) {
+        let signature = sign_state_root(&mut root, private_key, NETWORK).expect("sign root");
+        assert!(
+            collector
+                .add_vote(&mut root, index, signature.to_vec(), &pubkeys, NETWORK)
+                .is_none()
+        );
+    }
+
+    let mut changed = pubkeys.clone();
+    changed[2] = vs[4].1.clone();
+    let signature = sign_state_root(&mut root, &vs[4].0, NETWORK).expect("sign changed slot");
+    assert!(
+        collector
+            .add_vote(&mut root, 2, signature.to_vec(), &changed, NETWORK)
+            .is_none(),
+        "a changed validator context must not enter the existing pool"
+    );
+
+    let signature = sign_state_root(&mut root, &vs[2].0, NETWORK).expect("sign root");
+    assert!(
+        collector
+            .add_vote(&mut root, 2, signature.to_vec(), &pubkeys, NETWORK)
+            .is_some()
+    );
+}
+
+#[test]
 fn pruning_removes_every_competing_root_below_the_index() {
     let vs = validators(4); // N=4 -> M=3
     let pubkeys: Vec<ECPoint> = vs.iter().map(|(_, p)| p.clone()).collect();

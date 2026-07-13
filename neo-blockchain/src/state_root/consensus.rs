@@ -116,7 +116,13 @@ impl From<&StateRoot> for StateRootIdentity {
 /// feeding it inbound votes and broadcasting the returned signed root.
 #[derive(Default)]
 pub struct StateRootVoteCollector {
-    votes: HashMap<StateRootIdentity, HashMap<usize, Vec<u8>>>,
+    pools: HashMap<StateRootIdentity, StateRootVotePool>,
+}
+
+struct StateRootVotePool {
+    network: u32,
+    validators: Vec<ECPoint>,
+    votes: HashMap<usize, Vec<u8>>,
 }
 
 impl StateRootVoteCollector {
@@ -141,19 +147,32 @@ impl StateRootVoteCollector {
         if !validate_state_root_vote(state_root, validator_index, &signature, validators, network) {
             return None;
         }
-        let entry = self
-            .votes
+        let pool = self
+            .pools
             .entry(StateRootIdentity::from(&*state_root))
-            .or_default();
-        entry.insert(validator_index, signature);
-        let witness = aggregate_state_root_witness(entry, validators)?;
+            .or_insert_with(|| StateRootVotePool {
+                network,
+                validators: validators.to_vec(),
+                votes: HashMap::new(),
+            });
+        if pool.network != network || pool.validators != validators {
+            return None;
+        }
+
+        pool.votes.insert(validator_index, signature);
+        let pool_network = pool.network;
+        let pool_validators = &pool.validators;
+        pool.votes.retain(|index, candidate| {
+            validate_state_root_vote(state_root, *index, candidate, pool_validators, pool_network)
+        });
+        let witness = aggregate_state_root_witness(&pool.votes, pool_validators)?;
         Some(state_root.clone().with_witness(witness))
     }
 
     /// Drops vote pools for roots below `index` (called after a signed root is
     /// finalized/persisted) to bound memory.
     pub fn prune_below(&mut self, index: u32) {
-        self.votes
+        self.pools
             .retain(|root_identity, _| root_identity.index >= index);
     }
 }
