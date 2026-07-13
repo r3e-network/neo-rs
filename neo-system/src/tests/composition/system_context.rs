@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use neo_blockchain::SystemContext;
 use neo_config::ProtocolSettings;
 use neo_native_contracts::StandardNativeProvider;
-use neo_storage::persistence::StoreCache;
 use neo_storage::persistence::providers::MemoryStore;
+use neo_storage::persistence::{StoreCache, TransactionalStore};
 use neo_storage::{StorageItem, StorageKey};
 
 use crate::{BlockCommitHooks, NodeSystemContext, NoopBlockCommitHooks};
@@ -17,9 +17,9 @@ struct RecordingCommitHooks {
     failed: AtomicBool,
 }
 
-impl<B> BlockCommitHooks<B> for RecordingCommitHooks
+impl<S> BlockCommitHooks<S> for RecordingCommitHooks
 where
-    B: neo_storage::CacheRead,
+    S: TransactionalStore,
 {
     fn fence_precommit_durability(&self) -> Result<(), String> {
         self.fenced.store(true, Ordering::Release);
@@ -38,9 +38,9 @@ where
 #[derive(Debug, Default)]
 struct FailingFenceHooks;
 
-impl<B> BlockCommitHooks<B> for FailingFenceHooks
+impl<S> BlockCommitHooks<S> for FailingFenceHooks
 where
-    B: neo_storage::CacheRead,
+    S: TransactionalStore,
 {
     fn fence_precommit_durability(&self) -> Result<(), String> {
         Err("injected observer flush failure".to_string())

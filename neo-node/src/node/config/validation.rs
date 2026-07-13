@@ -3,7 +3,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context;
-use neo_storage::persistence::ReadOnlyStoreGeneric;
 use tracing::info;
 
 use super::super::cli::LedgerMode;
@@ -483,7 +482,13 @@ pub(in crate::node) fn validate_storage(
     let state_service_provider = service_store_provider(config)?;
     let store = open_store(config, storage_override)?;
     let ledger_index = durable_ledger_index(&store)?;
-    validate_state_service_storage(config, network, ledger_index, &state_service_provider)?;
+    validate_state_service_storage(
+        config,
+        network,
+        ledger_index,
+        &state_service_provider,
+        &store,
+    )?;
     Ok(())
 }
 
@@ -499,11 +504,24 @@ pub(in crate::node) fn validate_state_service_storage(
     network: u32,
     ledger_index: Option<u32>,
     storage_provider: &str,
+    canonical_store: &Arc<neo_storage::persistence::providers::RuntimeStore>,
 ) -> anyhow::Result<()> {
     if !config.state_service.enabled {
         return Ok(());
     }
     let chain_height = ledger_index;
+    if storage_provider.eq_ignore_ascii_case("mdbx") && canonical_store.as_mdbx().is_some() {
+        let state_store = canonical_store
+            .open_coordinated_namespace(neo_state_service::MDBX_STATE_SERVICE_NAMESPACE)
+            .context("opening coordinated StateService MDBX namespace for validation")?;
+        let label = format!(
+            "canonical MDBX namespace {}",
+            neo_state_service::MDBX_STATE_SERVICE_NAMESPACE
+        );
+        let state_height = read_state_service_height_from_store(&state_store, &label)?;
+        return validate_state_service_height(chain_height, state_height, &label);
+    }
+
     let Some(path) = &config.state_service.path else {
         return match chain_height {
             Some(chain_height) => anyhow::bail!(
@@ -525,11 +543,18 @@ pub(in crate::node) fn validate_state_service_storage(
     }
 
     let state_height = read_state_service_mpt_height(storage_provider, &config.storage, &path)?;
+    validate_state_service_height(chain_height, state_height, &path.display().to_string())
+}
+
+fn validate_state_service_height(
+    chain_height: Option<u32>,
+    state_height: Option<u32>,
+    label: &str,
+) -> anyhow::Result<()> {
     let Some(chain_height) = chain_height else {
         return match state_height {
             Some(height) => anyhow::bail!(
-                "StateService MPT height {height} at {} exists while the chain store is uninitialized; restore matching canonical and StateService stores or remove both local stores and replay from genesis",
-                path.display()
+                "StateService MPT height {height} at {label} exists while the chain store is uninitialized; restore matching canonical and StateService data or remove the local store and replay from genesis"
             ),
             None => Ok(()),
         };
@@ -537,38 +562,28 @@ pub(in crate::node) fn validate_state_service_storage(
     match state_height {
         Some(height) if height == chain_height => Ok(()),
         Some(height) => anyhow::bail!(
-            "StateService MPT height {height} at {} does not match chain height {chain_height}; restore a matching StateRoot checkpoint or replay from genesis with [state_service].track_during_catchup = true",
-            path.display()
+            "StateService MPT height {height} at {label} does not match chain height {chain_height}; restore a matching checkpoint or replay from genesis with [state_service].track_during_catchup = true"
         ),
         None => anyhow::bail!(
-            "StateService MPT store {} has no current local root while the chain store is already at height {chain_height}; restore a matching StateRoot checkpoint or replay from genesis with [state_service].track_during_catchup = true",
-            path.display()
+            "StateService MPT store at {label} has no current local root while the chain store is already at height {chain_height}; restore a matching checkpoint or replay from genesis with [state_service].track_during_catchup = true"
         ),
     }
 }
 
-fn read_state_service_mpt_height(
-    storage_provider: &str,
-    storage: &StorageSection,
-    path: &Path,
-) -> anyhow::Result<Option<u32>> {
-    use neo_storage::persistence::{Store, StoreFactory};
+fn read_state_service_height_from_store<S>(store: &S, label: &str) -> anyhow::Result<Option<u32>>
+where
+    S: neo_storage::persistence::Store,
+{
+    use neo_storage::persistence::RawReadOnlyStore;
 
     const CURRENT_LOCAL_ROOT_INDEX_KEY: &[u8] = &[0x02];
-
-    let mut cfg = storage.storage_config_for_path(path.to_path_buf());
-    cfg.read_only = true;
-    let store = StoreFactory::get_store_with_config(storage_provider, cfg).map_err(|err| {
-        anyhow::anyhow!("failed to open StateService MPT {storage_provider} store: {err}")
-    })?;
     let snapshot = store.snapshot();
-    let Some(value) = snapshot.get(&CURRENT_LOCAL_ROOT_INDEX_KEY.to_vec()) else {
+    let Some(value) = snapshot.try_get_bytes(CURRENT_LOCAL_ROOT_INDEX_KEY) else {
         return Ok(None);
     };
     if value.len() != 4 {
         anyhow::bail!(
-            "StateService MPT current local root index at {} is malformed: expected 4 bytes, got {}",
-            path.display(),
+            "StateService MPT current local root index at {label} is malformed: expected 4 bytes, got {}",
             value.len()
         );
     }
@@ -576,6 +591,21 @@ fn read_state_service_mpt_height(
     let mut bytes = [0u8; 4];
     bytes.copy_from_slice(&value);
     Ok(Some(u32::from_le_bytes(bytes)))
+}
+
+fn read_state_service_mpt_height(
+    storage_provider: &str,
+    storage: &StorageSection,
+    path: &Path,
+) -> anyhow::Result<Option<u32>> {
+    use neo_storage::persistence::StoreFactory;
+
+    let mut cfg = storage.storage_config_for_path(path.to_path_buf());
+    cfg.read_only = true;
+    let store = StoreFactory::get_store_with_config(storage_provider, cfg).map_err(|err| {
+        anyhow::anyhow!("failed to open StateService MPT {storage_provider} store: {err}")
+    })?;
+    read_state_service_height_from_store(store.as_ref(), &path.display().to_string())
 }
 
 fn storage_backend_name(config: &NodeConfig) -> anyhow::Result<&str> {

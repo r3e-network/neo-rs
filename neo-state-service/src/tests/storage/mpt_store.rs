@@ -795,6 +795,51 @@ fn batch_apply_commits_multiple_state_roots_with_one_backing_overlay() {
 }
 
 #[test]
+fn coordinated_batch_publishes_all_roots_after_one_external_commit() {
+    let backing = Arc::new(RecordingRawOverlayStore::new());
+    let store = MptStore::from_store(Arc::clone(&backing), true).expect("mpt store");
+    let changes0 = vec![put(5, &[0xA0], b"v0")];
+    let changes1 = vec![put(5, &[0xA1], b"v1")];
+    let changes2 = Vec::new();
+    let blocks = [
+        MptBlockChanges {
+            block_index: 0,
+            changes: &changes0,
+        },
+        MptBlockChanges {
+            block_index: 1,
+            changes: &changes1,
+        },
+        MptBlockChanges {
+            block_index: 2,
+            changes: &changes2,
+        },
+    ];
+
+    let roots = store
+        .apply_block_changes_batch_coordinated(None, &blocks, |backing, prepared| {
+            assert_eq!(store.current_local_root(), None);
+            assert_eq!(prepared.block_index(), 2);
+            assert!(backing.try_commit_borrowed_raw_overlay(prepared)?);
+            Ok(())
+        })
+        .expect("coordinated batch applies");
+
+    assert_eq!(roots.len(), 3);
+    assert_eq!(backing.commit_count(), 1);
+    assert_eq!(store.current_local_root(), Some((2, roots[2])));
+    for (index, root) in roots.iter().enumerate() {
+        assert_eq!(
+            store
+                .get_state_root(index as u32)
+                .expect("state root record")
+                .root_hash(),
+            root
+        );
+    }
+}
+
+#[test]
 fn batch_apply_matches_sequential_roots_and_reads() {
     let sequential = MptStore::new(true);
     let batched = MptStore::new(true);
@@ -1769,6 +1814,88 @@ fn read_snapshot_rejects_writes() {
     trie.put(&storage_key(5, &[0xEE]), b"nope")
         .expect("puts stage in the trie cache");
     assert!(trie.commit().is_err(), "snapshot commit must be rejected");
+}
+
+#[test]
+fn coordinated_commit_matches_immediate_root_and_backing_bytes() {
+    let immediate_backing = Arc::new(MemoryStore::new());
+    let coordinated_backing = Arc::new(MemoryStore::new());
+    let immediate = MptStore::from_memory_store(Arc::clone(&immediate_backing), true)
+        .expect("open immediate store");
+    let coordinated = MptStore::from_memory_store(Arc::clone(&coordinated_backing), true)
+        .expect("open coordinated store");
+    let changes = vec![
+        put(5, &[0xAA, 0x01], b"v1"),
+        put(5, &[0xAA, 0x02], b"v2"),
+        put(7, &[0x10], b"other"),
+    ];
+
+    let expected_root = immediate
+        .apply_block_changes(0, None, &changes)
+        .expect("immediate block applies");
+    let actual_root = coordinated
+        .apply_block_changes_coordinated(0, None, &changes, |backing, prepared| {
+            assert_eq!(coordinated.current_local_root(), None);
+            assert_eq!(prepared.block_index(), 0);
+            assert_eq!(prepared.root_hash(), expected_root);
+            assert!(backing.try_commit_borrowed_raw_overlay(prepared)?);
+            Ok(())
+        })
+        .expect("coordinated block applies");
+
+    assert_eq!(actual_root, expected_root);
+    assert_eq!(coordinated.current_local_root(), Some((0, expected_root)));
+    let immediate_entries = <MemoryStore as ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>>>::find(
+        immediate_backing.as_ref(),
+        None,
+        SeekDirection::Forward,
+    )
+    .collect::<Vec<_>>();
+    let coordinated_entries = <MemoryStore as ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>>>::find(
+        coordinated_backing.as_ref(),
+        None,
+        SeekDirection::Forward,
+    )
+    .collect::<Vec<_>>();
+    assert_eq!(coordinated_entries, immediate_entries);
+}
+
+#[test]
+fn coordinated_commit_failure_after_overlay_visit_does_not_publish_root() {
+    let backing = Arc::new(MemoryStore::new());
+    let store = MptStore::from_memory_store(Arc::clone(&backing), false).expect("open MPT store");
+    let changes = vec![put(5, &[0xAA], b"value")];
+
+    let error = store
+        .apply_block_changes_coordinated(0, None, &changes, |_backing, prepared| {
+            let mut visited = 0usize;
+            prepared.visit_raw_overlay(&mut |_key: &[u8], _value: Option<&[u8]>| {
+                visited += 1;
+            });
+            assert!(visited > 0);
+            Err(neo_storage::StorageError::CommitFailed(
+                "injected canonical failure".to_string(),
+            ))
+        })
+        .expect_err("external transaction failure must propagate");
+
+    assert!(error.to_string().contains("injected canonical failure"));
+    assert_eq!(store.current_local_root(), None);
+    assert_eq!(backing.try_get_bytes(Keys::CURRENT_LOCAL_ROOT_INDEX), None);
+}
+
+#[test]
+fn coordinated_commit_rejects_success_without_overlay_consumption() {
+    let backing = Arc::new(MemoryStore::new());
+    let store = MptStore::from_memory_store(Arc::clone(&backing), false).expect("open MPT store");
+
+    let error = store
+        .apply_block_changes_coordinated(0, None, &[], |_backing, _prepared| Ok(()))
+        .expect_err("a no-op external committer must be rejected");
+
+    assert!(error.to_string().contains("did not consume"));
+    assert_eq!(store.current_local_root(), None);
+    assert_eq!(backing.try_get_bytes(Keys::CURRENT_LOCAL_ROOT_INDEX), None);
 }
 
 #[test]

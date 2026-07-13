@@ -1,13 +1,14 @@
 //! # Local Replay Recovery
 //!
-//! StateService and a persistent indexer can publish from the blockchain
-//! pre-commit hook, while the canonical ledger reaches durable storage at a
-//! later fence. Those stores cannot share one transaction. Before either
-//! observer runs, the guard writes and fsyncs a marker. Both observer backends
-//! are explicitly fenced before Ledger. A successful canonical fence removes
-//! and directory-syncs the marker; a crash or failed fence leaves it in place,
-//! requests shutdown, and makes startup refuse the data set until an operator
-//! restores matching stores. ApplicationLogs and TokensTracker consume the
+//! A persistent indexer and non-coordinated StateService backends can publish
+//! from the blockchain pre-commit hook before the canonical Ledger reaches its
+//! durability fence. Before either independent observer runs, the guard writes
+//! and fsyncs a marker. Those observer backends are explicitly fenced before
+//! Ledger. A successful canonical fence removes and directory-syncs the marker;
+//! a crash or failed fence leaves it in place, requests shutdown, and makes
+//! startup refuse the data set until an operator restores matching stores. MDBX
+//! StateService uses a named table in the canonical transaction and therefore
+//! does not arm this guard. ApplicationLogs and TokensTracker consume the
 //! post-canonical finalized stream and therefore do not arm this guard. The static
 //! Ledger archive stages durable but provider-invisible bytes before canonical
 //! storage and publishes their index only after hot success. Startup recovers

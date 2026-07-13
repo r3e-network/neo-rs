@@ -40,5 +40,7 @@ pub use sync::{
     staged_sync_pipeline, sync_download_import, sync_header_pipeline, sync_import_pipeline,
     verified_block_fetcher,
 };
-pub use system_context::{BlockCommitHooks, NodeSystemContext, NoopBlockCommitHooks};
+pub use system_context::{
+    BlockCommitHooks, CanonicalCommit, NodeSystemContext, NoopBlockCommitHooks,
+};
 pub use wallet_provider::WalletProvider;

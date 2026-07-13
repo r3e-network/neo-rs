@@ -16,7 +16,7 @@ use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_mempool::MemoryPool;
 use neo_network::NetworkHandle;
-use neo_storage::persistence::{StoreCache, StoreCacheBacking, StoreDataCache, TransactionalStore};
+use neo_storage::persistence::{StoreCache, StoreDataCache, TransactionalStore};
 
 use crate::{BlockCommitHooks, Node, NodeBuilder, NodeResult, NodeSystemContext};
 
@@ -31,7 +31,7 @@ pub struct NodeCoreBuilder<P, S, H>
 where
     P: NativeContractProvider,
     S: TransactionalStore,
-    H: BlockCommitHooks<StoreCacheBacking<S>>,
+    H: BlockCommitHooks<S>,
 {
     settings: Arc<ProtocolSettings>,
     storage: Arc<S>,
@@ -46,7 +46,7 @@ impl<P, S, H> NodeCoreBuilder<P, S, H>
 where
     P: NativeContractProvider + 'static,
     S: TransactionalStore + 'static,
-    H: BlockCommitHooks<StoreCacheBacking<S>> + 'static,
+    H: BlockCommitHooks<S> + 'static,
 {
     /// Start core composition from its required concrete collaborators.
     pub fn new(
@@ -135,7 +135,7 @@ pub struct NodeCoreLaunch<P, S, H>
 where
     P: NativeContractProvider,
     S: TransactionalStore,
-    H: BlockCommitHooks<StoreCacheBacking<S>>,
+    H: BlockCommitHooks<S>,
 {
     core: NodeCore<P, S>,
     blockchain_task: BlockchainTask<P, S, H>,
@@ -145,7 +145,7 @@ impl<P, S, H> NodeCoreLaunch<P, S, H>
 where
     P: NativeContractProvider,
     S: TransactionalStore,
-    H: BlockCommitHooks<StoreCacheBacking<S>>,
+    H: BlockCommitHooks<S>,
 {
     /// Separate shareable core handles from the owned service task.
     pub fn into_parts(self) -> (NodeCore<P, S>, BlockchainTask<P, S, H>) {
@@ -158,7 +158,7 @@ pub struct BlockchainTask<P, S, H>
 where
     P: NativeContractProvider,
     S: TransactionalStore,
-    H: BlockCommitHooks<StoreCacheBacking<S>>,
+    H: BlockCommitHooks<S>,
 {
     service: CoreBlockchainService<P, S, H>,
 }
@@ -167,7 +167,7 @@ impl<P, S, H> BlockchainTask<P, S, H>
 where
     P: NativeContractProvider + 'static,
     S: TransactionalStore + 'static,
-    H: BlockCommitHooks<StoreCacheBacking<S>> + 'static,
+    H: BlockCommitHooks<S> + 'static,
 {
     /// Drive blockchain commands until the handle requests shutdown.
     pub async fn run(self) {

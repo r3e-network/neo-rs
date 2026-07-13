@@ -52,6 +52,7 @@ pub(super) fn build_operational_services(
     network: u32,
     enable_local_replay_services: bool,
     service_fast_sync: bool,
+    canonical_store: &Arc<RuntimeStore>,
 ) -> anyhow::Result<OperationalServices> {
     if !enable_local_replay_services {
         info!(
@@ -70,8 +71,13 @@ pub(super) fn build_operational_services(
     }
 
     let storage_provider = service_store_provider(config)?;
-    let state_runtime =
-        state::build_state_service_runtime(config, network, &storage_provider, service_fast_sync)?;
+    let state_runtime = state::build_state_service_runtime(
+        config,
+        network,
+        &storage_provider,
+        service_fast_sync,
+        canonical_store,
+    )?;
     let read_side_services =
         read_side::build_read_side_services(config, network, &storage_provider)?;
     let StateServiceRuntime {

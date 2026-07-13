@@ -164,6 +164,39 @@ impl RuntimeStore {
             _ => None,
         }
     }
+
+    /// Creates an isolated store namespace when the selected runtime backend
+    /// can keep it in the same atomic commit domain.
+    pub fn open_coordinated_namespace(&self, name: &str) -> StorageResult<Self> {
+        match self {
+            Self::Mdbx(store) => store.open_named_table(name).map(Self::Mdbx),
+            Self::Memory(_) | Self::RocksDb(_) => Err(StorageError::invalid_operation(format!(
+                "{} does not provide coordinated store namespaces",
+                self.backend_kind().as_str()
+            ))),
+        }
+    }
+
+    /// Atomically publishes overlays from two runtime-selected store views.
+    pub fn commit_coordinated_overlays<P, S>(
+        &self,
+        primary: &mut P,
+        secondary_store: &Self,
+        secondary: &mut S,
+    ) -> StorageResult<()>
+    where
+        P: RawOverlaySource + ?Sized,
+        S: RawOverlaySource + ?Sized,
+    {
+        match (self, secondary_store) {
+            (Self::Mdbx(primary_store), Self::Mdbx(secondary_store)) => {
+                primary_store.commit_coordinated_overlays(primary, secondary_store, secondary)
+            }
+            _ => Err(StorageError::invalid_operation(
+                "coordinated runtime commit requires two MDBX views from one environment",
+            )),
+        }
+    }
 }
 
 impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RuntimeSnapshot {

@@ -18,7 +18,7 @@ pub mod mpt_store;
 pub mod root_cache;
 pub mod state_store;
 
-pub use mpt_store::{MptChange, MptReadSnapshot, MptStore};
+pub use mpt_store::{MDBX_STATE_SERVICE_NAMESPACE, MptChange, MptReadSnapshot, MptStore};
 pub use root_cache::{
     DEFAULT_ROOT_CACHE_CAPACITY, StateRootCache, StateRootCacheEntry, StateRootCacheStats,
     StateRootCacheStatsSnapshot,

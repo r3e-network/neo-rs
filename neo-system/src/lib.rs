@@ -21,8 +21,8 @@ mod errors;
 
 // Public re-exports for the crate's public surface.
 pub use composition::{
-    BlockCommitHooks, BlockchainTask, DEFAULT_FINALITY_CAPACITY, FinalizedBlockConsumer,
-    FinalizedBlockHandle, FinalizedBlockStream, FinalizedBlockStreamError,
+    BlockCommitHooks, BlockchainTask, CanonicalCommit, DEFAULT_FINALITY_CAPACITY,
+    FinalizedBlockConsumer, FinalizedBlockHandle, FinalizedBlockStream, FinalizedBlockStreamError,
     FinalizedBlockStreamFactory, HeaderStageBatchOutcome, HeaderStageProgress,
     LiveBlockImportPipeline, LiveBlockImportSummary, Node, NodeBuilder, NodeCore, NodeCoreBuilder,
     NodeCoreLaunch, NodeSystemContext, NoopBlockCommitHooks, StagedSyncPipeline,

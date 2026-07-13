@@ -44,6 +44,6 @@ pub use storage::{
     StateRootCacheStatsSnapshot,
 };
 pub use storage::{
-    MptChange, MptReadSnapshot, MptStore, StateStore, StateStoreLookup, StateStoreTransaction,
-    mpt_store, root_cache, state_store,
+    MDBX_STATE_SERVICE_NAMESPACE, MptChange, MptReadSnapshot, MptStore, StateStore,
+    StateStoreLookup, StateStoreTransaction, mpt_store, root_cache, state_store,
 };

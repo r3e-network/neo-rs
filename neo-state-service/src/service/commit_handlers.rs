@@ -14,15 +14,16 @@
 
 use crate::StateRootApplyMetrics;
 use crate::metrics::{StateRootApplyCountKind, StateRootApplyStage};
+use crate::mpt_store::PreparedMptCommit;
 use crate::state_store::ProjectedMptBlock;
 use crate::state_store::StateStore;
 use neo_crypto::mpt_trie::MptResult;
 use neo_payloads::ApplicationExecuted;
 use neo_payloads::Block;
 use neo_payloads::{CommittedHandler, CommittingHandler};
-use neo_storage::DataCache;
 use neo_storage::persistence::Store;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
+use neo_storage::{DataCache, StorageResult};
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -40,6 +41,7 @@ const ASYNC_BATCH_COALESCE_WAIT: Duration = Duration::from_millis(10);
 pub struct StateServiceCommitHandlers<S: Store = MemoryStore> {
     state_store: Arc<StateStore<S>>,
     worker: Option<AsyncStateRootWorker>,
+    coordinated_requests: Option<parking_lot::Mutex<Vec<AsyncApplyRequest>>>,
 }
 
 impl<S> StateServiceCommitHandlers<S>
@@ -51,7 +53,29 @@ where
         Self {
             state_store,
             worker: None,
+            coordinated_requests: None,
         }
+    }
+
+    /// Constructs a handler whose MPT bytes publish with the canonical store.
+    ///
+    /// This mode queues projected changes until
+    /// [`Self::commit_pending_coordinated`] supplies the external atomic
+    /// transaction. It cannot be combined with the ordinary async worker,
+    /// because that worker intentionally publishes its backing store before the
+    /// canonical Ledger fence.
+    pub fn try_new_coordinated(state_store: Arc<StateStore<S>>) -> Result<Self, &'static str> {
+        let Some(mpt) = state_store.mpt() else {
+            return Err("coordinated StateService commits require an MPT store");
+        };
+        if !mpt.has_backing_store() {
+            return Err("coordinated StateService commits require a durable MPT backing store");
+        }
+        Ok(Self {
+            state_store,
+            worker: None,
+            coordinated_requests: Some(parking_lot::Mutex::new(Vec::new())),
+        })
     }
 
     /// Constructs a pipeline that projects MPT changes synchronously and applies
@@ -145,6 +169,7 @@ where
         Ok(Self {
             state_store,
             worker: Some(worker),
+            coordinated_requests: None,
         })
     }
 
@@ -156,6 +181,12 @@ where
     /// Returns true when MPT applies are serialized on the background worker.
     pub fn is_async(&self) -> bool {
         self.worker.is_some()
+    }
+
+    /// Returns whether StateService publication is delegated to the canonical
+    /// transaction coordinator.
+    pub fn is_coordinated(&self) -> bool {
+        self.coordinated_requests.is_some()
     }
 
     /// Returns the async MPT worker queue capacity when async mode is enabled.
@@ -208,6 +239,11 @@ where
     /// canonical Ledger transaction is allowed to commit.
     pub fn flush_durable_result(&self) -> Result<(), String> {
         self.flush_result().map_err(str::to_string)?;
+        if self.is_coordinated() {
+            return Err(
+                "coordinated StateService mode requires commit_pending_coordinated".to_string(),
+            );
+        }
         if let Some(mpt) = self.state_store.mpt() {
             mpt.flush_backing().map_err(|error| error.to_string())?;
         }
@@ -221,6 +257,9 @@ where
         block_index: u32,
         snapshot: &DataCache<B>,
     ) -> bool {
+        if self.coordinated_requests.is_some() {
+            return self.on_committing_coordinated(block_index, snapshot);
+        }
         if let Some(worker) = &self.worker {
             return self.on_committing_async(worker, block_index, snapshot)
                 && worker.flush_result().is_ok();
@@ -235,6 +274,9 @@ where
         block_index: u32,
         snapshot: &DataCache<B>,
     ) -> bool {
+        if self.coordinated_requests.is_some() {
+            return self.on_committing_coordinated(block_index, snapshot);
+        }
         if let Some(worker) = &self.worker {
             return self.on_committing_async(worker, block_index, snapshot);
         }
@@ -284,9 +326,103 @@ where
         })
     }
 
+    fn on_committing_coordinated<B: neo_storage::CacheRead>(
+        &self,
+        block_index: u32,
+        snapshot: &DataCache<B>,
+    ) -> bool {
+        let Some(requests) = &self.coordinated_requests else {
+            return false;
+        };
+        let total_start = std::time::Instant::now();
+        let project_start = std::time::Instant::now();
+        let mut changes = Vec::with_capacity(snapshot.pending_change_count());
+        StateStore::<MemoryStore>::project_mpt_changes_into(snapshot, &mut changes);
+        requests.lock().push(AsyncApplyRequest {
+            block_index,
+            changes,
+            project_us: elapsed_us(project_start),
+            queued_at: std::time::Instant::now(),
+            total_start,
+        });
+        true
+    }
+
+    /// Applies all queued projected blocks and commits their prepared MPT bytes
+    /// through `commit`.
+    ///
+    /// `Ok(None)` means no StateService block was queued and the caller should
+    /// use its ordinary canonical commit. `Ok(Some(roots))` means `commit` was
+    /// invoked exactly once and the StateService local generation now reflects
+    /// those roots. The trusted callback must consume the complete prepared
+    /// overlay and return success only after it has atomically published the
+    /// canonical and StateService bytes. An error leaves the in-memory
+    /// StateService root at its previously committed value, although recovery
+    /// of any external side effects remains the coordinator's responsibility.
+    pub fn commit_pending_coordinated<F>(
+        &self,
+        commit: F,
+    ) -> Result<Option<Vec<neo_primitives::UInt256>>, String>
+    where
+        F: FnOnce(&S, &mut PreparedMptCommit) -> StorageResult<()>,
+    {
+        let Some(requests) = &self.coordinated_requests else {
+            return Err("StateService handler is not in coordinated commit mode".to_string());
+        };
+        let batch = std::mem::take(&mut *requests.lock());
+        if batch.is_empty() {
+            return Ok(None);
+        }
+
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::BatchBlocks,
+            batch.len() as u64,
+        );
+        for request in &batch {
+            StateRootApplyMetrics::record_stage(
+                StateRootApplyStage::QueueWait,
+                elapsed_us(request.queued_at),
+            );
+        }
+        let projected = batch
+            .iter()
+            .map(|request| ProjectedMptBlock {
+                block_index: request.block_index,
+                changes: request.changes.as_slice(),
+                project_us: request.project_us,
+                total_start: request.total_start,
+            })
+            .collect::<Vec<_>>();
+        match self
+            .state_store
+            .apply_projected_mpt_change_batch_coordinated(&projected, commit)
+        {
+            Ok(roots) => {
+                for (request, root_hash) in batch.iter().zip(roots.iter()) {
+                    let _ = log_applied_root(request.block_index, root_hash);
+                }
+                Ok(Some(roots))
+            }
+            Err(error) => {
+                if let Some(request) = batch.first() {
+                    let _ = log_failed_root(request.block_index, &error);
+                }
+                Err(error.to_string())
+            }
+        }
+    }
+
+    /// Drops projected blocks that never crossed the canonical transaction.
+    pub fn discard_pending_coordinated(&self) {
+        if let Some(requests) = &self.coordinated_requests {
+            requests.lock().clear();
+        }
+    }
+
     /// Discards any state-root candidate whose block index falls in
     /// the supplied range (inclusive).
     pub fn on_reverting(&self, from_index: u32, to_index: u32) {
+        self.discard_pending_coordinated();
         if let Some(worker) = &self.worker {
             if let Err(err) = worker.enqueue_command(AsyncCommand::Revert {
                 from_index,

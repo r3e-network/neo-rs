@@ -5,7 +5,7 @@ use crate::persistence::read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadO
 use crate::persistence::seek_direction::SeekDirection;
 use crate::persistence::store::Store;
 use crate::persistence::write_store::WriteStore;
-use crate::persistence::{StoreMaintenanceBatch, TransactionalStore};
+use crate::persistence::{RawOverlaySource, StoreMaintenanceBatch, TransactionalStore};
 use crate::types::{StorageItem, StorageKey};
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -339,6 +339,48 @@ fn durable_commit_prefers_backend_durable_overlay_capability() {
         store.durable_overlay(),
         vec![(key.to_array(), Some(vec![0xEE]))]
     );
+}
+
+#[test]
+fn coordinated_durable_commit_publishes_cache_only_after_callback_success() {
+    let store = Arc::new(OverlayContractStore::new(OverlayMode::DurableBorrowed));
+    let key = StorageKey::new(7, vec![0x26]);
+    let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
+    writer.add(key.clone(), StorageItem::from_bytes(vec![0xAB]));
+
+    writer
+        .try_commit_durable_with(|store, source| store.commit_canonical_overlay(source))
+        .expect("coordinated callback should publish the canonical overlay");
+
+    assert_eq!(writer.data_cache().pending_change_count(), 0);
+    assert_eq!(
+        store.durable_overlay(),
+        vec![(key.to_array(), Some(vec![0xAB]))]
+    );
+}
+
+#[test]
+fn coordinated_durable_commit_discards_cache_when_callback_fails_after_visit() {
+    let store = Arc::new(OverlayContractStore::new(OverlayMode::DurableBorrowed));
+    let key = StorageKey::new(7, vec![0x27]);
+    let mut writer = StoreCache::new_from_store(Arc::clone(&store), false);
+    writer.add(key.clone(), StorageItem::from_bytes(vec![0xCD]));
+
+    let error = writer
+        .try_commit_durable_with(|_store, source| {
+            let mut visited = 0usize;
+            source.visit_raw_overlay(&mut |_key: &[u8], _value: Option<&[u8]>| {
+                visited += 1;
+            });
+            assert_eq!(visited, 1);
+            Err(StorageError::backend("injected coordinated failure"))
+        })
+        .expect_err("coordinated callback failure must reach the caller");
+
+    assert!(error.to_string().contains("injected coordinated failure"));
+    assert_eq!(writer.data_cache().pending_change_count(), 0);
+    assert!(writer.get(&key).is_none());
+    assert!(store.durable_overlay().is_empty());
 }
 
 #[test]

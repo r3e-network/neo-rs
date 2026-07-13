@@ -17,9 +17,12 @@
 use std::sync::Arc;
 
 use neo_execution::native_contract_provider::NativeContractProvider;
+#[cfg(test)]
+use neo_storage::StorageError;
+use neo_storage::StorageResult;
 use neo_storage::persistence::providers::RuntimeStore;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
-use neo_storage::persistence::store::Store;
+use neo_storage::persistence::{RawOverlaySource, Store, TransactionalStore};
 use parking_lot::{Mutex, RwLock};
 
 use super::recovery::LocalReplayGuard;
@@ -28,6 +31,72 @@ mod finality;
 mod plugins;
 
 pub(in crate::node) use finality::FinalizedProjectionConsumer;
+
+pub(in crate::node) trait CoordinatedNodeStoreWith<S>: TransactionalStore
+where
+    S: Store,
+{
+    fn commit_node_overlays<P, Q>(
+        &self,
+        primary: &mut P,
+        secondary_store: &S,
+        secondary: &mut Q,
+    ) -> StorageResult<()>
+    where
+        P: RawOverlaySource + ?Sized,
+        Q: RawOverlaySource + ?Sized;
+}
+
+impl CoordinatedNodeStoreWith<RuntimeStore> for RuntimeStore {
+    fn commit_node_overlays<P, Q>(
+        &self,
+        primary: &mut P,
+        secondary_store: &RuntimeStore,
+        secondary: &mut Q,
+    ) -> StorageResult<()>
+    where
+        P: RawOverlaySource + ?Sized,
+        Q: RawOverlaySource + ?Sized,
+    {
+        self.commit_coordinated_overlays(primary, secondary_store, secondary)
+    }
+}
+
+#[cfg(test)]
+impl CoordinatedNodeStoreWith<MemoryStore> for MemoryStore {
+    fn commit_node_overlays<P, Q>(
+        &self,
+        _primary: &mut P,
+        _secondary_store: &MemoryStore,
+        _secondary: &mut Q,
+    ) -> StorageResult<()>
+    where
+        P: RawOverlaySource + ?Sized,
+        Q: RawOverlaySource + ?Sized,
+    {
+        Err(StorageError::invalid_operation(
+            "test MemoryStore does not provide coordinated namespaces",
+        ))
+    }
+}
+
+#[cfg(test)]
+impl CoordinatedNodeStoreWith<RuntimeStore> for MemoryStore {
+    fn commit_node_overlays<P, Q>(
+        &self,
+        _primary: &mut P,
+        _secondary_store: &RuntimeStore,
+        _secondary: &mut Q,
+    ) -> StorageResult<()>
+    where
+        P: RawOverlaySource + ?Sized,
+        Q: RawOverlaySource + ?Sized,
+    {
+        Err(StorageError::invalid_operation(
+            "test stores do not share a coordinated namespace",
+        ))
+    }
+}
 
 #[derive(Clone)]
 struct HotLedgerPruning {

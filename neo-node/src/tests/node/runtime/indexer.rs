@@ -236,8 +236,8 @@ fn persistent_indexer_arms_replay_marker_before_precommit_write() {
         MemoryStore,
         MemoryStore,
         MemoryStore,
-    > as BlockCommitHooks<neo_storage::persistence::StoreCacheBacking<MemoryStore>>>::fence_precommit_durability(&hooks)
-        .expect("persistent indexer durability fence");
+    > as BlockCommitHooks<MemoryStore>>::fence_precommit_durability(&hooks)
+    .expect("persistent indexer durability fence");
     crate::node::recovery::refuse_local_replay_marker(Some(&marker))
         .expect_err("startup must reject an indexer pre-commit without canonical Ledger");
 }

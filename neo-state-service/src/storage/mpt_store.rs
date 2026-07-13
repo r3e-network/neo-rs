@@ -58,6 +58,7 @@ use crate::state_root::{CURRENT_VERSION, StateRoot};
 use neo_crypto::mpt_trie::{MptError, MptResult, MptStoreSnapshot, Node, Trie};
 use neo_io::SerializableExtensions;
 use neo_primitives::{UINT256_SIZE, UInt256};
+use neo_storage::StorageResult;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_storage::persistence::{
     RawOverlaySink, RawOverlaySource, RawReadOnlyStore, Store, StoreSnapshot, WriteStore,
@@ -72,6 +73,9 @@ use std::time::Instant;
 /// `version (1) + index (4, LE) + root_hash (32)`.
 const STATE_ROOT_UNSIGNED_LEN: usize = 1 + 4 + UINT256_SIZE;
 const MPT_NODE_PREFIX: u8 = 0xf0;
+
+/// MDBX named table used when StateService shares the canonical environment.
+pub const MDBX_STATE_SERVICE_NAMESPACE: &str = "neo_state_service";
 
 /// One storage mutation from a block's change set.
 ///
@@ -241,6 +245,80 @@ impl RawOverlaySource for EmptyRootBatchOverlaySource<'_> {
 struct SortedOverlaySource<'a> {
     entries: &'a [(&'a Vec<u8>, &'a Option<Vec<u8>>)],
     counts: OverlayCounts,
+}
+
+/// StateService mutations prepared for an externally coordinated commit.
+///
+/// The value is exposed only as an ordered [`RawOverlaySource`]. Composition
+/// code may place these bytes in the same physical transaction as canonical
+/// Ledger bytes, but cannot alter the root/index metadata or publish the local
+/// in-memory generation directly. The external coordinator remains responsible
+/// for actually committing every visited byte atomically with its primary
+/// overlay; `PreparedMptCommit` can detect a callback that never visits it, but
+/// cannot roll back an external transaction after the callback returns.
+pub struct PreparedMptCommit {
+    block_index: u32,
+    root_hash: UInt256,
+    overlay: HashMap<Vec<u8>, Option<Vec<u8>>>,
+    samples: usize,
+    counts: OverlayCounts,
+    visited: bool,
+}
+
+impl PreparedMptCommit {
+    fn new(
+        block_index: u32,
+        root_hash: UInt256,
+        overlay: HashMap<Vec<u8>, Option<Vec<u8>>>,
+        samples: usize,
+    ) -> Self {
+        Self {
+            block_index,
+            root_hash,
+            overlay,
+            samples: samples.max(1),
+            counts: OverlayCounts::default(),
+            visited: false,
+        }
+    }
+
+    /// Returns the final block index represented by this overlay.
+    pub fn block_index(&self) -> u32 {
+        self.block_index
+    }
+
+    /// Returns the final StateService trie root represented by this overlay.
+    pub fn root_hash(&self) -> UInt256 {
+        self.root_hash
+    }
+}
+
+impl std::fmt::Debug for PreparedMptCommit {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PreparedMptCommit")
+            .field("block_index", &self.block_index)
+            .field("root_hash", &self.root_hash)
+            .field("entries", &self.overlay.len())
+            .field("samples", &self.samples)
+            .finish()
+    }
+}
+
+impl RawOverlaySource for PreparedMptCommit {
+    fn visit_raw_overlay<S>(&mut self, sink: &mut S)
+    where
+        S: RawOverlaySink + ?Sized,
+    {
+        let mut entries = self.overlay.iter().collect::<Vec<_>>();
+        entries.sort_unstable_by(|left, right| left.0.cmp(right.0));
+        self.counts = OverlayCounts::default();
+        self.visited = true;
+        for (key, value) in entries {
+            self.counts.record(value.as_ref());
+            sink.visit(key, value.as_deref());
+        }
+    }
 }
 
 impl RawOverlaySource for SortedOverlaySource<'_> {
@@ -519,6 +597,11 @@ where
         self.full_state
     }
 
+    /// Returns whether this MPT can participate in an external durable commit.
+    pub fn has_backing_store(&self) -> bool {
+        self.backing.is_some()
+    }
+
     fn backing_snapshot(&self) -> Option<Arc<S::Snapshot>> {
         self.backing.as_ref().map(|backing| backing.snapshot())
     }
@@ -605,6 +688,52 @@ where
         })
     }
 
+    /// Applies one block while delegating durable publication to `commit`.
+    ///
+    /// The trie mutation, root calculation, and overlay preparation run under
+    /// the StateService writer gate. `commit` receives the concrete backing view
+    /// and an ordered raw overlay. The local root and read generation advance
+    /// only after `commit` returns success, allowing a caller to include this
+    /// overlay in the canonical Ledger transaction without exposing MPT details.
+    ///
+    /// The callback is a trusted composition boundary. It must consume the
+    /// complete overlay and return `Ok(())` only after the canonical and MPT
+    /// mutations have committed atomically. The post-callback visit check
+    /// catches accidental omission; it cannot undo an external commit.
+    pub fn apply_block_changes_coordinated<F>(
+        &self,
+        block_index: u32,
+        root_before: Option<UInt256>,
+        changes: &[MptChange],
+        commit: F,
+    ) -> MptResult<UInt256>
+    where
+        F: FnOnce(&S, &mut PreparedMptCommit) -> StorageResult<()>,
+    {
+        self.apply_block_changes_with_len_coordinated(
+            block_index,
+            root_before,
+            changes.len(),
+            |trie| {
+                let mut effective_change_count = 0usize;
+                let mut path_scratch = Vec::new();
+                for change in changes {
+                    effective_change_count += 1;
+                    match change {
+                        MptChange::Put { key, value } => {
+                            trie.put_with_scratch(key, value, &mut path_scratch)?
+                        }
+                        MptChange::Delete { key } => {
+                            let _ = trie.delete_with_scratch(key, &mut path_scratch)?;
+                        }
+                    }
+                }
+                Ok(effective_change_count)
+            },
+            commit,
+        )
+    }
+
     pub(crate) fn apply_block_changes_with_len<F>(
         &self,
         block_index: u32,
@@ -616,12 +745,45 @@ where
         F: FnOnce(&mut Trie<MptWriteBatch<S>>) -> MptResult<usize>,
     {
         let _writer = self.write_gate.lock();
+        let prepared =
+            self.prepare_block_changes_with_len(block_index, root_before, change_count, mutate)?;
+        self.publish_prepared(prepared)
+    }
+
+    fn apply_block_changes_with_len_coordinated<M, C>(
+        &self,
+        block_index: u32,
+        root_before: Option<UInt256>,
+        change_count: usize,
+        mutate: M,
+        commit: C,
+    ) -> MptResult<UInt256>
+    where
+        M: FnOnce(&mut Trie<MptWriteBatch<S>>) -> MptResult<usize>,
+        C: FnOnce(&S, &mut PreparedMptCommit) -> StorageResult<()>,
+    {
+        let _writer = self.write_gate.lock();
+        let prepared =
+            self.prepare_block_changes_with_len(block_index, root_before, change_count, mutate)?;
+        self.publish_prepared_coordinated(prepared, commit)
+    }
+
+    fn prepare_block_changes_with_len<F>(
+        &self,
+        block_index: u32,
+        root_before: Option<UInt256>,
+        change_count: usize,
+        mutate: F,
+    ) -> MptResult<PreparedMptCommit>
+    where
+        F: FnOnce(&mut Trie<MptWriteBatch<S>>) -> MptResult<usize>,
+    {
         if change_count == 0
             && let Some(root_before) = root_before
         {
             StateRootApplyMetrics::record_count(StateRootApplyCountKind::Changes, 0);
             let overlay = Self::local_root_overlay(block_index, root_before);
-            return self.publish_overlay(block_index, root_before, overlay);
+            return Ok(PreparedMptCommit::new(block_index, root_before, overlay, 1));
         }
 
         // Stage every mutation against the current generation. The
@@ -653,7 +815,7 @@ where
             drop(trie);
             drop(batch);
             let overlay = Self::local_root_overlay(block_index, new_root);
-            return self.publish_overlay(block_index, new_root, overlay);
+            return Ok(PreparedMptCommit::new(block_index, new_root, overlay, 1));
         }
 
         let stage_start = Instant::now();
@@ -685,7 +847,7 @@ where
         // instead of cloning the map.
         drop(batch);
 
-        self.publish_overlay(block_index, new_root, overlay)
+        Ok(PreparedMptCommit::new(block_index, new_root, overlay, 1))
     }
 
     pub(crate) fn apply_block_changes_lazy<F>(
@@ -789,6 +951,36 @@ where
             return Ok(vec![root_before; blocks.len()]);
         }
 
+        let (roots, prepared) = self.prepare_block_changes_batch(root_before, blocks)?;
+        self.publish_prepared(prepared)?;
+        Ok(roots)
+    }
+
+    pub(crate) fn apply_block_changes_batch_coordinated<F>(
+        &self,
+        root_before: Option<UInt256>,
+        blocks: &[MptBlockChanges<'_>],
+        commit: F,
+    ) -> MptResult<Vec<UInt256>>
+    where
+        F: FnOnce(&S, &mut PreparedMptCommit) -> StorageResult<()>,
+    {
+        if blocks.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let _writer = self.write_gate.lock();
+        self.validate_ordered_batch(root_before, blocks)?;
+        let (roots, prepared) = self.prepare_block_changes_batch(root_before, blocks)?;
+        self.publish_prepared_coordinated(prepared, commit)?;
+        Ok(roots)
+    }
+
+    fn prepare_block_changes_batch(
+        &self,
+        root_before: Option<UInt256>,
+        blocks: &[MptBlockChanges<'_>],
+    ) -> MptResult<(Vec<UInt256>, PreparedMptCommit)> {
         let overlay_capacity = blocks
             .iter()
             .map(|block| block.changes.len().saturating_mul(2).saturating_add(2))
@@ -870,8 +1062,8 @@ where
                 "state-service MPT batch produced no roots for a non-empty block batch",
             ));
         };
-        self.publish_overlay_with_samples(last_block_index, last_root, overlay, blocks.len())?;
-        Ok(roots)
+        let prepared = PreparedMptCommit::new(last_block_index, last_root, overlay, blocks.len());
+        Ok((roots, prepared))
     }
 
     fn validate_ordered_batch(
@@ -939,7 +1131,58 @@ where
         new_root: UInt256,
         overlay: HashMap<Vec<u8>, Option<Vec<u8>>>,
     ) -> MptResult<UInt256> {
-        self.publish_overlay_with_samples(block_index, new_root, overlay, 1)
+        self.publish_prepared(PreparedMptCommit::new(block_index, new_root, overlay, 1))
+    }
+
+    fn publish_prepared(&self, prepared: PreparedMptCommit) -> MptResult<UInt256> {
+        let PreparedMptCommit {
+            block_index,
+            root_hash,
+            overlay,
+            samples,
+            ..
+        } = prepared;
+        self.publish_overlay_with_samples(block_index, root_hash, overlay, samples)
+    }
+
+    fn publish_prepared_coordinated<F>(
+        &self,
+        mut prepared: PreparedMptCommit,
+        commit: F,
+    ) -> MptResult<UInt256>
+    where
+        F: FnOnce(&S, &mut PreparedMptCommit) -> StorageResult<()>,
+    {
+        let Some(backing) = self.backing.as_ref() else {
+            return Err(MptError::storage(
+                "coordinated StateService commit requires a durable backing store",
+            ));
+        };
+
+        let stage_start = Instant::now();
+        commit(backing, &mut prepared).map_err(|error| {
+            MptError::storage(format!("coordinated StateService commit failed: {error}"))
+        })?;
+        if !prepared.visited {
+            return Err(MptError::storage(
+                "coordinated StateService commit did not consume the prepared overlay",
+            ));
+        }
+        Self::record_stage_samples(
+            StateRootApplyStage::BackingCommit,
+            elapsed_us(stage_start),
+            prepared.samples as u64,
+        );
+
+        let PreparedMptCommit {
+            block_index,
+            root_hash,
+            overlay,
+            samples,
+            counts,
+            ..
+        } = prepared;
+        self.publish_committed_overlay(block_index, root_hash, overlay, counts, samples)
     }
 
     fn publish_overlay_with_samples(
@@ -949,15 +1192,28 @@ where
         overlay: HashMap<Vec<u8>, Option<Vec<u8>>>,
         samples: usize,
     ) -> MptResult<UInt256> {
-        let samples = samples.max(1) as u64;
+        let sample_count = samples.max(1) as u64;
         let stage_start = Instant::now();
         let backing_result = self.commit_overlay_to_backing(&overlay);
         Self::record_stage_samples(
             StateRootApplyStage::BackingCommit,
             elapsed_us(stage_start),
-            samples,
+            sample_count,
         );
         let backing_counts = backing_result?;
+
+        self.publish_committed_overlay(block_index, new_root, overlay, backing_counts, samples)
+    }
+
+    fn publish_committed_overlay(
+        &self,
+        block_index: u32,
+        new_root: UInt256,
+        overlay: HashMap<Vec<u8>, Option<Vec<u8>>>,
+        backing_counts: OverlayCounts,
+        samples: usize,
+    ) -> MptResult<UInt256> {
+        let samples = samples.max(1) as u64;
 
         let stage_start = Instant::now();
         let mut overlay_counts = OverlayCounts::default();

@@ -18,25 +18,79 @@ use neo_blockchain::{
 use neo_config::ProtocolSettings;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Block};
+use neo_storage::StorageResult;
 use neo_storage::persistence::{
-    CacheRead, StoreCache, StoreCacheBacking, StoreDataCache, TransactionalStore,
+    RawOverlaySource, StoreCache, StoreCacheBacking, StoreDataCache, TransactionalStore,
 };
 use parking_lot::Mutex;
 
+/// Canonical durability capability exposed to application commit policy.
+///
+/// The composition root retains ownership of its concrete [`StoreCache`]. An
+/// application hook can request an ordinary commit or supply a stronger atomic
+/// backend transaction without depending on cache mechanics or taking storage
+/// ownership back from `neo-system`.
+pub trait CanonicalCommit<S>
+where
+    S: TransactionalStore,
+{
+    /// Ordered canonical overlay type borrowed for an external transaction.
+    type Overlay<'a>: RawOverlaySource + ?Sized
+    where
+        Self: 'a;
+
+    /// Publishes the canonical overlay through the store's normal transaction.
+    fn commit_durable(&mut self) -> Result<(), String>;
+
+    /// Publishes the canonical overlay through a stronger external transaction.
+    fn commit_durable_with<F>(&mut self, commit: F) -> Result<(), String>
+    where
+        F: FnOnce(&S, &mut Self::Overlay<'_>) -> StorageResult<()>;
+
+    /// Drops canonical mutations that must not cross a failed durability fence.
+    fn discard_pending(&mut self);
+}
+
+impl<S> CanonicalCommit<S> for StoreCache<S>
+where
+    S: TransactionalStore + 'static,
+{
+    type Overlay<'a>
+        = &'a neo_storage::DataCache<StoreCacheBacking<S>>
+    where
+        Self: 'a;
+
+    fn commit_durable(&mut self) -> Result<(), String> {
+        self.try_commit_durable().map_err(|error| error.to_string())
+    }
+
+    fn commit_durable_with<F>(&mut self, commit: F) -> Result<(), String>
+    where
+        F: FnOnce(&S, &mut Self::Overlay<'_>) -> StorageResult<()>,
+    {
+        self.try_commit_durable_with(commit)
+            .map_err(|error| error.to_string())
+    }
+
+    fn discard_pending(&mut self) {
+        self.discard_pending_changes();
+    }
+}
+
 /// Application-owned behavior around a canonical block commit.
 ///
-/// `B` is the concrete cache backing used by the composed store. The hook is a
-/// generic collaborator so block import remains monomorphized and no callback
-/// allocation or virtual dispatch enters the persistence path.
-pub trait BlockCommitHooks<B>: Send + Sync + fmt::Debug
+/// `S` is the concrete transactional store used by the composition. Snapshots
+/// retain its `StoreCacheBacking<S>` type, while the durability hook can select
+/// an ordinary or coordinated store commit without virtual dispatch.
+pub trait BlockCommitHooks<S>: Send + Sync + fmt::Debug
 where
-    B: CacheRead,
+    S: TransactionalStore,
 {
     /// Run pre-commit observers and return whether persistence may continue.
     fn block_committing(
         &self,
         _block: &Block,
-        _snapshot: &neo_storage::DataCache<B>,
+        _snapshot: &neo_storage::DataCache<StoreCacheBacking<S>>,
         _application_executed: &[ApplicationExecuted],
         _live_tip: u64,
         _context: BlockPersistContext,
@@ -47,7 +101,7 @@ where
     /// Deliver one canonical outcome after the Ledger durability fence.
     fn block_finalized(
         &self,
-        _finalized: FinalizedBlock<B>,
+        _finalized: FinalizedBlock<StoreCacheBacking<S>>,
         _live_tip: u64,
     ) -> impl Future<Output = Result<(), String>> + Send {
         async { Ok(()) }
@@ -71,6 +125,22 @@ where
     /// Fences pre-commit observer stores before canonical Ledger durability.
     fn fence_precommit_durability(&self) -> Result<(), String> {
         Ok(())
+    }
+
+    /// Publishes the canonical cache through the selected durability strategy.
+    ///
+    /// The default fences independent pre-commit stores and then uses the
+    /// canonical store transaction. Application composition may override this
+    /// method to include a prepared service namespace in the same transaction.
+    fn commit_canonical<C>(&self, canonical: &mut C) -> Result<(), String>
+    where
+        C: CanonicalCommit<S>,
+    {
+        if let Err(error) = self.fence_precommit_durability() {
+            canonical.discard_pending();
+            return Err(format!("pre-commit durability fence failed: {error}"));
+        }
+        canonical.commit_durable()
     }
 
     /// Notify application recovery policy after the canonical durability fence.
@@ -103,9 +173,9 @@ where
 #[derive(Debug, Default, Clone, Copy)]
 pub struct NoopBlockCommitHooks;
 
-impl<B> BlockCommitHooks<B> for NoopBlockCommitHooks
+impl<S> BlockCommitHooks<S> for NoopBlockCommitHooks
 where
-    B: CacheRead,
+    S: TransactionalStore,
 {
     fn sync_batch_commit_policy(
         &self,
@@ -122,7 +192,7 @@ pub struct NodeSystemContext<P, S, H>
 where
     P: NativeContractProvider,
     S: TransactionalStore,
-    H: BlockCommitHooks<StoreCacheBacking<S>>,
+    H: BlockCommitHooks<S>,
 {
     settings: Arc<ProtocolSettings>,
     snapshot: Arc<StoreDataCache<S>>,
@@ -137,7 +207,7 @@ impl<P, S, H> NodeSystemContext<P, S, H>
 where
     P: NativeContractProvider,
     S: TransactionalStore,
-    H: BlockCommitHooks<StoreCacheBacking<S>>,
+    H: BlockCommitHooks<S>,
 {
     /// Compose a blockchain context over one canonical store cache.
     pub fn new(
@@ -193,7 +263,7 @@ impl<P, S, H> fmt::Debug for NodeSystemContext<P, S, H>
 where
     P: NativeContractProvider,
     S: TransactionalStore,
-    H: BlockCommitHooks<StoreCacheBacking<S>>,
+    H: BlockCommitHooks<S>,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -208,7 +278,7 @@ impl<P, S, H> SystemContext for NodeSystemContext<P, S, H>
 where
     P: NativeContractProvider + 'static,
     S: TransactionalStore + 'static,
-    H: BlockCommitHooks<StoreCacheBacking<S>> + 'static,
+    H: BlockCommitHooks<S> + 'static,
 {
     type NativeProvider = P;
     type CacheBacking = StoreCacheBacking<S>;
@@ -279,17 +349,8 @@ where
     }
 
     fn commit_to_store(&self) -> Result<(), String> {
-        if let Err(error) = self.hooks.fence_precommit_durability() {
-            self.store_cache.lock().discard_pending_changes();
-            let error = format!("pre-commit durability fence failed: {error}");
-            self.mark_fatal_persistence_error(&error);
-            return Err(error);
-        }
-        let result = self
-            .store_cache
-            .lock()
-            .try_commit_durable()
-            .map_err(|error| error.to_string());
+        let mut store_cache = self.store_cache.lock();
+        let result = self.hooks.commit_canonical(&mut *store_cache);
         match &result {
             Ok(()) => self.hooks.canonical_commit_succeeded(),
             Err(error) => self.mark_fatal_persistence_error(error),

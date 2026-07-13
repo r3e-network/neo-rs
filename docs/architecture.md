@@ -374,14 +374,17 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   mandatory trait operations rather than optional `Store` probes. The canonical
   MDBX adapter additionally implements `CoordinatedTransactionalStore`: named
   table views isolate identical raw keys while sharing one environment, and two
-  ordered overlays can cross one MDBX transaction. This is storage groundwork,
-  not a claim about the current node composition. The canonical
-  Ledger and pre-commit StateService/persistent-indexer stores are separate
-  durability domains; they are not presented as one atomic transaction. Before
-  either independent observer can publish, `neo-node` writes and fsyncs
-  `.neo-local-replay-poisoned`. StateService and the persistent indexer are then
-  durably fenced before the canonical Ledger transaction; mutation or fence
-  failure in either observer rejects the block. Canonical success removes the
+  ordered overlays can cross one MDBX transaction. `neo-system` retains the
+  concrete `StoreCache` and exposes only `CanonicalCommit<S>` to application
+  hooks; `neo-node` can select ordinary or coordinated durability without
+  reclaiming core cache ownership. Node composition consumes this capability
+  for StateService: per-block changes remain ordered, the MPT prepares one batch
+  overlay under its writer gate, and Ledger + MPT root metadata publish in one
+  transaction before the visible root advances.
+  RocksDB StateService and the persistent indexer remain independent durability
+  domains. Before either independent observer can publish, `neo-node` writes and
+  fsyncs `.neo-local-replay-poisoned`, then fences it before the canonical Ledger
+  transaction; mutation or fence failure rejects the block. Canonical success removes the
   marker and syncs its directory; a crash or failed fence leaves it
   in place, requests graceful shutdown, and makes restart refuse the local data
   set until matching stores are restored. ApplicationLogs and TokensTracker do
@@ -531,8 +534,9 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   `CoordinatedTransactionalStore` is a separate static capability for service
   domains that can prove one physical transaction. MDBX implements it with
   collision-free named-table store views and rejects views from different
-  environments before visiting either overlay. StateService does not consume
-  that capability yet, so its documented fail-stop fence remains authoritative.
+  environments before visiting either overlay. StateService consumes the named
+  `neo_state_service` view through a prepared-overlay callback; RocksDB retains
+  the separate-store durability fence and recovery marker.
   compact encodings cannot replace protocol storage formats. Backend-reaching
   snapshots and caches expose only fallible commits. `TableProvider` is blanket
   implemented for `TransactionalStore`, because maintenance-table reads require

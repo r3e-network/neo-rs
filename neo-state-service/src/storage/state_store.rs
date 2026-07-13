@@ -17,14 +17,14 @@
 //! Mirrors the C# `StateService.Storage.StateStore` shape.
 
 use crate::StateRootApplyMetrics;
-use crate::mpt_store::{MptBlockChanges, MptChange, MptStore};
+use crate::mpt_store::{MptBlockChanges, MptChange, MptStore, PreparedMptCommit};
 use crate::providers::MptStateProviderFactory;
 use crate::state_root::StateRoot;
 use neo_crypto::mpt_trie::{MptError, MptResult};
 use neo_primitives::UInt256;
 use neo_storage::persistence::Store;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
-use neo_storage::{DataCache, TrackState};
+use neo_storage::{DataCache, StorageResult, TrackState};
 use parking_lot::RwLock;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -276,31 +276,8 @@ where
                 .unwrap_or_default());
         }
 
-        let Some(mpt) = self.mpt.as_ref() else {
+        let Some((mpt, root_before)) = self.projected_batch_context(requests)? else {
             return Ok(Vec::new());
-        };
-        let first = &requests[0];
-        for pair in requests.windows(2) {
-            if pair[0].block_index.checked_add(1) != Some(pair[1].block_index) {
-                return Err(MptError::invalid(format!(
-                    "non-contiguous state-service MPT batch: block {} followed by {}",
-                    pair[0].block_index, pair[1].block_index
-                )));
-            }
-        }
-        let root_before = match Self::contiguous_root_before(mpt, first.block_index) {
-            Ok(root_before) => root_before,
-            Err(err) => {
-                StateRootApplyMetrics::record_apply(
-                    first.block_index,
-                    first.changes.len(),
-                    first.project_us,
-                    0,
-                    elapsed_us(first.total_start),
-                    false,
-                );
-                return Err(err);
-            }
         };
 
         let blocks = requests
@@ -311,7 +288,82 @@ where
             })
             .collect::<Vec<_>>();
         let apply_start = std::time::Instant::now();
-        match mpt.apply_block_changes_batch(root_before, &blocks) {
+        Self::record_projected_batch_result(
+            requests,
+            apply_start,
+            mpt.apply_block_changes_batch(root_before, &blocks),
+        )
+    }
+
+    pub(crate) fn apply_projected_mpt_change_batch_coordinated<F>(
+        &self,
+        requests: &[ProjectedMptBlock<'_>],
+        commit: F,
+    ) -> MptResult<Vec<UInt256>>
+    where
+        F: FnOnce(&S, &mut PreparedMptCommit) -> StorageResult<()>,
+    {
+        if requests.is_empty() {
+            return Ok(Vec::new());
+        }
+        let Some((mpt, root_before)) = self.projected_batch_context(requests)? else {
+            return Ok(Vec::new());
+        };
+        let blocks = requests
+            .iter()
+            .map(|request| MptBlockChanges {
+                block_index: request.block_index,
+                changes: request.changes,
+            })
+            .collect::<Vec<_>>();
+        let apply_start = std::time::Instant::now();
+        Self::record_projected_batch_result(
+            requests,
+            apply_start,
+            mpt.apply_block_changes_batch_coordinated(root_before, &blocks, commit),
+        )
+    }
+
+    fn projected_batch_context<'a>(
+        &'a self,
+        requests: &[ProjectedMptBlock<'_>],
+    ) -> MptResult<Option<(&'a MptStore<S>, Option<UInt256>)>> {
+        let Some(mpt) = self.mpt.as_deref() else {
+            return Ok(None);
+        };
+        let first = requests.first().ok_or_else(|| {
+            MptError::invalid("state-service projected batch requires at least one block")
+        })?;
+        for pair in requests.windows(2) {
+            if pair[0].block_index.checked_add(1) != Some(pair[1].block_index) {
+                return Err(MptError::invalid(format!(
+                    "non-contiguous state-service MPT batch: block {} followed by {}",
+                    pair[0].block_index, pair[1].block_index
+                )));
+            }
+        }
+        match Self::contiguous_root_before(mpt, first.block_index) {
+            Ok(root_before) => Ok(Some((mpt, root_before))),
+            Err(err) => {
+                StateRootApplyMetrics::record_apply(
+                    first.block_index,
+                    first.changes.len(),
+                    first.project_us,
+                    0,
+                    elapsed_us(first.total_start),
+                    false,
+                );
+                Err(err)
+            }
+        }
+    }
+
+    fn record_projected_batch_result(
+        requests: &[ProjectedMptBlock<'_>],
+        apply_start: std::time::Instant,
+        result: MptResult<Vec<UInt256>>,
+    ) -> MptResult<Vec<UInt256>> {
+        match result {
             Ok(roots) => {
                 let apply_us = elapsed_us(apply_start) / (requests.len() as u64).max(1);
                 for request in requests {

@@ -172,6 +172,7 @@ pub(in crate::node) async fn build_node(
         settings.network,
         durable_tip_index,
         &service_storage_provider,
+        &store,
     )?;
     let durable_tip_height = durable_tip_index.unwrap_or(0);
     let use_fast_sync_store_mode = ledger_mode.uses_local_replay_services()
@@ -206,6 +207,7 @@ pub(in crate::node) async fn build_node(
         settings.network,
         ledger_mode.uses_local_replay_services(),
         use_fast_sync_store_mode,
+        &store,
     )?;
 
     let tokens_tracker = tokens_tracker_runtime.map(|(tracker_settings, tracker_store)| {

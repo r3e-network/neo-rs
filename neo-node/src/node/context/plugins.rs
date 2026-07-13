@@ -9,12 +9,12 @@ use neo_blockchain::{BlockPersistContext, FinalizedBlock, SyncBatchCommitPolicy}
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Block};
 use neo_storage::persistence::StoreCacheBacking;
-use neo_storage::persistence::store::Store;
-use neo_storage::{CacheRead, DataCache};
-use neo_system::BlockCommitHooks;
+use neo_storage::persistence::{Store, TransactionalStore};
+use neo_storage::{CacheRead, DataCache, StorageError};
+use neo_system::{BlockCommitHooks, CanonicalCommit};
 use tracing::{debug, warn};
 
-use super::DaemonCommitHooks;
+use super::{CoordinatedNodeStoreWith, DaemonCommitHooks};
 use crate::node::static_files::{
     STATIC_ARCHIVE_MAX_DEFERRED_BLOCKS, STATIC_ARCHIVE_PRUNE_BATCH_FRAMES, hot_ledger_prune_target,
 };
@@ -89,16 +89,20 @@ where
                 .indexer_service
                 .as_ref()
                 .is_some_and(|indexer| indexer.can_append_contiguous_block(block));
-        // StateService and a persistent indexer can make an independent store
-        // durable before Ledger. ApplicationLogs and TokensTracker run wholly
-        // on the acknowledged post-canonical stream, so they do not arm the
-        // cross-store recovery marker.
+        // A non-coordinated StateService or persistent indexer can make an
+        // independent store durable before Ledger. Coordinated MDBX
+        // StateService and post-canonical projections do not arm this marker.
         let has_persistent_indexer = should_index_live
             && self
                 .indexer_service
                 .as_ref()
                 .is_some_and(|indexer| indexer.is_persistent());
-        if (should_track_state || has_persistent_indexer)
+        let state_requires_recovery_marker = should_track_state
+            && self
+                .state_service
+                .as_ref()
+                .is_some_and(|state_service| !state_service.is_coordinated());
+        if (state_requires_recovery_marker || has_persistent_indexer)
             && !self.replay_guard.begin_observer_commit()
         {
             return false;
@@ -151,13 +155,13 @@ where
     }
 }
 
-impl<P, S, L, T, C> BlockCommitHooks<StoreCacheBacking<C>> for DaemonCommitHooks<P, S, L, T, C>
+impl<P, S, L, T, C> BlockCommitHooks<C> for DaemonCommitHooks<P, S, L, T, C>
 where
     P: NativeContractProvider + 'static,
     S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,
-    C: Store + 'static,
+    C: TransactionalStore + CoordinatedNodeStoreWith<S> + 'static,
 {
     fn block_committing(
         &self,
@@ -238,7 +242,11 @@ where
 
     fn fence_precommit_durability(&self) -> Result<(), String> {
         if let Some(state_service) = &self.state_service {
-            state_service.flush_durable_result()?;
+            if state_service.is_coordinated() {
+                state_service.flush_result().map_err(str::to_string)?;
+            } else {
+                state_service.flush_durable_result()?;
+            }
         }
         if let Some(indexer) = &self.indexer_service {
             indexer
@@ -254,6 +262,46 @@ where
             }
         }
         Ok(())
+    }
+
+    fn commit_canonical<K>(&self, canonical_commit: &mut K) -> Result<(), String>
+    where
+        K: CanonicalCommit<C>,
+    {
+        if let Err(error) = self.fence_precommit_durability() {
+            canonical_commit.discard_pending();
+            if let Some(state_service) = &self.state_service {
+                state_service.discard_pending_coordinated();
+            }
+            return Err(format!("pre-commit durability fence failed: {error}"));
+        }
+
+        if let Some(state_service) = &self.state_service
+            && state_service.is_coordinated()
+        {
+            let coordinated =
+                state_service.commit_pending_coordinated(|state_backing, state_overlay| {
+                    canonical_commit
+                        .commit_durable_with(|canonical, canonical_overlay| {
+                            canonical.commit_node_overlays(
+                                canonical_overlay,
+                                state_backing,
+                                state_overlay,
+                            )
+                        })
+                        .map_err(|error| StorageError::CommitFailed(error.to_string()))
+                });
+            match coordinated {
+                Ok(Some(_roots)) => return Ok(()),
+                Ok(None) => {}
+                Err(error) => {
+                    canonical_commit.discard_pending();
+                    return Err(error);
+                }
+            }
+        }
+
+        canonical_commit.commit_durable()
     }
 
     fn canonical_commit_succeeded(&self) {
@@ -309,6 +357,9 @@ where
 
     fn canonical_commit_failed(&self, reason: &str) {
         self.pending_static_records.lock().clear();
+        if let Some(state_service) = &self.state_service {
+            state_service.discard_pending_coordinated();
+        }
         self.replay_guard.canonical_commit_failed(reason);
     }
 

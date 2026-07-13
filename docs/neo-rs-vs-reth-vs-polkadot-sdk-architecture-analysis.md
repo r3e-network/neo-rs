@@ -32,10 +32,11 @@ MDBX also implements the stronger, statically selected
 service's raw byte format in a collision-free keyspace while sharing the
 canonical environment, and two overlays can publish in one MDBX transaction.
 Tests prove namespace isolation, old-snapshot isolation, one transaction-id
-advance, restart persistence, and rejection of cross-environment commits before
-partial writes. StateService preparation/publication is not wired to this path
-yet, so the following fail-stop protocol remains the production behavior.
-StateService and a persistent indexer remain separate durability domains, so
+advance, rollback after a secondary write failure, restart persistence, and
+rejection of cross-environment commits before partial writes. StateService now
+queues projected blocks, prepares one ordered MPT overlay, and publishes it with
+Ledger through that callback before advancing its visible root.
+RocksDB StateService and a persistent indexer remain separate durability domains, so
 neo-rs uses write-ahead fail-stop recovery rather than claiming cross-store
 atomicity: it writes and fsyncs a poison marker before either observer can
 publish, fences both observer stores before Ledger, and removes the marker only
@@ -392,14 +393,14 @@ happen only inside `neo-blockchain`.
 
 The transaction-bearing path is measured through a canonical Criterion fixture
 rather than an isolated VM loop. It composes `NodeCoreBuilder`, one real GAS
-transfer per block, separate Ledger and StateService MDBX stores, and a
-32-block durable import. Every Criterion sample starts from the same
-genesis/warmup or explicit transaction-block prefill, so mutable database growth
-does not invalidate the estimate. StateService separates queue backpressure
-from the MPT apply ceiling and adaptively flushes four roots when caught up while
-consuming up to eight queued roots under backlog. This is the Reth pipeline
-lesson applied without splitting already-atomic Neo persistence into fake
-stages.
+transfer per block, separate Ledger and StateService tables in one MDBX
+environment, and a 32-block atomic import. Every Criterion sample starts from
+the same genesis/warmup or explicit transaction-block prefill, so mutable
+database growth does not invalidate the estimate. The coordinated path projects
+per-block changes during import and computes one queued MPT batch at the
+canonical transaction boundary. This measures the production atomicity cost
+directly; the earlier two-environment asynchronous figures are not a valid
+baseline for this path.
 
 ### Polkadot SDK innovations
 
@@ -825,8 +826,8 @@ already established Neo codec byte-for-byte.
    table maintenance and canonical overlay publication have no runtime
    unsupported-capability branch. The existing child/parent `DataCache` is the
    adopted `OverlayedChanges` pattern. MDBX named views and the static
-   coordinated-transaction capability are implemented and tested; wiring a
-   prepared StateService MPT overlay into that transaction remains pending.
+   coordinated-transaction capability are implemented, tested, and consumed by
+   StateService through prepared single/batch MPT overlays.
 3. **State provider/factory boundary** — implemented in `neo-state-service`.
    `StateStore` creates a concrete `MptStateProviderFactory`; all StateService
    RPC root, state, scan, and proof reads use its statically dispatched views.

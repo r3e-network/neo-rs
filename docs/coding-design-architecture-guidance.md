@@ -302,11 +302,16 @@ Priority order for crate refactors:
    Canonical stores must satisfy `TransactionalStore` at the composition type
    boundary. Its canonical-overlay and maintenance methods are mandatory and
    return `Result<()>`; do not add optional capability booleans or defaults back
-   to `Store`. Never substitute commit-then-flush because a failed flush cannot
-   roll back the already-applied overlay. Never claim atomicity across
-   independently committed stores. StateService and a persistent indexer may
-   persist before the canonical Ledger fence. Write and fsync an
-   operator-visible marker *before* entering either observer, durably fence both
+   to `Store`. `neo-system` owns the concrete cache and exposes
+   `CanonicalCommit<S>` to application hooks; do not pass `StoreCache` into
+   `neo-node` policy code. Never substitute commit-then-flush because a failed
+   flush cannot roll back the already-applied overlay. Use
+   `CoordinatedTransactionalStore`
+   only when both namespaces share one proven physical transaction; MDBX
+   StateService is the production example. Never claim atomicity across
+   independently committed stores. RocksDB StateService and a persistent indexer
+   may persist before the canonical Ledger fence. Write and fsync an
+   operator-visible marker *before* entering either observer, durably fence each
    before Ledger, and fail the canonical write if either persistent observer
    cannot mutate or fence its data. Clear the marker only after Ledger succeeds.
    A crash or failure leaves

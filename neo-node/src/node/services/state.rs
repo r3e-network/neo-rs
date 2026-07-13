@@ -23,12 +23,25 @@ pub(super) fn build_state_service_runtime(
     network: u32,
     storage_provider: &str,
     service_fast_sync: bool,
+    canonical_store: &Arc<RuntimeStore>,
 ) -> anyhow::Result<StateServiceRuntime> {
     let state_service_fast_sync = service_fast_sync && config.state_service.track_during_catchup;
-    let (state_store, durable_store) =
-        build_state_store(config, network, storage_provider, state_service_fast_sync)?;
-    let state_service = match state_store.as_ref() {
-        Some(state_store) if state_service_fast_sync => {
+    let (state_store, durable_store, coordinated) = build_state_store(
+        config,
+        network,
+        storage_provider,
+        state_service_fast_sync,
+        canonical_store,
+    )?;
+    let state_service = match (state_store.as_ref(), coordinated) {
+        (Some(state_store), true) => Some(Arc::new(
+            neo_state_service::commit_handlers::StateServiceCommitHandlers::try_new_coordinated(
+                Arc::clone(state_store),
+            )
+            .map_err(anyhow::Error::msg)
+            .context("constructing coordinated StateService commit handlers")?,
+        )),
+        (Some(state_store), false) if state_service_fast_sync => {
             let handlers =
                 neo_state_service::commit_handlers::StateServiceCommitHandlers::try_new_async_with_capacity(
                     Arc::clone(state_store),
@@ -37,12 +50,12 @@ pub(super) fn build_state_service_runtime(
                 .context("spawning StateService MPT worker")?;
             Some(Arc::new(handlers))
         }
-        Some(state_store) => Some(Arc::new(
+        (Some(state_store), false) => Some(Arc::new(
             neo_state_service::commit_handlers::StateServiceCommitHandlers::new(Arc::clone(
                 state_store,
             )),
         )),
-        None => None,
+        (None, _) => None,
     };
 
     Ok(StateServiceRuntime {
@@ -57,16 +70,31 @@ fn build_state_store(
     network: u32,
     storage_provider: &str,
     fast_sync: bool,
+    canonical_store: &Arc<RuntimeStore>,
 ) -> anyhow::Result<(
     Option<Arc<neo_state_service::StateStore<RuntimeStore>>>,
     Option<ServiceStore>,
+    bool,
 )> {
     if !config.state_service.enabled {
-        return Ok((None, None));
+        return Ok((None, None, false));
     }
 
     let mut durable_store = None;
-    let state_store = if let Some(path) = &config.state_service.path {
+    let coordinated =
+        storage_provider.eq_ignore_ascii_case("mdbx") && canonical_store.as_mdbx().is_some();
+    let state_store = if coordinated {
+        let backing = Arc::new(
+            canonical_store
+                .open_coordinated_namespace(neo_state_service::MDBX_STATE_SERVICE_NAMESPACE)
+                .context("opening StateService MDBX namespace")?,
+        );
+        durable_store = Some(Arc::clone(&backing));
+        Arc::new(
+            neo_state_service::StateStore::with_mpt_store(config.state_service.full_state, backing)
+                .context("opening coordinated StateService MPT store")?,
+        )
+    } else if let Some(path) = &config.state_service.path {
         let backing = open_service_store_with_storage_config(
             "StateService",
             storage_provider,
@@ -95,7 +123,8 @@ fn build_state_store(
     info!(
         target: "neo",
         full_state = config.state_service.full_state,
+        coordinated,
         "state service MPT store enabled"
     );
-    Ok((Some(state_store), durable_store))
+    Ok((Some(state_store), durable_store, coordinated))
 }

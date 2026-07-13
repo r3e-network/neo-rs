@@ -292,6 +292,40 @@ where
         Ok(())
     }
 
+    /// Commits the canonical overlay through an application-supplied atomic
+    /// transaction.
+    ///
+    /// The callback receives the concrete directly owned store and a borrowed,
+    /// byte-key-ordered overlay source. It may combine those bytes with another
+    /// namespace using a stronger backend capability. The cache publishes its
+    /// new generation only after the callback succeeds; any error discards the
+    /// pending canonical overlay and restores reads to the last committed view.
+    pub fn try_commit_durable_with<F>(&mut self, commit: F) -> DataCacheResult
+    where
+        F: FnOnce(&S, &mut &DataCache<StoreCacheBacking<S>>) -> StorageResult<()>,
+    {
+        if self.data_cache.is_read_only() {
+            return Err(DataCacheError::ReadOnly);
+        }
+
+        let StoreCacheBacking::Store(store) = &self.backing else {
+            self.discard_pending_changes();
+            return Err(DataCacheError::CommitFailed(
+                "coordinated canonical commit requires a directly store-backed cache".to_string(),
+            ));
+        };
+        let mut source = &self.data_cache;
+        if let Err(error) = commit(store, &mut source) {
+            self.discard_pending_changes();
+            return Err(DataCacheError::CommitFailed(format!(
+                "coordinated durable storage write failed: {error}"
+            )));
+        }
+
+        self.data_cache.commit();
+        Ok(())
+    }
+
     fn commit_canonical_store_overlay(&self) -> DataCacheResult {
         let StoreCacheBacking::Store(store) = &self.backing else {
             return Err(DataCacheError::CommitFailed(

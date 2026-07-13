@@ -17,11 +17,14 @@ use neo_state_service::{
     StateRootApplyMetrics, StateStore, commit_handlers::StateServiceCommitHandlers,
 };
 use neo_storage::{
-    CacheRead, DataCache,
+    DataCache, StorageError,
     mdbx::MdbxStore,
-    persistence::{Store, TransactionalStore, providers::MemoryStore},
+    persistence::{
+        CoordinatedTransactionalStore, Store, StoreCacheBacking, TransactionalStore,
+        providers::MemoryStore,
+    },
 };
-use neo_system::{BlockCommitHooks, NodeCoreBuilder};
+use neo_system::{BlockCommitHooks, CanonicalCommit, NodeCoreBuilder};
 use neo_vm::script_builder::ScriptBuilder;
 use num_bigint::BigInt;
 
@@ -90,15 +93,15 @@ impl<S: Store> fmt::Debug for StateServiceHooks<S> {
     }
 }
 
-impl<B, S> BlockCommitHooks<B> for StateServiceHooks<S>
+impl<C, S> BlockCommitHooks<C> for StateServiceHooks<S>
 where
-    B: CacheRead,
+    C: TransactionalStore,
     S: Store,
 {
     fn block_committing(
         &self,
         block: &Block,
-        snapshot: &DataCache<B>,
+        snapshot: &DataCache<StoreCacheBacking<C>>,
         _application_executed: &[neo_payloads::ApplicationExecuted],
         _live_tip: u64,
         context: BlockPersistContext,
@@ -126,6 +129,84 @@ where
 
     fn fence_precommit_durability(&self) -> Result<(), String> {
         self.handlers.flush_durable_result()
+    }
+}
+
+struct CoordinatedStateServiceHooks<S: Store> {
+    handlers: StateServiceCommitHandlers<S>,
+}
+
+impl<S: Store> CoordinatedStateServiceHooks<S> {
+    fn new(state_store: Arc<StateStore<S>>) -> Self {
+        Self {
+            handlers: StateServiceCommitHandlers::try_new_coordinated(state_store)
+                .expect("construct coordinated benchmark StateService"),
+        }
+    }
+}
+
+impl<S: Store> fmt::Debug for CoordinatedStateServiceHooks<S> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CoordinatedStateServiceHooks")
+            .finish_non_exhaustive()
+    }
+}
+
+impl<S> BlockCommitHooks<S> for CoordinatedStateServiceHooks<S>
+where
+    S: CoordinatedTransactionalStore,
+{
+    fn block_committing(
+        &self,
+        block: &Block,
+        snapshot: &DataCache<StoreCacheBacking<S>>,
+        _application_executed: &[neo_payloads::ApplicationExecuted],
+        _live_tip: u64,
+        _context: BlockPersistContext,
+    ) -> bool {
+        self.handlers
+            .on_committing_deferred(block.index(), snapshot)
+    }
+
+    fn sync_batch_commit_policy(
+        &self,
+        _start_height: u32,
+        _end_height: u32,
+        _live_tip: u64,
+    ) -> SyncBatchCommitPolicy {
+        SyncBatchCommitPolicy::DeferredLive
+    }
+
+    fn flush_deferred(&self) -> Result<(), String> {
+        self.handlers.flush_result().map_err(str::to_string)
+    }
+
+    fn commit_canonical<C>(&self, canonical_commit: &mut C) -> Result<(), String>
+    where
+        C: CanonicalCommit<S>,
+    {
+        let result = self
+            .handlers
+            .commit_pending_coordinated(|state_backing, state_overlay| {
+                canonical_commit
+                    .commit_durable_with(|canonical, canonical_overlay| {
+                        canonical.commit_coordinated_overlays(
+                            canonical_overlay,
+                            state_backing,
+                            state_overlay,
+                        )
+                    })
+                    .map_err(|error| StorageError::CommitFailed(error.to_string()))
+            });
+        match result {
+            Ok(Some(_roots)) => Ok(()),
+            Ok(None) => canonical_commit.commit_durable(),
+            Err(error) => {
+                canonical_commit.discard_pending();
+                Err(error)
+            }
+        }
     }
 }
 
@@ -334,21 +415,19 @@ impl<G> Drop for CanonicalImportFixture<G> {
     }
 }
 
-fn prepare_canonical_import_fixture<S, T, G>(
+fn prepare_canonical_import_fixture<S, H, G>(
     canonical_store: Arc<S>,
-    state_store: Arc<StateStore<T>>,
+    hooks: Arc<H>,
     storage_guard: G,
-    mpt_apply_batch_blocks: usize,
     prefill_blocks: usize,
     transactions_per_block: usize,
 ) -> CanonicalImportFixture<G>
 where
     S: TransactionalStore,
-    T: Store,
+    H: BlockCommitHooks<S> + 'static,
 {
     let settings = Arc::new(ProtocolSettings::default());
     let native_provider = Arc::new(StandardNativeProvider::new());
-    let hooks = Arc::new(StateServiceHooks::new(state_store, mpt_apply_batch_blocks));
     let launch = NodeCoreBuilder::new(
         Arc::clone(&settings),
         canonical_store,
@@ -424,27 +503,25 @@ where
     }
 }
 
-fn benchmark_canonical_import<S, T, G, F>(
+fn benchmark_canonical_import<S, H, G, F>(
     bencher: &mut Bencher<'_>,
     backend: &str,
-    mpt_apply_batch_blocks: usize,
     prefill_blocks: usize,
     transactions_per_block: usize,
     mut storage_factory: F,
 ) where
     S: TransactionalStore,
-    T: Store,
-    F: FnMut() -> (Arc<S>, Arc<StateStore<T>>, G),
+    H: BlockCommitHooks<S> + 'static,
+    F: FnMut() -> (Arc<S>, Arc<H>, G),
 {
     let mut timings = ImportTimingTotals::default();
     bencher.iter_batched(
         || {
-            let (canonical_store, state_store, storage_guard) = storage_factory();
+            let (canonical_store, hooks, storage_guard) = storage_factory();
             prepare_canonical_import_fixture(
                 canonical_store,
-                state_store,
+                hooks,
                 storage_guard,
-                mpt_apply_batch_blocks,
                 prefill_blocks,
                 transactions_per_block,
             )
@@ -493,13 +570,16 @@ fn bench_canonical_transaction_import(c: &mut Criterion) {
             benchmark_canonical_import(
                 bencher,
                 "memory",
-                mpt_apply_batch_blocks,
                 prefill_blocks,
                 transactions_per_block,
                 || {
+                    let state_store = Arc::new(StateStore::with_mpt(false));
                     (
                         Arc::new(MemoryStore::new()),
-                        Arc::new(StateStore::with_mpt(false)),
+                        Arc::new(StateServiceHooks::new(
+                            state_store,
+                            mpt_apply_batch_blocks,
+                        )),
                         (),
                     )
                 },
@@ -510,7 +590,7 @@ fn bench_canonical_transaction_import(c: &mut Criterion) {
     group.bench_with_input(
         BenchmarkId::new(
             format!(
-                "mdbx_blocks_mpt_{mpt_apply_batch_blocks}_prefill_{prefill_blocks}_txs_{transactions_per_block}"
+                "mdbx_coordinated_blocks_prefill_{prefill_blocks}_txs_{transactions_per_block}"
             ),
             BLOCKS_PER_BATCH,
         ),
@@ -518,23 +598,25 @@ fn bench_canonical_transaction_import(c: &mut Criterion) {
         |bencher, ()| {
             benchmark_canonical_import(
                 bencher,
-                "mdbx",
-                mpt_apply_batch_blocks,
+                "mdbx_coordinated",
                 prefill_blocks,
                 transactions_per_block,
                 || {
                     let (canonical_store, canonical_tempdir) =
                         make_mdbx_store("neo-canonical-import-mdbx-bench");
-                    let (state_backing, state_tempdir) =
-                        make_mdbx_store("neo-canonical-state-service-mdbx-bench");
+                    let state_backing = Arc::new(
+                        canonical_store
+                            .open_namespace(neo_state_service::MDBX_STATE_SERVICE_NAMESPACE)
+                            .expect("open coordinated benchmark StateService namespace"),
+                    );
                     let state_store = Arc::new(
                         StateStore::<MdbxStore>::with_mpt_store(false, state_backing)
                             .expect("create MDBX-backed benchmark StateService"),
                     );
                     (
                         canonical_store,
-                        state_store,
-                        (canonical_tempdir, state_tempdir),
+                        Arc::new(CoordinatedStateServiceHooks::new(state_store)),
+                        canonical_tempdir,
                     )
                 },
             );

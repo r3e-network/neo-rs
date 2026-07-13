@@ -1,6 +1,7 @@
 use super::*;
 use crate::state_root::StateRoot;
 use neo_primitives::UInt256;
+use neo_storage::persistence::{RawOverlaySource, RawReadOnlyStore};
 use neo_storage::{StorageItem, StorageKey};
 
 #[test]
@@ -28,6 +29,98 @@ fn committing_is_noop_without_mpt_backend() {
     assert!(handlers.on_committing(1, &snapshot));
     assert!(store.mpt().is_none());
     assert_eq!(store.candidate_count(), 0);
+}
+
+#[test]
+fn coordinated_handlers_require_a_durable_mpt_backing() {
+    let no_mpt = Arc::new(StateStore::new());
+    assert!(StateServiceCommitHandlers::try_new_coordinated(no_mpt).is_err());
+
+    let memory_only_mpt = Arc::new(StateStore::with_mpt(false));
+    assert!(StateServiceCommitHandlers::try_new_coordinated(memory_only_mpt).is_err());
+}
+
+#[test]
+fn coordinated_handlers_queue_blocks_until_external_commit() {
+    let backing = Arc::new(MemoryStore::new());
+    let store = Arc::new(
+        StateStore::with_mpt_store(false, Arc::clone(&backing)).expect("state store with backing"),
+    );
+    let handlers =
+        StateServiceCommitHandlers::try_new_coordinated(Arc::clone(&store)).expect("handlers");
+    let snapshot0 = DataCache::new(false);
+    snapshot0.add(
+        StorageKey::new(5, vec![0xAA]),
+        StorageItem::from_bytes(vec![0x01]),
+    );
+    let snapshot1 = DataCache::new(false);
+    snapshot1.update(
+        StorageKey::new(5, vec![0xAA]),
+        StorageItem::from_bytes(vec![0x02]),
+    );
+
+    assert!(handlers.is_coordinated());
+    assert!(!handlers.is_async());
+    assert!(handlers.on_committing_deferred(0, &snapshot0));
+    assert!(handlers.on_committing_deferred(1, &snapshot1));
+    assert_eq!(
+        store.mpt().expect("MPT").current_local_root(),
+        None,
+        "queued projections must not become visible before the external transaction"
+    );
+    assert!(handlers.flush_durable_result().is_err());
+
+    let roots = handlers
+        .commit_pending_coordinated(|backing, prepared| {
+            assert!(backing.try_commit_borrowed_raw_overlay(prepared)?);
+            Ok(())
+        })
+        .expect("coordinated commit")
+        .expect("queued roots");
+
+    assert_eq!(roots.len(), 2);
+    assert_eq!(
+        store.mpt().expect("MPT").current_local_root(),
+        Some((1, roots[1]))
+    );
+    assert!(
+        handlers
+            .commit_pending_coordinated(|_, _| panic!("empty batch must not invoke callback"))
+            .expect("empty coordinated commit")
+            .is_none()
+    );
+}
+
+#[test]
+fn coordinated_handler_failure_keeps_previous_visible_root() {
+    let backing = Arc::new(MemoryStore::new());
+    let store = Arc::new(
+        StateStore::with_mpt_store(false, Arc::clone(&backing)).expect("state store with backing"),
+    );
+    let handlers =
+        StateServiceCommitHandlers::try_new_coordinated(Arc::clone(&store)).expect("handlers");
+    let snapshot = DataCache::new(false);
+    snapshot.add(
+        StorageKey::new(5, vec![0xAA]),
+        StorageItem::from_bytes(vec![0x01]),
+    );
+    assert!(handlers.on_committing(0, &snapshot));
+
+    let error = handlers
+        .commit_pending_coordinated(|_backing, prepared| {
+            prepared.visit_raw_overlay(&mut |_key: &[u8], _value: Option<&[u8]>| {});
+            Err(neo_storage::StorageError::CommitFailed(
+                "injected canonical failure".to_string(),
+            ))
+        })
+        .expect_err("external failure must propagate");
+
+    assert!(error.contains("injected canonical failure"));
+    assert_eq!(store.mpt().expect("MPT").current_local_root(), None);
+    assert_eq!(
+        backing.try_get_bytes(crate::Keys::CURRENT_LOCAL_ROOT_INDEX),
+        None
+    );
 }
 
 #[test]

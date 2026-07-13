@@ -426,8 +426,11 @@ Key points:
   is the node's `OverlayedChanges`-style per-transaction/per-block atomicity
   mechanism (`neo-blockchain/src/native_persist.rs`).
 - **Durability.** `commit_to_store()` is fallible and flushes the snapshot's
-  tracked writes through `StoreCache::try_commit_durable()` to the configured
-  backend. `NodeBuilder`, `NodeCore`, `NodeSystemContext`, and `Node` require
+  tracked writes through the `CanonicalCommit<S>` capability owned by
+  `neo-system`; its `StoreCache<S>` implementation uses
+  `StoreCache::try_commit_durable()` for ordinary publication. Application hooks
+  can select a stronger transaction without naming or owning the cache.
+  `NodeBuilder`, `NodeCore`, `NodeSystemContext`, and `Node` require
   `S: TransactionalStore`, whose canonical-overlay operation is mandatory and
   returns `Result<()>`; an unsupported backend cannot compose a node. MDBX uses
   one atomic write transaction, while RocksDB bypasses fast-sync buffering with
@@ -437,18 +440,22 @@ Key points:
   events run only after this fence succeeds. MDBX is the production default,
   RocksDB remains a supported fallback, and the in-memory backend does not
   persist across restarts.
-- **Coordinated MDBX foundation.** `CoordinatedTransactionalStore` is an explicit
+- **Coordinated MDBX commit.** `CoordinatedTransactionalStore` is an explicit
   stronger capability above `TransactionalStore`. MDBX named-table views share
   one environment but isolate raw keyspaces, and its coordinated commit applies
   two overlay visitors in one write transaction. It rejects a different
-  environment or the same logical table before visiting either overlay. The
-  current StateService composition still uses a separate store and the recovery
-  protocol below; atomic integration requires prepared MPT publication and is
-  not inferred merely from using MDBX on both paths.
-- **Cross-store recovery.** StateService and a persistent indexer do not share a
-  transaction with the canonical Ledger store. The node writes and fsyncs
-  `.neo-local-replay-poisoned` before either pre-commit store can publish, then
-  durably fences both observer backends before committing Ledger. A persistent
+  environment or the same logical table before visiting either overlay. MDBX
+  StateService queues projected blocks, prepares its ordered MPT overlay under
+  the writer gate, and supplies it to the trusted `CanonicalCommit` callback.
+  The callback must consume both overlays and return success only after atomic
+  publication; backend parity tests prove that contract. Ledger and MPT bytes
+  become durable in one transaction; only then does the visible local root
+  advance.
+- **Cross-store recovery.** RocksDB StateService and a persistent indexer do not
+  share a transaction with the canonical Ledger store. The node writes and
+  fsyncs `.neo-local-replay-poisoned` before either independent pre-commit store
+  can publish, then durably fences those observer backends before committing
+  Ledger. A persistent
   observer mutation or fence failure rejects the block. Canonical success
   removes the marker and syncs its directory. A crash, deferred-hook
   failure, or Ledger commit failure leaves the marker for startup to reject.

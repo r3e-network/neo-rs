@@ -1,4 +1,5 @@
 use super::*;
+use crate::node::context::CoordinatedNodeStoreWith;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_storage::persistence::StoreDataCache;
 use neo_storage::persistence::providers::MemoryStore;
@@ -10,7 +11,7 @@ use neo_system::NodeSystemContext;
 struct TestDaemonContext<P, C = MemoryStore, S = MemoryStore, L = MemoryStore, T = MemoryStore>
 where
     P: NativeContractProvider + 'static,
-    C: TransactionalStore + 'static,
+    C: TransactionalStore + CoordinatedNodeStoreWith<S> + 'static,
     S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,
@@ -31,7 +32,7 @@ where
 impl<P, C, S, L, T> std::ops::Deref for TestDaemonContext<P, C, S, L, T>
 where
     P: NativeContractProvider + 'static,
-    C: TransactionalStore + 'static,
+    C: TransactionalStore + CoordinatedNodeStoreWith<S> + 'static,
     S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,
@@ -46,7 +47,7 @@ where
 impl<P, C, S, L, T> TestDaemonContext<P, C, S, L, T>
 where
     P: NativeContractProvider + 'static,
-    C: TransactionalStore + 'static,
+    C: TransactionalStore + CoordinatedNodeStoreWith<S> + 'static,
     S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,
@@ -86,7 +87,7 @@ fn daemon_context<P, C, S, L, T>(
 ) -> TestDaemonContext<P, C, S, L, T>
 where
     P: NativeContractProvider + 'static,
-    C: TransactionalStore + 'static,
+    C: TransactionalStore + CoordinatedNodeStoreWith<S> + 'static,
     S: Store + 'static,
     L: Store + 'static,
     T: Store + 'static,
@@ -124,6 +125,12 @@ fn native_provider() -> Arc<neo_native_contracts::StandardNativeProvider> {
     Arc::new(neo_native_contracts::StandardNativeProvider::new())
 }
 
+fn memory_runtime_store() -> Arc<neo_storage::persistence::providers::RuntimeStore> {
+    Arc::new(neo_storage::persistence::providers::RuntimeStore::Memory(
+        MemoryStore::new(),
+    ))
+}
+
 #[path = "runtime/indexer.rs"]
 mod indexer;
 
@@ -134,8 +141,8 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
         genesis_block, persist_block_natives_with_resources,
     };
     use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
+    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use neo_storage::persistence::{StoreCache, StoreCacheBacking};
     use neo_system::BlockCommitHooks;
 
     type Hooks = DaemonCommitHooks<
@@ -144,7 +151,6 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
         MemoryStore,
         MemoryStore,
     >;
-    type Backing = StoreCacheBacking<MemoryStore>;
 
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(
@@ -180,7 +186,7 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
         Arc::new(crate::node::recovery::LocalReplayGuard::new(None, shutdown)),
     );
 
-    assert!(<Hooks as BlockCommitHooks<Backing>>::block_committing(
+    assert!(<Hooks as BlockCommitHooks<MemoryStore>>::block_committing(
         &hooks,
         block.as_ref(),
         snapshot.as_ref(),
@@ -193,14 +199,14 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
         None,
         "pre-commit capture must stay in memory"
     );
-    <Hooks as BlockCommitHooks<Backing>>::fence_precommit_durability(&hooks)
+    <Hooks as BlockCommitHooks<MemoryStore>>::fence_precommit_durability(&hooks)
         .expect("durably stage archive before canonical commit");
     assert_eq!(
         archive.tip(),
         None,
         "the staged cold frame must remain hidden before canonical commit"
     );
-    <Hooks as BlockCommitHooks<Backing>>::canonical_commit_succeeded(&hooks);
+    <Hooks as BlockCommitHooks<MemoryStore>>::canonical_commit_succeeded(&hooks);
     assert_eq!(archive.tip(), Some(0));
     assert_eq!(
         archive
@@ -230,7 +236,7 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
             tokio_util::sync::CancellationToken::new(),
         )),
     );
-    assert!(<Hooks as BlockCommitHooks<Backing>>::block_committing(
+    assert!(<Hooks as BlockCommitHooks<MemoryStore>>::block_committing(
         &discarded,
         block.as_ref(),
         snapshot.as_ref(),
@@ -238,11 +244,11 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
         0,
         BlockPersistContext::live(),
     ));
-    <Hooks as BlockCommitHooks<Backing>>::canonical_commit_failed(
+    <Hooks as BlockCommitHooks<MemoryStore>>::canonical_commit_failed(
         &discarded,
         "injected canonical failure",
     );
-    <Hooks as BlockCommitHooks<Backing>>::canonical_commit_succeeded(&discarded);
+    <Hooks as BlockCommitHooks<MemoryStore>>::canonical_commit_succeeded(&discarded);
     assert_eq!(discarded_archive.tip(), None);
 
     let ahead_temp = tempfile::tempdir().expect("tempdir");
@@ -264,7 +270,7 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
             tokio_util::sync::CancellationToken::new(),
         )),
     );
-    assert!(<Hooks as BlockCommitHooks<Backing>>::block_committing(
+    assert!(<Hooks as BlockCommitHooks<MemoryStore>>::block_committing(
         &ahead,
         block.as_ref(),
         snapshot.as_ref(),
@@ -272,9 +278,9 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
         0,
         BlockPersistContext::live(),
     ));
-    <Hooks as BlockCommitHooks<Backing>>::fence_precommit_durability(&ahead)
+    <Hooks as BlockCommitHooks<MemoryStore>>::fence_precommit_durability(&ahead)
         .expect("publish ahead archive frame");
-    <Hooks as BlockCommitHooks<Backing>>::canonical_commit_failed(
+    <Hooks as BlockCommitHooks<MemoryStore>>::canonical_commit_failed(
         &ahead,
         "injected failure after cold durability",
     );
@@ -295,9 +301,9 @@ fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure()
         .expect("truncate uncommitted ahead archive frame");
     assert_eq!(recovery.truncated_blocks, 1);
     assert_eq!(recovered_archive.tip(), None);
-    assert!(!<Hooks as BlockCommitHooks<Backing>>::allows_empty_block_fast_forward(&discarded));
+    assert!(!<Hooks as BlockCommitHooks<MemoryStore>>::allows_empty_block_fast_forward(&discarded));
     assert!(
-        <Hooks as BlockCommitHooks<Backing>>::allows_empty_block_committing_fast_forward(
+        <Hooks as BlockCommitHooks<MemoryStore>>::allows_empty_block_committing_fast_forward(
             &discarded
         )
     );
@@ -312,10 +318,10 @@ fn canonical_archive_publication_prunes_hot_ledger_rows_atomically() {
     use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
     use neo_storage::StorageKey;
     use neo_storage::persistence::ReadOnlyStoreGeneric;
+    use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::RuntimeStore;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
     use neo_storage::persistence::store::Store;
-    use neo_storage::persistence::{StoreCache, StoreCacheBacking};
     use neo_system::BlockCommitHooks;
 
     type Hooks = DaemonCommitHooks<
@@ -324,7 +330,6 @@ fn canonical_archive_publication_prunes_hot_ledger_rows_atomically() {
         MemoryStore,
         MemoryStore,
     >;
-    type Backing = StoreCacheBacking<MemoryStore>;
 
     let settings = ProtocolSettings::default();
     let snapshot = Arc::new(
@@ -380,7 +385,7 @@ fn canonical_archive_publication_prunes_hot_ledger_rows_atomically() {
     );
     hooks.configure_hot_ledger_pruning(Arc::clone(&store), 0);
 
-    assert!(<Hooks as BlockCommitHooks<Backing>>::block_committing(
+    assert!(<Hooks as BlockCommitHooks<MemoryStore>>::block_committing(
         &hooks,
         block.as_ref(),
         snapshot.as_ref(),
@@ -388,9 +393,9 @@ fn canonical_archive_publication_prunes_hot_ledger_rows_atomically() {
         0,
         BlockPersistContext::live(),
     ));
-    <Hooks as BlockCommitHooks<Backing>>::fence_precommit_durability(&hooks)
+    <Hooks as BlockCommitHooks<MemoryStore>>::fence_precommit_durability(&hooks)
         .expect("stage archive");
-    <Hooks as BlockCommitHooks<Backing>>::canonical_commit_succeeded(&hooks);
+    <Hooks as BlockCommitHooks<MemoryStore>>::canonical_commit_succeeded(&hooks);
 
     let mut block_hash_key = vec![9];
     block_hash_key.extend_from_slice(&0u32.to_be_bytes());
@@ -427,7 +432,7 @@ fn daemon_commit_hooks_do_not_own_core_system_resources() {
     );
     assert!(
         system_context_source.contains("pub struct NodeSystemContext<P, S, H>")
-            && system_context_source.contains("H: BlockCommitHooks<StoreCacheBacking<S>>"),
+            && system_context_source.contains("H: BlockCommitHooks<S>"),
         "neo-system must own the generic core context and static hook boundary"
     );
     assert!(
@@ -696,14 +701,161 @@ path = "{}"
     ))
     .expect("parse mdbx service config");
 
-    let services = services::build_operational_services(&config, 0x334F_454E, true, false)
-        .expect("build services");
+    let canonical_path = temp.path().join("chain");
+    let canonical_store = crate::node::config::open_store(&config, Some(&canonical_path))
+        .expect("open canonical MDBX store");
+    let services =
+        services::build_operational_services(&config, 0x334F_454E, true, false, &canonical_store)
+            .expect("build services");
     let state_store = services
         .durable_stores
         .first()
         .expect("state service durable store");
 
     assert_eq!(state_store.backend_kind(), StoreBackendKind::Mdbx);
+    assert!(
+        services
+            .state_service
+            .as_ref()
+            .expect("state service")
+            .is_coordinated(),
+        "MDBX StateService must share the canonical transaction domain"
+    );
+}
+
+#[test]
+fn coordinated_mdbx_commit_publishes_ledger_and_state_root_atomically() {
+    use neo_blockchain::{BlockPersistContext, SystemContext};
+    use neo_storage::persistence::providers::RuntimeStore;
+    use neo_storage::persistence::{RawReadOnlyStore, StoreCache};
+    use neo_storage::{StorageItem, StorageKey};
+
+    let temp = tempfile::tempdir().expect("temp MDBX root");
+    let config: NodeConfig = toml::from_str(&format!(
+        r#"
+[storage]
+backend = "mdbx"
+data_dir = "{}"
+
+[state_service]
+enabled = true
+track_during_catchup = true
+"#,
+        temp.path().join("chain").display(),
+    ))
+    .expect("parse coordinated MDBX config");
+    let canonical_store =
+        crate::node::config::open_store(&config, None).expect("open canonical MDBX store");
+    let services =
+        services::build_operational_services(&config, 0x334F_454E, true, true, &canonical_store)
+            .expect("build coordinated services");
+    let state_service = services
+        .state_service
+        .as_ref()
+        .expect("state service")
+        .clone();
+    assert!(state_service.is_coordinated());
+    let state_backing = services
+        .durable_stores
+        .first()
+        .expect("state backing")
+        .clone();
+    let store_cache = StoreCache::new_from_store(Arc::clone(&canonical_store), false);
+    let snapshot = Arc::new(store_cache.data_cache().clone());
+    let settings = Arc::new(ProtocolSettings::default());
+    let genesis = Arc::new(
+        neo_blockchain::genesis_block(settings.as_ref()).expect("construct coordinated genesis"),
+    );
+    let resources = neo_blockchain::NativePersistResources::from_provider(native_provider());
+    neo_blockchain::persist_block_natives_with_resources(
+        Arc::clone(&snapshot),
+        Arc::clone(&genesis),
+        Arc::clone(&settings),
+        neo_blockchain::NativePersistOptions::default(),
+        &resources,
+    )
+    .expect("persist coordinated genesis transition");
+    let contract_key = StorageKey::new(5, vec![0xAA]);
+    snapshot.add(contract_key.clone(), StorageItem::from_bytes(vec![0x01]));
+    let marker = temp.path().join(".neo-local-replay-poisoned");
+    let shutdown = tokio_util::sync::CancellationToken::new();
+    let (hooks, _stream) = DaemonCommitHooks::<
+        neo_native_contracts::StandardNativeProvider,
+        RuntimeStore,
+        MemoryStore,
+        MemoryStore,
+        RuntimeStore,
+    >::compose(
+        0x334F_454E,
+        Some(state_service),
+        true,
+        None,
+        None,
+        None,
+        None,
+        Arc::new(crate::node::recovery::LocalReplayGuard::new(
+            Some(marker.clone()),
+            shutdown,
+        )),
+    );
+    let context = NodeSystemContext::new(
+        settings,
+        Arc::clone(&snapshot),
+        store_cache,
+        native_provider(),
+        hooks,
+    );
+
+    assert!(context.block_committing_with_context(
+        genesis.as_ref(),
+        &snapshot,
+        &[],
+        BlockPersistContext::trusted_replay(),
+    ));
+    assert!(!marker.exists());
+    assert_eq!(
+        canonical_store.try_get_bytes(&contract_key.to_array()),
+        None
+    );
+    assert_eq!(
+        state_backing.try_get_bytes(neo_state_service::Keys::CURRENT_LOCAL_ROOT_INDEX),
+        None
+    );
+    let transaction_before = canonical_store
+        .as_mdbx()
+        .expect("canonical MDBX")
+        .info()
+        .expect("MDBX info before")
+        .last_txnid();
+
+    context.commit_to_store().expect("coordinated commit");
+
+    assert_eq!(
+        canonical_store.try_get_bytes(&contract_key.to_array()),
+        Some(vec![0x01])
+    );
+    assert_eq!(
+        state_backing.try_get_bytes(neo_state_service::Keys::CURRENT_LOCAL_ROOT_INDEX),
+        Some(0u32.to_le_bytes().to_vec())
+    );
+    assert_eq!(
+        canonical_store
+            .as_mdbx()
+            .expect("canonical MDBX")
+            .info()
+            .expect("MDBX info after")
+            .last_txnid(),
+        transaction_before + 1
+    );
+    assert!(!marker.exists());
+
+    drop(context);
+    drop(snapshot);
+    drop(state_backing);
+    drop(services);
+    drop(canonical_store);
+    crate::node::config::validate_storage(&config, None, 0x334F_454E)
+        .expect("coordinated genesis must pass startup validation after reopen");
 }
 
 #[test]
@@ -725,8 +877,12 @@ path = "{}"
     ))
     .expect("parse mdbx service config");
 
-    let services = services::build_operational_services(&config, 0x334F_454E, true, false)
-        .expect("build services");
+    let canonical_path = temp.path().join("chain");
+    let canonical_store = crate::node::config::open_store(&config, Some(&canonical_path))
+        .expect("open canonical MDBX store");
+    let services =
+        services::build_operational_services(&config, 0x334F_454E, true, false, &canonical_store)
+            .expect("build services");
     let service_store = services
         .durable_stores
         .first()
@@ -759,8 +915,14 @@ path = "{}"
     ))
     .expect("parse state-service config");
 
-    let services = services::build_operational_services(&config, 0x334F_454E, true, false)
-        .expect("build services");
+    let services = services::build_operational_services(
+        &config,
+        0x334F_454E,
+        true,
+        false,
+        &memory_runtime_store(),
+    )
+    .expect("build services");
     let state_store = services
         .durable_stores
         .first()
@@ -799,8 +961,14 @@ track_during_catchup = true
     ))
     .expect("parse state-service config");
 
-    let services = services::build_operational_services(&config, 0x334F_454E, true, true)
-        .expect("build fast-sync services");
+    let services = services::build_operational_services(
+        &config,
+        0x334F_454E,
+        true,
+        true,
+        &memory_runtime_store(),
+    )
+    .expect("build fast-sync services");
     let state_service = services
         .state_service
         .as_ref()
@@ -834,8 +1002,14 @@ track_during_catchup = true
 "#,
     )
     .expect("parse validation state-service config");
-    let services = services::build_operational_services(&config, 0x334F_454E, true, true)
-        .expect("build fast-sync validation services");
+    let services = services::build_operational_services(
+        &config,
+        0x334F_454E,
+        true,
+        true,
+        &memory_runtime_store(),
+    )
+    .expect("build fast-sync validation services");
     let state_service = services
         .state_service
         .as_ref()
@@ -908,8 +1082,14 @@ track_during_catchup = true
 "#,
     )
     .expect("parse validation state-service config");
-    let services = services::build_operational_services(&config, 0x334F_454E, true, true)
-        .expect("build fast-sync validation services");
+    let services = services::build_operational_services(
+        &config,
+        0x334F_454E,
+        true,
+        true,
+        &memory_runtime_store(),
+    )
+    .expect("build fast-sync validation services");
     let state_service = services
         .state_service
         .as_ref()
@@ -970,8 +1150,14 @@ track_during_catchup = false
     ))
     .expect("parse state-service config");
 
-    let services = services::build_operational_services(&config, 0x334F_454E, true, true)
-        .expect("build fast-sync services");
+    let services = services::build_operational_services(
+        &config,
+        0x334F_454E,
+        true,
+        true,
+        &memory_runtime_store(),
+    )
+    .expect("build fast-sync services");
     let state_service = services
         .state_service
         .as_ref()
@@ -1090,8 +1276,14 @@ track_during_catchup = true
 "#,
     )
     .expect("parse validation state-service config");
-    let services = services::build_operational_services(&config, 0x334F_454E, true, false)
-        .expect("build validation services");
+    let services = services::build_operational_services(
+        &config,
+        0x334F_454E,
+        true,
+        false,
+        &memory_runtime_store(),
+    )
+    .expect("build validation services");
     let state_store = services
         .state_store
         .as_ref()
@@ -1150,8 +1342,14 @@ full_state = true
 "#,
     )
     .expect("parse default state-service config");
-    let services = services::build_operational_services(&config, 0x334F_454E, true, false)
-        .expect("build services");
+    let services = services::build_operational_services(
+        &config,
+        0x334F_454E,
+        true,
+        false,
+        &memory_runtime_store(),
+    )
+    .expect("build services");
     let state_store = services
         .state_store
         .as_ref()
@@ -1701,7 +1899,6 @@ fn post_canonical_application_logs_do_not_arm_replay_marker() {
 #[test]
 fn sync_batch_policy_never_spans_live_post_canonical_plugin_staging() {
     use neo_rpc::application_logs::{ApplicationLogsService, ApplicationLogsSettings};
-    use neo_storage::persistence::StoreCacheBacking;
     use neo_system::BlockCommitHooks;
 
     type Hooks = DaemonCommitHooks<
@@ -1710,7 +1907,6 @@ fn sync_batch_policy_never_spans_live_post_canonical_plugin_staging() {
         MemoryStore,
         MemoryStore,
     >;
-    type Backing = StoreCacheBacking<MemoryStore>;
 
     let settings = ProtocolSettings::default();
     let mut logs_settings = ApplicationLogsSettings::default();
@@ -1734,12 +1930,16 @@ fn sync_batch_policy_never_spans_live_post_canonical_plugin_staging() {
     );
 
     assert_eq!(
-        <Hooks as BlockCommitHooks<Backing>>::sync_batch_commit_policy(&guarded, 1, 100, 10_100,),
+        <Hooks as BlockCommitHooks<MemoryStore>>::sync_batch_commit_policy(
+            &guarded, 1, 100, 10_100,
+        ),
         neo_blockchain::SyncBatchCommitPolicy::PerBlock,
         "the exact catch-up boundary still runs per-block plugin staging",
     );
     assert_eq!(
-        <Hooks as BlockCommitHooks<Backing>>::sync_batch_commit_policy(&guarded, 1, 100, 10_101,),
+        <Hooks as BlockCommitHooks<MemoryStore>>::sync_batch_commit_policy(
+            &guarded, 1, 100, 10_101,
+        ),
         neo_blockchain::SyncBatchCommitPolicy::DeferredCatchUp,
         "batching freezes catch-up observer semantics for the whole range",
     );
@@ -1757,7 +1957,12 @@ fn sync_batch_policy_never_spans_live_post_canonical_plugin_staging() {
         )),
     );
     assert_eq!(
-        <Hooks as BlockCommitHooks<Backing>>::sync_batch_commit_policy(&observer_free, 1, 100, 0,),
+        <Hooks as BlockCommitHooks<MemoryStore>>::sync_batch_commit_policy(
+            &observer_free,
+            1,
+            100,
+            0,
+        ),
         neo_blockchain::SyncBatchCommitPolicy::DeferredLive,
         "observer-free compositions can batch before a peer tip is known",
     );
@@ -1766,7 +1971,6 @@ fn sync_batch_policy_never_spans_live_post_canonical_plugin_staging() {
 #[test]
 fn static_archive_bounds_deferred_commit_staging() {
     use neo_static_files::{StaticFileArchiveFactory, StaticFileProviderFactory};
-    use neo_storage::persistence::StoreCacheBacking;
     use neo_system::BlockCommitHooks;
 
     type Hooks = DaemonCommitHooks<
@@ -1775,7 +1979,6 @@ fn static_archive_bounds_deferred_commit_staging() {
         MemoryStore,
         MemoryStore,
     >;
-    type Backing = StoreCacheBacking<MemoryStore>;
 
     let temp = tempfile::tempdir().expect("temp dir");
     let files = StaticFileArchiveFactory::default()
@@ -1795,12 +1998,12 @@ fn static_archive_bounds_deferred_commit_staging() {
     );
 
     assert_eq!(
-        <Hooks as BlockCommitHooks<Backing>>::sync_batch_commit_policy(&hooks, 1, 64, 0),
+        <Hooks as BlockCommitHooks<MemoryStore>>::sync_batch_commit_policy(&hooks, 1, 64, 0),
         neo_blockchain::SyncBatchCommitPolicy::DeferredLive,
         "a bounded archive batch should retain one canonical commit",
     );
     assert_eq!(
-        <Hooks as BlockCommitHooks<Backing>>::sync_batch_commit_policy(&hooks, 1, 65, 0),
+        <Hooks as BlockCommitHooks<MemoryStore>>::sync_batch_commit_policy(&hooks, 1, 65, 0),
         neo_blockchain::SyncBatchCommitPolicy::PerBlock,
         "oversized archive staging must fall back to bounded per-block commits",
     );
