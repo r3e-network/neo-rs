@@ -5,10 +5,20 @@ name: Fuzzing
     - main
     - master
     paths:
-    - neo-core/**
+    - Cargo.lock
+    - Cargo.toml
+    - neo-config/**
+    - neo-crypto/**
+    - neo-error/**
     - neo-io/**
-    - neo-p2p/**
+    - neo-manifest/**
+    - neo-network/**
+    - neo-payloads/**
     - neo-primitives/**
+    - neo-runtime/**
+    - neo-serialization/**
+    - neo-storage/**
+    - neo-vm/**
     - fuzz/**
     - .github/workflows/fuzz.yml
   pull_request:
@@ -16,10 +26,20 @@ name: Fuzzing
     - main
     - master
     paths:
-    - neo-core/**
+    - Cargo.lock
+    - Cargo.toml
+    - neo-config/**
+    - neo-crypto/**
+    - neo-error/**
     - neo-io/**
-    - neo-p2p/**
+    - neo-manifest/**
+    - neo-network/**
+    - neo-payloads/**
     - neo-primitives/**
+    - neo-runtime/**
+    - neo-serialization/**
+    - neo-storage/**
+    - neo-vm/**
     - fuzz/**
     - .github/workflows/fuzz.yml
   schedule:
@@ -42,23 +62,33 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-    - name: Checkout neo-vm-rs (sibling path dependency)
-      run: git clone --depth 1 https://github.com/r3e-network/neo-vm-rs.git ../neo-vm-rs
     - name: Install dependencies
       run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
         \n  build-essential \\\n  clang \\\n  libclang-dev \\\n  llvm-dev \\\n  liblz4-dev\
         \ \\\n  libssl-dev \\\n  pkg-config\n"
     - name: Install Rust nightly
-      uses: dtolnay/rust-toolchain@nightly
+      uses: dtolnay/rust-toolchain@nightly-2025-11-30
     - name: Install cargo-fuzz
-      run: cargo install cargo-fuzz
+      run: cargo install cargo-fuzz --version 0.13.1 --locked
     - name: Cache cargo
       uses: Swatinem/rust-cache@v2
       with:
         key: fuzz-transaction
     - name: Run fuzz_transaction_parse
-      run: "cd fuzz\ncargo fuzz run fuzz_transaction_parse \\\n  --release \\\n  --\
-        \ -max_total_time=${{ github.event.inputs.duration || 300 }} -print_final_stats=1\n"
+      run: |
+        cd fuzz
+        cargo metadata --locked --no-deps --format-version 1 >/dev/null
+        lock_before="$(sha256sum Cargo.lock | awk '{print $1}')"
+        rc=0
+        cargo fuzz run fuzz_transaction_parse \
+          --release \
+          -- -max_total_time=${{ github.event.inputs.duration || 300 }} -print_final_stats=1 || rc=$?
+        lock_after="$(sha256sum Cargo.lock | awk '{print $1}')"
+        if [ "$lock_before" != "$lock_after" ]; then
+          echo "fuzz/Cargo.lock changed during fuzz_transaction_parse" >&2
+          exit 1
+        fi
+        exit "$rc"
     - name: Upload crash artifacts
       if: failure()
       uses: actions/upload-artifact@v4
@@ -73,23 +103,33 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-    - name: Checkout neo-vm-rs (sibling path dependency)
-      run: git clone --depth 1 https://github.com/r3e-network/neo-vm-rs.git ../neo-vm-rs
     - name: Install dependencies
       run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
         \n  build-essential \\\n  clang \\\n  libclang-dev \\\n  llvm-dev \\\n  liblz4-dev\
         \ \\\n  libssl-dev \\\n  pkg-config\n"
     - name: Install Rust nightly
-      uses: dtolnay/rust-toolchain@nightly
+      uses: dtolnay/rust-toolchain@nightly-2025-11-30
     - name: Install cargo-fuzz
-      run: cargo install cargo-fuzz
+      run: cargo install cargo-fuzz --version 0.13.1 --locked
     - name: Cache cargo
       uses: Swatinem/rust-cache@v2
       with:
         key: fuzz-script
     - name: Run fuzz_script_parse
-      run: "cd fuzz\ncargo fuzz run fuzz_script_parse \\\n  --release \\\n  -- -max_total_time=${{\
-        \ github.event.inputs.duration || 300 }} -print_final_stats=1\n"
+      run: |
+        cd fuzz
+        cargo metadata --locked --no-deps --format-version 1 >/dev/null
+        lock_before="$(sha256sum Cargo.lock | awk '{print $1}')"
+        rc=0
+        cargo fuzz run fuzz_script_parse \
+          --release \
+          -- -max_total_time=${{ github.event.inputs.duration || 300 }} -print_final_stats=1 || rc=$?
+        lock_after="$(sha256sum Cargo.lock | awk '{print $1}')"
+        if [ "$lock_before" != "$lock_after" ]; then
+          echo "fuzz/Cargo.lock changed during fuzz_script_parse" >&2
+          exit 1
+        fi
+        exit "$rc"
     - name: Upload crash artifacts
       if: failure()
       uses: actions/upload-artifact@v4
@@ -104,23 +144,33 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-    - name: Checkout neo-vm-rs (sibling path dependency)
-      run: git clone --depth 1 https://github.com/r3e-network/neo-vm-rs.git ../neo-vm-rs
     - name: Install dependencies
       run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
         \n  build-essential \\\n  clang \\\n  libclang-dev \\\n  llvm-dev \\\n  liblz4-dev\
         \ \\\n  libssl-dev \\\n  pkg-config\n"
     - name: Install Rust nightly
-      uses: dtolnay/rust-toolchain@nightly
+      uses: dtolnay/rust-toolchain@nightly-2025-11-30
     - name: Install cargo-fuzz
-      run: cargo install cargo-fuzz
+      run: cargo install cargo-fuzz --version 0.13.1 --locked
     - name: Cache cargo
       uses: Swatinem/rust-cache@v2
       with:
         key: fuzz-message
     - name: Run fuzz_message_parse
-      run: "cd fuzz\ncargo fuzz run fuzz_message_parse \\\n  --release \\\n  -- -max_total_time=${{\
-        \ github.event.inputs.duration || 300 }} -print_final_stats=1\n"
+      run: |
+        cd fuzz
+        cargo metadata --locked --no-deps --format-version 1 >/dev/null
+        lock_before="$(sha256sum Cargo.lock | awk '{print $1}')"
+        rc=0
+        cargo fuzz run fuzz_message_parse \
+          --release \
+          -- -max_total_time=${{ github.event.inputs.duration || 300 }} -print_final_stats=1 || rc=$?
+        lock_after="$(sha256sum Cargo.lock | awk '{print $1}')"
+        if [ "$lock_before" != "$lock_after" ]; then
+          echo "fuzz/Cargo.lock changed during fuzz_message_parse" >&2
+          exit 1
+        fi
+        exit "$rc"
     - name: Upload crash artifacts
       if: failure()
       uses: actions/upload-artifact@v4
@@ -136,33 +186,37 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-    - name: Checkout neo-vm-rs (sibling path dependency)
-      run: git clone --depth 1 https://github.com/r3e-network/neo-vm-rs.git ../neo-vm-rs
     - name: Install dependencies
       run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
         \n  build-essential \\\n  clang \\\n  libclang-dev \\\n  llvm-dev \\\n  liblz4-dev\
         \ \\\n  libssl-dev \\\n  pkg-config\n"
     - name: Install Rust nightly
-      uses: dtolnay/rust-toolchain@nightly
+      uses: dtolnay/rust-toolchain@nightly-2025-11-30
     - name: Install cargo-fuzz
-      run: cargo install cargo-fuzz
+      run: cargo install cargo-fuzz --version 0.13.1 --locked
     - name: Cache cargo
       uses: Swatinem/rust-cache@v2
       with:
         key: fuzz-smoke
     - name: Run smoke tests (30 seconds each)
-      run: 'cd fuzz
-
+      run: |
+        cd fuzz
+        cargo metadata --locked --no-deps --format-version 1 >/dev/null
+        lock_before="$(sha256sum Cargo.lock | awk '{print $1}')"
+        rc=0
         echo "=== Transaction Fuzzing ==="
-
-        cargo fuzz run fuzz_transaction_parse --release -- -max_total_time=30
-
-        echo "=== Script Fuzzing ==="
-
-        cargo fuzz run fuzz_script_parse --release -- -max_total_time=30
-
-        echo "=== Message Fuzzing ==="
-
-        cargo fuzz run fuzz_message_parse --release -- -max_total_time=30
-
-        '
+        cargo fuzz run fuzz_transaction_parse --release -- -max_total_time=30 || rc=$?
+        if [ "$rc" -eq 0 ]; then
+          echo "=== Script Fuzzing ==="
+          cargo fuzz run fuzz_script_parse --release -- -max_total_time=30 || rc=$?
+        fi
+        if [ "$rc" -eq 0 ]; then
+          echo "=== Message Fuzzing ==="
+          cargo fuzz run fuzz_message_parse --release -- -max_total_time=30 || rc=$?
+        fi
+        lock_after="$(sha256sum Cargo.lock | awk '{print $1}')"
+        if [ "$lock_before" != "$lock_after" ]; then
+          echo "fuzz/Cargo.lock changed during smoke fuzzing" >&2
+          exit 1
+        fi
+        exit "$rc"

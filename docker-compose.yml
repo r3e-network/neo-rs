@@ -3,8 +3,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      additional_contexts:
-        neo-vm-rs: ../neo-vm-rs
       args:
         - BUILDKIT_INLINE_CACHE=1
     image: neo-rust-node:latest

@@ -7,10 +7,33 @@ on:
     paths:
     - .github/workflows/compatibility-v310.yml
     - scripts/validate-v310-consistency.sh
-    - neo-core/**
+    - Cargo.lock
+    - Cargo.toml
+    - neo-blockchain/**
+    - neo-config/**
+    - neo-consensus/**
+    - neo-crypto/**
+    - neo-error/**
+    - neo-execution/**
+    - neo-indexer/**
+    - neo-io/**
+    - neo-manifest/**
+    - neo-mempool/**
+    - neo-native-contracts/**
+    - neo-network/**
     - neo-node/**
+    - neo-oracle-service/**
+    - neo-payloads/**
+    - neo-primitives/**
     - neo-rpc/**
-    - neo-p2p/**
+    - neo-runtime/**
+    - neo-serialization/**
+    - neo-state-service/**
+    - neo-static-files/**
+    - neo-storage/**
+    - neo-system/**
+    - neo-vm/**
+    - neo-wallets/**
   pull_request:
     branches:
     - main
@@ -18,10 +41,33 @@ on:
     paths:
     - .github/workflows/compatibility-v310.yml
     - scripts/validate-v310-consistency.sh
-    - neo-core/**
+    - Cargo.lock
+    - Cargo.toml
+    - neo-blockchain/**
+    - neo-config/**
+    - neo-consensus/**
+    - neo-crypto/**
+    - neo-error/**
+    - neo-execution/**
+    - neo-indexer/**
+    - neo-io/**
+    - neo-manifest/**
+    - neo-mempool/**
+    - neo-native-contracts/**
+    - neo-network/**
     - neo-node/**
+    - neo-oracle-service/**
+    - neo-payloads/**
+    - neo-primitives/**
     - neo-rpc/**
-    - neo-p2p/**
+    - neo-runtime/**
+    - neo-serialization/**
+    - neo-state-service/**
+    - neo-static-files/**
+    - neo-storage/**
+    - neo-system/**
+    - neo-vm/**
+    - neo-wallets/**
   schedule:
   - cron: 0 */12 * * *
   workflow_dispatch:
@@ -62,8 +108,6 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-    - name: Checkout neo-vm-rs (sibling path dependency)
-      run: git clone --depth 1 https://github.com/r3e-network/neo-vm-rs.git ../neo-vm-rs
     - name: Install system dependencies
       run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
         \n  build-essential \\\n  clang \\\n  cmake \\\n  curl \\\n  jq \\\n  libbz2-dev\
@@ -71,7 +115,7 @@ jobs:
         \ \\\n  libssl-dev \\\n  libzstd-dev \\\n  pkg-config \\\n  python3 \\\n \
         \ python3-pip \\\n  python3-venv \\\n  zlib1g-dev\n"
     - name: Set up Rust
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@1.89.0
     - name: Cache cargo
       uses: Swatinem/rust-cache@v2
     - name: Run Neo v3.10.1 consistency validation
@@ -104,9 +148,10 @@ jobs:
           if bash scripts/validate-v310-consistency.sh "${args[@]}"; then
             rc=0
             break
+          else
+            rc=$?
+            echo "attempt $attempt failed (rc=$rc)" >&2
           fi
-          rc=$?
-          echo "attempt $attempt failed (rc=$rc)" >&2
           [ "$attempt" -lt 3 ] && sleep 15
         done
         exit "$rc"

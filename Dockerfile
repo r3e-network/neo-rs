@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for Neo Rust Node
 # R3E Network <jimmy@r3e.network>
 
-FROM rust:1.88-bullseye AS builder
+FROM rust:1.89-bullseye AS builder
 
 # Install system dependencies for building
 RUN apt-get update && apt-get install -y \
@@ -27,16 +27,7 @@ RUN apt-get update && apt-get install -y \
 # must be set directly (not via bashrc) so it's visible to the RUN cargo build.
 ENV LIBCLANG_PATH=/usr/lib/llvm-11/lib
 
-# Create app directory. Keep neo-rs and neo-vm-rs as siblings because the
-# workspace intentionally depends on `../neo-vm-rs`.
 WORKDIR /workspace/neo-rs
-
-# The neo-vm-rs sibling crate is a path dependency (../neo-vm-rs). It is not
-# published as a Docker image, so clone it directly into the build context
-# (the same way the CI workflows do), tracking its main branch.
-RUN apt-get update && apt-get install -y --no-install-recommends git \
-    && git clone --depth 1 https://github.com/r3e-network/neo-vm-rs.git /workspace/neo-vm-rs \
-    && rm -rf /var/lib/apt/lists/*
 
 # Copy manifests and workspace crates (kept explicit for better Docker layer caching).
 COPY Cargo.toml Cargo.lock ./
@@ -44,6 +35,7 @@ COPY neo-primitives/ neo-primitives/
 COPY neo-config/ neo-config/
 COPY neo-crypto/ neo-crypto/
 COPY neo-storage/ neo-storage/
+COPY neo-static-files/ neo-static-files/
 COPY neo-io/ neo-io/
 COPY neo-vm/ neo-vm/
 COPY neo-error/ neo-error/
@@ -65,6 +57,7 @@ COPY neo-system/ neo-system/
 COPY neo-rpc/ neo-rpc/
 COPY neo-oracle-service/ neo-oracle-service/
 COPY neo-node/ neo-node/
+COPY neo-test-fixtures/ neo-test-fixtures/
 COPY tests/ tests/
 COPY benches-package/ benches-package/
 COPY scripts/ scripts/
@@ -87,6 +80,7 @@ RUN apt-get update && apt-get install -y \
     libbz2-1.0 \
     libssl1.1 \
     curl \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Create neo user and home
@@ -141,7 +135,7 @@ CMD []
 
 # Metadata
 LABEL org.opencontainers.image.title="Neo-Rust-Node"
-LABEL org.opencontainers.image.description="Production-ready Rust implementation of the Neo N3 blockchain protocol"
+LABEL org.opencontainers.image.description="Rust implementation of the Neo N3 blockchain protocol"
 LABEL org.opencontainers.image.url="https://github.com/r3e-network/neo-rs"
 LABEL org.opencontainers.image.documentation="https://github.com/r3e-network/neo-rs/blob/master/README.md"
 LABEL org.opencontainers.image.source="https://github.com/r3e-network/neo-rs"

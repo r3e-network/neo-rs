@@ -844,8 +844,8 @@ run_network_validation() {
   mkdir -p "$network_dir"
 
   local csharp_rpc neogo_rpc
-  csharp_rpc="$(select_rpc "$network" "Neo v3.10.1" "Neo:3.10.1" "$expected_network" "$expected_msperblock" "$csharp_candidates")"
-  neogo_rpc="$(select_rpc "$network" "NeoGo" "NEO-GO" "$expected_network" "$expected_msperblock" "$neogo_candidates")"
+  csharp_rpc="$(select_rpc "$network" "Neo v3.10.1" "Neo:3.10.1" "$expected_network" "$expected_msperblock" "$csharp_candidates")" || csharp_rpc=""
+  neogo_rpc="$(select_rpc "$network" "NeoGo" "NEO-GO" "$expected_network" "$expected_msperblock" "$neogo_candidates")" || neogo_rpc=""
 
   echo "[$network] selected C#:   $csharp_rpc"
   echo "[$network] selected NeoGo: $neogo_rpc"

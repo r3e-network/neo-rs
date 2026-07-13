@@ -21,17 +21,15 @@ jobs:
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
-    - name: Checkout neo-vm-rs (sibling path dependency)
-      run: git clone --depth 1 https://github.com/r3e-network/neo-vm-rs.git ../neo-vm-rs
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@1.89.0
       with:
         components: rustfmt
-    # Check only this workspace's members. `cargo fmt --all` also reformats the
-    # `neo-vm-rs` path dependency, which is a separately-released crate that keeps
-    # its own rustfmt style; `cargo metadata --no-deps` lists members only.
+    # Check only this workspace's members. The locked `cargo metadata --no-deps`
+    # query excludes the separately released `neo-vm-rs` Git dependency and its
+    # independent rustfmt style.
     - name: Format check (workspace members)
       run: |
-        for pkg in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name'); do
+        for pkg in $(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[].name'); do
           cargo fmt --check --package "$pkg"
         done
   clippy:
@@ -40,8 +38,6 @@ jobs:
     timeout-minutes: 25
     steps:
     - uses: actions/checkout@v4
-    - name: Checkout neo-vm-rs (sibling path dependency)
-      run: git clone --depth 1 https://github.com/r3e-network/neo-vm-rs.git ../neo-vm-rs
     - name: Reclaim runner disk space
       run: 'sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
 
@@ -54,7 +50,7 @@ jobs:
         packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev
           libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
         version: 1.0
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@1.89.0
       with:
         components: clippy
     - name: Setup sccache
@@ -73,15 +69,13 @@ jobs:
       # The lint policy (deny clippy::all + the accepted allow-list) lives in
       # [workspace.lints.clippy] in the root Cargo.toml, so local `cargo clippy`
       # and CI enforce exactly the same rules.
-      run: cargo clippy --workspace --all-targets --profile test
+      run: cargo clippy --workspace --all-targets --profile test --locked -- -D warnings
   test:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
     - uses: actions/checkout@v4
-    - name: Checkout neo-vm-rs (sibling path dependency)
-      run: git clone --depth 1 https://github.com/r3e-network/neo-vm-rs.git ../neo-vm-rs
     - name: Reclaim runner disk space
       run: 'sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
 
@@ -94,7 +88,7 @@ jobs:
         packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev
           libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
         version: 1.0
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@1.89.0
     - name: Setup sccache
       uses: mozilla-actions/sccache-action@v0.0.7
       continue-on-error: true
@@ -104,14 +98,35 @@ jobs:
         \ >> \"$GITHUB_ENV\"\n  echo \"::notice::sccache enabled\"\nelse\n  echo \"\
         ::warning::sccache unavailable — falling back to direct compilation\"\nfi\n"
     - name: Install cargo-nextest
-      uses: taiki-e/install-action@nextest
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-nextest@0.9.128
     - name: Cache cargo registry & git
       uses: Swatinem/rust-cache@v2
       with:
         shared-key: ci-test
     - name: Build tests
-      run: cargo test --workspace --no-run
+      run: cargo test --workspace --no-run --locked
     - name: Run tests
-      run: cargo nextest run --workspace --no-fail-fast
+      run: cargo nextest run --workspace --no-fail-fast --locked
     - name: Run doctests
-      run: cargo test --workspace --doc
+      run: cargo test --workspace --doc --locked
+  dependency-policy:
+    name: Dependency Policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@1.89.0
+    - name: Install cargo-deny
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-deny@0.18.9
+    - name: Validate locked dependency graphs
+      run: |
+        cargo metadata --locked --no-deps --format-version 1 >/dev/null
+        cargo metadata --manifest-path fuzz/Cargo.toml --locked --no-deps --format-version 1 >/dev/null
+    - name: Check root dependency policy
+      run: cargo deny check advisories licenses sources --hide-inclusion-graph
+    - name: Check fuzz dependency policy
+      run: cargo deny --manifest-path fuzz/Cargo.toml check advisories licenses sources --hide-inclusion-graph
