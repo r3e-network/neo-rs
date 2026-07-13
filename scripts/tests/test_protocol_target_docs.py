@@ -1,11 +1,212 @@
+import re
 import unittest
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+COMPATIBILITY_TRIGGER_PATHS = [
+    ".github/workflows/compatibility-v310.yml",
+    "scripts/validate-v310-consistency.sh",
+    "Cargo.lock",
+    "Cargo.toml",
+    "neo-blockchain/**",
+    "neo-config/**",
+    "neo-consensus/**",
+    "neo-crypto/**",
+    "neo-error/**",
+    "neo-execution/**",
+    "neo-indexer/**",
+    "neo-io/**",
+    "neo-manifest/**",
+    "neo-mempool/**",
+    "neo-native-contracts/**",
+    "neo-network/**",
+    "neo-node/**",
+    "neo-oracle-service/**",
+    "neo-payloads/**",
+    "neo-primitives/**",
+    "neo-rpc/**",
+    "neo-runtime/**",
+    "neo-serialization/**",
+    "neo-state-service/**",
+    "neo-static-files/**",
+    "neo-storage/**",
+    "neo-system/**",
+    "neo-vm/**",
+    "neo-wallets/**",
+]
+FUZZ_TRIGGER_PATHS = [
+    "Cargo.lock",
+    "Cargo.toml",
+    "neo-config/**",
+    "neo-crypto/**",
+    "neo-error/**",
+    "neo-io/**",
+    "neo-manifest/**",
+    "neo-network/**",
+    "neo-payloads/**",
+    "neo-primitives/**",
+    "neo-runtime/**",
+    "neo-serialization/**",
+    "neo-storage/**",
+    "neo-vm/**",
+    "fuzz/**",
+    ".github/workflows/fuzz.yml",
+]
+
+
+def workflow_block(text: str, key: str, indent: int) -> str:
+    lines = text.splitlines()
+    header = f"{' ' * indent}{key}:"
+    starts = [index for index, line in enumerate(lines) if line == header]
+    if len(starts) != 1:
+        raise AssertionError(f"expected one {header!r} block, found {len(starts)}")
+
+    start = starts[0]
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        line = lines[index]
+        if line.strip() and len(line) - len(line.lstrip()) <= indent:
+            end = index
+            break
+    return "\n".join(lines[start:end])
+
+
+def workflow_trigger_paths(text: str, trigger: str) -> list[str]:
+    trigger_block = workflow_block(text, trigger, 2)
+    lines = trigger_block.splitlines()
+    paths_header = "    paths:"
+    try:
+        start = lines.index(paths_header) + 1
+    except ValueError as error:
+        raise AssertionError(f"{trigger!r} trigger has no paths block") from error
+
+    paths = []
+    for line in lines[start:]:
+        if line.startswith("    - "):
+            paths.append(line.removeprefix("    - "))
+        elif line.strip():
+            break
+    return paths
+
+
+def assert_block_contains_once(test: unittest.TestCase, block: str, markers: list[str]):
+    for marker in markers:
+        with test.subTest(marker=marker):
+            test.assertEqual(block.count(marker), 1)
+
+
+def normalized(text: str) -> str:
+    without_quote_prefixes = re.sub(r"(?m)^>\s?", "", text)
+    return " ".join(without_quote_prefixes.split())
 
 
 class ProtocolTargetDocsTests(unittest.TestCase):
+    def test_ci_uses_locked_rust_and_tool_versions(self):
+        text = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+
+        expected_markers = {
+            "fmt": [
+                "dtolnay/rust-toolchain@1.89.0",
+                "cargo metadata --locked --no-deps --format-version 1",
+            ],
+            "clippy": [
+                "dtolnay/rust-toolchain@1.89.0",
+                "cargo clippy --workspace --all-targets --profile test --locked -- -D warnings",
+            ],
+            "test": [
+                "dtolnay/rust-toolchain@1.89.0",
+                "tool: cargo-nextest@0.9.128",
+                "cargo test --workspace --no-run --locked",
+                "cargo nextest run --workspace --no-fail-fast --locked",
+                "cargo test --workspace --doc --locked",
+            ],
+            "dependency-policy": [
+                "dtolnay/rust-toolchain@1.89.0",
+                "tool: cargo-deny@0.18.9",
+                "cargo metadata --locked --no-deps --format-version 1",
+                "cargo metadata --manifest-path fuzz/Cargo.toml --locked --no-deps --format-version 1",
+                "cargo deny check advisories licenses sources --hide-inclusion-graph",
+                "cargo deny --manifest-path fuzz/Cargo.toml check advisories licenses sources --hide-inclusion-graph",
+            ],
+        }
+        for job, markers in expected_markers.items():
+            with self.subTest(job=job):
+                assert_block_contains_once(self, workflow_block(text, job, 2), markers)
+
+    def test_compatibility_workflow_preserves_failures_and_all_protocol_triggers(self):
+        text = (
+            REPO_ROOT / ".github" / "workflows" / "compatibility-v310.yml"
+        ).read_text(encoding="utf-8")
+
+        for trigger in ("push", "pull_request"):
+            with self.subTest(trigger=trigger):
+                self.assertEqual(
+                    workflow_trigger_paths(text, trigger),
+                    COMPATIBILITY_TRIGGER_PATHS,
+                )
+
+        job = workflow_block(text, "consistency", 2)
+        assert_block_contains_once(
+            self,
+            job,
+            ["dtolnay/rust-toolchain@1.89.0"],
+        )
+        self.assertRegex(
+            job,
+            re.compile(
+                r"if bash scripts/validate-v310-consistency\.sh.*?\n"
+                r"\s+rc=0\n\s+break\n\s+else\n\s+rc=\$\?\n"
+                r"\s+echo \"attempt \$attempt failed \(rc=\$rc\)\"",
+                re.DOTALL,
+            ),
+        )
+        self.assertNotRegex(job, re.compile(r"\n\s*fi\n\s*rc=\$\?"))
+
+    def test_consistency_validator_handles_unavailable_rpc_selection_explicitly(self):
+        text = (REPO_ROOT / "scripts" / "validate-v310-consistency.sh").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertRegex(
+            text,
+            re.compile(r'csharp_rpc="\$\(select_rpc .*?\)" \|\| csharp_rpc=""'),
+        )
+        self.assertRegex(
+            text,
+            re.compile(r'neogo_rpc="\$\(select_rpc .*?\)" \|\| neogo_rpc=""'),
+        )
+        self.assertIn("REFERENCE-UNREACHABLE", text)
+        self.assertIn("NOT a parity failure", text)
+
+    def test_fuzz_workflow_pins_tools_and_protects_the_standalone_lock(self):
+        text = (REPO_ROOT / ".github" / "workflows" / "fuzz.yml").read_text(
+            encoding="utf-8"
+        )
+
+        for trigger in ("push", "pull_request"):
+            with self.subTest(trigger=trigger):
+                self.assertEqual(workflow_trigger_paths(text, trigger), FUZZ_TRIGGER_PATHS)
+
+        markers = [
+            "dtolnay/rust-toolchain@nightly-2025-11-30",
+            "cargo install cargo-fuzz --version 0.13.1 --locked",
+            "cargo metadata --locked --no-deps --format-version 1",
+            'lock_before="$(sha256sum Cargo.lock',
+            'lock_after="$(sha256sum Cargo.lock',
+            'if [ "$lock_before" != "$lock_after" ]',
+        ]
+        for job in (
+            "fuzz-transaction",
+            "fuzz-script",
+            "fuzz-message",
+            "fuzz-smoke-test",
+        ):
+            with self.subTest(job=job):
+                assert_block_contains_once(self, workflow_block(text, job, 2), markers)
+
     def test_release_guide_names_current_neo_n3_target(self):
         text = (REPO_ROOT / "docs" / "RELEASE.md").read_text(encoding="utf-8")
 
@@ -134,6 +335,93 @@ class ProtocolTargetDocsTests(unittest.TestCase):
         }:
             with self.subTest(marker=marker):
                 self.assertIn(marker, text)
+
+    def test_protocol_baseline_records_official_schedules_and_evidence_scope(self):
+        text = (REPO_ROOT / "docs" / "protocol-compatibility.md").read_text(
+            encoding="utf-8"
+        )
+        prose = normalized(text)
+
+        for marker in (
+            "Compatibility Target and Current Evidence",
+            "7313f8087724e1de4caa88edd2ada58c1fe54abc",
+            "explicitly loaded `Hardforks: {}`",
+            "Full differential execution parity",
+            "sustained live-peer interoperability",
+            "complete MainNet replay and state parity",
+            "authenticated checkpoint fast sync",
+            "Code presence is not, by itself, evidence",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, prose)
+
+        self.assertIn("| HF_Gorgon | 12,020,000 | 17,960,000 |", text)
+        self.assertIn("| HF_Huyao | not scheduled | not scheduled |", text)
+        self.assertNotIn("not scheduled by preset", text)
+        self.assertNotIn("## Neo N3 v3.10.1 Parity", text)
+
+    def test_active_architecture_docs_record_the_immutable_canonical_vm_boundary(self):
+        architecture = (REPO_ROOT / "docs" / "architecture.md").read_text(
+            encoding="utf-8"
+        )
+        design = (REPO_ROOT / "design.md").read_text(encoding="utf-8")
+        node_readme = (REPO_ROOT / "neo-node" / "README.md").read_text(
+            encoding="utf-8"
+        )
+
+        revision = "3081e83db3716fd51dc58c0afc039290d2d07253"
+        for document, text in (("architecture", architecture), ("design", design)):
+            with self.subTest(document=document):
+                self.assertIn(revision, text)
+                self.assertIn("sole canonical", text)
+                self.assertIn("non-canonical", text)
+
+        self.assertNotIn("external sibling crate", architecture)
+        self.assertNotIn("referenced by path", architecture)
+        self.assertIn("44 ADRs", architecture)
+        self.assertIn("44 ADRs", node_readme)
+        self.assertIn("8 ordered dependency layers", node_readme)
+
+    def test_adr_044_records_authority_semantics_and_evidence_limits(self):
+        text = (REPO_ROOT / "design.md").read_text(encoding="utf-8")
+        headings = re.findall(r"^### ADR-(\d{3}):", text, re.MULTILINE)
+        prose = normalized(text)
+
+        self.assertEqual(len(headings), 44)
+        self.assertEqual(
+            sorted(headings),
+            [f"{number:03d}" for number in range(1, 45)],
+        )
+        self.assertIn("### ADR-044: Immutable VM boundary and canonical local execution", text)
+        for marker in (
+            "Reth and Polkadot/Substrate are architecture references only",
+            "repeated compound IDs",
+            "conflicting kind, shape, or content fails closed",
+            "Before `HF_Domovoi`",
+            "fresh immutable deep copy",
+            "`RUSTSEC-2025-0141`",
+            "Phase 2 plan 02-03",
+            "complete MainNet replay/state parity",
+            "authenticated checkpoint fast sync",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, prose)
+
+    def test_fast_sync_docs_do_not_claim_authenticated_checkpoint_sync(self):
+        text = (REPO_ROOT / "docs" / "operations.md").read_text(encoding="utf-8")
+        prose = normalized(text)
+
+        for marker in (
+            "Download, MD5-check, cache, and import",
+            "accelerated full-history archive replay",
+            "not authenticated checkpoint fast sync",
+            "HTTPS protects transport and MD5 detects accidental corruption",
+            "neither supplies an explicit checkpoint trust policy or authenticity proof",
+            "replay/performance evidence gate",
+            "not as a complete production release gate",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, prose)
 
     def test_active_regression_test_names_use_current_neo_n3_target(self):
         stale_markers = []

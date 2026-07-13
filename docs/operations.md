@@ -55,7 +55,7 @@ The daemon accepts a small, fixed set of flags; everything else lives in TOML.
 | `--check-storage` | Open the configured storage backend, confirm it is reachable/writable, and exit. |
 | `--check-all` | Run both preflight checks and exit. |
 | `--import-chain <PATH>` | Import a local `chain.acc` dump before live P2P sync. |
-| `--fast-sync` | Download, validate, cache, and import the built-in official fast-sync package before live P2P sync. |
+| `--fast-sync` | Download, MD5-check, cache, and import the built-in official fast-sync package before live P2P sync. |
 | `--fast-sync-cache <PATH>` | Override the fast-sync package cache directory. Requires `--fast-sync`. |
 | `--stop-at-height <HEIGHT>` | Stop gracefully after the persisted local ledger reaches the target height. |
 | `--remote-ledger-rpc <URL>` | Run without a local canonical ledger and delegate ledger/state/indexer RPC reads plus relay, wallet transaction, and oracle submission RPC calls to the upstream JSON-RPC endpoint. Cannot be combined with `--import-chain` or `--fast-sync`. |
@@ -77,6 +77,12 @@ restores durable backend write settings before continuing with live network sync
 The in-progress marker is removed only after that local tip proof succeeds; if
 the marker remains, restore a checkpoint or remove the local ledger before
 retrying the import.
+
+This is accelerated full-history archive replay, not authenticated checkpoint
+fast sync. HTTPS protects transport and MD5 detects accidental corruption;
+neither supplies an explicit checkpoint trust policy or authenticity proof.
+Package import, state-root samples, and throughput results do not satisfy
+`FASTSYNC-01`, `FASTSYNC-02`, or `RELEASE-01`.
 
 ```bash
 ./target/release/neo-node \
@@ -288,12 +294,12 @@ journalctl -u neo-node -f
 
 A multi-stage `Dockerfile` builds the daemon (`cargo build --release -p neo-node`) onto a slim Debian runtime as a non-root `neo` user, and a `docker-compose.yml` is provided. The container exposes MainNet (`10332`/`10333`), TestNet (`20332`/`20333`), and private-net (`30332`/`30333`) ports and persists state under the `/data` volume.
 
-The Rust workspace depends on the shared VM crate at `../neo-vm-rs`. Compose
-passes that sibling checkout as a named build context; direct Docker builds need
-the same context flag.
+The shared `neo-vm-rs` dependency is pinned to an exact Git revision in
+`Cargo.toml` and `Cargo.lock`, so Docker and CI builds use the same VM semantics
+without a sibling checkout or extra build context.
 
 ```bash
-docker build --build-context neo-vm-rs=../neo-vm-rs -t neo-rs:latest .
+docker build -t neo-rs:latest .
 
 # TestNet with persistent data
 docker run -d --name neo-node \
@@ -843,7 +849,8 @@ The report also includes a `throughput_trend` series and
 `throughput_regressions` list. By default, any adjacent milestone drop of 25%
 or more is flagged; adjust that with `--regression-threshold-percent <N>` when
 you are comparing debug, release, or different storage devices.
-Use `production_proof_readiness` as the top-level release gate summary. It is
+Use `production_proof_readiness` as the replay/performance evidence gate
+summary, not as a complete production release gate. It is
 `ready=true` only when the history has no StateRoot/reference mismatch, at
 least one transaction-bearing fast-sync proof meets the configured BPS floor,
 each counted transaction proof has at least the minimum transaction-bearing

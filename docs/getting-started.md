@@ -2,9 +2,11 @@
 
 This guide walks you through building `neo-rs`, running a Neo N3 node on
 TestNet or MainNet, pointing it at a data directory, and verifying it over
-JSON-RPC. `neo-rs` is a from-scratch Rust implementation of the Neo N3 node with
-byte-for-byte protocol parity to the C# reference node (tracked through Neo
-v3.10.1).
+JSON-RPC. `neo-rs` is a from-scratch Rust implementation of the Neo N3 node
+targeting byte-for-byte compatibility with the C# reference node through Neo
+v3.10.1. Differential execution, sustained live-peer operation, complete
+MainNet replay/state parity, and authenticated checkpoint fast sync remain
+production release gates.
 
 The runnable program is a single daemon, `neo-node`. It syncs the chain over a
 custom TCP P2P protocol and optionally serves a JSON-RPC API. There is no
@@ -205,11 +207,11 @@ Compose). Useful targets:
 A multi-stage Docker build and a Compose file are provided. The container
 selects a bundled config from `NEO_NETWORK`; set `NEO_PROFILE=service` to use
 `config/testnet-service.toml` or `config/mainnet-service.toml` inside the image.
-The workspace currently expects the shared VM crate at `../neo-vm-rs`; Compose
-wires that sibling checkout automatically through a named build context.
+Direct Docker and Compose builds resolve the same immutable `neo-vm-rs` source
+without a sibling checkout or additional build context.
 
 ```bash
-docker build --build-context neo-vm-rs=../neo-vm-rs -t neo-rs .
+docker build -t neo-rs .
 
 docker run -d --name neo-node \
   -p 20332:20332 -p 20333:20333 -p 19091:9091 \

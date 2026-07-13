@@ -1,20 +1,31 @@
 # Protocol Compatibility
 
-This node is a from-scratch Rust reimplementation of the Neo N3 protocol. It targets **byte-for-byte parity** with the official C# reference node (Neo v3.10.1). This document describes what that means, which native contracts and hardforks are implemented, and which protocol features are supported.
+This node is a from-scratch Rust reimplementation of the Neo N3 protocol. It
+targets **byte-for-byte compatibility** with the official C# reference node
+(Neo v3.10.1). Phase 1 establishes a reproducible, hardfork-aware execution
+baseline; it does not establish blanket protocol parity. This document records
+the compatibility target, the implemented surfaces, and the evidence still
+required before a production release.
 
-## Neo N3 v3.10.1 Parity
+## Compatibility Target and Current Evidence
 
-"Byte-for-byte parity" means the node produces the exact same on-wire and on-disk bytes as the C# node for the structures that determine consensus:
+Byte-for-byte compatibility requires the node to produce the same on-wire and
+on-disk bytes as the C# node for every structure that determines consensus:
 
-- **Same network.** Blocks, headers, transactions, signers, witnesses, and P2P messages serialize to identical bytes, so the node speaks the same TCP protocol and participates on the same MainNet/TestNet as C# nodes.
-- **Same state roots.** Native-contract storage layout, the Merkle Patricia Trie (MPT), and block execution are modeled to produce the same state root hash at each block, so a synced node reaches the same state as the C# node.
-- **Same hardfork schedule.** Consensus-affecting behavior is gated behind named hardforks at the same activation heights as the C# `config.mainnet.json` / `config.testnet.json`, so historical blocks replay identically.
+- **Same network target.** Blocks, headers, transactions, signers, witnesses,
+  and P2P messages must serialize to identical bytes before sustained
+  MainNet/TestNet interoperability can be claimed.
+- **Same state-root target.** Native-contract storage, the Merkle Patricia Trie
+  (MPT), and block execution must produce the reference state root at every
+  retained comparison height.
+- **Same hardfork schedule.** Consensus-affecting behavior is selected at the
+  official `config.mainnet.json` / `config.testnet.json` activation heights.
 
 ```mermaid
 flowchart LR
-    A[C# Neo node v3.10.1] -- same wire bytes --> N[neo-rs node]
-    N -- same state root per block --> A
-    subgraph "Parity surfaces"
+    A[C# Neo node v3.10.1] -- "target: same wire bytes" --> N[neo-rs node]
+    N -- "target: same state root per block" --> A
+    subgraph "Compatibility surfaces"
       W[Blocks / Tx / P2P messages]
       S[Native storage + MPT state root]
       H[Hardfork-gated execution]
@@ -24,7 +35,10 @@ flowchart LR
     N --- H
 ```
 
-> Parity is verified by in-tree tests (wire round-trips, a real MainNet block-1000 fixture that decodes and hashes to its known C# hash, native-contract hash/manifest pinning tests). Full live-network state-root replay against a running C# node is not part of the in-tree test suite.
+> In-tree fixtures and focused tests provide component evidence only. Full
+> differential execution parity, sustained live-peer interoperability,
+> complete MainNet replay and state parity, and authenticated checkpoint fast
+> sync remain separate release gates.
 
 ## v3.10.1 Release Delta Audit
 
@@ -70,7 +84,14 @@ All eleven contracts are registered in the canonical catalog in C# ID order. Som
 
 ## Hardforks
 
-Neo N3 ships protocol upgrades as named hardforks (named after mythological creatures, in alphabetical order) that activate at configured block heights. The node defines the full enum and gates behavior accordingly. The C# v3.10.1 `ProtocolSettings` loader backfills omitted leading hardforks at height 0, so `Hardforks: {}` enables every known hardfork including `HF_Gorgon` and `HF_Huyao`. The built-in neo-rs MainNet/TestNet presets are explicit operational schedules and keep later forks disabled until a loaded network config schedules them.
+Neo N3 ships protocol upgrades as named hardforks (named after mythological
+creatures, in alphabetical order) that activate at configured block heights.
+The node defines the full enum and gates behavior accordingly. The C# v3.10.1
+`ProtocolSettings` loader backfills omitted leading hardforks at height 0, so an
+explicitly loaded `Hardforks: {}` enables every known hardfork including
+`HF_Gorgon` and `HF_Huyao`. The built-in neo-rs MainNet/TestNet presets instead
+use the explicit official operational schedules: they schedule Gorgon and omit
+Huyao.
 
 | Hardfork | Index | What it changes (as gated in this node) |
 |---|---:|---|
@@ -88,7 +109,11 @@ flowchart LR
     A[Aspidochelone] --> B[Basilisk] --> C[Cockatrice] --> D[Domovoi] --> E[Echidna] --> F[Faun] --> G[Gorgon] --> H[Huyao]
 ```
 
-Activation heights for the built-in operational presets (from the node's hardfork manager):
+The built-in schedules are sourced from `neo-project/neo-node` tag `v3.10.1`,
+commit `7313f8087724e1de4caa88edd2ada58c1fe54abc`. The `neo` and
+`neo-vm` commits in the release-delta audit remain the semantic authorities.
+
+Activation heights for the built-in operational presets are:
 
 | Hardfork | MainNet height | TestNet height |
 |---|---:|---:|
@@ -98,12 +123,16 @@ Activation heights for the built-in operational presets (from the node's hardfor
 | HF_Domovoi | 5,570,000 | 4,144,000 |
 | HF_Echidna | 7,300,000 | 5,870,000 |
 | HF_Faun | 8,800,000 | 12,960,000 |
-| HF_Gorgon | not scheduled by preset | not scheduled by preset |
-| HF_Huyao | not scheduled by preset | not scheduled by preset |
+| HF_Gorgon | 12,020,000 | 17,960,000 |
+| HF_Huyao | not scheduled | not scheduled |
 
 A hardfork is enabled at a given block when the block index is greater than or equal to its configured height; an unconfigured hardfork is treated as disabled. When a loaded config contains `Hardforks: {}`, the C# v3.10.1 compatibility rule inserts all known hardforks at height 0. Because consensus-affecting code (including the VM jump table) is hardfork-gated, blocks before a hardfork replay with the pre-hardfork rules and blocks after it replay with the post-hardfork rules.
 
-## What's Supported
+## Implemented Surfaces
+
+The following table describes code present in the repository. Code presence is
+not, by itself, evidence of live interoperability, complete replay, or state
+parity.
 
 | Area | Support |
 |---|---|

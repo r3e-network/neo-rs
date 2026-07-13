@@ -2,14 +2,14 @@
 
 ## What is neo-rs
 
-neo-rs is a full Neo N3 blockchain node implemented from scratch in Rust. It is a
-re-implementation of the official C# reference node (Neo v3.10.1): it speaks the
-same P2P protocol, runs the same dBFT 2.0 consensus, executes the same NeoVM
-bytecode and native contracts, and produces the same state roots. Byte-for-byte
-protocol parity with the C# node is a hard design constraint — a block accepted
-by one node must be accepted by the other, and the two implementations must
-agree on every hash, signature, fee, and storage value. neo-rs is organized as a
-workspace of focused crates arranged in explicit dependency layers, with
+neo-rs is a Neo N3 blockchain node implemented from scratch in Rust. It targets
+byte-for-byte compatibility with the official C# reference node (Neo v3.10.1):
+P2P bytes, dBFT behavior, NeoVM execution, native-contract effects, and state
+roots must ultimately match the reference implementation. Phase 1 establishes
+the reproducible hardfork-aware execution baseline; differential execution,
+sustained live-peer interoperability, complete MainNet replay/state parity, and
+authenticated checkpoint fast sync remain release gates. neo-rs is organized
+as a workspace of focused crates arranged in explicit dependency layers, with
 `tokio`-based async services, a `jsonrpsee` JSON-RPC interface, MDBX for
 persistent storage, and in-memory storage for tests, ephemeral nodes, and
 remote-ledger mode.
@@ -76,7 +76,7 @@ flowchart TD
         primitives[neo-primitives]
     end
 
-    extvm[neo-vm-rs<br/>pure VM semantics<br/>external sibling crate]
+    extvm[neo-vm-rs v0.2.0<br/>immutable Git dependency<br/>rev 3081e83d]
 
     APP --> PLUG
     APP --> COMP
@@ -132,9 +132,11 @@ The current workspace has 26 production workspace members plus 3 development-onl
 The development-only members are not part of the running node:
 `neo-test-fixtures` (shared test builders), `tests` (cross-crate integration
 tests), and `benches-package` (Criterion benchmarks).
-The pure VM semantics live in `neo-vm-rs`, an external sibling crate referenced
-by path from `neo-vm`. For the full ADR log and evolution roadmap, see
-[`design.md`](../design.md) (41 ADRs covering RPC decoupling, engine integration,
+The pure VM semantics live in `neo-vm-rs` v0.2.0, an immutable Git dependency
+at revision `3081e83db3716fd51dc58c0afc039290d2d07253`; it is neither a
+filesystem nor a runtime-loaded input. For the full ADR log and evolution
+roadmap, see [`design.md`](../design.md) (44 ADRs covering RPC decoupling,
+engine integration,
 error unification, oracle decoupling, dead dependency cleanup, pipeline strategy,
 error type policy, MPT layering, and more).
 
@@ -197,18 +199,20 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
 
 ## Key design decisions
 
-> The full ADR log lives in [`design.md`](../design.md) — 41 ADRs covering
+> The full ADR log lives in [`design.md`](../design.md) — 44 ADRs covering
 > RPC decoupling, engine integration, error unification, oracle decoupling,
 > dead dependency cleanup, pipeline strategy, error type policy, MPT layering,
 > doc management, runtime versioning, and native contract registry. The
 > reth/polkadot pattern comparison is also there.
 
-- **Two-tier VM.** `neo-vm` is a stateful *host* (execution loop, call contexts,
-  reference-counted stack items) layered over `neo-vm-rs`, an external crate that
-  holds the pure NeoVM semantics (opcode behavior, jump tables). Separating the
-  stateless instruction semantics from the stateful host keeps the
-  parity-critical opcode logic isolated and independently testable. The pure
-  semantics are shared with RISC-V and zkVM execution profiles. (ADR-012
+- **Two-tier VM.** `neo-vm` owns the local reference-counted object graph,
+  mutability, execution contexts, and hardfork-aware instruction behavior over
+  the immutable `neo-vm-rs` dependency. The local engine selected by
+  `neo-execution::ApplicationEngine::execute_allow_fault` is the sole canonical
+  route. The lean external interpreter remains non-canonical until Phase 3
+  differential evidence proves it equivalent. Separating the stateless
+  instruction semantics from the stateful host keeps opcode logic independently
+  testable. (ADR-012
   documents the analogous MPT layering: `neo-crypto::mpt_trie` owns the data
   structure, `neo-state-service` owns the durable store.)
 
@@ -640,12 +644,12 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   Once a watermark exists, the archive is authoritative for historical Ledger
   rows and must be backed up and restored with the hot database.
 
-- **Byte-for-byte C# parity as a hard constraint.** Wire formats, hashing,
-  signature schemes, fee formulas, VM opcode pricing, native-contract behavior,
-  and state-root computation are all matched to the C# reference node. Where the
-  C# implementation has quirks (for example specific serialization-size
-  behavior), neo-rs reproduces them deliberately so the two nodes never diverge
-  on a block.
+- **Byte-for-byte C# compatibility as a release constraint.** Wire formats,
+  hashing, signature schemes, fee formulas, VM opcode pricing, native-contract
+  behavior, and state-root computation must match the C# reference node. Claims
+  that they match are accepted only through retained differential, network, and
+  replay evidence; reference quirks are reproduced deliberately when that
+  evidence establishes them.
 
 ## How the pieces fit at runtime
 
@@ -669,6 +673,6 @@ pipeline stage traits it uses live in `neo-blockchain::pipeline::stage_traits`.
 
 For a step-by-step trace of how a block and a transaction move through these
 services — including the P2P sync path, execution, state-root commit, and RPC
-query path — see [dataflow.md](dataflow.md). For the 41 ADRs documenting every
-architectural decision and the 4-phase evolution roadmap, see
+query path — see [dataflow.md](dataflow.md). For the 44 ADRs documenting the
+architecture and its evolution, see
 [design.md](../design.md).

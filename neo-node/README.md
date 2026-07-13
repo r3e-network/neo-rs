@@ -137,10 +137,11 @@ console_output = true
                     └──────────────────┘
 ```
 
-The node follows a 7-layer architecture inspired by **reth** (provider traits,
-type-state `NodeComponents`, `EngineApi`) and **Polkadot/Substrate** (bounded
-context layers, per-domain error types). See `../design.md` for the 15 ADRs
-and the evolution roadmap.
+The node follows 8 ordered dependency layers and concrete static composition,
+using selected **reth** provider/storage patterns and **Polkadot/Substrate**
+bounded-context ideas as architecture references. The earlier type-state
+`NodeComponents` and `EngineApi` scaffolds were removed. See `../design.md` for
+the 44 ADRs and architecture evolution record.
 
 ## License
 

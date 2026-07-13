@@ -1,7 +1,7 @@
 # neo-rs Architecture Design Document
 
-**Version**: 5.6
-**Date**: 2026-07-12
+**Version**: 5.9
+**Date**: 2026-07-13
 **Author**: Software Architect
 **Status**: Active
 
@@ -10,13 +10,14 @@
 ## Executive Summary
 
 This document captures the architecture decisions for the neo-rs Neo N3 Rust
-node implementation. It covers the current state (26 crates, 8 ordered layers), the
-identified issues, and the ADRs that resolve them. The goal is a codebase
+node implementation. It covers the current state (26 production crates plus 3
+development-only crates, 8 ordered layers), the identified issues, and the ADRs
+that resolve them. The goal is a codebase
 that is professional, consistent, and ready for long-term evolution.
 
-**Architecture health score**: 9.5/10
+**Architecture structure health score**: 9.5/10 (not a production-readiness score)
 
-The ADR log now spans ADR-001 through ADR-041. Beyond the early trait-design,
+The ADR log now spans ADR-001 through ADR-044. Beyond the early trait-design,
 duplication, and async/concurrency audits (ADR-016 through ADR-019), later ADRs
 cover store-surface reduction and trait sealing (ADR-020, ADR-021), dead-code
 excision (ADR-022, ADR-027, ADR-028, ADR-032), hex/KeyBuilder consolidation
@@ -30,12 +31,15 @@ staged and live peer sync (ADR-038), bounded acknowledged finalized projection
 delivery (ADR-039), and typed storage tables with fail-closed commits (ADR-040).
 ADR-041 makes atomic canonical and maintenance transactions a compile-time
 store capability and records `DataCache` as the node's transactional overlay.
+ADR-042 makes MDBX the sole persistent backend, ADR-043 rotates the finalized
+static archive by height, and ADR-044 fixes the immutable VM dependency and
+sole canonical execution boundary for the Neo v3.10.1 baseline.
 
 ---
 
 ## Current Architecture
 
-### Layer Hierarchy (26 crates, 8 ordered layers)
+### Layer Hierarchy (26 production crates plus 3 development-only crates, 8 ordered layers)
 
 | Layer | Crates | Role |
 |-------|--------|------|
@@ -841,7 +845,7 @@ hardcoded implementation with a delegation to
   consensus divergence risk from opcode drift.
 - **Giving up**: neo-hsm now depends on neo-vm (one additional dependency).
   This is acceptable — neo-hsm already depends on neo-crypto which depends
-  on neo-vm's sibling.
+  on the `neo-vm-rs` dependency.
 - **Reversibility**: High — the function signature is unchanged.
 
 **Consequences**:
@@ -1274,7 +1278,7 @@ Validation is split into:
 | doc(html_root_url) versions | All 11 crates at 0.10.0 (ADR-013) |
 | Redundant inline lints | Removed (tokens_tracker module) |
 | reth/polkadot comparison | Living implementation matrix, including typed tables and staged/finalized delivery |
-| Evolution roadmap | 4 phases, full ADR log (ADR-001 through ADR-041) |
+| Evolution roadmap | Historical 4-phase refactor plus the full ADR log (ADR-001 through ADR-044) |
 | Debug trait bounds | Consistent across all service traits (ADR-019) |
 | HSM redeem script | Delegates to canonical neo-vm impl (ADR-016) |
 | Async/concurrency safety | Excellent — 0 Critical/Major issues (ADR audit) |
@@ -1283,9 +1287,9 @@ Validation is split into:
 | Store trait surface | General `Store` plus mandatory generic `TransactionalStore` for canonical composition; no downcast or dynamic extension traits (ADR-020, ADR-041) |
 | Typed table boundary | GAT codecs + generic providers/batches; sync/prune metadata migrated without byte changes (ADR-040) |
 | Transactional overlay | `DataCache` child isolation, drop rollback, one parent merge, and sorted backend emission (ADR-041) |
-| Trait sealing | NodeTypes, NodeComponents, EngineApi sealed (ADR-021) |
+| Dead type-state/service traits | Removed after the sealing audit (ADR-027, ADR-032, ADR-033) |
 | Dead KeyBuilder wrapper | Removed (ADR-022) |
-| NodeComponents type-state | Documented as scaffolded, not functional (ADR-023) |
+| NodeComponents type-state | Removed after remaining scaffold consumers were proven dead (ADR-032) |
 | Hex encoding | Canonical hex_util module in neo-primitives (ADR-024) |
 | KeyBuilder systems | 3-system coexistence documented, ad-hoc path fixed (ADR-025) |
 | ValidateStage extraction | Concrete `NeoValidateStage` added and tested (ADR-026) |
@@ -2510,3 +2514,74 @@ finalized-height record or weaken the archive-before-hot commit protocol.
   changes.
 - Neo N3 block/transaction bytes, native Ledger storage bytes, state-root
   inputs, canonical commit ordering, and RPC/P2P results are unchanged.
+
+### ADR-044: Immutable VM boundary and canonical local execution
+
+**Status**: Accepted (implemented as the Phase 1 protocol baseline)
+
+**Context**: Consensus-critical execution previously depended on a sibling
+filesystem checkout of `neo-vm-rs`, and application execution could select a
+lean interpreter whose object-identity and hardfork behavior had not been
+proved equivalent to the stateful local engine. This made a clean checkout
+non-reproducible and allowed an unproved execution route into canonical block
+processing. The v3.10.1 update also requires exact Gorgon schedules and explicit
+notification/compound-object semantics; neither architectural examples from
+other chains nor component tests can substitute for Neo reference evidence.
+
+**Decision**:
+
+- Root and standalone fuzz manifests use `neo-vm-rs` v0.2.0 from
+  `https://github.com/r3e-network/neo-vm-rs.git` at revision
+  `3081e83db3716fd51dc58c0afc039290d2d07253`, with default features disabled
+  and only `std` plus `interpreter` enabled. Both lockfiles resolve that exact
+  source. A sibling checkout is not a build input.
+- Protocol authority comes from the official Neo v3.10.1 sources: `neo` tag
+  commit `d10e9ceecdabe3fcff719ee68ea5b76ba7e62c3d`, `neo-vm` tag commit
+  `004cd6070a940405818d9357638277dd44407e2e`, and `neo-node` configuration tag
+  commit `7313f8087724e1de4caa88edd2ada58c1fe54abc`. Reth and
+  Polkadot/Substrate are architecture references only.
+- `neo-vm` owns the reference-counted object graph, mutability, execution
+  contexts, and hardfork-aware behavior. The local engine selected by
+  `ApplicationEngine::execute_allow_fault` is the sole canonical execution
+  route. The lean external interpreter remains non-canonical until retained
+  differential evidence proves equivalent results across scheduled hardforks.
+- Stack-item reconstruction preserves graph identity: repeated compound IDs
+  resolve to one local object. A repeated definition with conflicting kind,
+  shape, or content fails closed instead of silently replacing or duplicating
+  the object.
+- Before `HF_Domovoi`, notification projection reuses the stored immutable
+  payload identity. From `HF_Domovoi`, projection creates a fresh immutable
+  deep copy while preserving aliases inside that copy.
+- `bincode` 1.3.3 remains only for existing `neo-consensus` recovery bytes
+  under the documented `RUSTSEC-2025-0141` exception. A silent codec change is
+  forbidden; a versioned envelope and legacy migration are tracked by Phase 2
+  plan 02-03.
+- Phase 1 evidence is deliberately narrow. It does not establish full
+  differential execution parity, sustained live-peer interoperability,
+  complete MainNet replay/state parity, or authenticated checkpoint fast sync.
+  Those remain release gates in later milestone phases.
+
+**Trade-offs**:
+
+- **Gaining**: one reproducible VM source, one canonical execution route,
+  fail-closed graph reconstruction, explicit hardfork semantics, and an
+  auditable authority chain from upstream sources to local tests and docs.
+- **Cost**: the optimized interpreter cannot accelerate canonical processing
+  until differential proof exists, and the temporary recovery-codec advisory
+  remains visible until a safe migration is implemented.
+- **Reversibility**: the VM revision may advance through an explicit reviewed
+  lock update; another engine may become canonical only after equivalent
+  differential evidence. The bincode exception is removable after the Phase 2
+  versioned migration, not by reinterpreting persisted bytes.
+
+**Consequences**:
+
+- CI, fuzzing, Docker, and local locked builds resolve the same VM revision
+  without undeclared filesystem input.
+- Canonical application execution cannot silently switch to the lean
+  interpreter, and compound/notification identity rules are regression-tested.
+- Official Neo configuration controls MainNet/TestNet hardfork activation;
+  architectural inspiration from reth or Substrate cannot override protocol
+  behavior.
+- Production-readiness documentation must distinguish implemented surfaces and
+  component evidence from network, replay, state-parity, and fast-sync proof.
