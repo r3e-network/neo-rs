@@ -16,7 +16,7 @@ from typing import Any, Callable
 DEFAULT_NODE_BIN = "target/debug/neo-node"
 DEFAULT_PROBE_BIN = "target/debug/neo-db-probe"
 DEFAULT_RPC = "http://127.0.0.1:21332"
-DEFAULT_STORAGE_PROVIDER = "mdbx"
+MDBX_STORAGE_PROVIDER = "mdbx"
 DEFAULT_RESTORE_SCRIPT = "scripts/restore-checkpoint.sh"
 DEFAULT_SYNC_SPEED_FLOOR_BPS = 1500.0
 DEFAULT_SYNC_SPEED_CEILING_BPS = None
@@ -117,11 +117,9 @@ def bounded_command(
     poll_interval: float,
     max_seconds: float,
     chain_db: Path,
-    stateroot_db: Path,
     probe_bin: Path,
     references: list[str],
     node_output_log: Path,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
     metrics_url: str | None = None,
     sync_speed_floor_bps: float | None = DEFAULT_SYNC_SPEED_FLOOR_BPS,
     sync_speed_ceiling_bps: float | None = None,
@@ -149,12 +147,8 @@ def bounded_command(
         str(chain_db),
         "--probe-bin",
         str(probe_bin),
-        "--storage-provider",
-        storage_provider,
         "--require-stateroot-height-match",
     ]
-    if storage_provider == "rocksdb":
-        command.extend(["--stateroot-db", str(stateroot_db)])
     if fast_sync:
         command.append("--fast-sync")
         if fast_sync_cache is not None:
@@ -186,10 +180,8 @@ def checkpoint_command(
     height: int,
     data_dir: Path,
     chain_db: Path,
-    stateroot_db: Path,
     checkpoint_root: Path,
     script: Path,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
 ) -> list[str]:
     command = [
         str(script),
@@ -201,13 +193,9 @@ def checkpoint_command(
         str(data_dir),
         "--chain-db",
         str(chain_db),
-        "--storage-provider",
-        storage_provider,
         "--root",
         str(checkpoint_root),
     ]
-    if storage_provider == "rocksdb":
-        command.extend(["--stateroot-db", str(stateroot_db)])
     return command
 
 
@@ -220,7 +208,6 @@ def checkpoint_restore_command(
     height: int,
     checkpoint_root: Path,
     script: Path,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
 ) -> list[str]:
     restore_root = checkpoint_restore_root(checkpoint_root, height)
     command = [
@@ -232,8 +219,6 @@ def checkpoint_restore_command(
         str(restore_root / "mainnet"),
         "--yes",
     ]
-    if storage_provider == "rocksdb":
-        command.extend(["--stateroot-db", str(restore_root / "StateRoot")])
     return command
 
 
@@ -280,13 +265,11 @@ def run_probe_json(command: list[str], runner: Callable[..., Any] = subprocess.r
     return json.loads(completed.stdout)
 
 
-def probe_command_prefix(probe_bin: Path, db_path: Path, storage_provider: str) -> list[str]:
+def probe_command_prefix(probe_bin: Path, db_path: Path) -> list[str]:
     return [
         str(probe_bin),
         "--db",
         str(db_path),
-        "--storage-provider",
-        storage_provider,
     ]
 
 
@@ -294,12 +277,10 @@ def read_probe_ledger_height(
     db_path: Path,
     probe_bin: Path,
     runner: Callable[..., Any] = subprocess.run,
-    *,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
 ) -> int | None:
     payload = run_probe_json(
         [
-            *probe_command_prefix(probe_bin, db_path, storage_provider),
+            *probe_command_prefix(probe_bin, db_path),
             "--contract-id",
             "-4",
             "--key-hex",
@@ -319,12 +300,10 @@ def read_probe_mpt_state_height(
     db_path: Path,
     probe_bin: Path,
     runner: Callable[..., Any] = subprocess.run,
-    *,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
 ) -> int | None:
     payload = run_probe_json(
         [
-            *probe_command_prefix(probe_bin, db_path, storage_provider),
+            *probe_command_prefix(probe_bin, db_path),
             "--mpt-state-height",
         ],
         runner,
@@ -341,12 +320,10 @@ def read_probe_mpt_state_root(
     probe_bin: Path,
     index: int,
     runner: Callable[..., Any] = subprocess.run,
-    *,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
 ) -> str | None:
     payload = run_probe_json(
         [
-            *probe_command_prefix(probe_bin, db_path, storage_provider),
+            *probe_command_prefix(probe_bin, db_path),
             "--mpt-state-root",
             str(index),
         ],
@@ -363,21 +340,23 @@ def checkpoint_content_verification_reason(
     expected_verified_height: int | None,
     expected_verified_stateroot_root: str | None,
     probe_bin: Path | None,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
     probe_runner: Callable[..., Any],
 ) -> str | None:
     if probe_bin is None or expected_verified_height is None:
         return None
     metadata = checkpoint_metadata(path)
-    effective_storage_provider = metadata.get("storage_provider") or storage_provider
+    effective_storage_provider = metadata.get("storage_provider") or MDBX_STORAGE_PROVIDER
+    if effective_storage_provider.lower() != MDBX_STORAGE_PROVIDER:
+        return "checkpoint is not an MDBX snapshot"
+    layout = metadata.get("state_root_layout")
+    if layout is not None and layout != "coordinated_mdbx":
+        return "checkpoint is not a coordinated MDBX snapshot"
     chain_db = path / "mainnet"
-    stateroot_db = path / "StateRoot"
     try:
         chain_height = read_probe_ledger_height(
             chain_db,
             probe_bin,
             probe_runner,
-            storage_provider=effective_storage_provider,
         )
     except Exception as exc:  # pylint: disable=broad-except
         return f"checkpoint chain database probe failed: {exc}"
@@ -388,10 +367,9 @@ def checkpoint_content_verification_reason(
         )
     try:
         stateroot_height = read_probe_mpt_state_height(
-            stateroot_db,
+            chain_db,
             probe_bin,
             probe_runner,
-            storage_provider=effective_storage_provider,
         )
     except Exception as exc:  # pylint: disable=broad-except
         return f"checkpoint StateRoot database height probe failed: {exc}"
@@ -404,11 +382,10 @@ def checkpoint_content_verification_reason(
         return None
     try:
         stateroot_root = read_probe_mpt_state_root(
-            stateroot_db,
+            chain_db,
             probe_bin,
             expected_verified_height,
             probe_runner,
-            storage_provider=effective_storage_provider,
         )
     except Exception as exc:  # pylint: disable=broad-except
         return f"checkpoint StateRoot root probe failed: {exc}"
@@ -486,14 +463,17 @@ def checkpoint_inventory(
     expected_verified_stateroot_root: str | None = None,
     expected_verified_against_reference: bool | None = None,
     probe_bin: Path | None = None,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
     probe_runner: Callable[..., Any] = subprocess.run,
     restore_roundtrip_verified: bool | None = None,
 ) -> dict[str, Any]:
-    has_chain = (path / "mainnet").is_dir()
-    has_stateroot = (path / "StateRoot").is_dir()
-    if checkpoint_metadata_value(path, "state_root_included") == "false":
-        has_stateroot = False
+    metadata = checkpoint_metadata(path)
+    has_chain = (path / "mainnet" / "mdbx.dat").is_file()
+    has_stateroot = bool(
+        has_chain
+        and (metadata.get("storage_provider") or "mdbx").lower() == "mdbx"
+        and metadata.get("state_root_layout") == "coordinated_mdbx"
+        and metadata.get("state_root_included") == "true"
+    )
     verification_reason = checkpoint_verification_reason(
         path,
         expected_verified_height=expected_verified_height,
@@ -507,7 +487,6 @@ def checkpoint_inventory(
             expected_verified_height=expected_verified_height,
             expected_verified_stateroot_root=expected_verified_stateroot_root,
             probe_bin=probe_bin,
-            storage_provider=storage_provider,
             probe_runner=probe_runner,
         )
     usable_for_state_validation = bool(
@@ -538,7 +517,7 @@ def checkpoint_inventory(
         "exists": path.is_dir(),
         "storage_provider": checkpoint_metadata(path).get(
             "storage_provider",
-            storage_provider,
+            MDBX_STORAGE_PROVIDER,
         ),
         "has_checkpoint_info": (path / "CHECKPOINT_INFO").is_file(),
         "in_progress": (path / "CHECKPOINT_IN_PROGRESS").exists(),
@@ -557,7 +536,6 @@ def retained_checkpoint_inventory(
     expected_roots: dict[int, str] | None = None,
     restore_roundtrip_by_height: dict[int, bool] | None = None,
     probe_bin: Path | None = None,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
     probe_runner: Callable[..., Any] = subprocess.run,
 ) -> dict[str, Any]:
     retained = []
@@ -570,7 +548,6 @@ def retained_checkpoint_inventory(
             expected_verified_stateroot_root=expected_roots.get(height),
             expected_verified_against_reference=True,
             probe_bin=probe_bin,
-            storage_provider=storage_provider,
             probe_runner=probe_runner,
             restore_roundtrip_verified=restore_roundtrip_by_height.get(height, False),
         )
@@ -599,7 +576,7 @@ def checkpoint_inventory_reason(
     if not has_chain:
         return "missing chain database snapshot"
     if not has_stateroot:
-        return "missing StateRoot database snapshot"
+        return "missing coordinated MDBX StateService state"
     return verification_reason
 
 
@@ -612,7 +589,6 @@ def build_plan(
     poll_interval: float,
     max_seconds: float,
     chain_db: Path,
-    stateroot_db: Path,
     probe_bin: Path,
     references: list[str],
     data_dir: Path,
@@ -620,7 +596,6 @@ def build_plan(
     checkpoint_script: Path,
     log_dir: Path,
     restore_script: Path = Path(DEFAULT_RESTORE_SCRIPT),
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
     metrics_url: str | None = None,
     sync_speed_floor_bps: float | None = DEFAULT_SYNC_SPEED_FLOOR_BPS,
     sync_speed_ceiling_bps: float | None = DEFAULT_SYNC_SPEED_CEILING_BPS,
@@ -630,8 +605,6 @@ def build_plan(
     fast_sync_cache: Path | None = None,
     initial_height: int | None = None,
 ) -> dict:
-    if storage_provider == "mdbx":
-        stateroot_db = chain_db
     steps = []
     for height in milestones:
         is_fast_sync_step = fast_sync
@@ -647,9 +620,7 @@ def build_plan(
                     poll_interval=1.0 if is_first_fast_sync_step else poll_interval,
                     max_seconds=max_seconds,
                     chain_db=chain_db,
-                    stateroot_db=stateroot_db,
                     probe_bin=probe_bin,
-                    storage_provider=storage_provider,
                     references=references,
                     node_output_log=log_dir / f"neo-node-milestone-h{height}.log",
                     metrics_url=metrics_url,
@@ -666,16 +637,13 @@ def build_plan(
                     height=height,
                     data_dir=data_dir,
                     chain_db=chain_db,
-                    stateroot_db=stateroot_db,
                     checkpoint_root=checkpoint_root,
                     script=checkpoint_script,
-                    storage_provider=storage_provider,
                 ),
                 "checkpoint_restore_command": checkpoint_restore_command(
                     height=height,
                     checkpoint_root=checkpoint_root,
                     script=restore_script,
-                    storage_provider=storage_provider,
                 ),
             }
         )
@@ -684,9 +652,8 @@ def build_plan(
         "config": str(config),
         "node_bin": str(node_bin),
         "probe_bin": str(probe_bin),
-        "storage_provider": storage_provider,
+        "storage_provider": MDBX_STORAGE_PROVIDER,
         "chain_db": str(chain_db),
-        "stateroot_db": str(stateroot_db),
         "checkpoint_root": str(checkpoint_root),
         "restore_script": str(restore_script),
         "milestones": milestones,
@@ -1405,7 +1372,6 @@ def checkpoint_restore_probe(
     height: int,
     expected_verified_stateroot_root: str,
     probe_bin: Path,
-    storage_provider: str,
     runner: Callable[..., Any],
 ) -> dict[str, Any]:
     restore = run_command(command, runner)
@@ -1427,7 +1393,6 @@ def checkpoint_restore_probe(
         expected_verified_height=height,
         expected_verified_stateroot_root=expected_verified_stateroot_root,
         probe_bin=probe_bin,
-        storage_provider=storage_provider,
         probe_runner=runner,
     )
     if content_reason is not None:
@@ -1488,7 +1453,6 @@ def build_run_summary(
         expected_roots=expected_checkpoint_roots(results),
         restore_roundtrip_by_height=restore_roundtrip_by_height(results),
         probe_bin=Path(plan["probe_bin"]),
-        storage_provider=plan.get("storage_provider", DEFAULT_STORAGE_PROVIDER),
         probe_runner=probe_runner,
     )
     retained_minimum_checkpoint_count_met = (
@@ -1552,7 +1516,6 @@ def summary_history_record(plan: dict, result: dict) -> dict:
         "node_bin": plan.get("node_bin"),
         "probe_bin": plan.get("probe_bin"),
         "chain_db": plan["chain_db"],
-        "stateroot_db": plan["stateroot_db"],
         "checkpoint_root": plan["checkpoint_root"],
         "summary": result.get("summary", {}),
     }
@@ -1685,7 +1648,6 @@ def run_milestones(
             expected_verified_stateroot_root=expected_root,
             expected_verified_against_reference=bool(plan.get("reference_rpcs")),
             probe_bin=Path(plan["probe_bin"]),
-            storage_provider=plan.get("storage_provider", DEFAULT_STORAGE_PROVIDER),
             probe_runner=runner,
         )
         result["checkpoint_inventory"] = inventory
@@ -1705,7 +1667,6 @@ def run_milestones(
             height=step["height"],
             expected_verified_stateroot_root=expected_root,
             probe_bin=Path(plan["probe_bin"]),
-            storage_provider=plan.get("storage_provider", DEFAULT_STORAGE_PROVIDER),
             runner=runner,
         )
         result["checkpoint_restore_probe"] = restore_probe
@@ -1778,14 +1739,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--poll-interval", default=5.0, type=float)
     parser.add_argument("--max-seconds", default=900.0, type=float)
     parser.add_argument("--chain-db", required=True, type=Path)
-    parser.add_argument("--stateroot-db", required=True, type=Path)
     parser.add_argument("--probe-bin", default=DEFAULT_PROBE_BIN, type=Path)
-    parser.add_argument(
-        "--storage-provider",
-        default=DEFAULT_STORAGE_PROVIDER,
-        choices=["mdbx", "rocksdb"],
-        help="Storage backend used by neo-db-probe for bounded and checkpoint proof reads.",
-    )
     parser.add_argument(
         "--fast-sync",
         action="store_true",
@@ -1932,9 +1886,7 @@ def main() -> int:
         poll_interval=args.poll_interval,
         max_seconds=args.max_seconds,
         chain_db=args.chain_db,
-        stateroot_db=args.stateroot_db,
         probe_bin=args.probe_bin,
-        storage_provider=args.storage_provider,
         references=references,
         data_dir=data_dir,
         checkpoint_root=args.checkpoint_root,

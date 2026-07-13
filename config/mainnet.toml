@@ -101,12 +101,9 @@ max_transactions_per_block = 200
 [mempool]
 max_transactions = 50000
 
-# Enable StateService so fresh sync populates the state-root MPT trie that
-# `mainnet_state_roots_vs_csharp` bulk-test reads from. Path is absolute
-# (`data/mainnet/StateRoot`) so it matches the existing 812MB clean-data
-# layout used by all the mainnet_block_*_repro tests.
+# Enable StateService so fresh sync populates the state-root MPT trie in the
+# canonical MDBX environment's `neo_state_service` table.
 [state_service]
 enabled = true
 full_state = true
 track_during_catchup = true
-path = "../mainnet/StateRoot"

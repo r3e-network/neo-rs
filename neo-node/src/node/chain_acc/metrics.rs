@@ -2,8 +2,6 @@
 
 use std::time::Duration;
 
-use neo_storage::persistence::store::Store;
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) struct StateServiceMptImportMetrics {
     pub(super) sync_blocks_persisted: u64,
@@ -150,46 +148,6 @@ impl StateServiceMptImportMetrics {
             publish_generation_avg_us: apply_hot.publish_generation_avg_us,
             overlay_entries_avg: apply_hot.overlay_entries_avg,
             batch_blocks_avg: apply_hot.batch_blocks_avg,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct RocksDbBatchImportMetrics {
-    pub(super) pending_operations: u64,
-    pub(super) batches_flushed: u64,
-    pub(super) operations_written: u64,
-    pub(super) bytes_written: u64,
-    pub(super) flush_timeouts: u64,
-    pub(super) avg_ops_per_flush: u64,
-    pub(super) avg_bytes_per_flush: u64,
-    pub(super) avg_flush_duration_ms: u64,
-    pub(super) max_batch_size: u64,
-    pub(super) max_batch_bytes: u64,
-    pub(super) disable_wal: bool,
-}
-
-impl RocksDbBatchImportMetrics {
-    pub(super) fn from_store<S>(store: &S) -> Option<Self>
-    where
-        S: Store,
-    {
-        store.rocksdb_batch_metrics().map(Self::from_metrics)
-    }
-
-    pub(super) fn from_metrics(metrics: neo_storage::persistence::RocksDbBatchMetrics) -> Self {
-        Self {
-            pending_operations: metrics.pending_operations,
-            batches_flushed: metrics.batches_flushed,
-            operations_written: metrics.operations_written,
-            bytes_written: metrics.bytes_written,
-            flush_timeouts: metrics.flush_timeouts,
-            avg_ops_per_flush: metrics.avg_ops_per_flush,
-            avg_bytes_per_flush: metrics.avg_bytes_per_flush,
-            avg_flush_duration_ms: metrics.avg_flush_duration_ms,
-            max_batch_size: metrics.max_batch_size,
-            max_batch_bytes: metrics.max_batch_bytes,
-            disable_wal: metrics.disable_wal,
         }
     }
 }

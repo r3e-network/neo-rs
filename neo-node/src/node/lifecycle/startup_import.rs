@@ -3,7 +3,7 @@
 //! Chain.acc and fast-sync package imports are startup modes that run before
 //! live P2P sync. Their import/parsing mechanics live in lower modules; this
 //! module owns the daemon-level decisions around stop-height handling, durable
-//! store restoration, task abortion, and observability reporting.
+//! store flushing, task abortion, and observability reporting.
 
 use std::sync::Arc;
 
@@ -18,8 +18,7 @@ use super::fast_sync;
 use super::observability::ObservabilityRuntime;
 use super::services::NodeServiceHandles;
 use super::startup_cleanup::{
-    abort_startup_after_import_failure, flush_state_service_for_shutdown,
-    restore_durable_store_mode,
+    abort_startup_after_import_failure, flush_durable_stores, flush_state_service_for_shutdown,
 };
 
 /// Outcome of startup import processing.
@@ -85,7 +84,7 @@ where
     .await
     {
         Ok(count) => {
-            restore_durable_store_mode(ctx.node.storage().as_ref(), ctx.durable_service_stores)?;
+            flush_durable_stores(ctx.node.storage().as_ref(), ctx.durable_service_stores)?;
             info!(
                 target: "neo",
                 imported = count,
@@ -158,7 +157,7 @@ where
             if let Some(path) = &ctx.cli.fast_sync_report {
                 fast_sync::write_fast_sync_report_sidecar(path, &report)?;
             }
-            restore_durable_store_mode(ctx.node.storage().as_ref(), ctx.durable_service_stores)?;
+            flush_durable_stores(ctx.node.storage().as_ref(), ctx.durable_service_stores)?;
             let count = report.import.imported_blocks;
             info!(
                 target: "neo::fast_sync",
@@ -212,8 +211,8 @@ where
     ServiceS: Store + 'static,
 {
     flush_state_service_for_shutdown(ctx.services)?;
-    restore_durable_store_mode(ctx.node.storage().as_ref(), ctx.durable_service_stores)
-        .context("failed to restore durable store mode after stop-height startup import")?;
+    flush_durable_stores(ctx.node.storage().as_ref(), ctx.durable_service_stores)
+        .context("failed to flush durable stores after stop-height startup import")?;
     for handle in ctx.handles.drain(..) {
         handle.abort();
     }

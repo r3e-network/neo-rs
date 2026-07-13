@@ -149,15 +149,16 @@ def checkpoint_height(path: Path) -> int | None:
 
 
 def checkpoint_has_chain(path: Path) -> bool:
-    return (path / "mainnet").is_dir()
+    return (path / "mainnet" / "mdbx.dat").is_file()
 
 
 def checkpoint_has_stateroot(path: Path) -> bool:
-    if not (path / "StateRoot").is_dir():
-        return False
-    if metadata_value(path, "state_root_included") == "false":
-        return False
-    return True
+    return bool(
+        checkpoint_has_chain(path)
+        and (metadata_value(path, "storage_provider") or "mdbx").lower() == "mdbx"
+        and metadata_value(path, "state_root_layout") == "coordinated_mdbx"
+        and metadata_value(path, "state_root_included") == "true"
+    )
 
 
 def checkpoint_restore_metadata_reason(path: Path, height: int) -> str | None:

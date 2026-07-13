@@ -758,7 +758,7 @@ impl<B: CacheRead> DataCache<B> {
     }
 
     /// Visits tracked items in byte-key order. This is the commit-facing path
-    /// for storage engines that benefit from sorted B+tree/LSM writes.
+    /// for storage engines that benefit from ordered, page-local writes.
     pub fn visit_tracked_items_sorted<F>(&self, mut visit: F)
     where
         F: FnMut(&StorageKey, &Trackable),

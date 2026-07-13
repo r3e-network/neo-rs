@@ -38,22 +38,32 @@ def write_history(path: Path, records):
     )
 
 
-def create_restore_verified_checkpoint(checkpoint_root: Path, height: int) -> None:
+def create_restore_verified_checkpoint(
+    checkpoint_root: Path,
+    height: int,
+    *,
+    restore_verified: bool = True,
+) -> None:
     checkpoint = checkpoint_root / f"h{height}"
     (checkpoint / "mainnet").mkdir(parents=True)
-    (checkpoint / "StateRoot").mkdir()
-    (checkpoint / "CHECKPOINT_INFO").write_text(
-        "\n".join(
+    (checkpoint / "mainnet" / "mdbx.dat").write_bytes(b"mdbx-checkpoint")
+    lines = [
+        f"height={height}",
+        "storage_provider=mdbx",
+        "state_root_layout=coordinated_mdbx",
+        "state_root_included=true",
+    ]
+    if restore_verified:
+        lines.extend(
             [
-                f"height={height}",
-                "state_root_included=true",
                 "restore_verified=true",
                 f"verified_height={height}",
                 f"verified_stateroot_root=0x{height}",
                 "verified_against_reference=true",
-                "",
             ]
-        ),
+        )
+    (checkpoint / "CHECKPOINT_INFO").write_text(
+        "\n".join(lines) + "\n",
         encoding="utf-8",
     )
 
@@ -732,11 +742,15 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             checkpoint_root = Path(tmp) / "checkpoints"
             (checkpoint_root / "h200" / "mainnet").mkdir(parents=True)
-            (checkpoint_root / "h200" / "StateRoot").mkdir()
+            (checkpoint_root / "h200" / "mainnet" / "mdbx.dat").write_bytes(
+                b"mdbx-checkpoint"
+            )
             (checkpoint_root / "h200" / "CHECKPOINT_INFO").write_text(
                 "\n".join(
                     [
                         "height=200",
+                        "storage_provider=mdbx",
+                        "state_root_layout=coordinated_mdbx",
                         "state_root_included=true",
                         "restore_verified=true",
                         "verified_height=200",
@@ -748,7 +762,20 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (checkpoint_root / "h300" / "mainnet").mkdir(parents=True)
-            (checkpoint_root / "h400" / "StateRoot").mkdir(parents=True)
+            (checkpoint_root / "h300" / "mainnet" / "mdbx.dat").write_bytes(
+                b"mdbx-checkpoint"
+            )
+            (checkpoint_root / "h300" / "CHECKPOINT_INFO").write_text(
+                "height=300\nstorage_provider=mdbx\n"
+                "state_root_layout=coordinated_mdbx\nstate_root_included=false\n",
+                encoding="utf-8",
+            )
+            (checkpoint_root / "h400").mkdir(parents=True)
+            (checkpoint_root / "h400" / "CHECKPOINT_INFO").write_text(
+                "height=400\nstorage_provider=mdbx\n"
+                "state_root_layout=coordinated_mdbx\nstate_root_included=true\n",
+                encoding="utf-8",
+            )
             legacy = checkpoint_root / "mainnet-bounded-700000-stable"
             (legacy / "data").mkdir(parents=True)
             (legacy / "CHECKPOINT_INFO").write_text(
@@ -854,12 +881,10 @@ class AnalyzeStateRootMilestoneHistoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             checkpoint_root = Path(tmp) / "checkpoints"
             for height in (100, 200, 300):
-                checkpoint = checkpoint_root / f"h{height}"
-                (checkpoint / "mainnet").mkdir(parents=True)
-                (checkpoint / "StateRoot").mkdir()
-                (checkpoint / "CHECKPOINT_INFO").write_text(
-                    "state_root_included=true\n",
-                    encoding="utf-8",
+                create_restore_verified_checkpoint(
+                    checkpoint_root,
+                    height,
+                    restore_verified=False,
                 )
 
             report = module.analyze_history(

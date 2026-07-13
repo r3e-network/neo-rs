@@ -75,9 +75,7 @@ fn validate_static_files_config(
         );
     }
     if persistent_store_provider(config, storage_override)?.is_none() {
-        anyhow::bail!(
-            "[storage].static_files_dir requires a durable canonical backend (mdbx or rocksdb)"
-        );
+        anyhow::bail!("[storage].static_files_dir requires the durable canonical MDBX backend");
     }
     if config.storage.read_only {
         anyhow::bail!(
@@ -610,14 +608,10 @@ fn read_state_service_mpt_height(
 
 fn storage_backend_name(config: &NodeConfig) -> anyhow::Result<&str> {
     let backend = config.storage.backend.as_deref().unwrap_or("memory");
-    if backend.eq_ignore_ascii_case("memory") || backend.eq_ignore_ascii_case("rocksdb") {
+    if backend.eq_ignore_ascii_case("memory") || backend.eq_ignore_ascii_case("mdbx") {
         return Ok(backend);
     }
-    if backend.eq_ignore_ascii_case("mdbx") {
-        mdbx_backend_name(backend)
-    } else {
-        anyhow::bail!("{}", unsupported_storage_backend_message(backend));
-    }
+    anyhow::bail!("{}", unsupported_storage_backend_message(backend));
 }
 
 pub(in crate::node) fn default_persistent_storage_provider() -> &'static str {
@@ -647,12 +641,8 @@ pub(in crate::node) fn service_store_provider(config: &NodeConfig) -> anyhow::Re
     }
 }
 
-fn mdbx_backend_name(backend: &str) -> anyhow::Result<&str> {
-    Ok(backend)
-}
-
 fn unsupported_storage_backend_message(backend: &str) -> String {
-    let expected = "\"memory\", \"rocksdb\", or \"mdbx\"";
+    let expected = "\"memory\" or \"mdbx\"";
     format!("unsupported [storage].backend {backend:?}; expected {expected}")
 }
 
@@ -660,9 +650,7 @@ pub(in crate::node) fn open_store(
     config: &NodeConfig,
     storage_override: Option<&Path>,
 ) -> anyhow::Result<Arc<neo_storage::persistence::providers::RuntimeStore>> {
-    use neo_storage::mdbx::MdbxStoreProvider;
-    use neo_storage::persistence::providers::RuntimeStore;
-    use neo_storage::rocksdb::RocksDBStoreProvider;
+    use neo_storage::persistence::StoreFactory;
 
     let provider = persistent_store_provider(config, storage_override)?;
     let store = if let Some(provider) = provider {
@@ -677,21 +665,8 @@ pub(in crate::node) fn open_store(
             })?;
         info!(target: "neo", backend = provider, path = %path.display(), "opening persistent store");
         let cfg = config.storage.storage_config_for_path(path.clone());
-        let store = match provider.as_str() {
-            "mdbx" => RuntimeStore::Mdbx(
-                MdbxStoreProvider::new(cfg)
-                    .get_mdbx_store("")
-                    .map_err(|e| anyhow::anyhow!("failed to open {provider} store: {e}"))?,
-            ),
-            "rocksdb" => RuntimeStore::RocksDb(
-                RocksDBStoreProvider::new(cfg)
-                    .get_rocksdb_store("")
-                    .map_err(|e| anyhow::anyhow!("failed to open {provider} store: {e}"))?,
-            ),
-            "memory" => return open_memory_store(),
-            other => anyhow::bail!("{}", unsupported_storage_backend_message(other)),
-        };
-        Arc::new(store)
+        StoreFactory::get_store_with_config(&provider, cfg)
+            .map_err(|e| anyhow::anyhow!("failed to open {provider} store: {e}"))?
     } else {
         info!(target: "neo", "using in-memory store (state is not persisted across restarts)");
         open_memory_store()?
@@ -702,7 +677,7 @@ pub(in crate::node) fn open_store(
 
 pub(in crate::node) fn open_memory_store()
 -> anyhow::Result<Arc<neo_storage::persistence::providers::RuntimeStore>> {
-    use neo_storage::persistence::providers::{MemoryStore, RuntimeStore};
+    use neo_storage::persistence::StoreFactory;
 
-    Ok(Arc::new(RuntimeStore::Memory(MemoryStore::new())))
+    StoreFactory::get_store("memory", "").map_err(anyhow::Error::from)
 }

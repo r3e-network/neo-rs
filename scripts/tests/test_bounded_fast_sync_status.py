@@ -90,8 +90,7 @@ class BoundedFastSyncStatusTests(unittest.TestCase):
             module.collect_post_probe = lambda **_kwargs: matching_post_probe()
             updated = module.attach_post_probe_report(
                 updated,
-                chain_db=Path("chain"),
-                stateroot_db=Path("state"),
+                db=Path("chain"),
                 probe_bin=Path("neo-db-probe"),
                 require_stateroot_height_match=True,
                 reference_urls=["http://seed1.neo.org:10332"],

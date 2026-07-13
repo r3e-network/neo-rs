@@ -15,7 +15,7 @@
 #   NODE_BIN       Path to neo-node binary (default: auto-detect release/debug)
 #   NODE_CONFIG    Node config file (default: neo_mainnet_node.toml)
 #   ACC_FILE       Path to .acc block file (default: auto-detect)
-#   DATA_DIR       RocksDB data directory to clean (default: ./data/mainnet)
+#   DATA_DIR       MDBX data directory to clean (default: ./data/mainnet)
 #   CSHARP_RPC     C# reference RPC (default: http://seed1.neo.org:10332)
 #   TRACE_LOG      Output trace log path (default: /tmp/neo_trace_RANGE.log)
 #   SKIP_IMPORT    Set to 1 to skip import and just run comparison on existing log
@@ -39,7 +39,7 @@ if [[ $# -lt 1 ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
     echo "  NODE_BIN       Path to neo-node binary" >&2
     echo "  NODE_CONFIG    Node config file (default: neo_mainnet_node.toml)" >&2
     echo "  ACC_FILE       Path to .acc block file" >&2
-    echo "  DATA_DIR       RocksDB data directory to clean" >&2
+    echo "  DATA_DIR       MDBX data directory to clean" >&2
     echo "  CSHARP_RPC     C# reference RPC (default: http://seed1.neo.org:10332)" >&2
     echo "  TRACE_LOG      Output trace log path" >&2
     echo "  SKIP_IMPORT    Set to 1 to skip import and just compare" >&2

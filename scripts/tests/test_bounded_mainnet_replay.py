@@ -24,18 +24,10 @@ def write_checkpoint(
     include_info: bool = True,
     metadata: dict[str, str | None] | None = None,
     chain_dir: str = "data",
-    state_dir: str = "mpt",
 ) -> None:
     data = root / chain_dir
     data.mkdir(parents=True)
-    (data / "CURRENT").write_text("MANIFEST-000001\n", encoding="utf-8")
-    if mpt:
-        state = root / state_dir
-        state.mkdir()
-        (state / "CURRENT").write_text("MANIFEST-000001\n", encoding="utf-8")
-        mpt_dir = state_dir
-    else:
-        mpt_dir = "missing-mpt"
+    (data / "mdbx.dat").write_bytes(b"mdbx-checkpoint")
     if not include_info:
         return
 
@@ -44,7 +36,9 @@ def write_checkpoint(
         "saved_at": "2026-06-27T04:49:44Z",
         "height": "511289",
         "data_dir": "data/mainnet-replay",
-        "mpt_dir": mpt_dir,
+        "storage_provider": "mdbx",
+        "state_root_layout": "coordinated_mdbx",
+        "state_root_included": "true" if mpt else "false",
         "restore_verified": "true",
         "verified_height": "511289",
         "verified_stateroot_root": VERIFIED_ROOT,
@@ -239,8 +233,7 @@ class BoundedMainnetReplayTests(unittest.TestCase):
             prepared = module.prepare_workspace(plan)
 
             config_text = Path(prepared["config_path"]).read_text(encoding="utf-8")
-            self.assertTrue((work_root / "prepared" / "data" / "CURRENT").exists())
-            self.assertTrue((work_root / "prepared" / "mpt" / "CURRENT").exists())
+            self.assertTrue((work_root / "prepared" / "data" / "mdbx.dat").exists())
             self.assertIn('backend = "mdbx"', config_text)
             self.assertIn('data_dir = "', config_text)
             self.assertIn("mdbx_geometry_upper_gb = 512", config_text)
@@ -287,7 +280,7 @@ class BoundedMainnetReplayTests(unittest.TestCase):
         self.assertIn("--rpc", command)
         self.assertIn("http://127.0.0.1:31332", command)
 
-    def test_plan_uses_real_checkpoint_layout_and_provider_metadata(self):
+    def test_plan_uses_mainnet_checkpoint_layout_and_provider_metadata(self):
         module = load_module()
         with tempfile.TemporaryDirectory() as tmp:
             checkpoint = Path(tmp) / "checkpoint"
@@ -295,19 +288,16 @@ class BoundedMainnetReplayTests(unittest.TestCase):
                 checkpoint,
                 mpt=True,
                 chain_dir="mainnet",
-                state_dir="StateRoot",
                 metadata={
-                    "storage_provider": "rocksdb",
+                    "storage_provider": "mdbx",
                     "chain_db": "data/mainnet-verified-h511289/chain",
-                    "stateroot_db": "data/mainnet-verified-h511289/state-root-334F454E",
-                    "mpt_dir": None,
                 },
             )
 
             plan = module.build_replay_plan(
                 checkpoint=checkpoint,
                 work_root=Path(tmp) / "work",
-                label="rocksdb-real-layout",
+                label="mdbx-real-layout",
                 start_height=511289,
                 target_height=511300,
                 addresses=[],
@@ -319,13 +309,15 @@ class BoundedMainnetReplayTests(unittest.TestCase):
         )
         self.assertEqual(
             plan["state_checkpoint"]["path"],
-            str((checkpoint / "StateRoot").resolve()),
+            str((checkpoint / "mainnet").resolve()),
         )
-        self.assertEqual(plan["storage_provider"], "rocksdb")
-        self.assertIn('backend = "rocksdb"', plan["config_text"])
-        self.assertNotIn("mdbx_geometry_upper_gb", plan["config_text"])
-        self.assertIn("--storage-provider", module.step_by_name(plan, "run-node-with-repairs")["command"])
-        self.assertIn("rocksdb", module.step_by_name(plan, "run-node-with-repairs")["command"])
+        self.assertEqual(plan["storage_provider"], "mdbx")
+        self.assertIn('backend = "mdbx"', plan["config_text"])
+        self.assertIn("mdbx_geometry_upper_gb", plan["config_text"])
+        self.assertNotIn(
+            "--storage-provider",
+            module.step_by_name(plan, "run-node-with-repairs")["command"],
+        )
 
     def test_plan_keeps_mdbx_default_for_checkpoints_without_provider_metadata(self):
         module = load_module()

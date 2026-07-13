@@ -106,7 +106,6 @@ max_transactions_per_block = 200
 
 [state_service]
 enabled = true
-path = "StateRoot_{0}"
 full_state = true
 track_during_catchup = true
 

@@ -76,38 +76,17 @@ def checkpoint_restore_verification_reason(
     return None
 
 
-def resolve_state_checkpoint(checkpoint: Path, info: dict[str, str]) -> Path | None:
-    candidates: list[Path] = []
-    if info.get("mpt_dir"):
-        mpt_path = Path(info["mpt_dir"])
-        candidates.append(mpt_path if mpt_path.is_absolute() else checkpoint / mpt_path)
-        candidates.append(mpt_path)
-    candidates.extend([
-        checkpoint / "StateRoot",
-        checkpoint / "mpt",
-        checkpoint / "state",
-        checkpoint / "Data_MPT",
-    ])
-    for candidate in candidates:
-        if candidate.is_dir() and (candidate / "CURRENT").exists():
-            return candidate
-    return None
-
-
 def resolve_chain_checkpoint(checkpoint: Path) -> Path | None:
     for candidate in [checkpoint / "data", checkpoint / "mainnet"]:
-        if candidate.is_dir() and (candidate / "CURRENT").exists():
+        if candidate.is_dir() and (candidate / "mdbx.dat").exists():
             return candidate
     return None
 
 
 def checkpoint_storage_provider(info: dict[str, str]) -> str:
     provider = (info.get("storage_provider") or DEFAULT_STORAGE_PROVIDER).strip().lower()
-    if provider not in {"mdbx", "rocksdb"}:
-        raise ValueError(
-            "checkpoint storage_provider must be 'mdbx' or 'rocksdb', "
-            f"got {provider!r}"
-        )
+    if provider != "mdbx":
+        raise ValueError(f"checkpoint storage_provider must be 'mdbx', got {provider!r}")
     return provider
 
 
@@ -119,18 +98,14 @@ def toml_quote(value: Path | str) -> str:
 def render_config(
     *,
     chain_db: Path,
-    state_db: Path,
     state_enabled: bool,
-    storage_provider: str,
     rpc_port: int,
     p2p_port: int,
     metrics_port: int,
     log_file: Path,
 ) -> str:
     state_enabled_value = "true" if state_enabled else "false"
-    storage_tuning = ""
-    if storage_provider == "mdbx":
-        storage_tuning = """mdbx_geometry_upper_gb = 512
+    storage_tuning = """mdbx_geometry_upper_gb = 512
 mdbx_geometry_growth_mb = 256
 mdbx_max_readers = 4096
 """
@@ -140,7 +115,7 @@ network_type = "MainNet"
 network_magic = 0x334F454E
 
 [storage]
-backend = "{storage_provider}"
+backend = "mdbx"
 data_dir = {toml_quote(chain_db)}
 read_only = false
 {storage_tuning}
@@ -218,7 +193,6 @@ max_transactions_per_block = 200
 
 [state_service]
 enabled = {state_enabled_value}
-path = {toml_quote(state_db)}
 full_state = true
 
 [mempool]
@@ -251,12 +225,12 @@ def build_replay_plan(
     checkpoint = checkpoint.resolve()
     work_dir = (work_root / label).resolve()
     info = parse_checkpoint_info(checkpoint)
-    storage_provider = checkpoint_storage_provider(info)
+    checkpoint_storage_provider(info)
     chain_source = resolve_chain_checkpoint(checkpoint)
     if chain_source is None:
         raise FileNotFoundError(
             "bounded replay checkpoint is missing a chain database directory "
-            "with CURRENT; expected data/ or mainnet/"
+            "with mdbx.dat; expected data/ or mainnet/"
         )
     metadata_height = int(info["height"]) if info.get("height") else None
     validation_height = start_height if start_height is not None else metadata_height
@@ -268,17 +242,19 @@ def build_replay_plan(
         raise ValueError(f"checkpoint is not restore-verified: {verification_reason}")
     if start_height is None and info.get("height"):
         start_height = metadata_height
-    state_source = resolve_state_checkpoint(checkpoint, info)
-    state_present = state_source is not None
+    state_present = (
+        info.get("state_root_layout") == "coordinated_mdbx"
+        and info.get("state_root_included", "").lower() == "true"
+    )
     if not state_present:
         raise ValueError(
-            "bounded replay requires a full-state checkpoint with a StateRoot/MPT "
-            "directory; create a restore-verified checkpoint with "
+            "bounded replay requires a coordinated MDBX full-state checkpoint; "
+            "create a restore-verified checkpoint with "
             "scripts/checkpoint-on-height.sh before preparing replay"
         )
     validator_enabled = start_height is not None
     chain_db = work_dir / "data"
-    state_db = work_dir / "mpt"
+    state_db = chain_db
     config_path = work_dir / "neo-bounded-replay.toml"
     log_file = work_dir / "neo-node.log"
     status_file = work_dir / "stateroot-validation.json"
@@ -319,8 +295,6 @@ def build_replay_plan(
         str(node_bin),
         "--probe-bin",
         str(probe_bin),
-        "--storage-provider",
-        storage_provider,
         "--rpc",
         f"http://127.0.0.1:{rpc_port}",
         "--reference-rpc",
@@ -333,13 +307,6 @@ def build_replay_plan(
             "source": str(chain_source),
             "destination": str(chain_db),
             "required": True,
-        },
-        {
-            "name": "copy-state-checkpoint",
-            "source": str(state_source) if state_source else None,
-            "destination": str(state_db),
-            "required": state_present,
-            "enabled": state_present,
         },
         {
             "name": "write-config",
@@ -377,8 +344,6 @@ def build_replay_plan(
                 str(chain_db),
                 "--probe-bin",
                 str(probe_bin),
-                "--storage-provider",
-                storage_provider,
                 "--reference-rpc",
                 reference_rpc,
                 *address_args,
@@ -395,10 +360,10 @@ def build_replay_plan(
         },
         "chain_checkpoint": {
             "path": str(chain_source),
-            "present": chain_source.is_dir() and (chain_source / "CURRENT").exists(),
+            "present": chain_source.is_dir() and (chain_source / "mdbx.dat").exists(),
         },
         "state_checkpoint": {
-            "path": str(state_source) if state_source else None,
+            "path": str(chain_source),
             "present": state_present,
         },
         "work": {
@@ -413,16 +378,14 @@ def build_replay_plan(
         },
         "target_height": target_height,
         "start_height": start_height,
-        "storage_provider": storage_provider,
+        "storage_provider": "mdbx",
         "rpc_port": rpc_port,
         "p2p_port": p2p_port,
         "metrics_port": metrics_port,
         "steps": steps,
         "config_text": render_config(
             chain_db=chain_db,
-            state_db=state_db,
             state_enabled=state_present,
-            storage_provider=storage_provider,
             rpc_port=rpc_port,
             p2p_port=p2p_port,
             metrics_port=metrics_port,
@@ -443,7 +406,7 @@ def state_root_validator_disabled_reason(
     start_height: int | None,
 ) -> str | None:
     if not state_present:
-        return "Checkpoint has no StateRoot/MPT directory."
+        return "Checkpoint does not include coordinated MDBX StateService state."
     if start_height is None:
         return "Checkpoint start height is unknown; pass --start-height so state-root validation starts at the checkpoint height."
     return None
@@ -461,10 +424,6 @@ def prepare_workspace(plan: dict, *, force: bool = False) -> dict:
         Path(step_by_name(plan, "copy-chain-checkpoint")["source"]),
         Path(plan["work"]["chain_db"]),
     )
-    state_step = step_by_name(plan, "copy-state-checkpoint")
-    if state_step.get("enabled"):
-        copy_checkpoint_dir(Path(state_step["source"]), Path(plan["work"]["state_db"]))
-
     config_path = Path(plan["work"]["config_path"])
     config_path.write_text(plan["config_text"], encoding="utf-8")
     return {

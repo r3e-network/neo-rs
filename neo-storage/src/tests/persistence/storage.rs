@@ -2,37 +2,6 @@ use super::*;
 use crate::{StorageItem, StorageKey};
 
 // ============================================================================
-// CompressionAlgorithm Tests
-// ============================================================================
-
-#[test]
-fn compression_algorithm_equality() {
-    assert_eq!(CompressionAlgorithm::None, CompressionAlgorithm::None);
-    assert_eq!(CompressionAlgorithm::Lz4, CompressionAlgorithm::Lz4);
-    assert_eq!(CompressionAlgorithm::Zstd, CompressionAlgorithm::Zstd);
-    assert_ne!(CompressionAlgorithm::None, CompressionAlgorithm::Lz4);
-}
-
-#[test]
-fn compression_algorithm_clone() {
-    let algo = CompressionAlgorithm::Zstd;
-    let cloned = algo;
-    assert_eq!(algo, cloned);
-}
-
-// ============================================================================
-// CompactionStrategy Tests
-// ============================================================================
-
-#[test]
-fn compaction_strategy_equality() {
-    assert_eq!(CompactionStrategy::Level, CompactionStrategy::Level);
-    assert_eq!(CompactionStrategy::Universal, CompactionStrategy::Universal);
-    assert_eq!(CompactionStrategy::Fifo, CompactionStrategy::Fifo);
-    assert_ne!(CompactionStrategy::Level, CompactionStrategy::Fifo);
-}
-
-// ============================================================================
 // StorageConfig Tests
 // ============================================================================
 
@@ -40,12 +9,6 @@ fn compaction_strategy_equality() {
 fn storage_config_default_values() {
     let config = StorageConfig::default();
     assert_eq!(config.path, PathBuf::from("./data"));
-    assert_eq!(config.compression_algorithm, CompressionAlgorithm::Lz4);
-    assert_eq!(config.compaction_strategy, CompactionStrategy::Level);
-    assert_eq!(config.max_open_files, None);
-    assert_eq!(config.cache_size, None);
-    assert_eq!(config.write_buffer_size, None);
-    assert!(!config.enable_statistics);
     assert!(!config.read_only);
 }
 
@@ -63,7 +26,6 @@ fn storage_config_clone() {
     let config = StorageConfig::default();
     let cloned = config.clone();
     assert_eq!(config.path, cloned.path);
-    assert_eq!(config.compression_algorithm, cloned.compression_algorithm);
     assert_eq!(
         config.mdbx_geometry_upper_bytes,
         cloned.mdbx_geometry_upper_bytes

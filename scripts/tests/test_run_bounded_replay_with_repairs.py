@@ -111,12 +111,8 @@ class RunBoundedReplayWithRepairsTests(unittest.TestCase):
                     height = captured["height_reader"]()
                     return {"status": "target-reached", "last_height": height}
 
-                def fake_read_probe_ledger_height(
-                    db_path,
-                    probe_bin,
-                    storage_provider="mdbx",
-                ):
-                    captured["probe_args"] = (db_path, probe_bin, storage_provider)
+                def fake_read_probe_ledger_height(db_path, probe_bin):
+                    captured["probe_args"] = (db_path, probe_bin)
                     return 677297
 
                 return SimpleNamespace(
@@ -166,11 +162,11 @@ class RunBoundedReplayWithRepairsTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(
             captured["probe_args"],
-            (Path("bounded/data"), Path("target/release/neo-db-probe"), "mdbx"),
+            (Path("bounded/data"), Path("target/release/neo-db-probe")),
         )
         self.assertIsNotNone(captured["node_output"])
 
-    def test_cli_passes_storage_provider_to_probe_and_repair(self):
+    def test_cli_uses_mdbx_probe_and_repair_without_backend_selector(self):
         module = load_module()
         captured = {}
 
@@ -181,8 +177,8 @@ class RunBoundedReplayWithRepairsTests(unittest.TestCase):
                     captured["height_reader"]()
                     return {"status": "process-exited", "last_height": 151116}
 
-                def fake_read_probe_ledger_height(db_path, probe_bin, storage_provider):
-                    captured["height_reader_args"] = (db_path, probe_bin, storage_provider)
+                def fake_read_probe_ledger_height(db_path, probe_bin):
+                    captured["height_reader_args"] = (db_path, probe_bin)
                     return 151116
 
                 return SimpleNamespace(
@@ -227,8 +223,6 @@ class RunBoundedReplayWithRepairsTests(unittest.TestCase):
                     "151120",
                     "--probe-bin",
                     "target/release/neo-db-probe",
-                    "--storage-provider",
-                    "rocksdb",
                     "--max-attempts",
                     "1",
                 ]
@@ -241,9 +235,9 @@ class RunBoundedReplayWithRepairsTests(unittest.TestCase):
         self.assertEqual(code, 124)
         self.assertEqual(
             captured["height_reader_args"],
-            (Path("bounded/data"), Path("target/release/neo-db-probe"), "rocksdb"),
+            (Path("bounded/data"), Path("target/release/neo-db-probe")),
         )
-        self.assertEqual(captured["repair_kwargs"]["storage_provider"], "rocksdb")
+        self.assertNotIn("storage_provider", captured["repair_kwargs"])
 
 
 if __name__ == "__main__":

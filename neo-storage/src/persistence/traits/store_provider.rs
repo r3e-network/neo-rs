@@ -6,7 +6,7 @@ use std::sync::Arc;
 /// Backend factory used to create [`Store`] instances.
 ///
 /// This trait is named `StoreProvider` because each implementation provides one
-/// named storage backend (`memory`, `mdbx`, `rocksdb`) to the
+/// named storage backend (`memory` or `mdbx`) to the
 /// [`crate::persistence::StoreFactory`] registry. It is distinct from
 /// `neo_runtime::StoreProvider`, which is an accessor for an already-created
 /// store in composition code.

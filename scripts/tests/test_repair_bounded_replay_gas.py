@@ -111,9 +111,8 @@ class RepairBoundedReplayGasTests(unittest.TestCase):
                 sender,
                 value_base64,
                 probe_bin,
-                storage_provider="mdbx",
             ):
-                probe_calls.append((db_path, sender, value_base64, probe_bin, storage_provider))
+                probe_calls.append((db_path, sender, value_base64, probe_bin))
                 return {"found": True, "written_value_len": 8}
 
             result = module.repair_bounded_replay_gas(
@@ -136,7 +135,6 @@ class RepairBoundedReplayGasTests(unittest.TestCase):
                     "NRMrnHtDT4PENPpmuZAaEbPVaq7XvpVpQE",
                     "QQEhBF8woDA=",
                     Path("target/release/neo-db-probe"),
-                    "mdbx",
                 )
             ],
         )
@@ -176,7 +174,7 @@ class RepairBoundedReplayGasTests(unittest.TestCase):
                     return "QQEhBADC6ws="
                 raise AssertionError(f"unexpected RPC method {method}")
 
-            def fake_local_balance(_db_path, sender, _probe_bin, _storage_provider="mdbx"):
+            def fake_local_balance(_db_path, sender, _probe_bin):
                 return {
                     "sender": sender,
                     "found": sender.startswith("NdK"),
@@ -234,7 +232,7 @@ class RepairBoundedReplayGasTests(unittest.TestCase):
                     return "QQEhBADC6ws="
                 raise AssertionError(f"unexpected RPC method {method}")
 
-            def fake_local_balance(_db_path, sender, _probe_bin, _storage_provider="mdbx"):
+            def fake_local_balance(_db_path, sender, _probe_bin):
                 return {
                     "sender": sender,
                     "found": True,
@@ -298,7 +296,7 @@ class RepairBoundedReplayGasTests(unittest.TestCase):
                     return "QQEhBADC6ws="
                 raise AssertionError(f"unexpected RPC method {method}")
 
-            def fake_local_balance(_db_path, sender, _probe_bin, _storage_provider="mdbx"):
+            def fake_local_balance(_db_path, sender, _probe_bin):
                 balances = {
                     "Nb7BhTXDTsZuWd8Tynry7q5tvNrDYEoNoy": 43245228046,
                     "NaBEbvxLb94zcFYMTn1dxSb2rsqMHQjz9n": 14076600,

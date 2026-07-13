@@ -1,8 +1,8 @@
 //! Tests for `chain_acc::metrics` projection helpers.
 
 use super::metrics::{
-    ChainAccImportProgress, NativePersistTxStageImportMetrics, RocksDbBatchImportMetrics,
-    StateServiceMptImportMetrics, SyncHotPathMetrics, should_log_import_progress,
+    ChainAccImportProgress, NativePersistTxStageImportMetrics, StateServiceMptImportMetrics,
+    SyncHotPathMetrics, should_log_import_progress,
 };
 
 fn state_service_metrics_from_parts(
@@ -434,34 +434,4 @@ fn state_service_import_metrics_projects_direct_hot_snapshot_fields() {
         metrics.neotoken_committee_candidate_hot_kind,
         "eligible_candidates"
     );
-}
-
-#[test]
-fn rocksdb_batch_import_metrics_projects_buffer_stats() {
-    let metrics =
-        RocksDbBatchImportMetrics::from_metrics(neo_storage::persistence::RocksDbBatchMetrics {
-            pending_operations: 5,
-            batches_flushed: 2,
-            operations_written: 17,
-            bytes_written: 4096,
-            flush_timeouts: 1,
-            avg_ops_per_flush: 8,
-            avg_bytes_per_flush: 2048,
-            avg_flush_duration_ms: 6,
-            max_batch_size: 50_000,
-            max_batch_bytes: 64 * 1024 * 1024,
-            disable_wal: true,
-        });
-
-    assert_eq!(metrics.pending_operations, 5);
-    assert_eq!(metrics.batches_flushed, 2);
-    assert_eq!(metrics.operations_written, 17);
-    assert_eq!(metrics.bytes_written, 4096);
-    assert_eq!(metrics.flush_timeouts, 1);
-    assert_eq!(metrics.avg_ops_per_flush, 8);
-    assert_eq!(metrics.avg_bytes_per_flush, 2048);
-    assert_eq!(metrics.avg_flush_duration_ms, 6);
-    assert_eq!(metrics.max_batch_size, 50_000);
-    assert_eq!(metrics.max_batch_bytes, 64 * 1024 * 1024);
-    assert!(metrics.disable_wal);
 }

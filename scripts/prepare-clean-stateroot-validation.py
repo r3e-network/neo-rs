@@ -43,7 +43,7 @@ def rewrite_config_text(text: str, replacements: dict[str, dict[str, Any]]) -> s
 
     def append_missing(section: str) -> None:
         for key, value in replacements.get(section, {}).items():
-            if key not in seen[section]:
+            if key not in seen[section] and value is not None:
                 output.append(f"{key} = {toml_value(value)}")
                 seen[section].add(key)
 
@@ -59,6 +59,9 @@ def rewrite_config_text(text: str, replacements: dict[str, dict[str, Any]]) -> s
         if match and current_section in replacements:
             key = match.group(2)
             if key in replacements[current_section]:
+                if replacements[current_section][key] is None:
+                    seen[current_section].add(key)
+                    continue
                 indent = match.group(1)
                 output.append(f"{indent}{key} = {toml_value(replacements[current_section][key])}")
                 seen[current_section].add(key)
@@ -77,7 +80,6 @@ def build_replacements(
     metrics_port: int,
 ) -> dict[str, dict[str, Any]]:
     chain_db = work_root / "chain"
-    state_root = work_root / "state-root-{0}"
     logs = work_root / "logs"
     return {
         "storage": {
@@ -116,7 +118,7 @@ def build_replacements(
         },
         "state_service": {
             "enabled": True,
-            "path": state_root,
+            "path": None,
             "full_state": True,
             "track_during_catchup": True,
         },
@@ -150,7 +152,6 @@ def build_plan(
         "work_root": str(work_root),
         "config_path": str(config_path),
         "chain_db": str(work_root / "chain"),
-        "stateroot_db": str(work_root / "state-root-334F454E"),
         "rpc_port": rpc_port,
         "p2p_port": p2p_port,
         "metrics_port": metrics_port,
@@ -182,8 +183,6 @@ def build_plan(
                 str(smoke_target_height),
                 "--db",
                 str(work_root / "chain"),
-                "--stateroot-db",
-                str(work_root / "state-root-334F454E"),
                 "--probe-bin",
                 str(probe_bin),
                 "--require-stateroot-height-match",
@@ -203,8 +202,6 @@ def build_plan(
                 str(work_root),
                 "--chain-db",
                 str(work_root / "chain"),
-                "--stateroot-db",
-                str(work_root / "state-root-334F454E"),
                 "--root",
                 str(work_root / "checkpoints"),
             ],
@@ -221,8 +218,6 @@ def build_plan(
                 ",".join(str(height) for height in milestone_heights),
                 "--chain-db",
                 str(work_root / "chain"),
-                "--stateroot-db",
-                str(work_root / "state-root-334F454E"),
                 "--probe-bin",
                 str(probe_bin),
                 "--reference",

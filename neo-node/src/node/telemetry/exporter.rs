@@ -6,7 +6,7 @@ use std::time::Instant;
 use anyhow::Context;
 use hyper::{Body, Response};
 use neo_execution::native_contract_provider::NativeContractProvider;
-use neo_storage::persistence::{MdbxEnvironmentInfo, RocksDbBatchMetrics, TransactionalStore};
+use neo_storage::persistence::{MdbxEnvironmentInfo, TransactionalStore};
 use prometheus::{Encoder, Gauge, IntGauge, IntGaugeVec, Opts, Registry, TextEncoder};
 use tracing::warn;
 
@@ -211,9 +211,6 @@ where
         if let Some(info) = storage.mdbx_environment_info() {
             return render_mdbx_metrics(info);
         }
-        if let Some(metrics) = storage.rocksdb_batch_metrics() {
-            return render_rocksdb_metrics(metrics);
-        }
         String::new()
     }
 }
@@ -244,55 +241,6 @@ fn render_mdbx_metrics(info: neo_storage::StorageResult<MdbxEnvironmentInfo>) ->
          # TYPE neo_storage_mdbx_reader_slots_used gauge\n\
          neo_storage_mdbx_reader_slots_used {}\n",
         info.map_size, info.last_pgno, info.last_txnid, info.max_readers, info.num_readers,
-    )
-}
-
-fn render_rocksdb_metrics(metrics: RocksDbBatchMetrics) -> String {
-    format!(
-        "# HELP neo_storage_rocksdb_batch_pending_operations Current write operations buffered before RocksDB flush\n\
-         # TYPE neo_storage_rocksdb_batch_pending_operations gauge\n\
-         neo_storage_rocksdb_batch_pending_operations {}\n\
-         # HELP neo_storage_rocksdb_batch_batches_flushed_total Total RocksDB write batches flushed by fast-sync buffering\n\
-         # TYPE neo_storage_rocksdb_batch_batches_flushed_total counter\n\
-         neo_storage_rocksdb_batch_batches_flushed_total {}\n\
-         # HELP neo_storage_rocksdb_batch_operations_written_total Total put/delete operations flushed through RocksDB write batches\n\
-         # TYPE neo_storage_rocksdb_batch_operations_written_total counter\n\
-         neo_storage_rocksdb_batch_operations_written_total {}\n\
-         # HELP neo_storage_rocksdb_batch_bytes_written_total Approximate payload bytes flushed through RocksDB write batches\n\
-         # TYPE neo_storage_rocksdb_batch_bytes_written_total counter\n\
-         neo_storage_rocksdb_batch_bytes_written_total {}\n\
-         # HELP neo_storage_rocksdb_batch_flush_timeouts_total Total RocksDB write-batch flush timeout observations\n\
-         # TYPE neo_storage_rocksdb_batch_flush_timeouts_total counter\n\
-         neo_storage_rocksdb_batch_flush_timeouts_total {}\n\
-         # HELP neo_storage_rocksdb_batch_avg_ops_per_flush Average write operations per flushed RocksDB batch\n\
-         # TYPE neo_storage_rocksdb_batch_avg_ops_per_flush gauge\n\
-         neo_storage_rocksdb_batch_avg_ops_per_flush {}\n\
-         # HELP neo_storage_rocksdb_batch_avg_bytes_per_flush Average payload bytes per flushed RocksDB batch\n\
-         # TYPE neo_storage_rocksdb_batch_avg_bytes_per_flush gauge\n\
-         neo_storage_rocksdb_batch_avg_bytes_per_flush {}\n\
-         # HELP neo_storage_rocksdb_batch_avg_flush_duration_ms Average RocksDB write-batch flush duration in milliseconds\n\
-         # TYPE neo_storage_rocksdb_batch_avg_flush_duration_ms gauge\n\
-         neo_storage_rocksdb_batch_avg_flush_duration_ms {}\n\
-         # HELP neo_storage_rocksdb_batch_max_batch_size Active RocksDB write-batch operation threshold\n\
-         # TYPE neo_storage_rocksdb_batch_max_batch_size gauge\n\
-         neo_storage_rocksdb_batch_max_batch_size {}\n\
-         # HELP neo_storage_rocksdb_batch_max_batch_bytes Active RocksDB write-batch byte threshold\n\
-         # TYPE neo_storage_rocksdb_batch_max_batch_bytes gauge\n\
-         neo_storage_rocksdb_batch_max_batch_bytes {}\n\
-         # HELP neo_storage_rocksdb_batch_disable_wal Whether RocksDB WAL is disabled for fast-sync batch writes\n\
-         # TYPE neo_storage_rocksdb_batch_disable_wal gauge\n\
-         neo_storage_rocksdb_batch_disable_wal {}\n",
-        metrics.pending_operations,
-        metrics.batches_flushed,
-        metrics.operations_written,
-        metrics.bytes_written,
-        metrics.flush_timeouts,
-        metrics.avg_ops_per_flush,
-        metrics.avg_bytes_per_flush,
-        metrics.avg_flush_duration_ms,
-        metrics.max_batch_size,
-        metrics.max_batch_bytes,
-        bool_to_i64(metrics.disable_wal),
     )
 }
 

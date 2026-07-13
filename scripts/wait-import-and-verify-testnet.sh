@@ -41,17 +41,20 @@ while kill -0 "$IMPORTER_PID" 2>/dev/null; do
 done
 echo "Importer exited. Running local/remote hash verification at height=$TARGET_HEIGHT ..."
 
-LOCAL_OUT="$(
-  cargo run -q -p neo-core --features rocksdb --example print_height -- "$STORAGE_PATH" "$TARGET_HEIGHT" \
-    | tr -d '\r'
-)"
+probe() {
+  cargo run -q -p neo-node --bin neo-db-probe -- --db "$STORAGE_PATH" "$@"
+}
 
-LOCAL_HEIGHT="$(printf '%s\n' "$LOCAL_OUT" | awk -F= '/^current_index=/{print $2; exit}')"
-LOCAL_HASH="$(printf '%s\n' "$LOCAL_OUT" | awk -F= -v h="$TARGET_HEIGHT" '$1=="block_hash[" h "]"{print $2; exit}')"
+LOCAL_OUT="$(probe --contract-id -4 --key-hex 0c --decode hash-index | tr -d '\r')"
+LOCAL_HEIGHT="$(printf '%s\n' "$LOCAL_OUT" | jq -r '.decoded.index // empty')"
+BLOCK_KEY_HEX="09$(printf '%08x' "$TARGET_HEIGHT")"
+LOCAL_HASH_OUT="$(probe --contract-id -4 --key-hex "$BLOCK_KEY_HEX" | tr -d '\r')"
+LOCAL_HASH_RAW="$(printf '%s\n' "$LOCAL_HASH_OUT" | jq -r '.value_hex // empty')"
+LOCAL_HASH="0x$(printf '%s' "$LOCAL_HASH_RAW" | fold -w2 | tac | tr -d '\n')"
 
 if [[ -z "$LOCAL_HEIGHT" ]]; then
-  echo "failed to read local current_index from print_height output" >&2
-  printf '%s\n' "$LOCAL_OUT" >&2
+  echo "failed to read local current_index from neo-db-probe output" >&2
+  printf '%s\n' "$LOCAL_HASH_OUT" >&2
   exit 1
 fi
 

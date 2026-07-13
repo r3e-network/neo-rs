@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# libclang for bindgen (RocksDB bindings). Bullseye ships LLVM 11; the
+# libclang for bindgen (MDBX bindings). Bullseye ships LLVM 11; the
 # libclang-dev package puts libclang.so under /usr/lib/llvm-11/lib. The ENV
 # must be set directly (not via bashrc) so it's visible to the RUN cargo build.
 ENV LIBCLANG_PATH=/usr/lib/llvm-11/lib
@@ -131,7 +131,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Environment variables
 ENV NEO_NETWORK=testnet \
-    NEO_BACKEND=rocksdb \
+    NEO_BACKEND=mdbx \
     NEO_PLUGINS_DIR=/data/Plugins \
     RUST_LOG=info
 

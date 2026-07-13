@@ -44,7 +44,6 @@ fastbloom = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
-rocksdb = { workspace = true }
 libmdbx = { workspace = true }
 
 [dev-dependencies]

@@ -3,7 +3,7 @@
 //! This module coordinates the high-level graceful shutdown path after live
 //! services have started: wait for a shutdown source, cancel spawned work,
 //! abort remaining handles after a short grace period, flush state-service
-//! writes, and restore durable store modes.
+//! writes, and flush durable stores.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,7 +15,7 @@ use tracing::{info, warn};
 use super::observability::ObservabilityRuntime;
 use super::services::NodeServiceHandles;
 use super::shutdown::wait_for_shutdown_signal;
-use super::startup_cleanup::{flush_state_service_for_shutdown, restore_durable_store_mode};
+use super::startup_cleanup::{flush_durable_stores, flush_state_service_for_shutdown};
 
 pub(in crate::node) async fn run_daemon_shutdown<S, ServiceS>(
     node: &Arc<neo_system::Node<neo_native_contracts::StandardNativeProvider, S>>,
@@ -62,6 +62,6 @@ where
         handle.abort();
     }
     flush_state_service_for_shutdown(services)?;
-    restore_durable_store_mode(node.storage().as_ref(), durable_service_stores)?;
+    flush_durable_stores(node.storage().as_ref(), durable_service_stores)?;
     Ok(())
 }

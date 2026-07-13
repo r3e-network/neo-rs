@@ -175,8 +175,8 @@ fn seed_store_tip(
     Ok(())
 }
 
-fn seed_rocksdb_tip(path: &Path, settings: &ProtocolSettings, tip: u32) -> anyhow::Result<()> {
-    seed_store_tip("rocksdb", path, settings, tip)
+fn seed_mdbx_tip(path: &Path, settings: &ProtocolSettings, tip: u32) -> anyhow::Result<()> {
+    seed_store_tip("mdbx", path, settings, tip)
 }
 
 fn unused_local_rpc_port() -> u16 {

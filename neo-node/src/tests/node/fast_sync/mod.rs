@@ -462,8 +462,6 @@ fn fast_sync_report_preserves_package_and_import_proof() {
                 native_persist_avg_total_us: 3_000,
                 native_persist_tx_hot_stage: "application",
                 native_persist_tx_hot_stage_avg_us: 1_700,
-                rocksdb_batch_avg_flush_duration_ms: 11,
-                rocksdb_batch_pending_operations: 19,
             },
         ),
         None,
@@ -542,8 +540,6 @@ fn fast_sync_report_preserves_package_and_import_proof() {
             .any(|stage| stage.stage == "load_execute"),
         "fast-sync hot metrics should preserve the native transaction stage series"
     );
-    assert_eq!(report.hot_metrics.rocksdb_batch_avg_flush_duration_ms, 11);
-    assert_eq!(report.hot_metrics.rocksdb_batch_pending_operations, 19);
 }
 
 #[test]
@@ -580,8 +576,6 @@ fn write_fast_sync_report_sidecar_serializes_machine_readable_proof() {
                 native_persist_avg_total_us: 3_000,
                 native_persist_tx_hot_stage: "application",
                 native_persist_tx_hot_stage_avg_us: 1_700,
-                rocksdb_batch_avg_flush_duration_ms: 11,
-                rocksdb_batch_pending_operations: 19,
             },
         ),
         None,
@@ -701,14 +695,6 @@ fn write_fast_sync_report_sidecar_serializes_machine_readable_proof() {
     assert_eq!(
         payload["hot_metrics"]["native_persist_tx_hot_stage_avg_us"],
         1700
-    );
-    assert_eq!(
-        payload["hot_metrics"]["rocksdb_batch_avg_flush_duration_ms"],
-        11
-    );
-    assert_eq!(
-        payload["hot_metrics"]["rocksdb_batch_pending_operations"],
-        19
     );
 }
 

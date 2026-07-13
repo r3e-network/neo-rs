@@ -1,9 +1,8 @@
 //! Startup import cleanup and durable-store finalization.
 //!
-//! Bulk imports temporarily enable backend-specific fast-sync mode for higher
-//! write throughput. These helpers keep the failure and shutdown paths in one
-//! place so chain and service stores are restored or rolled back consistently
-//! before the daemon either continues to live sync or exits.
+//! These helpers keep import failure and shutdown paths in one place so the
+//! StateService worker and every durable MDBX store are flushed before the
+//! daemon either continues to live sync or exits.
 
 use std::sync::Arc;
 
@@ -32,7 +31,7 @@ fn flush_state_service<S: Store>(
         .map_err(|err| anyhow::anyhow!("state service MPT worker failed during flush: {err}"))
 }
 
-pub(in crate::node) fn restore_durable_store_mode<S, ServiceS>(
+pub(in crate::node) fn flush_durable_stores<S, ServiceS>(
     chain_store: &S,
     service_stores: &[Arc<ServiceS>],
 ) -> anyhow::Result<()>
@@ -40,32 +39,15 @@ where
     S: neo_storage::persistence::store::Store,
     ServiceS: neo_storage::persistence::store::Store,
 {
-    chain_store.disable_fast_sync_mode();
     chain_store
         .flush()
-        .map_err(|err| anyhow::anyhow!("flushing chain store after fast-sync mode: {err}"))?;
+        .map_err(|err| anyhow::anyhow!("flushing canonical store: {err}"))?;
     for store in service_stores {
-        store.disable_fast_sync_mode();
         store
             .flush()
-            .map_err(|err| anyhow::anyhow!("flushing service store after fast-sync mode: {err}"))?;
+            .map_err(|err| anyhow::anyhow!("flushing service store: {err}"))?;
     }
     Ok(())
-}
-
-pub(in crate::node) fn abort_fast_sync_store_mode<S, ServiceS>(
-    chain_store: &S,
-    service_stores: &[Arc<ServiceS>],
-) where
-    S: neo_storage::persistence::store::Store,
-    ServiceS: neo_storage::persistence::store::Store,
-{
-    chain_store.discard_pending_fast_sync_writes();
-    chain_store.disable_fast_sync_mode();
-    for store in service_stores {
-        store.discard_pending_fast_sync_writes();
-        store.disable_fast_sync_mode();
-    }
 }
 
 pub(in crate::node) fn abort_startup_after_import_failure<S, ServiceS>(
@@ -85,7 +67,10 @@ where
     if let Err(cleanup_err) = flush_state_service_for_shutdown(services) {
         cleanup_errors.push(format!("state-service flush failed: {cleanup_err:#}"));
     }
-    abort_fast_sync_store_mode(node.storage().as_ref(), durable_service_stores);
+    if let Err(cleanup_err) = flush_durable_stores(node.storage().as_ref(), durable_service_stores)
+    {
+        cleanup_errors.push(format!("durable-store flush failed: {cleanup_err:#}"));
+    }
     for handle in handles {
         handle.abort();
     }

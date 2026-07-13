@@ -26,7 +26,7 @@ fn validate_config_requires_durable_writable_storage_for_static_files() {
     ephemeral.storage.static_files_dir = Some(PathBuf::from("./data/static"));
     let error = validate_config(&ephemeral, 0x3554_334E)
         .expect_err("ephemeral canonical storage cannot own a durable mirror");
-    assert!(error.to_string().contains("durable canonical backend"));
+    assert!(error.to_string().contains("durable canonical MDBX backend"));
 
     let mut read_only = NodeConfig::default();
     read_only.storage.backend = Some("mdbx".to_string());
@@ -61,7 +61,7 @@ fn validate_config_for_ledger_mode_rejects_truly_in_memory_static_files_in_local
 
     let error = validate_config_for_ledger_mode(&config, 0x3554_334E, LedgerMode::Local, None)
         .expect_err("local mode without durable storage must still reject static files");
-    assert!(error.to_string().contains("durable canonical backend"));
+    assert!(error.to_string().contains("durable canonical MDBX backend"));
 }
 
 #[test]
@@ -691,11 +691,11 @@ fn validate_config_rejects_indexer_store_path_file_after_network_expansion() {
 }
 
 #[test]
-fn validate_storage_requires_rocksdb_path() {
+fn validate_storage_requires_mdbx_path() {
     let config: NodeConfig = toml::from_str(
         r#"
 [storage]
-backend = "rocksdb"
+backend = "mdbx"
 "#,
     )
     .expect("parse config");
@@ -713,7 +713,7 @@ fn validate_storage_rejects_local_replay_poison_marker() {
     std::fs::write(&marker, b"reason=injected commit failure\n").expect("write marker");
 
     let mut config = NodeConfig::default();
-    config.storage.backend = Some("rocksdb".to_string());
+    config.storage.backend = Some("mdbx".to_string());
     config.storage.data_dir = Some(chain_path);
 
     let error = validate_storage(&config, None, ProtocolSettings::default().network)
@@ -723,76 +723,16 @@ fn validate_storage_rejects_local_replay_poison_marker() {
 }
 
 #[test]
-fn validate_storage_rejects_state_service_mpt_height_mismatch() {
-    use neo_storage::persistence::storage::StorageConfig;
-    use neo_storage::rocksdb::RocksDBStoreProvider;
-
-    let temp = tempfile::tempdir().expect("temp dir");
-    let chain_path = temp.path().join("chain");
-    let state_path_template = temp.path().join("StateRoot_{0}");
-    let settings = ProtocolSettings::default();
-    seed_rocksdb_tip(&chain_path, &settings, 1).expect("seed chain tip");
-
-    let state_path = temp
-        .path()
-        .join(format!("StateRoot_{:08X}", settings.network));
-    let provider = RocksDBStoreProvider::new(StorageConfig {
-        path: state_path,
-        ..StorageConfig::default()
-    });
-    let state_store = provider.get_store("").expect("open state store");
-    let mut snapshot = state_store.snapshot();
-    let writer = Arc::get_mut(&mut snapshot).expect("exclusive snapshot");
-    writer
-        .put(vec![0x02], 0u32.to_le_bytes().to_vec())
-        .expect("write current root index");
-    writer.try_commit().expect("commit state root height");
-
-    let mut config = NodeConfig::default();
-    config.storage.backend = Some("rocksdb".to_string());
-    config.storage.data_dir = Some(chain_path);
-    config.state_service.enabled = true;
-    config.state_service.path = Some(state_path_template);
-
-    let err = validate_storage(&config, None, settings.network)
-        .expect_err("mismatched StateRoot height should fail");
-    assert!(
-        err.to_string().contains("does not match chain height 1"),
-        "{err}"
-    );
-}
-
-#[test]
 fn validate_storage_rejects_state_service_root_for_uninitialized_chain() {
-    use neo_storage::persistence::storage::StorageConfig;
-    use neo_storage::rocksdb::RocksDBStoreProvider;
-
     let temp = tempfile::tempdir().expect("temp dir");
     let chain_path = temp.path().join("chain");
-    let state_path_template = temp.path().join("StateRoot_{0}");
     let settings = ProtocolSettings::default();
-    let state_path = temp
-        .path()
-        .join(format!("StateRoot_{:08X}", settings.network));
-    {
-        let provider = RocksDBStoreProvider::new(StorageConfig {
-            path: state_path,
-            ..StorageConfig::default()
-        });
-        let state_store = provider.get_store("").expect("open state store");
-        let mut snapshot = state_store.snapshot();
-        let writer = Arc::get_mut(&mut snapshot).expect("exclusive snapshot");
-        writer
-            .put(vec![0x02], 0u32.to_le_bytes().to_vec())
-            .expect("write genesis root index");
-        writer.try_commit().expect("commit genesis root index");
-    }
+    seed_coordinated_mdbx_state_height(&chain_path, 0u32.to_le_bytes().to_vec());
 
     let mut config = NodeConfig::default();
-    config.storage.backend = Some("rocksdb".to_string());
+    config.storage.backend = Some("mdbx".to_string());
     config.storage.data_dir = Some(chain_path);
     config.state_service.enabled = true;
-    config.state_service.path = Some(state_path_template);
 
     let error = validate_storage(&config, None, settings.network)
         .expect_err("StateService must not be ahead of an uninitialized chain");
@@ -881,21 +821,20 @@ fn validate_storage_rejects_malformed_coordinated_mdbx_state_height() {
 }
 
 #[test]
-fn validate_storage_rejects_state_service_without_path_for_populated_chain() {
+fn validate_storage_rejects_missing_coordinated_state_root_for_populated_chain() {
     let temp = tempfile::tempdir().expect("temp dir");
     let chain_path = temp.path().join("chain");
     let settings = ProtocolSettings::default();
-    seed_rocksdb_tip(&chain_path, &settings, 1).expect("seed chain tip");
+    seed_mdbx_tip(&chain_path, &settings, 1).expect("seed chain tip");
 
     let mut config = NodeConfig::default();
-    config.storage.backend = Some("rocksdb".to_string());
+    config.storage.backend = Some("mdbx".to_string());
     config.storage.data_dir = Some(chain_path);
     config.state_service.enabled = true;
-    config.state_service.path = None;
 
     let err = validate_storage(&config, None, settings.network)
-        .expect_err("populated chain requires durable StateService path");
-    assert!(err.to_string().contains("[state_service].path"), "{err}");
+        .expect_err("populated chain requires a coordinated StateService root");
+    assert!(err.to_string().contains("no current local root"), "{err}");
 }
 
 /// Default P2P ports follow the network magic.

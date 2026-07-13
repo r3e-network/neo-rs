@@ -3,9 +3,7 @@ use crate::node::context::CoordinatedNodeStoreWith;
 use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_storage::persistence::StoreDataCache;
 use neo_storage::persistence::providers::MemoryStore;
-use neo_storage::persistence::{
-    Store, StoreBackendKind, StoreSnapshot, TransactionalStore, WriteStore,
-};
+use neo_storage::persistence::{Store, StoreBackendKind, TransactionalStore};
 use neo_system::NodeSystemContext;
 
 struct TestDaemonContext<P, C = MemoryStore, S = MemoryStore, L = MemoryStore, T = MemoryStore>
@@ -378,15 +376,15 @@ fn canonical_archive_publication_prunes_hot_ledger_rows_atomically() {
     .expect("stage genesis Ledger rows");
 
     let temp = tempfile::tempdir().expect("tempdir");
-    let store = Arc::new(RuntimeStore::RocksDb(
-        neo_storage::rocksdb::RocksDBStoreProvider::new(
+    let store = Arc::new(RuntimeStore::Mdbx(
+        neo_storage::mdbx::MdbxStoreProvider::new(
             neo_storage::persistence::storage::StorageConfig {
                 path: temp.path().join("hot"),
                 ..Default::default()
             },
         )
-        .get_rocksdb_store(std::path::Path::new(""))
-        .expect("RocksDB store"),
+        .get_mdbx_store(std::path::Path::new(""))
+        .expect("MDBX store"),
     ));
     assert!(
         store
@@ -610,30 +608,26 @@ fn daemon_context_can_track_state_service_mpt_during_cold_catchup_for_validation
 }
 
 #[test]
-fn state_service_store_uses_fast_sync_for_validation_import() {
+fn state_service_store_opens_mdbx_through_factory() {
     let temp = tempfile::tempdir().expect("temp StateService root");
     let path = temp.path().join("StateRoot_{0}");
     let store = services::open_service_store_with_storage_config(
         "StateService",
-        "rocksdb",
+        "mdbx",
         &super::config::StorageSection::default(),
         &path,
         0x334F_454E,
-        true,
     )
-    .expect("open fast-sync StateService store");
+    .expect("open MDBX StateService store");
 
-    assert!(
-        store
-            .rocksdb_batch_metrics()
-            .expect("service store exposes RocksDB batch metrics")
-            .disable_wal,
-        "StateService fast-sync import should disable WAL like the chain store"
+    assert_eq!(
+        store.backend_kind(),
+        neo_storage::persistence::StoreBackendKind::Mdbx
     );
 }
 
 #[test]
-fn state_service_durable_fence_flushes_fast_sync_backing() {
+fn state_service_durable_fence_publishes_mdbx_backing() {
     use neo_state_service::{StateStore, commit_handlers::StateServiceCommitHandlers};
     use neo_storage::{DataCache, StorageItem, StorageKey};
 
@@ -641,13 +635,12 @@ fn state_service_durable_fence_flushes_fast_sync_backing() {
     let path = temp.path().join("StateRoot_{0}");
     let backing = services::open_service_store_with_storage_config(
         "StateService",
-        "rocksdb",
+        "mdbx",
         &super::config::StorageSection::default(),
         &path,
         0x334F_454E,
-        true,
     )
-    .expect("open fast-sync StateService store");
+    .expect("open MDBX StateService store");
     let state_store =
         Arc::new(StateStore::with_mpt_store(false, Arc::clone(&backing)).expect("open MPT store"));
     let handlers = StateServiceCommitHandlers::new(Arc::clone(&state_store));
@@ -658,19 +651,11 @@ fn state_service_durable_fence_flushes_fast_sync_backing() {
     );
 
     assert!(handlers.on_committing_deferred(0, &snapshot));
-    assert!(
-        backing.has_pending_fast_sync_writes(),
-        "ordinary StateService apply should remain buffered before its durability fence"
-    );
 
     handlers
         .flush_durable_result()
         .expect("StateService backing durability fence");
 
-    assert!(
-        !backing.has_pending_fast_sync_writes(),
-        "durability fence must drain the StateService backend buffer"
-    );
     assert_eq!(
         state_store.mpt().expect("MPT").current_local_root_index(),
         Some(0)
@@ -928,12 +913,12 @@ path = "{}"
 }
 
 #[test]
-fn operational_state_service_store_keeps_wal_for_normal_restart() {
+fn operational_state_service_store_uses_mdbx_for_normal_restart() {
     let temp = tempfile::tempdir().expect("temp StateService root");
     let config: NodeConfig = toml::from_str(&format!(
         r#"
 [storage]
-backend = "rocksdb"
+backend = "mdbx"
 
 [state_service]
 enabled = true
@@ -955,12 +940,9 @@ path = "{}"
         .durable_stores
         .first()
         .expect("state service durable store");
-    assert!(
-        !state_store
-            .rocksdb_batch_metrics()
-            .expect("state service exposes RocksDB batch metrics")
-            .disable_wal,
-        "normal restart must not leave StateService RocksDB in fast-sync mode"
+    assert_eq!(
+        state_store.backend_kind(),
+        neo_storage::persistence::StoreBackendKind::Mdbx
     );
     assert!(
         !services
@@ -978,7 +960,7 @@ fn fast_sync_state_service_uses_ordered_async_mpt_worker() {
     let config: NodeConfig = toml::from_str(&format!(
         r#"
 [storage]
-backend = "rocksdb"
+backend = "mdbx"
 
 [state_service]
 enabled = true
@@ -1167,7 +1149,7 @@ fn fast_sync_state_service_without_catchup_tracking_stays_synchronous() {
     let config: NodeConfig = toml::from_str(&format!(
         r#"
 [storage]
-backend = "rocksdb"
+backend = "mdbx"
 
 [state_service]
 enabled = true
@@ -1193,99 +1175,17 @@ track_during_catchup = false
 
     assert!(
         !state_service.is_async(),
-        "fast-sync store mode alone should not pay async StateService overhead when catch-up MPT tracking is disabled"
+        "bulk import alone should not pay async StateService overhead when catch-up MPT tracking is disabled"
     );
 
     let state_store = services
         .durable_stores
         .first()
         .expect("state service durable store");
-    assert!(
-        !state_store
-            .rocksdb_batch_metrics()
-            .expect("state service exposes RocksDB batch metrics")
-            .disable_wal,
-        "StateService RocksDB should stay in durable mode when catch-up MPT tracking is disabled"
+    assert_eq!(
+        state_store.backend_kind(),
+        neo_storage::persistence::StoreBackendKind::Mdbx
     );
-}
-
-#[tokio::test]
-async fn build_node_uses_fast_sync_store_mode_for_resumed_startup_import() {
-    use neo_storage::persistence::storage::StorageConfig;
-    use neo_storage::rocksdb::RocksDBStoreProvider;
-
-    const DURABLE_TIP: u32 = 1;
-
-    let temp = tempfile::tempdir().expect("temp RocksDB root");
-    let storage_path = temp.path().join("chain");
-    let state_path_template = temp.path().join("StateRoot_{0}");
-    let settings = Arc::new(ProtocolSettings::default());
-    seed_rocksdb_tip(&storage_path, settings.as_ref(), DURABLE_TIP)
-        .expect("seed durable RocksDB tip");
-
-    let state_path = temp
-        .path()
-        .join(format!("StateRoot_{:08X}", settings.network));
-    let provider = RocksDBStoreProvider::new(StorageConfig {
-        path: state_path,
-        ..StorageConfig::default()
-    });
-    let state_store = provider.get_store("").expect("open state store");
-    let mut state_snapshot = state_store.snapshot();
-    let state_writer = Arc::get_mut(&mut state_snapshot).expect("exclusive state snapshot");
-    state_writer
-        .put(vec![0x02], DURABLE_TIP.to_le_bytes().to_vec())
-        .expect("write current root index");
-    state_writer.try_commit().expect("commit state root height");
-    drop(state_snapshot);
-    drop(state_store);
-    drop(provider);
-
-    let mut config: NodeConfig = toml::from_str(
-        r#"
-[storage]
-backend = "rocksdb"
-"#,
-    )
-    .expect("parse rocksdb storage config");
-    config.state_service.enabled = true;
-    config.state_service.track_during_catchup = true;
-    config.state_service.path = Some(state_path_template);
-
-    let running = build_node(
-        Arc::clone(&settings),
-        &config,
-        Some(&storage_path),
-        None,
-        LedgerMode::Local,
-        true,
-        None,
-    )
-    .await
-    .expect("build node for resumed startup import");
-
-    let chain_store = running.node().storage();
-    assert!(
-        chain_store
-            .rocksdb_batch_metrics()
-            .expect("chain store exposes RocksDB batch metrics")
-            .disable_wal,
-        "resumed startup import should keep chain RocksDB in fast-sync mode even when the durable tip is nonzero"
-    );
-
-    let service_store = running
-        .durable_service_stores()
-        .first()
-        .expect("state service durable store");
-    assert!(
-        service_store
-            .rocksdb_batch_metrics()
-            .expect("state service exposes RocksDB batch metrics")
-            .disable_wal,
-        "resumed startup import should put StateService RocksDB in fast-sync mode too"
-    );
-
-    running.abort_for_test().await;
 }
 
 #[test]
@@ -1422,9 +1322,9 @@ full_state = true
 }
 
 #[test]
-fn restore_durable_store_mode_reenables_wal_for_chain_and_service_stores() {
+fn flush_durable_stores_accepts_chain_and_service_mdbx() {
+    use neo_storage::mdbx::MdbxStoreProvider;
     use neo_storage::persistence::storage::StorageConfig;
-    use neo_storage::rocksdb::RocksDBStoreProvider;
 
     let temp = tempfile::tempdir().expect("temp store root");
     let chain_cfg = StorageConfig {
@@ -1432,96 +1332,31 @@ fn restore_durable_store_mode_reenables_wal_for_chain_and_service_stores() {
         ..Default::default()
     };
     let chain_store = Arc::new(
-        RocksDBStoreProvider::new(chain_cfg)
-            .get_rocksdb_store("")
-            .expect("chain RocksDB store"),
+        MdbxStoreProvider::new(chain_cfg)
+            .get_mdbx_store("")
+            .expect("chain MDBX store"),
     );
-    chain_store.enable_fast_sync_mode();
 
     let state_path = temp.path().join("StateRoot_{0}");
     let service_store = services::open_service_store_with_storage_config(
         "StateService",
-        "rocksdb",
+        "mdbx",
         &super::config::StorageSection::default(),
         &state_path,
         0x334F_454E,
-        true,
     )
-    .expect("open fast-sync StateService store");
+    .expect("open StateService MDBX store");
 
-    restore_durable_store_mode(chain_store.as_ref(), &[Arc::clone(&service_store)])
-        .expect("restore durable mode");
+    flush_durable_stores(chain_store.as_ref(), &[Arc::clone(&service_store)])
+        .expect("flush durable stores");
 
-    assert!(
-        !chain_store.write_batch_config().disable_wal,
-        "chain store must restore WAL before normal node operation"
+    assert_eq!(
+        chain_store.backend_kind(),
+        neo_storage::persistence::StoreBackendKind::Mdbx
     );
-    assert!(
-        !service_store
-            .rocksdb_batch_metrics()
-            .expect("service store exposes RocksDB batch metrics")
-            .disable_wal,
-        "StateService store must restore WAL with the chain store"
-    );
-}
-
-#[test]
-fn abort_fast_sync_store_mode_discards_pending_chain_and_service_writes() {
-    use neo_storage::persistence::StoreCache;
-    use neo_storage::persistence::storage::StorageConfig;
-    use neo_storage::persistence::store::Store;
-    use neo_storage::rocksdb::RocksDBStoreProvider;
-    use neo_storage::{StorageItem, StorageKey};
-
-    let temp = tempfile::tempdir().expect("temp store root");
-    let chain_cfg = StorageConfig {
-        path: temp.path().join("chain"),
-        ..Default::default()
-    };
-    let chain_store = Arc::new(
-        RocksDBStoreProvider::new(chain_cfg)
-            .get_rocksdb_store("")
-            .expect("chain RocksDB store"),
-    );
-    chain_store.enable_fast_sync_mode();
-
-    let state_path = temp.path().join("StateRoot_{0}");
-    let service_store = services::open_service_store_with_storage_config(
-        "StateService",
-        "rocksdb",
-        &super::config::StorageSection::default(),
-        &state_path,
-        0x334F_454E,
-        true,
-    )
-    .expect("open fast-sync StateService store");
-
-    let chain_key = StorageKey::new(77, b"partial-chain-block".to_vec());
-    let service_key = StorageKey::new(88, b"partial-state-root".to_vec());
-    let mut chain_writer = StoreCache::new_from_store(chain_store.clone(), false);
-    chain_writer.add(chain_key.clone(), StorageItem::from_bytes(vec![0xC1]));
-    chain_writer
-        .try_commit()
-        .expect("chain fast-sync write buffers");
-    let mut service_writer = StoreCache::new_from_store(Arc::clone(&service_store), false);
-    service_writer.add(service_key.clone(), StorageItem::from_bytes(vec![0x51]));
-    service_writer
-        .try_commit()
-        .expect("service fast-sync write buffers");
-
-    abort_fast_sync_store_mode(chain_store.as_ref(), &[Arc::clone(&service_store)]);
-    chain_store.flush().expect("chain cleanup flush");
-    service_store.flush().expect("service cleanup flush");
-
-    let chain_reader = StoreCache::new_from_store(chain_store, false);
-    assert!(
-        chain_reader.get(&chain_key).is_none(),
-        "failed startup import cleanup must not persist partial chain writes"
-    );
-    let service_reader = StoreCache::new_from_store(service_store, false);
-    assert!(
-        service_reader.get(&service_key).is_none(),
-        "failed startup import cleanup must not persist partial service-store writes"
+    assert_eq!(
+        service_store.backend_kind(),
+        neo_storage::persistence::StoreBackendKind::Mdbx
     );
 }
 
@@ -1529,22 +1364,19 @@ fn abort_fast_sync_store_mode_discards_pending_chain_and_service_writes() {
 async fn build_node_rejects_missing_state_root_store_for_populated_chain() {
     const DURABLE_TIP: u32 = 1;
 
-    let temp = tempfile::tempdir().expect("temp RocksDB root");
+    let temp = tempfile::tempdir().expect("temp MDBX root");
     let storage_path = temp.path().join("chain");
-    let state_path_template = temp.path().join("StateRoot_{0}");
     let settings = Arc::new(ProtocolSettings::default());
-    seed_rocksdb_tip(&storage_path, settings.as_ref(), DURABLE_TIP)
-        .expect("seed durable RocksDB tip");
+    seed_mdbx_tip(&storage_path, settings.as_ref(), DURABLE_TIP).expect("seed durable MDBX tip");
 
     let mut config: NodeConfig = toml::from_str(
         r#"
 [storage]
-backend = "rocksdb"
+backend = "mdbx"
 "#,
     )
-    .expect("parse rocksdb storage config");
+    .expect("parse MDBX storage config");
     config.state_service.enabled = true;
-    config.state_service.path = Some(state_path_template.clone());
 
     let err = match build_node(
         Arc::clone(&settings),
@@ -1565,15 +1397,8 @@ backend = "rocksdb"
     };
 
     assert!(
-        err.to_string().contains("StateService MPT store"),
+        err.to_string().contains("no current local root"),
         "startup error should name StateRoot parity failure: {err:#}"
-    );
-    assert!(
-        !temp
-            .path()
-            .join(format!("StateRoot_{:08X}", settings.network))
-            .exists(),
-        "startup guard must run before creating a fresh mismatched StateRoot store"
     );
 }
 
@@ -1650,7 +1475,7 @@ db_path = "{}"
     );
     assert!(
         !temp.path().join("chain").exists(),
-        "remote-ledger mode must not create a local chain RocksDB directory"
+        "remote-ledger mode must not create a local chain MDBX directory"
     );
     assert!(
         neo_native_contracts::LedgerContract::new()
@@ -2126,16 +1951,16 @@ async fn daemon_context_skips_application_logs_finalized_projection_during_bulk_
     );
 }
 
-/// Full daemon restart smoke test: when the durable RocksDB store already
+/// Full daemon restart smoke test: when the durable MDBX store already
 /// contains a ledger tip, `build_node` must read it before P2P starts,
 /// advertise it in `version`, request verified headers from `tip + 1`, and
 /// request bodies only after that header range passes validation.
 #[tokio::test]
-async fn build_node_restarts_from_durable_rocksdb_tip_and_resumes_sync_cursor() {
+async fn build_node_restarts_from_durable_mdbx_tip_and_resumes_sync_cursor() {
     const DURABLE_TIP: u32 = 1;
     const PEER_HEIGHT: u32 = 3;
 
-    let temp = tempfile::tempdir().expect("temp RocksDB root");
+    let temp = tempfile::tempdir().expect("temp MDBX root");
     let storage_path = temp.path().join("chain");
     let private_key = neo_crypto::Secp256r1Crypto::generate_private_key();
     let public_key_bytes = neo_crypto::Secp256r1Crypto::derive_public_key(&private_key)
@@ -2145,11 +1970,10 @@ async fn build_node_restarts_from_durable_rocksdb_tip_and_resumes_sync_cursor() 
     protocol.standby_committee = vec![public_key.clone()];
     protocol.validators_count = 1;
     let settings = Arc::new(protocol);
-    seed_rocksdb_tip(&storage_path, settings.as_ref(), DURABLE_TIP)
-        .expect("seed durable RocksDB tip");
+    seed_mdbx_tip(&storage_path, settings.as_ref(), DURABLE_TIP).expect("seed durable MDBX tip");
 
     let mut config = NodeConfig::default();
-    config.storage.backend = Some("rocksdb".to_string());
+    config.storage.backend = Some("mdbx".to_string());
     let running = build_node(
         Arc::clone(&settings),
         &config,
@@ -2237,7 +2061,7 @@ async fn build_node_restarts_from_durable_rocksdb_tip_and_resumes_sync_cursor() 
     running.abort_for_test().await;
 }
 
-/// Operator-facing RPC smoke test: a daemon rebuilt over a durable RocksDB
+/// Operator-facing RPC smoke test: a daemon rebuilt over a durable MDBX
 /// ledger must expose the recovered chain height through JSON-RPC.
 ///
 /// Runs on a multi-thread runtime to match the production daemon
@@ -2246,18 +2070,17 @@ async fn build_node_restarts_from_durable_rocksdb_tip_and_resumes_sync_cursor() 
 /// runtime. `getblockcount` itself does not, but the multi-thread flavor
 /// keeps this end-to-end smoke test representative of the real daemon.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn rpc_getblockcount_reads_restarted_durable_rocksdb_tip() {
+async fn rpc_getblockcount_reads_restarted_durable_mdbx_tip() {
     const DURABLE_TIP: u32 = 1;
 
-    let temp = tempfile::tempdir().expect("temp RocksDB root");
+    let temp = tempfile::tempdir().expect("temp MDBX root");
     let storage_path = temp.path().join("chain");
     let settings = Arc::new(ProtocolSettings::default());
-    seed_rocksdb_tip(&storage_path, settings.as_ref(), DURABLE_TIP)
-        .expect("seed durable RocksDB tip");
+    seed_mdbx_tip(&storage_path, settings.as_ref(), DURABLE_TIP).expect("seed durable MDBX tip");
 
     let rpc_port = unused_local_rpc_port();
     let mut config = NodeConfig::default();
-    config.storage.backend = Some("rocksdb".to_string());
+    config.storage.backend = Some("mdbx".to_string());
     config.rpc.enabled = true;
     config.rpc.port = Some(rpc_port);
     config.rpc.bind_address = Some("127.0.0.1".to_string());

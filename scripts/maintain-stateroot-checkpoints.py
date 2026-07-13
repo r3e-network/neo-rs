@@ -84,14 +84,11 @@ def build_probe_chain_height_command(
     *,
     chain_db: Path,
     probe_bin: Path,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
 ) -> list[str]:
     return [
         str(probe_bin),
         "--db",
         str(chain_db),
-        "--storage-provider",
-        storage_provider,
         "--contract-id",
         "-4",
         "--key-hex",
@@ -105,14 +102,11 @@ def build_probe_stateroot_height_command(
     *,
     stateroot_db: Path,
     probe_bin: Path,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
 ) -> list[str]:
     return [
         str(probe_bin),
         "--db",
         str(stateroot_db),
-        "--storage-provider",
-        storage_provider,
         "--mpt-state-height",
     ]
 
@@ -122,14 +116,11 @@ def build_probe_stateroot_root_command(
     stateroot_db: Path,
     height: int,
     probe_bin: Path,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
 ) -> list[str]:
     return [
         str(probe_bin),
         "--db",
         str(stateroot_db),
-        "--storage-provider",
-        storage_provider,
         "--mpt-state-root",
         str(height),
     ]
@@ -166,15 +157,16 @@ def checkpoint_verification_reason(
     except ValueError:
         return "restore verification metadata has invalid verified_height"
     chain_db = path / "mainnet"
-    stateroot_db = path / "StateRoot"
     storage_provider = info.get("storage_provider") or DEFAULT_STORAGE_PROVIDER
+    if storage_provider.lower() != "mdbx" or info.get("state_root_layout") != "coordinated_mdbx":
+        return "checkpoint is not a coordinated MDBX snapshot"
+    stateroot_db = chain_db
     chain_height = parse_probe_chain_height(
         command_stdout(
             inventory_runner(
                 build_probe_chain_height_command(
                     chain_db=chain_db,
                     probe_bin=probe_bin,
-                    storage_provider=storage_provider,
                 )
             )
         )
@@ -190,7 +182,6 @@ def checkpoint_verification_reason(
                 build_probe_stateroot_height_command(
                     stateroot_db=stateroot_db,
                     probe_bin=probe_bin,
-                    storage_provider=storage_provider,
                 )
             )
         )
@@ -207,7 +198,6 @@ def checkpoint_verification_reason(
                     stateroot_db=stateroot_db,
                     height=verified_height,
                     probe_bin=probe_bin,
-                    storage_provider=storage_provider,
                 )
             )
         )
@@ -230,7 +220,6 @@ def checkpoint_exists(
     return (
         path.is_dir()
         and (path / "mainnet").is_dir()
-        and (path / "StateRoot").is_dir()
         and (path / "CHECKPOINT_INFO").is_file()
         and not (path / "CHECKPOINT_IN_PROGRESS").exists()
         and checkpoint_verification_reason(
@@ -376,40 +365,22 @@ def load_status(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def format_network_magic(value: Any) -> str:
-    if isinstance(value, int):
-        return f"{value:08X}"
-    if isinstance(value, str):
-        stripped = value.strip()
-        return f"{int(stripped, 0):08X}"
-    raise ValueError(f"unsupported network_magic value: {value!r}")
-
-
 def derive_checkpoint_paths_from_config(config_path: Path) -> dict[str, Path]:
     with config_path.open("rb") as handle:
         config = tomllib.load(handle)
 
     storage = config.get("storage") or {}
-    state_service = config.get("state_service") or {}
-    network = config.get("network") or {}
-
     chain_db = Path(storage.get("data_dir") or storage.get("path") or DEFAULT_DATA_DIR)
     data_dir = chain_db.parent if chain_db.name else Path(DEFAULT_DATA_DIR)
 
-    magic = format_network_magic(network.get("network_magic", 0))
     storage_provider = str(storage.get("backend") or DEFAULT_STORAGE_PROVIDER).lower()
-    if storage_provider == "mdbx":
-        stateroot_db = chain_db
-    else:
-        state_template = str(
-            state_service.get("path") or f"{DEFAULT_DATA_DIR}/Plugins/mainnet/StateRoot"
-        )
-        stateroot_db = Path(state_template.replace("{0}", magic))
+    if storage_provider != "mdbx":
+        raise ValueError(f"unsupported storage backend {storage_provider!r}; expected 'mdbx'")
 
     return {
         "data_dir": data_dir,
         "chain_db": chain_db,
-        "stateroot_db": stateroot_db,
+        "stateroot_db": chain_db,
     }
 
 
@@ -417,7 +388,10 @@ def storage_provider_from_config(config_path: Path) -> str:
     with config_path.open("rb") as handle:
         config = tomllib.load(handle)
     storage = config.get("storage") or {}
-    return str(storage.get("backend") or DEFAULT_STORAGE_PROVIDER).lower()
+    provider = str(storage.get("backend") or DEFAULT_STORAGE_PROVIDER).lower()
+    if provider != "mdbx":
+        raise ValueError(f"unsupported storage backend {provider!r}; expected 'mdbx'")
+    return provider
 
 
 def build_checkpoint_plan(
@@ -431,9 +405,8 @@ def build_checkpoint_plan(
     stateroot_db: Path | None,
     probe_bin: Path = Path(DEFAULT_PROBE_BIN),
     inventory_runner: Callable[[list[str]], Any] | None = None,
-    storage_provider: str = "rocksdb",
 ) -> dict:
-    if storage_provider == "mdbx" and chain_db is not None:
+    if chain_db is not None:
         stateroot_db = chain_db
     plan_context = {
         "checkpoint_root": str(checkpoint_root),
@@ -554,13 +527,9 @@ def build_checkpoint_plan(
                     str(data_dir),
                     "--root",
                     str(checkpoint_root),
-                    "--storage-provider",
-                    storage_provider,
                 ]
                 if chain_db is not None:
                     command.extend(["--chain-db", str(chain_db)])
-                if stateroot_db is not None and storage_provider == "rocksdb":
-                    command.extend(["--stateroot-db", str(stateroot_db)])
                 item["command"] = command
                 item["requires_restore_probe"] = True
                 item["restore_probe_command"] = build_restore_probe_command(
@@ -568,23 +537,19 @@ def build_checkpoint_plan(
                     checkpoint_root=checkpoint_root,
                     data_dir=data_dir,
                     restore_script=Path(DEFAULT_RESTORE_SCRIPT),
-                    storage_provider=storage_provider,
                 )
                 restore_probe_chain_db, restore_probe_stateroot_db = restore_probe_paths(
                     height=height,
                     data_dir=data_dir,
-                    storage_provider=storage_provider,
                 )
                 item["restore_probe_chain_height_command"] = build_probe_chain_height_command(
                     chain_db=restore_probe_chain_db,
                     probe_bin=probe_bin,
-                    storage_provider=storage_provider,
                 )
                 item["restore_probe_stateroot_height_command"] = (
                     build_probe_stateroot_height_command(
                         stateroot_db=restore_probe_stateroot_db,
                         probe_bin=probe_bin,
-                        storage_provider=storage_provider,
                     )
                 )
                 item["restore_probe_stateroot_root_command"] = (
@@ -592,7 +557,6 @@ def build_checkpoint_plan(
                         stateroot_db=restore_probe_stateroot_db,
                         height=height,
                         probe_bin=probe_bin,
-                        storage_provider=storage_provider,
                     )
                 )
                 expected_root = (
@@ -719,7 +683,6 @@ def build_restore_probe_command(
     checkpoint_root: Path,
     data_dir: Path,
     restore_script: Path,
-    storage_provider: str = "rocksdb",
 ) -> list[str]:
     scratch = restore_probe_root(height=height, data_dir=data_dir)
     command = [
@@ -732,8 +695,6 @@ def build_restore_probe_command(
         "--yes",
         "--allow-unverified",
     ]
-    if storage_provider == "rocksdb":
-        command.extend(["--stateroot-db", str(scratch / "StateRoot")])
     return command
 
 
@@ -741,13 +702,10 @@ def restore_probe_root(*, height: int, data_dir: Path) -> Path:
     return data_dir / "checkpoint-restore-probes" / f"h{height}"
 
 
-def restore_probe_paths(
-    *, height: int, data_dir: Path, storage_provider: str = "rocksdb"
-) -> tuple[Path, Path]:
+def restore_probe_paths(*, height: int, data_dir: Path) -> tuple[Path, Path]:
     scratch = restore_probe_root(height=height, data_dir=data_dir)
     chain_db = scratch / "mainnet"
-    state_db = chain_db if storage_provider == "mdbx" else scratch / "StateRoot"
-    return chain_db, state_db
+    return chain_db, chain_db
 
 
 def verify_restored_checkpoint(
@@ -957,7 +915,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--node-config",
         default=None,
-        help="Optional neo-node TOML used to infer --data-dir, --chain-db, and --stateroot-db.",
+        help="Optional neo-node TOML used to infer --data-dir and --chain-db.",
     )
     parser.add_argument(
         "--data-dir",
@@ -967,18 +925,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--chain-db",
         default=None,
-        help="Explicit chain RocksDB path for validation/replay layouts.",
-    )
-    parser.add_argument(
-        "--stateroot-db",
-        default=None,
-        help="Explicit StateRoot RocksDB path for validation/replay layouts.",
-    )
-    parser.add_argument(
-        "--storage-provider",
-        choices=["mdbx", "rocksdb"],
-        default=None,
-        help="Checkpoint backend; defaults to [storage].backend or mdbx.",
+        help="Explicit MDBX path for validation/replay layouts.",
     )
     parser.add_argument(
         "--root",
@@ -1036,31 +983,12 @@ def main() -> int:
         if args.node_config
         else {}
     )
-    storage_provider = (
-        args.storage_provider
-        or (
-            storage_provider_from_config(Path(args.node_config))
-            if args.node_config
-            else DEFAULT_STORAGE_PROVIDER
-        )
-    )
+    if args.node_config:
+        storage_provider_from_config(Path(args.node_config))
     data_dir = Path(args.data_dir) if args.data_dir else inferred_paths.get("data_dir", Path(DEFAULT_DATA_DIR))
     checkpoint_root = Path(args.root) if args.root else data_dir / "checkpoints"
     chain_db = Path(args.chain_db) if args.chain_db else inferred_paths.get("chain_db")
-    stateroot_db = (
-        Path(args.stateroot_db)
-        if args.stateroot_db
-        else inferred_paths.get("stateroot_db")
-    )
-    if storage_provider == "mdbx":
-        if args.stateroot_db and chain_db is not None:
-            if Path(args.stateroot_db).resolve() != chain_db.resolve():
-                print(
-                    "ERROR: MDBX StateService uses --chain-db; omit --stateroot-db or use the same path",
-                    file=sys.stderr,
-                )
-                return 2
-        stateroot_db = chain_db
+    stateroot_db = chain_db
 
     def status_loader() -> dict:
         return load_status(Path(args.status_file))
@@ -1076,7 +1004,6 @@ def main() -> int:
             stateroot_db=stateroot_db,
             probe_bin=Path(args.probe_bin),
             inventory_runner=run_command,
-            storage_provider=storage_provider,
         )
 
     try:

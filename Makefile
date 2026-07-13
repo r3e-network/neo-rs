@@ -16,7 +16,6 @@ SERVICE_MAINNET_CONFIG ?= config/mainnet-service.toml
 SERVICE_TESTNET_CONFIG ?= config/testnet-service.toml
 CONFIG ?= $(MAINNET_CONFIG)
 BACKUP_DIR ?= backups
-ROCKSDB_PATH ?=
 
 # Color codes for output
 GREEN = \033[0;32m
@@ -77,7 +76,6 @@ help:
 	@echo "  make db-clean       - Clean blockchain database"
 	@echo "  make db-backup      - Backup blockchain database"
 	@echo "  make db-restore     - Restore blockchain database"
-	@echo "  make backup-rocksdb - Snapshot RocksDB dir (ROCKSDB_PATH=/path/to/db)"
 	@echo ""
 	@echo "$(YELLOW)Release:$(NC)"
 	@echo "  make release        - Create release binaries"
@@ -270,13 +268,6 @@ db-restore:
 	else \
 		echo "$(RED)Backup file not found$(NC)"; \
 	fi
-
-# RocksDB backup helper (uses scripts/backup-rocksdb.sh)
-.PHONY: backup-rocksdb
-backup-rocksdb:
-	@if [ -z "$(ROCKSDB_PATH)" ]; then echo "$(RED)Set ROCKSDB_PATH=/path/to/rocksdb$(NC)"; exit 1; fi
-	@echo "$(GREEN)Backing up RocksDB from $(ROCKSDB_PATH) -> $(BACKUP_DIR)...$(NC)"
-	./scripts/backup-rocksdb.sh "$(ROCKSDB_PATH)" "$(BACKUP_DIR)"
 
 # Release targets
 .PHONY: release

@@ -13,10 +13,9 @@ network_type = "TestNet"
 network_magic = 0x3554334E
 
 [storage]
-backend = "rocksdb"
+backend = "mdbx"
 data_dir = "./data/testnet"
 read_only = false
-cache_size = 2048
 
 [p2p]
 port = 20333
@@ -54,7 +53,7 @@ enabled = false
     );
 
     // Operational sections the daemon wires.
-    assert_eq!(config.storage.backend.as_deref(), Some("rocksdb"));
+    assert_eq!(config.storage.backend.as_deref(), Some("mdbx"));
     assert_eq!(
         config.storage.data_dir.as_deref(),
         Some(std::path::Path::new("./data/testnet"))
@@ -203,7 +202,7 @@ fn storage_section_ignores_legacy_aliases() {
     let config: NodeConfig = toml::from_str(
         r#"
 [storage]
-Engine = "rocksdb"
+Engine = "legacy"
 path = "./data/legacy"
 ReadOnly = true
 "#,
@@ -213,32 +212,6 @@ ReadOnly = true
     assert!(config.storage.backend.is_none());
     assert!(config.storage.data_directory().is_none());
     assert!(!config.storage.read_only);
-}
-
-#[test]
-fn storage_read_only_is_passed_to_rocksdb_open() {
-    let temp = tempfile::tempdir().expect("temp RocksDB root");
-    let missing_path = temp.path().join("missing-read-only-store");
-    let config: NodeConfig = toml::from_str(&format!(
-        r#"
-[storage]
-backend = "rocksdb"
-data_dir = "{}"
-read_only = true
-"#,
-        missing_path.display()
-    ))
-    .expect("parse read-only storage config");
-
-    let err = match open_store(&config, None) {
-        Ok(_) => panic!("read-only RocksDB should not create stores"),
-        Err(err) => err,
-    };
-    let message = err.to_string();
-    assert!(
-        message.contains("failed to open RocksDB store"),
-        "unexpected error: {message}"
-    );
 }
 
 #[test]

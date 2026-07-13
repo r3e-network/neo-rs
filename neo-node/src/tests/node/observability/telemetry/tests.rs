@@ -32,51 +32,6 @@ fn memory_pool(
     neo_mempool::MemoryPool::new_with_native_contract_provider(settings, native_contract_provider)
 }
 
-fn rocksdb_test_node() -> (
-    Arc<
-        neo_system::Node<
-            neo_native_contracts::StandardNativeProvider,
-            neo_storage::rocksdb::RocksDbStore,
-        >,
-    >,
-    tempfile::TempDir,
-) {
-    use neo_blockchain::HeaderCache;
-    use neo_network::NetworkHandle;
-    use neo_storage::persistence::storage::StorageConfig;
-    use neo_storage::rocksdb::{RocksDBStoreProvider, WriteBatchConfig};
-
-    let tmp = tempfile::TempDir::new().expect("tempdir");
-    let cfg = StorageConfig {
-        path: tmp.path().join("telemetry-rocksdb"),
-        ..Default::default()
-    };
-    let storage: Arc<neo_storage::rocksdb::RocksDbStore> = Arc::new(
-        RocksDBStoreProvider::new(cfg)
-            .with_batch_config(WriteBatchConfig::balanced())
-            .get_rocksdb_store("")
-            .expect("rocksdb store"),
-    );
-    let settings = Arc::new(neo_config::ProtocolSettings::testnet());
-    let native_contract_provider = native_provider();
-    let (blockchain, _rx) = neo_blockchain::BlockchainHandle::with_capacity();
-    let (network, _nrx, _etx) = NetworkHandle::channel(8, 8);
-    let node = neo_system::Node::builder()
-        .with_settings(Arc::clone(&settings))
-        .with_storage(storage)
-        .with_blockchain(blockchain)
-        .with_network(network)
-        .with_mempool(Arc::new(memory_pool(
-            &settings,
-            Arc::clone(&native_contract_provider),
-        )))
-        .with_header_cache(Arc::new(HeaderCache::default()))
-        .with_native_contract_provider(native_contract_provider)
-        .build()
-        .expect("node");
-    (Arc::new(node), tmp)
-}
-
 fn mdbx_test_node(
     map_size: isize,
 ) -> (
@@ -231,48 +186,6 @@ fn renders_mdbx_environment_metrics() {
     assert!(text.contains("neo_storage_mdbx_last_transaction_id"));
     assert!(text.contains("neo_storage_mdbx_max_readers"));
     assert!(text.contains("neo_storage_mdbx_reader_slots_used"));
-    assert!(
-        !text.contains("neo_storage_rocksdb_batch_pending_operations"),
-        "MDBX nodes should not emit RocksDB-only batch metrics"
-    );
-}
-
-#[test]
-fn renders_rocksdb_fast_sync_batch_metrics() {
-    let (node, _tmp) = rocksdb_test_node();
-    let storage = node.storage();
-    assert!(
-        storage.supports_fast_sync_mode(),
-        "RocksDB store supports fast-sync"
-    );
-    storage.enable_fast_sync_mode();
-
-    for index in 0..3 {
-        let mut writer = node.store_cache();
-        writer.add(
-            neo_storage::StorageKey::new(42, vec![index]),
-            neo_storage::StorageItem::from_bytes(vec![index]),
-        );
-        writer.try_commit().expect("buffer fast-sync write");
-    }
-
-    let exporter = MetricsExporter::new(node, empty_services()).expect("metrics exporter");
-    let payload = exporter.render().expect("metrics payload");
-    let text = String::from_utf8(payload).expect("utf8 metrics");
-
-    assert!(text.contains("neo_storage_rocksdb_batch_pending_operations 3"));
-    assert!(text.contains("neo_storage_rocksdb_batch_batches_flushed_total 0"));
-    assert!(text.contains("neo_storage_rocksdb_batch_operations_written_total 0"));
-    assert!(text.contains("neo_storage_rocksdb_batch_disable_wal 1"));
-    assert!(text.contains("neo_storage_rocksdb_batch_max_batch_size 5000"));
-
-    storage.flush().expect("flush pending fast-sync writes");
-
-    let payload = exporter.render().expect("metrics payload after flush");
-    let text = String::from_utf8(payload).expect("utf8 metrics after flush");
-    assert!(text.contains("neo_storage_rocksdb_batch_pending_operations 0"));
-    assert!(text.contains("neo_storage_rocksdb_batch_batches_flushed_total 1"));
-    assert!(text.contains("neo_storage_rocksdb_batch_operations_written_total 3"));
 }
 
 #[test]

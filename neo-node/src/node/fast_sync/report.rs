@@ -104,9 +104,6 @@ impl FastSyncReport {
                 .into_iter()
                 .map(FastSyncStageMetricReport::from_native_tx_stage)
                 .collect(),
-                rocksdb_batch_avg_flush_duration_ms: hot_metrics
-                    .rocksdb_batch_avg_flush_duration_ms,
-                rocksdb_batch_pending_operations: hot_metrics.rocksdb_batch_pending_operations,
             },
             reference,
         }
@@ -175,8 +172,6 @@ pub(in crate::node) struct FastSyncHotMetricsReport {
     pub(in crate::node) native_persist_tx_hot_stage: String,
     pub(in crate::node) native_persist_tx_hot_stage_avg_us: u64,
     pub(in crate::node) native_persist_tx_stages: Vec<FastSyncStageMetricReport>,
-    pub(in crate::node) rocksdb_batch_avg_flush_duration_ms: u64,
-    pub(in crate::node) rocksdb_batch_pending_operations: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

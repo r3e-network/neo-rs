@@ -144,11 +144,11 @@ where
     /// Constructs a state store with an MPT backend loaded from a backing store.
     ///
     /// Composition roots should pass the concrete backend type they already
-    /// own when it is known (`MdbxStore`, `RocksDbStore`, `MemoryStore`, ...).
+    /// own when it is known (`MdbxStore`, `MemoryStore`, or a custom store).
     /// Runtime-selected startup code should pass the concrete
     /// [`neo_storage::persistence::providers::RuntimeStore`]
     /// enum, so the state service stays provider-neutral through the generic
-    /// `S` parameter rather than depending on RocksDB/MDBX/memory directly.
+    /// `S` parameter rather than depending on MDBX or memory directly.
     pub fn with_mpt_store(full_state: bool, backing: Arc<S>) -> MptResult<Self> {
         Ok(Self {
             inner: Arc::new(RwLock::default()),

@@ -176,8 +176,8 @@ fn shipped_service_provider_configs_enable_neofura_surface() {
         assert!(config.state_service.enabled, "{relative} state service");
         assert!(config.state_service.full_state, "{relative} full state");
         assert!(
-            config.state_service.path.is_some(),
-            "{relative} state store path"
+            config.state_service.path.is_none(),
+            "{relative} StateService should use the coordinated MDBX namespace"
         );
         assert!(
             config.indexer.store_path.is_some(),

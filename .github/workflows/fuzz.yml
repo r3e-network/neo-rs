@@ -47,7 +47,7 @@ jobs:
     - name: Install dependencies
       run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
         \n  build-essential \\\n  clang \\\n  libclang-dev \\\n  llvm-dev \\\n  liblz4-dev\
-        \ \\\n  librocksdb-dev \\\n  libssl-dev \\\n  pkg-config\n"
+        \ \\\n  libssl-dev \\\n  pkg-config\n"
     - name: Install Rust nightly
       uses: dtolnay/rust-toolchain@nightly
     - name: Install cargo-fuzz
@@ -78,7 +78,7 @@ jobs:
     - name: Install dependencies
       run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
         \n  build-essential \\\n  clang \\\n  libclang-dev \\\n  llvm-dev \\\n  liblz4-dev\
-        \ \\\n  librocksdb-dev \\\n  libssl-dev \\\n  pkg-config\n"
+        \ \\\n  libssl-dev \\\n  pkg-config\n"
     - name: Install Rust nightly
       uses: dtolnay/rust-toolchain@nightly
     - name: Install cargo-fuzz
@@ -109,7 +109,7 @@ jobs:
     - name: Install dependencies
       run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
         \n  build-essential \\\n  clang \\\n  libclang-dev \\\n  llvm-dev \\\n  liblz4-dev\
-        \ \\\n  librocksdb-dev \\\n  libssl-dev \\\n  pkg-config\n"
+        \ \\\n  libssl-dev \\\n  pkg-config\n"
     - name: Install Rust nightly
       uses: dtolnay/rust-toolchain@nightly
     - name: Install cargo-fuzz
@@ -141,7 +141,7 @@ jobs:
     - name: Install dependencies
       run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
         \n  build-essential \\\n  clang \\\n  libclang-dev \\\n  llvm-dev \\\n  liblz4-dev\
-        \ \\\n  librocksdb-dev \\\n  libssl-dev \\\n  pkg-config\n"
+        \ \\\n  libssl-dev \\\n  pkg-config\n"
     - name: Install Rust nightly
       uses: dtolnay/rust-toolchain@nightly
     - name: Install cargo-fuzz

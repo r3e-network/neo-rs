@@ -60,17 +60,6 @@ DEFAULT_METRIC_NAMES = [
     "neo_state_service_mpt_apply_count_samples_total",
     "neo_state_service_mpt_apply_items_total",
     "neo_state_service_mpt_apply_avg_items",
-    "neo_storage_rocksdb_batch_pending_operations",
-    "neo_storage_rocksdb_batch_batches_flushed_total",
-    "neo_storage_rocksdb_batch_operations_written_total",
-    "neo_storage_rocksdb_batch_bytes_written_total",
-    "neo_storage_rocksdb_batch_flush_timeouts_total",
-    "neo_storage_rocksdb_batch_avg_ops_per_flush",
-    "neo_storage_rocksdb_batch_avg_bytes_per_flush",
-    "neo_storage_rocksdb_batch_avg_flush_duration_ms",
-    "neo_storage_rocksdb_batch_max_batch_size",
-    "neo_storage_rocksdb_batch_max_batch_bytes",
-    "neo_storage_rocksdb_batch_disable_wal",
 ]
 DEFAULT_POLL_INTERVAL_SECONDS = 30.0
 DEFAULT_IMPORT_POLL_INTERVAL_SECONDS = 1.0
@@ -236,98 +225,21 @@ def node_command(
     return command
 
 
-def materialize_state_service_config(
-    config: Path,
-    stateroot_db: Path | None,
-    output_dir: Path,
-    storage_provider: str = "rocksdb",
-) -> Path:
-    """Point separate-store backends at stateroot_db; MDBX uses the chain DB."""
-    if stateroot_db is None or storage_provider == "mdbx":
-        return config
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output = output_dir / "bounded-replay-node.toml"
-    state_path = json.dumps(str(stateroot_db))
-    path_line = f"path = {state_path}"
-    section_pattern = re.compile(r"^\s*\[([^\]]+)\]\s*(?:#.*)?$")
-    path_pattern = re.compile(r"^\s*path\s*=")
-
-    lines = config.read_text(encoding="utf-8").splitlines()
-    rendered: list[str] = []
-    in_state_service = False
-    saw_state_service = False
-    wrote_path = False
-
-    for line in lines:
-        section = section_pattern.match(line)
-        if section:
-            if in_state_service and not wrote_path:
-                rendered.append(path_line)
-                wrote_path = True
-            in_state_service = section.group(1).strip() == "state_service"
-            if in_state_service:
-                saw_state_service = True
-                wrote_path = False
-            rendered.append(line)
-            continue
-
-        if in_state_service and path_pattern.match(line):
-            rendered.append(path_line)
-            wrote_path = True
-        else:
-            rendered.append(line)
-
-    if in_state_service and not wrote_path:
-        rendered.append(path_line)
-    elif not saw_state_service:
-        if rendered and rendered[-1].strip():
-            rendered.append("")
-        rendered.extend(["[state_service]", path_line])
-
-    output.write_text("\n".join(rendered) + "\n", encoding="utf-8")
-    return output
-
-
-DEFAULT_STORAGE_PROVIDER = "mdbx"
-
-
-def resolve_stateroot_db(
-    chain_db: Path | None,
-    stateroot_db: Path | None,
-    storage_provider: str,
-) -> Path | None:
-    """Resolve the physical StateService store for the selected backend."""
-    if storage_provider != "mdbx":
-        return stateroot_db
-    if stateroot_db is not None and chain_db is None:
-        raise ValueError("MDBX --stateroot-db requires --db and must name the same directory")
-    if stateroot_db is not None and chain_db is not None:
-        if stateroot_db.resolve() != chain_db.resolve():
-            raise ValueError(
-                "MDBX stores StateService in --db; --stateroot-db must be omitted or equal --db"
-            )
-    return chain_db
-
-
-def probe_command_prefix(probe_bin: Path, db_path: Path, storage_provider: str) -> list[str]:
+def probe_command_prefix(probe_bin: Path, db_path: Path) -> list[str]:
     return [
         str(probe_bin),
         "--db",
         str(db_path),
-        "--storage-provider",
-        storage_provider,
     ]
 
 
 def read_probe_ledger_height(
     db_path: Path,
     probe_bin: Path,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
 ) -> int | None:
     completed = subprocess.run(
         [
-            *probe_command_prefix(probe_bin, db_path, storage_provider),
+            *probe_command_prefix(probe_bin, db_path),
             "--contract-id",
             "-4",
             "--key-hex",
@@ -350,11 +262,10 @@ def read_probe_ledger_height(
 def read_probe_mpt_state_height(
     db_path: Path,
     probe_bin: Path,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
 ) -> int | None:
     completed = subprocess.run(
         [
-            *probe_command_prefix(probe_bin, db_path, storage_provider),
+            *probe_command_prefix(probe_bin, db_path),
             "--mpt-state-height",
         ],
         check=True,
@@ -374,11 +285,10 @@ def read_probe_mpt_state_root(
     db_path: Path,
     probe_bin: Path,
     index: int,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
 ) -> str | None:
     completed = subprocess.run(
         [
-            *probe_command_prefix(probe_bin, db_path, storage_provider),
+            *probe_command_prefix(probe_bin, db_path),
             "--mpt-state-root",
             str(index),
         ],
@@ -465,10 +375,8 @@ def reference_stateroot_match_is_strong(reference: dict, expected_count: int) ->
 
 def collect_post_probe(
     *,
-    chain_db: Path | None,
-    stateroot_db: Path | None,
+    db: Path | None,
     probe_bin: Path,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
     reference_urls: list[str] | None = None,
     rpc: Callable[..., Any] = rpc_call,
 ) -> dict:
@@ -476,12 +384,12 @@ def collect_post_probe(
     state_height: int | None = None
     local_root: str | None = None
 
-    if chain_db is not None:
+    if db is not None:
         try:
-            chain_height = read_probe_ledger_height(chain_db, probe_bin, storage_provider)
+            chain_height = read_probe_ledger_height(db, probe_bin)
             post_probe["chain_height"] = {
-                "db": str(chain_db),
-                "storage_provider": storage_provider,
+                "db": str(db),
+                "storage_provider": "mdbx",
                 "height": chain_height,
                 "found": chain_height is not None,
                 "ok": chain_height is not None,
@@ -489,38 +397,37 @@ def collect_post_probe(
         except Exception as exc:  # pylint: disable=broad-except
             post_probe["chain_height"] = {
                 "ok": False,
-                "db": str(chain_db),
+                "db": str(db),
                 "error": str(exc),
             }
 
-    if stateroot_db is not None:
+    if db is not None:
         try:
-            state_height = read_probe_mpt_state_height(stateroot_db, probe_bin, storage_provider)
+            state_height = read_probe_mpt_state_height(db, probe_bin)
             post_probe["stateroot_height"] = {
                 "ok": state_height is not None,
-                "db": str(stateroot_db),
-                "storage_provider": storage_provider,
+                "db": str(db),
+                "storage_provider": "mdbx",
                 "height": state_height,
                 "found": state_height is not None,
             }
         except Exception as exc:  # pylint: disable=broad-except
             post_probe["stateroot_height"] = {
                 "ok": False,
-                "db": str(stateroot_db),
+                "db": str(db),
                 "error": str(exc),
             }
         if state_height is not None:
             try:
                 local_root = read_probe_mpt_state_root(
-                    stateroot_db,
+                    db,
                     probe_bin,
                     state_height,
-                    storage_provider,
                 )
                 post_probe["stateroot_root"] = {
                     "ok": local_root is not None,
-                    "db": str(stateroot_db),
-                    "storage_provider": storage_provider,
+                    "db": str(db),
+                    "storage_provider": "mdbx",
                     "height": state_height,
                     "root": local_root,
                     "found": local_root is not None,
@@ -528,7 +435,7 @@ def collect_post_probe(
             except Exception as exc:  # pylint: disable=broad-except
                 post_probe["stateroot_root"] = {
                     "ok": False,
-                    "db": str(stateroot_db),
+                    "db": str(db),
                     "height": state_height,
                     "error": str(exc),
                 }
@@ -537,7 +444,7 @@ def collect_post_probe(
     state_height = (post_probe.get("stateroot_height") or {}).get("height")
     if chain_height is not None and state_height is not None:
         post_probe["stateroot_matches_chain"] = int(chain_height) == int(state_height)
-    elif chain_db is not None and stateroot_db is not None:
+    elif db is not None:
         post_probe["stateroot_matches_chain"] = False
 
     references = normalize_reference_urls(reference_urls)
@@ -555,18 +462,15 @@ def collect_post_probe(
 def attach_post_probe_report(
     report: dict,
     *,
-    chain_db: Path | None,
-    stateroot_db: Path | None,
+    db: Path | None,
     probe_bin: Path,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
     require_stateroot_height_match: bool,
     reference_urls: list[str] | None = None,
     require_reference_stateroot_match: bool = False,
     rpc: Callable[..., Any] = rpc_call,
 ) -> dict:
     if (
-        chain_db is None
-        and stateroot_db is None
+        db is None
         and not reference_urls
         and not require_reference_stateroot_match
     ):
@@ -577,10 +481,8 @@ def attach_post_probe_report(
         effective_reference_urls = DEFAULT_REFERENCE_RPCS
 
     post_probe = collect_post_probe(
-        chain_db=chain_db,
-        stateroot_db=stateroot_db,
+        db=db,
         probe_bin=probe_bin,
-        storage_provider=storage_provider,
         reference_urls=effective_reference_urls,
         rpc=rpc,
     )
@@ -1567,21 +1469,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--db", default=None, type=Path)
     parser.add_argument("--probe-bin", default=Path("target/release/neo-db-probe"), type=Path)
     parser.add_argument(
-        "--storage-provider",
-        default=DEFAULT_STORAGE_PROVIDER,
-        choices=["mdbx", "rocksdb"],
-        help="Storage backend used by neo-db-probe for post-run proof reads.",
-    )
-    parser.add_argument(
-        "--stateroot-db",
-        default=None,
-        type=Path,
-        help=(
-            "StateService MPT path for RocksDB. MDBX uses --db's "
-            "neo_state_service table; omit this option or pass the same path as --db."
-        ),
-    )
-    parser.add_argument(
         "--require-stateroot-height-match",
         action="store_true",
         help="Fail a target-reached run unless probed chain and StateService MPT heights match.",
@@ -1642,14 +1529,6 @@ def parse_args() -> argparse.Namespace:
         parser.error("--import-chain and --fast-sync are mutually exclusive")
     if args.fast_sync_cache is not None and not args.fast_sync:
         parser.error("--fast-sync-cache requires --fast-sync")
-    try:
-        args.stateroot_db = resolve_stateroot_db(
-            args.db,
-            args.stateroot_db,
-            args.storage_provider,
-        )
-    except ValueError as error:
-        parser.error(str(error))
     if (
         args.sync_speed_floor_bps is not None
         and args.sync_speed_floor_bps < DEFAULT_SYNC_SPEED_FLOOR_BPS
@@ -1658,7 +1537,7 @@ def parse_args() -> argparse.Namespace:
             "--sync-speed-floor-bps must be >= "
             f"{DEFAULT_SYNC_SPEED_FLOOR_BPS:g} for production proof"
         )
-    if (args.fast_sync or args.import_chain is not None) and args.stateroot_db is not None:
+    if (args.fast_sync or args.import_chain is not None) and args.db is not None:
         args.require_stateroot_height_match = True
     if args.poll_interval is None:
         args.poll_interval = (
@@ -1704,18 +1583,16 @@ def main() -> int:
         height_reader = lambda: read_probe_ledger_height(
             args.db,
             args.probe_bin,
-            args.storage_provider,
         )
     target_ready_reader = None
-    if args.require_stateroot_height_match and args.stateroot_db is not None:
+    if args.require_stateroot_height_match and args.db is not None:
         target_ready_reader = (
             lambda: stateroot_covers_observed_chain_height(
                 target_height=args.target_height,
                 observed_chain_height=height_reader() if height_reader is not None else None,
                 stateroot_height=read_probe_mpt_state_height(
-                    args.stateroot_db,
+                    args.db,
                     args.probe_bin,
-                    args.storage_provider,
                 ),
             )
         )
@@ -1725,17 +1602,6 @@ def main() -> int:
         (lambda: fast_sync_cache_progress(fast_sync_cache_dir))
         if fast_sync_cache_dir is not None
         else None
-    )
-    runtime_config_dir = (
-        args.node_output_log.parent
-        if args.node_output_log is not None
-        else (args.db.parent if args.db is not None else args.config.parent)
-    )
-    runtime_config = materialize_state_service_config(
-        args.config,
-        args.stateroot_db,
-        runtime_config_dir,
-        args.storage_provider,
     )
     if args.node_output_log is not None:
         args.node_output_log.parent.mkdir(parents=True, exist_ok=True)
@@ -1747,7 +1613,7 @@ def main() -> int:
         report = run_until_target(
             command=node_command(
                 args.node_bin,
-                runtime_config,
+                args.config,
                 args.target_height,
                 storage_path=args.db,
                 import_chain=args.import_chain,
@@ -1774,10 +1640,8 @@ def main() -> int:
     report = attach_chain_acc_import_report(report, args.node_output_log)
     report = attach_post_probe_report(
         report,
-        chain_db=args.db,
-        stateroot_db=args.stateroot_db,
+        db=args.db,
         probe_bin=args.probe_bin,
-        storage_provider=args.storage_provider,
         require_stateroot_height_match=args.require_stateroot_height_match,
         reference_urls=args.reference,
         require_reference_stateroot_match=args.require_reference_stateroot_match,

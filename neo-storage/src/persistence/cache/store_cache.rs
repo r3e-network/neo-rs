@@ -157,17 +157,11 @@ where
 
     /// Discards changes that have not reached a durable backend commit.
     ///
-    /// This is the failure-side counterpart to [`Self::try_commit_durable`]. It clears
-    /// the canonical overlay and any backend-specific fast-sync buffer so the
-    /// next read observes the last successfully committed snapshot.
+    /// This is the failure-side counterpart to [`Self::try_commit_durable`]. It
+    /// clears the canonical overlay so the next read observes the last
+    /// successfully committed snapshot.
     pub fn discard_pending_changes(&self) {
         self.data_cache.reset();
-        match &self.backing {
-            StoreCacheBacking::Store(store) => store.discard_pending_fast_sync_writes(),
-            StoreCacheBacking::Snapshot(snapshot) => {
-                snapshot.store().discard_pending_fast_sync_writes();
-            }
-        }
     }
 
     fn try_commit_store_overlay(&self) -> DataCacheResult<bool> {
@@ -261,11 +255,9 @@ where
     /// Commits the canonical overlay as one backend durability boundary.
     ///
     /// The `TransactionalStore` bound makes atomic publication a compile-time
-    /// capability. MDBX uses one write transaction. RocksDB first persists any
-    /// earlier fast-sync prefix and then writes this overlay with synchronous
-    /// WAL. Callers that publish a canonical tip must use this method rather
-    /// than treating [`Self::try_commit`] or commit-then-flush as a durability
-    /// fence.
+    /// capability. MDBX uses one write transaction. Callers that publish a
+    /// canonical tip must use this method rather than treating
+    /// [`Self::try_commit`] or commit-then-flush as a durability fence.
     pub fn try_commit_durable(&mut self) -> DataCacheResult {
         if self.data_cache.is_read_only() {
             return Err(DataCacheError::ReadOnly);

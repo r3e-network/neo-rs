@@ -61,7 +61,7 @@ if [[ -z "$ACC_PATH" ]]; then
 fi
 echo "[$(date '+%F %T')] acc-file=$ACC_PATH"
 
-# 4) Import into rocksdb state.
+# 4) Import into MDBX state.
 "$NODE_BIN" --config "$NODE_CONFIG" --import-acc "$ACC_PATH" --import-only \
   >"$IMPORT_LOG" 2>&1
 

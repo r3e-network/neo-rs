@@ -67,7 +67,7 @@ jobs:
     - name: Install system dependencies
       run: "sudo apt-get update\nsudo apt-get install -y --no-install-recommends \\\
         \n  build-essential \\\n  clang \\\n  cmake \\\n  curl \\\n  jq \\\n  libbz2-dev\
-        \ \\\n  libclang-dev \\\n  liblz4-dev \\\n  librocksdb-dev \\\n  libsnappy-dev\
+        \ \\\n  libclang-dev \\\n  liblz4-dev \\\n  libsnappy-dev\
         \ \\\n  libssl-dev \\\n  libzstd-dev \\\n  pkg-config \\\n  python3 \\\n \
         \ python3-pip \\\n  python3-venv \\\n  zlib1g-dev\n"
     - name: Set up Rust

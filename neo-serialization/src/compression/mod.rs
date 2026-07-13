@@ -14,8 +14,19 @@
 
 use neo_error::CoreError;
 use neo_io::Lz4;
-pub use neo_storage::persistence::storage::CompressionAlgorithm;
+use serde::{Deserialize, Serialize};
 use std::io::Cursor;
+
+/// Compression algorithm supported by the serialization helpers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CompressionAlgorithm {
+    /// No compression.
+    None,
+    /// LZ4 compression.
+    Lz4,
+    /// Zstandard compression.
+    Zstd,
+}
 
 /// Result type for compression operations (alias of [`neo_error::Result`]).
 pub type CompressionResult<T> = neo_error::Result<T>;

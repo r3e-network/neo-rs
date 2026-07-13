@@ -99,9 +99,7 @@ use inventory_relay::{FAST_SYNC_BURST_CAPACITY, flush_inventory_block_batch};
 #[cfg(test)]
 use lifecycle::composition::build_node;
 #[cfg(test)]
-use lifecycle::startup_cleanup::abort_fast_sync_store_mode;
-#[cfg(test)]
-use lifecycle::startup_cleanup::{flush_state_service_for_shutdown, restore_durable_store_mode};
+use lifecycle::startup_cleanup::{flush_durable_stores, flush_state_service_for_shutdown};
 #[cfg(test)]
 use rpc_runtime::start_rpc_server;
 

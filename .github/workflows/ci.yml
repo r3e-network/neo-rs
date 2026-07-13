@@ -51,7 +51,7 @@ jobs:
     - name: Cache APT packages
       uses: awalsh128/cache-apt-pkgs-action@latest
       with:
-        packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev
+        packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev
           libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
         version: 1.0
     - uses: dtolnay/rust-toolchain@stable
@@ -91,7 +91,7 @@ jobs:
     - name: Cache APT packages
       uses: awalsh128/cache-apt-pkgs-action@latest
       with:
-        packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev librocksdb-dev
+        packages: build-essential clang cmake libbz2-dev libclang-dev liblz4-dev
           libsnappy-dev libssl-dev libzstd-dev pkg-config zlib1g-dev
         version: 1.0
     - uses: dtolnay/rust-toolchain@stable

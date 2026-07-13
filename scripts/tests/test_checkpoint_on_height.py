@@ -14,7 +14,6 @@ class CheckpointOnHeightTests(unittest.TestCase):
         *,
         height,
         chain_db,
-        stateroot_db,
         checkpoint_root,
         extra_args=None,
     ):
@@ -26,12 +25,8 @@ class CheckpointOnHeightTests(unittest.TestCase):
             str(height),
             "--chain-db",
             str(chain_db),
-            "--stateroot-db",
-            str(stateroot_db),
             "--root",
             str(checkpoint_root),
-            "--storage-provider",
-            "rocksdb",
         ]
         if extra_args:
             command.extend(extra_args)
@@ -43,32 +38,29 @@ class CheckpointOnHeightTests(unittest.TestCase):
             check=False,
         )
 
-    def test_once_checkpoint_accepts_explicit_chain_and_stateroot_dirs(self):
+    def test_once_checkpoint_captures_coordinated_mdbx_environment(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             chain_db = root / "chain-db"
-            stateroot_db = root / "state-root-db"
             checkpoint_root = root / "checkpoints"
             chain_db.mkdir()
-            stateroot_db.mkdir()
-            (chain_db / "CURRENT").write_text("MANIFEST-000001\n", encoding="utf-8")
-            (stateroot_db / "CURRENT").write_text("MANIFEST-000002\n", encoding="utf-8")
+            (chain_db / "mdbx.dat").write_text("chain-and-state", encoding="utf-8")
 
             result = self.run_checkpoint(
                 height=42,
                 chain_db=chain_db,
-                stateroot_db=stateroot_db,
                 checkpoint_root=checkpoint_root,
             )
 
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-            self.assertTrue((checkpoint_root / "h42" / "mainnet" / "CURRENT").exists())
-            self.assertTrue((checkpoint_root / "h42" / "StateRoot" / "CURRENT").exists())
+            self.assertTrue((checkpoint_root / "h42" / "mainnet" / "mdbx.dat").exists())
+            self.assertFalse((checkpoint_root / "h42" / "StateRoot").exists())
             info = (checkpoint_root / "h42" / "CHECKPOINT_INFO").read_text(
                 encoding="utf-8"
             )
             self.assertIn(f"chain_db={chain_db}", info)
-            self.assertIn(f"stateroot_db={stateroot_db}", info)
+            self.assertIn(f"stateroot_db={chain_db}:neo_state_service", info)
+            self.assertIn("state_root_layout=coordinated_mdbx", info)
 
     def test_mdbx_checkpoint_does_not_hardlink_live_database_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -76,20 +68,18 @@ class CheckpointOnHeightTests(unittest.TestCase):
             chain_db = root / "chain-mdbx"
             checkpoint_root = root / "checkpoints"
             chain_db.mkdir()
-            (chain_db / "data.mdbx").write_text("chain-and-state", encoding="utf-8")
+            (chain_db / "mdbx.dat").write_text("chain-and-state", encoding="utf-8")
 
             result = self.run_checkpoint(
                 height=42,
                 chain_db=chain_db,
-                stateroot_db=chain_db,
                 checkpoint_root=checkpoint_root,
-                extra_args=["--storage-provider", "mdbx"],
             )
 
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             self.assertNotEqual(
-                (chain_db / "data.mdbx").stat().st_ino,
-                (checkpoint_root / "h42" / "mainnet" / "data.mdbx").stat().st_ino,
+                (chain_db / "mdbx.dat").stat().st_ino,
+                (checkpoint_root / "h42" / "mainnet" / "mdbx.dat").stat().st_ino,
                 "MDBX checkpoint must not share live DB inodes",
             )
             self.assertFalse((checkpoint_root / "h42" / "StateRoot").exists())
@@ -103,18 +93,14 @@ class CheckpointOnHeightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             chain_db = root / "chain-db"
-            stateroot_db = root / "state-root-db"
             checkpoint_root = root / "checkpoints"
             chain_db.mkdir()
-            stateroot_db.mkdir()
-            (chain_db / "CURRENT").write_text("MANIFEST-000001\n", encoding="utf-8")
-            (stateroot_db / "CURRENT").write_text("MANIFEST-000002\n", encoding="utf-8")
+            (chain_db / "mdbx.dat").write_text("chain-and-state", encoding="utf-8")
 
             for height in (20, 5000, 10000, 20000):
                 result = self.run_checkpoint(
                     height=height,
                     chain_db=chain_db,
-                    stateroot_db=stateroot_db,
                     checkpoint_root=checkpoint_root,
                     extra_args=["--max", "3"],
                 )
@@ -131,21 +117,20 @@ class CheckpointOnHeightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             chain_db = root / "chain-db"
-            stateroot_db = root / "state-root-db"
             checkpoint_root = root / "checkpoints"
             chain_db.mkdir()
-            stateroot_db.mkdir()
-            (chain_db / "CURRENT").write_text("MANIFEST-000001\n", encoding="utf-8")
-            (stateroot_db / "CURRENT").write_text("MANIFEST-000002\n", encoding="utf-8")
+            (chain_db / "mdbx.dat").write_text("chain-and-state", encoding="utf-8")
 
             for height in (10, 20, 30):
                 checkpoint = checkpoint_root / f"h{height}"
                 (checkpoint / "mainnet").mkdir(parents=True)
-                (checkpoint / "StateRoot").mkdir()
                 (checkpoint / "CHECKPOINT_INFO").write_text(
                     "\n".join(
                         [
                             f"height={height}",
+                            "storage_provider=mdbx",
+                            "state_root_layout=coordinated_mdbx",
+                            "state_root_included=true",
                             "restore_verified=true",
                             f"verified_height={height}",
                             f"verified_stateroot_root=0xroot{height}",
@@ -159,7 +144,6 @@ class CheckpointOnHeightTests(unittest.TestCase):
             for height in (40, 50):
                 checkpoint = checkpoint_root / f"h{height}"
                 (checkpoint / "mainnet").mkdir(parents=True)
-                (checkpoint / "StateRoot").mkdir()
                 (checkpoint / "CHECKPOINT_INFO").write_text(
                     f"height={height}\n",
                     encoding="utf-8",
@@ -168,7 +152,6 @@ class CheckpointOnHeightTests(unittest.TestCase):
             result = self.run_checkpoint(
                 height=60,
                 chain_db=chain_db,
-                stateroot_db=stateroot_db,
                 checkpoint_root=checkpoint_root,
                 extra_args=[
                     "--max",
@@ -201,17 +184,13 @@ class CheckpointOnHeightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             chain_db = root / "chain-db"
-            stateroot_db = root / "state-root-db"
             checkpoint_root = root / "checkpoints"
             chain_db.mkdir()
-            stateroot_db.mkdir()
-            (chain_db / "CURRENT").write_text("MANIFEST-000001\n", encoding="utf-8")
-            (stateroot_db / "CURRENT").write_text("MANIFEST-000002\n", encoding="utf-8")
+            (chain_db / "mdbx.dat").write_text("chain-and-state", encoding="utf-8")
 
             result = self.run_checkpoint(
                 height=42,
                 chain_db=chain_db,
-                stateroot_db=stateroot_db,
                 checkpoint_root=checkpoint_root,
                 extra_args=["--max", "2"],
             )
@@ -225,7 +204,7 @@ class CheckpointOnHeightTests(unittest.TestCase):
             chain_db = root / "bounded-replay-db"
             checkpoint_root = root / "checkpoints"
             chain_db.mkdir()
-            (chain_db / "CURRENT").write_text("MANIFEST-000001\n", encoding="utf-8")
+            (chain_db / "mdbx.dat").write_text("chain-only", encoding="utf-8")
 
             result = subprocess.run(
                 [
@@ -247,7 +226,7 @@ class CheckpointOnHeightTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
-            self.assertTrue((checkpoint_root / "h624433" / "mainnet" / "CURRENT").exists())
+            self.assertTrue((checkpoint_root / "h624433" / "mainnet" / "mdbx.dat").exists())
             self.assertFalse((checkpoint_root / "h624433" / "StateRoot").exists())
             info = (checkpoint_root / "h624433" / "CHECKPOINT_INFO").read_text(
                 encoding="utf-8"
@@ -260,17 +239,13 @@ class CheckpointOnHeightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             chain_db = root / "chain-db"
-            stateroot_db = root / "state-root-db"
             checkpoint_root = root / "checkpoints"
             chain_db.mkdir()
-            stateroot_db.mkdir()
-            (chain_db / "CURRENT").write_text("MANIFEST-000001\n", encoding="utf-8")
-            (stateroot_db / "CURRENT").write_text("MANIFEST-000002\n", encoding="utf-8")
+            (chain_db / "mdbx.dat").write_text("chain-and-state", encoding="utf-8")
 
             result = self.run_checkpoint(
                 height=42,
                 chain_db=chain_db,
-                stateroot_db=stateroot_db,
                 checkpoint_root=checkpoint_root,
                 extra_args=[
                     "--restore-verified",
@@ -295,17 +270,13 @@ class CheckpointOnHeightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             chain_db = root / "chain-db"
-            stateroot_db = root / "state-root-db"
             checkpoint_root = root / "checkpoints"
             chain_db.mkdir()
-            stateroot_db.mkdir()
-            (chain_db / "CURRENT").write_text("MANIFEST-000001\n", encoding="utf-8")
-            (stateroot_db / "CURRENT").write_text("MANIFEST-000002\n", encoding="utf-8")
+            (chain_db / "mdbx.dat").write_text("chain-and-state", encoding="utf-8")
 
             first = self.run_checkpoint(
                 height=42,
                 chain_db=chain_db,
-                stateroot_db=stateroot_db,
                 checkpoint_root=checkpoint_root,
                 extra_args=[
                     "--restore-verified",
@@ -321,7 +292,6 @@ class CheckpointOnHeightTests(unittest.TestCase):
             second = self.run_checkpoint(
                 height=42,
                 chain_db=chain_db,
-                stateroot_db=stateroot_db,
                 checkpoint_root=checkpoint_root,
                 extra_args=[
                     "--restore-verified",
@@ -340,15 +310,12 @@ class CheckpointOnHeightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             chain_db = root / "chain-db"
-            stateroot_db = root / "state-root-db"
             checkpoint_root = root / "checkpoints"
             chain_db.mkdir()
-            stateroot_db.mkdir()
 
             result = self.run_checkpoint(
                 height=42,
                 chain_db=chain_db,
-                stateroot_db=stateroot_db,
                 checkpoint_root=checkpoint_root,
                 extra_args=["--verified-stateroot-root", "0xabc123"],
             )
@@ -360,15 +327,12 @@ class CheckpointOnHeightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             chain_db = root / "chain-db"
-            stateroot_db = root / "state-root-db"
             checkpoint_root = root / "checkpoints"
             chain_db.mkdir()
-            stateroot_db.mkdir()
 
             result = self.run_checkpoint(
                 height=42,
                 chain_db=chain_db,
-                stateroot_db=stateroot_db,
                 checkpoint_root=checkpoint_root,
                 extra_args=[
                     "--restore-verified",
@@ -388,15 +352,12 @@ class CheckpointOnHeightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             chain_db = root / "chain-db"
-            stateroot_db = root / "state-root-db"
             checkpoint_root = root / "checkpoints"
             chain_db.mkdir()
-            stateroot_db.mkdir()
 
             result = self.run_checkpoint(
                 height=42,
                 chain_db=chain_db,
-                stateroot_db=stateroot_db,
                 checkpoint_root=checkpoint_root,
                 extra_args=[
                     "--restore-verified",

@@ -36,7 +36,7 @@ pub trait Service: Send + Sync + std::fmt::Debug + 'static {
     /// Short, human-readable name of the service implementation.
     ///
     /// Used in log lines, metrics labels, and `Debug` output. Should be
-    /// stable per implementation (e.g. `"RocksDbExecutor"`,
+    /// stable per implementation (e.g. `"MdbxExecutor"`,
     /// `"LocalNetworkService"`).
     fn name(&self) -> &str {
         std::any::type_name::<Self>()

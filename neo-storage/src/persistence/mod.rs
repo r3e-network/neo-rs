@@ -75,10 +75,7 @@ pub mod write_store;
 pub use data_cache::{CacheRead, DataCache, EmptyCacheBacking, Trackable};
 pub use read_only_store::{RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric};
 pub use seek_direction::SeekDirection;
-pub use store::{
-    MdbxEnvironmentInfo, RawOverlaySink, RawOverlaySource, RocksDbBatchMetrics, Store,
-    StoreBackendKind,
-};
+pub use store::{MdbxEnvironmentInfo, RawOverlaySink, RawOverlaySource, Store, StoreBackendKind};
 pub use store_cache::{StoreCache, StoreCacheBacking, StoreDataCache};
 pub use store_factory::StoreFactory;
 pub use store_maintenance::StoreMaintenanceBatch;

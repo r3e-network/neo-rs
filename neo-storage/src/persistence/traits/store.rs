@@ -14,8 +14,6 @@ pub enum StoreBackendKind {
     Memory,
     /// Production MDBX store.
     Mdbx,
-    /// RocksDB compatibility/backend store.
-    RocksDb,
     /// A custom store implementation outside the built-in backend set.
     Custom(&'static str),
 }
@@ -26,7 +24,6 @@ impl StoreBackendKind {
         match self {
             Self::Memory => "memory",
             Self::Mdbx => "mdbx",
-            Self::RocksDb => "rocksdb",
             Self::Custom(name) => name,
         }
     }
@@ -45,34 +42,6 @@ pub struct MdbxEnvironmentInfo {
     pub max_readers: usize,
     /// MDBX reader slots currently used.
     pub num_readers: usize,
-}
-
-/// RocksDB fast-sync batch diagnostics projected without exposing the concrete
-/// store type to callers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RocksDbBatchMetrics {
-    /// Current write operations buffered before RocksDB flush.
-    pub pending_operations: u64,
-    /// Total RocksDB write batches flushed by fast-sync buffering.
-    pub batches_flushed: u64,
-    /// Total put/delete operations flushed through RocksDB write batches.
-    pub operations_written: u64,
-    /// Approximate payload bytes flushed through RocksDB write batches.
-    pub bytes_written: u64,
-    /// Total RocksDB write-batch flush timeout observations.
-    pub flush_timeouts: u64,
-    /// Average write operations per flushed RocksDB batch.
-    pub avg_ops_per_flush: u64,
-    /// Average payload bytes per flushed RocksDB batch.
-    pub avg_bytes_per_flush: u64,
-    /// Average RocksDB write-batch flush duration in milliseconds.
-    pub avg_flush_duration_ms: u64,
-    /// Active RocksDB write-batch operation threshold.
-    pub max_batch_size: u64,
-    /// Active RocksDB write-batch byte threshold.
-    pub max_batch_bytes: u64,
-    /// Whether RocksDB WAL is disabled for fast-sync batch writes.
-    pub disable_wal: bool,
 }
 
 /// Sink for ordered raw byte-key overlay entries.
@@ -109,11 +78,11 @@ pub trait RawOverlaySource {
 /// - **Snapshot** — concrete `Snapshot` associated type + `snapshot()`
 /// - **Backend capabilities** — explicit backend identity and optional metrics
 ///
-/// Additional optional backend capabilities are exposed as default methods:
-/// fast-sync controls, ordinary direct raw-overlay commits, and backend
-/// metrics. Canonical atomic commits and isolated maintenance metadata belong
-/// to the stronger [`super::transactional_store::TransactionalStore`] contract,
-/// so node composition cannot discover those requirements at runtime.
+/// Optional backend diagnostics and direct raw-overlay commits are exposed as
+/// default methods. Canonical atomic commits and isolated maintenance metadata
+/// belong to the stronger
+/// [`super::transactional_store::TransactionalStore`] contract, so node
+/// composition cannot discover those requirements at runtime.
 pub trait Store:
     ReadOnlyStore
     + RawReadOnlyStore
@@ -148,42 +117,11 @@ pub trait Store:
         None
     }
 
-    /// Returns RocksDB fast-sync batch diagnostics when this store is backed by
-    /// RocksDB.
-    fn rocksdb_batch_metrics(&self) -> Option<RocksDbBatchMetrics> {
-        None
-    }
-
-    /// Returns whether this backend implements storage-level fast-sync
-    /// optimizations.
-    fn supports_fast_sync_mode(&self) -> bool {
-        false
-    }
-
-    /// Enables storage-level fast-sync optimizations when this backend supports
-    /// them. Backends that do not support fast-sync mode leave this as a no-op.
-    fn enable_fast_sync_mode(&self) {}
-
-    /// Disables storage-level fast-sync optimizations, restoring normal
-    /// durability guarantees when this backend supports them.
-    fn disable_fast_sync_mode(&self) {}
-
-    /// Drops pending fast-sync buffered writes that have not reached durable
-    /// storage. Backends without buffered fast-sync writes leave this as a
-    /// no-op.
-    fn discard_pending_fast_sync_writes(&self) {}
-
-    /// Returns whether fast-sync writes have been accepted by the backend but
-    /// are not guaranteed visible through fresh snapshots yet.
-    fn has_pending_fast_sync_writes(&self) -> bool {
-        false
-    }
-
     /// Commits raw byte-key overlay entries directly when the backend can do so
     /// without constructing a mutable snapshot.
     ///
     /// Implementations may sort this materialized overlay by raw key before
-    /// writing so B+tree and LSM backends receive locality-friendly batches.
+    /// writing so persistent backends receive locality-friendly batches.
     /// Backends that do not support a direct overlay commit return `Ok(false)`
     /// so callers can fall back to snapshot-based commit.
     fn try_commit_raw_overlay(

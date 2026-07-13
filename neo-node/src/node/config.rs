@@ -73,8 +73,8 @@ pub(super) struct NetworkSection {
 /// `[storage]`: persistence backend.
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct StorageSection {
-    /// Storage provider name. Supported values are `memory`, `mdbx`, and
-    /// `rocksdb`; production builds default persistent stores to `mdbx`.
+    /// Storage provider name. `mdbx` is the persistent backend and `memory` is
+    /// available for ephemeral or remote-ledger nodes.
     #[serde(default)]
     pub(super) backend: Option<String>,
     /// Database directory for persistent storage backends.
@@ -139,8 +139,7 @@ impl StorageSection {
         self.static_files_recovery_batch_blocks.unwrap_or(1_024)
     }
 
-    /// Builds the provider-neutral storage configuration for a persistent
-    /// backend path.
+    /// Builds the storage-factory configuration for a persistent MDBX path.
     pub(super) fn storage_config_for_path(
         &self,
         path: PathBuf,
@@ -155,7 +154,6 @@ impl StorageSection {
                 .mdbx_geometry_growth_mb
                 .map(|mb| mb as isize * 1024 * 1024),
             mdbx_max_readers: self.mdbx_max_readers,
-            ..Default::default()
         }
     }
 }

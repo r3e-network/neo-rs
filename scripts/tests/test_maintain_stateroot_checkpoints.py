@@ -31,14 +31,16 @@ class MaintainStateRootCheckpointsTests(unittest.TestCase):
         restore_verified: bool = True,
         verified_stateroot_root: str | None = None,
         verified_against_reference: bool = True,
-        storage_provider: str | None = None,
     ) -> None:
         checkpoint = checkpoint_root / f"h{height}"
         (checkpoint / "mainnet").mkdir(parents=True)
-        (checkpoint / "StateRoot").mkdir()
-        info = f"height={height}\n"
-        if storage_provider is not None:
-            info += f"storage_provider={storage_provider}\n"
+        (checkpoint / "mainnet" / "mdbx.dat").write_bytes(b"mdbx-checkpoint")
+        info = (
+            f"height={height}\n"
+            "storage_provider=mdbx\n"
+            "state_root_layout=coordinated_mdbx\n"
+            "state_root_included=true\n"
+        )
         if restore_verified:
             root = verified_stateroot_root or f"0xroot{height}"
             info += (
@@ -72,19 +74,18 @@ class MaintainStateRootCheckpointsTests(unittest.TestCase):
             stdout=json.dumps({"decoded": {"format": "hash-index", "index": height}})
         )
 
-    def test_checkpoint_verification_uses_checkpoint_storage_provider_metadata(self):
+    def test_checkpoint_verification_uses_coordinated_mdbx_without_provider_flag(self):
         module = load_module()
         with tempfile.TemporaryDirectory() as tmp:
             checkpoint_root = Path(tmp) / "checkpoints"
             self.create_full_state_checkpoint(
                 checkpoint_root,
                 10,
-                storage_provider="rocksdb",
             )
-            providers = []
+            commands = []
 
             def fake_runner(command):
-                providers.append(command[command.index("--storage-provider") + 1])
+                commands.append(command)
                 return self.fake_probe_runner(command)
 
             reason = module.checkpoint_verification_reason(
@@ -94,7 +95,8 @@ class MaintainStateRootCheckpointsTests(unittest.TestCase):
             )
 
         self.assertIsNone(reason)
-        self.assertEqual(providers, ["rocksdb", "rocksdb", "rocksdb"])
+        self.assertEqual(len(commands), 3)
+        self.assertTrue(all("--storage-provider" not in command for command in commands))
 
     def checkpoint_status(
         self,
@@ -170,10 +172,7 @@ class MaintainStateRootCheckpointsTests(unittest.TestCase):
             self.assertIn("120000", latest["command"])
             self.assertIn("--data-dir", latest["command"])
             self.assertIn("--root", latest["command"])
-            self.assertEqual(
-                latest["command"][latest["command"].index("--storage-provider") + 1],
-                "rocksdb",
-            )
+            self.assertNotIn("--storage-provider", latest["command"])
 
     def test_plan_waits_until_status_contains_validated_checkpoint_stages(self):
         module = load_module()
@@ -193,7 +192,7 @@ class MaintainStateRootCheckpointsTests(unittest.TestCase):
             self.assertEqual(plan["status"], "waiting")
             self.assertEqual(plan["actions"], [])
             self.assertEqual(plan["chain_db"], str(chain_db))
-            self.assertEqual(plan["stateroot_db"], str(stateroot_db))
+            self.assertEqual(plan["stateroot_db"], str(chain_db))
 
     def test_plan_blocks_partial_checkpoint_stage_payload(self):
         module = load_module()
@@ -451,9 +450,7 @@ class MaintainStateRootCheckpointsTests(unittest.TestCase):
                     return SimpleNamespace(stdout="")
                 elif Path(command[0]).name == "restore-checkpoint.sh":
                     chain_db = Path(command[command.index("--chain-db") + 1])
-                    stateroot_db = Path(command[command.index("--stateroot-db") + 1])
                     chain_db.mkdir(parents=True)
-                    stateroot_db.mkdir(parents=True)
                     return SimpleNamespace(stdout="")
                 elif Path(command[0]).name == "neo-db-probe":
                     return self.fake_probe_runner(command)
@@ -574,8 +571,8 @@ class MaintainStateRootCheckpointsTests(unittest.TestCase):
             command = plan["actions"][0]["command"]
             self.assertIn("--chain-db", command)
             self.assertIn(str(chain_db), command)
-            self.assertIn("--stateroot-db", command)
-            self.assertIn(str(stateroot_db), command)
+            self.assertNotIn("--stateroot-db", command)
+            self.assertEqual(plan["stateroot_db"], str(chain_db))
 
     def test_plan_passes_configured_probe_binary_to_restore_verification(self):
         module = load_module()
@@ -648,19 +645,15 @@ class MaintainStateRootCheckpointsTests(unittest.TestCase):
                 commands.append(command)
                 if command[0] == "scripts/checkpoint-on-height.sh":
                     height = int(command[command.index("--height") + 1])
-                    checkpoint = checkpoint_root / f"h{height}"
-                    (checkpoint / "mainnet").mkdir(parents=True)
-                    (checkpoint / "StateRoot").mkdir()
-                    (checkpoint / "CHECKPOINT_INFO").write_text(
-                        f"height={height}\n",
-                        encoding="utf-8",
+                    self.create_full_state_checkpoint(
+                        checkpoint_root,
+                        height,
+                        restore_verified=False,
                     )
                     return SimpleNamespace(stdout="")
                 elif command[0] == "scripts/restore-checkpoint.sh":
                     chain_db = Path(command[command.index("--chain-db") + 1])
-                    stateroot_db = Path(command[command.index("--stateroot-db") + 1])
                     chain_db.mkdir(parents=True)
-                    stateroot_db.mkdir(parents=True)
                     return SimpleNamespace(stdout="")
                 elif command[0] == "target/debug/neo-db-probe":
                     if "--mpt-state-height" in command:
@@ -753,17 +746,14 @@ class MaintainStateRootCheckpointsTests(unittest.TestCase):
             def fake_runner(command):
                 if command[0] == "scripts/checkpoint-on-height.sh":
                     height = int(command[command.index("--height") + 1])
-                    checkpoint = checkpoint_root / f"h{height}"
-                    (checkpoint / "mainnet").mkdir(parents=True)
-                    (checkpoint / "StateRoot").mkdir()
-                    (checkpoint / "CHECKPOINT_INFO").write_text(
-                        f"height={height}\n",
-                        encoding="utf-8",
+                    self.create_full_state_checkpoint(
+                        checkpoint_root,
+                        height,
+                        restore_verified=False,
                     )
                     return SimpleNamespace(stdout="")
                 if command[0] == "scripts/restore-checkpoint.sh":
                     Path(command[command.index("--chain-db") + 1]).mkdir(parents=True)
-                    Path(command[command.index("--stateroot-db") + 1]).mkdir(parents=True)
                     return SimpleNamespace(stdout="")
                 if command[0] == "target/debug/neo-db-probe":
                     return self.fake_probe_runner(command)
@@ -795,18 +785,19 @@ class MaintainStateRootCheckpointsTests(unittest.TestCase):
                 if command[0] == "scripts/checkpoint-on-height.sh":
                     height = int(command[command.index("--height") + 1])
                     checkpoint = checkpoint_root / f"h{height}"
-                    (checkpoint / "mainnet").mkdir(parents=True)
-                    (checkpoint / "StateRoot").mkdir()
-                    (checkpoint / "CHECKPOINT_INFO").write_text(
-                        f"height={height}\nexpected_stateroot_root=0xroot{height}\n",
-                        encoding="utf-8",
+                    self.create_full_state_checkpoint(
+                        checkpoint_root,
+                        height,
+                        restore_verified=False,
                     )
+                    with (checkpoint / "CHECKPOINT_INFO").open(
+                        "a", encoding="utf-8"
+                    ) as info:
+                        info.write(f"expected_stateroot_root=0xroot{height}\n")
                     return SimpleNamespace(stdout="")
                 if command[0] == "scripts/restore-checkpoint.sh":
                     chain_db = Path(command[command.index("--chain-db") + 1])
-                    stateroot_db = Path(command[command.index("--stateroot-db") + 1])
                     chain_db.mkdir(parents=True)
-                    stateroot_db.mkdir(parents=True)
                     return SimpleNamespace(stdout="")
                 if command[0] == "target/debug/neo-db-probe":
                     if "--mpt-state-height" in command:
@@ -862,19 +853,15 @@ class MaintainStateRootCheckpointsTests(unittest.TestCase):
                 commands.append(command)
                 if command[0] == "scripts/checkpoint-on-height.sh":
                     height = int(command[command.index("--height") + 1])
-                    checkpoint = checkpoint_root / f"h{height}"
-                    (checkpoint / "mainnet").mkdir(parents=True)
-                    (checkpoint / "StateRoot").mkdir()
-                    (checkpoint / "CHECKPOINT_INFO").write_text(
-                        f"height={height}\n",
-                        encoding="utf-8",
+                    self.create_full_state_checkpoint(
+                        checkpoint_root,
+                        height,
+                        restore_verified=False,
                     )
                     return SimpleNamespace(stdout="")
                 if command[0] == "scripts/restore-checkpoint.sh":
                     chain_db = Path(command[command.index("--chain-db") + 1])
-                    stateroot_db = Path(command[command.index("--stateroot-db") + 1])
                     chain_db.mkdir(parents=True)
-                    stateroot_db.mkdir(parents=True)
                     return SimpleNamespace(stdout="")
                 if command[0] == "target/debug/neo-db-probe":
                     if "--mpt-state-height" in command:
@@ -1017,9 +1004,7 @@ path = "Data_MPT_validate_{0}"
                     return SimpleNamespace(stdout="")
                 elif Path(command[0]).name == "restore-checkpoint.sh":
                     chain_db = Path(command[command.index("--chain-db") + 1])
-                    stateroot_db = Path(command[command.index("--stateroot-db") + 1])
                     chain_db.mkdir(parents=True)
-                    stateroot_db.mkdir(parents=True)
                     return SimpleNamespace(stdout="")
                 elif Path(command[0]).name == "neo-db-probe":
                     height = int(Path(command[command.index("--db") + 1]).parent.name[1:])

@@ -13,7 +13,7 @@
 //! - `read_side`: indexer, application logs, and token-tracker construction.
 //! - `handles`: Typed optional-service ownership passed to daemon consumers.
 //! - `state`: StateService MPT store and commit-handler construction.
-//! - `store`: service-store opening and fast-sync backend mode.
+//! - `store`: service-store opening through the canonical factory.
 
 use std::sync::Arc;
 
@@ -51,7 +51,7 @@ pub(super) fn build_operational_services(
     config: &NodeConfig,
     network: u32,
     enable_local_replay_services: bool,
-    service_fast_sync: bool,
+    use_bulk_state_pipeline: bool,
     canonical_store: &Arc<RuntimeStore>,
 ) -> anyhow::Result<OperationalServices> {
     if !enable_local_replay_services {
@@ -75,7 +75,7 @@ pub(super) fn build_operational_services(
         config,
         network,
         &storage_provider,
-        service_fast_sync,
+        use_bulk_state_pipeline,
         canonical_store,
     )?;
     let read_side_services =

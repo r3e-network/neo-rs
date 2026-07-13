@@ -26,9 +26,6 @@ from neo_storage_tools import (  # noqa: E402
 
 ProbeRunner = Callable[[Path, list[str]], dict]
 RpcCaller = Callable[[str, str, list, float], Any]
-DEFAULT_STORAGE_PROVIDER = "mdbx"
-
-
 def display_hash_from_le(hash_hex_le: str) -> str:
     return "0x" + bytes.fromhex(hash_hex_le)[::-1].hex()
 
@@ -38,14 +35,11 @@ def run_probe(
     args: list[str],
     *,
     probe_bin: Path,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
 ) -> dict:
     command = [
         str(probe_bin),
         "--db",
         str(db_path),
-        "--storage-provider",
-        storage_provider,
         *args,
     ]
     completed = subprocess.run(
@@ -62,14 +56,12 @@ def local_ledger_pointer(
     *,
     db_path: Path,
     probe_bin: Path,
-    storage_provider: str,
     probe_runner: Callable[..., dict],
 ) -> dict:
     payload = probe_runner(
         db_path,
         ["--contract-id", "-4", "--key-hex", "0c", "--decode", "hash-index"],
         probe_bin=probe_bin,
-        storage_provider=storage_provider,
     )
     decoded = payload.get("decoded") or {}
     if not payload.get("found") or decoded.get("format") != "hash-index":
@@ -85,14 +77,12 @@ def local_gas_balance(
     db_path: Path,
     address: str,
     probe_bin: Path,
-    storage_provider: str,
     probe_runner: Callable[..., dict],
 ) -> dict:
     payload = probe_runner(
         db_path,
         ["--gas-address", address, "--decode", "nep17-account"],
         probe_bin=probe_bin,
-        storage_provider=storage_provider,
     )
     decoded = payload.get("decoded") or {}
     if payload.get("found"):
@@ -112,14 +102,12 @@ def compare_gas_accounts(
     addresses: list[str],
     probe_bin: Path,
     reference_rpc: str,
-    storage_provider: str = DEFAULT_STORAGE_PROVIDER,
     probe_runner: Callable[..., dict] = run_probe,
     rpc: RpcCaller = rpc_call,
 ) -> dict:
     ledger = local_ledger_pointer(
         db_path=db_path,
         probe_bin=probe_bin,
-        storage_provider=storage_provider,
         probe_runner=probe_runner,
     )
     height = ledger["height"]
@@ -133,7 +121,6 @@ def compare_gas_accounts(
             db_path=db_path,
             address=address,
             probe_bin=probe_bin,
-            storage_provider=storage_provider,
             probe_runner=probe_runner,
         )
         reference_value = rpc(
@@ -160,7 +147,7 @@ def compare_gas_accounts(
     all_balances_match = all(item["matches"] for item in balances)
     return {
         "db": str(db_path),
-        "storage_provider": storage_provider,
+        "storage_provider": "mdbx",
         "height": height,
         "local_block_hash": ledger["hash"],
         "reference_block_hash": reference_block_hash,
@@ -174,11 +161,11 @@ def compare_gas_accounts(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Compare offline GAS account storage from a neo-rs RocksDB directory "
+            "Compare offline GAS account storage from a neo-rs MDBX directory "
             "against Neo reference state at the DB's current Ledger height."
         )
     )
-    parser.add_argument("--db", required=True, type=Path, help="neo-rs chain RocksDB path")
+    parser.add_argument("--db", required=True, type=Path, help="neo-rs chain MDBX path")
     parser.add_argument(
         "--address",
         action="append",
@@ -190,12 +177,6 @@ def parse_args() -> argparse.Namespace:
         default=Path("target/debug/neo-db-probe"),
         type=Path,
         help="Path to the built neo-db-probe binary",
-    )
-    parser.add_argument(
-        "--storage-provider",
-        default=DEFAULT_STORAGE_PROVIDER,
-        choices=["mdbx", "rocksdb"],
-        help="Storage backend used by neo-db-probe for offline reads.",
     )
     parser.add_argument(
         "--reference-rpc",
@@ -216,7 +197,6 @@ def main() -> int:
         db_path=args.db,
         addresses=args.address,
         probe_bin=args.probe_bin,
-        storage_provider=args.storage_provider,
         reference_rpc=args.reference_rpc,
     )
     print(json.dumps(report, indent=2, sort_keys=True))

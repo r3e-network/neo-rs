@@ -22,17 +22,13 @@ pub(super) fn build_state_service_runtime(
     config: &NodeConfig,
     network: u32,
     storage_provider: &str,
-    service_fast_sync: bool,
+    use_bulk_state_pipeline: bool,
     canonical_store: &Arc<RuntimeStore>,
 ) -> anyhow::Result<StateServiceRuntime> {
-    let state_service_fast_sync = service_fast_sync && config.state_service.track_during_catchup;
-    let (state_store, durable_store, coordinated) = build_state_store(
-        config,
-        network,
-        storage_provider,
-        state_service_fast_sync,
-        canonical_store,
-    )?;
+    let use_async_state_pipeline =
+        use_bulk_state_pipeline && config.state_service.track_during_catchup;
+    let (state_store, durable_store, coordinated) =
+        build_state_store(config, network, storage_provider, canonical_store)?;
     let state_service = match (state_store.as_ref(), coordinated) {
         (Some(state_store), true) => Some(Arc::new(
             neo_state_service::commit_handlers::StateServiceCommitHandlers::try_new_coordinated(
@@ -41,7 +37,7 @@ pub(super) fn build_state_service_runtime(
             .map_err(anyhow::Error::msg)
             .context("constructing coordinated StateService commit handlers")?,
         )),
-        (Some(state_store), false) if state_service_fast_sync => {
+        (Some(state_store), false) if use_async_state_pipeline => {
             let handlers =
                 neo_state_service::commit_handlers::StateServiceCommitHandlers::try_new_async_with_capacity(
                     Arc::clone(state_store),
@@ -69,7 +65,6 @@ fn build_state_store(
     config: &NodeConfig,
     network: u32,
     storage_provider: &str,
-    fast_sync: bool,
     canonical_store: &Arc<RuntimeStore>,
 ) -> anyhow::Result<(
     Option<Arc<neo_state_service::StateStore<RuntimeStore>>>,
@@ -101,7 +96,6 @@ fn build_state_store(
             &config.storage,
             path,
             network,
-            fast_sync,
         )?;
         durable_store = Some(Arc::clone(&backing));
         Arc::new(

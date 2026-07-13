@@ -20,18 +20,18 @@ def load_module():
 
 
 def write_config(path: Path, *, chain_db: Path, stateroot_db: Path) -> None:
+    del stateroot_db
     path.write_text(
         f"""
 [network]
 network_magic = 0x334F454E
 
 [storage]
-backend = "rocksdb"
+backend = "mdbx"
 data_dir = "{chain_db}"
 
 [state_service]
 enabled = true
-path = "{stateroot_db}"
 track_during_catchup = true
 """,
         encoding="utf-8",
@@ -41,7 +41,7 @@ track_during_catchup = true
 def create_store_dirs(*paths: Path) -> None:
     for path in paths:
         path.mkdir(parents=True)
-        (path / "CURRENT").write_text("MANIFEST-000001\n", encoding="utf-8")
+        (path / "mdbx.dat").write_bytes(b"mdbx")
 
 
 def create_mdbx_store_dirs(*paths: Path) -> None:
@@ -60,14 +60,13 @@ def write_checkpoint(
 ) -> Path:
     checkpoint = root / f"h{height}"
     (checkpoint / "mainnet").mkdir(parents=True)
-    (checkpoint / "mainnet" / "CURRENT").write_text("MANIFEST-chain\n", encoding="utf-8")
-    lines = [f"height={height}"]
+    (checkpoint / "mainnet" / "mdbx.dat").write_bytes(b"mdbx-checkpoint")
+    lines = [
+        f"height={height}",
+        "storage_provider=mdbx",
+        "state_root_layout=coordinated_mdbx",
+    ]
     if full_state:
-        (checkpoint / "StateRoot").mkdir()
-        (checkpoint / "StateRoot" / "CURRENT").write_text(
-            "MANIFEST-state\n",
-            encoding="utf-8",
-        )
         lines.append("state_root_included=true")
         if restore_verified:
             lines.extend(
@@ -181,8 +180,7 @@ class StateRootRecoveryPlanTests(unittest.TestCase):
                 stateroot_db=root / "stale-config-state",
             )
             runtime_chain = root / "runtime" / "chain"
-            runtime_stateroot = root / "runtime" / "StateRoot"
-            create_mdbx_store_dirs(runtime_chain, runtime_stateroot)
+            create_mdbx_store_dirs(runtime_chain)
             probe_commands = []
 
             def run(command, *, check, capture_output, text):
@@ -198,40 +196,28 @@ class StateRootRecoveryPlanTests(unittest.TestCase):
                 node_config=config,
                 checkpoint_root=checkpoints,
                 chain_db=runtime_chain,
-                stateroot_db=runtime_stateroot,
-                storage_provider="mdbx",
                 runner=run,
             )
 
         self.assertEqual(plan["mode"], "restore-full-state-checkpoint")
         self.assertEqual(plan["storage_provider"], "mdbx")
         self.assertEqual(plan["chain"]["path"], str(runtime_chain))
-        self.assertEqual(plan["state_service"]["path"], str(runtime_stateroot))
+        self.assertEqual(plan["state_service"]["path"], str(runtime_chain))
         self.assertEqual(
             probe_commands[0][probe_commands[0].index("--db") + 1],
             str(runtime_chain),
         )
         self.assertEqual(
-            probe_commands[0][probe_commands[0].index("--storage-provider") + 1],
-            "mdbx",
-        )
-        self.assertEqual(
             probe_commands[1][probe_commands[1].index("--db") + 1],
-            str(runtime_stateroot),
+            str(runtime_chain),
         )
-        self.assertEqual(
-            probe_commands[1][probe_commands[1].index("--storage-provider") + 1],
-            "mdbx",
-        )
+        self.assertTrue(all("--storage-provider" not in command for command in probe_commands))
         restore_command = plan["recommended_action"]["commands"][0]
         self.assertEqual(
             restore_command[restore_command.index("--chain-db") + 1],
             str(runtime_chain),
         )
-        self.assertEqual(
-            restore_command[restore_command.index("--stateroot-db") + 1],
-            str(runtime_stateroot),
-        )
+        self.assertNotIn("--stateroot-db", restore_command)
 
     def test_cli_accepts_explicit_db_overrides(self):
         module = load_module()
@@ -244,18 +230,12 @@ class StateRootRecoveryPlanTests(unittest.TestCase):
                 "neo.toml",
                 "--chain-db",
                 "runtime-chain",
-                "--stateroot-db",
-                "runtime-state",
-                "--storage-provider",
-                "mdbx",
             ],
         ):
             args = module.parse_args()
 
         self.assertEqual(args.node_config, "neo.toml")
         self.assertEqual(args.chain_db, "runtime-chain")
-        self.assertEqual(args.stateroot_db, "runtime-state")
-        self.assertEqual(args.storage_provider, "mdbx")
 
     def test_chooses_nearest_full_state_checkpoint_before_chain_height(self):
         module = load_module()
@@ -279,7 +259,7 @@ class StateRootRecoveryPlanTests(unittest.TestCase):
         self.assertEqual(plan["mode"], "restore-full-state-checkpoint")
         self.assertEqual(plan["recommended_action"]["checkpoint"]["height"], 100)
         command = plan["recommended_action"]["commands"][0]
-        self.assertIn("--stateroot-db", command)
+        self.assertNotIn("--stateroot-db", command)
         self.assertIn("--dry-run", command)
         self.assertEqual(len(plan["checkpoints"]["full_state"]), 1)
         self.assertEqual(len(plan["checkpoints"]["chain_only"]), 1)

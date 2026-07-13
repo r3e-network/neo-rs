@@ -41,7 +41,7 @@ services:
       - NEO_PROFILE=${NEO_PROFILE:-}
       - NEO_CONFIG=${NEO_CONFIG:-}
       - NEO_STORAGE=${NEO_STORAGE:-}
-      - NEO_BACKEND=${NEO_BACKEND:-rocksdb}
+      - NEO_BACKEND=${NEO_BACKEND:-mdbx}
       - NEO_PLUGINS_DIR=${NEO_PLUGINS_DIR:-/data/Plugins}
       - NEO_RPC_PORT=${NEO_RPC_PORT:-}
       - NEO_LISTEN_PORT=${NEO_LISTEN_PORT:-}

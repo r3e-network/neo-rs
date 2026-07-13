@@ -3,12 +3,7 @@ use criterion::{BatchSize, BenchmarkId, Criterion, black_box, criterion_group, c
 use neo_state_service::{
     StateRootApplyMetrics, StateStore, commit_handlers::StateServiceCommitHandlers,
 };
-use neo_storage::{
-    DataCache, StorageItem, StorageKey,
-    mdbx::MdbxStore,
-    persistence::{Store, storage::StorageConfig},
-    rocksdb::{RocksDBStoreProvider, RocksDbStore},
-};
+use neo_storage::{DataCache, StorageItem, StorageKey, mdbx::MdbxStore, persistence::Store};
 use std::sync::Arc;
 
 #[path = "../support/mod.rs"]
@@ -93,23 +88,6 @@ impl<S: Store, G> TransactionBatchWorkload<S, G> {
     }
 }
 
-fn make_rocksdb_state_store() -> (StateStore<RocksDbStore>, BenchTempDir) {
-    let tempdir = BenchTempDir::new("neo-state-service-rocksdb-bench");
-    let backing = Arc::new(
-        RocksDBStoreProvider::new(StorageConfig {
-            path: tempdir.path().to_path_buf(),
-            ..Default::default()
-        })
-        .with_read_ahead(true)
-        .get_rocksdb_store("")
-        .expect("open rocksdb"),
-    );
-    (
-        StateStore::with_mpt_store(false, backing).expect("rocksdb-backed state store"),
-        tempdir,
-    )
-}
-
 fn make_mdbx_state_store() -> (StateStore<MdbxStore>, BenchTempDir) {
     let (backing, tempdir) = make_mdbx_store("neo-state-service-mdbx-bench");
     (
@@ -133,21 +111,6 @@ fn bench_state_service_apply_snapshot_changes(c: &mut Criterion) {
         });
     }
     group.finish();
-
-    let mut rocksdb_group = c.benchmark_group("state_service/apply_snapshot_changes_rocksdb");
-    for &change_count in &[1usize, 10, 100, 500, 2000] {
-        let snapshot = make_snapshot(change_count);
-        rocksdb_group.bench_function(format!("{change_count}_changes"), |b| {
-            let (store, _tempdir) = make_rocksdb_state_store();
-            let mut next_index = 0u32;
-            b.iter(|| {
-                let index = next_index;
-                next_index = next_index.wrapping_add(1);
-                black_box(store.apply_snapshot_changes(index, &snapshot).unwrap());
-            });
-        });
-    }
-    rocksdb_group.finish();
 
     let mut mdbx_group = c.benchmark_group("state_service/apply_snapshot_changes_mdbx");
     for &change_count in &[1usize, 10, 100, 500, 2000] {
@@ -188,30 +151,6 @@ fn bench_state_service_empty_continuation_batches(c: &mut Criterion) {
         });
     }
     group.finish();
-
-    let mut rocksdb_group = c.benchmark_group("state_service/empty_continuation_batches_rocksdb");
-    for &batch_len in &[10usize, 100, 1000, 4096] {
-        rocksdb_group.bench_function(format!("{batch_len}_blocks"), |b| {
-            let (store, _tempdir) = make_rocksdb_state_store();
-            let store = Arc::new(store);
-            let handlers = StateServiceCommitHandlers::new_async_with_capacity(
-                Arc::clone(&store),
-                batch_len.max(1),
-            );
-            let seed = make_snapshot(1);
-            let empty = DataCache::new(false);
-            let mut next_index = 1u32;
-            store
-                .apply_snapshot_changes(0, &seed)
-                .expect("seed root applies");
-            b.iter(|| {
-                let start = next_index;
-                next_index = next_index.wrapping_add(batch_len as u32);
-                black_box(apply_empty_batch(&handlers, &empty, start, batch_len));
-            });
-        });
-    }
-    rocksdb_group.finish();
 
     let mut mdbx_group = c.benchmark_group("state_service/empty_continuation_batches_mdbx");
     for &batch_len in &[10usize, 100, 1000, 4096] {

@@ -1407,10 +1407,7 @@ where
     }
 
     fn should_publish_live_overlay(&self) -> bool {
-        match self.backing.as_ref() {
-            None => true,
-            Some(backing) => backing.has_pending_fast_sync_writes(),
-        }
+        self.backing.is_none()
     }
 
     fn insert_local_root_records(

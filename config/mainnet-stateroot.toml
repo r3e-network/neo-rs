@@ -95,7 +95,6 @@ max_transactions = 50000
 
 [state_service]
 enabled = true
-path = "StateRoot"
 full_state = true
 track_during_catchup = true
 auto_verify = false

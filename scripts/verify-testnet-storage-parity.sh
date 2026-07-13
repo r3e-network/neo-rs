@@ -28,7 +28,7 @@ if [[ $# -lt 5 || $# -gt 6 ]]; then
   exit 1
 fi
 
-for cmd in cargo curl jq xxd base64; do
+for cmd in cargo curl jq xxd base64 tac; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "required command not found: $cmd" >&2
     exit 1
@@ -109,17 +109,21 @@ rpc_call() {
     "$RPC_URL"
 }
 
-LOCAL_HEIGHT_OUT="$(
-  cargo run -q -p neo-core --features rocksdb --example print_height -- "$STORAGE_PATH" "$HEIGHT" \
-    | tr -d '\r'
-)"
+probe() {
+  cargo run -q -p neo-node --bin neo-db-probe -- --db "$STORAGE_PATH" "$@"
+}
 
-LOCAL_HEIGHT="$(printf '%s\n' "$LOCAL_HEIGHT_OUT" | awk -F= '/^current_index=/{print $2; exit}')"
-LOCAL_HASH="$(printf '%s\n' "$LOCAL_HEIGHT_OUT" | awk -F= -v h="$HEIGHT" '$1=="block_hash[" h "]"{print $2; exit}')"
+LOCAL_HEIGHT_OUT="$(probe --contract-id -4 --key-hex 0c --decode hash-index | tr -d '\r')"
+LOCAL_HEIGHT="$(printf '%s\n' "$LOCAL_HEIGHT_OUT" | jq -r '.decoded.index // empty')"
+BLOCK_KEY_HEX="09$(printf '%08x' "$HEIGHT")"
+LOCAL_HASH_OUT="$(probe --contract-id -4 --key-hex "$BLOCK_KEY_HEX" | tr -d '\r')"
+LOCAL_HASH_RAW="$(printf '%s\n' "$LOCAL_HASH_OUT" | jq -r '.value_hex // empty')"
+LOCAL_HASH="0x$(printf '%s' "$LOCAL_HASH_RAW" | fold -w2 | tac | tr -d '\n')"
 
 if [[ -z "$LOCAL_HEIGHT" || -z "$LOCAL_HASH" || "$LOCAL_HASH" == "<none>" ]]; then
-  echo "failed to read local height/hash from print_height output:" >&2
+  echo "failed to read local height/hash from neo-db-probe output:" >&2
   printf '%s\n' "$LOCAL_HEIGHT_OUT" >&2
+  printf '%s\n' "$LOCAL_HASH_OUT" >&2
   exit 1
 fi
 
@@ -130,7 +134,7 @@ fi
 
 if (( LOCAL_HEIGHT != HEIGHT )); then
   echo "state parity check requires height == local tip (requested=$HEIGHT local_tip=$LOCAL_HEIGHT)" >&2
-  echo "use print_height/getblockhash for historical hash parity; storage-key parity is only valid at current local tip" >&2
+  echo "historical hash parity is available, but storage-key parity is only valid at the current local tip" >&2
   exit 1
 fi
 
@@ -173,19 +177,16 @@ else
   REMOTE_STATE_B64="$(printf '%s\n' "$REMOTE_STATE_RESP" | jq -r '.result // empty')"
 fi
 
-LOCAL_STATE_OUT="$(
-  cargo run -q -p neo-core --features rocksdb --example print_storage_key -- \
-    "$STORAGE_PATH" "$CONTRACT_ID" "$KEY_SUFFIX_HEX" \
-    | tr -d '\r'
-)"
-LOCAL_VALUE_HEX="$(printf '%s\n' "$LOCAL_STATE_OUT" | awk -F= '/^value_hex=/{print $2; exit}')"
+LOCAL_STATE_OUT="$(probe --contract-id "$CONTRACT_ID" --key-hex "$KEY_SUFFIX_HEX" | tr -d '\r')"
+LOCAL_FOUND="$(printf '%s\n' "$LOCAL_STATE_OUT" | jq -r '.found')"
+LOCAL_VALUE_HEX="$(printf '%s\n' "$LOCAL_STATE_OUT" | jq -r '.value_hex // empty')"
 if [[ -z "$LOCAL_VALUE_HEX" ]]; then
   echo "failed to parse local storage output:" >&2
   printf '%s\n' "$LOCAL_STATE_OUT" >&2
   exit 1
 fi
 
-if [[ "$LOCAL_VALUE_HEX" == "<none>" ]]; then
+if [[ "$LOCAL_FOUND" != "true" ]]; then
   LOCAL_STATE_B64=""
 else
   LOCAL_VALUE_HEX="${LOCAL_VALUE_HEX#0x}"

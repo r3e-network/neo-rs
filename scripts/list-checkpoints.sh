@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# List available chain+StateRoot checkpoints in pretty form.
+# List available coordinated MDBX checkpoints in pretty form.
 #
 # Usage: scripts/list-checkpoints.sh [--root <path>] [--data-dir <path>]
 
@@ -23,7 +23,7 @@ if [[ ! -d "$CHECKPOINT_ROOT" ]]; then
   echo "no checkpoint root at $CHECKPOINT_ROOT" >&2; exit 1
 fi
 
-printf '%-10s  %-21s  %-10s  %-10s  %s\n' "HEIGHT" "COMPLETED" "DU-CHAIN" "DU-STATE" "PATH"
+printf '%-10s  %-21s  %-10s  %-10s  %s\n' "HEIGHT" "COMPLETED" "DU-MDBX" "STATE" "PATH"
 shopt -s nullglob
 mapfile -t dirs < <(printf '%s\n' "${CHECKPOINT_ROOT}"/h[0-9]* | sort -t h -k2,2n)
 if [[ ${#dirs[@]} -eq 0 ]]; then
@@ -41,6 +41,6 @@ for d in "${dirs[@]}"; do
     completed="?"
   fi
   du_chain=$(du -sh "$d/mainnet" 2>/dev/null | awk '{print $1}')
-  du_state=$(du -sh "$d/StateRoot" 2>/dev/null | awk '{print $1}')
-  printf '%-10s  %-21s  %-10s  %-10s  %s\n' "$h" "${completed}" "${du_chain:--}" "${du_state:--}" "$d"
+  state_included=$(sed -n 's/^state_root_included=//p' "$d/CHECKPOINT_INFO" 2>/dev/null | head -1)
+  printf '%-10s  %-21s  %-10s  %-10s  %s\n' "$h" "${completed}" "${du_chain:--}" "${state_included:--}" "$d"
 done

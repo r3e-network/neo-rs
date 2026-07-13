@@ -9,7 +9,6 @@ use std::sync::Arc;
 
 use neo_config::ProtocolSettings;
 use neo_storage::persistence::providers::RuntimeStore;
-use neo_storage::persistence::store::Store;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -175,18 +174,15 @@ pub(in crate::node) async fn build_node(
         &store,
     )?;
     let durable_tip_height = durable_tip_index.unwrap_or(0);
-    let use_fast_sync_store_mode = ledger_mode.uses_local_replay_services()
+    let use_bulk_state_pipeline = ledger_mode.uses_local_replay_services()
         && (durable_tip_height == 0 || startup_bulk_import);
-    if use_fast_sync_store_mode {
+    if use_bulk_state_pipeline {
         info!(
             target: "neo::sync",
             startup_bulk_import,
             durable_tip_height,
-            "enabling fast-sync store mode for initial catch-up (WAL disabled, auto-compaction off)"
+            "enabling bounded asynchronous StateService pipeline for initial catch-up"
         );
-        if store.supports_fast_sync_mode() {
-            store.enable_fast_sync_mode();
-        }
     }
 
     // Native dispatch must be available before genesis initialization, and the
@@ -206,7 +202,7 @@ pub(in crate::node) async fn build_node(
         config,
         settings.network,
         ledger_mode.uses_local_replay_services(),
-        use_fast_sync_store_mode,
+        use_bulk_state_pipeline,
         &store,
     )?;
 

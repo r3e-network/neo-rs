@@ -111,89 +111,6 @@ class RunBoundedReplayTests(unittest.TestCase):
             ],
         )
 
-    def test_materialize_state_service_config_overrides_existing_path(self):
-        module = load_module()
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            config = root / "node.toml"
-            config.write_text(
-                "\n".join(
-                    [
-                        "[storage]",
-                        'data_dir = "old-chain"',
-                        "",
-                        "[state_service]",
-                        "enabled = true",
-                        'path = "old-state-root"',
-                        "full_state = true",
-                    ]
-                )
-                + "\n",
-                encoding="utf-8",
-            )
-
-            runtime_config = module.materialize_state_service_config(
-                config,
-                root / "fresh" / "StateRoot",
-                root / "logs",
-            )
-
-            text = runtime_config.read_text(encoding="utf-8")
-            self.assertIn('[state_service]\n', text)
-            self.assertIn(f'path = {json.dumps(str(root / "fresh" / "StateRoot"))}', text)
-            self.assertNotIn("old-state-root", text)
-
-    def test_materialize_state_service_config_adds_missing_path(self):
-        module = load_module()
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            config = root / "node.toml"
-            config.write_text(
-                "\n".join(
-                    [
-                        "[network]",
-                        "network_magic = 0x334F454E",
-                        "",
-                        "[state_service]",
-                        "enabled = true",
-                        "full_state = true",
-                    ]
-                )
-                + "\n",
-                encoding="utf-8",
-            )
-
-            runtime_config = module.materialize_state_service_config(
-                config,
-                root / "StateRoot",
-                root / "runtime",
-            )
-
-            self.assertIn(
-                f'path = {json.dumps(str(root / "StateRoot"))}',
-                runtime_config.read_text(encoding="utf-8"),
-            )
-
-    def test_materialize_state_service_config_keeps_mdbx_config_unchanged(self):
-        module = load_module()
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            config = root / "node.toml"
-            config.write_text("[state_service]\nenabled = true\n", encoding="utf-8")
-
-            runtime_config = module.materialize_state_service_config(
-                config,
-                root / "chain",
-                root / "runtime",
-                "mdbx",
-            )
-
-            self.assertEqual(runtime_config, config)
-            self.assertNotIn("path =", config.read_text(encoding="utf-8"))
-
     def test_node_command_can_import_chain_acc_before_syncing(self):
         module = load_module()
 
@@ -316,7 +233,7 @@ class RunBoundedReplayTests(unittest.TestCase):
             module.sys.argv = original_argv
 
         self.assertTrue(args.require_stateroot_height_match)
-        self.assertEqual(args.stateroot_db, Path("bounded/chain"))
+        self.assertFalse(hasattr(args, "stateroot_db"))
 
     def test_import_chain_with_mdbx_db_requires_height_match_by_default(self):
         module = load_module()
@@ -338,9 +255,9 @@ class RunBoundedReplayTests(unittest.TestCase):
             module.sys.argv = original_argv
 
         self.assertTrue(args.require_stateroot_height_match)
-        self.assertEqual(args.stateroot_db, Path("bounded/chain"))
+        self.assertFalse(hasattr(args, "stateroot_db"))
 
-    def test_parse_args_rejects_separate_mdbx_stateroot_db(self):
+    def test_parse_args_rejects_removed_stateroot_db_option(self):
         module = load_module()
         original_argv = module.sys.argv
         try:
@@ -456,17 +373,6 @@ class RunBoundedReplayTests(unittest.TestCase):
                     'neo_state_service_mpt_apply_stage_avg_us{stage="queue_wait"} 900',
                     'neo_state_service_mpt_apply_stage_avg_us{stage="trie_commit"} 120',
                     'neo_state_service_mpt_apply_avg_items{kind="overlay_entries"} 19',
-                    "neo_storage_rocksdb_batch_pending_operations 7",
-                    "neo_storage_rocksdb_batch_batches_flushed_total 3",
-                    "neo_storage_rocksdb_batch_operations_written_total 900",
-                    "neo_storage_rocksdb_batch_bytes_written_total 2048",
-                    "neo_storage_rocksdb_batch_flush_timeouts_total 1",
-                    "neo_storage_rocksdb_batch_avg_ops_per_flush 300",
-                    "neo_storage_rocksdb_batch_avg_bytes_per_flush 682",
-                    "neo_storage_rocksdb_batch_avg_flush_duration_ms 11",
-                    "neo_storage_rocksdb_batch_max_batch_size 5000",
-                    "neo_storage_rocksdb_batch_max_batch_bytes 1048576",
-                    "neo_storage_rocksdb_batch_disable_wal 1",
                     'neo_node_service_enabled{service="state_service"} 1',
                     "neo_state_service_mpt_apply_avg_changes 17",
                     "bad_line nope",
@@ -516,20 +422,6 @@ class RunBoundedReplayTests(unittest.TestCase):
             metrics['neo_state_service_mpt_apply_avg_items{kind="overlay_entries"}'],
             19.0,
         )
-        self.assertEqual(metrics["neo_storage_rocksdb_batch_pending_operations"], 7.0)
-        self.assertEqual(metrics["neo_storage_rocksdb_batch_batches_flushed_total"], 3.0)
-        self.assertEqual(
-            metrics["neo_storage_rocksdb_batch_operations_written_total"],
-            900.0,
-        )
-        self.assertEqual(metrics["neo_storage_rocksdb_batch_bytes_written_total"], 2048.0)
-        self.assertEqual(metrics["neo_storage_rocksdb_batch_flush_timeouts_total"], 1.0)
-        self.assertEqual(metrics["neo_storage_rocksdb_batch_avg_ops_per_flush"], 300.0)
-        self.assertEqual(metrics["neo_storage_rocksdb_batch_avg_bytes_per_flush"], 682.0)
-        self.assertEqual(metrics["neo_storage_rocksdb_batch_avg_flush_duration_ms"], 11.0)
-        self.assertEqual(metrics["neo_storage_rocksdb_batch_max_batch_size"], 5000.0)
-        self.assertEqual(metrics["neo_storage_rocksdb_batch_max_batch_bytes"], 1048576.0)
-        self.assertEqual(metrics["neo_storage_rocksdb_batch_disable_wal"], 1.0)
         self.assertEqual(metrics["neo_state_service_mpt_apply_avg_changes"], 17.0)
         self.assertNotIn("neo_node_service_enabled", metrics)
 
@@ -1423,8 +1315,7 @@ class RunBoundedReplayTests(unittest.TestCase):
 
             updated = module.attach_post_probe_report(
                 report,
-                chain_db=Path("clean/chain"),
-                stateroot_db=Path("clean/state-root-334F454E"),
+                db=Path("clean/chain"),
                 probe_bin=Path("target/release/neo-db-probe"),
                 require_stateroot_height_match=True,
             )
@@ -1484,8 +1375,6 @@ class RunBoundedReplayTests(unittest.TestCase):
                             "native_persist_avg_total_us": 3000,
                             "native_persist_tx_hot_stage": "application",
                             "native_persist_tx_hot_stage_avg_us": 1700,
-                            "rocksdb_batch_avg_flush_duration_ms": 11,
-                            "rocksdb_batch_pending_operations": 19,
                         },
                         "reference": {
                             "endpoint": "http://seed1.neo.org:10332",
@@ -1516,8 +1405,6 @@ class RunBoundedReplayTests(unittest.TestCase):
         self.assertEqual(hot["native_persist_avg_total_us"], 3000)
         self.assertEqual(hot["native_persist_tx_hot_stage"], "application")
         self.assertEqual(hot["native_persist_tx_hot_stage_avg_us"], 1700)
-        self.assertEqual(hot["rocksdb_batch_avg_flush_duration_ms"], 11)
-        self.assertEqual(hot["rocksdb_batch_pending_operations"], 19)
         reference = updated["sync_proof"]["fast_sync_reference"]
         self.assertEqual(reference["endpoint"], "http://seed1.neo.org:10332")
         self.assertEqual(reference["block_height"], 100000)
@@ -1730,10 +1617,7 @@ class RunBoundedReplayTests(unittest.TestCase):
         self.assertEqual(height, 677297)
         self.assertEqual(captured["command"][0], "target/release/neo-db-probe")
         self.assertEqual(captured["command"][captured["command"].index("--db") + 1], "bounded/data")
-        self.assertEqual(
-            captured["command"][captured["command"].index("--storage-provider") + 1],
-            "mdbx",
-        )
+        self.assertNotIn("--storage-provider", captured["command"])
         self.assertIn("--decode", captured["command"])
         self.assertTrue(captured["kwargs"]["check"])
 
@@ -1778,7 +1662,7 @@ class RunBoundedReplayTests(unittest.TestCase):
         try:
             module.subprocess.run = fake_run
             height = module.read_probe_mpt_state_height(
-                Path("bounded/state-root-334F454E"),
+                Path("bounded/data"),
                 Path("target/release/neo-db-probe"),
             )
         finally:
@@ -1788,12 +1672,9 @@ class RunBoundedReplayTests(unittest.TestCase):
         self.assertEqual(captured["command"][0], "target/release/neo-db-probe")
         self.assertEqual(
             captured["command"][captured["command"].index("--db") + 1],
-            "bounded/state-root-334F454E",
+            "bounded/data",
         )
-        self.assertEqual(
-            captured["command"][captured["command"].index("--storage-provider") + 1],
-            "mdbx",
-        )
+        self.assertNotIn("--storage-provider", captured["command"])
         self.assertIn("--mpt-state-height", captured["command"])
         self.assertTrue(captured["kwargs"]["check"])
 
@@ -1844,8 +1725,7 @@ class RunBoundedReplayTests(unittest.TestCase):
             module.read_probe_mpt_state_height = lambda *_args, **_kwargs: 677300
             module.read_probe_mpt_state_root = lambda *_args, **_kwargs: "0xabc123"
             post_probe = module.collect_post_probe(
-                chain_db=Path("bounded/chain"),
-                stateroot_db=Path("bounded/state-root-334F454E"),
+                db=Path("bounded/chain"),
                 probe_bin=Path("target/release/neo-db-probe"),
             )
         finally:
@@ -1877,8 +1757,7 @@ class RunBoundedReplayTests(unittest.TestCase):
                 return {"index": 11, "roothash": "0xabc123"}
 
             post_probe = module.collect_post_probe(
-                chain_db=Path("bounded/chain"),
-                stateroot_db=Path("bounded/state-root-334F454E"),
+                db=Path("bounded/chain"),
                 probe_bin=Path("target/release/neo-db-probe"),
                 reference_urls=["http://seed1.neo.org:10332,http://seed2.neo.org:10332"],
                 rpc=fake_rpc,
@@ -1930,8 +1809,7 @@ class RunBoundedReplayTests(unittest.TestCase):
             }
             updated = module.attach_post_probe_report(
                 report,
-                chain_db=Path("bounded/chain"),
-                stateroot_db=Path("bounded/state-root-334F454E"),
+                db=Path("bounded/chain"),
                 probe_bin=Path("target/release/neo-db-probe"),
                 require_stateroot_height_match=True,
             )
@@ -1959,8 +1837,7 @@ class RunBoundedReplayTests(unittest.TestCase):
             }
             updated = module.attach_post_probe_report(
                 report,
-                chain_db=Path("bounded/chain"),
-                stateroot_db=Path("bounded/state-root-334F454E"),
+                db=Path("bounded/chain"),
                 probe_bin=Path("target/release/neo-db-probe"),
                 require_stateroot_height_match=True,
                 reference_urls=["http://seed1.neo.org:10332"],
@@ -1997,8 +1874,7 @@ class RunBoundedReplayTests(unittest.TestCase):
             module.collect_post_probe = fake_collect
             updated = module.attach_post_probe_report(
                 report,
-                chain_db=Path("bounded/chain"),
-                stateroot_db=Path("bounded/state-root-334F454E"),
+                db=Path("bounded/chain"),
                 probe_bin=Path("target/release/neo-db-probe"),
                 require_stateroot_height_match=True,
                 require_reference_stateroot_match=True,
@@ -2029,8 +1905,7 @@ class RunBoundedReplayTests(unittest.TestCase):
             }
             updated = module.attach_post_probe_report(
                 report,
-                chain_db=Path("bounded/chain"),
-                stateroot_db=Path("bounded/state-root-334F454E"),
+                db=Path("bounded/chain"),
                 probe_bin=Path("target/release/neo-db-probe"),
                 require_stateroot_height_match=False,
                 reference_urls=[

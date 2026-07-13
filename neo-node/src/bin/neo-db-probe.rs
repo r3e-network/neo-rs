@@ -48,7 +48,7 @@ use serde_json::{Value, json};
     about = "Inspect Neo storage and static archives without starting a node"
 )]
 struct Cli {
-    /// Hot canonical MDBX or RocksDB directory.
+    /// Hot canonical MDBX directory.
     #[arg(
         long,
         value_name = "PATH",
@@ -63,9 +63,6 @@ struct Cli {
     /// Verify every archive frame and persistent index entry, then exit.
     #[arg(long, requires = "static_files_dir")]
     scrub_static_files: bool,
-
-    #[arg(long, value_enum, default_value_t = default_storage_provider_arg())]
-    storage_provider: StorageProviderArg,
 
     #[arg(long, value_name = "ADDRESS")]
     gas_address: Option<String>,
@@ -132,25 +129,6 @@ enum DecodeMode {
     HashIndex,
     TransactionState,
     ContractState,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-enum StorageProviderArg {
-    Mdbx,
-    Rocksdb,
-}
-
-impl StorageProviderArg {
-    fn as_provider_name(self) -> &'static str {
-        match self {
-            StorageProviderArg::Mdbx => "mdbx",
-            StorageProviderArg::Rocksdb => "rocksdb",
-        }
-    }
-}
-
-fn default_storage_provider_arg() -> StorageProviderArg {
-    StorageProviderArg::Mdbx
 }
 
 #[derive(Debug)]
@@ -305,7 +283,6 @@ fn main() -> Result<()> {
     {
         ensure_mpt_probe_args(&cli)?;
         let output = probe_mpt_state(
-            cli.storage_provider,
             db,
             cli.mpt_state_height,
             cli.mpt_state_root,
@@ -335,13 +312,8 @@ fn main() -> Result<()> {
                 && cli.key_hex.is_none(),
             "--replay-tx cannot be combined with storage probe arguments"
         );
-        let output = replay_transaction(
-            cli.storage_provider,
-            db,
-            cli.static_files_dir.as_deref(),
-            tx_hash,
-        )
-        .with_context(|| format!("replay transaction {tx_hash} from {}", db.display()))?;
+        let output = replay_transaction(db, cli.static_files_dir.as_deref(), tx_hash)
+            .with_context(|| format!("replay transaction {tx_hash} from {}", db.display()))?;
         println!("{}", serde_json::to_string_pretty(&output)?);
         return Ok(());
     }
@@ -362,7 +334,7 @@ fn main() -> Result<()> {
         let block = cli.replay_block_base64.as_deref().ok_or_else(|| {
             anyhow!("--replay-block-base64 is required with --replay-raw-tx-base64")
         })?;
-        let output = replay_raw_transaction(cli.storage_provider, db, raw_tx, block)
+        let output = replay_raw_transaction(db, raw_tx, block)
             .with_context(|| format!("replay raw transaction against {}", db.display()))?;
         println!("{}", serde_json::to_string_pretty(&output)?);
         return Ok(());
@@ -385,7 +357,7 @@ fn main() -> Result<()> {
         let contract_id = cli
             .contract_id
             .ok_or_else(|| anyhow!("--contract-id is required with --dump-contract-storage"))?;
-        let output = dump_contract_storage(cli.storage_provider, db, contract_id, cli.dump_limit)
+        let output = dump_contract_storage(db, contract_id, cli.dump_limit)
             .with_context(|| format!("dump contract storage from {}", db.display()))?;
         println!("{}", serde_json::to_string_pretty(&output)?);
         return Ok(());
@@ -396,41 +368,27 @@ fn main() -> Result<()> {
     let written_len = if let Some(value) = cli.write_value_base64.as_deref() {
         let value = base64_decode(value).context("decode --write-value-base64")?;
         write_storage_value(
-            cli.storage_provider,
             db,
             request.contract_id,
             request.key_suffix.clone(),
             value.clone(),
         )
-        .with_context(|| {
-            format!(
-                "write {} at {}",
-                cli.storage_provider.as_provider_name(),
-                db.display()
-            )
-        })?;
+        .with_context(|| format!("write MDBX at {}", db.display(),))?;
         Some(value.len())
     } else {
         None
     };
     let value = read_storage_value(
-        cli.storage_provider,
         db,
         cli.static_files_dir.as_deref(),
         request.contract_id,
         request.key_suffix.clone(),
     )
-    .with_context(|| {
-        format!(
-            "read {} at {}",
-            cli.storage_provider.as_provider_name(),
-            db.display()
-        )
-    })?;
+    .with_context(|| format!("read MDBX at {}", db.display()))?;
 
     let mut output = json!({
         "db": db,
-        "storage_provider": cli.storage_provider.as_provider_name(),
+        "storage_provider": "mdbx",
         "contract_id": request.contract_id,
         "key_base64": base64_encode(&request.key_suffix),
         "key_hex": hex::encode(&request.key_suffix),
@@ -633,7 +591,6 @@ fn mpt_current_local_root_index_key() -> Vec<u8> {
 }
 
 fn probe_mpt_state(
-    storage_provider: StorageProviderArg,
     db_path: &Path,
     include_height: bool,
     root_index: Option<u32>,
@@ -646,24 +603,19 @@ fn probe_mpt_state(
     dump_limit: usize,
     decode: DecodeMode,
 ) -> Result<Value> {
-    let canonical_store = open_store(storage_provider, db_path, true)?;
-    let store = match storage_provider {
-        StorageProviderArg::Mdbx => Arc::new(
-            canonical_store
-                .open_coordinated_namespace(MDBX_STATE_SERVICE_NAMESPACE)
-                .context("open coordinated MDBX StateService namespace")?,
-        ),
-        StorageProviderArg::Rocksdb => canonical_store,
-    };
+    let canonical_store = open_store(db_path, true)?;
+    let store = Arc::new(
+        canonical_store
+            .open_coordinated_namespace(MDBX_STATE_SERVICE_NAMESPACE)
+            .context("open coordinated MDBX StateService namespace")?,
+    );
     let snapshot = store.snapshot();
     let mut output = json!({
         "db": db_path,
-        "storage_provider": storage_provider.as_provider_name(),
+        "storage_provider": "mdbx",
         "mode": "state-service-mpt",
+        "namespace": MDBX_STATE_SERVICE_NAMESPACE,
     });
-    if matches!(storage_provider, StorageProviderArg::Mdbx) {
-        output["namespace"] = json!(MDBX_STATE_SERVICE_NAMESPACE);
-    }
 
     if include_height {
         let key = mpt_current_local_root_index_key();
@@ -823,14 +775,9 @@ fn probe_mpt_state(
     Ok(output)
 }
 
-fn dump_contract_storage(
-    storage_provider: StorageProviderArg,
-    db_path: &Path,
-    contract_id: i32,
-    limit: usize,
-) -> Result<Value> {
+fn dump_contract_storage(db_path: &Path, contract_id: i32, limit: usize) -> Result<Value> {
     ensure!(limit > 0, "--dump-limit must be greater than zero");
-    let store = open_store(storage_provider, db_path, true)?;
+    let store = open_store(db_path, true)?;
     let prefix = StorageKey::new(contract_id, Vec::new());
     let mut entries = Vec::new();
     let mut truncated = false;
@@ -852,7 +799,7 @@ fn dump_contract_storage(
 
     Ok(json!({
         "db": db_path,
-        "storage_provider": storage_provider.as_provider_name(),
+        "storage_provider": "mdbx",
         "contract_id": contract_id,
         "storage_prefix_hex": hex::encode(storage_key_prefix_bytes(contract_id)),
         "entry_count": entries.len(),
@@ -862,13 +809,12 @@ fn dump_contract_storage(
 }
 
 fn read_storage_value(
-    storage_provider: StorageProviderArg,
     db_path: &Path,
     static_files_dir: Option<&Path>,
     contract_id: i32,
     key_suffix: Vec<u8>,
 ) -> Result<Option<Vec<u8>>> {
-    let store = open_store(storage_provider, db_path, true)?;
+    let store = open_store(db_path, true)?;
     let key = StorageKey::new(contract_id, key_suffix);
     if let Some(item) = store.try_get(&key) {
         return Ok(Some(item.to_value()));
@@ -887,46 +833,34 @@ fn read_storage_value(
 }
 
 fn write_storage_value(
-    storage_provider: StorageProviderArg,
     db_path: &Path,
     contract_id: i32,
     key_suffix: Vec<u8>,
     value: Vec<u8>,
 ) -> Result<()> {
-    let store = open_store(storage_provider, db_path, false)?;
+    let store = open_store(db_path, false)?;
     let mut snapshot = store.snapshot();
-    let snapshot = Arc::get_mut(&mut snapshot).ok_or_else(|| {
-        anyhow!(
-            "{} snapshot is unexpectedly shared",
-            storage_provider.as_provider_name()
-        )
-    })?;
+    let snapshot = Arc::get_mut(&mut snapshot)
+        .ok_or_else(|| anyhow!("MDBX snapshot is unexpectedly shared"))?;
     snapshot.put_sync(storage_key_bytes(contract_id, &key_suffix), value)?;
     snapshot.try_commit()?;
     Ok(())
 }
 
-fn open_store(
-    storage_provider: StorageProviderArg,
-    db_path: &Path,
-    read_only: bool,
-) -> Result<Arc<RuntimeStore>> {
+fn open_store(db_path: &Path, read_only: bool) -> Result<Arc<RuntimeStore>> {
     StoreFactory::get_store_with_config(
-        storage_provider.as_provider_name(),
+        "mdbx",
         StorageConfig {
             path: db_path.to_path_buf(),
             read_only,
             ..StorageConfig::default()
         },
     )
-    .map_err(|err| anyhow!("open {} store: {err}", storage_provider.as_provider_name()))
+    .map_err(|err| anyhow!("open MDBX store: {err}"))
 }
 
-fn open_store_cache(
-    storage_provider: StorageProviderArg,
-    db_path: &Path,
-) -> Result<(Arc<RuntimeStore>, StoreCache<RuntimeStore>)> {
-    let store = open_store(storage_provider, db_path, true)?;
+fn open_store_cache(db_path: &Path) -> Result<(Arc<RuntimeStore>, StoreCache<RuntimeStore>)> {
+    let store = open_store(db_path, true)?;
     let cache = StoreCache::<RuntimeStore>::new_from_store(Arc::clone(&store), false);
     Ok((store, cache))
 }
@@ -1006,7 +940,6 @@ fn scrub_static_archive(directory: &Path) -> Result<Value> {
 }
 
 fn replay_transaction(
-    storage_provider: StorageProviderArg,
     db_path: &Path,
     static_files_dir: Option<&Path>,
     tx_hash: &str,
@@ -1023,7 +956,7 @@ fn replay_transaction(
         .zip(trace_events.as_ref())
         .map(|(limit, events)| ReplayInstructionTracer::new(limit, Arc::clone(events)));
 
-    let (store, store_cache) = open_store_cache(storage_provider, db_path)?;
+    let (store, store_cache) = open_store_cache(db_path)?;
     let snapshot = store_cache.data_cache();
     let ledger_factory = open_offline_ledger_factory(static_files_dir, store.as_ref(), snapshot)?;
     let ledger = ledger_factory.provider(snapshot);
@@ -1055,7 +988,6 @@ fn replay_transaction(
 }
 
 fn replay_raw_transaction(
-    storage_provider: StorageProviderArg,
     db_path: &Path,
     raw_tx_base64: &str,
     block_base64: &str,
@@ -1081,7 +1013,7 @@ fn replay_raw_transaction(
         "raw transaction {tx_hash} is not included in supplied block"
     );
 
-    let (_store, store_cache) = open_store_cache(storage_provider, db_path)?;
+    let (_store, store_cache) = open_store_cache(db_path)?;
     let snapshot = store_cache.data_cache();
     execute_transaction_probe(
         db_path,

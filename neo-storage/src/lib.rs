@@ -15,7 +15,6 @@
 //! - `persistence`: Persistence traits, snapshots, transactions, maintenance
 //!   batches, and cache overlays.
 //! - `mdbx`: Production default MDBX provider and store adapter.
-//! - `rocksdb`: RocksDB provider, store, snapshot, and write-batch adapter.
 //! - `types`: Storage-domain types shared by store implementations.
 
 mod core;
@@ -23,7 +22,6 @@ mod errors;
 pub mod mdbx;
 /// Persistence traits, caches, snapshots, and in-memory store providers.
 pub mod persistence;
-pub mod rocksdb;
 pub mod types;
 
 // Canonical cache types live in `persistence::data_cache`; re-export the common

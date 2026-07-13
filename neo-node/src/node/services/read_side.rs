@@ -61,7 +61,6 @@ fn build_indexer_service(
             &config.storage,
             &path,
             network,
-            false,
         )?;
         Arc::new(
             neo_indexer::IndexerService::open_store_with_path(store, Some(path.clone()))
@@ -95,7 +94,6 @@ fn build_application_logs_service(
         &config.storage,
         Path::new(&logs_settings.path),
         network,
-        false,
     )?;
     let service = Arc::new(neo_rpc::application_logs::ApplicationLogsService::new(
         logs_settings.clone(),
@@ -129,7 +127,6 @@ fn build_tokens_tracker_services(
         &config.storage,
         Path::new(&tracker_settings.db_path),
         network,
-        false,
     )?;
     let service = Arc::new(neo_rpc::plugins::tokens_tracker::TokensTrackerService::new(
         tracker_settings.clone(),

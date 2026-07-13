@@ -7,7 +7,6 @@ POLL_SECONDS="${POLL_SECONDS:-15}"
 NODE_LOG="${NODE_LOG:-logs/neo-node-watchdog-node.log}"
 WATCHDOG_LOG="${WATCHDOG_LOG:-logs/neo-node-watchdog.log}"
 RUST_LOG_LEVEL="${RUST_LOG_LEVEL:-warn}"
-ROCKSDB_BATCH_PROFILE="${ROCKSDB_BATCH_PROFILE:-balanced}"
 NODE_CONFIG="${NODE_CONFIG:-neo_testnet_node.toml}"
 NODE_STORAGE="${NODE_STORAGE:-}"
 
@@ -53,7 +52,6 @@ start_node() {
   pkill -f "neo-node --config $NODE_CONFIG" >/dev/null 2>&1 || true
   env \
     RUST_LOG="$RUST_LOG_LEVEL" \
-    NEO_ROCKSDB_BATCH_PROFILE="$ROCKSDB_BATCH_PROFILE" \
     "${NODE_CMD[@]}" >>"$NODE_LOG" 2>&1 &
   NODE_PID=$!
   log "node started pid=$NODE_PID"
@@ -78,7 +76,7 @@ last_height=""
 last_header=""
 last_progress_ts=0
 
-log "watchdog config poll=${POLL_SECONDS}s stall=${STALL_SECONDS}s rocksdb_profile=${ROCKSDB_BATCH_PROFILE} node_bin=${NODE_BIN} config=${NODE_CONFIG} storage=${NODE_STORAGE:-<config-default>}"
+log "watchdog config poll=${POLL_SECONDS}s stall=${STALL_SECONDS}s node_bin=${NODE_BIN} config=${NODE_CONFIG} storage=${NODE_STORAGE:-<config-default>}"
 start_node
 last_progress_ts=$(date +%s)
 

@@ -443,8 +443,8 @@ fn state_store_mpt_constructor_surface_is_provider_neutral() {
     let source = include_str!("../../storage/state_store.rs");
 
     assert!(
-        !source.contains("fn with_mpt_rocksdb"),
-        "StateStore should accept durable MPT backends through generic S: Store, not a RocksDB-specific constructor"
+        !source.contains("fn with_mpt_mdbx"),
+        "StateStore should accept durable MPT backends through generic S: Store, not a backend-specific constructor"
     );
     assert!(
         !source.contains("fn with_mpt_memory_store"),
@@ -498,23 +498,22 @@ fn apply_snapshot_changes_is_noop_without_mpt_backend() {
 }
 
 #[test]
-fn with_mpt_store_accepts_rocksdb_backend_through_provider_neutral_store() {
+fn with_mpt_store_accepts_mdbx_backend_through_provider_neutral_store() {
+    use neo_storage::mdbx::MdbxStoreProvider;
     use neo_storage::persistence::storage::StorageConfig;
-    use neo_storage::rocksdb::RocksDBStoreProvider;
 
     let path = std::env::temp_dir().join(format!(
-        "neo-state-service-rocksdb-test-{}",
+        "neo-state-service-mdbx-test-{}",
         std::process::id()
     ));
     let _ = std::fs::remove_dir_all(&path);
     let backing = Arc::new(
-        RocksDBStoreProvider::new(StorageConfig {
+        MdbxStoreProvider::new(StorageConfig {
             path: path.clone(),
             ..Default::default()
         })
-        .with_read_ahead(true)
-        .get_rocksdb_store("")
-        .expect("open rocksdb"),
+        .get_mdbx_store("")
+        .expect("open MDBX"),
     );
 
     let store = StateStore::with_mpt_store(true, backing).expect("state store");

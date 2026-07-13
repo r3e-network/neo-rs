@@ -157,7 +157,7 @@ class RepositoryHygieneTests(unittest.TestCase):
             offenders,
             [],
             "shipped node presets should use canonical MDBX persistent storage; "
-            "RocksDB belongs in explicit fallback tests only",
+            "removed persistent backends must remain rejected",
         )
 
     def test_crate_src_roots_only_contain_entry_modules(self):

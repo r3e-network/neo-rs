@@ -10,7 +10,7 @@ members = [
     "neo-config",
     # Cryptography: hashing, ECC, signatures, BLS12-381.
     "neo-crypto",
-    # Storage traits, `DataCache`, MDBX, RocksDB, and in-memory stores.
+    # Storage traits, `DataCache`, MDBX, and in-memory stores.
     "neo-storage",
     # Append-only compressed static files for immutable ledger records.
     "neo-static-files",
@@ -340,7 +340,6 @@ governor = { version = "0.10.4", default-features = false, features = ["std", "d
 memchr = "2.8"
 
 # === Storage ===
-rocksdb = { version = "0.21", default-features = false, features = ["snappy", "lz4", "zlib"] }
 libmdbx = { version = "0.5.3", default-features = false }
 
 # === Network ===

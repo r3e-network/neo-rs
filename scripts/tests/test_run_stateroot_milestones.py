@@ -26,14 +26,16 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         *,
         restore_verified: bool = True,
         verified_stateroot_root: str | None = None,
-        storage_provider: str | None = None,
     ) -> None:
         checkpoint = checkpoint_root / f"h{height}"
         (checkpoint / "mainnet").mkdir(parents=True)
-        (checkpoint / "StateRoot").mkdir()
-        info = f"height={height}\nstate_root_included=true\n"
-        if storage_provider is not None:
-            info += f"storage_provider={storage_provider}\n"
+        (checkpoint / "mainnet" / "mdbx.dat").write_bytes(b"mdbx-checkpoint")
+        info = (
+            f"height={height}\n"
+            "storage_provider=mdbx\n"
+            "state_root_layout=coordinated_mdbx\n"
+            "state_root_included=true\n"
+        )
         if restore_verified:
             root = verified_stateroot_root or f"0xroot{height}"
             info += (
@@ -207,7 +209,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -237,10 +238,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         )
         bounded = plan["steps"][0]["bounded_command"]
         self.assertIn("scripts/run-bounded-mainnet-replay.py", bounded)
-        self.assertEqual(
-            bounded[bounded.index("--storage-provider") + 1],
-            "mdbx",
-        )
+        self.assertNotIn("--storage-provider", bounded)
         self.assertIn("--require-stateroot-height-match", bounded)
         self.assertIn("--require-reference-stateroot-match", bounded)
         self.assertIn("--sync-speed-floor-bps", bounded)
@@ -252,7 +250,7 @@ class RunStateRootMilestonesTests(unittest.TestCase):
         self.assertEqual(checkpoint[0], "scripts/checkpoint-on-height.sh")
         self.assertIn("--height", checkpoint)
         self.assertIn("20", checkpoint)
-        self.assertEqual(checkpoint[checkpoint.index("--storage-provider") + 1], "mdbx")
+        self.assertNotIn("--storage-provider", checkpoint)
 
     def test_build_plan_passes_metrics_url_to_bounded_command(self):
         module = load_module()
@@ -265,7 +263,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -292,7 +289,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -326,7 +322,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -357,7 +352,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -402,7 +396,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -429,7 +422,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -458,8 +450,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 "20",
                 "--chain-db",
                 "clean/chain",
-                "--stateroot-db",
-                "clean/state-root-334F454E",
                 "--checkpoint-root",
                 "clean/checkpoints",
                 "--log-dir",
@@ -482,8 +472,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 "10",
                 "--chain-db",
                 "clean/chain",
-                "--stateroot-db",
-                "clean/state-root-334F454E",
                 "--checkpoint-root",
                 "clean/checkpoints",
                 "--log-dir",
@@ -513,8 +501,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 "30",
                 "--chain-db",
                 "clean/chain",
-                "--stateroot-db",
-                "clean/state-root-334F454E",
                 "--checkpoint-root",
                 "clean/checkpoints",
                 "--log-dir",
@@ -542,8 +528,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 "30",
                 "--chain-db",
                 "clean/chain",
-                "--stateroot-db",
-                "clean/state-root-334F454E",
                 "--checkpoint-root",
                 "clean/checkpoints",
                 "--log-dir",
@@ -571,8 +555,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 "30",
                 "--chain-db",
                 "clean/chain",
-                "--stateroot-db",
-                "clean/state-root-334F454E",
                 "--checkpoint-root",
                 "clean/checkpoints",
                 "--log-dir",
@@ -605,11 +587,13 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             checkpoint_root = Path(tmp) / "checkpoints"
             checkpoint = checkpoint_root / "h10"
             (checkpoint / "mainnet").mkdir(parents=True)
-            (checkpoint / "StateRoot").mkdir()
+            (checkpoint / "mainnet" / "mdbx.dat").write_bytes(b"mdbx-checkpoint")
             (checkpoint / "CHECKPOINT_INFO").write_text(
                 "\n".join(
                     [
                         "height=10",
+                        "storage_provider=mdbx",
+                        "state_root_layout=coordinated_mdbx",
                         "state_root_included=true",
                         "restore_verified=true",
                         "verified_height=10",
@@ -625,19 +609,18 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             self.assertFalse(inventory["usable_for_state_validation"])
             self.assertIn("verified_stateroot_root", inventory["reason"])
 
-    def test_checkpoint_inventory_uses_checkpoint_storage_provider_metadata(self):
+    def test_checkpoint_inventory_uses_coordinated_mdbx_without_provider_flag(self):
         module = load_module()
         with tempfile.TemporaryDirectory() as tmp:
             checkpoint_root = Path(tmp) / "checkpoints"
             self.create_full_state_checkpoint(
                 checkpoint_root,
                 10,
-                storage_provider="rocksdb",
             )
-            providers = []
+            commands = []
 
             def fake_probe(command, **kwargs):
-                providers.append(command[command.index("--storage-provider") + 1])
+                commands.append(command)
                 return self.fake_probe_result(command)
 
             inventory = module.checkpoint_inventory(
@@ -646,12 +629,12 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 expected_verified_stateroot_root="0xroot10",
                 expected_verified_against_reference=True,
                 probe_bin=Path("target/debug/neo-db-probe"),
-                storage_provider="mdbx",
                 probe_runner=fake_probe,
             )
 
         self.assertTrue(inventory["usable_for_state_validation"])
-        self.assertEqual(providers, ["rocksdb", "rocksdb", "rocksdb"])
+        self.assertEqual(len(commands), 3)
+        self.assertTrue(all("--storage-provider" not in command for command in commands))
 
     def test_checkpoint_inventory_probes_checkpoint_contents_before_counting_usable(self):
         module = load_module()
@@ -716,7 +699,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 poll_interval=5.0,
                 max_seconds=120.0,
                 chain_db=Path("clean/chain"),
-                stateroot_db=Path("clean/state-root-334F454E"),
                 probe_bin=Path("target/debug/neo-db-probe"),
                 references=["http://seed1.neo.org:10332"],
                 data_dir=Path("clean"),
@@ -853,7 +835,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -909,7 +890,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -966,7 +946,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -1026,7 +1005,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -1079,7 +1057,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -1143,7 +1120,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -1213,7 +1189,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -1319,7 +1294,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -1512,7 +1486,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 poll_interval=5.0,
                 max_seconds=120.0,
                 chain_db=Path("clean/chain"),
-                stateroot_db=Path("clean/state-root-334F454E"),
                 probe_bin=Path("target/debug/neo-db-probe"),
                 references=["http://seed1.neo.org:10332"],
                 data_dir=Path("clean"),
@@ -1632,7 +1605,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -1741,7 +1713,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -1852,7 +1823,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 poll_interval=5.0,
                 max_seconds=120.0,
                 chain_db=Path("clean/chain"),
-                stateroot_db=Path("clean/state-root-334F454E"),
                 probe_bin=Path("target/debug/neo-db-probe"),
                 references=["http://seed1.neo.org:10332"],
                 data_dir=Path("clean"),
@@ -1945,7 +1915,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 poll_interval=5.0,
                 max_seconds=120.0,
                 chain_db=Path("clean/chain"),
-                stateroot_db=Path("clean/state-root-334F454E"),
                 probe_bin=Path("target/debug/neo-db-probe"),
                 references=["http://seed1.neo.org:10332"],
                 data_dir=Path("clean"),
@@ -2034,7 +2003,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -2102,7 +2070,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 poll_interval=5.0,
                 max_seconds=120.0,
                 chain_db=Path("clean/chain"),
-                stateroot_db=Path("clean/state-root-334F454E"),
                 probe_bin=Path("target/debug/neo-db-probe"),
                 references=["http://seed1.neo.org:10332"],
                 data_dir=Path("clean"),
@@ -2165,7 +2132,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=[
                 "http://seed1.neo.org:10332",
@@ -2230,7 +2196,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 poll_interval=5.0,
                 max_seconds=120.0,
                 chain_db=Path("clean/chain"),
-                stateroot_db=Path("clean/state-root-334F454E"),
                 probe_bin=Path("target/debug/neo-db-probe"),
                 references=["http://seed1.neo.org:10332"],
                 data_dir=Path("clean"),
@@ -2300,7 +2265,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 poll_interval=5.0,
                 max_seconds=120.0,
                 chain_db=Path("clean/chain"),
-                stateroot_db=Path("clean/state-root-334F454E"),
                 probe_bin=Path("target/debug/neo-db-probe"),
                 references=["http://seed1.neo.org:10332"],
                 data_dir=Path("clean"),
@@ -2376,7 +2340,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 poll_interval=5.0,
                 max_seconds=120.0,
                 chain_db=Path("clean/chain"),
-                stateroot_db=Path("clean/state-root-334F454E"),
                 probe_bin=Path("target/debug/neo-db-probe"),
                 references=["http://seed1.neo.org:10332"],
                 data_dir=Path("clean"),
@@ -2458,7 +2421,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 poll_interval=5.0,
                 max_seconds=120.0,
                 chain_db=Path("clean/chain"),
-                stateroot_db=Path("clean/state-root-334F454E"),
                 probe_bin=Path("target/debug/neo-db-probe"),
                 references=["http://seed1.neo.org:10332"],
                 data_dir=Path("clean"),
@@ -2774,7 +2736,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 poll_interval=5.0,
                 max_seconds=120.0,
                 chain_db=Path("clean/chain"),
-                stateroot_db=Path("clean/state-root-334F454E"),
                 probe_bin=Path("target/debug/neo-db-probe"),
                 references=["http://seed1.neo.org:10332"],
                 data_dir=Path("clean"),
@@ -2843,7 +2804,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -2900,7 +2860,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -2950,7 +2909,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
                 poll_interval=5.0,
                 max_seconds=120.0,
                 chain_db=Path("clean/chain"),
-                stateroot_db=Path("clean/state-root-334F454E"),
                 probe_bin=Path("target/debug/neo-db-probe"),
                 references=["http://seed1.neo.org:10332"],
                 data_dir=Path("clean"),
@@ -2994,8 +2952,17 @@ class RunStateRootMilestonesTests(unittest.TestCase):
 
                 checkpoint = checkpoint_root / "h10"
                 (checkpoint / "mainnet").mkdir(parents=True)
+                (checkpoint / "mainnet" / "mdbx.dat").write_bytes(b"mdbx-checkpoint")
                 (checkpoint / "CHECKPOINT_INFO").write_text(
-                    "height=10\nstate_root_included=false\n",
+                    "\n".join(
+                        [
+                            "height=10",
+                            "storage_provider=mdbx",
+                            "state_root_layout=coordinated_mdbx",
+                            "state_root_included=false",
+                            "",
+                        ]
+                    ),
                     encoding="utf-8",
                 )
                 return SimpleNamespace(returncode=0, stdout="checkpoint created", stderr="")
@@ -3022,7 +2989,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             poll_interval=5.0,
             max_seconds=120.0,
             chain_db=Path("clean/chain"),
-            stateroot_db=Path("clean/state-root-334F454E"),
             probe_bin=Path("target/debug/neo-db-probe"),
             references=["http://seed1.neo.org:10332"],
             data_dir=Path("clean"),
@@ -3058,7 +3024,6 @@ class RunStateRootMilestonesTests(unittest.TestCase):
             "node_bin": "target/release/neo-node",
             "probe_bin": "target/release/neo-db-probe",
             "chain_db": "clean/chain",
-            "stateroot_db": "clean/state-root-334F454E",
             "checkpoint_root": "clean/checkpoints",
         }
         result = {

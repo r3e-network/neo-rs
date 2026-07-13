@@ -117,18 +117,6 @@ pub const CONSENSUS_MESSAGE_SIZE_LIMIT: usize = 1024;
 
 // === Storage Constants ===
 
-/// Cache size in megabytes for database operations.
-pub const CACHE_SIZE_MB: usize = 512;
-
-/// Write buffer size in megabytes for database operations.
-pub const WRITE_BUFFER_SIZE_MB: usize = 64;
-
-/// Maximum number of open files for database.
-pub const MAX_OPEN_FILES: i32 = 1000;
-
-/// Whether to enable compression for `RocksDB`.
-pub const ROCKSDB_COMPRESSION_ENABLED: bool = true;
-
 /// Maximum size of a storage key in bytes.
 pub const MAX_STORAGE_KEY_SIZE: usize = 64;
 

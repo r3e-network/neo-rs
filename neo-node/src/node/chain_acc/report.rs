@@ -4,7 +4,7 @@
 //! machine-readable report shape and the projection from hot-path metrics into
 //! stable report fields consumed by fast-sync reporting.
 
-use super::metrics::{RocksDbBatchImportMetrics, StateServiceMptImportMetrics};
+use super::metrics::StateServiceMptImportMetrics;
 
 use crate::node::ledger_source::LocalLedgerTip;
 
@@ -56,15 +56,10 @@ pub(in crate::node) struct ImportHotMetrics {
     pub(in crate::node) native_persist_avg_total_us: u64,
     pub(in crate::node) native_persist_tx_hot_stage: &'static str,
     pub(in crate::node) native_persist_tx_hot_stage_avg_us: u64,
-    pub(in crate::node) rocksdb_batch_avg_flush_duration_ms: u64,
-    pub(in crate::node) rocksdb_batch_pending_operations: u64,
 }
 
 impl ImportHotMetrics {
-    pub(super) fn from_snapshots(
-        state_service: &StateServiceMptImportMetrics,
-        rocksdb: Option<RocksDbBatchImportMetrics>,
-    ) -> Self {
+    pub(super) fn from_snapshot(state_service: &StateServiceMptImportMetrics) -> Self {
         Self {
             state_service_mpt_apply_attempts: state_service.apply_attempts,
             state_service_mpt_apply_failures: state_service.apply_failures,
@@ -85,10 +80,6 @@ impl ImportHotMetrics {
             native_persist_avg_total_us: state_service.native_persist_avg_total_us,
             native_persist_tx_hot_stage: state_service.native_persist_tx_hot_stage,
             native_persist_tx_hot_stage_avg_us: state_service.native_persist_tx_hot_stage_avg_us,
-            rocksdb_batch_avg_flush_duration_ms: rocksdb
-                .map_or(0, |metrics| metrics.avg_flush_duration_ms),
-            rocksdb_batch_pending_operations: rocksdb
-                .map_or(0, |metrics| metrics.pending_operations),
         }
     }
 }

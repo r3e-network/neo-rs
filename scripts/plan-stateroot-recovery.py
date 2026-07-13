@@ -29,10 +29,6 @@ def format_network_magic(value: Any) -> str:
     raise ValueError(f"unsupported network_magic value: {value!r}")
 
 
-def network_scoped_path(path: str, network_magic: str) -> Path:
-    return Path(path.replace("{0}", network_magic))
-
-
 def load_config_paths(config_path: Path) -> dict[str, Any]:
     with config_path.open("rb") as handle:
         config = tomllib.load(handle)
@@ -43,19 +39,17 @@ def load_config_paths(config_path: Path) -> dict[str, Any]:
 
     network_magic = format_network_magic(network.get("network_magic", 0))
     storage_provider = str(storage.get("backend") or "mdbx").lower()
+    if storage_provider != "mdbx":
+        raise ValueError(f"unsupported storage backend {storage_provider!r}; expected 'mdbx'")
     chain_db = Path(storage.get("data_dir") or storage.get("path") or DEFAULT_DATA_DIR)
     data_dir = chain_db.parent if chain_db.name else Path(DEFAULT_DATA_DIR)
-    stateroot_template = str(
-        state_service.get("path") or f"{DEFAULT_DATA_DIR}/Plugins/mainnet/StateRoot"
-    )
-    stateroot_db = network_scoped_path(stateroot_template, network_magic)
 
     return {
         "network_magic": network_magic,
         "storage_provider": storage_provider,
         "data_dir": data_dir,
         "chain_db": chain_db,
-        "stateroot_db": stateroot_db,
+        "stateroot_db": chain_db,
         "state_service_enabled": bool(state_service.get("enabled", False)),
         "track_during_catchup": bool(state_service.get("track_during_catchup", False)),
     }
@@ -75,14 +69,13 @@ def store_exists(path: Path) -> bool:
         return False
     if path.is_file():
         return True
-    return (path / "CURRENT").exists() or (path / "mdbx.dat").exists()
+    return (path / "mdbx.dat").exists()
 
 
 def probe_chain_height(
     *,
     probe_bin: Path,
     chain_db: Path,
-    storage_provider: str,
     runner: Callable[..., Any] = subprocess.run,
 ) -> dict[str, Any]:
     if not store_exists(chain_db):
@@ -91,8 +84,6 @@ def probe_chain_height(
         str(probe_bin),
         "--db",
         str(chain_db),
-        "--storage-provider",
-        storage_provider,
         "--contract-id",
         "-4",
         "--key-hex",
@@ -112,7 +103,6 @@ def probe_stateroot_height(
     *,
     probe_bin: Path,
     stateroot_db: Path,
-    storage_provider: str,
     runner: Callable[..., Any] = subprocess.run,
 ) -> dict[str, Any]:
     if not store_exists(stateroot_db):
@@ -121,8 +111,6 @@ def probe_stateroot_height(
         str(probe_bin),
         "--db",
         str(stateroot_db),
-        "--storage-provider",
-        storage_provider,
         "--mpt-state-height",
     ]
     try:
@@ -186,15 +174,18 @@ def checkpoint_height(path: Path) -> int | None:
 
 
 def checkpoint_has_chain(path: Path) -> bool:
-    return (path / "mainnet").is_dir()
+    return (path / "mainnet" / "mdbx.dat").is_file()
 
 
 def checkpoint_has_stateroot(path: Path) -> bool:
-    if not (path / "StateRoot").is_dir():
+    if not checkpoint_has_chain(path):
         return False
-    if metadata_value(path, "state_root_included") == "false":
+    if (metadata_value(path, "storage_provider") or "mdbx").lower() != "mdbx":
         return False
-    return True
+    return (
+        metadata_value(path, "state_root_layout") == "coordinated_mdbx"
+        and metadata_value(path, "state_root_included") == "true"
+    )
 
 
 def scan_checkpoints(root: Path) -> list[dict[str, Any]]:
@@ -262,8 +253,6 @@ def build_recovery_plan(
     node_config: Path,
     checkpoint_root: Path | None = None,
     chain_db: Path | None = None,
-    stateroot_db: Path | None = None,
-    storage_provider: str | None = None,
     probe_bin: Path = Path(DEFAULT_PROBE_BIN),
     restore_script: Path = Path(DEFAULT_CHECKPOINT_SCRIPT),
     stack_runner: Path = Path(DEFAULT_STACK_RUNNER),
@@ -273,23 +262,18 @@ def build_recovery_plan(
     paths = load_config_paths(node_config)
     if chain_db is not None:
         paths["chain_db"] = chain_db
+        paths["stateroot_db"] = chain_db
         paths["data_dir"] = chain_db.parent if chain_db.name else paths["data_dir"]
-    if stateroot_db is not None:
-        paths["stateroot_db"] = stateroot_db
-    if storage_provider is not None:
-        paths["storage_provider"] = storage_provider.lower()
     checkpoint_root = checkpoint_root or paths["data_dir"] / "checkpoints"
 
     chain = probe_chain_height(
         probe_bin=probe_bin,
         chain_db=paths["chain_db"],
-        storage_provider=paths["storage_provider"],
         runner=runner,
     )
     stateroot = probe_stateroot_height(
         probe_bin=probe_bin,
         stateroot_db=paths["stateroot_db"],
-        storage_provider=paths["storage_provider"],
         runner=runner,
     )
     checkpoints = scan_checkpoints(checkpoint_root)
@@ -341,7 +325,7 @@ def build_recovery_plan(
         recommended_action = {
             "action": "restore-full-state-checkpoint",
             "reason": (
-                "nearest checkpoint includes both chain DB and StateRoot, so it can "
+                "nearest checkpoint includes coordinated chain and StateService state, so it can "
                 "resume state-root validation without recomputing from genesis"
             ),
             "checkpoint": full_state_checkpoint,
@@ -353,8 +337,6 @@ def build_recovery_plan(
                     str(checkpoint_root),
                     "--chain-db",
                     str(paths["chain_db"]),
-                    "--stateroot-db",
-                    str(paths["stateroot_db"]),
                     "--keep-current",
                     "--dry-run",
                 ]
@@ -365,7 +347,7 @@ def build_recovery_plan(
         recommended_action = {
             "action": "clean-replay-from-genesis",
             "reason": (
-                "no checkpoint with a matching StateRoot store is available; chain-only "
+                "no checkpoint with coordinated StateService state is available; chain-only "
                 "checkpoints cannot be used for StateService validation"
             ),
             "commands": [
@@ -422,20 +404,6 @@ def parse_args() -> argparse.Namespace:
             "runs that override the TOML storage path at runtime."
         ),
     )
-    parser.add_argument(
-        "--stateroot-db",
-        default=None,
-        help=(
-            "Explicit StateService MPT store path. Use this when the runtime "
-            "StateRoot DB differs from the TOML path."
-        ),
-    )
-    parser.add_argument(
-        "--storage-provider",
-        default=None,
-        choices=["mdbx", "rocksdb"],
-        help="Storage backend used by the chain and StateRoot stores.",
-    )
     parser.add_argument("--probe-bin", default=DEFAULT_PROBE_BIN)
     parser.add_argument("--restore-script", default=DEFAULT_CHECKPOINT_SCRIPT)
     parser.add_argument("--stack-runner", default=DEFAULT_STACK_RUNNER)
@@ -450,8 +418,6 @@ def main() -> int:
             node_config=Path(args.node_config),
             checkpoint_root=Path(args.checkpoint_root) if args.checkpoint_root else None,
             chain_db=Path(args.chain_db) if args.chain_db else None,
-            stateroot_db=Path(args.stateroot_db) if args.stateroot_db else None,
-            storage_provider=args.storage_provider,
             probe_bin=Path(args.probe_bin),
             restore_script=Path(args.restore_script),
             stack_runner=Path(args.stack_runner),

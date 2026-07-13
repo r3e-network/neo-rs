@@ -115,11 +115,6 @@ impl RunningNode {
     }
 
     #[cfg(test)]
-    pub(in crate::node) fn durable_service_stores(&self) -> &[Arc<RuntimeStore>] {
-        &self.durable_service_stores
-    }
-
-    #[cfg(test)]
     pub(in crate::node) async fn abort_for_test(mut self) {
         let _ = self.network.shutdown().await;
         for handle in self.handles.drain(..) {

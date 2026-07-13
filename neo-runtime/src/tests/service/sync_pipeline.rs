@@ -12,7 +12,6 @@ use neo_storage::persistence::storage::StorageConfig;
 use neo_storage::persistence::{
     IntoTableBytes, StoreMaintenanceBatch, TableEncode, TransactionalStore, WriteStore,
 };
-use neo_storage::rocksdb::RocksDBStoreProvider;
 use parking_lot::Mutex;
 use std::fs;
 use std::path::PathBuf;
@@ -560,46 +559,6 @@ fn store_checkpoint_store_persists_across_mdbx_reopen() {
     {
         let mdbx = provider.get_mdbx_store(&path).expect("reopen mdbx");
         let store = StoreSyncStageCheckpointStore::new(mdbx);
-        assert_eq!(
-            store.checkpoint(SyncStageKind::Import).expect("read"),
-            Some(checkpoint)
-        );
-    }
-
-    let _ = fs::remove_dir_all(path);
-}
-
-#[test]
-fn store_checkpoint_store_persists_across_rocksdb_reopen() {
-    let path = unique_test_path("sync-checkpoint-rocksdb");
-    let provider = RocksDBStoreProvider::new(StorageConfig {
-        path: path.clone(),
-        ..Default::default()
-    });
-    let checkpoint =
-        SyncStageCheckpoint::new(SyncStageKind::Import, 101).with_counters(100, 32_768);
-
-    {
-        let rocksdb = provider
-            .get_rocksdb_store(std::path::Path::new(""))
-            .expect("open RocksDB");
-        let store = StoreSyncStageCheckpointStore::new(rocksdb);
-        store
-            .put_checkpoint(checkpoint.clone())
-            .expect("persist checkpoint");
-        assert_eq!(
-            store
-                .store()
-                .try_get_bytes(&checkpoint_key(SyncStageKind::Import)),
-            None
-        );
-    }
-
-    {
-        let rocksdb = provider
-            .get_rocksdb_store(std::path::Path::new(""))
-            .expect("reopen RocksDB");
-        let store = StoreSyncStageCheckpointStore::new(rocksdb);
         assert_eq!(
             store.checkpoint(SyncStageKind::Import).expect("read"),
             Some(checkpoint)

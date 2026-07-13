@@ -114,12 +114,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-height", required=True, type=int)
     parser.add_argument("--node-bin", default=Path("target/release/neo-node"), type=Path)
     parser.add_argument("--probe-bin", default=Path("target/release/neo-db-probe"), type=Path)
-    parser.add_argument(
-        "--storage-provider",
-        default="mdbx",
-        choices=["mdbx", "rocksdb"],
-        help="Storage backend used by neo-db-probe for local reads and repair writes.",
-    )
     parser.add_argument("--rpc", default="http://127.0.0.1:21332")
     parser.add_argument("--reference-rpc", default="http://seed1.neo.org:10332")
     parser.add_argument("--poll-interval", default=30.0, type=float)
@@ -162,7 +156,6 @@ def main() -> int:
             height_reader=lambda: runner.read_probe_ledger_height(
                 args.db,
                 args.probe_bin,
-                args.storage_provider,
             ),
             node_output=node_output_handle,
         )
@@ -174,7 +167,6 @@ def main() -> int:
             probe_bin=args.probe_bin,
             reference_rpc=args.reference_rpc,
             log_start_offset=log_start_offset,
-            storage_provider=args.storage_provider,
             apply=True,
         )
 

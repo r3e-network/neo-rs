@@ -37,8 +37,7 @@ fn mpt_current_local_root_index_key_matches_state_service_keyspace() {
 fn mdbx_mpt_probe_reads_the_canonical_state_service_namespace() {
     let temp = tempfile::tempdir().expect("temporary MDBX directory");
     {
-        let canonical = open_store(StorageProviderArg::Mdbx, temp.path(), false)
-            .expect("open canonical MDBX store");
+        let canonical = open_store(temp.path(), false).expect("open canonical MDBX store");
         let state_service = canonical
             .open_coordinated_namespace(MDBX_STATE_SERVICE_NAMESPACE)
             .expect("open StateService namespace");
@@ -54,7 +53,6 @@ fn mdbx_mpt_probe_reads_the_canonical_state_service_namespace() {
     }
 
     let output = probe_mpt_state(
-        StorageProviderArg::Mdbx,
         temp.path(),
         true,
         None,
@@ -222,24 +220,27 @@ fn cli_accepts_negative_native_contract_id() {
 }
 
 #[test]
-fn cli_defaults_to_mdbx_storage_provider_in_production_build() {
+fn cli_uses_mdbx_without_a_backend_switch() {
     let cli = Cli::try_parse_from(["neo-db-probe", "--db", "data/mainnet"]).expect("parse cli");
 
-    assert_eq!(cli.storage_provider, StorageProviderArg::Mdbx);
+    assert_eq!(
+        cli.db.as_deref(),
+        Some(std::path::Path::new("data/mainnet"))
+    );
 }
 
 #[test]
-fn cli_accepts_explicit_rocksdb_storage_provider() {
-    let cli = Cli::try_parse_from([
+fn cli_rejects_removed_storage_provider_option() {
+    let error = Cli::try_parse_from([
         "neo-db-probe",
         "--db",
         "data/mainnet",
         "--storage-provider",
-        "rocksdb",
+        "mdbx",
     ])
-    .expect("parse cli");
+    .expect_err("MDBX is built in and no provider switch should remain");
 
-    assert_eq!(cli.storage_provider, StorageProviderArg::Rocksdb);
+    assert!(error.to_string().contains("--storage-provider"));
 }
 
 #[test]
@@ -399,12 +400,11 @@ fn raw_ledger_probe_falls_back_to_static_archive_after_hot_miss() {
 
     let directory = tempfile::tempdir().expect("tempdir");
     let db = directory.path().join("hot");
-    drop(open_store(StorageProviderArg::Mdbx, &db, false).expect("create hot store"));
+    drop(open_store(&db, false).expect("create hot store"));
     let static_dir = directory.path().join("static");
     std::fs::create_dir(&static_dir).expect("static directory");
     let block_hash = UInt256::from_bytes(&[0x44; 32]).expect("block hash");
     write_storage_value(
-        StorageProviderArg::Mdbx,
         &db,
         LedgerContract::ID,
         vec![0x09, 0, 0, 0, 0],
@@ -412,7 +412,6 @@ fn raw_ledger_probe_falls_back_to_static_archive_after_hot_miss() {
     )
     .expect("write hot block hash");
     write_storage_value(
-        StorageProviderArg::Mdbx,
         &db,
         LedgerContract::ID,
         vec![0x0c],
@@ -441,14 +440,8 @@ fn raw_ledger_probe_falls_back_to_static_archive_after_hot_miss() {
     drop(files);
 
     assert_eq!(
-        read_storage_value(
-            StorageProviderArg::Mdbx,
-            &db,
-            Some(&static_dir),
-            LedgerContract::ID,
-            suffix,
-        )
-        .expect("read routed value"),
+        read_storage_value(&db, Some(&static_dir), LedgerContract::ID, suffix,)
+            .expect("read routed value"),
         Some(b"archived".to_vec())
     );
 }

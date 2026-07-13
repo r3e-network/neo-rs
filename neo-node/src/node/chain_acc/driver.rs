@@ -21,8 +21,8 @@ use super::batch::{
 };
 use super::format::{read_chain_acc_header, read_next_chain_acc_block, skip_chain_acc_records};
 use super::metrics::{
-    ChainAccImportProgress, NativePersistTxStageImportMetrics, RocksDbBatchImportMetrics,
-    StateServiceMptImportMetrics, should_log_import_progress,
+    ChainAccImportProgress, NativePersistTxStageImportMetrics, StateServiceMptImportMetrics,
+    should_log_import_progress,
 };
 use super::range::{
     bounded_chain_acc_import_range, chain_acc_import_record_count, chain_acc_records_to_skip,
@@ -228,11 +228,7 @@ where
             }
             let state_service_metrics = StateServiceMptImportMetrics::current();
             let native_tx_stage_metrics = NativePersistTxStageImportMetrics::current();
-            let rocksdb_batch_metrics = storage
-                .as_deref()
-                .and_then(RocksDbBatchImportMetrics::from_store);
-            hot_metrics =
-                ImportHotMetrics::from_snapshots(&state_service_metrics, rocksdb_batch_metrics);
+            hot_metrics = ImportHotMetrics::from_snapshot(&state_service_metrics);
             if should_log_import_progress(
                 progress.imported(),
                 batch_result.imported,
@@ -300,17 +296,6 @@ where
                     state_service_mpt_publish_generation_avg_us = state_service_metrics.publish_generation_avg_us,
                     state_service_mpt_overlay_entries_avg = state_service_metrics.overlay_entries_avg,
                     state_service_mpt_batch_blocks_avg = state_service_metrics.batch_blocks_avg,
-                    rocksdb_batch_pending_operations = rocksdb_batch_metrics.map_or(0, |metrics| metrics.pending_operations),
-                    rocksdb_batch_batches_flushed = rocksdb_batch_metrics.map_or(0, |metrics| metrics.batches_flushed),
-                    rocksdb_batch_operations_written = rocksdb_batch_metrics.map_or(0, |metrics| metrics.operations_written),
-                    rocksdb_batch_bytes_written = rocksdb_batch_metrics.map_or(0, |metrics| metrics.bytes_written),
-                    rocksdb_batch_flush_timeouts = rocksdb_batch_metrics.map_or(0, |metrics| metrics.flush_timeouts),
-                    rocksdb_batch_avg_ops_per_flush = rocksdb_batch_metrics.map_or(0, |metrics| metrics.avg_ops_per_flush),
-                    rocksdb_batch_avg_bytes_per_flush = rocksdb_batch_metrics.map_or(0, |metrics| metrics.avg_bytes_per_flush),
-                    rocksdb_batch_avg_flush_duration_ms = rocksdb_batch_metrics.map_or(0, |metrics| metrics.avg_flush_duration_ms),
-                    rocksdb_batch_max_batch_size = rocksdb_batch_metrics.map_or(0, |metrics| metrics.max_batch_size),
-                    rocksdb_batch_max_batch_bytes = rocksdb_batch_metrics.map_or(0, |metrics| metrics.max_batch_bytes),
-                    rocksdb_batch_disable_wal = rocksdb_batch_metrics.is_some_and(|metrics| metrics.disable_wal),
                     "chain.acc import progress"
                 );
             }

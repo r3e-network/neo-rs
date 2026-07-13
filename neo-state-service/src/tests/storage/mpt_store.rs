@@ -314,8 +314,8 @@ fn mpt_store_durable_constructor_surface_is_provider_neutral() {
     let source = include_str!("../../storage/mpt_store.rs");
 
     assert!(
-        !source.contains("fn from_rocksdb_store"),
-        "MptStore should accept durable backends through generic S: Store, not a RocksDB-specific constructor"
+        !source.contains("fn from_mdbx_store"),
+        "MptStore should accept durable backends through generic S: Store, not a backend-specific constructor"
     );
     assert!(
         source.contains("pub struct MptStore<S: Store = MemoryStore>"),
@@ -1522,71 +1522,6 @@ fn backed_publish_drops_durable_overlay_from_live_generation() {
             .expect("read from backing snapshot"),
         Some(b"v3".to_vec())
     );
-}
-
-#[test]
-fn rocksdb_fast_sync_backing_keeps_buffered_overlay_readable_before_flush() {
-    use neo_storage::persistence::storage::StorageConfig;
-    use neo_storage::rocksdb::RocksDBStoreProvider;
-
-    let path = std::env::temp_dir().join(format!(
-        "neo-state-service-mpt-fast-sync-buffered-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&path);
-    let backing = Arc::new(
-        RocksDBStoreProvider::new(StorageConfig {
-            path: path.clone(),
-            ..Default::default()
-        })
-        .get_rocksdb_store("")
-        .expect("open rocksdb"),
-    );
-    backing.enable_fast_sync_mode();
-
-    let store = MptStore::from_store(backing.clone(), true).expect("open store");
-    let root = store
-        .apply_block_changes(1, None, &[put(5, &[0xAA, 0x01], b"v1")])
-        .expect("block 1 applies");
-
-    assert!(
-        !store.kv.read().is_empty(),
-        "buffered RocksDB writes must remain in the live generation until flush"
-    );
-    assert_eq!(store.current_local_root(), Some((1, root)));
-    let mut trie = store.open_trie(Some(root));
-    assert_eq!(
-        trie.get(&storage_key(5, &[0xAA, 0x01]))
-            .expect("read buffered write"),
-        Some(b"v1".to_vec())
-    );
-
-    backing.disable_fast_sync_mode();
-    let root2 = store
-        .apply_block_changes(2, Some(root), &[put(5, &[0xAA, 0x02], b"v2")])
-        .expect("block 2 applies after flush");
-
-    assert_eq!(
-        store.kv.read().len(),
-        0,
-        "after RocksDB fast-sync writes are flushed, new durable overlays should be served lazily from backing snapshots"
-    );
-    assert_eq!(store.current_local_root(), Some((2, root2)));
-    let mut trie = store.open_trie(Some(root2));
-    assert_eq!(
-        trie.get(&storage_key(5, &[0xAA, 0x01]))
-            .expect("read first durable write"),
-        Some(b"v1".to_vec())
-    );
-    assert_eq!(
-        trie.get(&storage_key(5, &[0xAA, 0x02]))
-            .expect("read second durable write"),
-        Some(b"v2".to_vec())
-    );
-
-    drop(store);
-    drop(backing);
-    let _ = std::fs::remove_dir_all(path);
 }
 
 #[test]

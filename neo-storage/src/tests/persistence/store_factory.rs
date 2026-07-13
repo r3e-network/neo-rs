@@ -9,13 +9,9 @@ fn built_in_provider_names_are_registered() {
         Some(StoreProviderKind::Memory)
     );
     assert!(StoreFactory::get_store_provider("Memory").is_some());
-    assert_eq!(
-        StoreFactory::get_store_provider("rocksdb"),
-        Some(StoreProviderKind::RocksDb)
-    );
     assert!(
         StoreFactory::get_store_provider("RocksDBStore").is_none(),
-        "legacy concrete-type aliases are not part of the production provider contract"
+        "removed backends must not remain in the production provider contract"
     );
     assert_eq!(
         StoreFactory::get_store_provider("mdbx"),
@@ -76,34 +72,12 @@ fn factory_accepts_non_utf8_paths_without_string_conversion() {
 }
 
 #[test]
-fn rocksdb_provider_name_creates_rocksdb_store() {
-    let temp = tempfile::tempdir().expect("tempdir");
-    let path = temp.path().join("rocksdb");
-    let store = StoreFactory::get_store("rocksdb", &path).expect("rocksdb store");
+fn removed_rocksdb_provider_is_rejected() {
+    let err = StoreFactory::get_store("rocksdb", "")
+        .expect_err("removed RocksDB provider must be rejected");
 
-    assert!(store.as_rocksdb().is_some());
-}
-
-#[test]
-fn configured_rocksdb_provider_preserves_read_only_flag() {
-    let temp = tempfile::tempdir().expect("tempdir");
-    let path = temp.path().join("missing-read-only-store");
-    let err = match StoreFactory::get_store_with_config(
-        "rocksdb",
-        StorageConfig {
-            path,
-            read_only: true,
-            ..StorageConfig::default()
-        },
-    ) {
-        Ok(_) => panic!("read-only RocksDB open must not create a missing store"),
-        Err(err) => err,
-    };
-
-    assert!(
-        err.to_string().contains("failed to open RocksDB store"),
-        "unexpected error: {err}"
-    );
+    assert!(err.to_string().contains("rocksdb"));
+    assert!(err.to_string().contains("memory, mdbx"));
 }
 
 #[test]
