@@ -84,7 +84,7 @@ fn rejects_manifest_package_with_reversed_height_range() {
 }
 
 #[test]
-fn rejects_manifest_package_with_non_http_url() {
+fn rejects_manifest_package_with_non_https_url() {
     let manifest: SyncManifest = serde_json::from_str(
         r#"
 {
@@ -102,10 +102,37 @@ fn rejects_manifest_package_with_non_http_url() {
     .expect("manifest");
 
     let err = select_full_package(&manifest, MAINNET_MAGIC)
-        .expect_err("non-HTTP package URL should fail");
+        .expect_err("non-HTTPS package URL should fail");
 
     assert!(
         err.to_string().contains("unsupported URL scheme"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn rejects_manifest_package_with_cleartext_http_url() {
+    let manifest: SyncManifest = serde_json::from_str(
+        r#"
+{
+  "n3mainnet": {
+    "full": {
+      "path": "http://packets.example/chain.0.acc.zip",
+      "md5": "abcdef0123456789abcdef0123456789",
+      "start": 0,
+      "end": 10
+    }
+  }
+}
+"#,
+    )
+    .expect("manifest");
+
+    let err = select_full_package(&manifest, MAINNET_MAGIC)
+        .expect_err("cleartext package URL should fail");
+
+    assert!(
+        err.to_string().contains("expected https"),
         "unexpected error: {err}"
     );
 }

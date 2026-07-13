@@ -95,9 +95,9 @@ fn select_full_package(manifest: &SyncManifest, network: u32) -> anyhow::Result<
 fn package_filename(url: &str) -> anyhow::Result<String> {
     let parsed = url::Url::parse(url).context("manifest package URL is invalid")?;
     match parsed.scheme() {
-        "http" | "https" => {}
+        "https" => {}
         scheme => anyhow::bail!(
-            "manifest package URL uses unsupported URL scheme {scheme:?}; expected http or https"
+            "manifest package URL uses unsupported URL scheme {scheme:?}; expected https"
         ),
     }
     let filename = parsed
