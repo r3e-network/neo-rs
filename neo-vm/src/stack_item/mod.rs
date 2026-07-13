@@ -15,6 +15,7 @@
 //! - `map`: VM map stack item implementation.
 //! - `pointer`: VM pointer stack item implementation.
 //! - `stack_item`: NeoVM stack item representations and conversion helpers.
+//! - `stack_value_conversion`: Alias-preserving external graph conversion.
 //! - `struct_item`: VM struct stack item implementation.
 //! - `vm_integer`: VM integer stack item implementation.
 
@@ -31,6 +32,7 @@ pub mod pointer;
 // root module remains the facade for stack item subtypes.
 #[allow(clippy::module_inception)]
 pub mod stack_item;
+mod stack_value_conversion;
 /// Struct stack item type.
 pub mod struct_item;
 /// VM integer stack item.

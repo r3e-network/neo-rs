@@ -22,7 +22,6 @@ RUST_SIZE_BASELINE = {
     "neo-state-service/src/storage/mpt_store.rs": 1764,
     "neo-state-service/src/tests/storage/mpt_store.rs": 1925,
     "neo-storage/src/persistence/data_cache/cache.rs": 946,
-    "neo-vm/src/stack_item/stack_item.rs": 1044,
     "tests/tests/architecture/layer_boundary_tests.rs": 1415,
 }
 
