@@ -46,12 +46,16 @@ Every architecture-level decision must update or add an ADR in `design.md`.
   4. Competing state-root votes cannot be aggregated across version, height, or root hash.
   5. Workspace format, check, test, doctest, and clippy gates pass.
 
-**Plans**: 2 plans
+**Plans**: 1/2 plans executed
 
 Plans:
+
+- [x] 01-01-PLAN.md
+- [ ] 01-02-PLAN.md
+
 **Wave 1**
 
-- [ ] 01-01: Complete the pinned VM v0.2 migration and consensus-safety regressions.
+- [x] 01-01: Complete the pinned VM v0.2 migration and consensus-safety regressions.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -185,7 +189,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Reproducible Protocol Baseline | 0/2 | In progress | - |
+| 1. Reproducible Protocol Baseline | 1/2 | In Progress|  |
 | 2. Fail-Closed Storage and Lifecycle | 0/3 | Not started | - |
 | 3. Differential Protocol Parity | 0/3 | Not started | - |
 | 4. P2P Interoperability and Canonical Sync | 0/4 | Not started | - |
