@@ -713,6 +713,15 @@ assistance, and Oracle responses. Custom providers default to conservative
 execution. VM interop descriptors use `Cow<'static, str>` so canonical syscall
 names are borrowed and custom hosts may still register owned names; successful
 syscall dispatch no longer clones a name merely to format a never-taken error.
+The v3.10.1 catalog is pre-sized to 41 entries and registration uses the map
+entry API for one lookup. Dispatch copies the handler/flag record before
+entering the mutable host, leaving the immutable registry installed for nested
+native execution and removing the former per-engine registration replay list.
+A controlled quick Criterion comparison over 256 prefilled transaction blocks
+and eight GAS transfers per measured block produced point estimates of about
+2.6% higher memory throughput and 3.0% higher coordinated-MDBX throughput, but
+the confidence intervals overlap; this is allocation/architecture evidence,
+not a claimed BPS improvement.
 
 ### Polkadot SDK innovations
 

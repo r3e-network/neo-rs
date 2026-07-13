@@ -629,6 +629,11 @@ transformed, cached, or transferred.
   Do not introduce `Cow` to hide unclear ownership.
 - Avoid passing large structs by value across hot paths. Use references or
   smaller named domain values unless ownership transfer is the point.
+- Keep immutable registries installed across callbacks. Resolve the small
+  copyable dispatch record before borrowing the mutable host; do not remove a
+  registry merely to satisfy borrowing and then retain/replay a duplicate list
+  for nested execution. Pre-size closed protocol catalogs and use entry APIs so
+  duplicate detection does not require a second table probe.
 - Avoid `#[inline]` and custom allocation tricks until a benchmark or profile
   shows the compiler needs help.
 

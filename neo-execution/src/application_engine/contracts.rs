@@ -510,26 +510,6 @@ where
         // Refresh cached hashes so the callee observes the native caller.
         self.refresh_context_tracking()?;
 
-        // The VM's `on_syscall` takes the `InteropService` out of the engine
-        // while a syscall handler runs (the System.Contract.CallNative frame we
-        // are inside of), so the nested steps below would find no registry.
-        // Install an equivalent one rebuilt from the recorded registrations;
-        // the outer `on_syscall` frame restores the original (overwriting this
-        // temporary) when the native method returns.
-        if self.vm_engine.engine().interop_service().is_none() {
-            let mut service = neo_vm::interop_service::InteropService::new();
-            for (name, price, flags) in &self.host_syscall_registrations {
-                service
-                    .register_host_descriptor(name, *price, *flags)
-                    .map_err(|e| {
-                        CoreError::invalid_operation(format!(
-                            "rebuilding the interop registry for a nested native call: {e}"
-                        ))
-                    })?;
-            }
-            self.vm_engine.engine_mut().set_interop_service(service);
-        }
-
         // Register the callee root as a native-call boundary (the C#
         // `contractTasks` key). `context` stays alive across the loop, so the
         // pointer identity cannot be reused while registered.
@@ -618,20 +598,6 @@ where
         let state_arc = context.state();
         state_arc.lock().native_calling_script_hash = Some(*calling_script_hash);
         self.refresh_context_tracking()?;
-
-        if self.vm_engine.engine().interop_service().is_none() {
-            let mut service = neo_vm::interop_service::InteropService::new();
-            for (name, price, flags) in &self.host_syscall_registrations {
-                service
-                    .register_host_descriptor(name, *price, *flags)
-                    .map_err(|e| {
-                        CoreError::invalid_operation(format!(
-                            "rebuilding the interop registry for a nested native call: {e}"
-                        ))
-                    })?;
-            }
-            self.vm_engine.engine_mut().set_interop_service(service);
-        }
 
         let boundary_id = Arc::as_ptr(&state_arc) as usize;
         self.native_call_boundary_contexts.push(boundary_id);

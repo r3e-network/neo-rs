@@ -80,14 +80,39 @@ impl<S> ExecutionEngine<S> {
     }
 
     /// Handles system calls. Delegates to the configured interop service when available.
+    #[inline]
     pub fn on_syscall(&mut self, descriptor: u32) -> VmResult<()> {
-        let Some(mut service) = self.interop_service.take() else {
-            return Err(VmError::invalid_operation_msg(format!(
-                "Syscall {descriptor} not supported"
-            )));
+        let resolved = {
+            let Some(service) = self.interop_service.as_ref() else {
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Syscall {descriptor} not supported"
+                )));
+            };
+            service.resolve_by_hash(descriptor)?
         };
-        let result = service.invoke_by_hash(self, descriptor);
-        self.interop_service = Some(service);
-        result
+
+        if !self.has_call_flags(resolved.required_call_flags) {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Missing required call flags: {:?}",
+                resolved.required_call_flags
+            )));
+        }
+
+        if let Some(callback) = resolved.handler {
+            return callback(self);
+        }
+
+        if let Some(result) = self.invoke_host_syscall(descriptor) {
+            result
+        } else {
+            let name = self
+                .interop_service
+                .as_ref()
+                .and_then(|service| service.descriptor_name(descriptor))
+                .unwrap_or("<unknown>");
+            Err(VmError::invalid_operation_msg(format!(
+                "Syscall {name} requires an interop host"
+            )))
+        }
     }
 }

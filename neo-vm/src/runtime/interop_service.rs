@@ -11,6 +11,7 @@ use neo_primitives::CallFlags;
 use neo_vm_rs::Instruction;
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::str;
 
 /// Function pointer used for interop handlers that execute within the VM itself.
@@ -39,16 +40,28 @@ pub struct VmInteropDescriptor<S = ()> {
     pub required_call_flags: CallFlags,
 }
 
-/// Internal representation of a registered descriptor including its computed hash.
+/// Internal descriptor representation stored under its precomputed hash key.
 struct RegisteredDescriptor<S = ()> {
     descriptor: VmInteropDescriptor<S>,
-    hash: u32,
 }
 
 impl<S> RegisteredDescriptor<S> {
-    fn new(descriptor: VmInteropDescriptor<S>) -> VmResult<Self> {
+    fn new(descriptor: VmInteropDescriptor<S>) -> VmResult<(u32, Self)> {
         let hash = hash_syscall(descriptor.name.as_ref())?;
-        Ok(Self { descriptor, hash })
+        Ok((hash, Self { descriptor }))
+    }
+}
+
+pub(crate) struct ResolvedInterop<S = ()> {
+    pub(crate) handler: Option<InteropCallback<S>>,
+    pub(crate) required_call_flags: CallFlags,
+}
+
+impl<S> Copy for ResolvedInterop<S> {}
+
+impl<S> Clone for ResolvedInterop<S> {
+    fn clone(&self) -> Self {
+        *self
     }
 }
 
@@ -149,20 +162,32 @@ impl<S> InteropService<S> {
         }
     }
 
+    /// Creates an empty interop service with storage for at least `capacity`
+    /// descriptors.
+    ///
+    /// Hosts with a fixed protocol catalog should use this constructor to avoid
+    /// repeated table growth while registering their descriptors.
+    #[must_use]
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            descriptors: HashMap::with_capacity(capacity),
+        }
+    }
+
     /// Registers a descriptor and returns its syscall hash.
     pub fn register(&mut self, descriptor: VmInteropDescriptor<S>) -> VmResult<u32> {
-        let registered = RegisteredDescriptor::new(descriptor)?;
+        let (hash, registered) = RegisteredDescriptor::new(descriptor)?;
 
-        if self.descriptors.contains_key(&registered.hash) {
-            return Err(VmError::invalid_operation_msg(format!(
+        match self.descriptors.entry(hash) {
+            Entry::Vacant(entry) => {
+                entry.insert(registered);
+                Ok(hash)
+            }
+            Entry::Occupied(_) => Err(VmError::invalid_operation_msg(format!(
                 "Syscall {} already registered",
                 registered.descriptor.name
-            )));
+            ))),
         }
-
-        let hash = registered.hash;
-        self.descriptors.insert(hash, registered);
-        Ok(hash)
     }
 
     /// Registers a host-only descriptor (handled by the execution engine host) and returns its hash.
@@ -194,9 +219,20 @@ impl<S> InteropService<S> {
         self.get_method(name).map_or(0, |d| d.price)
     }
 
+    /// Iterates over registered descriptor metadata in unspecified order.
+    pub fn registered_descriptors(&self) -> impl Iterator<Item = (&str, i64, CallFlags)> + '_ {
+        self.descriptors.values().map(|entry| {
+            (
+                entry.descriptor.name.as_ref(),
+                entry.descriptor.price,
+                entry.descriptor.required_call_flags,
+            )
+        })
+    }
+
     /// Invokes a syscall linked to an instruction.
     pub fn invoke_instruction(
-        &mut self,
+        &self,
         engine: &mut ExecutionEngine<S>,
         instruction: &Instruction,
     ) -> VmResult<()> {
@@ -205,26 +241,17 @@ impl<S> InteropService<S> {
     }
 
     /// Invokes a syscall by its 32-bit hash identifier.
-    pub fn invoke_by_hash(&mut self, engine: &mut ExecutionEngine<S>, hash: u32) -> VmResult<()> {
-        let (handler, required_call_flags, name) = {
-            let entry = self.descriptors.get(&hash).ok_or_else(|| {
-                VmError::invalid_operation_msg(format!("Syscall 0x{hash:08x} not registered"))
-            })?;
+    pub fn invoke_by_hash(&self, engine: &mut ExecutionEngine<S>, hash: u32) -> VmResult<()> {
+        let resolved = self.resolve_by_hash(hash)?;
 
-            (
-                entry.descriptor.handler,
-                entry.descriptor.required_call_flags,
-                entry.descriptor.name.as_ref(),
-            )
-        };
-
-        if !engine.has_call_flags(required_call_flags) {
+        if !engine.has_call_flags(resolved.required_call_flags) {
             return Err(VmError::invalid_operation_msg(format!(
-                "Missing required call flags: {required_call_flags:?}"
+                "Missing required call flags: {:?}",
+                resolved.required_call_flags
             )));
         }
 
-        if let Some(callback) = handler {
+        if let Some(callback) = resolved.handler {
             return callback(engine);
         }
 
@@ -232,9 +259,28 @@ impl<S> InteropService<S> {
             result
         } else {
             Err(VmError::invalid_operation_msg(format!(
-                "Syscall {name} requires an interop host"
+                "Syscall {} requires an interop host",
+                self.descriptor_name(hash).unwrap_or("<unknown>")
             )))
         }
+    }
+
+    #[inline]
+    pub(crate) fn resolve_by_hash(&self, hash: u32) -> VmResult<ResolvedInterop<S>> {
+        let entry = self.descriptors.get(&hash).ok_or_else(|| {
+            VmError::invalid_operation_msg(format!("Syscall 0x{hash:08x} not registered"))
+        })?;
+        Ok(ResolvedInterop {
+            handler: entry.descriptor.handler,
+            required_call_flags: entry.descriptor.required_call_flags,
+        })
+    }
+
+    #[inline]
+    pub(crate) fn descriptor_name(&self, hash: u32) -> Option<&str> {
+        self.descriptors
+            .get(&hash)
+            .map(|entry| entry.descriptor.name.as_ref())
     }
 
     /// Returns the number of registered descriptors (useful for diagnostics/tests).
@@ -259,4 +305,37 @@ fn hash_syscall(api: &str) -> VmResult<u32> {
     }
 
     Ok(neo_vm_rs::interop_hash(api))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_registry_visible(engine: &mut ExecutionEngine) -> VmResult<()> {
+        if engine.interop_service().is_some() {
+            Ok(())
+        } else {
+            Err(VmError::invalid_operation_msg(
+                "interop registry was removed during syscall dispatch",
+            ))
+        }
+    }
+
+    #[test]
+    fn syscall_callbacks_keep_the_registry_installed() {
+        let mut engine = ExecutionEngine::new(None);
+        let hash = engine
+            .interop_service_mut()
+            .expect("default interop service")
+            .register(VmInteropDescriptor {
+                name: Cow::Borrowed("System.Test.RegistryVisible"),
+                handler: Some(assert_registry_visible),
+                price: 0,
+                required_call_flags: CallFlags::NONE,
+            })
+            .expect("register test syscall");
+
+        engine.on_syscall(hash).expect("dispatch test syscall");
+        assert_eq!(engine.interop_service().map(InteropService::len), Some(1));
+    }
 }

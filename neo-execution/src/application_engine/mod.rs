@@ -136,13 +136,6 @@ where
     /// engine (C# throws `VMUnhandledException`) so no frame below the native
     /// call can catch the exception.
     native_call_boundary_contexts: Vec<usize>,
-    /// Every host syscall registered on the VM (static protocol name, fixed
-    /// price, required call flags). The VM's `on_syscall` takes its
-    /// `InteropService` out for the duration of a syscall handler, so nested
-    /// VM execution started from inside a native method
-    /// (`call_from_native_contract_returning`) finds it
-    /// missing; this list rebuilds an equivalent registry for the nested steps.
-    host_syscall_registrations: Vec<(&'static str, i64, CallFlags)>,
     nonce_data: [u8; 16],
     random_times: u32,
     diagnostic: D,

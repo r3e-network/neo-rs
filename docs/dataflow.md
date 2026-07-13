@@ -236,7 +236,11 @@ Each Application engine uses a validated block-backed transaction container;
 the shared immutable block keeps the payload alive without a per-transaction
 deep clone. One child transaction cache is lazily allocated per block and reset
 between transactions, preserving HALT/FAULT isolation while avoiding repeated
-cache-control allocations in dense blocks.
+cache-control allocations in dense blocks. Its fixed Neo syscall registry is
+pre-sized once during engine construction and remains installed while a host
+callback runs. Nested native-to-contract execution therefore shares the same
+descriptor table instead of rebuilding 37 base entries plus four Faun entries
+inside the callback.
 Positive-path pipeline tests force each dynamic hook to produce an observable
 error when its downstream state is invalid, preventing a future optimization
 from silently skipping required protocol work.

@@ -26,9 +26,12 @@ fn handler_id(table: &JumpTable, opcode: OpCode) -> usize {
 
 fn registered_services(engine: &ApplicationEngine) -> Vec<(String, i64, u8)> {
     let mut services: Vec<_> = engine
-        .host_syscall_registrations
-        .iter()
-        .map(|(name, price, flags)| ((*name).to_string(), *price, flags.bits()))
+        .vm_engine
+        .engine()
+        .interop_service()
+        .expect("application engine interop service")
+        .registered_descriptors()
+        .map(|(name, price, flags)| (name.to_string(), price, flags.bits()))
         .collect();
     services.sort();
     services

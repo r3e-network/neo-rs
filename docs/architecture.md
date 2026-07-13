@@ -255,7 +255,13 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   batch preserves execution/MPT overlap when the worker catches up, while an
   eight-block ceiling amortizes MDBX work under backlog. VM syscall descriptors
   retain borrowed static protocol names, avoiding per-engine and per-syscall
-  name allocation while still allowing owned custom descriptor names.
+  name allocation while still allowing owned custom descriptor names. The
+  v3.10.1 catalog is pre-sized for its 37 base entries plus four Faun entries,
+  descriptor registration uses one hash-table probe, and dispatch resolves
+  copyable metadata before entering the
+  mutable host. The registry therefore remains installed during callbacks, so
+  nested native execution reuses it instead of retaining and replaying a second
+  per-engine registration list.
   Application-trigger engines retain their transaction through the immutable
   shared block, so script-container setup does not deep-clone transaction
   scripts, signers, attributes, or witnesses. Transactions in the same block

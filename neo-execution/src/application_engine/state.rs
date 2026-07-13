@@ -105,6 +105,9 @@ where
         );
         let jump_table = Self::select_jump_table(protocol_settings.as_ref(), current_index);
         let mut engine = ExecutionEngine::new(Some(jump_table));
+        engine.set_interop_service(neo_vm::InteropService::with_capacity(
+            HOST_SYSCALL_REGISTRATION_CAPACITY,
+        ));
         // Match C# Neo: no instruction-count cap on the execution path. Bounding
         // is done by gas alone (fee consumption), so a long cheap-instruction
         // script HALTs instead of FAULTing at the upstream 1M-instruction
@@ -142,7 +145,6 @@ where
             invocation_counter: HashMap::new(),
             pending_native_calls: Vec::new(),
             native_call_boundary_contexts: Vec::new(),
-            host_syscall_registrations: Vec::with_capacity(HOST_SYSCALL_REGISTRATION_CAPACITY),
             nonce_data,
             random_times: 0,
             diagnostic,
@@ -195,6 +197,9 @@ where
         );
         let jump_table = Self::select_jump_table(protocol_settings.as_ref(), current_index);
         let mut engine = ExecutionEngine::new(Some(jump_table));
+        engine.set_interop_service(neo_vm::InteropService::with_capacity(
+            HOST_SYSCALL_REGISTRATION_CAPACITY,
+        ));
         // Match C# Neo: no instruction-count cap on the execution path. Bounding
         // is done by gas alone (fee consumption), so a long cheap-instruction
         // script HALTs instead of FAULTing at the upstream 1M-instruction
@@ -232,7 +237,6 @@ where
             invocation_counter: HashMap::new(),
             pending_native_calls: Vec::new(),
             native_call_boundary_contexts: Vec::new(),
-            host_syscall_registrations: Vec::with_capacity(HOST_SYSCALL_REGISTRATION_CAPACITY),
             nonce_data,
             random_times: 0,
             diagnostic,
@@ -327,10 +331,6 @@ where
                 handler,
             },
         );
-        // Remember the registration so nested VM execution from a native frame
-        // can rebuild the registry while `on_syscall` holds the original.
-        self.host_syscall_registrations
-            .push((name, price, call_flags));
         Ok(())
     }
 
