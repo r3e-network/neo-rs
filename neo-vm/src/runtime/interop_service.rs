@@ -9,8 +9,8 @@ use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
 use neo_primitives::CallFlags;
 use neo_vm_rs::Instruction;
+use rustc_hash::FxHashMap;
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::str;
 
@@ -44,6 +44,12 @@ pub struct VmInteropDescriptor<S = ()> {
 struct RegisteredDescriptor<S = ()> {
     descriptor: VmInteropDescriptor<S>,
 }
+
+// Syscall IDs are closed, protocol-derived u32 values rather than attacker-
+// chosen keys. FxHashMap avoids SipHash overhead without changing lookup or
+// duplicate-detection semantics; callers must not reuse this choice for
+// untrusted key material or consensus-visible iteration.
+type DescriptorMap<S> = FxHashMap<u32, RegisteredDescriptor<S>>;
 
 impl<S> RegisteredDescriptor<S> {
     fn new(descriptor: VmInteropDescriptor<S>) -> VmResult<(u32, Self)> {
@@ -143,7 +149,7 @@ pub trait InteropHost<S = ()> {
 
 /// `InteropService` manages syscall descriptors and dispatches them just like the C# implementation.
 pub struct InteropService<S = ()> {
-    descriptors: HashMap<u32, RegisteredDescriptor<S>>,
+    descriptors: DescriptorMap<S>,
 }
 
 impl<S> Default for InteropService<S> {
@@ -158,7 +164,7 @@ impl<S> InteropService<S> {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            descriptors: HashMap::new(),
+            descriptors: FxHashMap::default(),
         }
     }
 
@@ -170,7 +176,7 @@ impl<S> InteropService<S> {
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            descriptors: HashMap::with_capacity(capacity),
+            descriptors: FxHashMap::with_capacity_and_hasher(capacity, Default::default()),
         }
     }
 

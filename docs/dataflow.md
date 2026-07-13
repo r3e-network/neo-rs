@@ -240,7 +240,9 @@ cache-control allocations in dense blocks. Its fixed Neo syscall registry is
 pre-sized once during engine construction and remains installed while a host
 callback runs. Nested native-to-contract execution therefore shares the same
 descriptor table instead of rebuilding 37 base entries plus four Faun entries
-inside the callback.
+inside the callback. The descriptor and generic-handler maps use deterministic
+fast hashing for these trusted protocol `u32` IDs; no network/RPC key or
+consensus-visible map inherits that choice.
 Positive-path pipeline tests force each dynamic hook to produce an observable
 error when its downstream state is invalid, preventing a future optimization
 from silently skipping required protocol work.

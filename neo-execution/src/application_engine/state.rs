@@ -127,7 +127,10 @@ where
             storage_price: 100_000u32,
             call_flags: CallFlags::ALL,
             vm_engine: VmEngineHost::new(engine),
-            interop_handlers: HashMap::with_capacity(HOST_SYSCALL_REGISTRATION_CAPACITY),
+            interop_handlers: FxHashMap::with_capacity_and_hasher(
+                HOST_SYSCALL_REGISTRATION_CAPACITY,
+                Default::default(),
+            ),
             snapshot_cache,
             original_snapshot_cache,
             notifications: Vec::new(),
@@ -219,7 +222,10 @@ where
             storage_price: 100_000u32,
             call_flags: CallFlags::ALL,
             vm_engine: VmEngineHost::new(engine),
-            interop_handlers: HashMap::with_capacity(HOST_SYSCALL_REGISTRATION_CAPACITY),
+            interop_handlers: FxHashMap::with_capacity_and_hasher(
+                HOST_SYSCALL_REGISTRATION_CAPACITY,
+                Default::default(),
+            ),
             snapshot_cache,
             original_snapshot_cache,
             notifications: Vec::new(),

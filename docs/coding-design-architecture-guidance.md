@@ -634,6 +634,11 @@ transformed, cached, or transferred.
   registry merely to satisfy borrowing and then retain/replay a duplicate list
   for nested execution. Pre-size closed protocol catalogs and use entry APIs so
   duplicate detection does not require a second table probe.
+- A deterministic fast hasher such as `FxHashMap` is allowed only for closed,
+  trusted integer IDs when iteration order is not consensus- or API-visible.
+  Keep randomized/DoS-resistant hashing for attacker-controlled keys, and use
+  an explicitly ordered collection whenever iteration affects encoded bytes,
+  state roots, execution, or responses.
 - Avoid `#[inline]` and custom allocation tricks until a benchmark or profile
   shows the compiler needs help.
 

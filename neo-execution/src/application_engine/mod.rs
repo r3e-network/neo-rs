@@ -74,6 +74,7 @@ use neo_vm_rs::interpret_with_stack_and_syscalls_at;
 use neo_vm_rs::interpret_with_stack_and_syscalls_at_with_result_limit;
 use num_traits::ToPrimitive;
 use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -93,6 +94,11 @@ pub const FEE_FACTOR: i64 = 10000;
 type InteropHandler<P, D, B> =
     fn(&mut ApplicationEngine<P, D, B>, &mut ExecutionEngine<B>) -> VmResult<()>;
 
+// Keys are the same closed Neo syscall IDs validated by InteropService. Keep
+// this fast map local to trusted protocol dispatch; other engine maps retain
+// their existing hashers and iteration contracts.
+type InteropHandlerMap<P, D, B> = FxHashMap<u32, HostInteropHandler<P, D, B>>;
+
 /// Neo N3 application engine that hosts VM execution, syscalls, and native contracts.
 pub struct ApplicationEngine<P = NoNativeContractProvider, D = NoDiagnostic, B = EmptyCacheBacking>
 where
@@ -110,7 +116,7 @@ where
     storage_price: u32,
     call_flags: CallFlags,
     vm_engine: VmEngineHost<B>,
-    interop_handlers: HashMap<u32, HostInteropHandler<P, D, B>>,
+    interop_handlers: InteropHandlerMap<P, D, B>,
     snapshot_cache: Arc<DataCache<B>>,
     original_snapshot_cache: Arc<DataCache<B>>,
     notifications: Vec<NotifyEventArgs>,

@@ -258,8 +258,10 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   name allocation while still allowing owned custom descriptor names. The
   v3.10.1 catalog is pre-sized for its 37 base entries plus four Faun entries,
   descriptor registration uses one hash-table probe, and dispatch resolves
-  copyable metadata before entering the
-  mutable host. The registry therefore remains installed during callbacks, so
+  copyable metadata before entering the mutable host. Descriptor and host-
+  handler tables use `FxHashMap` only because their keys are closed, trusted
+  protocol-derived `u32` IDs and their iteration order is not observable. The
+  registry therefore remains installed during callbacks, so
   nested native execution reuses it instead of retaining and replaying a second
   per-engine registration list.
   Application-trigger engines retain their transaction through the immutable

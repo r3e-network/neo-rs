@@ -723,6 +723,18 @@ and eight GAS transfers per measured block produced point estimates of about
 the confidence intervals overlap; this is allocation/architecture evidence,
 not a claimed BPS improvement.
 
+The remaining descriptor and generic-host-handler maps now use
+`rustc_hash::FxHashMap` for their closed, trusted `u32` syscall IDs. A temporary
+release probe over one million 41-entry constructions and 100 million lookups
+ran three times: construction was 14-17% faster and lookup was 68-71% faster
+than `std::collections::HashMap`. The same dense canonical quick command moved
+its successive point estimates from about 3.22k to 3.33k BPS in memory and
+2.26k to 2.30k BPS with coordinated MDBX. Those end-to-end intervals remain
+noisy, so only the isolated map improvement is treated as proven. The fast
+hasher is deliberately not a workspace-wide default: attacker-controlled keys
+and every consensus-visible iteration retain their existing security/ordering
+contracts.
+
 ### Polkadot SDK innovations
 
 1. **WASM runtime as meta-protocol** — runtime blob in state `:code` is source
