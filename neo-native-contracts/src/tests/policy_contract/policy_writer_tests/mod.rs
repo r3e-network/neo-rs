@@ -26,8 +26,8 @@ use neo_payloads::witness::Witness;
 use neo_payloads::{Block, BlockHeader, VerifiableContainer};
 use neo_primitives::{TriggerType, WitnessScope};
 use neo_storage::StorageItem;
+use neo_vm::VmState;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::VmState;
 use num_bigint::BigInt;
 use std::sync::Arc;
 
@@ -148,10 +148,7 @@ where
 fn returning_user_contract(hash: UInt160) -> ContractState {
     let nef = NefFile::new(
         "policy-blocked-call-test".to_string(),
-        vec![
-            neo_vm_rs::OpCode::PUSH1.byte(),
-            neo_vm_rs::OpCode::RET.byte(),
-        ],
+        vec![neo_vm::OpCode::PUSH1.byte(), neo_vm::OpCode::RET.byte()],
     );
     let mut manifest = ContractManifest::new("BlockedCallFixture".to_string());
     manifest.abi.methods.push(

@@ -1,7 +1,7 @@
 use super::*;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 
@@ -13,7 +13,7 @@ fn parameter_definition_projects_to_neo_vm_rs_stack_value() {
 
     let left = definition.to_stack_value();
     let right = StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![
             StackValue::ByteString(b"owner".to_vec()),
             StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
@@ -31,7 +31,7 @@ fn parameter_definition_reads_from_neo_vm_rs_stack_value() {
 
     definition
         .from_stack_value(StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::ByteString(b"flag".to_vec()),
                 StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
@@ -52,7 +52,7 @@ fn parameter_definition_rejects_invalid_stack_fields_like_csharp() {
     assert!(
         definition
             .from_stack_value(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![
                     StackValue::ByteString(b"changed".to_vec()),
                     StackValue::Integer(0x7f),
@@ -63,7 +63,7 @@ fn parameter_definition_rejects_invalid_stack_fields_like_csharp() {
     assert!(
         definition
             .from_stack_value(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![
                     StackValue::Null,
                     StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
@@ -74,7 +74,7 @@ fn parameter_definition_rejects_invalid_stack_fields_like_csharp() {
     assert!(
         definition
             .from_stack_value(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![
                     StackValue::ByteString(vec![0xff]),
                     StackValue::Integer(ContractParameterType::Boolean as u8 as i64),
@@ -85,7 +85,7 @@ fn parameter_definition_rejects_invalid_stack_fields_like_csharp() {
     assert!(
         definition
             .from_stack_value(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![
                     StackValue::ByteString(b"changed".to_vec()),
                     StackValue::Integer(-1),

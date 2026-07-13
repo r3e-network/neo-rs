@@ -4,7 +4,7 @@ use num_bigint::BigInt;
 
 /// Structural equality for StackValue. Collection identity is not part of
 /// serialized stack data, so these tests compare value shape.
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 
@@ -88,41 +88,39 @@ fn to_stack_value_matches_csharp_layout() {
     let hashes = sample_hashes();
     let block = TrimmedBlock::new(header, hashes);
 
-    let neo_vm_rs::StackValue::Array(_, fields) = block.to_stack_value() else {
+    let neo_vm::StackValue::Array(_, fields) = block.to_stack_value() else {
         panic!("TrimmedBlock projects to an Array");
     };
     assert_eq!(fields.len(), 10, "C# ToStackItem produces a 10-field Array");
 
     assert_eq!(
         fields[0],
-        neo_vm_rs::StackValue::ByteString(block.header.hash().to_bytes())
+        neo_vm::StackValue::ByteString(block.header.hash().to_bytes())
     );
-    assert_eq!(fields[1], neo_vm_rs::StackValue::Integer(0));
+    assert_eq!(fields[1], neo_vm::StackValue::Integer(0));
     assert_eq!(
         fields[2],
-        neo_vm_rs::StackValue::ByteString(block.header.prev_hash().to_bytes())
+        neo_vm::StackValue::ByteString(block.header.prev_hash().to_bytes())
     );
     assert_eq!(
         fields[3],
-        neo_vm_rs::StackValue::ByteString(block.header.merkle_root().to_bytes())
+        neo_vm::StackValue::ByteString(block.header.merkle_root().to_bytes())
     );
     assert_eq!(
         fields[4],
-        neo_vm_rs::StackValue::BigInteger(
-            BigInt::from(0x0123_4567_89AB_CDEFu64).to_signed_bytes_le()
-        )
+        neo_vm::StackValue::BigInteger(BigInt::from(0x0123_4567_89AB_CDEFu64).to_signed_bytes_le())
     );
     assert_eq!(
         fields[5],
-        neo_vm_rs::StackValue::BigInteger(BigInt::from(u64::MAX).to_signed_bytes_le())
+        neo_vm::StackValue::BigInteger(BigInt::from(u64::MAX).to_signed_bytes_le())
     );
-    assert_eq!(fields[6], neo_vm_rs::StackValue::Integer(123_456));
-    assert_eq!(fields[7], neo_vm_rs::StackValue::Integer(3));
+    assert_eq!(fields[6], neo_vm::StackValue::Integer(123_456));
+    assert_eq!(fields[7], neo_vm::StackValue::Integer(3));
     assert_eq!(
         fields[8],
-        neo_vm_rs::StackValue::ByteString(block.header.next_consensus().to_bytes())
+        neo_vm::StackValue::ByteString(block.header.next_consensus().to_bytes())
     );
-    assert_eq!(fields[9], neo_vm_rs::StackValue::Integer(2));
+    assert_eq!(fields[9], neo_vm::StackValue::Integer(2));
 }
 
 #[test]

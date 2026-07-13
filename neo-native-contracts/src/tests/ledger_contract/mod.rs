@@ -22,13 +22,13 @@ use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
 use neo_vm::StackItem;
-use neo_vm_rs::{ExecutionEngineLimits, StackValue, VmState as VMState};
+use neo_vm::{ExecutionEngineLimits, StackValue, VmState as VMState};
 
 /// Structural equality for StackValue that ignores the reference-identity ids
 /// on compound variants. Collection identity is not part of serialized
 /// stack data, so structural equality is the correct notion for round-trip / shape
 /// assertions.
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 
@@ -472,7 +472,7 @@ fn ledger_public_return_encoders_use_stack_value_projection() {
 #[test]
 fn decode_transaction_state_rejects_malformed_full_record() {
     let record = BinarySerializer::serialize_stack_value_default(&StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![
             StackValue::Integer(7),
             StackValue::ByteString(vec![0xff]),
@@ -493,7 +493,7 @@ fn hash_index_state_interoperable_projection_matches_csharp_shape() {
     let hash = UInt256::from_bytes(&[0x77; 32]).unwrap();
     let state = HashIndexState::new(hash, 1234);
     let expected_value = StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![
             StackValue::ByteString(hash.to_bytes()),
             StackValue::Integer(1234),
@@ -517,15 +517,12 @@ fn hash_index_state_interoperable_projection_matches_csharp_shape() {
     assert_eq!(parsed, state);
 
     assert!(
-        HashIndexState::from_stack_value(StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
-            vec![],
-        ))
-        .is_err()
+        HashIndexState::from_stack_value(StackValue::Array(neo_vm::next_stack_item_id(), vec![],))
+            .is_err()
     );
     assert!(
         HashIndexState::from_stack_value(StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::ByteString(vec![0x77; 31]),
                 StackValue::Integer(1)

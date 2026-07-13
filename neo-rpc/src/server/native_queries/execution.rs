@@ -12,7 +12,7 @@ use neo_manifest::CallFlags;
 use neo_primitives::{TriggerType, UInt160};
 use neo_storage::persistence::{CacheRead, DataCache};
 use neo_vm::StackItem;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 
 use crate::server::rpc_server::RpcServer;
 

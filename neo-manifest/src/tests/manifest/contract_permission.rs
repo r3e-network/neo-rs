@@ -1,7 +1,7 @@
 use super::*;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 
@@ -15,11 +15,11 @@ fn contract_permission_projects_to_neo_vm_rs_stack_value() {
 
     let left = permission.to_stack_value();
     let right = StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![
             StackValue::ByteString(hash.to_bytes()),
             StackValue::Array(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![
                     StackValue::ByteString(b"transfer".to_vec()),
                     StackValue::ByteString(b"balanceOf".to_vec()),
@@ -40,11 +40,11 @@ fn contract_permission_reads_from_neo_vm_rs_stack_value() {
 
     permission
         .from_stack_value(StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::ByteString(hash.to_bytes()),
                 StackValue::Array(
-                    neo_vm_rs::next_stack_item_id(),
+                    neo_vm::next_stack_item_id(),
                     vec![StackValue::ByteString(b"mint".to_vec())],
                 ),
             ],

@@ -1,8 +1,8 @@
 use super::*;
 use neo_io::{BinaryWriter, MemoryReader};
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 
@@ -93,7 +93,7 @@ fn contract_manifest_projects_to_stack_value() {
     };
 
     assert_eq!(items[0], StackValue::ByteString(b"sample".to_vec()));
-    let expected_groups = StackValue::Array(neo_vm_rs::next_stack_item_id(), Vec::new());
+    let expected_groups = StackValue::Array(neo_vm::next_stack_item_id(), Vec::new());
     assert!(
         stack_value_struct_eq(&items[1], &expected_groups),
         "structural StackValue mismatch: {:?} vs {expected_groups:?}",
@@ -107,7 +107,7 @@ fn contract_manifest_projects_to_stack_value() {
         "C# ContractManifest.ToStackItem always emits an empty features map"
     );
     let expected_standards = StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![StackValue::ByteString(b"NEP-17".to_vec())],
     );
     assert!(
@@ -122,7 +122,7 @@ fn contract_manifest_projects_to_stack_value() {
         items[4]
     );
     let expected_permissions = StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![manifest.permissions[0].to_stack_value()],
     );
     assert!(
@@ -272,7 +272,7 @@ fn contract_manifest_rejects_non_empty_features_stack_value_like_csharp() {
     let source = ContractManifest::new("sample".to_string());
     let mut items = stack_items_from_manifest(&source);
     items[2] = StackValue::Map(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![(
             StackValue::ByteString(b"feature".to_vec()),
             StackValue::ByteString(b"{}".to_vec()),
@@ -281,7 +281,7 @@ fn contract_manifest_rejects_non_empty_features_stack_value_like_csharp() {
 
     assert!(
         ContractManifest::default()
-            .from_stack_value(StackValue::Struct(neo_vm_rs::next_stack_item_id(), items))
+            .from_stack_value(StackValue::Struct(neo_vm::next_stack_item_id(), items))
             .is_err()
     );
 }
@@ -294,26 +294,26 @@ fn contract_manifest_rejects_malformed_stack_fields_like_csharp() {
         mutate(&mut items);
         assert!(
             ContractManifest::default()
-                .from_stack_value(StackValue::Struct(neo_vm_rs::next_stack_item_id(), items))
+                .from_stack_value(StackValue::Struct(neo_vm::next_stack_item_id(), items))
                 .is_err()
         );
     };
 
     assert_rejected(|items| {
-        items[1] = StackValue::Array(neo_vm_rs::next_stack_item_id(), vec![StackValue::Null]);
+        items[1] = StackValue::Array(neo_vm::next_stack_item_id(), vec![StackValue::Null]);
     });
     assert_rejected(|items| {
         items[3] = StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![StackValue::ByteString(vec![0xff])],
         );
     });
     assert_rejected(|items| {
-        items[3] = StackValue::Array(neo_vm_rs::next_stack_item_id(), vec![StackValue::Null]);
+        items[3] = StackValue::Array(neo_vm::next_stack_item_id(), vec![StackValue::Null]);
     });
     assert_rejected(|items| {
         items[6] = StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![StackValue::ByteString(vec![1, 2, 3])],
         );
     });

@@ -32,8 +32,8 @@ neo-blockchain = { workspace = true }
 neo-network = { workspace = true }
 neo-rpc = { workspace = true }
 
-# External sibling VM semantics crate
-neo-vm-rs = { workspace = true }
+# Canonical VM implementation
+neo-vm = { workspace = true }
 
 # Utilities
 num-bigint = { workspace = true }

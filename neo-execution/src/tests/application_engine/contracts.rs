@@ -12,8 +12,8 @@ use neo_payloads::{
     OracleResponse, Signer, Transaction, TransactionAttribute, VerifiableContainer,
 };
 use neo_primitives::{ContractParameterType, OracleResponseCode, WitnessScope};
+use neo_vm::OpCode;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::OpCode;
 use parking_lot::Mutex as PlMutex;
 use std::collections::HashMap;
 
@@ -1282,7 +1282,7 @@ fn returning_call_yields_result_and_native_calling_hash() {
 
     let mut script = vec![OpCode::SYSCALL.byte()];
     script.extend_from_slice(
-        &neo_vm_rs::interop_hash("System.Runtime.GetCallingScriptHash").to_le_bytes(),
+        &neo_vm::interop_hash("System.Runtime.GetCallingScriptHash").to_le_bytes(),
     );
     script.push(OpCode::RET.byte());
 
@@ -1602,7 +1602,7 @@ fn returning_call_exception_cannot_be_caught_below_native_frame() {
     // ip10: PUSH2; RET            <- catch handler (must NOT run)
     // ip12: PUSH1; RET
     let mut script = vec![OpCode::TRY.byte(), 10, 0, OpCode::SYSCALL.byte()];
-    script.extend_from_slice(&neo_vm_rs::interop_hash(BOUNDARY_TEST_SYSCALL).to_le_bytes());
+    script.extend_from_slice(&neo_vm::interop_hash(BOUNDARY_TEST_SYSCALL).to_le_bytes());
     script.extend_from_slice(&[
         OpCode::ENDTRY.byte(),
         4,
@@ -1679,7 +1679,7 @@ fn queued_native_call_exception_cannot_be_caught_below_native_frame() {
     // ip10: PUSH2; RET            <- catch handler (must NOT run)
     // ip12: PUSH1; RET
     let mut script = vec![OpCode::TRY.byte(), 10, 0, OpCode::SYSCALL.byte()];
-    script.extend_from_slice(&neo_vm_rs::interop_hash(QUEUED_BOUNDARY_TEST_SYSCALL).to_le_bytes());
+    script.extend_from_slice(&neo_vm::interop_hash(QUEUED_BOUNDARY_TEST_SYSCALL).to_le_bytes());
     script.extend_from_slice(&[
         OpCode::ENDTRY.byte(),
         4,

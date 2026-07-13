@@ -9,7 +9,7 @@ use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_storage::DataCache;
 use neo_storage::persistence::storage::StorageConfig;
 use neo_storage::persistence::{RawReadOnlyStore, Store, StoreCache};
-use neo_vm_rs::VmState;
+use neo_vm::VmState;
 
 use crate::StaticLedgerArchive;
 

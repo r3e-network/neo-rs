@@ -20,8 +20,8 @@ use neo_primitives::{
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
+use neo_vm::{ExecutionEngineLimits, OpCode, VmState};
 use neo_vm::{StackItem, script_builder::ScriptBuilder};
-use neo_vm_rs::{ExecutionEngineLimits, OpCode, VmState};
 use num_bigint::BigInt;
 use std::sync::Arc;
 

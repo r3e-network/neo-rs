@@ -2,7 +2,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
 use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
 use super::PolicyContract;
 use crate::policy_contract::PREFIX_WHITELISTED_FEE_CONTRACTS;
@@ -136,7 +136,7 @@ impl WhitelistedContractView {
 
     pub(super) fn to_stack_value(&self) -> StackValue {
         StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::ByteString(self.contract_hash.to_bytes()),
                 StackValue::ByteString(self.method.as_bytes().to_vec()),

@@ -1,8 +1,8 @@
 use crate::RpcClientError;
 use neo_manifest::CallFlags;
 use neo_primitives::UInt160;
+use neo_vm::OpCode;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::OpCode;
 
 pub(crate) fn build_dynamic_call_script(
     script_hash: &UInt160,

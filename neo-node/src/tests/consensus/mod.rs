@@ -34,9 +34,9 @@ use neo_payloads::{ExtensiblePayload, Signer, Transaction, TransactionAttribute,
 use neo_primitives::{UInt160, UInt256, VerifyResult, WitnessScope};
 use neo_serialization::BinarySerializer;
 use neo_storage::{StorageItem, StorageKey, persistence::DataCache};
+use neo_vm::ExecutionEngineLimits;
+use neo_vm::OpCode;
 use neo_vm::StackItem;
-use neo_vm_rs::ExecutionEngineLimits;
-use neo_vm_rs::OpCode;
 use parking_lot::RwLock;
 use tokio::sync::mpsc;
 
@@ -453,7 +453,7 @@ fn seed_persisted_transaction(snapshot: &DataCache, block_index: u32, tx: &Trans
         StorageKey::new(LedgerContract::ID, key),
         StorageItem::from_bytes(
             LedgerContract::new()
-                .serialize_persisted_transaction_state(block_index, neo_vm_rs::VmState::HALT, tx)
+                .serialize_persisted_transaction_state(block_index, neo_vm::VmState::HALT, tx)
                 .unwrap(),
         ),
     );

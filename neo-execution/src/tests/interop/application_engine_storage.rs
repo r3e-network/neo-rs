@@ -4,7 +4,7 @@ use crate::native_contract_provider::NoNativeContractProvider;
 use neo_config::ProtocolSettings;
 use neo_primitives::TriggerType;
 use neo_storage::persistence::DataCache;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use std::sync::Arc;
 
 fn storage_engine() -> ApplicationEngine {

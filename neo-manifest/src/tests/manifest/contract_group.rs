@@ -1,7 +1,7 @@
 use super::*;
 use neo_primitives::hex_util;
 
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 
@@ -21,7 +21,7 @@ fn contract_group_projects_to_neo_vm_rs_stack_value() {
 
     let left = group.to_stack_value();
     let right = StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![
             StackValue::ByteString(pub_key_bytes),
             StackValue::ByteString(vec![0xAB; 64]),
@@ -39,7 +39,7 @@ fn contract_group_reads_from_neo_vm_rs_stack_value() {
     let pub_key_bytes = group.pub_key.encode_point(true).expect("compressed key");
 
     let decoded = ContractGroup::try_from_stack_value(StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![
             StackValue::ByteString(pub_key_bytes),
             StackValue::ByteString(vec![0xCD; 64]),

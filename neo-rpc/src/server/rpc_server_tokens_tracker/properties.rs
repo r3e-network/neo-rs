@@ -14,9 +14,9 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_execution::application_engine::TEST_MODE_GAS;
 use neo_execution::{ApplicationEngine, TriggerType};
 use neo_manifest::CallFlags;
+use neo_vm::VmState as VMState;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm::stack_item::StackItem;
-use neo_vm_rs::VmState as VMState;
 use serde_json::{Map, Value};
 
 use super::RpcServerTokensTracker;

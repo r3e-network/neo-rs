@@ -8,7 +8,7 @@ use neo_primitives::{ContractParameterType, UInt160};
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
 use neo_vm::Interoperable;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 
 #[path = "style/mod.rs"]
@@ -18,7 +18,7 @@ mod style;
 /// on compound variants. Collection identity is not part of serialized
 /// stack data, so structural equality is the correct notion for round-trip / shape
 /// assertions.
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 
@@ -26,7 +26,7 @@ fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -
 fn account_state_interoperable_projection_matches_csharp_shape() {
     let state = AccountState::new(BigInt::from(12345));
     let expected_value = StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![StackValue::BigInteger(
             BigInt::from(12345).to_signed_bytes_le(),
         )],
@@ -49,14 +49,12 @@ fn account_state_interoperable_projection_matches_csharp_shape() {
     assert_eq!(parsed, state);
 
     assert!(
-        AccountState::from_stack_value(StackValue::Array(neo_vm_rs::next_stack_item_id(), vec![],))
+        AccountState::from_stack_value(StackValue::Array(neo_vm::next_stack_item_id(), vec![],))
             .is_err()
     );
     assert!(
-        AccountState::from_stack_value(
-            StackValue::Struct(neo_vm_rs::next_stack_item_id(), vec![],)
-        )
-        .is_err()
+        AccountState::from_stack_value(StackValue::Struct(neo_vm::next_stack_item_id(), vec![],))
+            .is_err()
     );
 }
 
@@ -202,7 +200,7 @@ fn nep17_payment_data_item_round_trips_any_payload() {
     let original = neo_vm::StackItem::from_byte_string(vec![0xaa, 0xbb]);
     let bytes = neo_serialization::BinarySerializer::serialize(
         &original,
-        &neo_vm_rs::ExecutionEngineLimits::default(),
+        &neo_vm::ExecutionEngineLimits::default(),
     )
     .expect("serialize stack item");
     let restored = nep17_payment_data_item(&bytes, "test data").expect("restore data");

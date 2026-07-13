@@ -1,6 +1,6 @@
 use crate::{Signer, Transaction, Witness};
+use neo_vm::OpCode;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::OpCode;
 
 use super::{SignerBuilder, TransactionAttributesBuilder, WitnessBuilder};
 

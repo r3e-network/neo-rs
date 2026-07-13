@@ -4,8 +4,8 @@ use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::CallFlags;
 use neo_primitives::OracleResponseCode;
 use neo_primitives::UInt160;
+use neo_vm::OpCode;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::OpCode;
 use serde::{Deserialize, Serialize};
 
 /// Indicates the maximum size of the Result field.
@@ -43,7 +43,7 @@ impl OracleResponse {
         builder.emit_push_int(i64::from(CallFlags::ALL.bits()));
         builder.emit_push(b"finish");
         builder.emit_push(&oracle_hash.to_array());
-        builder.emit_syscall_hash(neo_vm_rs::interop_hash("System.Contract.Call"));
+        builder.emit_syscall_hash(neo_vm::interop_hash("System.Contract.Call"));
         builder.to_array()
     }
 

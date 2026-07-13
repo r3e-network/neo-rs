@@ -13,8 +13,8 @@ use neo_error::{CoreError, CoreResult};
 use neo_primitives::TriggerType;
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::json::{JObject, JToken};
-use neo_vm_rs::StackValue;
-use neo_vm_rs::VmState;
+use neo_vm::StackValue;
+use neo_vm::VmState;
 /// Application log information matching C# `RpcApplicationLog`
 #[derive(Debug, Clone)]
 pub struct RpcApplicationLog {

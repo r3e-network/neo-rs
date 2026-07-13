@@ -584,17 +584,14 @@ fn stack_item_parses_map() {
 
 #[test]
 fn stack_item_to_json_emits_array_and_map_shapes() {
-    let array = StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
-        vec![StackValue::Integer(5)],
-    );
+    let array = StackValue::Array(neo_vm::next_stack_item_id(), vec![StackValue::Integer(5)]);
     assert_eq!(
         RpcUtility::stack_item_to_json(&array).unwrap().to_string(),
         r#"{"type":"Array","value":[{"type":"Integer","value":"5"}]}"#
     );
 
     let map = StackValue::Map(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![(
             StackValue::ByteString(b"k".to_vec()),
             StackValue::Boolean(true),

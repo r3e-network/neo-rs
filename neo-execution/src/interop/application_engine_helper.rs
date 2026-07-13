@@ -10,10 +10,10 @@ use neo_primitives::TriggerType;
 use neo_primitives::UInt160;
 use neo_serialization::BinarySerializer;
 use neo_vm::StackItem;
+use neo_vm::StackValue;
+use neo_vm::VmOrderedDictionary;
+use neo_vm::VmState as VMState;
 use neo_vm::stack_item::{Array as ArrayItem, Map as MapItem, Struct as StructItem};
-use neo_vm_rs::StackValue;
-use neo_vm_rs::VmOrderedDictionary;
-use neo_vm_rs::VmState as VMState;
 use num_traits::ToPrimitive;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
@@ -324,7 +324,7 @@ fn notification_state_to_stack_value(state: &[StackItem]) -> CoreResult<StackVal
         .cloned()
         .map(StackValue::try_from)
         .collect::<Result<Vec<_>, _>>()
-        .map(|items| StackValue::Array(neo_vm_rs::next_stack_item_id(), items))
+        .map(|items| StackValue::Array(neo_vm::next_stack_item_id(), items))
         .map_err(|error| CoreError::other(error.to_string()))
 }
 

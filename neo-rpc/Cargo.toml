@@ -64,7 +64,6 @@ neo-serialization = { workspace = true, optional = true }
 neo-config = { workspace = true, optional = true }
 neo-execution = { workspace = true, optional = true }
 neo-payloads = { workspace = true, optional = true }
-neo-vm-rs = { workspace = true, optional = true }
 
 # Internal crates — server feature only
 neo-runtime = { workspace = true, optional = true }
@@ -146,7 +145,6 @@ server = [
     "dep:neo-config",
     "dep:neo-execution",
     "dep:neo-payloads",
-    "dep:neo-vm-rs",
     # Server-only deps
     "dep:neo-runtime",
     "dep:neo-oracle-service",
@@ -184,7 +182,6 @@ client = [
     "dep:neo-serialization",
     # Client deps
     "dep:neo-config",
-    "dep:neo-vm-rs",
     "dep:neo-payloads",
     "dep:neo-execution",
     # External client deps

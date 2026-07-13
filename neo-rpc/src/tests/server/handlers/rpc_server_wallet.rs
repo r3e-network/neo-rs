@@ -19,7 +19,7 @@ use neo_payloads::transaction::Transaction;
 use neo_payloads::transaction_attribute::TransactionAttribute;
 use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm_rs::{OpCode, VmState as VMState};
+use neo_vm::{OpCode, VmState as VMState};
 use neo_wallets::wallet_helper::WalletAddress as wallet_helper;
 use neo_wallets::{KeyPair, Nep6Wallet, Wallet, WalletError};
 use num_bigint::BigInt;

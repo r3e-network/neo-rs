@@ -10,8 +10,8 @@
 
 use neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use neo_primitives::UInt256;
+use neo_vm::StackValue;
 use neo_vm::{Interoperable, InteroperableError};
-use neo_vm_rs::StackValue;
 
 use crate::block::Block;
 use crate::header::Header;
@@ -71,7 +71,7 @@ impl TrimmedBlock {
         };
 
         StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 // Computed property: Header.Hash.ToArray().
                 StackValue::ByteString(self.header.hash().to_bytes()),

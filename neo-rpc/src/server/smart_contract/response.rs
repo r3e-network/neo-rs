@@ -6,9 +6,9 @@
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_payloads::NotifyEventArgs;
+use neo_vm::VmState;
 use neo_vm::rpc_json::StackItemRpcJson;
 use neo_vm::stack_item::StackItem;
-use neo_vm_rs::VmState;
 use serde_json::{Map, Value, json};
 
 use crate::server::rpc_exception::RpcException;

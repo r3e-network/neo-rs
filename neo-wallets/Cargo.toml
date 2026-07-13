@@ -46,7 +46,6 @@ rand = { workspace = true }
 
 [dev-dependencies]
 neo-execution = { workspace = true }
-neo-vm-rs = { workspace = true }
 
 [lints]
 workspace = true

@@ -74,7 +74,7 @@ fn stage_context() -> StageContext {
 }
 
 fn true_witness() -> Witness {
-    Witness::new_with_scripts(Vec::new(), vec![neo_vm_rs::OpCode::PUSH1.byte()])
+    Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH1.byte()])
 }
 
 fn block(index: u32, parent_hash: UInt256, timestamp: u64, witness: Witness) -> Block {
@@ -172,11 +172,8 @@ fn consensus_witness_stage_rejects_wrong_consensus_account() {
         hash: parent_hash,
         index: 0,
         timestamp: 10,
-        next_consensus: Witness::new_with_scripts(
-            Vec::new(),
-            vec![neo_vm_rs::OpCode::PUSH2.byte()],
-        )
-        .script_hash(),
+        next_consensus: Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH2.byte()])
+            .script_hash(),
     };
     let block = block(1, parent_hash, 20, witness);
 

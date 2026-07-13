@@ -2,7 +2,7 @@
 
 use crate::ApplicationExecutionContext;
 use neo_storage::CacheRead;
-use neo_vm_rs::Instruction;
+use neo_vm::Instruction;
 
 /// Diagnostic interface for ApplicationEngine.
 ///

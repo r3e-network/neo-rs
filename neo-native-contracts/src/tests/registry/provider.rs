@@ -70,7 +70,7 @@ fn standard_persist_hook_capabilities_match_protocol_implementations() {
     );
 
     let mut transaction = neo_payloads::Transaction::new();
-    transaction.set_script(vec![neo_vm_rs::OpCode::RET.byte()]);
+    transaction.set_script(vec![neo_vm::OpCode::RET.byte()]);
     let ordinary_block = neo_payloads::Block::from_parts(
         {
             let mut header = neo_payloads::Header::new();
@@ -110,7 +110,7 @@ fn standard_persist_hook_capabilities_match_protocol_implementations() {
     assert_eq!(ordinary_post_persist, ["LedgerContract", "NeoToken"]);
 
     let mut attributed_transaction = neo_payloads::Transaction::new();
-    attributed_transaction.set_script(vec![neo_vm_rs::OpCode::RET.byte()]);
+    attributed_transaction.set_script(vec![neo_vm::OpCode::RET.byte()]);
     attributed_transaction.set_attributes(vec![
         neo_payloads::TransactionAttribute::NotaryAssisted(neo_payloads::NotaryAssisted::new(1)),
         neo_payloads::TransactionAttribute::OracleResponse(neo_payloads::OracleResponse::new(

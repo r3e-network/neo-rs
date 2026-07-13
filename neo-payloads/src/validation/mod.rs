@@ -14,7 +14,7 @@
 //! - `validation`: Validation routines and typed verdicts for protocol data.
 //! - `verify_result`: verification result records.
 
-/// Strict VM script validation helpers re-exported from `neo-vm-rs`.
+/// Strict VM script validation helpers re-exported from `neo-vm`.
 pub mod script_validation;
 mod validation;
 /// VerifyResult re-export from `neo-primitives`.

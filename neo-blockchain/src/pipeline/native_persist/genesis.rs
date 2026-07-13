@@ -62,7 +62,7 @@ pub fn genesis_block(settings: &ProtocolSettings) -> CoreResult<Block> {
     header.set_index(0);
     header.set_primary_index(0);
     header.set_next_consensus(bft_address(&settings.standby_validators())?);
-    header.witness = Witness::new_with_scripts(Vec::new(), vec![neo_vm_rs::OpCode::PUSH1.byte()]);
+    header.witness = Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH1.byte()]);
     Ok(Block::from_parts(header, Vec::new()))
 }
 

@@ -19,8 +19,8 @@ use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
+use neo_vm::ExecutionEngineLimits;
 use neo_vm::StackItem;
-use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::Zero;
 
@@ -69,7 +69,7 @@ fn gas_transfer_from_calling_contract_uses_contract_as_witness() {
     .expect("engine builds");
 
     engine
-        .load_script(vec![neo_vm_rs::OpCode::RET.byte()], CallFlags::ALL, None)
+        .load_script(vec![neo_vm::OpCode::RET.byte()], CallFlags::ALL, None)
         .expect("load calling contract context");
     let entry = engine.current_context().cloned().expect("entry context");
     let state = entry.state();
@@ -89,7 +89,7 @@ fn gas_transfer_from_calling_contract_uses_contract_as_witness() {
         )
         .expect("load GAS transfer");
 
-    assert_eq!(engine.execute_allow_fault(), neo_vm_rs::VmState::HALT);
+    assert_eq!(engine.execute_allow_fault(), neo_vm::VmState::HALT);
     assert_eq!(
         GasToken::new()
             .read_gas_account(&snapshot, &contract_account)

@@ -5,7 +5,7 @@ use neo_payloads::transaction_attribute::TransactionAttribute;
 #[cfg(test)]
 use neo_primitives::WitnessScope;
 use neo_primitives::{BigDecimal, UInt160};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use neo_wallets::{AssetDescriptor, Nep6Wallet, TransferOutput};
 use num_traits::ToPrimitive;
 use serde_json::Value;

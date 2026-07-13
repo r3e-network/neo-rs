@@ -6,7 +6,7 @@ use neo_payloads::{ApplicationExecuted, Block, Header, NotifyEventArgs, Signer, 
 use neo_primitives::{TriggerType, UInt160, WitnessScope};
 use neo_storage::persistence::{Store, StoreSnapshot, WriteStore};
 use neo_vm::StackItem;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 
 pub(super) fn find_handler<'a>(handlers: &'a [RpcHandler], name: &str) -> &'a RpcHandler {
     handlers

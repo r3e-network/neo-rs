@@ -25,7 +25,6 @@ neo-state-service = { workspace = true }
 neo-storage = { workspace = true }
 neo-system = { workspace = true }
 neo-vm = { workspace = true }
-neo-vm-rs = { workspace = true }
 neo-payloads = { workspace = true }
 hex = { workspace = true }
 num-bigint = { workspace = true }

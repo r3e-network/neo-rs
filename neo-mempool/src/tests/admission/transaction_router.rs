@@ -1,7 +1,7 @@
 use super::*;
 use neo_payloads::{Signer, Transaction, Witness};
 use neo_primitives::{UInt160, WitnessScope};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 fn sample_tx() -> Transaction {
     let mut tx = Transaction::new();

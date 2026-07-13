@@ -22,7 +22,7 @@ fn daemon_context_indexes_application_executed_notifications() {
     use neo_primitives::{TriggerType, UInt160, UInt256, WitnessScope};
     use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use neo_vm_rs::VmState as VMState;
+    use neo_vm::VmState as VMState;
 
     let store = Arc::new(MemoryStore::new());
     let store_cache = StoreCache::new_from_store(Arc::clone(&store), false);

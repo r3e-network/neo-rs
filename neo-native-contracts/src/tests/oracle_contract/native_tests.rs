@@ -5,15 +5,15 @@ use neo_primitives::{CallFlags, ContractParameterType, UInt160, UInt256};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
+use neo_vm::{ExecutionEngineLimits, StackValue};
 use neo_vm::{Interoperable, StackItem};
-use neo_vm_rs::{ExecutionEngineLimits, StackValue};
 use num_bigint::BigInt;
 
 /// Structural equality for StackValue that ignores the reference-identity ids
 /// on compound variants. Collection identity is not part of serialized
 /// stack data, so structural equality is the correct notion for round-trip / shape
 /// assertions.
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 // ===== from oracle_native_tests.rs =====
@@ -346,7 +346,7 @@ fn oracle_id_list_interoperable_projection_matches_csharp_shape() {
     let ids = vec![0u64, 7, u64::MAX];
     let state = OracleIdList::new(ids.clone());
     let expected_value = StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         ids.iter()
             .map(|id| StackValue::BigInteger(BigInt::from(*id).to_signed_bytes_le()))
             .collect::<Vec<_>>(),

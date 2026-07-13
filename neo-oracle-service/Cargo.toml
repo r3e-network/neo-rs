@@ -15,7 +15,6 @@ description = "Oracle plugin for the Neo blockchain (HTTPS + NeoFS oracle reques
 
 [dependencies]
 neo-vm = { workspace = true }
-neo-vm-rs = { workspace = true }
 neo-storage = { workspace = true }
 neo-crypto = { workspace = true }
 base64 = { workspace = true }

@@ -8,7 +8,7 @@ use neo_rpc::application_logs::ApplicationLogsSettings;
 use neo_storage::persistence::StoreCache;
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 use neo_vm::StackItem;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 
 use super::*;
 

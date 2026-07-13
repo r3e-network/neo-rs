@@ -7,7 +7,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
 use neo_storage::persistence::DataCache;
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 
 /// C# `Notary.Deposit`: `Struct[Amount, Till]`.
@@ -24,7 +24,7 @@ impl DepositState {
 
     pub(in crate::notary) fn to_stack_value(&self) -> StackValue {
         StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::BigInteger(self.amount.to_signed_bytes_le()),
                 StackValue::Integer(i64::from(self.till)),

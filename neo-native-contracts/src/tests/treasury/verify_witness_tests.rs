@@ -9,8 +9,8 @@ use neo_payloads::witness::Witness;
 use neo_payloads::{Block, Header, VerifiableContainer};
 use neo_primitives::{CallFlags, TriggerType, UInt160, WitnessScope};
 use neo_storage::persistence::DataCache;
+use neo_vm::VmState;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::VmState;
 
 /// Runs `Treasury::verify()` via System.Contract.Call, signed (Global) by
 /// `signer`. Returns the final VM state and the boolean result.

@@ -2,7 +2,7 @@
 
 use neo_error::{CoreError, CoreResult};
 use neo_serialization::{BinarySerializer, JsonSerializer};
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm::ExecutionEngineLimits;
 
 use super::StdLib;
 

@@ -7,8 +7,8 @@
 //! back-compat with code that still imports it from there.
 
 use neo_primitives::UInt160;
+use neo_vm::StackValue;
 use neo_vm::{Interoperable, InteroperableError, StackItem, VmError};
-use neo_vm_rs::StackValue;
 use std::fmt;
 use std::sync::Arc;
 
@@ -82,13 +82,13 @@ impl NotifyEventArgs {
     }
 
     /// Builds the C# `NotifyEventArgs.ToStackItem` layout with a caller-prepared
-    /// state array in the lean neo-vm-rs representation.
+    /// state array in the lean neo-vm representation.
     ///
     /// The runtime owns hardfork-specific state-copying policy. This helper keeps
     /// the `[ScriptHash, EventName, State]` projection in one place.
     pub fn to_stack_value_with_state_array(&self, state_array: StackValue) -> StackValue {
         StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::ByteString(self.script_hash.to_bytes()),
                 StackValue::ByteString(self.event_name.clone().into_bytes()),
@@ -97,7 +97,7 @@ impl NotifyEventArgs {
         )
     }
 
-    /// Converts the notification to a neo-vm-rs stack value using its current state array.
+    /// Converts the notification to a neo-vm stack value using its current state array.
     pub fn to_stack_value(&self) -> Result<StackValue, VmError> {
         let state = self
             .state
@@ -106,7 +106,7 @@ impl NotifyEventArgs {
             .map(StackValue::try_from)
             .collect::<Result<Vec<_>, _>>()?;
         Ok(self.to_stack_value_with_state_array(StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             state,
         )))
     }

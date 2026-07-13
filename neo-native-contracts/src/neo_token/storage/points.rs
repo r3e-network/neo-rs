@@ -12,7 +12,7 @@ impl NeoToken {
         I: IntoIterator<Item = &'a ECPoint>,
     {
         StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             points
                 .into_iter()
                 .map(|p| StackValue::ByteString(p.to_bytes()))

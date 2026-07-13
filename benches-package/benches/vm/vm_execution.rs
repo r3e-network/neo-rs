@@ -1,7 +1,17 @@
 #![allow(missing_docs)] // benchmark/integration-test harness: not public API
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use neo_vm::evaluation_stack::EvaluationStack;
+use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::{OpCode, StackValue, VmState, interpret, validate_strict_script};
+use neo_vm::{ExecutionEngine, OpCode, Script, StackItem, VmState, validate_strict_script};
+
+fn execute(script: &[u8]) -> VmState {
+    let mut engine = ExecutionEngine::<()>::new(None);
+    engine
+        .load_script(Script::new_relaxed(script.to_vec()), -1, 0)
+        .expect("load benchmark script");
+    engine.execute()
+}
 
 /// Benchmark opcode dispatch: PUSH1+PUSH1+ADD+DROP repeated 1000 times.
 fn bench_vm_add_loop(c: &mut Criterion) {
@@ -18,8 +28,7 @@ fn bench_vm_add_loop(c: &mut Criterion) {
 
     c.bench_function("vm_add_loop_1000", |b| {
         b.iter(|| {
-            let result = interpret(black_box(&script_bytes)).expect("execute script");
-            assert_eq!(result.state, VmState::Halt);
+            assert_eq!(execute(black_box(&script_bytes)), VmState::Halt);
         });
     });
 }
@@ -36,22 +45,23 @@ fn bench_vm_nop_loop(c: &mut Criterion) {
 
     c.bench_function("vm_nop_5000", |b| {
         b.iter(|| {
-            let result = interpret(black_box(&script_bytes)).expect("execute script");
-            assert_eq!(result.state, VmState::Halt);
+            assert_eq!(execute(black_box(&script_bytes)), VmState::Halt);
         });
     });
 }
 
-/// Benchmark `neo-vm-rs` stack value push/pop cycles.
+/// Benchmark local VM evaluation-stack push/pop cycles.
 fn bench_stack_push_pop(c: &mut Criterion) {
     c.bench_function("stack_push_pop_1000", |b| {
         b.iter(|| {
-            let mut stack = Vec::with_capacity(1000);
+            let mut stack = EvaluationStack::new(ReferenceCounter::new());
             for i in 0..1000i64 {
-                stack.push(StackValue::Integer(black_box(i)));
+                stack
+                    .push(StackItem::from_i64(black_box(i)))
+                    .expect("push benchmark item");
             }
             for _ in 0..1000 {
-                let _ = black_box(stack.pop().expect("pop"));
+                let _ = black_box(stack.pop().expect("pop benchmark item"));
             }
         });
     });
@@ -59,15 +69,17 @@ fn bench_stack_push_pop(c: &mut Criterion) {
 
 /// Benchmark stack peek operations.
 fn bench_stack_peek(c: &mut Criterion) {
-    let mut stack = Vec::with_capacity(100);
+    let mut stack = EvaluationStack::new(ReferenceCounter::new());
     for i in 0..100i64 {
-        stack.push(StackValue::Integer(i));
+        stack
+            .push(StackItem::from_i64(i))
+            .expect("push benchmark item");
     }
 
     c.bench_function("stack_peek_top_10000", |b| {
         b.iter(|| {
             for _ in 0..10_000 {
-                let _ = black_box(stack.last().expect("peek"));
+                let _ = black_box(stack.peek(0).expect("peek benchmark item"));
             }
         });
     });

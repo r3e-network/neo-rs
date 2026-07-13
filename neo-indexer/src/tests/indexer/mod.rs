@@ -18,8 +18,8 @@ use super::*;
 use crate::{INDEXER_SNAPSHOT_VERSION, IndexerSnapshot};
 use neo_payloads::{ApplicationExecuted, Block, Header, NotifyEventArgs, Signer, Transaction};
 use neo_primitives::{TriggerType, WitnessScope};
+use neo_vm::VmState as VMState;
 use neo_vm::{StackItem, StackItemRpcJson};
-use neo_vm_rs::VmState as VMState;
 
 fn account(seed: u8) -> UInt160 {
     UInt160::from_bytes(&[seed; UInt160::LENGTH]).expect("valid account")

@@ -2,7 +2,7 @@
 
 use neo_error::{CoreError, CoreResult};
 use neo_vm::StackItem;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -120,7 +120,7 @@ impl WildCardContainer<String> {
         Ok(values)
     }
 
-    /// Converts from a neo-vm-rs stack value.
+    /// Converts from a neo-vm stack value.
     pub fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
         match stack_value {
             StackValue::Null => Ok(Self::create_wildcard()),
@@ -141,12 +141,12 @@ impl WildCardContainer<String> {
         )
     }
 
-    /// Converts the container to a neo-vm-rs stack value.
+    /// Converts the container to a neo-vm stack value.
     pub fn to_stack_value(&self) -> StackValue {
         match self {
             Self::Wildcard => StackValue::Null,
             Self::List(values) => StackValue::Array(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 values
                     .iter()
                     .map(|value| StackValue::ByteString(value.as_bytes().to_vec()))

@@ -24,7 +24,6 @@ neo-static-files = { workspace = true }
 neo-payloads = { workspace = true }
 neo-manifest = { workspace = true }
 neo-vm = { workspace = true }
-neo-vm-rs = { workspace = true }
 neo-serialization = { workspace = true }
 neo-mempool = { workspace = true }
 neo-runtime = { workspace = true }

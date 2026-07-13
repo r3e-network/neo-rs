@@ -2,7 +2,7 @@ use super::*;
 use crate::native_contract_provider::{
     NativeContractProvider, NoNativeContract, NoNativeContractProvider,
 };
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use std::sync::Arc;
 
 struct CurrentIndexProvider(u32);

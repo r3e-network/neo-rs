@@ -339,7 +339,7 @@ impl ChainCursor {
 
 fn gas_transfer_script(sender: &UInt160, recipient: &UInt160) -> Vec<u8> {
     let mut builder = ScriptBuilder::new();
-    builder.emit_opcode(neo_vm_rs::OpCode::PUSHNULL);
+    builder.emit_opcode(neo_vm::OpCode::PUSHNULL);
     builder.emit_push_int(TRANSFER_AMOUNT);
     builder.emit_push(&recipient.to_array());
     builder.emit_push(&sender.to_array());

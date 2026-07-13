@@ -109,7 +109,7 @@ fn decode_nep17_account_state_balance() {
 fn decode_neo_account_state_reads_reward_markers() {
     let vote_to = [0x02u8; 33];
     let value = StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![
             StackValue::Integer(100),
             StackValue::Integer(151_116),
@@ -190,7 +190,7 @@ fn decode_transaction_state_reads_block_and_vm_state() {
         UInt160::zero(),
         neo_primitives::WitnessScope::CALLED_BY_ENTRY,
     )]);
-    tx.set_script(vec![neo_vm_rs::OpCode::PUSH1.byte()]);
+    tx.set_script(vec![neo_vm::OpCode::PUSH1.byte()]);
     tx.set_witnesses(vec![neo_payloads::Witness::new()]);
     let bytes = neo_native_contracts::LedgerContract::new()
         .serialize_persisted_transaction_state(12, VMState::FAULT, &tx)
@@ -320,7 +320,7 @@ fn offline_ledger_factory_reconstructs_archive_only_block_and_transaction() {
         UInt160::zero(),
         neo_primitives::WitnessScope::CALLED_BY_ENTRY,
     )]);
-    transaction.set_script(vec![neo_vm_rs::OpCode::PUSH1.byte()]);
+    transaction.set_script(vec![neo_vm::OpCode::PUSH1.byte()]);
     transaction.set_witnesses(vec![neo_payloads::Witness::new()]);
     let tx_hash = transaction.try_hash().expect("transaction hash");
     let mut header = neo_payloads::Header::new();

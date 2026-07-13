@@ -1,8 +1,8 @@
 //! StorageContext - matches C# Neo.SmartContract.StorageContext exactly
 
 use neo_error::{CoreError, CoreResult};
+use neo_vm::StackValue;
 use neo_vm::{Interoperable, InteroperableError, StackItem};
-use neo_vm_rs::StackValue;
 use num_traits::ToPrimitive;
 
 /// The storage context used to read and write data in smart contracts (matches C# StorageContext)

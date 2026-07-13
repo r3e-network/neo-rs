@@ -19,7 +19,6 @@ neo-primitives = { workspace = true }
 neo-error = { workspace = true }
 neo-io = { workspace = true }
 neo-crypto = { workspace = true }
-neo-vm-rs = { workspace = true }
 neo-vm = { workspace = true }
 # External
 serde = { workspace = true }

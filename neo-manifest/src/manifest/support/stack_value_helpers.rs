@@ -1,6 +1,6 @@
 use neo_error::CoreError;
 use neo_primitives::ContractParameterType;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
 pub(super) fn required_struct_fields(
     stack_value: StackValue,

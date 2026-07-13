@@ -2,7 +2,7 @@ use super::super::rpc_stack::RpcStack;
 use super::super::test_fixtures::rpc_case_result;
 use super::*;
 use neo_serialization::json::{JArray, JToken};
-use neo_vm_rs::{StackValue, VmState, stack_value_as_bytes};
+use neo_vm::{StackValue, VmState, stack_value_as_bytes};
 
 #[test]
 fn invoke_result_roundtrip() {
@@ -130,7 +130,7 @@ fn invoke_result_to_json_handles_circular_stack() {
         state: VmState::Halt,
         gas_consumed: 1,
         stack: vec![StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![StackValue::Boolean(true)],
         )],
         tx: None,

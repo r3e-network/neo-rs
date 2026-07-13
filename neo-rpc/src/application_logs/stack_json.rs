@@ -1,6 +1,6 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use neo_error::{CoreError, CoreResult};
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 use serde_json::{Map, Number as JsonNumber, Value};
 

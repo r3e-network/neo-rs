@@ -103,7 +103,7 @@ fn verified_import_stage_context_marks_bulk_as_trusted_local() {
 fn verified_import_pipeline_rejects_merkle_before_parent_lookup() {
     let mut tx = Transaction::new();
     tx.set_nonce(1);
-    tx.set_script(vec![neo_vm_rs::OpCode::PUSH1.byte()]);
+    tx.set_script(vec![neo_vm::OpCode::PUSH1.byte()]);
     let block = Block::from_parts(base_header(), vec![tx]);
 
     let err = pipeline()
@@ -121,7 +121,7 @@ fn verified_import_pipeline_rejects_merkle_before_parent_lookup() {
 #[test]
 fn verified_import_pipeline_runs_consensus_witness_after_validation() {
     let mut header = base_header();
-    header.witness = Witness::new_with_scripts(Vec::new(), vec![neo_vm_rs::OpCode::PUSH1.byte()]);
+    header.witness = Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH1.byte()]);
     let block = Block::from_parts(header, Vec::new());
 
     let err = pipeline()

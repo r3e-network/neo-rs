@@ -9,7 +9,7 @@ use neo_storage::persistence::SeekDirection;
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::StackItem;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::{OpCode, VmState};
+use neo_vm::{OpCode, VmState};
 use num_bigint::BigInt;
 
 #[test]

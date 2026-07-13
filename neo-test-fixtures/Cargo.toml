@@ -14,7 +14,7 @@ neo-payloads = { workspace = true }
 neo-storage = { workspace = true }
 neo-crypto = { workspace = true }
 neo-native-contracts = { workspace = true }
-neo-vm-rs = { workspace = true }
+neo-vm = { workspace = true }
 neo-io = { workspace = true }
 
 [lints]

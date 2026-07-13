@@ -4,7 +4,7 @@ use crate::block::Block;
 use crate::signer::Signer;
 use crate::transaction::Transaction;
 use neo_primitives::{UInt160, WitnessScope};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 fn transaction_with_script(script: Vec<u8>) -> Transaction {
     let mut tx = Transaction::new();

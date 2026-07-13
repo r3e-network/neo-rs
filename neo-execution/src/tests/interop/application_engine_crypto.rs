@@ -5,8 +5,8 @@ use neo_config::{Hardfork, ProtocolSettings};
 use neo_payloads::VerifiableContainer;
 use neo_primitives::TriggerType;
 use neo_storage::DataCache;
+use neo_vm::OpCode;
 use neo_vm::StackItem;
-use neo_vm_rs::OpCode;
 use std::sync::Arc;
 
 fn engine_with_gorgon(active: bool) -> ApplicationEngine {

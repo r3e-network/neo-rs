@@ -9,7 +9,7 @@ use neo_storage::persistence::{
     write_store::WriteStore,
 };
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm_rs::{StackValue, VmState as VMState};
+use neo_vm::{StackValue, VmState as VMState};
 
 #[derive(Clone, Debug)]
 struct FailingStore;
@@ -147,7 +147,7 @@ fn application_executed_stack_renders_from_stack_value_without_legacy_stack_item
         None,
         0,
         vec![StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::Integer(1),
                 StackValue::ByteString(b"neo".to_vec()),

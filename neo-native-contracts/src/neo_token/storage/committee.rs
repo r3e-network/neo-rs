@@ -180,10 +180,10 @@ impl NeoToken {
         value: &[u8],
         index: usize,
     ) -> CoreResult<Option<(ECPoint, BigInt)>> {
-        const ARRAY: u8 = neo_vm_rs::NEOVM_STACK_ITEM_TYPE_ARRAY;
-        const STRUCT: u8 = neo_vm_rs::NEOVM_STACK_ITEM_TYPE_STRUCT;
-        const BYTE_STRING: u8 = neo_vm_rs::NEOVM_STACK_ITEM_TYPE_BYTESTRING;
-        const INTEGER: u8 = neo_vm_rs::NEOVM_STACK_ITEM_TYPE_INTEGER;
+        const ARRAY: u8 = neo_vm::NEOVM_STACK_ITEM_TYPE_ARRAY;
+        const STRUCT: u8 = neo_vm::NEOVM_STACK_ITEM_TYPE_STRUCT;
+        const BYTE_STRING: u8 = neo_vm::NEOVM_STACK_ITEM_TYPE_BYTESTRING;
+        const INTEGER: u8 = neo_vm::NEOVM_STACK_ITEM_TYPE_INTEGER;
 
         let Some((&ARRAY, tail)) = value.split_first() else {
             return Ok(None);

@@ -93,13 +93,28 @@ pub use runtime::slot;
 pub mod stack_item;
 
 // ============================================================================
-// Pure VM types come directly from the shared neo-vm-rs crate.
+// Canonical VM primitives
 //
-// neo_core::neo_vm intentionally does NOT re-export the pure VM symbols defined
-// upstream. Callers import those directly from the `neo_vm_rs` crate so there
-// is a single, unambiguous source of truth for the shared VM semantics; this
-// module only re-exports the local stateful host types below.
+// `neo-vm` is the workspace's only VM boundary. These primitives are re-exported
+// here while their pinned implementations are moved into this crate; consumers
+// must not couple themselves to a second execution crate.
 // ============================================================================
+
+pub use neo_vm_rs::semantics;
+pub use neo_vm_rs::{
+    DEFAULT_MAX_INVOCATION_DEPTH, DEFAULT_MAX_STACK_DEPTH, ExceptionHandlingContext,
+    ExceptionHandlingState, ExecutionEngineLimits, FromOperand, Instruction, InstructionError,
+    InstructionErrorKind, InstructionResult, MAX_ITEM_SIZE, MAX_SCRIPT_SIZE,
+    NEOVM_STACK_ITEM_TYPE_ANY, NEOVM_STACK_ITEM_TYPE_ARRAY, NEOVM_STACK_ITEM_TYPE_BOOLEAN,
+    NEOVM_STACK_ITEM_TYPE_BUFFER, NEOVM_STACK_ITEM_TYPE_BYTESTRING, NEOVM_STACK_ITEM_TYPE_INTEGER,
+    NEOVM_STACK_ITEM_TYPE_INTEROP_INTERFACE, NEOVM_STACK_ITEM_TYPE_MAP,
+    NEOVM_STACK_ITEM_TYPE_POINTER, NEOVM_STACK_ITEM_TYPE_STRUCT, OpCode, ScriptInstruction,
+    StackItemType, StackValue, ValidatedScript, ValidationResult, VmOrderedDictionary, VmState,
+    encode_integer, instruction_jump_target, instruction_try_targets, interop_hash,
+    next_stack_item_id, parse_script_instructions, stack_value_as_bool, stack_value_as_bytes,
+    stack_value_as_i64, stack_value_as_u8, stack_value_as_u32, validate_script,
+    validate_strict_script,
+};
 
 // ============================================================================
 // Public Re-exports from the local VM host (stateful types)

@@ -4,7 +4,7 @@ use neo_execution::application_engine::ApplicationEngine;
 use neo_manifest::CallFlags;
 use neo_primitives::{BigDecimal, TriggerType, UInt160};
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::{OpCode, VmState as VMState};
+use neo_vm::{OpCode, VmState as VMState};
 use neo_wallets::{Wallet as CoreWallet, WalletAccount};
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};

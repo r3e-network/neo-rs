@@ -26,7 +26,7 @@ use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
 use neo_vm::StackItem;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::{ExecutionEngineLimits, OpCode, VmState};
+use neo_vm::{ExecutionEngineLimits, OpCode, VmState};
 use num_bigint::BigInt;
 use std::sync::Arc;
 

@@ -11,7 +11,7 @@
 //! belongs next to that contract. It cannot move there, however, because it is
 //! deeply coupled to the execution engine: it depends on [`crate::helper::Helper`],
 //! [`crate::interoperable::Interoperable`], and the VM stack-item types
-//! ([`neo_vm::StackItem`] / [`neo_vm_rs::StackValue`]) for its (de)serialization
+//! ([`neo_vm::StackItem`] / [`neo_vm::StackValue`]) for its (de)serialization
 //! to/from the on-chain `Struct` representation. `neo-native-contracts` depends
 //! on `neo-execution` (for the `NativeContract` trait and the engine), so
 //! moving `ContractState` the other way would create a dependency cycle.
@@ -27,7 +27,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_manifest::{ContractManifest, NefFile};
 use neo_primitives::UInt160;
-use neo_vm_rs::{OpCode, StackValue};
+use neo_vm::{OpCode, StackValue};
 use num_traits::ToPrimitive;
 use serde_json::{Value, json};
 
@@ -163,7 +163,7 @@ impl ContractState {
     pub fn serialize_contract_record(&self) -> CoreResult<Vec<u8>> {
         neo_serialization::BinarySerializer::serialize_stack_value(
             &self.to_stack_value(),
-            &neo_vm_rs::ExecutionEngineLimits::default(),
+            &neo_vm::ExecutionEngineLimits::default(),
         )
         .map_err(|e| CoreError::serialization(format!("ContractState record: {e}")))
     }
@@ -175,7 +175,7 @@ impl ContractState {
     /// `BinarySerializer.Deserialize(value, ExecutionEngineLimits.Default)`
     /// followed by `ContractState.FromStackItem`.
     pub fn deserialize_contract_record(bytes: &[u8]) -> CoreResult<Self> {
-        let limits = neo_vm_rs::ExecutionEngineLimits::default();
+        let limits = neo_vm::ExecutionEngineLimits::default();
         let value = neo_serialization::BinarySerializer::deserialize_stack_value_with_limits(
             bytes,
             limits.max_item_size as usize,
@@ -203,7 +203,7 @@ impl ContractState {
     /// Converts the contract state into the persisted VM stack-value shape.
     pub fn to_stack_value(&self) -> StackValue {
         StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::Integer(self.id as i64),
                 StackValue::Integer(i64::from(self.update_counter)),

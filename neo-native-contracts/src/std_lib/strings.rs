@@ -7,7 +7,7 @@ use super::{StdLib, args::MAX_INPUT_LENGTH};
 use crate::text::dotnet_text_segmentation::text_element_count;
 use neo_error::{CoreError, CoreResult};
 use neo_serialization::BinarySerializer;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 
 impl StdLib {
@@ -60,7 +60,7 @@ impl StdLib {
             .collect();
 
         BinarySerializer::serialize_stack_value_default(&StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             items,
         ))
         .map_err(|e| CoreError::invalid_operation(format!("StdLib::stringSplit: {e}")))

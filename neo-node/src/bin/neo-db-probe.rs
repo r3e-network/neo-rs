@@ -35,7 +35,7 @@ use neo_storage::persistence::{
 };
 use neo_storage::{CacheRead, DataCache, StorageKey};
 use neo_vm::stack_value_as_bigint;
-use neo_vm_rs::{
+use neo_vm::{
     ExecutionEngineLimits, Instruction, StackValue, VmState as VMState, stack_value_as_u32,
 };
 use num_bigint::BigInt;

@@ -8,7 +8,7 @@
 use neo_execution::contract_parameter::{ContractParameter, ContractParameterValue};
 use neo_manifest::CallFlags;
 use neo_primitives::UInt160;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_traits::ToPrimitive;
 
 use crate::server::rpc_exception::RpcException;
@@ -27,7 +27,7 @@ pub(super) fn build_dynamic_call_script(
     let mut builder = neo_vm::script_builder::ScriptBuilder::new();
 
     if args.is_empty() {
-        builder.emit_opcode(neo_vm_rs::OpCode::NEWARRAY0);
+        builder.emit_opcode(neo_vm::OpCode::NEWARRAY0);
     } else {
         for item in args.iter().rev() {
             builder
@@ -35,7 +35,7 @@ pub(super) fn build_dynamic_call_script(
                 .map_err(|err| internal_error(err.to_string()))?;
         }
         builder.emit_push_int(args.len() as i64);
-        builder.emit_opcode(neo_vm_rs::OpCode::PACK);
+        builder.emit_opcode(neo_vm::OpCode::PACK);
     }
 
     builder.emit_push_int(i64::from(CallFlags::ALL.bits()));
@@ -75,10 +75,7 @@ pub(in crate::server::smart_contract) fn contract_parameter_to_stack_value(
                 .iter()
                 .map(contract_parameter_to_stack_value)
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(StackValue::Array(
-                neo_vm_rs::next_stack_item_id(),
-                converted,
-            ))
+            Ok(StackValue::Array(neo_vm::next_stack_item_id(), converted))
         }
         ContractParameterValue::Map(entries) => {
             let mut map = Vec::with_capacity(entries.len());
@@ -88,7 +85,7 @@ pub(in crate::server::smart_contract) fn contract_parameter_to_stack_value(
                     contract_parameter_to_stack_value(value)?,
                 ));
             }
-            Ok(StackValue::Map(neo_vm_rs::next_stack_item_id(), map))
+            Ok(StackValue::Map(neo_vm::next_stack_item_id(), map))
         }
         ContractParameterValue::InteropInterface => Err(invalid_params(
             "InteropInterface parameters are not supported in invoke RPCs",

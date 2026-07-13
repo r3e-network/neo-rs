@@ -8,8 +8,8 @@ use neo_manifest::manifest::contract_manifest::MAX_MANIFEST_LENGTH;
 use neo_manifest::{ContractAbi, ContractManifest, NefFile};
 use neo_primitives::{CallFlags, UInt160};
 use neo_serialization::BinarySerializer;
+use neo_vm::ExecutionEngineLimits;
 use neo_vm::StackItem;
-use neo_vm_rs::ExecutionEngineLimits;
 use std::collections::HashSet;
 
 impl ContractManagement {
@@ -122,7 +122,7 @@ impl ContractManagement {
         strict: bool,
     ) -> CoreResult<()> {
         let validated = if strict {
-            Some(neo_vm_rs::validate_script(script, true).map_err(|e| {
+            Some(neo_vm::validate_script(script, true).map_err(|e| {
                 CoreError::invalid_operation(format!("ContractManagement: invalid script: {e}"))
             })?)
         } else {
@@ -153,7 +153,7 @@ impl ContractManagement {
                     }
                 }
                 None => {
-                    neo_vm_rs::Instruction::parse(script, offset).map_err(|e| {
+                    neo_vm::Instruction::parse(script, offset).map_err(|e| {
                         CoreError::invalid_operation(format!(
                             "ContractManagement: method '{}' offset {}: {e}",
                             method.name, offset

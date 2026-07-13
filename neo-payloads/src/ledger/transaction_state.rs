@@ -4,7 +4,7 @@ use crate::Transaction;
 use neo_error::CoreError;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_vm::{Interoperable, InteroperableError};
-use neo_vm_rs::{StackValue, VmState as VMState};
+use neo_vm::{StackValue, VmState as VMState};
 
 /// State of a transaction in the ledger (matches C# TransactionState).
 #[derive(Clone, Debug)]
@@ -57,13 +57,13 @@ impl TransactionState {
         VMState::from_byte(value)
     }
 
-    /// Converts to a neo-vm-rs stack value, preserving C# failure semantics:
+    /// Converts to a neo-vm stack value, preserving C# failure semantics:
     /// a full transaction record must either contain the serialized
     /// transaction bytes or fail, never silently degrade to a conflict stub.
     pub fn try_to_stack_value(&self) -> Result<StackValue, CoreError> {
         if let Some(tx) = &self.transaction {
             return Ok(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![
                     StackValue::Integer(i64::from(self.block_index)),
                     StackValue::ByteString(Self::serialize_transaction(tx)?),
@@ -73,12 +73,12 @@ impl TransactionState {
         }
 
         Ok(StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![StackValue::Integer(i64::from(self.block_index))],
         ))
     }
 
-    /// Updates this transaction state from a neo-vm-rs stack value.
+    /// Updates this transaction state from a neo-vm stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         let StackValue::Struct(_, items) = stack_value else {
             return Err(CoreError::invalid_data(
@@ -89,7 +89,7 @@ impl TransactionState {
             return Err(CoreError::invalid_data("TransactionState struct is empty"));
         }
 
-        self.block_index = neo_vm_rs::stack_value_as_u32(&items[0]).ok_or_else(|| {
+        self.block_index = neo_vm::stack_value_as_u32(&items[0]).ok_or_else(|| {
             CoreError::invalid_data("TransactionState block index out of uint range")
         })?;
 
@@ -109,7 +109,7 @@ impl TransactionState {
             .to_byte_string_bytes()
             .ok_or_else(|| CoreError::invalid_data("TransactionState transaction is not bytes"))?;
         self.transaction = Some(Self::deserialize_transaction(&tx_bytes)?);
-        let state_byte = neo_vm_rs::stack_value_as_u8(&items[2])
+        let state_byte = neo_vm::stack_value_as_u8(&items[2])
             .ok_or_else(|| CoreError::invalid_data("TransactionState VMState out of byte range"))?;
         self.state = Self::decode_vm_state(state_byte);
         Ok(())

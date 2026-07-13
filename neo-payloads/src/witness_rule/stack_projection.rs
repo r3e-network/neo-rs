@@ -1,15 +1,15 @@
 use super::{WitnessCondition, WitnessRule};
+use neo_vm::StackValue;
 use neo_vm::{Interoperable, InteroperableError};
-use neo_vm_rs::StackValue;
 
-/// Projects witness-rule types to the lean neo-vm-rs [`StackValue`] form.
+/// Projects witness-rule types to the lean neo-vm [`StackValue`] form.
 ///
 /// This lives in neo-core (which depends on the VM crate) rather than in neo-io
 /// so that neo-io — a Layer-1 serialization crate — stays free of any VM
 /// dependency. The projection is provided here as inherent methods on the
 /// witness-rule types (defined in this crate).
 impl WitnessCondition {
-    /// Converts to a neo-vm-rs stack value (matches C# `WitnessCondition.ToStackItem` layout).
+    /// Converts to a neo-vm stack value (matches C# `WitnessCondition.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
         let mut items = vec![StackValue::Integer(i64::from(
             self.condition_type().to_byte(),
@@ -27,10 +27,7 @@ impl WitnessCondition {
                     .iter()
                     .map(WitnessCondition::to_stack_value)
                     .collect::<Vec<_>>();
-                items.push(StackValue::Array(
-                    neo_vm_rs::next_stack_item_id(),
-                    expressions,
-                ));
+                items.push(StackValue::Array(neo_vm::next_stack_item_id(), expressions));
             }
             WitnessCondition::ScriptHash { hash } | WitnessCondition::CalledByContract { hash } => {
                 items.push(StackValue::ByteString(hash.to_bytes()));
@@ -41,15 +38,15 @@ impl WitnessCondition {
             WitnessCondition::CalledByEntry => {}
         }
 
-        StackValue::Array(neo_vm_rs::next_stack_item_id(), items)
+        StackValue::Array(neo_vm::next_stack_item_id(), items)
     }
 }
 
 impl WitnessRule {
-    /// Converts to a neo-vm-rs stack value (matches C# `WitnessRule.ToStackItem` layout).
+    /// Converts to a neo-vm stack value (matches C# `WitnessRule.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
         StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::Integer(i64::from(self.action.to_byte())),
                 self.condition.to_stack_value(),

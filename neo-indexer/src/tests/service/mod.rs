@@ -27,7 +27,7 @@ use neo_primitives::{TriggerType, UInt160, WitnessScope};
 use neo_storage::persistence::providers::memory_store_provider::MemoryStoreProvider;
 use neo_storage::persistence::{ReadOnlyStoreGeneric, SeekDirection, StoreSnapshot, WriteStore};
 use neo_vm::StackItem;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 
 fn account(seed: u8) -> UInt160 {
     UInt160::from_bytes(&[seed; UInt160::LENGTH]).expect("valid account")

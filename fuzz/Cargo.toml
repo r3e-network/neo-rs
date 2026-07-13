@@ -16,7 +16,7 @@ neo-io = { path = "../neo-io", version = "0.10.0" }
 neo-primitives = { path = "../neo-primitives", version = "0.10.0" }
 neo-network = { path = "../neo-network", version = "0.10.0" }
 neo-payloads = { path = "../neo-payloads", version = "0.10.0" }
-neo-vm-rs = { git = "https://github.com/r3e-network/neo-vm-rs.git", rev = "3081e83db3716fd51dc58c0afc039290d2d07253", version = "0.2.0", default-features = false, features = ["std", "interpreter"] }
+neo-vm = { path = "../neo-vm", version = "0.10.0" }
 
 
 [[bin]]

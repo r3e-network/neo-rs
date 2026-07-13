@@ -15,9 +15,9 @@ use neo_primitives::ContractParameterType;
 use neo_primitives::TriggerType;
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::{CacheRead, DataCache};
+use neo_vm::OpCode;
+use neo_vm::VmState as VMState;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::OpCode;
-use neo_vm_rs::VmState as VMState;
 use std::sync::Arc;
 
 /// Helper functions for smart contracts (matches C# Helper)
@@ -371,7 +371,7 @@ impl Helper {
     /// Validates that a script doesn't contain invalid opcodes.
     /// Basic validation to catch obviously malformed scripts.
     fn is_valid_script(script: &[u8]) -> bool {
-        neo_vm_rs::validate_strict_script(script).is_ok()
+        neo_vm::validate_strict_script(script).is_ok()
     }
 }
 

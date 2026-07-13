@@ -8,7 +8,7 @@
 use super::LedgerContract;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 use num_bigint::BigInt;
 
 impl LedgerContract {

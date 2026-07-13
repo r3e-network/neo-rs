@@ -22,8 +22,8 @@ use neo_manifest::{
     ContractParameterDefinition, NefFile,
 };
 use neo_payloads::Block;
+use neo_vm::OpCode;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::OpCode;
 use serde::{Deserialize, Serialize};
 
 use crate::application_engine::ApplicationEngine;
@@ -720,7 +720,7 @@ where
     P: NativeContractProvider + 'static,
     T: NativeContract<P>,
 {
-    let syscall_hash = neo_vm_rs::interop_hash("System.Contract.CallNative");
+    let syscall_hash = neo_vm::interop_hash("System.Contract.CallNative");
 
     let mut methods: Vec<&NativeMethod> = contract
         .methods()

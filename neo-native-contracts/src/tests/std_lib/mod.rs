@@ -17,7 +17,7 @@ use neo_config::Hardfork;
 use neo_crypto::base58;
 use neo_primitives::ContractParameterType;
 use neo_serialization::BinarySerializer;
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 

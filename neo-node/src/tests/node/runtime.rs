@@ -1613,7 +1613,7 @@ async fn daemon_context_dispatches_application_logs_handlers() {
     use neo_rpc::application_logs::{ApplicationLogsService, ApplicationLogsSettings};
     use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use neo_vm_rs::VmState as VMState;
+    use neo_vm::VmState as VMState;
 
     let settings = Arc::new(ProtocolSettings::default());
     let chain_store = Arc::new(MemoryStore::new());
@@ -1875,7 +1875,7 @@ async fn daemon_context_skips_application_logs_finalized_projection_during_bulk_
     use neo_rpc::application_logs::{ApplicationLogsService, ApplicationLogsSettings};
     use neo_storage::persistence::StoreCache;
     use neo_storage::persistence::providers::memory_store::MemoryStore;
-    use neo_vm_rs::VmState as VMState;
+    use neo_vm::VmState as VMState;
 
     let settings = Arc::new(ProtocolSettings::default());
     let chain_store = Arc::new(MemoryStore::new());

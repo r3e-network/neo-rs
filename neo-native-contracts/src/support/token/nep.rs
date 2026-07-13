@@ -7,7 +7,7 @@
 
 use neo_execution::{NativeEvent, NativeMethod};
 use neo_vm::StackItem;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 
 /// The `Transfer` event declared on the C# `FungibleToken` base constructor
@@ -216,7 +216,7 @@ impl AccountState {
 
     pub(crate) fn to_stack_value(&self) -> StackValue {
         StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![StackValue::BigInteger(self.balance.to_signed_bytes_le())],
         )
     }

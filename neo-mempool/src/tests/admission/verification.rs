@@ -5,7 +5,7 @@ use neo_primitives::{UInt256, WitnessScope};
 use neo_serialization::BinarySerializer;
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::StackItem;
-use neo_vm_rs::{ExecutionEngineLimits, OpCode};
+use neo_vm::{ExecutionEngineLimits, OpCode};
 use std::sync::Arc;
 
 fn standard_native_provider() -> Arc<neo_native_contracts::StandardNativeProvider> {

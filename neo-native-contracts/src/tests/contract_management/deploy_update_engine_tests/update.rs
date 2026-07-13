@@ -8,7 +8,7 @@ use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_storage::persistence::DataCache;
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::{OpCode, VmState};
+use neo_vm::{OpCode, VmState};
 use std::sync::Arc;
 
 fn callback_contract(name: &str, marker: u8) -> (NefFile, neo_manifest::ContractManifest) {

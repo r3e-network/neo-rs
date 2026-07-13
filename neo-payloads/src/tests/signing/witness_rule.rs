@@ -3,13 +3,13 @@ use super::*;
 use neo_primitives::ADDRESS_SIZE;
 use neo_primitives::UInt160;
 use neo_vm::Interoperable;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
 /// Structural equality for StackValue that ignores the reference-identity ids
 /// on compound variants. Collection identity is not part of serialized
 /// stack data, so structural equality is the correct notion for round-trip / shape
 /// assertions.
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 
@@ -196,33 +196,33 @@ fn witness_rule_projects_to_neo_vm_rs_stack_value() {
     );
 
     let left = rule.to_stack_value();
-    let right = neo_vm_rs::StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
+    let right = neo_vm::StackValue::Array(
+        neo_vm::next_stack_item_id(),
         vec![
-            neo_vm_rs::StackValue::Integer(WitnessRuleAction::Allow.to_byte().into()),
-            neo_vm_rs::StackValue::Array(
-                neo_vm_rs::next_stack_item_id(),
+            neo_vm::StackValue::Integer(WitnessRuleAction::Allow.to_byte().into()),
+            neo_vm::StackValue::Array(
+                neo_vm::next_stack_item_id(),
                 vec![
-                    neo_vm_rs::StackValue::Integer(WitnessConditionType::And.to_byte().into()),
-                    neo_vm_rs::StackValue::Array(
-                        neo_vm_rs::next_stack_item_id(),
+                    neo_vm::StackValue::Integer(WitnessConditionType::And.to_byte().into()),
+                    neo_vm::StackValue::Array(
+                        neo_vm::next_stack_item_id(),
                         vec![
-                            neo_vm_rs::StackValue::Array(
-                                neo_vm_rs::next_stack_item_id(),
+                            neo_vm::StackValue::Array(
+                                neo_vm::next_stack_item_id(),
                                 vec![
-                                    neo_vm_rs::StackValue::Integer(
+                                    neo_vm::StackValue::Integer(
                                         WitnessConditionType::Boolean.to_byte().into(),
                                     ),
-                                    neo_vm_rs::StackValue::Boolean(true),
+                                    neo_vm::StackValue::Boolean(true),
                                 ],
                             ),
-                            neo_vm_rs::StackValue::Array(
-                                neo_vm_rs::next_stack_item_id(),
+                            neo_vm::StackValue::Array(
+                                neo_vm::next_stack_item_id(),
                                 vec![
-                                    neo_vm_rs::StackValue::Integer(
+                                    neo_vm::StackValue::Integer(
                                         WitnessConditionType::ScriptHash.to_byte().into(),
                                     ),
-                                    neo_vm_rs::StackValue::ByteString(hash.to_bytes()),
+                                    neo_vm::StackValue::ByteString(hash.to_bytes()),
                                 ],
                             ),
                         ],

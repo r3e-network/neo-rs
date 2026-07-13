@@ -1,7 +1,7 @@
 use super::PoolItem;
 use neo_payloads::{Signer, Transaction, TransactionAttribute, Witness};
 use neo_primitives::{UInt160, WitnessScope};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use std::cmp::Ordering;
 
 fn make_transaction(nonce: u32, network_fee: i64, high_priority: bool) -> Transaction {

@@ -4,7 +4,7 @@ use neo_error::CoreResult;
 use neo_payloads::Transaction;
 use neo_primitives::UInt256;
 use neo_serialization::json::JObject;
-use neo_vm_rs::VmState;
+use neo_vm::VmState;
 
 /// RPC transaction information matching C# `RpcTransaction`
 #[derive(Debug, Clone)]

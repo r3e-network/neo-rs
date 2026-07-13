@@ -9,7 +9,7 @@ use neo_manifest::CallFlags;
 use neo_payloads::{Block, VerifiableContainer};
 use neo_primitives::TriggerType;
 use neo_storage::{CacheRead, DataCache};
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 use parking_lot::Mutex;
 
 use super::artifacts::application_executed;

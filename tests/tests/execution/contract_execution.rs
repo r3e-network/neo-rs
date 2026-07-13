@@ -2,19 +2,49 @@
 
 use neo_primitives::UInt160;
 use neo_tests::state::{MemoryWorldState, StateChanges, StorageItem, StorageKey, WorldState};
-use neo_vm_rs::{ExecutionResult, OpCode, StackValue, VmState, interpret};
+use neo_vm::{ExecutionEngine, OpCode, Script, StackItem, VmError, VmState};
 use num_bigint::BigInt;
 
+struct ExecutionResult {
+    state: VmState,
+    stack: Vec<StackItem>,
+    fee_consumed_pico: i64,
+    fault_message: Option<String>,
+}
+
+fn try_run_script(script: &[u8]) -> Result<ExecutionResult, VmError> {
+    let script = Script::new(script.to_vec(), true)?;
+    let mut engine = ExecutionEngine::<()>::new(None);
+    engine.load_script(script, -1, 0)?;
+    let state = engine.execute();
+    if state == VmState::FAULT {
+        let message = engine
+            .uncaught_exception()
+            .and_then(|item| item.as_bytes().ok())
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+            .unwrap_or_else(|| "local neo-vm execution faulted".to_string());
+        return Err(VmError::invalid_operation_msg(message));
+    }
+
+    Ok(ExecutionResult {
+        state,
+        stack: engine.result_stack().to_vec(),
+        fee_consumed_pico: i64::try_from(engine.gas_consumed()).unwrap_or(i64::MAX),
+        fault_message: None,
+    })
+}
+
 fn run_script(script: &[u8]) -> ExecutionResult {
-    interpret(script).expect("neo-vm-rs interpreter should execute script")
+    try_run_script(script).expect("local neo-vm should execute script")
 }
 
 fn top_int(result: &ExecutionResult) -> BigInt {
-    match result.stack.last().expect("result stack item") {
-        StackValue::Integer(value) => BigInt::from(*value),
-        StackValue::BigInteger(bytes) => BigInt::from_signed_bytes_le(bytes),
-        item => panic!("expected integer stack value, got {item:?}"),
-    }
+    result
+        .stack
+        .last()
+        .expect("result stack item")
+        .as_int()
+        .expect("expected integer stack item")
 }
 
 #[tokio::test]
@@ -143,13 +173,13 @@ async fn test_vm_gas_consumption_basic() {
 #[tokio::test]
 async fn test_vm_stack_underflow() {
     let script = vec![OpCode::ADD.byte(), OpCode::RET.byte()];
-    assert!(interpret(&script).is_err());
+    assert!(try_run_script(&script).is_err());
 }
 
 #[tokio::test]
 async fn test_vm_invalid_opcode() {
     let script = vec![0xFF, 0xFF, OpCode::RET.byte()];
-    assert!(interpret(&script).is_err());
+    assert!(try_run_script(&script).is_err());
 }
 
 #[tokio::test]

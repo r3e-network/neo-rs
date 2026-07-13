@@ -9,8 +9,8 @@ use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Transaction};
 use neo_primitives::UInt160;
 use neo_vm::StackItem;
-use neo_vm_rs::StackValue;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::StackValue;
+use neo_vm::VmState as VMState;
 
 /// A notification emitted by a native persistence engine, captured for the
 /// caller (C# wraps these in `ApplicationExecuted` events).

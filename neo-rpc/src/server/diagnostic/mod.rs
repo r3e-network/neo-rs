@@ -17,7 +17,7 @@ mod invocation_tree;
 use neo_execution::ApplicationExecutionContext as ExecutionContext;
 use neo_execution::diagnostic::Diagnostic as DiagnosticTrait;
 use neo_storage::CacheRead;
-use neo_vm_rs::Instruction;
+use neo_vm::Instruction;
 use parking_lot::Mutex;
 use std::fmt;
 use std::sync::Arc;

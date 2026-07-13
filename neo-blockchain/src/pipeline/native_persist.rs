@@ -66,7 +66,7 @@ use neo_execution::{ApplicationEngine, NativeContract, NoDiagnostic};
 use neo_payloads::Block;
 use neo_primitives::TriggerType;
 use neo_storage::{CacheRead, DataCache};
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 
 mod artifacts;
 mod genesis;
@@ -91,7 +91,7 @@ pub use types::{
 #[cfg(test)]
 use neo_vm::StackItem;
 #[cfg(test)]
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
 /// Runs the C# `Blockchain.Persist` sequence for `block` against
 /// `snapshot`: native `OnPersist` (with activation-block

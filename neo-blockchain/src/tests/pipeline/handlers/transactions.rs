@@ -64,7 +64,7 @@ async fn on_new_transaction_reports_already_exists_for_persisted_ledger_tx() {
     key.push(11);
     key.extend_from_slice(&tx_hash.to_bytes());
     let value = neo_native_contracts::LedgerContract::new()
-        .serialize_persisted_transaction_state(7, neo_vm_rs::VmState::HALT, &tx)
+        .serialize_persisted_transaction_state(7, neo_vm::VmState::HALT, &tx)
         .expect("transaction state");
     snapshot.add(
         neo_storage::StorageKey::new(neo_native_contracts::LedgerContract::ID, key),

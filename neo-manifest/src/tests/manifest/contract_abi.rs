@@ -1,8 +1,8 @@
 use super::*;
 use neo_primitives::ContractParameterType;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 
@@ -27,15 +27,15 @@ fn contract_abi_projects_to_neo_vm_rs_stack_value() {
 
     let left = abi.to_stack_value();
     let right = StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![
             StackValue::Array(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![StackValue::Struct(
-                    neo_vm_rs::next_stack_item_id(),
+                    neo_vm::next_stack_item_id(),
                     vec![
                         StackValue::ByteString(b"main".to_vec()),
-                        StackValue::Array(neo_vm_rs::next_stack_item_id(), Vec::new()),
+                        StackValue::Array(neo_vm::next_stack_item_id(), Vec::new()),
                         StackValue::Integer(ContractParameterType::Void as u8 as i64),
                         StackValue::Integer(7),
                         StackValue::Boolean(true),
@@ -43,12 +43,12 @@ fn contract_abi_projects_to_neo_vm_rs_stack_value() {
                 )],
             ),
             StackValue::Array(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![StackValue::Struct(
-                    neo_vm_rs::next_stack_item_id(),
+                    neo_vm::next_stack_item_id(),
                     vec![
                         StackValue::ByteString(b"Notify".to_vec()),
-                        StackValue::Array(neo_vm_rs::next_stack_item_id(), Vec::new()),
+                        StackValue::Array(neo_vm::next_stack_item_id(), Vec::new()),
                     ],
                 )],
             ),
@@ -66,14 +66,14 @@ fn contract_abi_reads_from_neo_vm_rs_stack_value_and_clears_method_cache() {
     assert!(abi.get_method("old", 0).is_some());
 
     abi.from_stack_value(StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![
             StackValue::Array(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![method("new").to_stack_value()],
             ),
             StackValue::Array(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![event("Updated").to_stack_value()],
             ),
         ],
@@ -91,14 +91,14 @@ fn contract_abi_rejects_struct_sequences_like_csharp() {
 
     assert!(
         abi.from_stack_value(StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::Struct(
-                    neo_vm_rs::next_stack_item_id(),
+                    neo_vm::next_stack_item_id(),
                     vec![method("main").to_stack_value()]
                 ),
                 StackValue::Array(
-                    neo_vm_rs::next_stack_item_id(),
+                    neo_vm::next_stack_item_id(),
                     vec![event("Notify").to_stack_value()]
                 ),
             ]
@@ -107,14 +107,14 @@ fn contract_abi_rejects_struct_sequences_like_csharp() {
     );
     assert!(
         abi.from_stack_value(StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::Array(
-                    neo_vm_rs::next_stack_item_id(),
+                    neo_vm::next_stack_item_id(),
                     vec![method("main").to_stack_value()]
                 ),
                 StackValue::Struct(
-                    neo_vm_rs::next_stack_item_id(),
+                    neo_vm::next_stack_item_id(),
                     vec![event("Notify").to_stack_value()]
                 ),
             ]

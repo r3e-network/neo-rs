@@ -1,26 +1,26 @@
 use super::*;
 use neo_manifest::ContractManifest;
 use neo_vm::StackItem;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
 /// Structural equality for StackValue that ignores the reference-identity ids
 /// on compound variants. Collection identity is not part of serialized
 /// stack data, so structural equality is the correct notion for round-trip / shape
 /// assertions.
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 
 fn array(items: Vec<StackValue>) -> StackValue {
-    StackValue::Array(neo_vm_rs::next_stack_item_id(), items)
+    StackValue::Array(neo_vm::next_stack_item_id(), items)
 }
 
 fn structure(items: Vec<StackValue>) -> StackValue {
-    StackValue::Struct(neo_vm_rs::next_stack_item_id(), items)
+    StackValue::Struct(neo_vm::next_stack_item_id(), items)
 }
 
 fn map(items: Vec<(StackValue, StackValue)>) -> StackValue {
-    StackValue::Map(neo_vm_rs::next_stack_item_id(), items)
+    StackValue::Map(neo_vm::next_stack_item_id(), items)
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn contract_record_pins_the_interoperable_stack_item_encoding() {
     ]);
     let expected = neo_serialization::BinarySerializer::serialize(
         &StackItem::try_from(expected_value).expect("expected stack item"),
-        &neo_vm_rs::ExecutionEngineLimits::default(),
+        &neo_vm::ExecutionEngineLimits::default(),
     )
     .expect("expected bytes");
     assert_eq!(record, expected);
@@ -331,7 +331,7 @@ fn contract_record_rejects_top_level_struct_like_csharp() {
 
     let record = neo_serialization::BinarySerializer::serialize(
         &StackItem::try_from(malformed).expect("malformed stack item"),
-        &neo_vm_rs::ExecutionEngineLimits::default(),
+        &neo_vm::ExecutionEngineLimits::default(),
     )
     .expect("malformed record bytes");
     assert!(ContractState::deserialize_contract_record(&record).is_err());

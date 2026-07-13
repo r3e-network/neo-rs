@@ -5,13 +5,13 @@ use neo_primitives::UInt160;
 use neo_primitives::WitnessScope;
 use neo_serialization::BinarySerializer;
 use neo_vm::Interoperable;
-use neo_vm_rs::{ExecutionEngineLimits, OpCode, StackValue, VmState as VMState};
+use neo_vm::{ExecutionEngineLimits, OpCode, StackValue, VmState as VMState};
 
 /// Structural equality for StackValue that ignores the reference-identity ids
 /// on compound variants. Collection identity is not part of serialized
 /// stack data, so structural equality is the correct notion for round-trip / shape
 /// assertions.
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 
@@ -43,10 +43,7 @@ fn transaction_state_projects_conflict_stub_to_neo_vm_rs_stack_value() {
     let state = TransactionState::new(7, None, VMState::NONE);
 
     let left = stack_value(&state);
-    let right = StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
-        vec![StackValue::Integer(7)],
-    );
+    let right = StackValue::Struct(neo_vm::next_stack_item_id(), vec![StackValue::Integer(7)]);
     assert!(
         stack_value_struct_eq(&left, &right),
         "structural StackValue mismatch: {left:?} vs {right:?}"
@@ -61,7 +58,7 @@ fn transaction_state_reads_from_neo_vm_rs_stack_value() {
 
     state
         .from_stack_value(StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::Integer(11),
                 StackValue::ByteString(tx_bytes),
@@ -161,18 +158,18 @@ fn transaction_state_rejects_invalid_stack_shapes() {
 
     assert!(
         parsed
-            .from_stack_value(StackValue::Array(neo_vm_rs::next_stack_item_id(), vec![],))
+            .from_stack_value(StackValue::Array(neo_vm::next_stack_item_id(), vec![],))
             .is_err()
     );
     assert!(
         parsed
-            .from_stack_value(StackValue::Struct(neo_vm_rs::next_stack_item_id(), vec![],))
+            .from_stack_value(StackValue::Struct(neo_vm::next_stack_item_id(), vec![],))
             .is_err()
     );
     assert!(
         parsed
             .from_stack_value(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![StackValue::Integer(7), StackValue::ByteString(vec![])]
             ))
             .is_err()
@@ -185,7 +182,7 @@ fn transaction_state_rejects_malformed_transaction_bytes() {
 
     let error = parsed
         .from_stack_value(StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::Integer(7),
                 StackValue::ByteString(vec![0xff]),

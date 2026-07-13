@@ -13,7 +13,7 @@ use neo_primitives::{CallFlags, ContractParameterType, TriggerType, UInt160, Wit
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::{OpCode, VmState};
+use neo_vm::{OpCode, VmState};
 use num_bigint::BigInt;
 use std::sync::Arc;
 

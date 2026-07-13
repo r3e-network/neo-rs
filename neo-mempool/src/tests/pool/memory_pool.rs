@@ -4,7 +4,7 @@ use neo_payloads::{Signer, Transaction, TransactionAttribute, Witness};
 use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_serialization::BinarySerializer;
 use neo_vm::StackItem;
-use neo_vm_rs::{ExecutionEngineLimits, OpCode};
+use neo_vm::{ExecutionEngineLimits, OpCode};
 use std::sync::Arc;
 
 fn memory_pool(settings: &ProtocolSettings) -> MemoryPool {

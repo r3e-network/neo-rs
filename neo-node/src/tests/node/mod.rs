@@ -97,7 +97,7 @@ fn empty_child_block(parent: &neo_payloads::Block, index: u32) -> neo_payloads::
     header.set_timestamp(parent.header.timestamp() + 15_000);
     header.set_next_consensus(*parent.header.next_consensus());
     header.witness =
-        neo_payloads::Witness::new_with_scripts(Vec::new(), vec![neo_vm_rs::OpCode::PUSH1.byte()]);
+        neo_payloads::Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH1.byte()]);
     neo_payloads::Block::from_parts(header, Vec::new())
 }
 

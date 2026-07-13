@@ -19,7 +19,7 @@ use crate::server::rpc_error::RpcError;
 use crate::server::rpc_error_factory;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 use super::helpers::internal_error;
 use super::invoke::contract_parameter_to_stack_value;

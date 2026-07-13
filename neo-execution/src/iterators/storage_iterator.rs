@@ -7,7 +7,7 @@ use neo_serialization::binary_serializer::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::StorageKey;
 use neo_vm::StackItem;
-use neo_vm_rs::{ExecutionEngineLimits, StackValue};
+use neo_vm::{ExecutionEngineLimits, StackValue};
 
 /// Storage iterator for iterating over storage items (matches C# StorageIterator)
 #[derive(Debug)]
@@ -141,7 +141,7 @@ impl Iter for StorageIterator {
         } else {
             // Return struct with key and value
             stack_value_to_stack_item(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![StackValue::ByteString(key_bytes), value_item],
             ))
         }

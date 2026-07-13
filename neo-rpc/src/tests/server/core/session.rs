@@ -4,7 +4,7 @@ use neo_execution::iterators::{IteratorInterop, StorageIterator};
 use neo_primitives::FindOptions;
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::stack_item::StackItem;
-use neo_vm_rs::{OpCode, VmState};
+use neo_vm::{OpCode, VmState};
 
 #[test]
 fn server_context_engine_paths_use_explicit_native_provider() {
@@ -632,7 +632,7 @@ async fn stateless_invoke_builds_dummy_persisting_block() {
 
     // SYSCALL System.Runtime.GetTime ; RET
     let mut script = vec![OpCode::SYSCALL.byte()];
-    script.extend_from_slice(&neo_vm_rs::interop_hash("System.Runtime.GetTime").to_le_bytes());
+    script.extend_from_slice(&neo_vm::interop_hash("System.Runtime.GetTime").to_le_bytes());
     script.push(OpCode::RET.byte());
 
     let session = Session::new(

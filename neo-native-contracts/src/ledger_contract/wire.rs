@@ -2,7 +2,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_payloads::{Transaction, TrimmedBlock};
 use neo_primitives::UInt256;
 use neo_serialization::BinarySerializer;
-use neo_vm_rs::{StackValue, VmState as VMState};
+use neo_vm::{StackValue, VmState as VMState};
 
 use super::LedgerContract;
 
@@ -21,7 +21,7 @@ impl HashIndexState {
 
     pub(crate) fn to_stack_value(&self) -> StackValue {
         StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::ByteString(self.hash.to_bytes()),
                 StackValue::Integer(i64::from(self.index)),
@@ -91,7 +91,7 @@ impl LedgerContract {
         method: &str,
     ) -> CoreResult<Vec<u8>> {
         let item = StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             signers
                 .iter()
                 .map(neo_payloads::Signer::to_stack_value)

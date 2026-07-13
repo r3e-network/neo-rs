@@ -6,7 +6,7 @@ use super::*;
 use neo_error::CoreError;
 use neo_primitives::SerializablePayload;
 use neo_vm::InteroperableError;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
 impl SerializablePayload for Transaction {
     fn hash_data(&self) -> Vec<u8> {
@@ -43,7 +43,7 @@ impl Inventory for Transaction {
 }
 
 impl Transaction {
-    /// Converts the transaction to a neo-vm-rs stack value (matches C# `Transaction.ToStackItem` layout).
+    /// Converts the transaction to a neo-vm stack value (matches C# `Transaction.ToStackItem` layout).
     pub fn to_stack_value(&self) -> Result<StackValue, CoreError> {
         let sender = self
             .sender()
@@ -53,7 +53,7 @@ impl Transaction {
             .to_bytes();
 
         Ok(StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::ByteString(self.try_hash()?.to_bytes()),
                 StackValue::Integer(i64::from(self.version)),

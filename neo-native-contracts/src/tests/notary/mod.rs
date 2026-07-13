@@ -18,15 +18,15 @@ use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
+use neo_vm::{ExecutionEngineLimits, StackValue};
 use neo_vm::{Interoperable, StackItem};
-use neo_vm_rs::{ExecutionEngineLimits, StackValue};
 use num_bigint::BigInt;
 
 /// Structural equality for StackValue that ignores the reference-identity ids
 /// on compound variants. Collection identity is not part of serialized
 /// stack data, so structural equality is the correct notion for round-trip / shape
 /// assertions.
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 
@@ -201,7 +201,7 @@ fn deposit_round_trips_and_lock_decision_matches_csharp() {
 fn deposit_state_interoperable_projection_matches_csharp_shape() {
     let state = DepositState::new(BigInt::from(1000), 42);
     let expected_value = StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![
             StackValue::BigInteger(BigInt::from(1000).to_signed_bytes_le()),
             StackValue::Integer(42),
@@ -225,12 +225,12 @@ fn deposit_state_interoperable_projection_matches_csharp_shape() {
     assert_eq!(parsed, state);
 
     assert!(
-        DepositState::from_stack_value(StackValue::Array(neo_vm_rs::next_stack_item_id(), vec![],))
+        DepositState::from_stack_value(StackValue::Array(neo_vm::next_stack_item_id(), vec![],))
             .is_err()
     );
     assert!(
         DepositState::from_stack_value(StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![StackValue::BigInteger(
                 BigInt::from(1000).to_signed_bytes_le(),
             )],

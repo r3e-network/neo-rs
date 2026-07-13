@@ -7,8 +7,8 @@ use crate::server::diagnostic::Diagnostic;
 use crate::server::rpc_exception::RpcException;
 use crate::server::rpc_server::RpcServer;
 use crate::server::session::Session;
+use neo_vm::VmState as VMState;
 use neo_vm::stack_item::StackItem;
-use neo_vm_rs::VmState as VMState;
 
 use super::diagnostics::{diagnostic_invocation_to_json, diagnostic_storage_changes};
 use super::helpers::internal_error;

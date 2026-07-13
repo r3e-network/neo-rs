@@ -23,7 +23,7 @@ fn empty_child_block(parent: &Block, index: u32) -> Block {
     header.set_prev_hash(parent.hash());
     header.set_timestamp(parent.header.timestamp() + 15_000);
     header.set_next_consensus(*parent.header.next_consensus());
-    header.witness = Witness::new_with_scripts(Vec::new(), vec![neo_vm_rs::OpCode::PUSH1.byte()]);
+    header.witness = Witness::new_with_scripts(Vec::new(), vec![neo_vm::OpCode::PUSH1.byte()]);
     Block::from_parts(header, Vec::new())
 }
 

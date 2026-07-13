@@ -147,7 +147,7 @@ pub fn verify_state_independent(tx: &Transaction, settings: &ProtocolSettings) -
 
     // Strict script parse (C# `new Script(Script, true)` throwing
     // BadScriptException).
-    if neo_vm_rs::validate_strict_script(tx.script()).is_err() {
+    if neo_vm::validate_strict_script(tx.script()).is_err() {
         return VerifyResult::InvalidScript;
     }
 

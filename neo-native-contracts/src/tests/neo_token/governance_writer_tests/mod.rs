@@ -25,8 +25,8 @@ use neo_payloads::signer::Signer;
 use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
 use neo_primitives::{CallFlags, TriggerType, WitnessScope};
+use neo_vm::VmState;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::VmState;
 use std::sync::Arc;
 
 use crate::test_support::deploy_native;

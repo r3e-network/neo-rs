@@ -6,7 +6,7 @@ use neo_manifest::{ContractManifest, NefFile};
 use neo_primitives::UInt256;
 use neo_state_service::mpt_store::MptChange;
 use neo_storage::persistence::providers::{MemoryStore, RuntimeStore};
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 /// Contract id of the fixture contract deployed into the state trie.
 pub(super) const FIXTURE_CONTRACT_ID: i32 = 77;

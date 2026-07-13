@@ -1,7 +1,7 @@
 use super::*;
 use neo_payloads::{Signer, Transaction};
 use neo_primitives::WitnessScope;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use serde_json::json;
 
 /// Builds a signed transaction (with a witness) for context round-trip tests.

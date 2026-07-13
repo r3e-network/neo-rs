@@ -2,7 +2,7 @@ use super::*;
 use crate::signer::Signer;
 use neo_crypto::Crypto;
 use neo_primitives::WitnessScope;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 fn sample_header() -> Header {
     let mut header = Header::new();

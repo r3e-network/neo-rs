@@ -4,8 +4,8 @@
 
 use neo_error::{CoreError, CoreResult};
 use neo_vm::StackItem;
+use neo_vm::StackItemType;
 use neo_vm::stack_item::{Array, Map as MapItem, Struct};
-use neo_vm_rs::StackItemType;
 use num_bigint::BigInt;
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 use std::collections::HashSet;

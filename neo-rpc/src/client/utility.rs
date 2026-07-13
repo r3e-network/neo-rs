@@ -54,7 +54,7 @@ use neo_native_contracts::{NativeRegistry, StandardNativeProvider};
 use neo_payloads::{Block, BlockHeader, Transaction, Witness};
 use neo_primitives::{UInt160, UInt256, strip_hex_prefix};
 use neo_serialization::json::{JObject, JToken};
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use neo_wallets::KeyPair;
 use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 use num_bigint::BigInt;
@@ -288,12 +288,12 @@ impl RpcUtility {
         tx_json::transaction_from_json(json, protocol_settings)
     }
 
-    /// Converts a `neo-serialization::json` representation of a stack item into `neo-vm-rs`.
+    /// Converts a `neo-serialization::json` representation of a stack item into `neo-vm`.
     pub fn stack_item_from_json(json: &JObject) -> CoreResult<StackValue> {
         stack::stack_item_from_json(json).map_err(|e| CoreError::other(e.to_string()))
     }
 
-    /// Converts a `neo-vm-rs` stack value into a `neo-serialization::json` representation.
+    /// Converts a `neo-vm` stack value into a `neo-serialization::json` representation.
     pub fn stack_item_to_json(item: &StackValue) -> CoreResult<JObject> {
         stack::stack_item_to_json(item)
     }

@@ -5,7 +5,7 @@ use neo_vm::Interoperable;
 /// on compound variants. Collection identity is not part of serialized
 /// stack data, so structural equality is the correct notion for round-trip / shape
 /// assertions.
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 
@@ -24,14 +24,11 @@ fn notify_event_projects_to_neo_vm_rs_stack_value() {
 
     let left = notification.to_stack_value().expect("stack value");
     let right = StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![
             StackValue::ByteString(notification.script_hash.to_bytes()),
             StackValue::ByteString(b"Transfer".to_vec()),
-            StackValue::Array(
-                neo_vm_rs::next_stack_item_id(),
-                vec![StackValue::Integer(7)],
-            ),
+            StackValue::Array(neo_vm::next_stack_item_id(), vec![StackValue::Integer(7)]),
         ],
     );
     assert!(
@@ -44,12 +41,12 @@ fn notify_event_projects_to_neo_vm_rs_stack_value() {
 fn notify_event_prepared_state_projection_uses_stack_value_layout() {
     let notification = sample_notification();
     let prepared_state = StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![StackValue::Boolean(true)],
     );
 
     let expected = StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![
             StackValue::ByteString(notification.script_hash.to_bytes()),
             StackValue::ByteString(b"Transfer".to_vec()),

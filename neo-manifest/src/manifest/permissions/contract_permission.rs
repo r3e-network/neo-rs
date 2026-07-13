@@ -10,7 +10,7 @@ use neo_primitives::UInt160;
 use neo_vm::Interoperable;
 use neo_vm::InteroperableError;
 // Removed neo_cryptography dependency - using external crypto crates directly
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 
 /// Represents a permission that a contract requires.
@@ -145,10 +145,10 @@ impl ContractPermission {
         Ok(())
     }
 
-    /// Converts to a neo-vm-rs stack value (matches C# `ContractPermission.ToStackItem` layout).
+    /// Converts to a neo-vm stack value (matches C# `ContractPermission.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
         StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 self.contract.to_stack_value(),
                 self.methods.to_stack_value(),
@@ -156,7 +156,7 @@ impl ContractPermission {
         )
     }
 
-    /// Updates this permission from a neo-vm-rs stack value.
+    /// Updates this permission from a neo-vm stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         let StackValue::Struct(_, items) = stack_value else {
             return Err(CoreError::invalid_format(

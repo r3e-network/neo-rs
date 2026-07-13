@@ -13,7 +13,7 @@ use neo_payloads::transaction_attribute::TransactionAttribute;
 use neo_primitives::{UInt160, WitnessScope};
 use neo_storage::persistence::{CacheRead, DataCache};
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::{OpCode, VmState as VMState};
+use neo_vm::{OpCode, VmState as VMState};
 use neo_wallets::{TransferOutput, Wallet, WalletAccount};
 use num_bigint::BigInt;
 use num_traits::Zero;

@@ -9,7 +9,7 @@ mod surface;
 
 /// Structural equality for StackValue. Collection identity is not part of
 /// serialized stack data, so these tests compare value shape.
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 

@@ -47,7 +47,7 @@ use neo_native_contracts::LedgerContract;
 use neo_payloads::{Block, Transaction, TransactionAttribute};
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::{DataCache, StorageItem, StorageKey};
-use neo_vm_rs::VmState as VMState;
+use neo_vm::VmState as VMState;
 
 use neo_native_contracts::ledger_contract::storage::{
     PREFIX_BLOCK, PREFIX_BLOCK_HASH, PREFIX_CURRENT_BLOCK, PREFIX_TRANSACTION,

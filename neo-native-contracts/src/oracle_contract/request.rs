@@ -2,7 +2,7 @@
 
 use neo_error::{CoreError, CoreResult};
 use neo_primitives::{UInt160, UInt256};
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -58,7 +58,7 @@ impl OracleRequest {
             None => StackValue::Null,
         };
         StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::ByteString(self.original_tx_id.to_bytes()),
                 StackValue::Integer(self.gas_for_response),
@@ -136,7 +136,7 @@ impl OracleIdList {
 
     pub(super) fn to_stack_value(&self) -> StackValue {
         StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             self.ids
                 .iter()
                 .map(|id| StackValue::BigInteger(BigInt::from(*id).to_signed_bytes_le()))

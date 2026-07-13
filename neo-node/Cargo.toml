@@ -27,7 +27,6 @@ default = []
 hsm = ["dep:neo-hsm", "neo-hsm/pkcs11"]
 
 [dependencies]
-neo-vm-rs = { workspace = true }
 
 # HSM-backed consensus signer (feature-gated)
 neo-hsm = { workspace = true, optional = true }

@@ -22,7 +22,7 @@ use neo_wallets::wallet_helper::WalletAddress as address_helper;
 use neo_wallets::{KeyPair, Nep6Wallet, Wallet, WalletAccount};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_vm_rs::{ExecutionEngineLimits, OpCode};
+use neo_vm::{ExecutionEngineLimits, OpCode};
 use num_bigint::BigInt;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -119,7 +119,7 @@ fn deploy_verify_contract(system: &Arc<crate::server::NodeContext>) -> UInt160 {
         BinarySerializer::deserialize(&contract_bytes, &ExecutionEngineLimits::default(), None)
             .expect("contract stack item");
     let mut contract = ContractState::default();
-    let sv = neo_vm_rs::StackValue::try_from(item).expect("stack item to stack value");
+    let sv = neo_vm::StackValue::try_from(item).expect("stack item to stack value");
     let _ = contract.from_stack_value(sv);
 
     let tracked = engine.snapshot_cache().tracked_items();

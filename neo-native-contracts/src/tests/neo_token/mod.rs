@@ -20,7 +20,7 @@
 use super::*;
 use neo_primitives::{CallFlags, ContractParameterType};
 use neo_serialization::BinarySerializer;
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm::ExecutionEngineLimits;
 
 #[cfg(test)]
 #[path = "basic_tests.rs"]

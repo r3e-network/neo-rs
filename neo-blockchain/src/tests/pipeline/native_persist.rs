@@ -5,8 +5,8 @@ use neo_payloads::Header;
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageKey;
+use neo_vm::ExecutionEngineLimits;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -162,10 +162,7 @@ fn deploy_contract(snapshot: &DataCache, state: &neo_execution::ContractState) {
 fn throwing_nep17_receiver_contract(hash: UInt160) -> neo_execution::ContractState {
     let nef = NefFile::new(
         "throwing-nep17-receiver".to_string(),
-        vec![
-            neo_vm_rs::OpCode::PUSH1.byte(),
-            neo_vm_rs::OpCode::THROW.byte(),
-        ],
+        vec![neo_vm::OpCode::PUSH1.byte(), neo_vm::OpCode::THROW.byte()],
     );
     let mut manifest = ContractManifest::new("ThrowingNep17Receiver".to_string());
     manifest.abi.methods.push(
@@ -212,7 +209,7 @@ fn policy_get_exec_fee_factor_script() -> Vec<u8> {
 
 fn gas_transfer_script(from: &UInt160, to: &UInt160, amount: i64) -> Vec<u8> {
     let mut builder = ScriptBuilder::new();
-    builder.emit_opcode(neo_vm_rs::OpCode::PUSHNULL);
+    builder.emit_opcode(neo_vm::OpCode::PUSHNULL);
     builder.emit_push_int(amount);
     builder.emit_push(&to.to_array());
     builder.emit_push(&from.to_array());
@@ -313,7 +310,7 @@ fn genesis_block_matches_csharp_create_genesis_block() {
     assert!(block.header.witness.invocation_script().is_empty());
     assert_eq!(
         block.header.witness.verification_script(),
-        &[neo_vm_rs::OpCode::PUSH1.byte()]
+        &[neo_vm::OpCode::PUSH1.byte()]
     );
 }
 
@@ -665,13 +662,13 @@ fn persist_executes_transactions_and_records_vm_states() {
     let signer = neo_payloads::Signer::new(signer_account, neo_primitives::WitnessScope::NONE);
     let mut tx1 = neo_payloads::Transaction::new();
     tx1.set_nonce(1);
-    tx1.set_script(vec![neo_vm_rs::OpCode::ABORT.byte()]);
+    tx1.set_script(vec![neo_vm::OpCode::ABORT.byte()]);
     tx1.set_system_fee(1_0000_0000);
     tx1.set_signers(vec![signer.clone()]);
     tx1.set_witnesses(vec![neo_payloads::Witness::empty()]);
     let mut tx2 = neo_payloads::Transaction::new();
     tx2.set_nonce(2);
-    tx2.set_script(vec![neo_vm_rs::OpCode::PUSH1.byte()]);
+    tx2.set_script(vec![neo_vm::OpCode::PUSH1.byte()]);
     tx2.set_system_fee(1_0000_0000);
     tx2.set_signers(vec![signer]);
     tx2.set_witnesses(vec![neo_payloads::Witness::empty()]);
@@ -689,10 +686,10 @@ fn persist_executes_transactions_and_records_vm_states() {
     assert_eq!(outcome.application_executed.len(), 4);
     let tx1_exec = &outcome.application_executed[1];
     assert_eq!(tx1_exec.trigger, neo_primitives::TriggerType::Application);
-    assert_eq!(tx1_exec.vm_state, neo_vm_rs::VmState::FAULT);
+    assert_eq!(tx1_exec.vm_state, neo_vm::VmState::FAULT);
     assert!(tx1_exec.transaction.is_some());
     let tx2_exec = &outcome.application_executed[2];
-    assert_eq!(tx2_exec.vm_state, neo_vm_rs::VmState::HALT);
+    assert_eq!(tx2_exec.vm_state, neo_vm::VmState::HALT);
     // PUSH1 leaves the integer 1 on the result stack.
     assert_eq!(tx2_exec.stack.len(), 1);
     let actual = match &tx2_exec.stack[0] {
@@ -710,13 +707,13 @@ fn persist_executes_transactions_and_records_vm_states() {
         .get_transaction_state(&snapshot, &tx1_hash)
         .unwrap()
         .expect("tx1 record");
-    assert_eq!(s1.state, neo_vm_rs::VmState::FAULT);
+    assert_eq!(s1.state, neo_vm::VmState::FAULT);
     assert_eq!(s1.block_index, 1);
     let s2 = ledger
         .get_transaction_state(&snapshot, &tx2_hash)
         .unwrap()
         .expect("tx2 record");
-    assert_eq!(s2.state, neo_vm_rs::VmState::HALT);
+    assert_eq!(s2.state, neo_vm::VmState::HALT);
     assert_eq!(
         ledger.get_block_hash(&snapshot, 1).unwrap(),
         Some(block_hash)
@@ -764,7 +761,7 @@ fn persist_records_fault_when_nep17_receiver_callback_faults() {
     assert_eq!(tx_exec.trigger, neo_primitives::TriggerType::Application);
     assert_eq!(
         tx_exec.vm_state,
-        neo_vm_rs::VmState::FAULT,
+        neo_vm::VmState::FAULT,
         "a receiver onNEP17Payment exception must fault the transaction"
     );
 
@@ -775,7 +772,7 @@ fn persist_records_fault_when_nep17_receiver_callback_faults() {
         .expect("tx record");
     assert_eq!(
         state.state,
-        neo_vm_rs::VmState::FAULT,
+        neo_vm::VmState::FAULT,
         "persisted ledger TransactionState must carry the callback-induced fault"
     );
 }
@@ -803,7 +800,7 @@ fn bulk_sync_native_persist_skips_replay_artifacts_but_keeps_vm_state() {
 
     let mut tx = neo_payloads::Transaction::new();
     tx.set_nonce(44);
-    tx.set_script(vec![neo_vm_rs::OpCode::PUSH1.byte()]);
+    tx.set_script(vec![neo_vm::OpCode::PUSH1.byte()]);
     tx.set_system_fee(1_0000_0000);
     tx.set_signers(vec![neo_payloads::Signer::new(
         signer_account,
@@ -844,7 +841,7 @@ fn bulk_sync_native_persist_skips_replay_artifacts_but_keeps_vm_state() {
         .get_transaction_state(&snapshot, &tx_hash)
         .unwrap()
         .expect("tx ledger state remains consensus-visible");
-    assert_eq!(state.state, neo_vm_rs::VmState::HALT);
+    assert_eq!(state.state, neo_vm::VmState::HALT);
     assert_eq!(state.block_index, 1);
 }
 
@@ -944,7 +941,7 @@ fn reusable_native_persist_resources_keep_provider_consistent_across_blocks() {
         .iter()
         .find(|executed| executed.trigger == neo_primitives::TriggerType::Application)
         .expect("transaction application execution");
-    assert_eq!(tx_exec.vm_state, neo_vm_rs::VmState::HALT);
+    assert_eq!(tx_exec.vm_state, neo_vm::VmState::HALT);
     assert_eq!(
         tx_exec.stack,
         vec![StackValue::Integer(30)],

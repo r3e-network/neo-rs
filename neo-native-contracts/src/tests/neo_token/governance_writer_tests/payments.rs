@@ -122,7 +122,7 @@ fn gas_transfer_register_then_get_candidates_script(sender: UInt160, pubkey: &EC
     b.emit_push(&crate::GasToken::script_hash().to_array());
     b.emit_syscall("System.Contract.Call")
         .expect("transfer call");
-    b.emit_opcode(neo_vm_rs::OpCode::DROP);
+    b.emit_opcode(neo_vm::OpCode::DROP);
 
     b.emit_push_int(0);
     b.emit_pack();

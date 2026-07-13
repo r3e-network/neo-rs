@@ -26,7 +26,6 @@ neo-crypto = { workspace = true }
 # oracle fixed script, and the NEP-17 account-state codec.
 neo-native-contracts = { workspace = true }
 neo-vm = { workspace = true }
-neo-vm-rs = { workspace = true }
 neo-io = { workspace = true }
 num-bigint = { workspace = true }
 parking_lot = { workspace = true }

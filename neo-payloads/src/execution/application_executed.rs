@@ -11,8 +11,8 @@
 
 use crate::{LogEventArgs, NotifyEventArgs, Transaction};
 use neo_primitives::{TriggerType, UInt160};
-use neo_vm_rs::StackValue;
-use neo_vm_rs::VmState as VMState;
+use neo_vm::StackValue;
+use neo_vm::VmState as VMState;
 
 /// Result of executing a single transaction (mirrors C# ApplicationExecuted).
 #[derive(Clone, Debug)]

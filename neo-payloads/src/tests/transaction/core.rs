@@ -1,7 +1,7 @@
 use super::*;
 use crate::{Block, Header, VerifiableContainer};
 use neo_primitives::WitnessScope;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 use std::sync::Arc;
 
 fn transaction_with_script(script: Vec<u8>) -> Transaction {

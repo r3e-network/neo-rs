@@ -34,7 +34,7 @@ use neo_payloads::witness::Witness;
 use neo_primitives::{UInt160, UInt256, WitnessScope};
 use neo_storage::persistence::{Store, StoreCache};
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm_rs::VmState;
+use neo_vm::VmState;
 
 /// Storage-key prefixes used by the `LedgerContract` (C# `Prefix_*` constants).
 mod prefix {

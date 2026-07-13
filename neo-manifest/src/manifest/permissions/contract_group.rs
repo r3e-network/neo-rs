@@ -13,7 +13,7 @@ use neo_vm::InteroperableError;
 use neo_vm::StackItem;
 use std::convert::TryFrom;
 // Removed neo_cryptography dependency - using external crypto crates directly
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 
 /// Represents a set of mutually trusted contracts.
@@ -95,7 +95,7 @@ impl ContractGroup {
         }
     }
 
-    /// Builds a contract group from a neo-vm-rs stack value.
+    /// Builds a contract group from a neo-vm stack value.
     ///
     /// # Errors
     ///
@@ -133,7 +133,7 @@ impl ContractGroup {
         })
     }
 
-    /// Converts to a neo-vm-rs stack value.
+    /// Converts to a neo-vm stack value.
     pub fn to_stack_value(&self) -> StackValue {
         let pub_key_bytes = self.pub_key.encode_point(true).unwrap_or_else(|e| {
             tracing::error!("Failed to encode ECPoint: {}", e);
@@ -141,7 +141,7 @@ impl ContractGroup {
         });
 
         StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::ByteString(pub_key_bytes),
                 StackValue::ByteString(self.signature.clone()),

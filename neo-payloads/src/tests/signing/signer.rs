@@ -1,13 +1,13 @@
 use super::*;
 use neo_primitives::hex_util;
 use neo_vm::Interoperable;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
 /// Structural equality for StackValue that ignores the reference-identity ids
 /// on compound variants. Collection identity is not part of serialized
 /// stack data, so structural equality is the correct notion for round-trip / shape
 /// assertions.
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 
@@ -26,16 +26,16 @@ fn signer_projects_to_neo_vm_rs_stack_value() {
 
     let left = signer.to_stack_value();
     let right = StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![
             StackValue::ByteString(account.to_bytes()),
             StackValue::Integer(i64::from(scopes.bits())),
             StackValue::Array(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![StackValue::ByteString(allowed_contract.to_bytes())],
             ),
-            StackValue::Array(neo_vm_rs::next_stack_item_id(), Vec::new()),
-            StackValue::Array(neo_vm_rs::next_stack_item_id(), vec![rule.to_stack_value()]),
+            StackValue::Array(neo_vm::next_stack_item_id(), Vec::new()),
+            StackValue::Array(neo_vm::next_stack_item_id(), vec![rule.to_stack_value()]),
         ],
     );
     assert!(

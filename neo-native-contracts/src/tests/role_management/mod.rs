@@ -21,14 +21,14 @@ use neo_primitives::{CallFlags, ContractParameterType};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
+use neo_vm::StackValue;
 use neo_vm::{Interoperable, StackItem};
-use neo_vm_rs::StackValue;
 
 /// Structural equality for StackValue that ignores the reference-identity ids
 /// on compound variants. Collection identity is not part of serialized
 /// stack data, so structural equality is the correct notion for round-trip / shape
 /// assertions.
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 
@@ -136,7 +136,7 @@ fn encode_node_list_sorts_and_round_trips() {
     let mut expected = input.clone();
     expected.sort();
     let expected_value = StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         expected
             .iter()
             .map(|point| StackValue::ByteString(point.to_bytes()))
@@ -159,7 +159,7 @@ fn node_list_interoperable_projection_matches_csharp_shape() {
     let nodes = vec![a.clone(), b.clone()];
     let state = NodeList::new(nodes.clone());
     let expected_value = StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![
             StackValue::ByteString(a.to_bytes()),
             StackValue::ByteString(b.to_bytes()),
@@ -213,7 +213,7 @@ fn node_list_storage_codecs_use_stack_value_projection() {
 fn parse_nodes_arg_enforces_1_to_32() {
     // Empty array -> rejected.
     let empty = BinarySerializer::serialize_stack_value_default(&StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         Vec::new(),
     ))
     .unwrap();
@@ -261,7 +261,7 @@ fn designation_backward_seek_picks_most_recent() {
 
     // Designate the Oracle role at index 10 (a 1-element node list).
     let list = BinarySerializer::serialize_stack_value_default(&StackValue::Array(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![StackValue::ByteString(point.to_bytes())],
     ))
     .unwrap();

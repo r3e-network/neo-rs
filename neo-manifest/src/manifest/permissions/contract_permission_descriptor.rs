@@ -6,7 +6,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
 use neo_primitives::hex_util;
 use neo_vm::StackItem;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -120,7 +120,7 @@ impl ContractPermissionDescriptor {
         StackItem::try_from(self.to_stack_value()).unwrap_or(StackItem::Null)
     }
 
-    /// Creates a descriptor from a neo-vm-rs stack value encoded form.
+    /// Creates a descriptor from a neo-vm stack value encoded form.
     pub fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
         match stack_value {
             StackValue::Null => Ok(Self::create_wildcard()),

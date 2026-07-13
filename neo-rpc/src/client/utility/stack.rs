@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose};
 use neo_error::{CoreError, CoreResult};
 use neo_serialization::json::{JObject, JToken};
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use thiserror::Error;
@@ -61,7 +61,7 @@ impl From<CoreError> for StackParseError {
     }
 }
 
-/// Converts a `neo-serialization::json` representation of an RPC stack item into `neo-vm-rs`.
+/// Converts a `neo-serialization::json` representation of an RPC stack item into `neo-vm`.
 pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, StackParseError> {
     let item_type = json
         .get("type")
@@ -101,13 +101,13 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, StackParseErro
         }
         "ByteString" => parse_base64_stack_value(json, "ByteString", StackValue::ByteString),
         "Buffer" => parse_base64_stack_value(json, "Buffer", |bytes| {
-            StackValue::Buffer(neo_vm_rs::next_stack_item_id(), bytes)
+            StackValue::Buffer(neo_vm::next_stack_item_id(), bytes)
         }),
         "Array" => parse_stack_sequence(json, "Array", |items| {
-            StackValue::Array(neo_vm_rs::next_stack_item_id(), items)
+            StackValue::Array(neo_vm::next_stack_item_id(), items)
         }),
         "Struct" => parse_stack_sequence(json, "Struct", |items| {
-            StackValue::Struct(neo_vm_rs::next_stack_item_id(), items)
+            StackValue::Struct(neo_vm::next_stack_item_id(), items)
         }),
         "Map" => {
             let values = json
@@ -139,7 +139,7 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, StackParseErro
                     stack_item_from_json(value_obj)?,
                 ));
             }
-            Ok(StackValue::Map(neo_vm_rs::next_stack_item_id(), entries))
+            Ok(StackValue::Map(neo_vm::next_stack_item_id(), entries))
         }
         "Pointer" => {
             let index_token = json

@@ -5,7 +5,7 @@ use crate::manifest::{ContractEventDescriptor, ContractMethodDescriptor};
 use neo_error::{CoreError, CoreResult};
 use neo_vm::Interoperable;
 use neo_vm::InteroperableError;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -133,20 +133,20 @@ impl ContractAbi {
         methods_size + events_size
     }
 
-    /// Converts to a neo-vm-rs stack value (matches C# `ContractAbi.ToStackItem` layout).
+    /// Converts to a neo-vm stack value (matches C# `ContractAbi.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
         StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::Array(
-                    neo_vm_rs::next_stack_item_id(),
+                    neo_vm::next_stack_item_id(),
                     self.methods
                         .iter()
                         .map(ContractMethodDescriptor::to_stack_value)
                         .collect(),
                 ),
                 StackValue::Array(
-                    neo_vm_rs::next_stack_item_id(),
+                    neo_vm::next_stack_item_id(),
                     self.events
                         .iter()
                         .map(ContractEventDescriptor::to_stack_value)
@@ -156,7 +156,7 @@ impl ContractAbi {
         )
     }
 
-    /// Updates this ABI from a neo-vm-rs stack value.
+    /// Updates this ABI from a neo-vm stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         let items = required_struct_fields(stack_value, "ContractAbi", 2)?;
 

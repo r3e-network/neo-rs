@@ -20,7 +20,7 @@ use neo_primitives::{CallFlags, ContractParameterType, TransactionAttributeType}
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageKey;
 use neo_vm::StackItem;
-use neo_vm_rs::{ExecutionEngineLimits, StackValue};
+use neo_vm::{ExecutionEngineLimits, StackValue};
 use num_traits::ToPrimitive;
 
 #[cfg(test)]

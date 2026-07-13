@@ -34,7 +34,7 @@ fn notary_assisted_block_runs_notary_on_persist_gate() {
     fund_gas(snapshot.as_ref(), &sender, notary_fee);
 
     let mut transaction = neo_payloads::Transaction::new();
-    transaction.set_script(vec![neo_vm_rs::OpCode::RET.byte()]);
+    transaction.set_script(vec![neo_vm::OpCode::RET.byte()]);
     transaction.set_network_fee(notary_fee);
     transaction.set_signers(vec![Signer::new(sender, WitnessScope::NONE)]);
     transaction.set_witnesses(vec![Witness::empty()]);
@@ -81,7 +81,7 @@ fn oracle_response_block_runs_oracle_post_persist_gate() {
     let sender = UInt160::from([0x72; 20]);
     fund_gas(snapshot.as_ref(), &sender, 1_0000_0000);
     let mut transaction = neo_payloads::Transaction::new();
-    transaction.set_script(vec![neo_vm_rs::OpCode::RET.byte()]);
+    transaction.set_script(vec![neo_vm::OpCode::RET.byte()]);
     transaction.set_system_fee(1_0000_0000);
     transaction.set_signers(vec![Signer::new(sender, WitnessScope::NONE)]);
     transaction.set_witnesses(vec![Witness::empty()]);

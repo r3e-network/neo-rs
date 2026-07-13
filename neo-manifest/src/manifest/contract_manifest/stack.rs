@@ -1,8 +1,8 @@
 //! VM stack-value projection for `ContractManifest`.
 
 use neo_error::CoreError;
+use neo_vm::StackValue;
 use neo_vm::{Interoperable, InteroperableError};
-use neo_vm_rs::StackValue;
 
 use crate::manifest::{
     ContractAbi, ContractGroup, ContractManifest, ContractPermission, ContractPermissionDescriptor,
@@ -44,7 +44,7 @@ impl ContractManifest {
         let trusts_item = match &self.trusts {
             WildCardContainer::Wildcard => StackValue::Null,
             WildCardContainer::List(trusts) => StackValue::Array(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 trusts
                     .iter()
                     .map(ContractPermissionDescriptor::to_stack_value)
@@ -60,15 +60,15 @@ impl ContractManifest {
         };
 
         StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::ByteString(self.name.as_bytes().to_vec()),
-                StackValue::Array(neo_vm_rs::next_stack_item_id(), group_items),
+                StackValue::Array(neo_vm::next_stack_item_id(), group_items),
                 // C# ContractManifest.ToStackItem always emits an empty features map.
-                StackValue::Map(neo_vm_rs::next_stack_item_id(), Vec::new()),
-                StackValue::Array(neo_vm_rs::next_stack_item_id(), standards_items),
+                StackValue::Map(neo_vm::next_stack_item_id(), Vec::new()),
+                StackValue::Array(neo_vm::next_stack_item_id(), standards_items),
                 self.abi.to_stack_value(),
-                StackValue::Array(neo_vm_rs::next_stack_item_id(), permission_items),
+                StackValue::Array(neo_vm::next_stack_item_id(), permission_items),
                 trusts_item,
                 StackValue::ByteString(extra_bytes),
             ],

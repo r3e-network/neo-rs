@@ -16,7 +16,7 @@ use neo_primitives::UInt256;
 use neo_primitives::verify_result::VerifyResult;
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageKey;
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm::ExecutionEngineLimits;
 use num_bigint::BigInt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -797,7 +797,7 @@ fn neo_total_supply(snapshot: &neo_storage::DataCache) -> Option<num_bigint::Big
 fn transaction_with_nonce(nonce: u32) -> Transaction {
     let mut tx = Transaction::new();
     tx.set_nonce(nonce);
-    tx.set_script(vec![neo_vm_rs::OpCode::PUSH1.byte()]);
+    tx.set_script(vec![neo_vm::OpCode::PUSH1.byte()]);
     tx.set_system_fee(1_0000_0000);
     tx.set_signers(vec![neo_payloads::Signer::new(
         neo_primitives::UInt160::from_bytes(&[0x33; 20]).expect("test signer"),

@@ -20,8 +20,8 @@ use neo_serialization::BinarySerializer;
 use neo_serialization::json::JToken;
 use neo_storage::{StorageItem, StorageKey};
 use neo_test_fixtures::TestTransactionBuilder;
-use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};
-use neo_vm_rs::{OpCode, StackValue};
+use neo_vm::{ExecutionEngineLimits, VmState as VMState};
+use neo_vm::{OpCode, StackValue};
 use neo_wallets::KeyPair;
 use num_bigint::BigInt;
 use serde_json::Value;
@@ -193,7 +193,7 @@ fn store_committee<S>(
         .iter()
         .map(|pk| {
             StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![
                     StackValue::ByteString(pk.as_bytes().to_vec()),
                     StackValue::Integer(0),
@@ -201,8 +201,7 @@ fn store_committee<S>(
             )
         })
         .collect();
-    let bytes =
-        serialize_test_stack_value(&StackValue::Array(neo_vm_rs::next_stack_item_id(), items));
+    let bytes = serialize_test_stack_value(&StackValue::Array(neo_vm::next_stack_item_id(), items));
     let key = StorageKey::create(neo_token_id, PREFIX_COMMITTEE);
     store.add(key, StorageItem::from_bytes(bytes));
     store.try_commit().expect("commit test store");
@@ -217,7 +216,7 @@ fn store_candidate_state<S>(
     S: neo_storage::persistence::Store,
 {
     let item = StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![
             StackValue::Boolean(registered),
             StackValue::BigInteger(votes.to_signed_bytes_le()),

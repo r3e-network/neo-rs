@@ -36,11 +36,11 @@ use std::sync::Arc;
 fn signed_test_transaction(nonce: u32) -> Transaction {
     let mut tx = Transaction::new();
     tx.set_nonce(nonce);
-    tx.set_script(vec![neo_vm_rs::OpCode::RET.byte()]);
+    tx.set_script(vec![neo_vm::OpCode::RET.byte()]);
     tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
     tx.set_witnesses(vec![Witness::new_with_scripts(
         Vec::new(),
-        vec![neo_vm_rs::OpCode::PUSH1.byte()],
+        vec![neo_vm::OpCode::PUSH1.byte()],
     )]);
     tx
 }

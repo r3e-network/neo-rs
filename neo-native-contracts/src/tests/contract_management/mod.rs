@@ -21,7 +21,7 @@ use neo_manifest::manifest::contract_manifest::MAX_MANIFEST_LENGTH;
 use neo_manifest::{ContractAbi, ContractManifest, NefFile};
 use neo_serialization::BinarySerializer;
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm_rs::ExecutionEngineLimits;
+use neo_vm::ExecutionEngineLimits;
 use num_bigint::BigInt;
 
 fn storage_key_int(snapshot: &DataCache, key: StorageKey) -> Option<BigInt> {

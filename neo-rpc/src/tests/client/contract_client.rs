@@ -8,7 +8,7 @@ use neo_native_contracts::GasToken;
 use neo_primitives::UInt160;
 use neo_serialization::json::{JArray, JObject, JToken};
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::{OpCode, StackValue};
+use neo_vm::{OpCode, StackValue};
 use neo_wallets::KeyPair;
 use num_bigint::BigInt;
 use regex::escape;

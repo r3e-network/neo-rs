@@ -14,8 +14,8 @@ use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
+use neo_vm::ExecutionEngineLimits;
 use neo_vm::StackItem;
-use neo_vm_rs::ExecutionEngineLimits;
 use num_bigint::BigInt;
 
 impl OracleContract {

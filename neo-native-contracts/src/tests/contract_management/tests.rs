@@ -665,7 +665,7 @@ fn check_script_against_abi_validates_offsets_and_uniqueness() {
         )
         .unwrap()
     };
-    let ret_script = vec![neo_vm_rs::OpCode::RET.byte()];
+    let ret_script = vec![neo_vm::OpCode::RET.byte()];
 
     // A method at offset 0 (RET) passes in both strict and lazy modes.
     let abi = ContractAbi::new(vec![method("main", 0)], vec![]);
@@ -760,11 +760,11 @@ fn parse_nef_checked_validates_container_and_checksum() {
     // Empty payload (C# "NEF file length cannot be zero").
     assert!(ContractManagement::parse_nef_checked(&[], "deploy").is_err());
     // A valid NEF3 container round-trips.
-    let nef = NefFile::new("unit-test".to_string(), vec![neo_vm_rs::OpCode::RET.byte()]);
+    let nef = NefFile::new("unit-test".to_string(), vec![neo_vm::OpCode::RET.byte()]);
     let bytes = nef.to_bytes();
     let parsed = ContractManagement::parse_nef_checked(&bytes, "deploy").unwrap();
     assert_eq!(parsed.checksum, nef.checksum);
-    assert_eq!(parsed.script, vec![neo_vm_rs::OpCode::RET.byte()]);
+    assert_eq!(parsed.script, vec![neo_vm::OpCode::RET.byte()]);
     // Corrupting the trailing checksum fails the parse (the C#
     // AsSerializable<NefFile> checksum verifier).
     let mut corrupted = bytes;

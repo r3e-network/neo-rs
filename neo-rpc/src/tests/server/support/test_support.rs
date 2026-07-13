@@ -345,11 +345,8 @@ const NEO_DEFAULT_REGISTER_PRICE: i64 = 1000_0000_0000;
 /// Serializes a [`neo_vm::StackItem`] with the canonical
 /// `BinarySerializer` wire format the native contracts read.
 fn serialize_stack_item(item: &neo_vm::StackItem) -> Vec<u8> {
-    neo_serialization::BinarySerializer::serialize(
-        item,
-        &neo_vm_rs::ExecutionEngineLimits::default(),
-    )
-    .expect("serialize stack item")
+    neo_serialization::BinarySerializer::serialize(item, &neo_vm::ExecutionEngineLimits::default())
+        .expect("serialize stack item")
 }
 
 /// C# `Contract.GetBFTAddress(validators)`: the script hash of the
@@ -368,7 +365,7 @@ fn bft_address(validators: &[neo_crypto::ECPoint]) -> UInt160 {
 /// a `PUSH1` witness, with `NextConsensus` set to the BFT address of
 /// the standby validators.
 fn genesis_header(settings: &ProtocolSettings) -> neo_payloads::Header {
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
 
     let mut header = neo_payloads::Header::new();
     header.set_version(0);
@@ -576,7 +573,7 @@ where
     let state = neo_vm::StackItem::from_struct(vec![neo_vm::StackItem::from_int(amount)]);
     let bytes = neo_serialization::BinarySerializer::serialize(
         &state,
-        &neo_vm_rs::ExecutionEngineLimits::default(),
+        &neo_vm::ExecutionEngineLimits::default(),
     )
     .expect("serialize NEP-17 account state");
 

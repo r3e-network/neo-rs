@@ -195,7 +195,7 @@ fn build_account_witness(
     };
 
     let mut invocation = Vec::with_capacity(signature.len() + 2);
-    invocation.push(neo_vm_rs::OpCode::PUSHDATA1.byte());
+    invocation.push(neo_vm::OpCode::PUSHDATA1.byte());
     invocation.push(signature.len() as u8);
     invocation.extend_from_slice(&signature);
 

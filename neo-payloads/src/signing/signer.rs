@@ -7,8 +7,8 @@ use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::hex_util;
 use neo_primitives::{UINT160_SIZE, UInt160, WitnessScope};
+use neo_vm::StackValue;
 use neo_vm::{Interoperable, InteroperableError};
-use neo_vm_rs::StackValue;
 use serde::{Deserialize, Serialize};
 // Hash and Hasher now provided by impl_hash_for_fields macro
 use std::str::FromStr;
@@ -244,7 +244,7 @@ impl Signer {
         Ok(signer)
     }
 
-    /// Converts the signer to a neo-vm-rs stack value (matches C# `Signer.ToStackItem` layout).
+    /// Converts the signer to a neo-vm stack value (matches C# `Signer.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
         let allowed_contracts = if self.scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
             self.allowed_contracts
@@ -275,13 +275,13 @@ impl Signer {
         };
 
         StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::ByteString(self.account.to_bytes()),
                 StackValue::Integer(i64::from(self.scopes.bits())),
-                StackValue::Array(neo_vm_rs::next_stack_item_id(), allowed_contracts),
-                StackValue::Array(neo_vm_rs::next_stack_item_id(), allowed_groups),
-                StackValue::Array(neo_vm_rs::next_stack_item_id(), rules),
+                StackValue::Array(neo_vm::next_stack_item_id(), allowed_contracts),
+                StackValue::Array(neo_vm::next_stack_item_id(), allowed_groups),
+                StackValue::Array(neo_vm::next_stack_item_id(), rules),
             ],
         )
     }

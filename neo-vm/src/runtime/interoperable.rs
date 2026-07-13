@@ -43,7 +43,7 @@ macro_rules! impl_interoperable_via_stack_value {
         impl $crate::Interoperable for $ty {
             fn from_stack_value(
                 &mut self,
-                value: ::neo_vm_rs::StackValue,
+                value: $crate::StackValue,
             ) -> ::std::result::Result<(), $crate::InteroperableError> {
                 *self = <$ty>::from_stack_value(value)
                     .map_err(|error| $crate::InteroperableError::InvalidData(format!("{error}")))?;
@@ -52,7 +52,7 @@ macro_rules! impl_interoperable_via_stack_value {
 
             fn to_stack_value(
                 &self,
-            ) -> ::std::result::Result<::neo_vm_rs::StackValue, $crate::InteroperableError> {
+            ) -> ::std::result::Result<$crate::StackValue, $crate::InteroperableError> {
                 Ok(<$ty>::to_stack_value(&*self))
             }
         }

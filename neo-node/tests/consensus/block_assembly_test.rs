@@ -3,7 +3,7 @@
 use neo_consensus::BlockData;
 use neo_crypto::{ECCurve, ecc::EcdsaVerify};
 use neo_payloads::Block;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 #[tokio::test]
 async fn test_complete_block_assembly_workflow() {
@@ -72,7 +72,7 @@ async fn test_complete_block_assembly_workflow() {
 async fn assemble_test_block(block_data: BlockData) -> anyhow::Result<Block> {
     use neo_execution::helper::Helper;
     use neo_payloads::{Block, Header, Witness};
-    use neo_vm_rs::OpCode;
+    use neo_vm::OpCode;
 
     // Build invocation script
     let mut invocation = Vec::new();

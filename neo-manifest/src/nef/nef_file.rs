@@ -220,8 +220,8 @@ impl Serializable for NefFile {
             return Err(IoError::invalid_data("Script too long for NEF format"));
         }
         // Also enforce the Neo VM item-size cap (matches
-        // neo-vm-rs::ExecutionEngineLimits::max_item_size).
-        let max_item_size = neo_vm_rs::ExecutionEngineLimits::DEFAULT.max_item_size as usize;
+        // neo-vm::ExecutionEngineLimits::max_item_size).
+        let max_item_size = neo_vm::ExecutionEngineLimits::DEFAULT.max_item_size as usize;
         if self.script.len() > max_item_size {
             return Err(IoError::invalid_data(format!(
                 "Script exceeds max item size: {} > {}",
@@ -260,7 +260,7 @@ impl Serializable for NefFile {
         let _reserved2 = reader.read_u16()?;
         // C# NefFile.Deserialize reads the script capped at MaxItemSize and
         // rejects an empty script.
-        let max_item_size = neo_vm_rs::ExecutionEngineLimits::DEFAULT.max_item_size as usize;
+        let max_item_size = neo_vm::ExecutionEngineLimits::DEFAULT.max_item_size as usize;
         let script = reader.read_var_bytes(max_item_size)?;
         if script.is_empty() {
             return Err(IoError::invalid_data("Script cannot be empty."));

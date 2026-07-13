@@ -16,8 +16,8 @@ use neo_config::ProtocolSettings;
 use neo_primitives::{CallFlags, TriggerType, UInt160};
 use neo_runtime::{Nep17Metadata, Nep17MetadataReader, ServiceError};
 use neo_storage::{CacheRead, DataCache, EmptyCacheBacking};
+use neo_vm::VmState;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::VmState;
 use num_traits::ToPrimitive;
 
 use crate::native_contract_provider::NativeContractProvider;

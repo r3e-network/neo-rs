@@ -6,8 +6,8 @@ use neo_payloads::transaction::Transaction;
 use neo_payloads::witness::Witness;
 use neo_primitives::{CallFlags, TriggerType, UInt160, WitnessScope};
 use neo_storage::DataCache;
+use neo_vm::VmState;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::VmState;
 use std::sync::Arc;
 
 /// Builds a script that calls `System.Runtime.CheckWitness(hash)`.

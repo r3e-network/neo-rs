@@ -13,8 +13,8 @@ use neo_primitives::UInt160;
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
+use neo_vm::ExecutionEngineLimits;
 use neo_vm::StackItem;
-use neo_vm_rs::ExecutionEngineLimits;
 
 /// Hex-decodes a string of hex digits into a `Vec<u8>`. Panics on invalid
 /// input (caller is responsible for supplying a valid string).

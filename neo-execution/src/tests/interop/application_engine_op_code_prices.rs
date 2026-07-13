@@ -1,6 +1,6 @@
 use super::*;
 use crate::native_contract_provider::NoNativeContractProvider;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 #[test]
 fn opcode_price_table_matches_csharp_v3101_dictionary() {

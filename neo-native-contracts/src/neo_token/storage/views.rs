@@ -27,7 +27,7 @@ impl NeoAccountStateView {
         items.push(StackValue::BigInteger(
             self.last_gas_per_vote.to_signed_bytes_le(),
         ));
-        StackValue::Struct(neo_vm_rs::next_stack_item_id(), items)
+        StackValue::Struct(neo_vm::next_stack_item_id(), items)
     }
 
     pub(in crate::neo_token) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
@@ -70,7 +70,7 @@ impl CandidateState {
 
     pub(in crate::neo_token) fn to_stack_value(&self) -> StackValue {
         StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::Boolean(self.registered),
                 StackValue::BigInteger(self.votes.to_signed_bytes_le()),
@@ -109,12 +109,12 @@ impl CachedCommittee {
 
     pub(crate) fn to_stack_value(&self) -> StackValue {
         StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             self.members
                 .iter()
                 .map(|(point, votes)| {
                     StackValue::Struct(
-                        neo_vm_rs::next_stack_item_id(),
+                        neo_vm::next_stack_item_id(),
                         vec![
                             StackValue::ByteString(point.to_bytes()),
                             StackValue::BigInteger(votes.to_signed_bytes_le()),

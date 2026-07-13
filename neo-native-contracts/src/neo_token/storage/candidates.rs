@@ -266,9 +266,9 @@ impl NeoToken {
     pub(in crate::neo_token) fn decode_canonical_candidate_state(
         value: &[u8],
     ) -> CoreResult<Option<(bool, BigInt)>> {
-        const STRUCT: u8 = neo_vm_rs::NEOVM_STACK_ITEM_TYPE_STRUCT;
-        const BOOLEAN: u8 = neo_vm_rs::NEOVM_STACK_ITEM_TYPE_BOOLEAN;
-        const INTEGER: u8 = neo_vm_rs::NEOVM_STACK_ITEM_TYPE_INTEGER;
+        const STRUCT: u8 = neo_vm::NEOVM_STACK_ITEM_TYPE_STRUCT;
+        const BOOLEAN: u8 = neo_vm::NEOVM_STACK_ITEM_TYPE_BOOLEAN;
+        const INTEGER: u8 = neo_vm::NEOVM_STACK_ITEM_TYPE_INTEGER;
 
         let Some((&STRUCT, tail)) = value.split_first() else {
             return Ok(None);
@@ -454,12 +454,12 @@ impl NeoToken {
         candidates: &[(ECPoint, BigInt)],
     ) -> CoreResult<Vec<u8>> {
         let array = StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             candidates
                 .iter()
                 .map(|(pk, votes)| {
                     StackValue::Struct(
-                        neo_vm_rs::next_stack_item_id(),
+                        neo_vm::next_stack_item_id(),
                         vec![
                             StackValue::ByteString(pk.to_bytes()),
                             StackValue::BigInteger(votes.to_signed_bytes_le()),

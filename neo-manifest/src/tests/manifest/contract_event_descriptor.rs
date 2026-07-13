@@ -1,8 +1,8 @@
 use super::*;
 use neo_primitives::ContractParameterType;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
-fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
+fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
     a.structural_eq(b)
 }
 
@@ -23,21 +23,21 @@ fn event_descriptor_projects_to_neo_vm_rs_stack_value() {
 
     let left = event.to_stack_value();
     let right = StackValue::Struct(
-        neo_vm_rs::next_stack_item_id(),
+        neo_vm::next_stack_item_id(),
         vec![
             StackValue::ByteString(b"Transfer".to_vec()),
             StackValue::Array(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![
                     StackValue::Struct(
-                        neo_vm_rs::next_stack_item_id(),
+                        neo_vm::next_stack_item_id(),
                         vec![
                             StackValue::ByteString(b"from".to_vec()),
                             StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
                         ],
                     ),
                     StackValue::Struct(
-                        neo_vm_rs::next_stack_item_id(),
+                        neo_vm::next_stack_item_id(),
                         vec![
                             StackValue::ByteString(b"amount".to_vec()),
                             StackValue::Integer(ContractParameterType::Integer as u8 as i64),
@@ -59,13 +59,13 @@ fn event_descriptor_reads_from_neo_vm_rs_stack_value() {
 
     event
         .from_stack_value(StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::ByteString(b"Approval".to_vec()),
                 StackValue::Array(
-                    neo_vm_rs::next_stack_item_id(),
+                    neo_vm::next_stack_item_id(),
                     vec![StackValue::Struct(
-                        neo_vm_rs::next_stack_item_id(),
+                        neo_vm::next_stack_item_id(),
                         vec![
                             StackValue::ByteString(b"spender".to_vec()),
                             StackValue::Integer(ContractParameterType::Hash160 as u8 as i64),
@@ -90,13 +90,13 @@ fn event_descriptor_rejects_struct_parameter_sequence_like_csharp() {
     assert!(
         event
             .from_stack_value(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![
                     StackValue::ByteString(b"Vote".to_vec()),
                     StackValue::Struct(
-                        neo_vm_rs::next_stack_item_id(),
+                        neo_vm::next_stack_item_id(),
                         vec![StackValue::Struct(
-                            neo_vm_rs::next_stack_item_id(),
+                            neo_vm::next_stack_item_id(),
                             vec![
                                 StackValue::ByteString(b"candidate".to_vec()),
                                 StackValue::Integer(ContractParameterType::PublicKey as u8 as i64),
@@ -116,10 +116,10 @@ fn event_descriptor_rejects_invalid_name_like_csharp() {
     assert!(
         event
             .from_stack_value(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![
                     StackValue::Null,
-                    StackValue::Array(neo_vm_rs::next_stack_item_id(), Vec::new()),
+                    StackValue::Array(neo_vm::next_stack_item_id(), Vec::new()),
                 ]
             ))
             .is_err()
@@ -127,10 +127,10 @@ fn event_descriptor_rejects_invalid_name_like_csharp() {
     assert!(
         event
             .from_stack_value(StackValue::Struct(
-                neo_vm_rs::next_stack_item_id(),
+                neo_vm::next_stack_item_id(),
                 vec![
                     StackValue::ByteString(vec![0xff]),
-                    StackValue::Array(neo_vm_rs::next_stack_item_id(), Vec::new()),
+                    StackValue::Array(neo_vm::next_stack_item_id(), Vec::new()),
                 ]
             ))
             .is_err()

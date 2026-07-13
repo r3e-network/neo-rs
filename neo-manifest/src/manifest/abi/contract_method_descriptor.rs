@@ -9,7 +9,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_primitives::ContractParameterType;
 use neo_vm::Interoperable;
 use neo_vm::InteroperableError;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 
 /// Represents a method in a smart contract ABI (matches C# ContractMethodDescriptor)
@@ -143,14 +143,14 @@ impl ContractMethodDescriptor {
         1 + self.name.len() + params_size + 1 + 4 + 1
     }
 
-    /// Converts to a neo-vm-rs stack value (matches C# `ContractMethodDescriptor.ToStackItem` layout).
+    /// Converts to a neo-vm stack value (matches C# `ContractMethodDescriptor.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
         StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::ByteString(self.name.as_bytes().to_vec()),
                 StackValue::Array(
-                    neo_vm_rs::next_stack_item_id(),
+                    neo_vm::next_stack_item_id(),
                     self.parameters
                         .iter()
                         .map(ContractParameterDefinition::to_stack_value)
@@ -163,7 +163,7 @@ impl ContractMethodDescriptor {
         )
     }
 
-    /// Updates this method descriptor from a neo-vm-rs stack value.
+    /// Updates this method descriptor from a neo-vm stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         let items = required_struct_fields(stack_value, "ContractMethodDescriptor", 5)?;
 

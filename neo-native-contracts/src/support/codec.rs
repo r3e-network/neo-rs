@@ -9,7 +9,7 @@
 //! ## Boundary
 //!
 //! This module belongs to `neo-native-contracts`. It wraps `neo_serialization`
-//! and `neo_vm_rs` primitives that every native contract codec already uses;
+//! and `neo_vm` primitives that every native contract codec already uses;
 //! it must not depend on node startup, RPC transport, or P2P sync.
 
 use neo_crypto::ECPoint;
@@ -17,7 +17,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::BinarySerializer;
 use neo_vm::Interoperable;
-use neo_vm_rs::{ExecutionEngineLimits, StackValue};
+use neo_vm::{ExecutionEngineLimits, StackValue};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -154,7 +154,7 @@ impl<'a> StructDecoder<'a> {
             .items
             .get(i)
             .ok_or_else(|| CoreError::invalid_data(format!("{} {} missing", self.label, field)))?;
-        neo_vm_rs::stack_value_as_bool(v).ok_or_else(|| {
+        neo_vm::stack_value_as_bool(v).ok_or_else(|| {
             CoreError::invalid_data(format!(
                 "{} {}: expected boolean-compatible value",
                 self.label, field

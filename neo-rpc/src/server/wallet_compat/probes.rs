@@ -12,7 +12,7 @@ use neo_payloads::VerifiableContainer;
 use neo_primitives::{TriggerType, UInt160};
 use neo_storage::persistence::{CacheRead, DataCache};
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::{OpCode, VmState as VMState};
+use neo_vm::{OpCode, VmState as VMState};
 use num_bigint::BigInt;
 
 use super::{WalletCompatError, WalletCompatResult};

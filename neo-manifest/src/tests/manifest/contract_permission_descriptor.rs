@@ -1,7 +1,7 @@
 use super::*;
 use neo_crypto::{ECPoint, Secp256k1Crypto, Secp256r1Crypto};
 use neo_primitives::hex_util;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
 fn group_key() -> ECPoint {
     let private_key = [1u8; 32];
@@ -55,7 +55,7 @@ fn permission_descriptor_reads_from_neo_vm_rs_stack_value() {
     );
     assert_eq!(
         ContractPermissionDescriptor::from_stack_value(StackValue::Buffer(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             group_bytes,
         ))
         .unwrap(),

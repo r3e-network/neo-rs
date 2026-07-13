@@ -25,7 +25,7 @@ fn test_transaction(nonce: u32) -> neo_payloads::Transaction {
     tx.set_valid_until_block(1);
     tx.set_signers(vec![Signer::new(UInt160::zero(), WitnessScope::NONE)]);
     tx.set_attributes(Vec::new());
-    tx.set_script(vec![neo_vm_rs::OpCode::PUSH1.byte()]);
+    tx.set_script(vec![neo_vm::OpCode::PUSH1.byte()]);
     tx.set_witnesses(vec![Witness::empty()]);
     tx
 }

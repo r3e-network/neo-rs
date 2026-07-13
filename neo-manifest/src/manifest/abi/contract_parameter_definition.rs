@@ -4,7 +4,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_primitives::ContractParameterType;
 use neo_vm::Interoperable;
 use neo_vm::InteroperableError;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 
 use crate::manifest::stack_value_helpers::{
@@ -72,10 +72,10 @@ impl ContractParameterDefinition {
         1 + self.name.len()
     }
 
-    /// Converts to a neo-vm-rs stack value (matches C# `ContractParameterDefinition.ToStackItem` layout).
+    /// Converts to a neo-vm stack value (matches C# `ContractParameterDefinition.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
         StackValue::Struct(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             vec![
                 StackValue::ByteString(self.name.as_bytes().to_vec()),
                 StackValue::Integer(self.param_type as u8 as i64),
@@ -83,7 +83,7 @@ impl ContractParameterDefinition {
         )
     }
 
-    /// Updates this definition from a neo-vm-rs stack value.
+    /// Updates this definition from a neo-vm stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
         let StackValue::Struct(_, items) = stack_value else {
             return Err(CoreError::invalid_format(

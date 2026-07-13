@@ -3,7 +3,7 @@
 use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
 use neo_vm::StackItem;
-use neo_vm_rs::StackValue;
+use neo_vm::StackValue;
 
 /// Decodes a serialized node-list (a `BinarySerializer` array of compressed
 /// EC-point byte strings) into `ECPoint`s.
@@ -73,7 +73,7 @@ impl NodeList {
 
     pub(super) fn to_stack_value(&self) -> StackValue {
         StackValue::Array(
-            neo_vm_rs::next_stack_item_id(),
+            neo_vm::next_stack_item_id(),
             self.nodes
                 .iter()
                 .map(|point| StackValue::ByteString(point.to_bytes()))

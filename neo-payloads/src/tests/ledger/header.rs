@@ -1,6 +1,6 @@
 use super::*;
 use neo_crypto::Crypto;
-use neo_vm_rs::OpCode;
+use neo_vm::OpCode;
 
 fn serializable_header_with_version(version: u32) -> Header {
     let mut header = Header::new();

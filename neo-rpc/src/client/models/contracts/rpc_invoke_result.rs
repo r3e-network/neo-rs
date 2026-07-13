@@ -7,8 +7,8 @@ use super::vm_state_utils::{
 };
 use neo_error::{CoreError, CoreResult};
 use neo_serialization::json::{JObject, JToken};
-use neo_vm_rs::StackValue;
-use neo_vm_rs::VmState;
+use neo_vm::StackValue;
+use neo_vm::VmState;
 
 /// RPC invoke result matching C# `RpcInvokeResult`
 #[derive(Debug, Clone)]

@@ -7,10 +7,10 @@ use crate::native_contract_provider::{NativeContractProvider, NoNativeContractPr
 use neo_config::ProtocolSettings;
 use neo_primitives::TriggerType;
 use neo_storage::{CacheRead, DataCache, StorageItem, StorageKey};
+use neo_vm::OpCode;
 use neo_vm::Script;
+use neo_vm::VmState as VMState;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm_rs::OpCode;
-use neo_vm_rs::VmState as VMState;
 use num_bigint::BigInt;
 use std::sync::Arc;
 
