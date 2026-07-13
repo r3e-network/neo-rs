@@ -58,11 +58,15 @@ impl Array {
     /// Creates a new array without a reference counter.
     #[must_use]
     pub fn new_untracked(items: Vec<StackItem>) -> Self {
+        Self::new_untracked_with_id(items, next_stack_item_id() as usize)
+    }
+
+    pub(crate) fn new_untracked_with_id(items: Vec<StackItem>, id: usize) -> Self {
         Self {
             inner: Arc::new(Mutex::new(ArrayInner {
                 items,
                 reference_counter: None,
-                id: next_stack_item_id() as usize,
+                id,
                 is_read_only: false,
             })),
         }

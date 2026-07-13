@@ -36,6 +36,176 @@ fn stack_value_big_integer_conversion_enforces_vm_integer_max_size() {
 }
 
 #[test]
+fn stack_value_round_trip_preserves_compound_identity() {
+    const ARRAY_ID: u64 = 101;
+    const BUFFER_ID: u64 = 102;
+    const STRUCT_ID: u64 = 103;
+    const MAP_ID: u64 = 104;
+
+    let external = neo_vm_rs::StackValue::Array(
+        ARRAY_ID,
+        vec![
+            neo_vm_rs::StackValue::Buffer(BUFFER_ID, vec![1, 2, 3]),
+            neo_vm_rs::StackValue::Struct(
+                STRUCT_ID,
+                vec![neo_vm_rs::StackValue::Map(
+                    MAP_ID,
+                    vec![(
+                        neo_vm_rs::StackValue::ByteString(b"key".to_vec()),
+                        neo_vm_rs::StackValue::Integer(42),
+                    )],
+                )],
+            ),
+        ],
+    );
+
+    let local = StackItem::try_from(external).expect("convert external stack value");
+    let StackItem::Array(array) = &local else {
+        panic!("expected local array");
+    };
+    assert_eq!(array.id(), ARRAY_ID as usize);
+    let items = array.items();
+    let StackItem::Buffer(buffer) = &items[0] else {
+        panic!("expected local buffer");
+    };
+    assert_eq!(buffer.id(), BUFFER_ID as usize);
+    let StackItem::Struct(structure) = &items[1] else {
+        panic!("expected local struct");
+    };
+    assert_eq!(structure.id(), STRUCT_ID as usize);
+    let StackItem::Map(map) = &structure.items()[0] else {
+        panic!("expected local map");
+    };
+    assert_eq!(map.id(), MAP_ID as usize);
+
+    let round_trip = neo_vm_rs::StackValue::try_from(local).expect("convert local stack item");
+    let neo_vm_rs::StackValue::Array(array_id, items) = round_trip else {
+        panic!("expected external array");
+    };
+    assert_eq!(array_id, ARRAY_ID);
+    assert!(matches!(
+        &items[0],
+        neo_vm_rs::StackValue::Buffer(BUFFER_ID, bytes) if bytes == &[1, 2, 3]
+    ));
+    let neo_vm_rs::StackValue::Struct(struct_id, fields) = &items[1] else {
+        panic!("expected external struct");
+    };
+    assert_eq!(*struct_id, STRUCT_ID);
+    assert!(matches!(
+        &fields[0],
+        neo_vm_rs::StackValue::Map(MAP_ID, entries)
+            if entries == &vec![(
+                neo_vm_rs::StackValue::ByteString(b"key".to_vec()),
+                neo_vm_rs::StackValue::Integer(42),
+            )]
+    ));
+}
+
+#[test]
+fn stack_value_conversion_preserves_repeated_compound_aliases() {
+    const ROOT_ID: u64 = 200;
+    const BUFFER_ID: u64 = 201;
+    const ARRAY_ID: u64 = 202;
+    const STRUCT_ID: u64 = 203;
+    const MAP_ID: u64 = 204;
+
+    let buffer = neo_vm_rs::StackValue::Buffer(BUFFER_ID, vec![1]);
+    let array = neo_vm_rs::StackValue::Array(ARRAY_ID, vec![neo_vm_rs::StackValue::Integer(2)]);
+    let structure =
+        neo_vm_rs::StackValue::Struct(STRUCT_ID, vec![neo_vm_rs::StackValue::Integer(3)]);
+    let map = neo_vm_rs::StackValue::Map(
+        MAP_ID,
+        vec![(
+            neo_vm_rs::StackValue::ByteString(b"first".to_vec()),
+            neo_vm_rs::StackValue::Integer(4),
+        )],
+    );
+    let external = neo_vm_rs::StackValue::Array(
+        ROOT_ID,
+        vec![
+            buffer.clone(),
+            buffer,
+            array.clone(),
+            array,
+            structure.clone(),
+            structure,
+            map.clone(),
+            map,
+        ],
+    );
+
+    let StackItem::Array(root) = StackItem::try_from(external).expect("convert repeated values")
+    else {
+        panic!("expected root array");
+    };
+    let items = root.items();
+
+    let (StackItem::Buffer(first_buffer), StackItem::Buffer(second_buffer)) =
+        (&items[0], &items[1])
+    else {
+        panic!("expected repeated buffers");
+    };
+    first_buffer.set(0, 9).expect("mutate first buffer alias");
+    assert_eq!(second_buffer.get(0).expect("read second buffer alias"), 9);
+
+    let (StackItem::Array(first_array), StackItem::Array(second_array)) = (&items[2], &items[3])
+    else {
+        panic!("expected repeated arrays");
+    };
+    first_array
+        .push(StackItem::from_i64(5))
+        .expect("mutate first array alias");
+    assert_eq!(second_array.len(), 2);
+
+    let (StackItem::Struct(first_struct), StackItem::Struct(second_struct)) =
+        (&items[4], &items[5])
+    else {
+        panic!("expected repeated structs");
+    };
+    first_struct
+        .push(StackItem::from_i64(6))
+        .expect("mutate first struct alias");
+    assert_eq!(second_struct.len(), 2);
+
+    let (StackItem::Map(first_map), StackItem::Map(second_map)) = (&items[6], &items[7]) else {
+        panic!("expected repeated maps");
+    };
+    let second_key = StackItem::from_byte_string(b"second".to_vec());
+    first_map
+        .set(second_key.clone(), StackItem::from_i64(7))
+        .expect("mutate first map alias");
+    assert_eq!(
+        second_map
+            .get(&second_key)
+            .expect("read second map alias")
+            .as_int()
+            .expect("map value is integer"),
+        BigInt::from(7)
+    );
+}
+
+#[test]
+fn stack_value_conversion_rejects_conflicting_compound_definitions() {
+    let different_content = neo_vm_rs::StackValue::Array(
+        300,
+        vec![
+            neo_vm_rs::StackValue::Buffer(301, vec![1]),
+            neo_vm_rs::StackValue::Buffer(301, vec![2]),
+        ],
+    );
+    assert!(StackItem::try_from(different_content).is_err());
+
+    let different_kind = neo_vm_rs::StackValue::Array(
+        302,
+        vec![
+            neo_vm_rs::StackValue::Array(303, Vec::new()),
+            neo_vm_rs::StackValue::Struct(303, Vec::new()),
+        ],
+    );
+    assert!(StackItem::try_from(different_kind).is_err());
+}
+
+#[test]
 fn test_bytestring_stack_item() {
     let bytes = vec![1, 2, 3];
     let byte_string = StackItem::from_byte_string(bytes.clone());

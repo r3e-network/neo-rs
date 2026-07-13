@@ -57,10 +57,14 @@ impl Struct {
     /// Creates a struct without a reference counter.
     #[must_use]
     pub fn new_untracked(items: Vec<StackItem>) -> Self {
+        Self::new_untracked_with_id(items, next_stack_item_id() as usize)
+    }
+
+    pub(crate) fn new_untracked_with_id(items: Vec<StackItem>, id: usize) -> Self {
         Self {
             inner: Arc::new(Mutex::new(StructInner {
                 items,
-                id: next_stack_item_id() as usize,
+                id,
                 reference_counter: None,
                 is_read_only: false,
             })),

@@ -219,12 +219,20 @@ fn get_notifications_deep_copies_domovoi_state_like_csharp() {
 
     let nested_arg = StackItem::from_array(vec![StackItem::from_i64(1)]);
     engine
-        .send_notification(UInt160::zero(), "Native".to_string(), vec![nested_arg])
+        .send_notification(
+            UInt160::zero(),
+            "Native".to_string(),
+            vec![nested_arg.clone(), nested_arg],
+        )
         .expect("send notification");
 
     let StackItem::Array(stored_nested) = &engine.notifications()[0].state[0] else {
         panic!("stored notification argument should be an array");
     };
+    let StackItem::Array(stored_nested_alias) = &engine.notifications()[0].state[1] else {
+        panic!("stored notification alias should be an array");
+    };
+    assert_eq!(stored_nested.id(), stored_nested_alias.id());
     assert!(stored_nested.is_read_only());
     assert!(stored_nested.push(StackItem::from_i64(2)).is_err());
 
@@ -244,9 +252,30 @@ fn get_notifications_deep_copies_domovoi_state_like_csharp() {
     let StackItem::Array(returned_nested) = &state_items[0] else {
         panic!("returned notification argument should be an array");
     };
+    let StackItem::Array(returned_nested_alias) = &state_items[1] else {
+        panic!("returned notification alias should be an array");
+    };
     assert!(returned_nested.is_read_only());
+    assert_eq!(returned_nested.id(), returned_nested_alias.id());
     assert_ne!(returned_nested.id(), stored_nested.id());
     assert!(returned_nested.push(StackItem::from_i64(3)).is_err());
+
+    let second_notifications = engine
+        .get_notifications(None)
+        .expect("get notifications again");
+    let StackItem::Array(second_notification) = &second_notifications[0] else {
+        panic!("second notification should project as an array");
+    };
+    let second_fields = second_notification.items();
+    let StackItem::Array(second_state) = &second_fields[2] else {
+        panic!("second notification state should project as an array");
+    };
+    let second_state_items = second_state.items();
+    let StackItem::Array(second_returned_nested) = &second_state_items[0] else {
+        panic!("second returned argument should be an array");
+    };
+    assert_ne!(state.id(), second_state.id());
+    assert_ne!(returned_nested.id(), second_returned_nested.id());
 }
 
 #[test]
@@ -268,21 +297,82 @@ fn notification_size_check_uses_stack_value_serializer() {
 }
 
 #[test]
-fn get_notifications_non_domovoi_projection_uses_stack_value_adapter() {
-    let source = include_str!("../../interop/application_engine_helper.rs");
-    let start = source
-        .find("fn notification_to_stack_item")
-        .expect("notification projection helper exists");
-    let end = source[start..]
-        .find("fn notification_state_to_stack_value")
-        .map(|offset| start + offset)
-        .expect("stack value helper follows notification projection");
-    let helper = &source[start..end];
+fn get_notifications_reuses_pre_domovoi_immutable_state_like_csharp() {
+    let mut settings = ProtocolSettings::default();
+    settings.hardforks.clear();
 
-    assert!(helper.contains("readonly_array_stack_item"));
-    assert!(helper.contains("notification_state_to_stack_value(&notification.state)"));
-    assert!(helper.contains("StackItem::try_from(value)"));
-    assert!(!helper.contains("StackItem::from_array(notification.state.to_vec())"));
+    let mut engine =
+        ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            settings,
+            TEST_MODE_GAS,
+            NoDiagnostic,
+            Arc::new(NoNativeContractProvider),
+        )
+        .expect("application engine");
+    engine
+        .load_script(vec![OpCode::RET.byte()], CallFlags::ALLOW_NOTIFY, None)
+        .expect("load script");
+
+    let nested = StackItem::from_array(vec![StackItem::from_i64(1)]);
+    engine
+        .send_notification(
+            UInt160::zero(),
+            "Native".to_string(),
+            vec![nested.clone(), nested],
+        )
+        .expect("send notification");
+
+    let stored_state = engine.notifications()[0].state_array();
+    let StackItem::Array(stored_state) = stored_state else {
+        panic!("stored state should be an array");
+    };
+    let stored_items = stored_state.items();
+    let StackItem::Array(stored_nested) = &stored_items[0] else {
+        panic!("stored nested state should be an array");
+    };
+    let StackItem::Array(stored_nested_alias) = &stored_items[1] else {
+        panic!("stored nested alias should be an array");
+    };
+    assert!(stored_state.is_read_only());
+    assert!(stored_nested.is_read_only());
+    assert_eq!(stored_nested.id(), stored_nested_alias.id());
+
+    let first = engine.get_notifications(None).expect("get notifications");
+    let second = engine
+        .get_notifications(None)
+        .expect("get notifications again");
+    let StackItem::Array(first_notification) = &first[0] else {
+        panic!("first notification should be an array");
+    };
+    let StackItem::Array(second_notification) = &second[0] else {
+        panic!("second notification should be an array");
+    };
+    let first_fields = first_notification.items();
+    let second_fields = second_notification.items();
+    let StackItem::Array(first_state) = &first_fields[2] else {
+        panic!("first state should be an array");
+    };
+    let StackItem::Array(second_state) = &second_fields[2] else {
+        panic!("second state should be an array");
+    };
+    assert_eq!(first_state.id(), stored_state.id());
+    assert_eq!(second_state.id(), stored_state.id());
+    assert!(first_state.push(StackItem::from_i64(2)).is_err());
+
+    let first_state_items = first_state.items();
+    let StackItem::Array(first_nested) = &first_state_items[0] else {
+        panic!("first nested state should be an array");
+    };
+    let StackItem::Array(first_nested_alias) = &first_state_items[1] else {
+        panic!("first nested alias should be an array");
+    };
+    assert_eq!(first_nested.id(), stored_nested.id());
+    assert_eq!(first_nested.id(), first_nested_alias.id());
+    assert!(first_nested.push(StackItem::from_i64(3)).is_err());
 }
 
 #[test]
@@ -401,7 +491,7 @@ fn policy_provider_legacy_exec_fee_factor_is_scaled_until_faun_height() {
 }
 
 #[test]
-fn external_vm_loop_hits_gas_limit_before_instruction_cap() {
+fn application_engine_loop_hits_gas_limit_before_instruction_cap() {
     let mut builder = ScriptBuilder::new();
     builder.emit_jump(OpCode::JMP_L, 0).expect("jump loop");
 
@@ -424,8 +514,8 @@ fn external_vm_loop_hits_gas_limit_before_instruction_cap() {
     assert_eq!(engine.execute_allow_fault(), VMState::FAULT);
     let exception = engine.fault_exception().unwrap_or_default();
     assert!(
-        exception.to_ascii_lowercase().contains("insufficient gas"),
-        "expected insufficient gas before VM instruction cap, got {exception}"
+        exception.to_ascii_lowercase().contains("gas exhausted"),
+        "expected local-engine gas exhaustion before VM instruction cap, got {exception}"
     );
     assert!(engine.fee_consumed() >= 1_000_000);
 }
@@ -468,13 +558,9 @@ fn invocation_counter_uses_explicit_context_script_hash_like_csharp() {
 }
 
 #[test]
-fn external_vm_pointer_result_halts_like_local_engine() {
+fn pointer_result_halts_like_neo_vm_v3101() {
     // A pure `PUSHA <offset>; RET` script HALTs with a Pointer on the result
-    // stack. The neo-vm-rs fast path cannot represent a Pointer as a stateful
-    // StackItem, so it must DECLINE and let the local engine HALT with the
-    // Pointer (matching C#/the local engine) rather than FAULT — otherwise a
-    // crafted transaction would HALT on C# but FAULT on the fast path, which is
-    // a consensus divergence.
+    // stack in NeoVM v3.10.1. Canonical execution must preserve that result.
     let script = vec![
         OpCode::PUSHA.byte(),
         0x00,
@@ -504,4 +590,56 @@ fn external_vm_pointer_result_halts_like_local_engine() {
         engine.result_stack().peek(0),
         Ok(neo_vm::stack_item::StackItem::Pointer(_))
     ));
+}
+
+#[test]
+fn canonical_execution_does_not_dispatch_to_external_interpreter() {
+    let source = include_str!("../../application_engine/storage_ops/load_execute_storage.rs");
+    let start = source
+        .find("pub fn execute_allow_fault")
+        .expect("execute_allow_fault exists");
+    let end = source[start..]
+        .find("pub fn execute_until_invocation_stack_depth")
+        .map(|offset| start + offset)
+        .expect("execute_until_invocation_stack_depth follows execute_allow_fault");
+    let execute_allow_fault = &source[start..end];
+
+    assert!(execute_allow_fault.contains("self.vm_engine.engine_mut().execute()"));
+    assert!(!execute_allow_fault.contains("try_execute_with_external_vm"));
+}
+
+#[test]
+fn zero_shift_coerces_boolean_result_to_integer_like_neo_vm_v3101() {
+    // NeoVM v3.10.1 unconditionally integer-coerces SHL's value operand,
+    // including when the shift is zero. Older/external interpreters have
+    // preserved the Boolean here, which changes the consensus stack type.
+    let script = vec![
+        OpCode::PUSHT.byte(),
+        OpCode::PUSH0.byte(),
+        OpCode::SHL.byte(),
+        OpCode::RET.byte(),
+    ];
+    let mut engine =
+        ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            NoDiagnostic,
+            Arc::new(NoNativeContractProvider),
+        )
+        .expect("application engine");
+    engine
+        .load_script(script, CallFlags::NONE, None)
+        .expect("load script");
+
+    assert_eq!(engine.execute_allow_fault(), VMState::HALT);
+    let result = engine.result_stack().peek(0).expect("shift result");
+    assert!(
+        matches!(result, neo_vm::stack_item::StackItem::Integer(_)),
+        "zero-shift result must be an Integer, got {result:?}"
+    );
+    assert_eq!(result.as_int().expect("integer result"), BigInt::from(1));
 }

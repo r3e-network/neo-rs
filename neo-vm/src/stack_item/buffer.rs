@@ -37,11 +37,12 @@ impl Buffer {
     /// Creates a new buffer with the specified data.
     #[must_use]
     pub fn new(data: Vec<u8>) -> Self {
+        Self::with_id(data, next_stack_item_id() as usize)
+    }
+
+    pub(crate) fn with_id(data: Vec<u8>, id: usize) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(BufferInner {
-                data,
-                id: next_stack_item_id() as usize,
-            })),
+            inner: Arc::new(Mutex::new(BufferInner { data, id })),
         }
     }
 

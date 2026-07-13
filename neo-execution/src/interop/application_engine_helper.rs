@@ -294,8 +294,7 @@ where
         let state = if self.is_hardfork_enabled(Hardfork::HfDomovoi) {
             readonly_array_stack_item(clone_notification_state(&notification.state)?)
         } else {
-            let value = notification_state_to_stack_value(&notification.state)?;
-            StackItem::try_from(value).map_err(|error| CoreError::other(error.to_string()))?
+            notification.state_array()
         };
         notification
             .try_to_stack_item_with_state_array(state)
@@ -325,7 +324,7 @@ fn notification_state_to_stack_value(state: &[StackItem]) -> CoreResult<StackVal
         .cloned()
         .map(StackValue::try_from)
         .collect::<Result<Vec<_>, _>>()
-        .map(StackValue::Array)
+        .map(|items| StackValue::Array(neo_vm_rs::next_stack_item_id(), items))
         .map_err(|error| CoreError::other(error.to_string()))
 }
 

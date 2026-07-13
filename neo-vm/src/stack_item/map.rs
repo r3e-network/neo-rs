@@ -64,10 +64,17 @@ impl Map {
     where
         T: Into<VmOrderedDictionary<StackItem, StackItem>>,
     {
+        Self::new_untracked_with_id(items, next_stack_item_id() as usize)
+    }
+
+    pub(crate) fn new_untracked_with_id<T>(items: T, id: usize) -> Self
+    where
+        T: Into<VmOrderedDictionary<StackItem, StackItem>>,
+    {
         Self {
             inner: Arc::new(Mutex::new(MapInner {
                 items: items.into(),
-                id: next_stack_item_id() as usize,
+                id,
                 reference_counter: None,
                 is_read_only: false,
             })),
