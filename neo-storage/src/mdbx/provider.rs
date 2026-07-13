@@ -118,6 +118,20 @@ impl MdbxStoreProvider {
     {
         self.build_store(path.as_ref()).map(Arc::new)
     }
+
+    /// Opens an isolated named-table view in a provider-created environment.
+    pub fn get_named_store<P>(
+        &self,
+        path: P,
+        table: impl AsRef<str>,
+    ) -> crate::StorageResult<Arc<MdbxStore>>
+    where
+        P: AsRef<Path>,
+    {
+        self.build_store(path.as_ref())?
+            .open_named_table(table)
+            .map(Arc::new)
+    }
 }
 
 impl StoreProvider for MdbxStoreProvider {

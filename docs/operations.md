@@ -766,6 +766,11 @@ checkpoint containing the matching chain, StateService, and persistent-indexer
 stores (or prepare a clean replay), verify their heights, and only then remove
 the marker before preflight.
 
+MDBX now has a tested named-table/coordinated-transaction storage primitive,
+but the daemon does not yet place StateService MPT publication in the Ledger
+transaction. Do not remove or bypass this marker because both configured paths
+use MDBX; separate MDBX environments are still separate durability domains.
+
 For a clean replay, prepare a fresh isolated config instead of reusing the
 mismatched directories:
 

@@ -47,7 +47,9 @@ impl MdbxSnapshot {
         let Some(read_tx) = self.read_tx.as_ref() else {
             return Ok(None);
         };
-        let table = read_tx.open_table(None).map_err(super::store::mdbx_error)?;
+        let table = read_tx
+            .open_table(self.store.data_table_name())
+            .map_err(super::store::mdbx_error)?;
         read_tx
             .get::<Vec<u8>>(&table, key)
             .map_err(super::store::mdbx_error)
@@ -61,7 +63,9 @@ impl MdbxSnapshot {
         let Some(read_tx) = self.read_tx.as_ref() else {
             return Ok(Vec::new());
         };
-        let table = read_tx.open_table(None).map_err(super::store::mdbx_error)?;
+        let table = read_tx
+            .open_table(self.store.data_table_name())
+            .map_err(super::store::mdbx_error)?;
         let mut cursor = read_tx.cursor(&table).map_err(super::store::mdbx_error)?;
         collect_cursor_entries(&mut cursor, key_prefix, direction)
     }

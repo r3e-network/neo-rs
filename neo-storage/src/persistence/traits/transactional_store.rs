@@ -31,3 +31,29 @@ pub trait TransactionalStore: Store {
     /// metadata mutations as one transaction.
     fn commit_maintenance(&self, batch: &StoreMaintenanceBatch) -> StorageResult<()>;
 }
+
+/// Store capability for collision-free namespaces in one atomic commit domain.
+///
+/// Implementations create an isolated logical store whose byte keys cannot
+/// collide with the canonical namespace, while retaining one physical
+/// transaction manager. The capability is intentionally separate from
+/// [`TransactionalStore`]: a backend must not advertise coordinated commits
+/// unless it can prove all-or-nothing publication across both namespaces.
+pub trait CoordinatedTransactionalStore: TransactionalStore + Sized {
+    /// Opens or creates an isolated namespace in this transaction domain.
+    fn open_namespace(&self, name: &str) -> StorageResult<Self>;
+
+    /// Returns whether `other` participates in this exact transaction domain.
+    fn shares_commit_domain(&self, other: &Self) -> bool;
+
+    /// Publishes canonical and secondary overlays in one atomic transaction.
+    fn commit_coordinated_overlays<P, S>(
+        &self,
+        primary: &mut P,
+        secondary_store: &Self,
+        secondary: &mut S,
+    ) -> StorageResult<()>
+    where
+        P: RawOverlaySource + ?Sized,
+        S: RawOverlaySource + ?Sized;
+}

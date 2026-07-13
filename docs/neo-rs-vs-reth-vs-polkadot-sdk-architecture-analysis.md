@@ -27,6 +27,14 @@ write transaction; RocksDB uses a WAL-synchronous overlay batch and persists
 any earlier WAL-disabled fast-sync prefix first. Canonical composition is
 generic over `S: TransactionalStore`, so an unsupported backend cannot start a
 node and fail only at the first block.
+MDBX also implements the stronger, statically selected
+`CoordinatedTransactionalStore` foundation. A named-table view preserves the
+service's raw byte format in a collision-free keyspace while sharing the
+canonical environment, and two overlays can publish in one MDBX transaction.
+Tests prove namespace isolation, old-snapshot isolation, one transaction-id
+advance, restart persistence, and rejection of cross-environment commits before
+partial writes. StateService preparation/publication is not wired to this path
+yet, so the following fail-stop protocol remains the production behavior.
 StateService and a persistent indexer remain separate durability domains, so
 neo-rs uses write-ahead fail-stop recovery rather than claiming cross-store
 atomicity: it writes and fsyncs a poison marker before either observer can
@@ -741,6 +749,9 @@ so codecs can return borrowed slices, stack arrays, or owned vectors;
 `IntoTableBytes` avoids copying an already-owned vector into a write batch.
 `TableProvider` supplies statically dispatched typed reads for every
 `TransactionalStore`, and `StoreMaintenanceBatch` supplies typed atomic writes.
+`CoordinatedTransactionalStore` separately identifies engines that can create
+isolated namespace views and commit two raw overlay sources under one physical
+transaction; MDBX is the first implementation.
 Domain crates own
 domain codecs. Built-in `StorageKeyCodec` and `StorageItemCodec` preserve C#
 bytes exactly; binary/wire serializers remain in their existing protocol
@@ -813,7 +824,9 @@ already established Neo codec byte-for-byte.
    node-local records. Canonical composition requires `TransactionalStore`, so
    table maintenance and canonical overlay publication have no runtime
    unsupported-capability branch. The existing child/parent `DataCache` is the
-   adopted `OverlayedChanges` pattern.
+   adopted `OverlayedChanges` pattern. MDBX named views and the static
+   coordinated-transaction capability are implemented and tested; wiring a
+   prepared StateService MPT overlay into that transaction remains pending.
 3. **State provider/factory boundary** — implemented in `neo-state-service`.
    `StateStore` creates a concrete `MptStateProviderFactory`; all StateService
    RPC root, state, scan, and proof reads use its statically dispatched views.

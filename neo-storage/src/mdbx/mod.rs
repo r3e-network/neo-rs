@@ -1,6 +1,6 @@
 //! # neo-storage::mdbx
 //!
-//! Production default MDBX provider and store adapter.
+//! Production default MDBX provider, named-table views, and store adapter.
 //!
 //! ## Boundary
 //!
@@ -12,7 +12,8 @@
 //!
 //! - `provider`: Provider adapter for the surrounding trait boundary.
 //! - `snapshot`: Read snapshot view for the surrounding store backend.
-//! - `store`: Store implementation for the surrounding backend or domain.
+//! - `store`: Store implementation plus collision-free named-table views and
+//!   coordinated two-domain transactions.
 //! - `tests`: Module-local tests and regression coverage.
 
 mod provider;

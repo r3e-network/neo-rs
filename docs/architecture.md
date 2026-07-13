@@ -103,7 +103,7 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-io | Infrastructure | Binary and variable-length integer reader/writer (mirrors `Neo.IO`). |
 | neo-error | Infrastructure | Authoritative `CoreError` / `CoreResult` error types for the workspace. |
 | neo-crypto | Infrastructure | Hashing, secp256r1 ECC, signatures, BLS12-381. |
-| neo-storage | Infrastructure | General `Store` and canonical `TransactionalStore` traits, child/parent `DataCache` overlays, C#-compatible raw key/value codecs, isolated node-maintenance metadata, MDBX/RocksDB adapters, and in-memory providers. |
+| neo-storage | Infrastructure | General `Store`, canonical `TransactionalStore`, and cross-namespace `CoordinatedTransactionalStore` capabilities; child/parent `DataCache` overlays; C#-compatible raw key/value codecs; isolated node-maintenance metadata; MDBX/RocksDB adapters; and in-memory providers. |
 | neo-static-files | Infrastructure | Versioned genesis-first static records with zstd compression, checksums, a derived MDBX versioned-offset index, payload-free frame-key lookup, bounded suffix recovery, strict scrubbing, kernel writer ownership, and LRU frame caching. |
 | neo-config | Infrastructure | Node and protocol configuration (TOML-backed settings). |
 | neo-vm | Infrastructure | Stateful NeoVM host (execution engine, contexts, reference-counted stack items) over `neo-vm-rs`. |
@@ -372,6 +372,10 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   `NodeCore`, `NodeSystemContext`, and `Node` all require
   `S: TransactionalStore`; atomic canonical-overlay and maintenance methods are
   mandatory trait operations rather than optional `Store` probes. The canonical
+  MDBX adapter additionally implements `CoordinatedTransactionalStore`: named
+  table views isolate identical raw keys while sharing one environment, and two
+  ordered overlays can cross one MDBX transaction. This is storage groundwork,
+  not a claim about the current node composition. The canonical
   Ledger and pre-commit StateService/persistent-indexer stores are separate
   durability domains; they are not presented as one atomic transaction. Before
   either independent observer can publish, `neo-node` writes and fsyncs
@@ -524,6 +528,11 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   while one batch can atomically combine ordinary row mutations with metadata
   updates. Those bytes cannot enter contract scans, store dumps, or state-root
   calculation. `StorageKeyCodec` and `StorageItemCodec` preserve exact C# bytes;
+  `CoordinatedTransactionalStore` is a separate static capability for service
+  domains that can prove one physical transaction. MDBX implements it with
+  collision-free named-table store views and rejects views from different
+  environments before visiting either overlay. StateService does not consume
+  that capability yet, so its documented fail-stop fence remains authoritative.
   compact encodings cannot replace protocol storage formats. Backend-reaching
   snapshots and caches expose only fallible commits. `TableProvider` is blanket
   implemented for `TransactionalStore`, because maintenance-table reads require

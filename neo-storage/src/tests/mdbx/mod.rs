@@ -13,8 +13,9 @@
 
 use super::*;
 use crate::persistence::{
-    RawReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, Store, StoreCache,
-    StoreMaintenanceBatch, StoreSnapshot, TransactionalStore, WriteStore, storage::StorageConfig,
+    CoordinatedTransactionalStore, RawOverlaySink, RawOverlaySource, RawReadOnlyStore,
+    ReadOnlyStoreGeneric, SeekDirection, Store, StoreCache, StoreMaintenanceBatch, StoreSnapshot,
+    TransactionalStore, WriteStore, storage::StorageConfig,
 };
 use crate::{StorageItem, StorageKey};
 use std::fs;
@@ -29,6 +30,20 @@ fn open_store(tmp: &TempDir, name: &str) -> MdbxStore {
     provider
         .get_mdbx_store(std::path::Path::new(""))
         .expect("mdbx store")
+}
+
+struct TestOverlay(Vec<(Vec<u8>, Option<Vec<u8>>)>);
+
+impl RawOverlaySource for TestOverlay {
+    fn visit_raw_overlay<S>(&mut self, sink: &mut S)
+    where
+        S: RawOverlaySink + ?Sized,
+    {
+        self.0.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        for (key, value) in &self.0 {
+            sink.visit(key, value.as_deref());
+        }
+    }
 }
 
 #[test]
@@ -75,6 +90,179 @@ fn opens_store_and_creates_environment_directory() {
 
     assert!(db_path.exists(), "MDBX environment directory should exist");
     let _snapshot = store.snapshot();
+}
+
+#[test]
+fn named_table_views_isolate_identical_raw_keys() {
+    let tmp = TempDir::new().expect("tempdir");
+    let mut canonical = open_store(&tmp, "named-isolation");
+    let mut state_service = canonical
+        .open_named_table("neo_state_service")
+        .expect("open StateService table");
+    let key = b"same-key".to_vec();
+
+    canonical
+        .put(key.clone(), b"ledger".to_vec())
+        .expect("write canonical value");
+    state_service
+        .put(key.clone(), b"state-root".to_vec())
+        .expect("write StateService value");
+
+    assert!(canonical.shares_environment_with(&state_service));
+    assert_eq!(canonical.data_table_name(), None);
+    assert_eq!(state_service.data_table_name(), Some("neo_state_service"));
+    assert_eq!(canonical.try_get_bytes(&key), Some(b"ledger".to_vec()));
+    assert_eq!(
+        state_service.try_get_bytes(&key),
+        Some(b"state-root".to_vec())
+    );
+}
+
+#[test]
+fn mdbx_exposes_the_static_coordinated_transaction_capability() {
+    fn assert_capability<S: CoordinatedTransactionalStore>() {}
+    assert_capability::<MdbxStore>();
+}
+
+#[test]
+fn coordinated_overlays_publish_both_tables_in_one_transaction() {
+    let tmp = TempDir::new().expect("tempdir");
+    let canonical = open_store(&tmp, "coordinated");
+    let state_service = canonical
+        .open_named_table("neo_state_service")
+        .expect("open StateService table");
+    let canonical_key = b"canonical-tip".to_vec();
+    let state_key = b"\x02".to_vec();
+    let canonical_before = canonical.snapshot();
+    let state_before = state_service.snapshot();
+    let transaction_before = canonical.info().expect("MDBX info before").last_txnid();
+
+    let mut canonical_overlay = TestOverlay(vec![(
+        (canonical_key.clone()),
+        Some(42u32.to_le_bytes().to_vec()),
+    )]);
+    let mut state_overlay = TestOverlay(vec![(
+        (state_key.clone()),
+        Some(42u32.to_le_bytes().to_vec()),
+    )]);
+    canonical
+        .commit_coordinated_overlays(&mut canonical_overlay, &state_service, &mut state_overlay)
+        .expect("coordinated commit");
+
+    assert_eq!(canonical_before.try_get_bytes(&canonical_key), None);
+    assert_eq!(state_before.try_get_bytes(&state_key), None);
+    assert_eq!(
+        canonical.try_get_bytes(&canonical_key),
+        Some(42u32.to_le_bytes().to_vec())
+    );
+    assert_eq!(
+        state_service.try_get_bytes(&state_key),
+        Some(42u32.to_le_bytes().to_vec())
+    );
+    assert_eq!(
+        canonical.info().expect("MDBX info after").last_txnid(),
+        transaction_before + 1,
+        "both overlays must cross one MDBX transaction boundary"
+    );
+}
+
+#[test]
+fn coordinated_commit_rejects_different_environments_without_partial_writes() {
+    let tmp = TempDir::new().expect("tempdir");
+    let canonical = open_store(&tmp, "coordinated-primary");
+    let unrelated = open_store(&tmp, "coordinated-unrelated")
+        .open_named_table("neo_state_service")
+        .expect("open unrelated StateService table");
+    let canonical_key = b"canonical-tip".to_vec();
+    let state_key = b"\x02".to_vec();
+    let mut canonical_overlay = TestOverlay(vec![(canonical_key.clone(), Some(vec![1]))]);
+    let mut state_overlay = TestOverlay(vec![(state_key.clone(), Some(vec![1]))]);
+
+    let error = canonical
+        .commit_coordinated_overlays(&mut canonical_overlay, &unrelated, &mut state_overlay)
+        .expect_err("different environments must be rejected");
+
+    assert!(error.to_string().contains("same environment"));
+    assert_eq!(canonical.try_get_bytes(&canonical_key), None);
+    assert_eq!(unrelated.try_get_bytes(&state_key), None);
+}
+
+#[test]
+fn coordinated_commit_rolls_back_primary_when_secondary_write_fails() {
+    let tmp = TempDir::new().expect("tempdir");
+    let provider = MdbxStoreProvider::new(StorageConfig {
+        path: tmp.path().join("coordinated-rollback"),
+        ..Default::default()
+    })
+    .with_map_size(4 * 1024 * 1024)
+    .with_growth_step(1024 * 1024);
+    let canonical = provider
+        .get_mdbx_store(std::path::Path::new(""))
+        .expect("open constrained MDBX environment");
+    let state_service = canonical
+        .open_named_table("neo_state_service")
+        .expect("open StateService table");
+    let canonical_key = b"canonical-tip".to_vec();
+    let state_key = b"large-state-node".to_vec();
+    let mut canonical_overlay = TestOverlay(vec![(canonical_key.clone(), Some(vec![1]))]);
+    let mut state_overlay = TestOverlay(vec![(
+        state_key.clone(),
+        Some(vec![0xAA; 16 * 1024 * 1024]),
+    )]);
+
+    canonical
+        .commit_coordinated_overlays(&mut canonical_overlay, &state_service, &mut state_overlay)
+        .expect_err("secondary write beyond map geometry must fail the transaction");
+
+    assert_eq!(canonical.try_get_bytes(&canonical_key), None);
+    assert_eq!(state_service.try_get_bytes(&state_key), None);
+}
+
+#[test]
+fn named_table_validation_rejects_reserved_or_wrapper_panicking_names() {
+    let tmp = TempDir::new().expect("tempdir");
+    let canonical = open_store(&tmp, "named-validation");
+
+    for invalid in ["", "neo_node_metadata", "state\0service"] {
+        canonical
+            .open_named_table(invalid)
+            .expect_err("invalid named table must be rejected");
+    }
+}
+
+#[test]
+fn named_table_data_survives_environment_reopen() {
+    let tmp = TempDir::new().expect("tempdir");
+    let db_path = tmp.path().join("named-reopen");
+    let provider = MdbxStoreProvider::new(StorageConfig {
+        path: db_path,
+        ..Default::default()
+    });
+    let key = b"\x02".to_vec();
+
+    {
+        let canonical = provider
+            .get_mdbx_store(std::path::Path::new(""))
+            .expect("open MDBX environment");
+        let mut state_service = canonical
+            .open_named_table("neo_state_service")
+            .expect("open StateService table");
+        state_service
+            .put(key.clone(), 77u32.to_le_bytes().to_vec())
+            .expect("write StateService height");
+    }
+
+    let canonical = provider
+        .get_mdbx_store(std::path::Path::new(""))
+        .expect("reopen MDBX environment");
+    let state_service = canonical
+        .open_named_table("neo_state_service")
+        .expect("reopen StateService table");
+    assert_eq!(canonical.try_get_bytes(&key), None);
+    assert_eq!(
+        state_service.try_get_bytes(&key),
+        Some(77u32.to_le_bytes().to_vec())
+    );
 }
 
 #[test]

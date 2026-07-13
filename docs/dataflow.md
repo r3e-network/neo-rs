@@ -437,6 +437,14 @@ Key points:
   events run only after this fence succeeds. MDBX is the production default,
   RocksDB remains a supported fallback, and the in-memory backend does not
   persist across restarts.
+- **Coordinated MDBX foundation.** `CoordinatedTransactionalStore` is an explicit
+  stronger capability above `TransactionalStore`. MDBX named-table views share
+  one environment but isolate raw keyspaces, and its coordinated commit applies
+  two overlay visitors in one write transaction. It rejects a different
+  environment or the same logical table before visiting either overlay. The
+  current StateService composition still uses a separate store and the recovery
+  protocol below; atomic integration requires prepared MPT publication and is
+  not inferred merely from using MDBX on both paths.
 - **Cross-store recovery.** StateService and a persistent indexer do not share a
   transaction with the canonical Ledger store. The node writes and fsyncs
   `.neo-local-replay-poisoned` before either pre-commit store can publish, then
@@ -458,6 +466,8 @@ Key points:
   an indeterminate storage result.
 - **Storage byte boundary.** `neo-storage` exposes general `Store` behavior,
   mandatory canonical/maintenance transactions through `TransactionalStore`,
+  optional but statically checked multi-namespace transactions through
+  `CoordinatedTransactionalStore`,
   `RawReadOnlyStore`, `ReadOnlyStoreGeneric`, `DataCache`, and `StoreFactory`
   over existing raw bytes. `StorageKey` still encodes with `to_array()` and
   `StorageItem` with `to_value()`. `Table` binds typed keys/values and concrete
