@@ -176,6 +176,7 @@ Plans:
   3. Operator documentation covers secure configuration, backup/restore, upgrades, rollback, pruning, and incident diagnosis.
   4. Reproducible release artifacts, SBOM, dependency audit, threat model, and independent review are complete.
   5. Production claims cite full replay, live interoperability, soak, and fast-sync evidence rather than test counts alone.
+  6. The repository file-size debt baseline is empty: oversized Rust, operational Python, and Python test modules are split without weakening the 900-line review budget.
 
 **Plans**: 3 plans
 

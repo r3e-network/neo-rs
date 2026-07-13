@@ -66,6 +66,7 @@ the new roadmap rather than being treated as complete.
 - Fast sync currently relies on an HTTPS manifest plus MD5 integrity, imports archives with reduced verification, and makes independent reference proof optional.
 - P2P startup failure and task-join/flush shutdown ordering need end-to-end failure tests; RPC bind/startup propagation is covered.
 - Full transaction-bearing MainNet replay and state-root parity remain unproven.
+- Repository size guards now use exact no-growth baselines for 15 Rust files, 4 operational Python scripts, and 4 Python test modules; Phase 7 must split every exception before `RELEASE-01` can pass.
 
 ## Session Continuity
 
