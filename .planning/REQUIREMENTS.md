@@ -8,7 +8,7 @@
 ### Protocol Baseline
 
 - [x] **PROTO-01**: Canonical execution uses only hardfork-aware semantics proven against Neo v3.10.1, with every consensus-sensitive external dependency pinned to an immutable revision.
-- [ ] **BUILD-01**: A clean checkout passes locked workspace, fuzz, container, and dependency-policy builds without a sibling repository or undeclared local input.
+- [x] **BUILD-01**: A clean checkout passes locked workspace, fuzz, container, and dependency-policy builds without a sibling repository or undeclared local input.
 - [x] **CONSENSUS-01**: State-root votes aggregate only when version, block index, and root hash all match, with adversarial tests for every competing identity.
 
 ### Storage and Lifecycle

@@ -15,7 +15,7 @@ work in this milestone.
 
 ## Phases
 
-- [ ] **Phase 1: Reproducible Protocol Baseline** - Pin v3.10.1 consensus inputs and remove known nondeterministic execution paths.
+- [x] **Phase 1: Reproducible Protocol Baseline** - Pin v3.10.1 consensus inputs and remove known nondeterministic execution paths. (completed 2026-07-13)
 - [ ] **Phase 2: Fail-Closed Storage and Lifecycle** - Make persistence, startup, and shutdown errors explicit and non-corrupting.
 - [ ] **Phase 3: Differential Protocol Parity** - Compare VM, native-contract, transaction, and state transitions with Neo v3.10.1.
 - [ ] **Phase 4: P2P Interoperability and Canonical Sync** - Prove sustained communication and ordered block import against real Neo peers.
@@ -46,12 +46,12 @@ Every architecture-level decision must update or add an ADR in `design.md`.
   4. Competing state-root votes cannot be aggregated across version, height, or root hash.
   5. Workspace format, check, test, doctest, and clippy gates pass.
 
-**Plans**: 1/2 plans executed
+**Plans**: 2/2 plans complete
 
 Plans:
 
 - [x] 01-01-PLAN.md
-- [ ] 01-02-PLAN.md
+- [x] 01-02-PLAN.md
 
 **Wave 1**
 
@@ -190,7 +190,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Reproducible Protocol Baseline | 1/2 | In Progress|  |
+| 1. Reproducible Protocol Baseline | 2/2 | Complete   | 2026-07-13 |
 | 2. Fail-Closed Storage and Lifecycle | 0/3 | Not started | - |
 | 3. Differential Protocol Parity | 0/3 | Not started | - |
 | 4. P2P Interoperability and Canonical Sync | 0/4 | Not started | - |

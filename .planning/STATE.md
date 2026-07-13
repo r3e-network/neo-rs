@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: Production-ready Neo N3 v3.10.1 Node
 current_phase: 01
 current_phase_name: Reproducible Protocol Baseline
-status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-07-13T16:02:37.087Z"
+status: verifying
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-07-13T17:52:19.459Z"
 last_activity: 2026-07-13
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 7
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
-  percent: 0
+  completed_plans: 2
+  percent: 14
 ---
 
 # Project State
@@ -30,7 +30,7 @@ See: `.planning/PROJECT.md` (updated 2026-07-13)
 
 Phase: 01 (Reproducible Protocol Baseline) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-13 — Phase 01 execution started
 
 Progress: [----------] 0%
@@ -50,6 +50,7 @@ the new roadmap rather than being treated as complete.
 - Canonical execution uses the local hardfork-aware VM until differential evidence proves any optimized interpreter equivalent.
 - Full MainNet replay/state-root parity is a release gate, not an aspirational follow-up.
 - Fast sync must evolve from accelerated full-history archive replay to an authenticated checkpoint/state bootstrap with canonical catch-up.
+- [Phase 01]: Known oversized Rust and Python files use exact no-growth ratchets and must be split before RELEASE-01.
 
 ### Evidence Established This Session
 
@@ -70,8 +71,8 @@ the new roadmap rather than being treated as complete.
 
 ## Session Continuity
 
-Last session: 2026-07-13T16:02:37.083Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-07-13T17:52:19.455Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
 
 ## Performance Metrics
@@ -79,3 +80,4 @@ Resume file: None
 | Phase | Plan | Duration | Notes |
 |-------|------|----------|-------|
 | Phase 01 P01 | 13 min | 2 tasks | 18 files |
+| Phase 01 P02 | 87min | 3 tasks | 115 files |
