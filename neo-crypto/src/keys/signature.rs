@@ -37,7 +37,7 @@ impl Secp256k1Crypto {
         let secret_key = K256SecretKey::random(&mut OsRng);
         let bytes = secret_key.to_bytes();
         let mut key = [0u8; 32];
-        key.copy_from_slice(bytes.as_slice());
+        key.copy_from_slice(bytes.as_ref());
         Ok(key)
     }
 
@@ -154,7 +154,7 @@ impl Secp256r1Crypto {
         let secret_key = P256SecretKey::random(&mut OsRng);
         let bytes = secret_key.to_bytes();
         let mut key = [0u8; 32];
-        key.copy_from_slice(bytes.as_slice());
+        key.copy_from_slice(bytes.as_ref());
         key
     }
 
