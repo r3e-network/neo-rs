@@ -215,7 +215,6 @@ nonminimal_bool = "allow"
 # Rust 1.89 activates these style-only rewrites across legacy protocol code.
 # Keep architecture changes reviewable; modernize touched modules incrementally.
 collapsible_if = "allow"
-manual_is_multiple_of = "allow"
 enum_variant_names = "allow"
 too_many_arguments = "allow"
 field_reassign_with_default = "allow"
