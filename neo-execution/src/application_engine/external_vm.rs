@@ -401,18 +401,15 @@ where
     }
 
     fn apply_external_vm_halt(&mut self, stack: Vec<VmStackValue>) -> VMState {
-        let mut stack_items: Vec<StackItem> = Vec::with_capacity(stack.len());
-        for v in stack {
-            match StackItem::try_from(v) {
-                Ok(item) => stack_items.push(item),
-                Err(error) => {
-                    return self.apply_external_vm_fault(
-                        format!("Failed to convert external VM stack item: {error}"),
-                        0,
-                    );
-                }
+        let stack_items = match StackItem::try_from_stack_values(stack) {
+            Ok(items) => items,
+            Err(error) => {
+                return self.apply_external_vm_fault(
+                    format!("Failed to convert external VM stack item: {error}"),
+                    0,
+                );
             }
-        }
+        };
 
         let context_index = match self
             .vm_engine

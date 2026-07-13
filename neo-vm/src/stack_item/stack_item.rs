@@ -720,6 +720,20 @@ impl TryFrom<neo_vm_rs::StackValue> for StackItem {
     }
 }
 
+impl StackItem {
+    /// Converts one external stack graph while preserving compound aliases
+    /// shared across top-level values.
+    pub fn try_from_stack_values(
+        values: impl IntoIterator<Item = neo_vm_rs::StackValue>,
+    ) -> VmResult<Vec<Self>> {
+        let mut conversion = StackValueConversion::default();
+        values
+            .into_iter()
+            .map(|value| conversion.convert(value))
+            .collect()
+    }
+}
+
 #[derive(Debug)]
 struct ConvertedCompound {
     definition: StackValue,
