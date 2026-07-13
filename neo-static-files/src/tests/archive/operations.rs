@@ -149,4 +149,12 @@ fn factory_rejects_invalid_resource_and_compression_limits() {
         StaticFileArchiveFactory::new(config).open(&path),
         Err(StaticFileError::InvalidFormat { .. })
     ));
+
+    let mut config = StaticFileConfig::default();
+    config.max_segment_bytes =
+        u64::try_from(crate::format::FILE_HEADER_LEN).expect("header length fits u64");
+    assert!(matches!(
+        StaticFileArchiveFactory::new(config).open(&path),
+        Err(StaticFileError::InvalidFormat { .. })
+    ));
 }

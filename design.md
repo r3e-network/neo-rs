@@ -1969,6 +1969,11 @@ callers used typed handles.
 
 **Status**: Accepted (implemented)
 
+**Evolution**: This ADR records the first production landing. ADR-040/041 and
+ADR-043 supersede its initial post-canonical publication, in-memory-index,
+no-pruning, and single-file constraints with cold-first staged durability, a
+global derived MDBX index, atomic hot pruning, and bounded segments.
+
 **Context**: ADR-027 correctly deleted an earlier `neo-static-files` crate: it
 had no production caller, duplicated an aspirational archive implementation,
 and made architecture claims unsupported by node composition. The live system
@@ -2434,3 +2439,74 @@ backend.
 - The deleted backend name is rejected by configuration and factory tests.
 - Neo key/value bytes, MPT node encoding, state-root inputs, and protocol
   behavior are unchanged.
+
+### ADR-043: Height-addressed static archive segment rotation
+
+**Status**: Accepted (implemented)
+
+**Context**: The production static Ledger archive had cold-first durability,
+one derived MDBX row/version index, strict recovery, and automatic hot-row
+pruning, but all finalized frames accumulated in one unbounded file. That made
+backup replacement, media scrubbing, filesystem limits, and future movement to
+separate cold storage operationally coarse. Rotation must not split one
+finalized-height record or weaken the archive-before-hot commit protocol.
+
+**Decision**:
+
+- Keep the existing versioned frame bytes unchanged. `ledger.static` remains
+  the genesis segment; later files use
+  `ledger.static.segment-<ten-digit-first-height>`. Every segment carries the
+  same non-zero archive identity.
+- Add `StaticFileConfig::max_segment_bytes`, exposed to the node as
+  `[storage].static_files_max_segment_mb` with a 4096 MiB default. Rotate before
+  the next frame would cross that target. Never split a frame; one oversized
+  frame may exceed the target in its own segment.
+- Keep one global path-adjacent MDBX index. Its checksummed state records the
+  active segment start, tip, active-file checkpoint, and row-version count.
+  Every checksummed frame and row location carries both its segment start and
+  global height, allowing exact file selection without adding protocol meaning
+  to the index.
+- Stage batches across as many segments as needed, syncing each segment before
+  creating the next and syncing the final segment before returning. Then publish
+  all frame and row locations in one MDBX index transaction only after canonical
+  hot durability succeeds. Cache keys include segment start and byte offset so
+  equal offsets in different files cannot alias.
+- Hold the existing kernel writer lease on the base file while discovering,
+  recovering, creating, truncating, or deleting any segment. Create headers in
+  a synced `.pending` file and rename them before writing frames. Startup
+  removes abandoned pending headers, validates archive identity and indexed
+  boundaries, and scans only the unindexed suffix on a clean open.
+- Treat all sealed/earlier segments strictly. Only an unpublished incomplete or
+  corrupt suffix in the final segment is tail-repairable. Missing indexes
+  rebuild by scanning every segment in height order; gaps and renamed or
+  mismatched segments fail closed.
+- Cross-segment rollback removes later files from highest to lowest, truncates
+  the retained segment, and rolls back every indexed row version in one MDBX
+  transaction. This physical ordering leaves a contiguous recoverable prefix at
+  every crash point. A failed operation poisons the writer and requires recovery
+  before further append.
+
+**Trade-offs**:
+
+- **Gaining**: bounded files, deterministic height ownership, bounded suffix
+  recovery, transparent historical reads, and operationally manageable backup
+  units without changing Neo bytes.
+- **Cost**: directory discovery and one short segment-directory read lock are
+  added to archive operation paths. Point reads already perform an indexed
+  lookup and checksummed frame decode, so this is not the dominant cost.
+- **Constraint**: the byte limit is a rotation target, not a hard frame-size
+  limit. `max_frame_bytes` remains the allocation/DoS bound.
+- **Reversibility**: the per-segment frame format remains independently
+  scrubbable, but the global index schema is derived and intentionally rebuilt
+  if an older schema is encountered.
+
+**Consequences**:
+
+- Backups after hot pruning must include canonical MDBX, the base segment, all
+  `ledger.static.segment-*` files, and the global `ledger.static.index/`
+  sidecar from one stopped-node snapshot.
+- `StaticFileArchive::scrub`, startup reconciliation, hot pruning, offline
+  probing, and all provider consumers traverse segment boundaries without API
+  changes.
+- Neo N3 block/transaction bytes, native Ledger storage bytes, state-root
+  inputs, canonical commit ordering, and RPC/P2P results are unchanged.

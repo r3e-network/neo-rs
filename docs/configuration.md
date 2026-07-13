@@ -61,9 +61,10 @@ Persistence backend.
 | `mdbx_geometry_upper_gb` | integer | backend default | MDBX map upper bound in GiB. Shipped MainNet/TestNet configs pin this so the mmap geometry is explicit. |
 | `mdbx_geometry_growth_mb` | integer | backend default | MDBX map growth step in MiB. |
 | `mdbx_max_readers` | integer | backend default | MDBX reader slot limit for concurrent RPC/service reads. |
-| `static_files_dir` | path | none (disabled) | Enables the finalized Ledger static archive, storing authoritative frames in `ledger.static` and the derived offset index in `ledger.static.index/` (MDBX). The configured provider becomes the shared historical fallback for blockchain, consensus, P2P, admission, wallet, and RPC reads. Archived hot Ledger rows older than the initial protocol `MaxTraceableBlocks` window are pruned automatically. Requires a writable persistent canonical backend. |
+| `static_files_dir` | path | none (disabled) | Enables the finalized Ledger static archive, storing authoritative frames in `ledger.static` plus height-addressed `ledger.static.segment-<first-height>` files and one derived offset index in `ledger.static.index/` (MDBX). The configured provider becomes the shared historical fallback for blockchain, consensus, P2P, admission, wallet, and RPC reads. Archived hot Ledger rows older than the initial protocol `MaxTraceableBlocks` window are pruned automatically. Requires a writable persistent canonical backend. |
 | `static_files_compression_level` | integer | `3` | Zstandard level applied independently to each finalized-height frame. |
 | `static_files_cache_capacity` | integer | `64` | Number of decompressed height frames retained by the LRU cache; must be greater than zero. |
+| `static_files_max_segment_mb` | integer | `4096` | Target maximum size of one height-addressed archive segment in MiB; must be greater than zero. Frames are never split, so one oversized frame may exceed the target. |
 | `static_files_recovery_batch_blocks` | integer | `1024` | Maximum hot Ledger blocks appended per startup reconciliation sync; must be greater than zero. |
 
 Notes:
@@ -83,22 +84,24 @@ Notes:
   Neo contract storage; row deletes and watermark
   advancement are one durable backend transaction. `Prefix_CurrentBlock (12)`
   always remains hot.
-- Opening `ledger.static` takes an exclusive OS lock on the archive file
-  itself. A second node using the same file, including through a symlink or
-  hard link, fails startup; the kernel releases the lease automatically when
-  the owning process exits, so no stale lockfile cleanup is required.
-- Static-file publication is ordered `ledger.static append -> sync_data -> hot
-  canonical transaction -> MDBX index transaction`. Until the final index
+- Opening `ledger.static` takes an exclusive OS lock on the base archive file
+  and thereby owns recovery and mutation of every height-addressed segment. A
+  second node using the same base file, including through a symlink or hard
+  link, fails startup; the kernel releases the lease automatically when the
+  owning process exits, so no stale lockfile cleanup is required.
+- Static-file publication is ordered `segment append -> sync_data -> hot
+  canonical transaction -> global MDBX index transaction`. Until the final index
   transaction, staged frames are invisible to providers. The index stores frame
-  boundaries plus every row-location version, so latest lookup and rollback
-  after truncation do not rebuild a process-local map. A clean open validates
-  the archive identity and published tail, then scans and republishes only bytes
-  beyond the indexed file length. Missing, stale, or archive-ahead indexes
-  rebuild from authoritative frames before canonical reconciliation.
+  boundaries plus every row-location version and the active segment, so latest
+  lookup and rollback after truncation do not rebuild a process-local map. A
+  clean open validates segment boundaries, archive identity, and the published
+  tail, then scans and republishes only files/bytes beyond the index checkpoint.
+  Missing, stale, or archive-ahead indexes rebuild from all authoritative
+  segments before canonical reconciliation.
 - Reads decompress and checksum the complete containing frame before returning
   a value. Published corruption is reported and is never guessed to be a torn
-  write; only an incomplete or corrupt **unpublished** final suffix may be
-  truncated during recovery. `StaticFileArchive::scrub` performs an explicit
+  write; only an incomplete or corrupt **unpublished suffix in the final
+  segment** may be truncated during recovery. `StaticFileArchive::scrub` performs an explicit
   full frame/index parity check. `neo-db-probe --static-files-dir <DIR>
   --scrub-static-files` exposes that maintenance operation without opening a
   hot database and fails if `<DIR>/ledger.static` does not already exist.
@@ -115,11 +118,11 @@ Notes:
   bounded 1024-frame transactions. Startup fails rather than advancing the
   watermark if a row differs, if the watermark exceeds the canonical tip, or
   if the archive does not cover an already-pruned height.
-- Once `hot-pruned-through` exists, `ledger.static` is not a disposable mirror.
-  Back up and restore the canonical database, `ledger.static`, and
-  `ledger.static.index/` together. The sidecar can be rebuilt from the archive,
-  but missing or corrupt authoritative frame bytes require a matching backup or
-  a clean resync.
+- Once `hot-pruned-through` exists, the static archive is not a disposable
+  mirror. Back up and restore the canonical database, `ledger.static`, every
+  `ledger.static.segment-*` file, and `ledger.static.index/` together. The
+  sidecar can be rebuilt from the segments, but missing or corrupt authoritative
+  frame bytes require a matching backup or a clean resync.
 - A precommit archive frame write or sync failure rejects the canonical commit
   before hot state is published and stops the writer. If the archive fence
   completed but the hot commit did not, startup validates and truncates the
@@ -542,6 +545,7 @@ network_type = "testnet"
 backend = "mdbx"
 data_dir = "./data/testnet"
 static_files_dir = "./data/testnet-static"
+static_files_max_segment_mb = 4096
 
 [p2p]
 port = 20333

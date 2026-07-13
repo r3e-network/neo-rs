@@ -179,7 +179,8 @@ impl ArchiveIndex {
         for frame in frames {
             state.advance(frame)?;
             let header = frame.header();
-            let location = FrameLocation::from_frame(frame.offset(), header)?;
+            let location =
+                FrameLocation::from_frame(frame.segment_start(), frame.offset(), header)?;
             tx.put(
                 &frame_table,
                 header.height.to_be_bytes(),
@@ -188,7 +189,8 @@ impl ArchiveIndex {
             )
             .map_err(|error| self.error("publish frame location", error))?;
             for row in frame.rows() {
-                let location = RowLocation::from_frame(frame.offset(), header, row);
+                let location =
+                    RowLocation::from_frame(frame.segment_start(), frame.offset(), header, row);
                 tx.put(
                     &row_table,
                     &row.key,

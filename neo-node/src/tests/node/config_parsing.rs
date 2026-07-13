@@ -256,6 +256,7 @@ mdbx_max_readers = 8192
 static_files_dir = "./data/static"
 static_files_compression_level = 5
 static_files_cache_capacity = 128
+static_files_max_segment_mb = 8192
 static_files_recovery_batch_blocks = 2048
 "#,
     )
@@ -270,6 +271,10 @@ static_files_recovery_batch_blocks = 2048
     );
     assert_eq!(config.storage.static_file_config().compression_level, 5);
     assert_eq!(config.storage.static_file_config().cache_capacity, 128);
+    assert_eq!(
+        config.storage.static_file_config().max_segment_bytes,
+        8 * 1024 * 1024 * 1024
+    );
     assert_eq!(config.storage.static_file_recovery_batch_blocks(), 2048);
 }
 

@@ -105,7 +105,7 @@ is consumed by `neo-rpc` and `neo-node`.
 | neo-error | Infrastructure | Authoritative `CoreError` / `CoreResult` error types for the workspace. |
 | neo-crypto | Infrastructure | Hashing, secp256r1 ECC, signatures, BLS12-381. |
 | neo-storage | Infrastructure | General `Store`, canonical `TransactionalStore`, and cross-namespace `CoordinatedTransactionalStore` capabilities; child/parent `DataCache` overlays; C#-compatible raw key/value codecs; isolated node-maintenance metadata; the MDBX persistent provider; and the in-memory provider. |
-| neo-static-files | Infrastructure | Versioned genesis-first static records with zstd compression, checksums, a derived MDBX versioned-offset index, payload-free frame-key lookup, bounded suffix recovery, strict scrubbing, kernel writer ownership, and LRU frame caching. |
+| neo-static-files | Infrastructure | Versioned genesis-first static records in bounded height-addressed segments with zstd compression, checksums, one derived MDBX versioned-offset index, payload-free frame-key lookup, final-segment suffix recovery, strict scrubbing, kernel writer ownership, and LRU frame caching. |
 | neo-config | Infrastructure | Node and protocol configuration (TOML-backed settings). |
 | neo-vm | Infrastructure | Stateful NeoVM host (execution engine, contexts, reference-counted stack items) over `neo-vm-rs`. |
 | neo-serialization | Infrastructure | Compression, binary and JSON stack-item codecs, JSONPath, in-memory storage providers. |

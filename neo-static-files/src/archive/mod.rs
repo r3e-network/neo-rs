@@ -13,8 +13,10 @@
 //! - `index`: MDBX frame/row locations and strict archive scanning.
 //! - `io`: Positioned file I/O and directory durability helpers.
 //! - `lease`: Kernel-held single-writer exclusion.
-//! - `provider`: Cloneable staged publication, lookup, truncate, and scrub
-//!   capability.
+//! - `maintenance`: Cross-segment truncation and full archive scrubbing.
+//! - `provider`: Cloneable staged publication and indexed lookup capability.
+//! - `recovery`: Indexed-layout validation and bounded startup suffix replay.
+//! - `segments`: Height-addressed file rotation and directory durability.
 
 use std::path::Path;
 
@@ -25,7 +27,10 @@ mod factory;
 mod index;
 mod io;
 mod lease;
+mod maintenance;
 mod provider;
+mod recovery;
+mod segments;
 
 pub use config::StaticFileConfig;
 pub use factory::{StaticFileArchiveFactory, StaticFileOpenStats};

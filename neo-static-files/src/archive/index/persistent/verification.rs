@@ -24,7 +24,9 @@ impl ArchiveIndex {
             .map_err(|error| self.error("open row cursor", error))?;
 
         for frame in frames {
-            let expected_frame = FrameLocation::from_frame(frame.offset, frame.header)?.encode();
+            let expected_frame =
+                FrameLocation::from_frame(frame.segment_start, frame.offset, frame.header)?
+                    .encode();
             let actual_frame = tx
                 .get::<Vec<u8>>(&frame_table, &frame.header.height.to_be_bytes())
                 .map_err(|error| self.error("verify frame location", error))?
@@ -36,7 +38,8 @@ impl ArchiveIndex {
             }
             for row in &frame.rows {
                 let expected =
-                    RowLocation::from_frame(frame.offset, frame.header, row).encode(&row.key);
+                    RowLocation::from_frame(frame.segment_start, frame.offset, frame.header, row)
+                        .encode(&row.key);
                 if row_cursor
                     .get_both::<Vec<u8>>(&row.key, &expected)
                     .map_err(|error| self.error("verify row location", error))?

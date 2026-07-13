@@ -75,6 +75,11 @@ fn validate_config_rejects_zero_static_file_resource_limits() {
     assert!(error.to_string().contains("cache_capacity"));
 
     config.storage.static_files_cache_capacity = Some(1);
+    config.storage.static_files_max_segment_mb = Some(0);
+    let error = validate_config(&config, 0x3554_334E).expect_err("zero segment cap must fail");
+    assert!(error.to_string().contains("max_segment_bytes"));
+
+    config.storage.static_files_max_segment_mb = Some(1);
     config.storage.static_files_recovery_batch_blocks = Some(0);
     let error = validate_config(&config, 0x3554_334E).expect_err("zero batch must fail");
     assert!(error.to_string().contains("recovery_batch_blocks"));

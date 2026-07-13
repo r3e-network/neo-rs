@@ -70,6 +70,7 @@ seed_nodes = ["seed1.neo.org:10333", "seed2.neo.org:10333"]
 data_dir = "./data/chain"
 backend = "mdbx"
 static_files_dir = "./data/chain-static"
+static_files_max_segment_mb = 4096
 
 [rpc]
 enabled = true

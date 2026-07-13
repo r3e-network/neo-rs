@@ -4,9 +4,10 @@
 //!
 //! ## Boundary
 //!
-//! This infrastructure crate owns the static-file format, genesis-first
-//! continuity checks, checksums, tail recovery, exclusive writer lease, an
-//! MDBX-backed versioned offset index, strict scrubbing, and key/value lookup.
+//! This infrastructure crate owns the static-file format, height-addressed
+//! segment rotation, genesis-first continuity checks, checksums, tail recovery,
+//! exclusive writer lease, an MDBX-backed versioned offset index, strict
+//! scrubbing, and key/value lookup.
 //! It does not understand Neo block, transaction, VM, native-contract, or
 //! state-root semantics; higher layers decide which immutable bytes enter each
 //! finalized-height record. Archive frames are authoritative; the adjacent
@@ -14,8 +15,8 @@
 //!
 //! ## Contents
 //!
-//! - `archive`: Provider/factory API plus append, indexed read, recovery,
-//!   scrubbing, and ownership.
+//! - `archive`: Provider/factory API plus segmented append, indexed read,
+//!   recovery, scrubbing, and ownership.
 //! - `error`: Static-file-specific failures.
 //! - `format`: Versioned frame encoding and validation.
 //! - `record`: Opaque finalized-height records and rows.

@@ -1,9 +1,9 @@
 //! Static-file compression and allocation limits.
 
-use crate::format::{FRAME_FOOTER_LEN, FRAME_HEADER_LEN};
+use crate::format::{FILE_HEADER_LEN, FRAME_FOOTER_LEN, FRAME_HEADER_LEN};
 use crate::{StaticFileError, StaticFileResult};
 
-/// Resource and compression limits for one static-file archive.
+/// Resource, compression, and rotation limits for one static-file archive.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StaticFileConfig {
     /// Zstandard compression level applied independently to each height frame.
@@ -16,6 +16,12 @@ pub struct StaticFileConfig {
     pub max_uncompressed_record_bytes: usize,
     /// Maximum encoded frame size, including its row index and footer.
     pub max_frame_bytes: usize,
+    /// Target maximum bytes in one immutable archive segment.
+    ///
+    /// A single frame is never split. A frame larger than this target occupies
+    /// a segment by itself, so the resulting file may exceed the target by
+    /// that frame's size.
+    pub max_segment_bytes: u64,
 }
 
 impl Default for StaticFileConfig {
@@ -26,6 +32,7 @@ impl Default for StaticFileConfig {
             max_rows_per_record: 1_000_000,
             max_uncompressed_record_bytes: 256 * 1024 * 1024,
             max_frame_bytes: 384 * 1024 * 1024,
+            max_segment_bytes: 4 * 1024 * 1024 * 1024,
         }
     }
 }
@@ -69,6 +76,14 @@ impl StaticFileConfig {
             return Err(StaticFileError::invalid(
                 0,
                 "max_frame_bytes is smaller than frame overhead",
+            ));
+        }
+        if self.max_segment_bytes
+            <= u64::try_from(FILE_HEADER_LEN).expect("file header length fits u64")
+        {
+            return Err(StaticFileError::invalid(
+                0,
+                "max_segment_bytes must leave room after the file header",
             ));
         }
         Ok(())

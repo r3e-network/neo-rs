@@ -103,6 +103,9 @@ pub(super) struct StorageSection {
     /// Number of decompressed static-file frames retained in memory.
     #[serde(default)]
     pub(super) static_files_cache_capacity: Option<usize>,
+    /// Target maximum size of one height-addressed static archive segment.
+    #[serde(default)]
+    pub(super) static_files_max_segment_mb: Option<u32>,
     /// Number of durable hot blocks replayed per archive recovery sync.
     #[serde(default)]
     pub(super) static_files_recovery_batch_blocks: Option<usize>,
@@ -130,6 +133,9 @@ impl StorageSection {
         }
         if let Some(capacity) = self.static_files_cache_capacity {
             config.cache_capacity = capacity;
+        }
+        if let Some(max_segment_mb) = self.static_files_max_segment_mb {
+            config.max_segment_bytes = u64::from(max_segment_mb) * 1024 * 1024;
         }
         config
     }

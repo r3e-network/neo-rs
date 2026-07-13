@@ -42,6 +42,7 @@ impl ArchiveIndex {
     pub(crate) fn truncate_after(
         &self,
         height: Option<u32>,
+        active_segment_start: u32,
         removed: &[ScannedFrame],
     ) -> StaticFileResult<IndexState> {
         let Some(current) = self.state() else {
@@ -64,6 +65,7 @@ impl ArchiveIndex {
                 })?;
                 IndexState {
                     archive_id: current.archive_id,
+                    active_segment_start,
                     indexed_file_len: frame.end,
                     tip: Some(height),
                     last_frame_start: frame.start,
@@ -91,7 +93,8 @@ impl ArchiveIndex {
             .map_err(|error| self.error("open row table", error))?;
         for frame in removed {
             for row in &frame.rows {
-                let location = RowLocation::from_frame(frame.offset, frame.header, row);
+                let location =
+                    RowLocation::from_frame(frame.segment_start, frame.offset, frame.header, row);
                 let encoded = location.encode(&row.key);
                 let deleted = tx
                     .del(&row_table, &row.key, Some(&encoded))

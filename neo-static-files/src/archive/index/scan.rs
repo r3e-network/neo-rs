@@ -30,6 +30,7 @@ pub(crate) struct ScanOutcome {
 pub(crate) fn scan_archive<F>(
     file: &File,
     path: &Path,
+    segment_start: u32,
     config: StaticFileConfig,
     file_len: u64,
     start: u64,
@@ -129,6 +130,7 @@ where
             .rows_scanned
             .saturating_add(u64::try_from(rows.len()).unwrap_or(u64::MAX));
         on_frame(ScannedFrame {
+            segment_start,
             offset: cursor,
             header,
             rows,
@@ -184,6 +186,7 @@ pub(crate) fn validate_published_tail(
 pub(crate) fn read_frame_index(
     file: &File,
     path: &Path,
+    segment_start: u32,
     config: StaticFileConfig,
     location: FrameLocation,
 ) -> StaticFileResult<ScannedFrame> {
@@ -193,6 +196,7 @@ pub(crate) fn read_frame_index(
     let header = decode_frame_header(&header_bytes, location.start)?;
     validate_frame_shape(header, location.start, config)?;
     if header.height != location.height
+        || location.segment_start != segment_start
         || location
             .start
             .checked_add(header.frame_len)
@@ -221,6 +225,7 @@ pub(crate) fn read_frame_index(
         .map_err(|source| StaticFileError::io("read frame row index", path, source))?;
     let rows = parse_index(header, &index, location.start)?;
     Ok(ScannedFrame {
+        segment_start,
         offset: location.start,
         header,
         rows,

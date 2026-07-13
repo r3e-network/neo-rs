@@ -10,12 +10,10 @@ use crate::{StaticFileError, StaticFileResult};
 
 #[cfg(unix)]
 pub(super) fn sync_parent_directory(path: &Path) -> StaticFileResult<()> {
-    let Some(parent) = path
+    let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
-    else {
-        return Ok(());
-    };
+        .unwrap_or_else(|| Path::new("."));
     File::open(parent)
         .and_then(|directory| directory.sync_all())
         .map_err(|source| StaticFileError::io("sync parent directory", parent, source))

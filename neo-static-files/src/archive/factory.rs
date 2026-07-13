@@ -8,24 +8,24 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use lru::LruCache;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use xxhash_rust::xxh3::Xxh3;
 
-use super::index::{
-    ArchiveIndex, FrameLocation, ScanMode, ScannedFrame, scan_archive, validate_published_tail,
-};
+use super::index::ArchiveIndex;
 use super::io::{read_exact_at, sync_parent_directory, write_all_at};
 use super::lease::WriterLease;
 use super::provider::{ArchiveInner, StaticFileArchive};
+use super::recovery::{indexed_layout_matches, recover_segments};
+use super::segments::ArchiveSegments;
 use super::{StaticFileConfig, StaticFileProviderFactory};
 use crate::format::{FILE_HEADER_LEN, file_header, validate_file_header};
 use crate::{StaticFileError, StaticFileResult};
 
-const INDEX_PUBLICATION_BATCH_FRAMES: usize = 1_024;
-
 /// Work performed while opening a static archive.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct StaticFileOpenStats {
+    /// Height-addressed archive segment files retained after recovery.
+    pub segments_retained: u32,
     /// Archive frames decoded because they followed the durable index checkpoint.
     pub frames_scanned: u64,
     /// Compressed payloads decoded while validating that suffix.
@@ -105,74 +105,49 @@ impl StaticFileArchiveFactory {
                 validate_file_header(&header, 0)?
             };
 
+        let mut segments = ArchiveSegments::discover(path, file, archive_id)?;
+        let mut stats = StaticFileOpenStats {
+            segments_retained: u32::try_from(segments.count()).unwrap_or(u32::MAX),
+            ..StaticFileOpenStats::default()
+        };
         let index = ArchiveIndex::open(path)?;
         let prior_state = index.state();
         let state_is_usable = prior_state.is_some_and(|state| {
             state.archive_id == archive_id
-                && state.indexed_file_len <= file_len
-                && index_tail_matches(&index, &file, path, self.config, state)
+                && indexed_layout_matches(&index, &segments, self.config, state)
         });
-        let mut stats = StaticFileOpenStats::default();
         let state = if state_is_usable {
             prior_state.expect("usable state is present")
         } else {
+            let snapshots = segments.snapshots();
             stats.index_rebuilt = prior_state.is_some()
+                || snapshots.len() > 1
                 || file_len > u64::try_from(FILE_HEADER_LEN).expect("header length fits u64");
-            let empty_archive =
-                file_len == u64::try_from(FILE_HEADER_LEN).expect("header length fits u64");
+            let empty_archive = snapshots.len() == 1
+                && file_len == u64::try_from(FILE_HEADER_LEN).expect("header length fits u64");
             index.reset(archive_id, empty_archive)?
         };
-        let scan_mode = if state.tail_recovery_safe {
-            ScanMode::RecoverTail
-        } else {
-            ScanMode::Strict
-        };
-
-        let mut batch = Vec::<ScannedFrame>::with_capacity(INDEX_PUBLICATION_BATCH_FRAMES);
-        let outcome = scan_archive(
-            &file,
-            path,
+        recover_segments(
+            &index,
+            &mut segments,
             self.config,
-            file_len,
-            state.indexed_file_len,
-            state.next_height()?,
-            scan_mode,
-            |frame| {
-                batch.push(frame);
-                if batch.len() == INDEX_PUBLICATION_BATCH_FRAMES {
-                    index.publish_frames(&batch)?;
-                    batch.clear();
-                }
-                Ok(())
-            },
+            state,
+            !state_is_usable,
+            &mut stats,
         )?;
-        if !batch.is_empty() {
-            index.publish_frames(&batch)?;
-        }
-        stats.frames_scanned = outcome.frames_scanned;
-        stats.payloads_decoded = outcome.payloads_decoded;
-        stats.rows_replayed = outcome.rows_scanned;
-
-        if outcome.valid_file_len != file_len {
-            file.set_len(outcome.valid_file_len)
-                .map_err(|source| StaticFileError::io("truncate torn tail", path, source))?;
-            file.sync_all()
-                .map_err(|source| StaticFileError::io("sync recovered tail", path, source))?;
-            stats.archive_tail_truncated = true;
-            file_len = outcome.valid_file_len;
-        }
         index.mark_tail_recovery_safe()?;
-        debug_assert_eq!(
-            index.state().map(|state| state.indexed_file_len),
-            Some(file_len)
-        );
+        let indexed_state = index
+            .state()
+            .ok_or_else(|| StaticFileError::invalid_index("archive index lost its state"))?;
+        let active_segment = segments.exact(indexed_state.active_segment_start)?;
+        debug_assert_eq!(active_segment.len()?, indexed_state.indexed_file_len);
 
         Ok((
             StaticFileArchive {
                 inner: Arc::new(ArchiveInner {
-                    file,
                     path: path.to_path_buf(),
                     config: self.config,
+                    segments: RwLock::new(segments),
                     write_lock: Mutex::new(()),
                     pending: Mutex::new(None),
                     index,
@@ -193,29 +168,6 @@ impl StaticFileProviderFactory for StaticFileArchiveFactory {
 
     fn open(&self, path: &Path) -> StaticFileResult<Self::Provider> {
         self.open_with_stats(path).map(|(archive, _)| archive)
-    }
-}
-
-fn index_tail_matches(
-    index: &ArchiveIndex,
-    file: &std::fs::File,
-    path: &Path,
-    config: StaticFileConfig,
-    state: super::index::IndexState,
-) -> bool {
-    if validate_published_tail(file, path, config, state).is_err() {
-        return false;
-    }
-    match state.tip {
-        Some(height) => index.frame(height).is_ok_and(|location| {
-            location
-                == Some(FrameLocation {
-                    height,
-                    start: state.last_frame_start,
-                    end: state.indexed_file_len,
-                })
-        }),
-        None => true,
     }
 }
 

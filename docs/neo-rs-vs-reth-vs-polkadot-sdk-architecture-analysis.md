@@ -88,8 +88,10 @@ retention floor, while `CurrentBlock` remains hot. The delete set and
 `hot-pruned-through` watermark become durable atomically. Startup rejects a
 watermark above canonical/archive truth or archive lag below a pruned prefix,
 then validates overlap from `watermark + 1`. Persistent offsets, bounded
-archive open, archive-aware offline tooling, atomic hot deletion, and
-prune/recovery parity are complete; segment rotation remains future work.
+archive open, height-addressed segment rotation, archive-aware offline tooling,
+atomic hot deletion, and prune/recovery parity are complete. Rotation never
+splits a finalized-height frame; one global MDBX index records the active
+segment and routes historical reads by indexed height.
 Operational persisted-tip reads (startup, config validation, chain.acc
 resume, and daemon context) share that routed factory shape. Observability
 ledger-height reads (health/readiness/metrics) use the same boundary for
@@ -179,7 +181,7 @@ pub trait TransactionalStore: Store {
 | Tiering | Hot MDBX plus an opt-in compressed static Ledger archive; provider routing, atomic pruning, and watermark-aware recovery are wired | Hot (MDBX) / Cold (RocksDB) / Static (NippyJar) | Single DB (parity-db or RocksDB) |
 | Overlay | Child/parent `DataCache`: isolated mutation, drop/reset rollback, one-way merge, sorted backend emission | MDBX transaction | `OverlayedChanges` |
 | Pruning | Static Ledger rows automatically prune beyond the initial `MaxTraceableBlocks` window; state/MPT pruning remains separately configured | Per-segment config (4 profiles) | `PruningMode` enum |
-| Static files | Versioned per-height zstd frames, opaque exact Ledger rows, checksums, LRU reads, continuity and torn-tail recovery; cold-first bytes with post-hot index visibility | NippyJar columnar (mandatory, mmap) | None |
+| Static files | Versioned per-height zstd frames in bounded height-addressed segments, opaque exact Ledger rows, checksums, LRU reads, continuity and final-segment torn-tail recovery; cold-first bytes with post-hot index visibility | NippyJar columnar (mandatory, mmap) | None |
 
 ### Reth innovations
 
@@ -214,7 +216,7 @@ pub trait TransactionalStore: Store {
 | Implemented phase | Atomic hot-row pruning and replay/recovery parity | Disk savings with latest-version filtering, byte parity checks, isolated watermarks, and fail-closed startup |
 | Implemented phase | Frozen StateService provider/factory boundary | Root/height-addressed snapshot isolation, pruning gates, and proof/state RPC without MPT mechanics in the API layer |
 | P1 | Compact derive for versioned node-local tables only | Fewer operational bytes without changing Neo consensus/storage codecs |
-| Implemented phase | Static Ledger archive and provider routing | Format, exact row capture, cold-first batch publication, startup reconciliation, shared runtime cold reads, and hot pruning are wired |
+| Implemented phase | Static Ledger archive and provider routing | Format, bounded height-addressed segments, exact row capture, cold-first batch publication, startup reconciliation, shared runtime cold reads, and hot pruning are wired |
 | Implemented | `OverlayedChanges`-style transactional overlay and mandatory canonical store capability | Child isolation, rollback by discard, ordered emission, and compile-time durability requirements |
 
 ---
@@ -835,7 +837,7 @@ already established Neo codec byte-for-byte.
 | Change | Speed | Storage | Reliability | Complexity | Effort |
 |--------|-------|---------|-------------|------------|--------|
 | Staged sync pipeline integration | ★★★★★ | ★★ | ★★★★ | ★★★★ | Durable Headers, header-gated Bodies, canonical Import, and committed-chain Index are live; standalone Prune is intentionally not split from existing owners |
-| Static archive/recovery/provider propagation/hot pruning | ★★★ | ★★★★ | ★★★★ | ★★★ | Implemented; segment rotation remains |
+| Static archive/recovery/provider propagation/hot pruning | ★★★ | ★★★★ | ★★★★ | ★★★ | Implemented, including height-addressed segment rotation |
 | Import queue + concurrent verify | ★★★★ | - | ★★★ | ★★★ | Runtime queue and production download-to-import bridge wired |
 | Stage commit policy + checkpoints | ★★★ | - | ★★★★ | ★★ | Import-stage driver done |
 | Typed table/codec provider | ★★ | - | ★★★★ | ★★ | Implemented for sync and prune metadata over unchanged bytes |
@@ -873,8 +875,8 @@ already established Neo codec byte-for-byte.
 7. **Hot/Cold/Static tiering integration** — append-only archive, exact Ledger
    adapter, cold-first precommit publication, recovery, persistent archive
    offsets, archive-aware offline tooling, and shared runtime cold reads are
-   implemented. Latest-version-aware hot deletion and atomic prune watermarks
-   are also implemented; segment rotation remains optional future work.
+   implemented. Latest-version-aware hot deletion, atomic prune watermarks, and
+   bounded height-addressed segment rotation are also implemented.
 8. **Staged sync pipeline integration** — durable `Headers`, header-gated
    `Bodies`, canonical `Import`, and the committed-chain `Index` follower are
    production-wired. Do not split execution/state-root work out of canonical

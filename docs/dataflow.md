@@ -519,7 +519,10 @@ Key points:
   precommit fence writes and syncs their frames before the canonical hot
   transaction but keeps them out of the provider-visible index; canonical
   success then publishes frame offsets and versioned row locations in one MDBX
-  transaction. The archive starts at genesis, verifies every still-hot
+  transaction. Frames rotate into immutable files named by their first height
+  before a configured byte target would be crossed; one frame is never split,
+  and the global index routes reads and rollback across those files. The archive
+  starts at genesis, verifies every still-hot
   overlapping block hash against canonical storage, and holds one kernel writer lease across all
   provider clones. Clean startup validates the sidecar checkpoint and scans only
   an unpublished suffix; a missing or stale sidecar is rebuilt from
