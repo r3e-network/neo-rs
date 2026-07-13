@@ -27,8 +27,9 @@ pub struct NotifyEventArgs {
     /// The name of the event
     pub event_name: String,
 
-    /// The arguments of the event
-    pub state: Vec<StackItem>,
+    /// The arguments of the event. This sequence is immutable after emission;
+    /// use [`Self::state`] for read-only access.
+    state: Vec<StackItem>,
 
     /// The immutable state array retained for pre-Domovoi reference semantics.
     state_array: StackItem,
@@ -72,6 +73,12 @@ impl NotifyEventArgs {
     /// Returns the retained immutable state array used before the Domovoi hardfork.
     pub fn state_array(&self) -> StackItem {
         self.state_array.clone()
+    }
+
+    /// Returns the immutable notification arguments.
+    #[must_use]
+    pub fn state(&self) -> &[StackItem] {
+        &self.state
     }
 
     /// Builds the C# `NotifyEventArgs.ToStackItem` layout with a caller-prepared

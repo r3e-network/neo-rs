@@ -127,7 +127,7 @@ pub(super) fn notification_to_json(
     mut session: Option<&mut Session>,
 ) -> Result<Value, RpcException> {
     let mut state = Vec::new();
-    for entry in &notification.state {
+    for entry in notification.state() {
         state.push(stack_item_to_json(entry, session.as_deref_mut())?);
     }
     Ok(json!({

@@ -75,7 +75,7 @@ fn deploy_writes_record_and_index_charges_fee_and_notifies() {
         .expect("Deploy event emitted");
     assert_eq!(deploy_event.script_hash, ContractManagement::script_hash());
     assert_eq!(
-        deploy_event.state[0].as_bytes().unwrap(),
+        deploy_event.state()[0].as_bytes().unwrap(),
         expected_hash.to_bytes().to_vec()
     );
 

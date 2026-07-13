@@ -154,7 +154,7 @@ fn destroy_removes_record_index_storage_and_blocks_hash() {
         .expect("Destroy event emitted");
     assert_eq!(destroy_event.script_hash, ContractManagement::script_hash());
     assert_eq!(
-        destroy_event.state[0].as_bytes().unwrap(),
+        destroy_event.state()[0].as_bytes().unwrap(),
         self_hash.to_bytes().to_vec()
     );
     let wl_event = notifications
@@ -162,9 +162,12 @@ fn destroy_removes_record_index_storage_and_blocks_hash() {
         .find(|n| n.event_name == "WhitelistFeeChanged")
         .expect("WhitelistFeeChanged event emitted");
     assert_eq!(wl_event.script_hash, crate::PolicyContract::script_hash());
-    assert_eq!(wl_event.state[1].as_bytes().unwrap(), b"transfer".to_vec());
-    assert_eq!(wl_event.state[2].as_int().unwrap(), BigInt::from(4));
-    assert!(matches!(wl_event.state[3], StackItem::Null));
+    assert_eq!(
+        wl_event.state()[1].as_bytes().unwrap(),
+        b"transfer".to_vec()
+    );
+    assert_eq!(wl_event.state()[2].as_int().unwrap(), BigInt::from(4));
+    assert!(matches!(wl_event.state()[3], StackItem::Null));
 }
 
 /// Protocol settings with every hardfork through `HF_Gorgon` active at height 0,

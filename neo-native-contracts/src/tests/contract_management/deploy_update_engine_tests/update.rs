@@ -117,7 +117,7 @@ fn update_bumps_counter_swaps_payloads_and_notifies() {
         .expect("Update event emitted");
     assert_eq!(update_event.script_hash, ContractManagement::script_hash());
     assert_eq!(
-        update_event.state[0].as_bytes().unwrap(),
+        update_event.state()[0].as_bytes().unwrap(),
         self_hash.to_bytes().to_vec()
     );
 }

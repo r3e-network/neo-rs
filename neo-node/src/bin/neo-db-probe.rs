@@ -1091,7 +1091,7 @@ fn execute_transaction_probe<B: neo_storage::CacheRead>(
             json!({
                 "contract": notification.script_hash.to_string(),
                 "event": notification.event_name,
-                "state_len": notification.state.len(),
+                "state_len": notification.state().len(),
             })
         })
         .collect::<Vec<_>>();

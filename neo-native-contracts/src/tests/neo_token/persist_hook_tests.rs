@@ -111,7 +111,7 @@ fn on_persist_refresh_recomputes_committee_and_emits_committee_changed() {
     let note = &notes[0];
     assert_eq!(note.script_hash, NeoToken::script_hash());
     assert_eq!(note.event_name, "CommitteeChanged");
-    assert_eq!(note.state.len(), 2);
+    assert_eq!(note.state().len(), 2);
     let keys_of = |item: &StackItem| -> Vec<Vec<u8>> {
         let StackItem::Array(array) = item else {
             panic!("CommitteeChanged arg is not an array");
@@ -122,8 +122,8 @@ fn on_persist_refresh_recomputes_committee_and_emits_committee_changed() {
             .map(|i| i.as_bytes().unwrap().to_vec())
             .collect()
     };
-    assert_eq!(keys_of(&note.state[0]), vec![k1.to_bytes()]);
-    assert_eq!(keys_of(&note.state[1]), vec![k2.to_bytes()]);
+    assert_eq!(keys_of(&note.state()[0]), vec![k1.to_bytes()]);
+    assert_eq!(keys_of(&note.state()[1]), vec![k2.to_bytes()]);
 }
 
 #[test]
@@ -274,13 +274,13 @@ fn post_persist_committee_and_voter_rewards_match_csharp_math() {
         .find(|n| n.event_name == "Transfer")
         .expect("committee reward Transfer");
     assert_eq!(transfer.script_hash, crate::GasToken::script_hash());
-    assert!(matches!(transfer.state[0], StackItem::Null));
+    assert!(matches!(transfer.state()[0], StackItem::Null));
     assert_eq!(
-        transfer.state[1].as_bytes().unwrap().to_vec(),
+        transfer.state()[1].as_bytes().unwrap().to_vec(),
         member0_addr.to_bytes()
     );
     assert_eq!(
-        transfer.state[2].as_int().unwrap(),
+        transfer.state()[2].as_int().unwrap(),
         BigInt::from(50_000_000)
     );
 

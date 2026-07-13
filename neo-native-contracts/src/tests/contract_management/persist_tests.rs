@@ -99,36 +99,36 @@ fn on_persist_writes_genesis_records_and_deploy_notifications() {
     assert_eq!(notifications.len(), genesis_native_names.len() + 2);
     assert_eq!(notifications[0].event_name, "Deploy");
     assert_eq!(
-        notifications[0].state[0].as_bytes().unwrap(),
+        notifications[0].state()[0].as_bytes().unwrap(),
         crate::ContractManagement::script_hash().to_bytes()
     );
     assert_eq!(notifications[1].event_name, "Deploy");
     assert_eq!(
-        notifications[1].state[0].as_bytes().unwrap(),
+        notifications[1].state()[0].as_bytes().unwrap(),
         crate::StdLib::script_hash().to_bytes()
     );
     assert_eq!(notifications[2].event_name, "Deploy");
     assert_eq!(
-        notifications[2].state[0].as_bytes().unwrap(),
+        notifications[2].state()[0].as_bytes().unwrap(),
         crate::CryptoLib::script_hash().to_bytes()
     );
     assert_eq!(notifications[3].event_name, "Deploy");
     assert_eq!(
-        notifications[3].state[0].as_bytes().unwrap(),
+        notifications[3].state()[0].as_bytes().unwrap(),
         crate::LedgerContract::script_hash().to_bytes()
     );
     assert_eq!(notifications[4].event_name, "Transfer");
     assert_eq!(notifications[4].script_hash, crate::NeoToken::script_hash());
     assert_eq!(notifications[5].event_name, "Deploy");
     assert_eq!(
-        notifications[5].state[0].as_bytes().unwrap(),
+        notifications[5].state()[0].as_bytes().unwrap(),
         crate::NeoToken::script_hash().to_bytes()
     );
     assert_eq!(notifications[6].event_name, "Transfer");
     assert_eq!(notifications[6].script_hash, crate::GasToken::script_hash());
     assert_eq!(notifications[7].event_name, "Deploy");
     assert_eq!(
-        notifications[7].state[0].as_bytes().unwrap(),
+        notifications[7].state()[0].as_bytes().unwrap(),
         crate::GasToken::script_hash().to_bytes()
     );
     let deploy_notifications = notifications
@@ -138,7 +138,7 @@ fn on_persist_writes_genesis_records_and_deploy_notifications() {
         assert_eq!(notification.event_name, "Deploy");
         assert_eq!(notification.script_hash, ContractManagement::script_hash());
         assert_eq!(
-            notification.state[0].as_bytes().unwrap(),
+            notification.state()[0].as_bytes().unwrap(),
             contract.hash().to_bytes(),
             "Deploy order follows the canonical contract order"
         );
@@ -240,7 +240,7 @@ fn echidna_block_refreshes_manifests_and_runs_policy_reinitialization() {
         engine
             .notifications()
             .iter()
-            .all(|n| n.state[0].as_bytes().unwrap() != gas_hash_bytes)
+            .all(|n| n.state()[0].as_bytes().unwrap() != gas_hash_bytes)
     );
 
     // Notification kinds: Update for refreshed natives, Deploy for Notary.
@@ -249,7 +249,7 @@ fn echidna_block_refreshes_manifests_and_runs_policy_reinitialization() {
         .iter()
         .map(|n| {
             (
-                n.state[0].as_bytes().unwrap().to_vec(),
+                n.state()[0].as_bytes().unwrap().to_vec(),
                 n.event_name.clone(),
             )
         })
@@ -345,7 +345,7 @@ fn faun_block_reinitializes_policy_and_deploys_treasury() {
         .iter()
         .map(|n| {
             (
-                n.state[0].as_bytes().unwrap().to_vec(),
+                n.state()[0].as_bytes().unwrap().to_vec(),
                 n.event_name.clone(),
             )
         })

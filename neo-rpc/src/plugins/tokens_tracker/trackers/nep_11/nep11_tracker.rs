@@ -343,7 +343,7 @@ where
                 continue;
             }
             for notify in &app.notifications {
-                if notify.event_name != "Transfer" || notify.state.is_empty() {
+                if notify.event_name != "Transfer" || notify.state().is_empty() {
                     continue;
                 }
 
@@ -362,7 +362,7 @@ where
                 self.handle_notification(
                     notify.script_container.as_ref(),
                     &notify.script_hash,
-                    &notify.state,
+                    notify.state(),
                     &mut transfers,
                     &mut transfer_index,
                 );

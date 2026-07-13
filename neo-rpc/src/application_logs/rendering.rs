@@ -145,7 +145,7 @@ fn notification_to_json(event: &NotifyEventArgs) -> Value {
     );
 
     let state_values = event
-        .state
+        .state()
         .iter()
         .map(|item| StackItemRpcJson::stack_item_rpc_json(item, None))
         .collect::<Result<Vec<_>, _>>();

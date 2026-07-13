@@ -104,3 +104,30 @@ fn notify_event_interoperable_to_stack_value_matches_inherent() {
         "structural StackValue mismatch: {interop:?} vs {expected:?}"
     );
 }
+
+#[test]
+fn notify_event_state_and_retained_array_share_one_immutable_sequence() {
+    let nested = StackItem::from_array(vec![StackItem::from_i64(1)]);
+    let notification = NotifyEventArgs::new_with_optional_container(
+        None,
+        UInt160::from_bytes(&[0x22; 20]).expect("script hash"),
+        "Transfer".to_string(),
+        vec![nested],
+    );
+
+    let StackItem::Array(nested_from_state) = &notification.state()[0] else {
+        panic!("notification state should contain an array");
+    };
+    nested_from_state
+        .push(StackItem::from_i64(2))
+        .expect("nested compounds remain reference values");
+
+    let StackItem::Array(retained_state) = notification.state_array() else {
+        panic!("retained state should be an array");
+    };
+    assert!(retained_state.is_read_only());
+    let StackItem::Array(nested_from_retained) = &retained_state.items()[0] else {
+        panic!("retained state should contain the same nested array");
+    };
+    assert_eq!(nested_from_retained.len(), 2);
+}

@@ -47,15 +47,15 @@ pub(super) fn prepare_notifications(
                     count: execution.notifications.len(),
                 }
             })?;
-            let state_item_count = u32::try_from(notification.state.len()).map_err(|_| {
+            let state_item_count = u32::try_from(notification.state().len()).map_err(|_| {
                 IndexerError::TooManyNotificationStateItems {
                     execution_index,
                     notification_index,
-                    count: notification.state.len(),
+                    count: notification.state().len(),
                 }
             })?;
             let state = notification
-                .state
+                .state()
                 .iter()
                 .map(|item| {
                     StackItemRpcJson::stack_item_rpc_json(item, None).map_err(|source| {
@@ -67,10 +67,8 @@ pub(super) fn prepare_notifications(
                     })
                 })
                 .collect::<IndexerResult<Vec<_>>>()?;
-            let accounts = transfer_participant_accounts(
-                &notification.event_name,
-                notification.state.as_slice(),
-            );
+            let accounts =
+                transfer_participant_accounts(&notification.event_name, notification.state());
 
             notifications.push(NotificationIndexRecord {
                 block_hash: block.hash,

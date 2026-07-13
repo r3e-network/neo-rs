@@ -116,7 +116,7 @@ where
         .map(|event| NativePersistNotification {
             script_hash: event.script_hash,
             event_name: event.event_name.clone(),
-            state: event.state.clone(),
+            state: event.state().to_vec(),
         })
         .collect()
 }

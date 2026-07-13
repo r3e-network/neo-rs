@@ -528,11 +528,11 @@ mod persist_tests {
         assert_eq!(transfer.event_name, "Transfer");
         assert_eq!(transfer.script_hash, GasToken::script_hash());
         assert!(
-            matches!(transfer.state[0], StackItem::Null),
+            matches!(transfer.state()[0], StackItem::Null),
             "from = null (mint)"
         );
-        assert_eq!(transfer.state[1].as_bytes().unwrap(), bft.to_bytes());
-        assert_eq!(transfer.state[2].as_int().unwrap(), expected);
+        assert_eq!(transfer.state()[1].as_bytes().unwrap(), bft.to_bytes());
+        assert_eq!(transfer.state()[2].as_int().unwrap(), expected);
     }
 
     /// C# `GasToken.OnPersistAsync` (GasToken.cs:39-58): each sender is burned
@@ -585,9 +585,9 @@ mod persist_tests {
             .iter()
             .map(|n| {
                 (
-                    matches!(n.state[0], StackItem::Null),
-                    matches!(n.state[1], StackItem::Null),
-                    n.state[2].as_int().unwrap(),
+                    matches!(n.state()[0], StackItem::Null),
+                    matches!(n.state()[1], StackItem::Null),
+                    n.state()[2].as_int().unwrap(),
                 )
             })
             .collect();

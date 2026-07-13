@@ -247,21 +247,21 @@ fn recover_fund_e2e_sweeps_balance_to_treasury_and_notifies() {
     assert_eq!(notifications[0].script_hash, gas_hash);
     assert_eq!(notifications[0].event_name, "Transfer");
     assert_eq!(
-        notifications[0].state[0].as_bytes().unwrap(),
+        notifications[0].state()[0].as_bytes().unwrap(),
         account.to_bytes()
     );
     assert_eq!(
-        notifications[0].state[1].as_bytes().unwrap(),
+        notifications[0].state()[1].as_bytes().unwrap(),
         treasury.to_bytes()
     );
     assert_eq!(
-        notifications[0].state[2].as_int().unwrap(),
+        notifications[0].state()[2].as_int().unwrap(),
         BigInt::from(SWEPT)
     );
     assert_eq!(notifications[1].script_hash, PolicyContract::script_hash());
     assert_eq!(notifications[1].event_name, "RecoveredFund");
     assert_eq!(
-        notifications[1].state[0].as_bytes().unwrap(),
+        notifications[1].state()[0].as_bytes().unwrap(),
         account.to_bytes()
     );
 }

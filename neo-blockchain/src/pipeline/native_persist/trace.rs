@@ -97,7 +97,7 @@ where
         .enumerate()
         .map(|(index, notification)| {
             let state = notification
-                .state
+                .state()
                 .iter()
                 .map(|item| format!("{:?}", stack_value_snapshot(item)))
                 .collect::<Vec<_>>()

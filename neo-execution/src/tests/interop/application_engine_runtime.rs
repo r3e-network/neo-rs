@@ -226,10 +226,10 @@ fn get_notifications_deep_copies_domovoi_state_like_csharp() {
         )
         .expect("send notification");
 
-    let StackItem::Array(stored_nested) = &engine.notifications()[0].state[0] else {
+    let StackItem::Array(stored_nested) = &engine.notifications()[0].state()[0] else {
         panic!("stored notification argument should be an array");
     };
-    let StackItem::Array(stored_nested_alias) = &engine.notifications()[0].state[1] else {
+    let StackItem::Array(stored_nested_alias) = &engine.notifications()[0].state()[1] else {
         panic!("stored notification alias should be an array");
     };
     assert_eq!(stored_nested.id(), stored_nested_alias.id());

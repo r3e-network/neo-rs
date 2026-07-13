@@ -292,7 +292,7 @@ where
 
     fn notification_to_stack_item(&self, notification: &NotifyEventArgs) -> CoreResult<StackItem> {
         let state = if self.is_hardfork_enabled(Hardfork::HfDomovoi) {
-            readonly_array_stack_item(clone_notification_state(&notification.state)?)
+            readonly_array_stack_item(clone_notification_state(notification.state())?)
         } else {
             notification.state_array()
         };

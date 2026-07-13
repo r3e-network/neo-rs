@@ -245,10 +245,10 @@ fn request_writes_record_id_list_counter_and_mints_response_gas() {
         .find(|n| n.event_name == "OracleRequest")
         .expect("OracleRequest notification");
     assert_eq!(event.script_hash, OracleContract::script_hash());
-    assert_eq!(event.state[0].as_int().unwrap(), BigInt::from(0));
-    assert_eq!(event.state[1].as_bytes().unwrap(), caller_hash.to_bytes());
-    assert_eq!(event.state[2].as_bytes().unwrap(), url.to_vec());
-    assert_eq!(event.state[3].as_bytes().unwrap(), b"$.value".to_vec());
+    assert_eq!(event.state()[0].as_int().unwrap(), BigInt::from(0));
+    assert_eq!(event.state()[1].as_bytes().unwrap(), caller_hash.to_bytes());
+    assert_eq!(event.state()[2].as_bytes().unwrap(), url.to_vec());
+    assert_eq!(event.state()[3].as_bytes().unwrap(), b"$.value".to_vec());
 }
 
 #[test]
@@ -424,9 +424,9 @@ fn finish_notifies_and_queues_the_callback() {
         .find(|n| n.event_name == "OracleResponse")
         .expect("OracleResponse notification");
     assert_eq!(event.script_hash, OracleContract::script_hash());
-    assert_eq!(event.state[0].as_int().unwrap(), BigInt::from(7));
+    assert_eq!(event.state()[0].as_int().unwrap(), BigInt::from(7));
     assert_eq!(
-        event.state[1].as_bytes().unwrap(),
+        event.state()[1].as_bytes().unwrap(),
         request.original_tx_id.to_bytes()
     );
 
