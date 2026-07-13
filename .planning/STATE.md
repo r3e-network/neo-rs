@@ -1,49 +1,68 @@
-# neo-rs Deep Refactor — Project State
-
-**Last updated**: 2026-07-05
-**Current phase**: Complete (Phase 5 cleanup landed)
-
+---
+gsd_state_version: '1.0'
+milestone: v1.0
+milestone_name: Production-ready Neo N3 v3.10.1 node
+status: in_progress
+progress:
+  total_phases: 7
+  completed_phases: 0
+  total_plans: 21
+  completed_plans: 0
+  percent: 0
 ---
 
-## Position
+# Project State
 
-- **Phase**: All 4 refactor phases complete, plus a Phase-5 cleanup pass.
-- **Refactor phases (ADR-027..031)**: b8afcc0 (Phase 1), a6d7a7a (Phase 2),
-  504e8ed (Phase 3), f71b431 (Phase 4) — all landed.
-- **Phase-5 cleanup**: 5b829e6 (ADR-032 dead-scaffolding excision), 41134a9
-  (hygiene) — landed.
+## Project Reference
 
-## Key Decisions (this project)
+See: `.planning/PROJECT.md` (updated 2026-07-13)
 
-| # | Decision | Rationale | Date |
-|---|----------|-----------|------|
-| 1 | Execute all 4 phases | User confirmed full scope | 2026-07-04 |
-| 2 | Each phase = independent commit + verify | Safety; can stop at any phase boundary | 2026-07-04 |
-| 3 | Sync update design.md with ADRs per phase | Keep design.md as source of truth | 2026-07-04 |
-| 4 | spec-skill methodology as framework | User invoked @skill:spec-skill explicitly | 2026-07-04 |
+**Core value:** Import, validate, execute, persist, and expose canonical Neo N3 state exactly as Neo v3.10.1 does.
+**Current focus:** Phase 1 - Reproducible Protocol Baseline
 
-## Baseline Metrics (pre-refactor)
+## Current Position
 
-- `cargo test --workspace`: 3356 tests, 0 failures
-- Layer boundary tests: 20/20
-- Crates: 28 (27 workspace members + 1 excluded neo-gui)
-- ADRs: 26
-- design.md health score: 9.4/10
+Phase: 1 of 7 (Reproducible Protocol Baseline)
+Plan: 0 of 2 in current phase
+Status: Ready to plan
+Last activity: 2026-07-13 - Phase 1 context and production requirements reconciled after implementation audit.
 
-## Blockers
+Progress: [----------] 0%
 
-None currently.
+## Completed Previous Milestone
 
-## Notes
+The July 2026 deep architecture refactor and cleanup landed before this
+production-readiness milestone. Its ADR-027 through ADR-043 decisions remain
+part of the architecture baseline; deferred production work is represented in
+the new roadmap rather than being treated as complete.
 
-- Phase 1 Plan 1.1 A3 (neo-engine deletion) is the highest-judgment call: the
-  audit found the entire public state API dead, but `NeoValidateStage`
-  (ADR-026) implements `neo_engine::ValidateStage`. Decision: move the
-  `ValidateStage` + `PipelineStage` traits into `neo-blockchain::pipeline`
-  (where the one impl already lives), then delete `neo-engine` entirely.
-  This collapses the L3 trait-crate split that ADR-007 only renamed.
-- Phase 3 B2 (neo-rpc split) is the largest single structural change. If
-  context budget gets tight, defer B2 to a follow-up session.
-- A7 (MempoolLike) and G4 (StoreConfigBundle) were deliberately SKIPPED as
-  net-negative (documented test-injection seam / trivial forwarding); B2
-  (neo-rpc split) and B3 (native-contracts split) remain DEFERRED.
+## Accumulated Context
+
+### Decisions
+
+- Neo v3.10.1 and its official network configuration are protocol authorities; reth and Substrate are architecture references only.
+- Canonical execution uses the local hardfork-aware VM until differential evidence proves any optimized interpreter equivalent.
+- Full MainNet replay/state-root parity is a release gate, not an aspirational follow-up.
+- Fast sync must evolve from accelerated full-history archive replay to an authenticated checkpoint/state bootstrap with canonical catch-up.
+
+### Evidence Established This Session
+
+- `neo-vm-rs` is pinned to revision `3081e83db3716fd51dc58c0afc039290d2d07253` in root and fuzz manifests.
+- Official Neo v3.10.1 Gorgon schedules are MainNet `12,020,000` and TestNet `17,960,000`; Huyao is unscheduled.
+- State-root vote pools are isolated by `(version, index, root_hash)`.
+- Canonical application execution no longer automatically dispatches to the external interpreter.
+- No retained local full-MainNet replay or per-height parity database exists yet.
+
+### Blockers/Concerns
+
+- MDBX read and snapshot-open errors are still represented through infallible `Option`-based traits and can be mistaken for absent state.
+- Databases do not yet enforce persisted network/genesis/schema/store-role identity before use.
+- Fast sync currently relies on an HTTPS manifest plus MD5 integrity, imports archives with reduced verification, and makes independent reference proof optional.
+- P2P startup failure and task-join/flush shutdown ordering need end-to-end failure tests; RPC bind/startup propagation is covered.
+- Full transaction-bearing MainNet replay and state-root parity remain unproven.
+
+## Session Continuity
+
+Last session: 2026-07-13
+Stopped at: Phase 1 context complete; planning the audited implementation and remaining verification fixes
+Resume file: None

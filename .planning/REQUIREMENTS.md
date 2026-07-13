@@ -28,6 +28,8 @@
 - [ ] **P2P-01**: The node exchanges Neo N3 v3.10.1 handshakes, addresses, headers, inventories, requests, blocks, transactions, and extensible payloads with real peers.
 - [ ] **SYNC-01**: Header and block synchronization remains ordered, bounded, restartable, and advancing under disconnects, malformed peers, slow peers, and backpressure.
 - [ ] **REORG-01**: Fork and reorganization handling never violates canonical mutation ownership or leaves persisted state inconsistent with the selected chain.
+- [ ] **VALIDATION-01**: Every imported block passes policy-aware, stateful validation inside the ordered canonical command loop before execution or persistence.
+- [ ] **VALIDATION-02**: Peer-import validity matches Neo v3.10.1, preserves authoritative header witness verification, and never treats producer-only transaction-count policy as peer hard validity.
 
 ### Full MainNet Replay
 
@@ -79,6 +81,8 @@ accepted through the milestone audit.
 | P2P-01 | Phase 4 | Pending |
 | SYNC-01 | Phase 4 | Pending |
 | REORG-01 | Phase 4 | Pending |
+| VALIDATION-01 | Phase 4 | Pending |
+| VALIDATION-02 | Phase 4 | Pending |
 | REPLAY-01 | Phase 5 | Pending |
 | STATE-01 | Phase 5 | Pending |
 | RECOVERY-01 | Phase 5 | Pending |
@@ -90,8 +94,8 @@ accepted through the milestone audit.
 | RELEASE-01 | Phase 7 | Pending |
 
 **Coverage:**
-- v1 requirements: 21 total
-- Mapped to phases: 21
+- v1 requirements: 23 total
+- Mapped to phases: 23
 - Unmapped: 0
 
 ---

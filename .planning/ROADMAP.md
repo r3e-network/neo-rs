@@ -1,126 +1,162 @@
-# neo-rs Deep Refactor Roadmap
+# Roadmap: neo-rs Production Node
 
-**Initialized**: 2026-07-04
-**Source audit**: `.planning/codebase/deep-audit-2026-07-04.md`
-**Method**: spec-driven, phase-by-phase, each phase = independent commit + `cargo test --workspace` green + ADR update
+## v1.0 Production-ready Neo N3 v3.10.1 Node (In Progress)
 
----
+## Overview
 
-## Phase 1 — Dead Code Excision + Native Contract Support Layer (A + C)
+This milestone turns the existing Neo N3 implementation into a node whose
+correctness is demonstrated against Neo v3.10.1. The order is deliberate:
+establish deterministic protocol semantics first, make persistence fail closed,
+build differential evidence, prove live interoperability, then prove full
+MainNet replay before optimizing a verified checkpoint-based fast-sync path.
+The completed 2026-07 architecture refactor remains in Git history and
+`.planning/codebase/deep-audit-2026-07-04.md`; it is not counted as unfinished
+work in this milestone.
 
-**Goal**: Remove the aspirational abstractions that never ran in production, and consolidate the real native-contract duplication. This is the prerequisite for all later phases — later structural changes are unsafe while dead scaffolding misrepresents the architecture.
+## Phases
 
-**Themes**: A (8 findings) + C (3 findings)
-**Estimated impact**: ~575 LOC removed, 1 crate deleted, 9 dead traits deleted, `neo-blockchain → neo-engine` dep removed
-**Risk**: Low — all deletions are verified zero-caller; support-layer additions are pure refactor
+- [ ] **Phase 1: Reproducible Protocol Baseline** - Pin v3.10.1 consensus inputs and remove known nondeterministic execution paths.
+- [ ] **Phase 2: Fail-Closed Storage and Lifecycle** - Make persistence, startup, and shutdown errors explicit and non-corrupting.
+- [ ] **Phase 3: Differential Protocol Parity** - Compare VM, native-contract, transaction, and state transitions with Neo v3.10.1.
+- [ ] **Phase 4: P2P Interoperability and Canonical Sync** - Prove sustained communication and ordered block import against real Neo peers.
+- [ ] **Phase 5: Full MainNet Replay and State Parity** - Replay MainNet from genesis and prove canonical state at protocol boundaries.
+- [ ] **Phase 6: Verified Checkpoint Fast Sync** - Replace trusted archive replay with authenticated state bootstrap and canonical catch-up.
+- [ ] **Phase 7: Production Hardening and Release** - Complete security, performance, operations, and release gates.
 
-### Plan 1.1 — Dead code excision (Theme A)
-- A1: Delete `neo-static-files` crate (orphaned, 0 prod consumers)
-- A2: Delete `BlockchainEngineAdapter` (never instantiated) + drop `neo-blockchain → neo-engine` dep
-- A3: Delete dead `neo-engine` public state API (`Pipeline`, `CanonicalChain`, `ChainTip`, `BlockBuffer`); keep only `ValidateStage`/`PipelineStage` traits + move `NeoValidateStage` ownership decision
-- A4: Delete 9 dead traits (`AsyncSystemContext`, `ApplicationEngineProvider`, 5 plugin-handler traits in neo-payloads, `ConsensusMessage`, `BlockLike`)
-- A5: `BlockchainProvider` — delete the 2 stub methods; keep trait but mark `#[allow(dead_code)]` until Phase 3 decides finish-vs-delete
-- A6: Delete `OracleNodeProvider` marker trait; split into 3 fields
-- A7: Delete `MempoolLike`; hold `Arc<MemoryPool>` directly
-- A8: Delete dead `Box<dyn ConsensusSigner>` blanket impl
+## Milestone-wide Exit Gates
 
-### Plan 1.2 — Native contract support layer (Theme C)
-- C1: Add `neo-native-contracts/src/support/codec.rs` — `decode_stack_value`, `encode_storage_struct`, `StructDecoder`
-- C2: Add `neo-native-contracts/src/support/engine.rs` — `require_persisting_block`
-- C3: Add `neo-native-contracts/src/support/settings.rs` — `read_hardfork_gated_u32_setting`, promote Policy i64 helpers
-- Migrate the ~26 duplicated call sites to the new helpers
+Every phase must retain the relevant focused tests and pass locked workspace
+format, check, test, doctest, and clippy gates before verification can pass.
+Changes to fuzzed, dependency, container, or deployment surfaces must also pass
+their corresponding locked fuzz, cargo-deny, and clean-context Docker gates.
+Every architecture-level decision must update or add an ADR in `design.md`.
 
-**Verification**: `cargo check --workspace --tests` clean, `cargo test --workspace` 3356+ tests pass, layer boundary tests 20/20
-**ADR**: ADR-027 (dead-trait excision) + ADR-028 (native contract support layer)
+## Phase Details
 
----
+### Phase 1: Reproducible Protocol Baseline
+**Goal**: A clean checkout builds against one immutable VM revision and canonical execution uses only semantics proven for the selected Neo hardfork.
+**Depends on**: Nothing
+**Requirements**: [PROTO-01, BUILD-01, CONSENSUS-01]
+**Success Criteria**:
+  1. CI, fuzzing, and Docker resolve the same pinned `neo-vm-rs` revision without a sibling checkout.
+  2. MainNet and TestNet hardfork schedules match the official Neo v3.10.1 configuration at every activation boundary.
+  3. Canonical block execution cannot automatically dispatch to a non-hardfork-aware interpreter.
+  4. Competing state-root votes cannot be aggregated across version, height, or root hash.
+  5. Workspace format, check, test, doctest, and clippy gates pass.
+**Plans**: 2 plans
 
-## Phase 2 — Cross-Crate Helpers + Test Fixtures (D + E)
+Plans:
+- [ ] 01-01: Complete the pinned VM v0.2 migration and consensus-safety regressions.
+- [ ] 01-02: Validate CI, fuzz, Docker, documentation, and dependency reproducibility from a clean build context.
 
-**Goal**: Consolidate the cross-crate duplication that doesn't fit in a single crate's support module.
+### Phase 2: Fail-Closed Storage and Lifecycle
+**Goal**: Storage and service failures cannot be mistaken for missing chain state or reported as successful node startup/shutdown.
+**Depends on**: Phase 1
+**Requirements**: [STORAGE-01, STORAGE-02, OPS-01]
+**Success Criteria**:
+  1. Backend read and snapshot-open errors propagate through result-bearing APIs and abort canonical mutation.
+  2. Every database persists and validates network magic, genesis hash, schema version, and store role before use.
+  3. RPC and P2P bind failures make startup fail, and shutdown joins critical tasks before the final durable flush.
+  4. Crash, partial-commit, wrong-network, and incompatible-schema tests leave the last committed canonical state recoverable.
+**Plans**: 3 plans
 
-**Themes**: D (4 findings) + E (1 finding)
-**Estimated impact**: ~250 LOC removed, 1 new dev-only crate
-**Risk**: Low — mechanical consolidation
+Plans:
+- [ ] 02-01: Introduce fallible read/snapshot boundaries and migrate canonical consumers.
+- [ ] 02-02: Add database identity/schema validation and coordinated recovery tests.
+- [ ] 02-03: Make service startup and graceful shutdown transactional and observable.
 
-### Plan 2.1 — Cross-crate helpers (Theme D)
-- D1: Promote `invocation_script_from_signature` / `signature_from_invocation` to `neo-vm::ScriptBuilder`
-- D2: Add `now_millis()` to `neo-primitives::time`
-- D3: Add `elapsed_us` / `elapsed_millis` to `neo-runtime::time` (or `neo-primitives::time`)
-- D4: Extend `impl_error_from!` macro for struct-variant `CoreError`; migrate 14 sites
+### Phase 3: Differential Protocol Parity
+**Goal**: Consensus-critical behavior is continuously compared with the official Neo v3.10.1 implementation across all scheduled hardforks.
+**Depends on**: Phase 2
+**Requirements**: [PROTO-02, VM-01, NATIVE-01]
+**Success Criteria**:
+  1. A versioned corpus covers script execution, faults, fees, notifications, storage writes, and native-contract side effects.
+  2. Differential tests run immediately before and after every MainNet/TestNet hardfork height.
+  3. Transaction results, application logs, fees, and post-state match Neo v3.10.1 byte-for-byte or by a documented canonical encoding.
+  4. Any optimized VM path remains disabled until the same corpus proves equivalent behavior.
+**Plans**: 3 plans
 
-### Plan 2.2 — Test fixtures (Theme E)
-- E1: Create `neo-test-fixtures` dev-only workspace member
-- Consolidate `make_transaction` / `make_ledger_block` / `store_block` from 4 crates
+Plans:
+- [ ] 03-01: Build the Neo v3.10.1 differential fixture and trace harness.
+- [ ] 03-02: Close VM and serialization divergences across hardfork boundaries.
+- [ ] 03-03: Close native-contract, fee, notification, and storage-transition divergences.
 
-**Verification**: workspace tests pass, no test regressions
-**ADR**: ADR-029 (cross-crate helpers consolidation)
+### Phase 4: P2P Interoperability and Canonical Sync
+**Goal**: The node interoperates with Neo N3 peers and imports one ordered canonical chain under realistic network conditions.
+**Depends on**: Phase 3
+**Requirements**: [P2P-01, SYNC-01, REORG-01, VALIDATION-01, VALIDATION-02]
+**Success Criteria**:
+  1. Handshake, address exchange, headers, inventories, payload requests, blocks, transactions, and extensible payloads interoperate with Neo v3.10.1 nodes.
+  2. Peer scoring, timeouts, backpressure, duplicate suppression, and bounded queues withstand malformed or slow peers.
+  3. Policy-aware stateful validation runs in the ordered canonical command loop before execution or persistence, preserving Neo v3.10.1 witness and peer-import semantics.
+  4. Header and block sync resume after disconnects and process forks/reorgs without violating ordered state mutation.
+  5. Multi-day TestNet/MainNet soak reports show advancing height, stable memory, bounded disk growth, and no silent service failure.
+**Plans**: 4 plans
 
----
+Plans:
+- [ ] 04-01: Add cross-client wire and live-peer interoperability tests.
+- [ ] 04-02: Wire policy-aware validation into the ordered canonical import loop with Neo v3.10.1 validity semantics.
+- [ ] 04-03: Harden peer lifecycle, request scheduling, backpressure, and reorg handling.
+- [ ] 04-04: Run and retain network soak evidence.
 
-## Phase 3 — Crate Consolidation + Architecture Honesty (B + G)
+### Phase 5: Full MainNet Replay and State Parity
+**Goal**: A genesis-to-tip MainNet replay produces the same canonical blocks, transaction outcomes, and state roots as Neo v3.10.1.
+**Depends on**: Phase 4
+**Requirements**: [REPLAY-01, STATE-01, RECOVERY-01]
+**Success Criteria**:
+  1. A transaction-bearing replay starts from an empty database and reaches the selected MainNet tip without bypassing canonical execution.
+  2. Block hashes, transaction VM states, fees, notifications, and state roots match trusted Neo v3.10.1 references at every retained checkpoint.
+  3. Hardfork boundary windows and deterministic random samples have retained machine-readable parity reports.
+  4. Interrupted replay resumes from the last atomic commit and reproduces the uninterrupted final state root.
+**Plans**: 3 plans
 
-**Goal**: Structural changes — merge the micro-crate, split the monolith, rename the colliding trait.
+Plans:
+- [ ] 05-01: Make the replay runner self-contained and reference-data aware.
+- [ ] 05-02: Run bounded transaction-bearing milestones and close the first divergence.
+- [ ] 05-03: Complete and retain a full MainNet replay proof.
 
-**Themes**: B (4 findings) + G (4 findings)
-**Estimated impact**: 1 crate merged, 1 crate split into 3-4, 1 trait rename, 1 trait extraction
-**Risk**: Medium — structural changes, import path updates across workspace
+### Phase 6: Verified Checkpoint Fast Sync
+**Goal**: A new node authenticates a checkpoint state, installs it atomically, and catches up through normal canonical validation substantially faster than full replay.
+**Depends on**: Phase 5
+**Requirements**: [FASTSYNC-01, FASTSYNC-02, SECURITY-01]
+**Success Criteria**:
+  1. Fast sync has an explicit trust model using authenticated manifests/checkpoints and strong content hashes; MD5 is never treated as authenticity.
+  2. State installation is staged, schema/network checked, root verified, and atomically promoted or discarded after a crash.
+  3. Headers establish the canonical checkpoint and post-checkpoint blocks execute through the normal ordered import pipeline.
+  4. Corrupt, equivocated, stale, wrong-network, and unavailable checkpoint sources fail closed with actionable diagnostics.
+  5. Reproducible benchmarks show wall-clock, CPU, memory, bandwidth, and disk improvements over full archive replay.
+**Plans**: 3 plans
 
-### Plan 3.1 — Crate consolidation (Theme B)
-- B1: Merge `neo-engine` into `neo-runtime` (after Phase 1 removed its dead parts)
-- B2: Split `neo-rpc` into `neo-rpc-api` / `neo-rpc-client` / `neo-rpc` (+ optional plugin crates)
-- B3: Feature-gate `neo-native-contracts` per contract (or split api/impl)
-- B4: Flip `neo-hsm` default features to `[]`
+Plans:
+- [ ] 06-01: Specify checkpoint format, trust policy, and atomic installation lifecycle using reth/Substrate patterns.
+- [ ] 06-02: Implement authenticated state download, verification, and promotion.
+- [ ] 06-03: Integrate canonical catch-up, adversarial tests, and benchmarks.
 
-### Plan 3.2 — Architecture honesty (Theme G)
-- G1: Rename `ConsensusService` trait → `ConsensusApi` (mirror ADR-007)
-- G2: Decide runtime service-trait seam: delete dead traits OR move to L2 `neo-runtime-api`
-- G3: Extract `Nep17MetadataReader` trait; remove `neo-wallets → neo-execution` dep
-- G4: Extract `StoreConfigBundle`; deduplicate `StoreProvider`/`ConfigProvider` impls
+### Phase 7: Production Hardening and Release
+**Goal**: The node has the evidence, controls, and operational surface required for a supported production release.
+**Depends on**: Phase 6
+**Requirements**: [SECURITY-02, PERF-01, RELEASE-01]
+**Success Criteria**:
+  1. Fuzz, property, concurrency, crash-recovery, and resource-exhaustion suites pass with retained reports.
+  2. Metrics and health endpoints distinguish peer, sync, execution, persistence, state-root, and degraded-service failures.
+  3. Operator documentation covers secure configuration, backup/restore, upgrades, rollback, pruning, and incident diagnosis.
+  4. Reproducible release artifacts, SBOM, dependency audit, threat model, and independent review are complete.
+  5. Production claims cite full replay, live interoperability, soak, and fast-sync evidence rather than test counts alone.
+**Plans**: 3 plans
 
-**Verification**: workspace tests pass, `cargo check -p neo-rpc --features client` light, layer boundary tests pass
-**ADR**: ADR-030 (crate consolidation) + ADR-031 (architecture honesty)
+Plans:
+- [ ] 07-01: Complete security and resilience gates.
+- [ ] 07-02: Tune performance from measured profiles and finish observability.
+- [ ] 07-03: Produce release artifacts, operations documentation, and acceptance evidence.
 
----
+## Progress
 
-## Phase 4 — Async/Blocking Correctness (F)
-
-**Goal**: Fix the two async/blocking correctness issues that force HSM/Nitro signers to spawn their own runtimes.
-
-**Themes**: F (2 findings)
-**Risk**: HIGH — touches consensus signing hot path and RPC wallet handlers
-
-### Plan 4.1 — Async signer
-- F1: Change `ConsensusSigner::sign` to `async fn` (or split sync/async traits)
-- Update all signers: software (sync), Nitro/HSM/Azure/GCP (async)
-- Update consensus driver to await
-
-### Plan 4.2 — Wallet future
-- F2: Rewrite `await_wallet_future` as `async fn` with `impl Future`
-- Push `block_in_place`/`spawn` decision up to RPC handler layer
-
-**Verification**: consensus test suite passes, RPC wallet tests pass, no runtime deadlocks
-**ADR**: ADR-032 (async signer correctness)
-
----
-
-## Phase Dependencies
-
-```
-Phase 1 (A+C) ──┬──→ Phase 2 (D+E) ──→ Phase 3 (B+G) ──→ Phase 4 (F)
-                │
-                └──→ Phase 3 depends on Phase 1's neo-engine cleanup
-```
-
-Phase 1 must complete first (dead code removal makes Phase 3's merge safe).
-Phase 2 can run after Phase 1 (helpers don't depend on structure).
-Phase 3 must follow Phase 1 (crate merge needs dead code gone first).
-Phase 4 must follow Phase 3 (async trait changes are cleaner after crate restructure).
-
-## Success Criteria (per phase)
-
-- [ ] `cargo check --workspace --tests` exits 0
-- [ ] `cargo test --workspace` — no regressions vs baseline (3356+ tests)
-- [ ] `cargo test -p neo-tests --test layer_boundary_tests` — 20/20 pass
-- [ ] ADR(s) written and design.md updated
-- [ ] Commit is atomic and describes the phase's changes
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 1. Reproducible Protocol Baseline | 0/2 | In progress | - |
+| 2. Fail-Closed Storage and Lifecycle | 0/3 | Not started | - |
+| 3. Differential Protocol Parity | 0/3 | Not started | - |
+| 4. P2P Interoperability and Canonical Sync | 0/4 | Not started | - |
+| 5. Full MainNet Replay and State Parity | 0/3 | Not started | - |
+| 6. Verified Checkpoint Fast Sync | 0/3 | Not started | - |
+| 7. Production Hardening and Release | 0/3 | Not started | - |
