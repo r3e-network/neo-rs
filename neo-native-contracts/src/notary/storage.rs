@@ -23,10 +23,13 @@ impl DepositState {
     }
 
     pub(in crate::notary) fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(vec![
-            StackValue::BigInteger(self.amount.to_signed_bytes_le()),
-            StackValue::Integer(i64::from(self.till)),
-        ])
+        StackValue::Struct(
+            neo_vm_rs::next_stack_item_id(),
+            vec![
+                StackValue::BigInteger(self.amount.to_signed_bytes_le()),
+                StackValue::Integer(i64::from(self.till)),
+            ],
+        )
     }
 
     pub(in crate::notary) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
@@ -163,7 +166,7 @@ impl Notary {
         data: &[u8],
     ) -> CoreResult<(UInt160, u32)> {
         let item = crate::support::codec::decode_stack_value(data, "Notary::onNEP17Payment data")?;
-        let StackValue::Array(items) = item else {
+        let StackValue::Array(_, items) = item else {
             return Err(CoreError::invalid_operation(
                 "Notary::onNEP17Payment data must be an array of 2 elements",
             ));

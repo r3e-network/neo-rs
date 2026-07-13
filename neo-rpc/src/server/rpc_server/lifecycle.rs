@@ -10,10 +10,10 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
+use neo_error::{CoreError, CoreResult};
 use parking_lot::RwLock;
-use rustls::ServerConfig;
 use tokio::{sync::oneshot, time::sleep};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use super::RpcServer;
 use super::http_policy::RpcHttpLayer;
@@ -22,24 +22,16 @@ use crate::server::rpc_transport::log_join_error;
 
 impl RpcServer {
     /// Start the jsonrpsee RPC server.
-    pub fn start_rpc_server(
-        &mut self,
-        handle: Weak<RwLock<Self>>,
-        _tls_config: Option<Arc<ServerConfig>>,
-    ) {
+    pub fn start_rpc_server(&mut self, handle: Weak<RwLock<Self>>) -> CoreResult<()> {
         if self.started {
-            return;
+            return Ok(());
         }
 
         self.self_handle = Some(handle.clone());
 
-        let auth_credentials = match self.rpc_auth_credentials() {
-            Ok(credentials) => credentials,
-            Err(err) => {
-                error!("invalid RPC authentication configuration: {}", err);
-                return;
-            }
-        };
+        let auth_credentials = self.rpc_auth_credentials().map_err(|err| {
+            CoreError::invalid_operation(format!("invalid RPC authentication configuration: {err}"))
+        })?;
 
         // Security warning for production deployments without TLS.
         let has_auth = auth_credentials.is_some();
@@ -56,12 +48,14 @@ impl RpcServer {
             );
         }
 
-        // The current jsonrpsee 0.24 transport does not yet support
-        // in-process TLS termination; the recommendation is to put
-        // the node behind a TLS-terminating reverse proxy. The
-        // `_tls_config` argument is retained for API compatibility with the
-        // previous in-process TLS hook.
-        let _ = _tls_config;
+        if !self.settings.ssl_cert.trim().is_empty()
+            || !self.settings.ssl_cert_password.is_empty()
+            || !self.settings.trusted_authorities.is_empty()
+        {
+            warn!(
+                "RPC SslCert/TrustedAuthorities settings are not used by the jsonrpsee transport; terminate TLS at a reverse proxy"
+            );
+        }
 
         let disabled_methods: Arc<HashSet<String>> = Arc::new(
             self.settings
@@ -72,24 +66,15 @@ impl RpcServer {
         );
 
         let address = SocketAddr::new(self.settings.bind_address, self.settings.port);
-        let std_listener = match std::net::TcpListener::bind(address) {
-            Ok(listener) => listener,
-            Err(err) => {
-                error!("error binding RPC server to {}: {}", address, err);
-                return;
-            }
-        };
-        let bound_addr = match std_listener.local_addr() {
-            Ok(addr) => addr,
-            Err(err) => {
-                error!("error getting RPC bound address: {}", err);
-                return;
-            }
-        };
-        if let Err(err) = std_listener.set_nonblocking(true) {
-            error!("error configuring RPC listener: {}", err);
-            return;
-        }
+        let std_listener = std::net::TcpListener::bind(address).map_err(|err| {
+            CoreError::invalid_operation(format!("error binding RPC server to {address}: {err}"))
+        })?;
+        let bound_addr = std_listener.local_addr().map_err(|err| {
+            CoreError::invalid_operation(format!("error getting RPC bound address: {err}"))
+        })?;
+        std_listener.set_nonblocking(true).map_err(|err| {
+            CoreError::invalid_operation(format!("error configuring RPC listener: {err}"))
+        })?;
 
         // Build the jsonrpsee module from the registered handlers. The public
         // method names are gathered from `self` (only the inner handler-map
@@ -98,13 +83,10 @@ impl RpcServer {
         // (`server.write().start_rpc_server(...)`); re-locking it here would
         // deadlock RPC startup.
         let methods = self.transport_method_names();
-        let module = match build_jsonrpsee_module_with_methods(handle, disabled_methods, methods) {
-            Ok(m) => m,
-            Err(err) => {
-                error!("error building jsonrpsee RPC module: {}", err);
-                return;
-            }
-        };
+        let module = build_jsonrpsee_module_with_methods(handle, disabled_methods, methods)
+            .map_err(|err| {
+                CoreError::invalid_operation(format!("error building jsonrpsee RPC module: {err}"))
+            })?;
 
         // Apply the configured DoS limits to the jsonrpsee builder. These are
         // native builder knobs plus a small HTTP policy middleware: the
@@ -140,20 +122,16 @@ impl RpcServer {
         // `std::net::TcpListener` and constructs the HTTP+WS server on top of
         // it. This keeps the HTTP+WS lifecycle in the canonical transport
         // builder instead of hand-rolled server glue.
-        let server = match jsonrpsee::server::Server::builder()
+        let server = jsonrpsee::server::Server::builder()
             .max_request_body_size(max_body)
             .max_connections(max_conns)
             .set_batch_request_config(batch_cfg)
             .enable_ws_ping(ping_cfg)
             .set_http_middleware(http_middleware)
             .build_from_tcp(std_listener)
-        {
-            Ok(s) => s,
-            Err(err) => {
-                error!("error building jsonrpsee server: {}", err);
-                return;
-            }
-        };
+            .map_err(|err| {
+                CoreError::invalid_operation(format!("error building jsonrpsee server: {err}"))
+            })?;
 
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let handle = server.start(module);
@@ -199,6 +177,7 @@ impl RpcServer {
             "Starting RPC server on {}:{} (network {})",
             self.settings.bind_address, self.settings.port, self.settings.network
         );
+        Ok(())
     }
 
     /// Stop the RPC server, purge sessions, and detach the active wallet.

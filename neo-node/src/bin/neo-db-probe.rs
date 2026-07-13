@@ -1255,7 +1255,7 @@ fn vm_state_name(state: VMState) -> &'static str {
 
 fn decode_hash_index_state(bytes: &[u8]) -> Result<HashIndexState> {
     let value = deserialize_stack_value(bytes).context("deserialize HashIndexState")?;
-    let StackValue::Struct(items) = value else {
+    let StackValue::Struct(_, items) = value else {
         bail!("expected HashIndexState struct");
     };
     ensure!(
@@ -1282,7 +1282,7 @@ fn decode_hash_index_state(bytes: &[u8]) -> Result<HashIndexState> {
 
 fn decode_neo_account_state(bytes: &[u8]) -> Result<NeoAccountStateProbe> {
     let value = deserialize_stack_value(bytes).context("deserialize NEO account state")?;
-    let StackValue::Struct(items) = value else {
+    let StackValue::Struct(_, items) = value else {
         bail!("expected NEO account state struct");
     };
     ensure!(
@@ -1359,7 +1359,7 @@ fn decode_nep17_account_balance(bytes: &[u8]) -> Result<BigInt> {
     }
     let value = deserialize_stack_value(bytes).context("deserialize NEP-17 account state")?;
 
-    let StackValue::Struct(items) = value else {
+    let StackValue::Struct(_, items) = value else {
         bail!("expected NEP-17 account state struct");
     };
     let balance = items

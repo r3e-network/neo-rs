@@ -47,7 +47,6 @@
 //! - `rpc_server_tokens_tracker`: Token tracker RPC endpoint handlers.
 //! - `rpc_server_utilities`: Utility RPC endpoint handlers.
 //! - `rpc_server_wallet`: Wallet compatibility RPC endpoint handlers.
-//! - `rpc_tls`: TLS configuration helpers for RPC transports.
 //! - `rpc_transport`: RPC transport startup, binding, and shutdown helpers.
 //! - `session`: RPC session records and connection-local state.
 //! - `smart_contract`: Smart-contract RPC endpoint handlers.
@@ -87,7 +86,6 @@ mod rpc_server_tokens_tracker;
 mod rpc_server_utilities;
 mod rpc_server_wallet;
 mod rpc_services;
-mod rpc_tls;
 mod rpc_transport;
 mod session;
 pub mod smart_contract;
@@ -117,7 +115,6 @@ pub use rpc_server_tokens_tracker::RpcServerTokensTracker;
 pub use rpc_server_utilities::RpcServerUtilities;
 pub use rpc_server_wallet::RpcServerWallet;
 pub use rpc_services::RpcServices;
-pub use rpc_tls::build_tls_config_from_settings;
 pub use session::Session;
 
 #[cfg(feature = "server")]

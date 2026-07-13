@@ -192,13 +192,17 @@ fn store_committee<S>(
     let items: Vec<StackValue> = committee
         .iter()
         .map(|pk| {
-            StackValue::Struct(vec![
-                StackValue::ByteString(pk.as_bytes().to_vec()),
-                StackValue::Integer(0),
-            ])
+            StackValue::Struct(
+                neo_vm_rs::next_stack_item_id(),
+                vec![
+                    StackValue::ByteString(pk.as_bytes().to_vec()),
+                    StackValue::Integer(0),
+                ],
+            )
         })
         .collect();
-    let bytes = serialize_test_stack_value(&StackValue::Array(items));
+    let bytes =
+        serialize_test_stack_value(&StackValue::Array(neo_vm_rs::next_stack_item_id(), items));
     let key = StorageKey::create(neo_token_id, PREFIX_COMMITTEE);
     store.add(key, StorageItem::from_bytes(bytes));
     store.try_commit().expect("commit test store");
@@ -212,10 +216,13 @@ fn store_candidate_state<S>(
 ) where
     S: neo_storage::persistence::Store,
 {
-    let item = StackValue::Struct(vec![
-        StackValue::Boolean(registered),
-        StackValue::BigInteger(votes.to_signed_bytes_le()),
-    ]);
+    let item = StackValue::Struct(
+        neo_vm_rs::next_stack_item_id(),
+        vec![
+            StackValue::Boolean(registered),
+            StackValue::BigInteger(votes.to_signed_bytes_le()),
+        ],
+    );
     let bytes = serialize_test_stack_value(&item);
     store_candidate_state_raw(store, candidate, bytes);
 }

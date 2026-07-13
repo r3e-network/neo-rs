@@ -146,10 +146,13 @@ fn application_executed_stack_renders_from_stack_value_without_legacy_stack_item
         VMState::HALT,
         None,
         0,
-        vec![StackValue::Struct(vec![
-            StackValue::Integer(1),
-            StackValue::ByteString(b"neo".to_vec()),
-        ])],
+        vec![StackValue::Struct(
+            neo_vm_rs::next_stack_item_id(),
+            vec![
+                StackValue::Integer(1),
+                StackValue::ByteString(b"neo".to_vec()),
+            ],
+        )],
     );
 
     let json = service.transaction_log_json(&UInt256::zero(), &exec);

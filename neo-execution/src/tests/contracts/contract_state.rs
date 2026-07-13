@@ -8,20 +8,19 @@ use neo_vm_rs::StackValue;
 /// stack data, so structural equality is the correct notion for round-trip / shape
 /// assertions.
 fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
-    use neo_vm_rs::StackValue::*;
-    match (a, b) {
-        (Buffer(x), Buffer(y)) => x == y,
-        (Array(x), Array(y)) | (Struct(x), Struct(y)) => {
-            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
-        }
-        (Map(x), Map(y)) => {
-            x.len() == y.len()
-                && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
-                    stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
-                })
-        }
-        _ => a == b,
-    }
+    a.structural_eq(b)
+}
+
+fn array(items: Vec<StackValue>) -> StackValue {
+    StackValue::Array(neo_vm_rs::next_stack_item_id(), items)
+}
+
+fn structure(items: Vec<StackValue>) -> StackValue {
+    StackValue::Struct(neo_vm_rs::next_stack_item_id(), items)
+}
+
+fn map(items: Vec<(StackValue, StackValue)>) -> StackValue {
+    StackValue::Map(neo_vm_rs::next_stack_item_id(), items)
 }
 
 #[test]
@@ -54,7 +53,7 @@ fn contract_state_projects_to_stack_value() {
     state.update_counter = 9;
 
     let left = state.to_stack_value();
-    let right = StackValue::Array(vec![
+    let right = array(vec![
         StackValue::Integer(-7),
         StackValue::Integer(9),
         StackValue::ByteString(hash.to_bytes()),
@@ -75,7 +74,7 @@ fn contract_state_reads_stack_value() {
 
     let mut state = ContractState::default();
     state
-        .from_stack_value(StackValue::Array(vec![
+        .from_stack_value(array(vec![
             StackValue::Integer(11),
             StackValue::Integer(3),
             StackValue::ByteString(hash.to_bytes()),
@@ -98,7 +97,7 @@ fn contract_state_rejects_invalid_integer_fields() {
     let manifest = ContractManifest::new("integer-bounds".to_string());
 
     let stack_value = |id, update_counter| {
-        StackValue::Array(vec![
+        array(vec![
             id,
             update_counter,
             StackValue::ByteString(hash.to_bytes()),
@@ -171,26 +170,23 @@ fn contract_record_pins_the_interoperable_stack_item_encoding() {
     // Self-consistency: the record equals the Rust BinarySerializer run
     // over a HAND-BUILT stack tree assembled per the C# composition rules
     // (ContractState.ToStackItem + ContractManifest.ToStackItem).
-    let expected_value = StackValue::Array(vec![
+    let expected_value = array(vec![
         StackValue::Integer(7),
         StackValue::Integer(9),
         StackValue::ByteString(hash.to_bytes()),
         StackValue::ByteString(nef.to_bytes()),
-        StackValue::Struct(vec![
+        structure(vec![
             StackValue::ByteString(b"Fixture".to_vec()),
-            StackValue::Array(Vec::new()), // groups
-            StackValue::Map(Vec::new()),   // features (always empty)
-            StackValue::Array(vec![StackValue::ByteString(b"NEP-17".to_vec())]),
-            StackValue::Struct(vec![
-                StackValue::Array(Vec::new()), // abi.methods
-                StackValue::Array(Vec::new()), // abi.events
+            array(Vec::new()), // groups
+            map(Vec::new()),   // features (always empty)
+            array(vec![StackValue::ByteString(b"NEP-17".to_vec())]),
+            structure(vec![
+                array(Vec::new()), // abi.methods
+                array(Vec::new()), // abi.events
             ]),
             // permissions: the default wildcard permission is
             // Struct[Null(contract), Null(methods)].
-            StackValue::Array(vec![StackValue::Struct(vec![
-                StackValue::Null,
-                StackValue::Null,
-            ])]),
+            array(vec![structure(vec![StackValue::Null, StackValue::Null])]),
             StackValue::Null,                         // trusts wildcard
             StackValue::ByteString(b"null".to_vec()), // extra absent
         ]),
@@ -319,7 +315,7 @@ fn contract_record_rejects_top_level_struct_like_csharp() {
     let hash = UInt160::from_bytes(&[0x33u8; 20]).expect("hash");
     let nef = NefFile::new("compiler".to_string(), vec![0x40]);
     let manifest = ContractManifest::new("StructRoot".to_string());
-    let malformed = StackValue::Struct(vec![
+    let malformed = structure(vec![
         StackValue::Integer(7),
         StackValue::Integer(0),
         StackValue::ByteString(hash.to_bytes()),

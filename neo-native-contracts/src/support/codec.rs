@@ -88,7 +88,7 @@ pub(crate) struct StructDecoder<'a> {
 impl<'a> StructDecoder<'a> {
     /// Creates a decoder from a `StackValue` that must be a `Struct`.
     pub fn new(value: &'a StackValue, label: &'a str) -> CoreResult<Self> {
-        let StackValue::Struct(items) = value else {
+        let StackValue::Struct(_, items) = value else {
             return Err(CoreError::invalid_data(format!("{label} is not a struct")));
         };
         Ok(Self { items, label })

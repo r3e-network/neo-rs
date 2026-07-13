@@ -10,20 +10,7 @@ use neo_vm_rs::StackValue;
 /// stack data, so structural equality is the correct notion for round-trip / shape
 /// assertions.
 fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
-    use neo_vm_rs::StackValue::*;
-    match (a, b) {
-        (Buffer(x), Buffer(y)) => x == y,
-        (Array(x), Array(y)) | (Struct(x), Struct(y)) => {
-            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
-        }
-        (Map(x), Map(y)) => {
-            x.len() == y.len()
-                && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
-                    stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
-                })
-        }
-        _ => a == b,
-    }
+    a.structural_eq(b)
 }
 
 #[test]
@@ -209,24 +196,41 @@ fn witness_rule_projects_to_neo_vm_rs_stack_value() {
     );
 
     let left = rule.to_stack_value();
-    let right = neo_vm_rs::StackValue::Array(vec![
-        neo_vm_rs::StackValue::Integer(WitnessRuleAction::Allow.to_byte().into()),
-        neo_vm_rs::StackValue::Array(vec![
-            neo_vm_rs::StackValue::Integer(WitnessConditionType::And.to_byte().into()),
-            neo_vm_rs::StackValue::Array(vec![
-                neo_vm_rs::StackValue::Array(vec![
-                    neo_vm_rs::StackValue::Integer(WitnessConditionType::Boolean.to_byte().into()),
-                    neo_vm_rs::StackValue::Boolean(true),
-                ]),
-                neo_vm_rs::StackValue::Array(vec![
-                    neo_vm_rs::StackValue::Integer(
-                        WitnessConditionType::ScriptHash.to_byte().into(),
+    let right = neo_vm_rs::StackValue::Array(
+        neo_vm_rs::next_stack_item_id(),
+        vec![
+            neo_vm_rs::StackValue::Integer(WitnessRuleAction::Allow.to_byte().into()),
+            neo_vm_rs::StackValue::Array(
+                neo_vm_rs::next_stack_item_id(),
+                vec![
+                    neo_vm_rs::StackValue::Integer(WitnessConditionType::And.to_byte().into()),
+                    neo_vm_rs::StackValue::Array(
+                        neo_vm_rs::next_stack_item_id(),
+                        vec![
+                            neo_vm_rs::StackValue::Array(
+                                neo_vm_rs::next_stack_item_id(),
+                                vec![
+                                    neo_vm_rs::StackValue::Integer(
+                                        WitnessConditionType::Boolean.to_byte().into(),
+                                    ),
+                                    neo_vm_rs::StackValue::Boolean(true),
+                                ],
+                            ),
+                            neo_vm_rs::StackValue::Array(
+                                neo_vm_rs::next_stack_item_id(),
+                                vec![
+                                    neo_vm_rs::StackValue::Integer(
+                                        WitnessConditionType::ScriptHash.to_byte().into(),
+                                    ),
+                                    neo_vm_rs::StackValue::ByteString(hash.to_bytes()),
+                                ],
+                            ),
+                        ],
                     ),
-                    neo_vm_rs::StackValue::ByteString(hash.to_bytes()),
-                ]),
-            ]),
-        ]),
-    ]);
+                ],
+            ),
+        ],
+    );
     assert!(
         stack_value_struct_eq(&left, &right),
         "structural StackValue mismatch: {left:?} vs {right:?}"

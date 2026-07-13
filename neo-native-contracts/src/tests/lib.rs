@@ -19,28 +19,18 @@ mod style;
 /// stack data, so structural equality is the correct notion for round-trip / shape
 /// assertions.
 fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
-    use neo_vm_rs::StackValue::*;
-    match (a, b) {
-        (Buffer(x), Buffer(y)) => x == y,
-        (Array(x), Array(y)) | (Struct(x), Struct(y)) => {
-            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
-        }
-        (Map(x), Map(y)) => {
-            x.len() == y.len()
-                && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
-                    stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
-                })
-        }
-        _ => a == b,
-    }
+    a.structural_eq(b)
 }
 
 #[test]
 fn account_state_interoperable_projection_matches_csharp_shape() {
     let state = AccountState::new(BigInt::from(12345));
-    let expected_value = StackValue::Struct(vec![StackValue::BigInteger(
-        BigInt::from(12345).to_signed_bytes_le(),
-    )]);
+    let expected_value = StackValue::Struct(
+        neo_vm_rs::next_stack_item_id(),
+        vec![StackValue::BigInteger(
+            BigInt::from(12345).to_signed_bytes_le(),
+        )],
+    );
 
     let projected = state.to_stack_value();
     assert!(
@@ -58,8 +48,16 @@ fn account_state_interoperable_projection_matches_csharp_shape() {
     Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
     assert_eq!(parsed, state);
 
-    assert!(AccountState::from_stack_value(StackValue::Array(vec![])).is_err());
-    assert!(AccountState::from_stack_value(StackValue::Struct(vec![])).is_err());
+    assert!(
+        AccountState::from_stack_value(StackValue::Array(neo_vm_rs::next_stack_item_id(), vec![],))
+            .is_err()
+    );
+    assert!(
+        AccountState::from_stack_value(
+            StackValue::Struct(neo_vm_rs::next_stack_item_id(), vec![],)
+        )
+        .is_err()
+    );
 }
 
 #[test]

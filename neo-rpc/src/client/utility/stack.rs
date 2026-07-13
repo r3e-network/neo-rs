@@ -100,9 +100,15 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, StackParseErro
             Ok(integer_stack_value(integer))
         }
         "ByteString" => parse_base64_stack_value(json, "ByteString", StackValue::ByteString),
-        "Buffer" => parse_base64_stack_value(json, "Buffer", StackValue::Buffer),
-        "Array" => parse_stack_sequence(json, "Array", StackValue::Array),
-        "Struct" => parse_stack_sequence(json, "Struct", StackValue::Struct),
+        "Buffer" => parse_base64_stack_value(json, "Buffer", |bytes| {
+            StackValue::Buffer(neo_vm_rs::next_stack_item_id(), bytes)
+        }),
+        "Array" => parse_stack_sequence(json, "Array", |items| {
+            StackValue::Array(neo_vm_rs::next_stack_item_id(), items)
+        }),
+        "Struct" => parse_stack_sequence(json, "Struct", |items| {
+            StackValue::Struct(neo_vm_rs::next_stack_item_id(), items)
+        }),
         "Map" => {
             let values = json
                 .get("value")
@@ -133,7 +139,7 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, StackParseErro
                     stack_item_from_json(value_obj)?,
                 ));
             }
-            Ok(StackValue::Map(entries))
+            Ok(StackValue::Map(neo_vm_rs::next_stack_item_id(), entries))
         }
         "Pointer" => {
             let index_token = json
@@ -173,16 +179,16 @@ pub fn stack_item_to_json(item: &StackValue) -> CoreResult<JObject> {
         StackValue::ByteString(bytes) => {
             insert_base64_value(&mut json, bytes);
         }
-        StackValue::Buffer(bytes) => {
+        StackValue::Buffer(_, bytes) => {
             insert_base64_value(&mut json, bytes);
         }
         StackValue::Pointer(index) => {
             json.insert("value".to_string(), JToken::Number(*index as f64));
         }
-        StackValue::Array(items) | StackValue::Struct(items) => {
+        StackValue::Array(_, items) | StackValue::Struct(_, items) => {
             json.insert("value".to_string(), stack_items_to_json(items)?);
         }
-        StackValue::Map(entries) => {
+        StackValue::Map(_, entries) => {
             json.insert(
                 "value".to_string(),
                 fallible_object_array(entries, |entry| {
@@ -272,11 +278,11 @@ pub fn stack_value_to_bigint(value: &StackValue) -> CoreResult<BigInt> {
         StackValue::Integer(value) => Ok(BigInt::from(*value)),
         StackValue::BigInteger(bytes)
         | StackValue::ByteString(bytes)
-        | StackValue::Buffer(bytes) => Ok(BigInt::from_signed_bytes_le(bytes)),
+        | StackValue::Buffer(_, bytes) => Ok(BigInt::from_signed_bytes_le(bytes)),
         StackValue::Null => Err(CoreError::other("Cannot convert Null to Integer")),
-        StackValue::Array(_)
-        | StackValue::Struct(_)
-        | StackValue::Map(_)
+        StackValue::Array(..)
+        | StackValue::Struct(..)
+        | StackValue::Map(..)
         | StackValue::Interop(_)
         | StackValue::Iterator(_)
         | StackValue::Pointer(_) => Err(CoreError::other("Cannot convert to Integer")),
@@ -289,7 +295,7 @@ pub fn stack_value_to_bool(value: &StackValue) -> bool {
 
 pub fn stack_value_to_string(value: &StackValue) -> CoreResult<String> {
     match value {
-        StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => {
+        StackValue::ByteString(bytes) | StackValue::Buffer(_, bytes) => {
             String::from_utf8(bytes.clone()).map_err(|err| CoreError::other(err.to_string()))
         }
         StackValue::Integer(_) | StackValue::BigInteger(_) => {
@@ -316,10 +322,10 @@ fn stack_value_type_name(item: &StackValue) -> &'static str {
         StackValue::Boolean(_) => "Boolean",
         StackValue::Integer(_) | StackValue::BigInteger(_) => "Integer",
         StackValue::ByteString(_) => "ByteString",
-        StackValue::Buffer(_) => "Buffer",
-        StackValue::Array(_) => "Array",
-        StackValue::Struct(_) => "Struct",
-        StackValue::Map(_) => "Map",
+        StackValue::Buffer(..) => "Buffer",
+        StackValue::Array(..) => "Array",
+        StackValue::Struct(..) => "Struct",
+        StackValue::Map(..) => "Map",
         StackValue::Interop(_) | StackValue::Iterator(_) => "InteropInterface",
         StackValue::Pointer(_) => "Pointer",
     }

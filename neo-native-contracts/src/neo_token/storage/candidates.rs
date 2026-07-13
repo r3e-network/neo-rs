@@ -454,13 +454,17 @@ impl NeoToken {
         candidates: &[(ECPoint, BigInt)],
     ) -> CoreResult<Vec<u8>> {
         let array = StackValue::Array(
+            neo_vm_rs::next_stack_item_id(),
             candidates
                 .iter()
                 .map(|(pk, votes)| {
-                    StackValue::Struct(vec![
-                        StackValue::ByteString(pk.to_bytes()),
-                        StackValue::BigInteger(votes.to_signed_bytes_le()),
-                    ])
+                    StackValue::Struct(
+                        neo_vm_rs::next_stack_item_id(),
+                        vec![
+                            StackValue::ByteString(pk.to_bytes()),
+                            StackValue::BigInteger(votes.to_signed_bytes_le()),
+                        ],
+                    )
                 })
                 .collect::<Vec<_>>(),
         );

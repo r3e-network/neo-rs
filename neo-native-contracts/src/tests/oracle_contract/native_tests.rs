@@ -14,20 +14,7 @@ use num_bigint::BigInt;
 /// stack data, so structural equality is the correct notion for round-trip / shape
 /// assertions.
 fn stack_value_struct_eq(a: &neo_vm_rs::StackValue, b: &neo_vm_rs::StackValue) -> bool {
-    use neo_vm_rs::StackValue::*;
-    match (a, b) {
-        (Buffer(x), Buffer(y)) => x == y,
-        (Array(x), Array(y)) | (Struct(x), Struct(y)) => {
-            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
-        }
-        (Map(x), Map(y)) => {
-            x.len() == y.len()
-                && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
-                    stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
-                })
-        }
-        _ => a == b,
-    }
+    a.structural_eq(b)
 }
 // ===== from oracle_native_tests.rs =====
 #[test]
@@ -359,6 +346,7 @@ fn oracle_id_list_interoperable_projection_matches_csharp_shape() {
     let ids = vec![0u64, 7, u64::MAX];
     let state = OracleIdList::new(ids.clone());
     let expected_value = StackValue::Array(
+        neo_vm_rs::next_stack_item_id(),
         ids.iter()
             .map(|id| StackValue::BigInteger(BigInt::from(*id).to_signed_bytes_le()))
             .collect::<Vec<_>>(),

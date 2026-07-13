@@ -426,9 +426,10 @@ fn has_key<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmR
         StackItem::ByteString(bytes) => {
             byte_sequence_has_key(neo_vm_rs::StackValue::ByteString(bytes.clone()), &key)?
         }
-        StackItem::Buffer(buffer) => {
-            byte_sequence_has_key(neo_vm_rs::StackValue::Buffer(buffer.data()), &key)?
-        }
+        StackItem::Buffer(buffer) => byte_sequence_has_key(
+            neo_vm_rs::StackValue::Buffer(buffer.id() as u64, buffer.data()),
+            &key,
+        )?,
         _ => {
             return Err(VmError::invalid_type_simple(
                 "Expected Array, Struct, Map, ByteString, or Buffer",
@@ -655,7 +656,10 @@ fn pick_item<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> 
         )?,
         StackItem::Buffer(buffer) => {
             let idx = normalize_index("Buffer", &key.as_integer()?, buffer.len())?;
-            pick_byte_sequence_item(neo_vm_rs::StackValue::Buffer(buffer.data()), idx)?
+            pick_byte_sequence_item(
+                neo_vm_rs::StackValue::Buffer(buffer.id() as u64, buffer.data()),
+                idx,
+            )?
         }
         _ => {
             return Err(VmError::invalid_type_simple(

@@ -117,6 +117,29 @@ fn assert_neo_exception(response: &Value, error: &RpcException) {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn rpc_start_reports_listener_bind_failure() {
+    let occupied = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind occupied port");
+    let port = occupied.local_addr().expect("occupied address").port();
+    let config = RpcServerConfig {
+        bind_address: IpAddr::V4(Ipv4Addr::LOCALHOST),
+        port,
+        ..RpcServerConfig::default()
+    };
+    let server = Arc::new(RwLock::new(build_server_with_config(config)));
+
+    let error = server
+        .write()
+        .start_rpc_server(Arc::downgrade(&server))
+        .expect_err("occupied RPC port must fail startup");
+
+    assert!(
+        error.to_string().contains("error binding RPC server"),
+        "unexpected error: {error}"
+    );
+    assert!(!server.read().is_started());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn module_includes_existing_smoke_methods() {
     let server = build_server_with_handlers();
     let module = build_jsonrpsee_module(Arc::downgrade(&server)).expect("module");
@@ -278,7 +301,8 @@ async fn http_transport_enforces_basic_auth_when_configured() {
     let server = Arc::new(RwLock::new(server));
     server
         .write()
-        .start_rpc_server(Arc::downgrade(&server), None);
+        .start_rpc_server(Arc::downgrade(&server))
+        .expect("start RPC server");
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let client = reqwest::Client::new();
@@ -332,7 +356,8 @@ async fn http_transport_emits_cors_headers_for_allowed_origin() {
     let server = Arc::new(RwLock::new(server));
     server
         .write()
-        .start_rpc_server(Arc::downgrade(&server), None);
+        .start_rpc_server(Arc::downgrade(&server))
+        .expect("start RPC server");
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let client = reqwest::Client::new();
@@ -378,7 +403,8 @@ async fn http_transport_answers_cors_preflight_without_basic_auth() {
     let server = Arc::new(RwLock::new(server));
     server
         .write()
-        .start_rpc_server(Arc::downgrade(&server), None);
+        .start_rpc_server(Arc::downgrade(&server))
+        .expect("start RPC server");
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let client = reqwest::Client::new();

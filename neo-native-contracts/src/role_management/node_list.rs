@@ -73,6 +73,7 @@ impl NodeList {
 
     pub(super) fn to_stack_value(&self) -> StackValue {
         StackValue::Array(
+            neo_vm_rs::next_stack_item_id(),
             self.nodes
                 .iter()
                 .map(|point| StackValue::ByteString(point.to_bytes()))
@@ -81,7 +82,7 @@ impl NodeList {
     }
 
     pub(super) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Array(items) = stack_value else {
+        let StackValue::Array(_, items) = stack_value else {
             return Err(CoreError::invalid_data(
                 "RoleManagement node list is not an array",
             ));

@@ -17,9 +17,9 @@ fuzz_target!(|data: &[u8]| {
     // Fuzz transaction deserialization from raw bytes
     // This is a critical attack surface as malformed transactions
     // could crash the node or cause resource exhaustion
-    
+
     let mut reader = MemoryReader::new(data);
-    
+
     // Attempt to deserialize a transaction from fuzzed input
     // We expect this to either succeed or return an error,
     // but it should never panic

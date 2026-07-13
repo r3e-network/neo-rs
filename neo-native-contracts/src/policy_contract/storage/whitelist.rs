@@ -135,12 +135,15 @@ impl WhitelistedContractView {
     }
 
     pub(super) fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(vec![
-            StackValue::ByteString(self.contract_hash.to_bytes()),
-            StackValue::ByteString(self.method.as_bytes().to_vec()),
-            StackValue::Integer(i64::from(self.arg_count)),
-            StackValue::Integer(self.fixed_fee),
-        ])
+        StackValue::Struct(
+            neo_vm_rs::next_stack_item_id(),
+            vec![
+                StackValue::ByteString(self.contract_hash.to_bytes()),
+                StackValue::ByteString(self.method.as_bytes().to_vec()),
+                StackValue::Integer(i64::from(self.arg_count)),
+                StackValue::Integer(self.fixed_fee),
+            ],
+        )
     }
 }
 

@@ -35,7 +35,6 @@ pub use compression::{Compression, CompressionAlgorithm, CompressionResult};
 pub use json_serializer::JsonSerializer;
 pub use providers::{MemorySnapshot, MemoryStore, MemoryStoreProvider};
 pub use serialization::{
-    compress_data, decompress_data, deserialize, deserialize_json, deserialize_neo_binary,
-    estimate_serialized_size, serialize, serialize_json, serialize_neo_binary,
-    validate_serialization,
+    compress_data, decompress_data, deserialize_json, deserialize_neo_binary, serialize_json,
+    serialize_neo_binary,
 };

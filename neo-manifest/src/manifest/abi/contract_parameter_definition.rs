@@ -74,15 +74,18 @@ impl ContractParameterDefinition {
 
     /// Converts to a neo-vm-rs stack value (matches C# `ContractParameterDefinition.ToStackItem` layout).
     pub fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(vec![
-            StackValue::ByteString(self.name.as_bytes().to_vec()),
-            StackValue::Integer(self.param_type as u8 as i64),
-        ])
+        StackValue::Struct(
+            neo_vm_rs::next_stack_item_id(),
+            vec![
+                StackValue::ByteString(self.name.as_bytes().to_vec()),
+                StackValue::Integer(self.param_type as u8 as i64),
+            ],
+        )
     }
 
     /// Updates this definition from a neo-vm-rs stack value.
     pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
-        let StackValue::Struct(items) = stack_value else {
+        let StackValue::Struct(_, items) = stack_value else {
             return Err(CoreError::invalid_format(
                 "ContractParameterDefinition expects Struct stack value",
             ));

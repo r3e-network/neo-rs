@@ -64,20 +64,23 @@ pub(crate) fn stack_value_snapshot(item: &StackItem) -> StackValue {
             None => StackValue::BigInteger(value.to_signed_bytes_le()),
         },
         StackItem::ByteString(bytes) => StackValue::ByteString(bytes.clone()),
-        StackItem::Buffer(buffer) => StackValue::Buffer(buffer.data()),
+        StackItem::Buffer(buffer) => StackValue::Buffer(buffer.id() as u64, buffer.data()),
         StackItem::Array(array) => StackValue::Array(
+            array.id() as u64,
             array
                 .iter()
                 .map(|item| stack_value_snapshot(&item))
                 .collect(),
         ),
         StackItem::Struct(structure) => StackValue::Struct(
+            structure.id() as u64,
             structure
                 .iter()
                 .map(|item| stack_value_snapshot(&item))
                 .collect(),
         ),
         StackItem::Map(map) => StackValue::Map(
+            map.id() as u64,
             map.iter()
                 .map(|(key, value)| (stack_value_snapshot(&key), stack_value_snapshot(&value)))
                 .collect(),

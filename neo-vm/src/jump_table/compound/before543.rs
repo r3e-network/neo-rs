@@ -168,7 +168,10 @@ pub(crate) fn pick_item_before543<S>(
         }
         StackItem::Buffer(buffer) => {
             let idx = before543_checked_index("Buffer", &key, buffer.len())?;
-            pick_byte_sequence_item(neo_vm_rs::StackValue::Buffer(buffer.data()), idx)?
+            pick_byte_sequence_item(
+                neo_vm_rs::StackValue::Buffer(buffer.id() as u64, buffer.data()),
+                idx,
+            )?
         }
         _ => {
             return Err(VmError::invalid_type_simple(

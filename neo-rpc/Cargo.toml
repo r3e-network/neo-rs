@@ -98,13 +98,6 @@ tracing = { workspace = true }
 jsonrpsee = { version = "0.24.10", optional = true, default-features = false, features = ["server"] }
 tower = { version = "0.4", optional = true }
 
-# TLS (server feature)
-tokio-rustls = { version = "0.24", optional = true }
-rustls = { version = "0.21", optional = true }
-rustls-native-certs = { version = "0.6", optional = true }
-p12 = { version = "0.6", optional = true }
-sha1 = { version = "0.10", optional = true }
-
 # Rate limiting (server feature)
 dashmap = { workspace = true, optional = true }
 governor = { workspace = true, optional = true }
@@ -178,11 +171,6 @@ server = [
     "dep:dashmap",
     "dep:governor",
     "dep:futures",
-    "dep:tokio-rustls",
-    "dep:rustls",
-    "dep:rustls-native-certs",
-    "dep:p12",
-    "dep:sha1",
 ]
 client = [
     # Shared client+server deps

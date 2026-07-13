@@ -20,10 +20,13 @@ impl HashIndexState {
     }
 
     pub(crate) fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(vec![
-            StackValue::ByteString(self.hash.to_bytes()),
-            StackValue::Integer(i64::from(self.index)),
-        ])
+        StackValue::Struct(
+            neo_vm_rs::next_stack_item_id(),
+            vec![
+                StackValue::ByteString(self.hash.to_bytes()),
+                StackValue::Integer(i64::from(self.index)),
+            ],
+        )
     }
 
     pub(crate) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
@@ -88,6 +91,7 @@ impl LedgerContract {
         method: &str,
     ) -> CoreResult<Vec<u8>> {
         let item = StackValue::Array(
+            neo_vm_rs::next_stack_item_id(),
             signers
                 .iter()
                 .map(neo_payloads::Signer::to_stack_value)

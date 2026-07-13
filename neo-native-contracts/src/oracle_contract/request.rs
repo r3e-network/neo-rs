@@ -57,20 +57,23 @@ impl OracleRequest {
             Some(filter) => StackValue::ByteString(filter.as_bytes().to_vec()),
             None => StackValue::Null,
         };
-        StackValue::Array(vec![
-            StackValue::ByteString(self.original_tx_id.to_bytes()),
-            StackValue::Integer(self.gas_for_response),
-            StackValue::ByteString(self.url.as_bytes().to_vec()),
-            filter_item,
-            StackValue::ByteString(self.callback_contract.to_bytes()),
-            StackValue::ByteString(self.callback_method.as_bytes().to_vec()),
-            StackValue::ByteString(self.user_data.clone()),
-        ])
+        StackValue::Array(
+            neo_vm_rs::next_stack_item_id(),
+            vec![
+                StackValue::ByteString(self.original_tx_id.to_bytes()),
+                StackValue::Integer(self.gas_for_response),
+                StackValue::ByteString(self.url.as_bytes().to_vec()),
+                filter_item,
+                StackValue::ByteString(self.callback_contract.to_bytes()),
+                StackValue::ByteString(self.callback_method.as_bytes().to_vec()),
+                StackValue::ByteString(self.user_data.clone()),
+            ],
+        )
     }
 
     /// Parses the C# `OracleRequest.FromStackItem` layout from a StackValue.
     pub fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Array(items) = stack_value else {
+        let StackValue::Array(_, items) = stack_value else {
             return Err(CoreError::invalid_data("OracleRequest is not an array"));
         };
         if items.len() != 7 {
@@ -133,6 +136,7 @@ impl OracleIdList {
 
     pub(super) fn to_stack_value(&self) -> StackValue {
         StackValue::Array(
+            neo_vm_rs::next_stack_item_id(),
             self.ids
                 .iter()
                 .map(|id| StackValue::BigInteger(BigInt::from(*id).to_signed_bytes_le()))
@@ -141,7 +145,7 @@ impl OracleIdList {
     }
 
     pub(super) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Array(items) = stack_value else {
+        let StackValue::Array(_, items) = stack_value else {
             return Err(CoreError::invalid_data("Oracle IdList is not an array"));
         };
         let mut ids = Vec::with_capacity(items.len());

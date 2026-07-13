@@ -16,7 +16,7 @@ pub(in crate::neo_token) struct NeoAccountStateView {
 impl NeoAccountStateView {
     pub(in crate::neo_token) fn to_stack_value(&self) -> StackValue {
         let mut items = match crate::AccountState::new(self.balance.clone()).to_stack_value() {
-            StackValue::Struct(items) => items,
+            StackValue::Struct(_, items) => items,
             _ => unreachable!("AccountState always projects to Struct"),
         };
         items.push(StackValue::Integer(i64::from(self.balance_height)));
@@ -27,7 +27,7 @@ impl NeoAccountStateView {
         items.push(StackValue::BigInteger(
             self.last_gas_per_vote.to_signed_bytes_le(),
         ));
-        StackValue::Struct(items)
+        StackValue::Struct(neo_vm_rs::next_stack_item_id(), items)
     }
 
     pub(in crate::neo_token) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
@@ -69,10 +69,13 @@ impl CandidateState {
     }
 
     pub(in crate::neo_token) fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(vec![
-            StackValue::Boolean(self.registered),
-            StackValue::BigInteger(self.votes.to_signed_bytes_le()),
-        ])
+        StackValue::Struct(
+            neo_vm_rs::next_stack_item_id(),
+            vec![
+                StackValue::Boolean(self.registered),
+                StackValue::BigInteger(self.votes.to_signed_bytes_le()),
+            ],
+        )
     }
 
     pub(in crate::neo_token) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
@@ -106,20 +109,24 @@ impl CachedCommittee {
 
     pub(crate) fn to_stack_value(&self) -> StackValue {
         StackValue::Array(
+            neo_vm_rs::next_stack_item_id(),
             self.members
                 .iter()
                 .map(|(point, votes)| {
-                    StackValue::Struct(vec![
-                        StackValue::ByteString(point.to_bytes()),
-                        StackValue::BigInteger(votes.to_signed_bytes_le()),
-                    ])
+                    StackValue::Struct(
+                        neo_vm_rs::next_stack_item_id(),
+                        vec![
+                            StackValue::ByteString(point.to_bytes()),
+                            StackValue::BigInteger(votes.to_signed_bytes_le()),
+                        ],
+                    )
                 })
                 .collect(),
         )
     }
 
     pub(crate) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Array(array) = stack_value else {
+        let StackValue::Array(_, array) = stack_value else {
             return Err(CoreError::invalid_data("committee cache is not an array"));
         };
         let mut members = Vec::with_capacity(array.len());

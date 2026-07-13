@@ -1,32 +1,6 @@
 use super::*;
 
 // ============================================================================
-// Binary Serialization Tests
-// ============================================================================
-
-#[test]
-fn serialize_and_deserialize_roundtrip() {
-    let data: Vec<i32> = vec![1, 2, 3, 4, 5];
-    let serialized = serialize(&data).unwrap();
-    let deserialized: Vec<i32> = deserialize(&serialized).unwrap();
-    assert_eq!(data, deserialized);
-}
-
-#[test]
-fn serialize_string() {
-    let data = "Hello, Neo!".to_string();
-    let serialized = serialize(&data).unwrap();
-    let deserialized: String = deserialize(&serialized).unwrap();
-    assert_eq!(data, deserialized);
-}
-
-#[test]
-fn deserialize_empty_data_returns_error() {
-    let result: neo_error::Result<i32> = deserialize(&[]);
-    assert!(result.is_err());
-}
-
-// ============================================================================
 // JSON Serialization Tests
 // ============================================================================
 
@@ -55,36 +29,6 @@ fn deserialize_json_empty_returns_error() {
 fn deserialize_json_whitespace_only_returns_error() {
     let result: neo_error::Result<i32> = deserialize_json("   ");
     assert!(result.is_err());
-}
-
-// ============================================================================
-// Size Estimation Tests
-// ============================================================================
-
-#[test]
-fn estimate_serialized_size_matches_actual() {
-    let data: Vec<i32> = vec![1, 2, 3, 4, 5];
-    let estimated = estimate_serialized_size(&data).unwrap();
-    let actual = serialize(&data).unwrap().len();
-    assert_eq!(estimated, actual);
-}
-
-// ============================================================================
-// Validation Tests
-// ============================================================================
-
-#[test]
-fn validate_serialization_returns_true_for_valid_data() {
-    let data: Vec<i32> = vec![1, 2, 3, 4, 5];
-    let result = validate_serialization(&data).unwrap();
-    assert!(result);
-}
-
-#[test]
-fn validate_serialization_string() {
-    let data = "Test string".to_string();
-    let result = validate_serialization(&data).unwrap();
-    assert!(result);
 }
 
 // ============================================================================

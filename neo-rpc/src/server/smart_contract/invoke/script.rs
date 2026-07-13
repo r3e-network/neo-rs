@@ -75,7 +75,10 @@ pub(in crate::server::smart_contract) fn contract_parameter_to_stack_value(
                 .iter()
                 .map(contract_parameter_to_stack_value)
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(StackValue::Array(converted))
+            Ok(StackValue::Array(
+                neo_vm_rs::next_stack_item_id(),
+                converted,
+            ))
         }
         ContractParameterValue::Map(entries) => {
             let mut map = Vec::with_capacity(entries.len());
@@ -85,7 +88,7 @@ pub(in crate::server::smart_contract) fn contract_parameter_to_stack_value(
                     contract_parameter_to_stack_value(value)?,
                 ));
             }
-            Ok(StackValue::Map(map))
+            Ok(StackValue::Map(neo_vm_rs::next_stack_item_id(), map))
         }
         ContractParameterValue::InteropInterface => Err(invalid_params(
             "InteropInterface parameters are not supported in invoke RPCs",

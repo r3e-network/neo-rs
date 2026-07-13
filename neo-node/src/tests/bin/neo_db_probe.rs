@@ -108,12 +108,15 @@ fn decode_nep17_account_state_balance() {
 #[test]
 fn decode_neo_account_state_reads_reward_markers() {
     let vote_to = [0x02u8; 33];
-    let value = StackValue::Struct(vec![
-        StackValue::Integer(100),
-        StackValue::Integer(151_116),
-        StackValue::ByteString(vote_to.to_vec()),
-        StackValue::BigInteger(BigInt::from(123456789u64).to_signed_bytes_le()),
-    ]);
+    let value = StackValue::Struct(
+        neo_vm_rs::next_stack_item_id(),
+        vec![
+            StackValue::Integer(100),
+            StackValue::Integer(151_116),
+            StackValue::ByteString(vote_to.to_vec()),
+            StackValue::BigInteger(BigInt::from(123456789u64).to_signed_bytes_le()),
+        ],
+    );
     let bytes = BinarySerializer::serialize_stack_value_default(&value).expect("serialize");
 
     let state = decode_neo_account_state(&bytes).expect("decode NEO account state");

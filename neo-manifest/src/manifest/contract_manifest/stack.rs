@@ -44,6 +44,7 @@ impl ContractManifest {
         let trusts_item = match &self.trusts {
             WildCardContainer::Wildcard => StackValue::Null,
             WildCardContainer::List(trusts) => StackValue::Array(
+                neo_vm_rs::next_stack_item_id(),
                 trusts
                     .iter()
                     .map(ContractPermissionDescriptor::to_stack_value)
@@ -58,17 +59,20 @@ impl ContractManifest {
             None => b"null".to_vec(),
         };
 
-        StackValue::Struct(vec![
-            StackValue::ByteString(self.name.as_bytes().to_vec()),
-            StackValue::Array(group_items),
-            // C# ContractManifest.ToStackItem always emits an empty features map.
-            StackValue::Map(Vec::new()),
-            StackValue::Array(standards_items),
-            self.abi.to_stack_value(),
-            StackValue::Array(permission_items),
-            trusts_item,
-            StackValue::ByteString(extra_bytes),
-        ])
+        StackValue::Struct(
+            neo_vm_rs::next_stack_item_id(),
+            vec![
+                StackValue::ByteString(self.name.as_bytes().to_vec()),
+                StackValue::Array(neo_vm_rs::next_stack_item_id(), group_items),
+                // C# ContractManifest.ToStackItem always emits an empty features map.
+                StackValue::Map(neo_vm_rs::next_stack_item_id(), Vec::new()),
+                StackValue::Array(neo_vm_rs::next_stack_item_id(), standards_items),
+                self.abi.to_stack_value(),
+                StackValue::Array(neo_vm_rs::next_stack_item_id(), permission_items),
+                trusts_item,
+                StackValue::ByteString(extra_bytes),
+            ],
+        )
     }
 
     /// Populates the manifest from the VM stack-value shape used by native interop.
@@ -76,7 +80,7 @@ impl ContractManifest {
         &mut self,
         stack_value: StackValue,
     ) -> std::result::Result<(), CoreError> {
-        let StackValue::Struct(items) = stack_value else {
+        let StackValue::Struct(_, items) = stack_value else {
             return Err(CoreError::invalid_format(
                 "ContractManifest expects Struct stack value",
             ));
@@ -96,7 +100,7 @@ impl ContractManifest {
             .map_err(|_| CoreError::invalid_format("ContractManifest name must be valid UTF-8"))?;
 
         self.groups = match &items[1] {
-            StackValue::Array(groups) => {
+            StackValue::Array(_, groups) => {
                 let mut values = Vec::with_capacity(groups.len());
                 for item in groups {
                     values.push(ContractGroup::try_from_stack_value(item.clone())?);
@@ -110,7 +114,7 @@ impl ContractManifest {
             }
         };
 
-        if let StackValue::Map(features) = &items[2] {
+        if let StackValue::Map(_, features) = &items[2] {
             if !features.is_empty() {
                 return Err(CoreError::invalid_format(
                     "ContractManifest features map must be empty",
@@ -124,7 +128,7 @@ impl ContractManifest {
         self.features.clear();
 
         self.supported_standards = match &items[3] {
-            StackValue::Array(standards) => {
+            StackValue::Array(_, standards) => {
                 let mut values = Vec::with_capacity(standards.len());
                 for item in standards {
                     if matches!(item, StackValue::Null) {
@@ -158,7 +162,7 @@ impl ContractManifest {
         self.abi = abi;
 
         self.permissions = match &items[5] {
-            StackValue::Array(permissions) => {
+            StackValue::Array(_, permissions) => {
                 let mut values = Vec::new();
                 for item in permissions {
                     let mut permission = ContractPermission::default_wildcard();
@@ -176,7 +180,7 @@ impl ContractManifest {
 
         self.trusts = match &items[6] {
             StackValue::Null => WildCardContainer::create_wildcard(),
-            StackValue::Array(trusts) => {
+            StackValue::Array(_, trusts) => {
                 let mut values = Vec::with_capacity(trusts.len());
                 for item in trusts {
                     values.push(ContractPermissionDescriptor::from_stack_value(
@@ -193,7 +197,7 @@ impl ContractManifest {
         };
 
         self.extra = match &items[7] {
-            StackValue::ByteString(bytes) | StackValue::Buffer(bytes) => {
+            StackValue::ByteString(bytes) | StackValue::Buffer(_, bytes) => {
                 parse_extra_bytes(bytes.as_slice())?
             }
             other => {

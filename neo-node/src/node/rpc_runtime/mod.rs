@@ -73,7 +73,10 @@ pub(super) fn start_rpc_server(
 
     let server = Arc::new(parking_lot::RwLock::new(server));
     let weak = Arc::downgrade(&server);
-    server.write().start_rpc_server(weak, None);
+    server
+        .write()
+        .start_rpc_server(weak)
+        .map_err(|err| anyhow::anyhow!("starting RPC server: {err}"))?;
     info!(target: "neo", %bind_address, port, "RPC server started");
     Ok(server)
 }
