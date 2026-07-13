@@ -411,22 +411,22 @@ docker image inspect "neo-rs:phase1-$sha" --format '{{.Id}}'
 
 All implementation-relevant claims were verified against the current codebase, local command output, official immutable Neo tags, official Cargo/cargo-deny documentation, or the registry. No `[ASSUMED]` claim is used. [VERIFIED: source inventory below]
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Where should the temporary bincode exception be tracked?**
    - What we know: `bincode 1.3.3` is unmaintained, generic `neo-serialization` helpers use it only in their own module/tests, and consensus recovery files depend on its existing bytes. [VERIFIED: usage search]
    - What's unclear: There is no issue identifier recorded in `deny.toml`; its policy requires written justification and tracking. [VERIFIED: `deny.toml`]
-   - Recommendation: Remove bincode from the unused generic helper surface now, document a root-only RUSTSEC-2025-0141 exception with Phase 2 plan 02-03 as its removal tracker, and migrate recovery bytes under an explicit version in Phase 2. [RECOMMENDATION]
+   - RESOLVED: Remove bincode from the unused generic helper surface now, document a root-only RUSTSEC-2025-0141 exception with Phase 2 plan 02-03 as its removal tracker, and migrate recovery bytes under an explicit version in Phase 2. [DECIDED]
 
 2. **Are live reference endpoints available for final supplemental validation?**
    - What we know: The validator can use configurable C#/NeoGo candidates and exits neutral when none is reachable. [VERIFIED: validator script]
    - What's unclear: Endpoint reachability is time-dependent and was not used as a Phase 1 prerequisite during research.
-   - Recommendation: Run MainNet and TestNet validation when endpoints are reachable, retain artifacts, and never count a neutral/unreachable run as protocol parity proof. [RECOMMENDATION]
+   - RESOLVED: Live endpoints are supplemental, not a Phase 1 gate. Run MainNet and TestNet validation when endpoints are reachable, retain artifacts, and never count a neutral/unreachable run as protocol parity proof. [DECIDED]
 
 3. **What commit will be the evidence anchor?**
    - What we know: The worktree contains extensive pre-existing edits, and final evidence must describe one exact source tree. [VERIFIED: git status]
    - What's unclear: The phase implementation commits do not exist yet.
-   - Recommendation: Generate the final evidence only after both phase plans commit their scoped work, using the resulting detached commit. [RECOMMENDATION]
+   - RESOLVED: Generate the final evidence only after both phase plans commit their scoped work, using the resulting detached commit. [DECIDED]
 
 ## Environment Availability
 
