@@ -135,6 +135,34 @@ fn memory_runtime_store() -> Arc<neo_storage::persistence::providers::RuntimeSto
 mod indexer;
 
 #[test]
+fn state_service_only_composition_skips_replay_artifact_copies() {
+    use neo_blockchain::SystemContext;
+
+    let settings = Arc::new(ProtocolSettings::default());
+    let store = Arc::new(MemoryStore::new());
+    let store_cache = neo_storage::persistence::StoreCache::new_from_store(store, false);
+    let snapshot = Arc::new(store_cache.data_cache().clone());
+    let state_store = Arc::new(neo_state_service::StateStore::with_mpt(false));
+    let state_service =
+        Arc::new(neo_state_service::commit_handlers::StateServiceCommitHandlers::new(state_store));
+    let context: TestDaemonContext<neo_native_contracts::StandardNativeProvider> = daemon_context(
+        Arc::clone(&settings),
+        snapshot,
+        store_cache,
+        Some(state_service),
+        true,
+        None,
+        native_provider(),
+        None,
+    );
+    let block = neo_blockchain::genesis_block(settings.as_ref()).expect("genesis block");
+
+    assert!(
+        !context.requires_replay_artifacts(&block, neo_blockchain::BlockPersistContext::live())
+    );
+}
+
+#[test]
 fn static_archive_fences_before_canonical_commit_and_recovers_an_ahead_failure() {
     use neo_blockchain::{
         BlockPersistContext, BlockProvider, NativePersistOptions, NativePersistResources,
@@ -1798,6 +1826,11 @@ async fn daemon_context_dispatches_application_logs_handlers() {
     header.set_index(7);
     let mut block = Block::from_parts(header, vec![tx.clone()]);
     block.try_rebuild_merkle_root().expect("merkle root");
+
+    assert!(ctx.requires_replay_artifacts(&block, neo_blockchain::BlockPersistContext::live()));
+    assert!(
+        !ctx.requires_replay_artifacts(&block, neo_blockchain::BlockPersistContext::catch_up())
+    );
 
     let mut executed = ApplicationExecuted::new(
         Some(tx),

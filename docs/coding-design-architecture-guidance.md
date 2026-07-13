@@ -361,7 +361,16 @@ Priority order for crate refactors:
    Compose finalized consumers before service startup; do not add mutable late
    registration. An active finalized projection forces per-block durability
    near tip so its snapshot remains fixed at one height. Observer-free catch-up
-   batches may omit per-height artifacts. A delivery failure after canonical
+   batches may omit per-height artifacts. Treat rich execution artifacts as a
+   statically composed capability: capture them only when the resolved import
+   mode permits observer delivery and concrete commit hooks report a consumer
+   for that persistence context. Keep the query independent of mutable peer-tip
+   and projection-checkpoint state so eligibility cannot change between capture
+   and the committing hook. Keep the trait default conservative for external
+   compositions, and let built-in no-op/StateService-only compositions opt out.
+   Never use this optimization to skip VM execution, native hooks, Ledger
+   VM-state recording, StateService, archival, or durability. A delivery
+   failure after canonical
    durability requests clean shutdown and must never be described as a Ledger
    rollback. Neo finalized projection delivery is committed-only; exceptional
    revert awareness remains explicit on the lifecycle stream.

@@ -237,7 +237,12 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   dispatched stream only after canonical durability. The separate
   `RuntimeEvent` broadcast carries lightweight lifecycle wakeups such as
   `Imported`, `Reverted`, `TipChanged`, relay results, and shutdown; it does not
-  carry snapshots or execution artifacts.
+  carry snapshots or execution artifacts. Execution-artifact materialization
+  is demand-driven: the immutable `ImportPlan` must permit artifacts and the
+  concrete `BlockCommitHooks` composition must report an indexer or finalized
+  projection consumer for that persistence context. StateService-only and
+  observer-free nodes therefore execute the same protocol transition without copying
+  `ApplicationExecuted` transaction/result/notification records.
 
 - **Measured block-aware persistence.** Canonical import constructs one typed
   `NativePersistResources<P>` bundle and shares one `Arc<ProtocolSettings>`
@@ -255,7 +260,13 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   shared block, so script-container setup does not deep-clone transaction
   scripts, signers, attributes, or witnesses. Transactions in the same block
   also reuse one resettable child `DataCache`; HALT commits it into the block
-  overlay and FAULT discards it before the next transaction.
+  overlay and FAULT discards it before the next transaction. The benchmark
+  fixture can compare this policy in production-shaped live imports with
+  `NEO_BENCH_IMPORT_MODE=live` and `NEO_BENCH_REPLAY_ARTIFACTS=1`; the default
+  trusted-replay fixture remains artifact-free by import semantics. Current
+  short A/B runs prove removal of artifact work, not an aggregate BPS gain,
+  because live MDBX samples are dominated by per-block durability and are
+  noisy at Criterion quick-run duration.
 
 - **Staged core and application lifecycle.** `neo-system::NodeCoreBuilder<P,
   S, H>` constructs the provider-neutral store snapshot, mempool, header cache,
@@ -388,9 +399,12 @@ the root, directory-size, entry-facade, and module-rustdoc rules.
   marker and syncs its directory; a crash or failed fence leaves it
   in place, requests graceful shutdown, and makes restart refuse the local data
   set until matching stores are restored. ApplicationLogs and TokensTracker do
-  no pre-commit staging. After Ledger succeeds, the blockchain service moves the
-  exact `Arc<Block>`, canonical snapshot, execution records, and frozen import
-  context into `FinalizedBlock<B>`. A bounded `FinalizedBlockStream` runs the
+  no pre-commit staging. Artifact capture is enabled only when the import mode
+  allows observer delivery and the composed hooks report a configured indexer
+  or finalized-projection consumer. After Ledger succeeds, the blockchain
+  service moves the exact `Arc<Block>`, canonical snapshot, captured execution
+  records, and frozen import context into `FinalizedBlock<B>`. A bounded
+  `FinalizedBlockStream` runs the
   concrete projection consumer on `spawn_blocking` and acknowledges completion;
   the canonical writer waits before mempool maintenance, the lightweight
   `Imported` broadcast, or the next observer-visible block. The stream is an

@@ -298,7 +298,10 @@ where
             .persist_block_sequence_with_context(
                 Arc::clone(&block),
                 crate::NativePersistOptions {
-                    capture_replay_artifacts: !persist_context.skips_live_observers(),
+                    capture_replay_artifacts: !persist_context.skips_live_observers()
+                        && self
+                            .system
+                            .requires_replay_artifacts(block.as_ref(), persist_context),
                 },
                 persist_context,
             )

@@ -90,19 +90,50 @@ impl ImportPlan {
     }
 
     #[inline]
+    pub(super) const fn allows_replay_artifacts(self) -> bool {
+        self.mode.allows_replay_artifacts()
+    }
+
+    #[inline]
     pub(super) const fn persist_context(self) -> BlockPersistContext {
         self.persist_context
     }
 
     #[inline]
-    pub(super) const fn persist_options(self) -> NativePersistOptions {
+    pub(super) const fn persist_options(
+        self,
+        observer_requires_artifacts: bool,
+    ) -> NativePersistOptions {
         NativePersistOptions {
-            capture_replay_artifacts: self.mode.captures_replay_artifacts(),
+            capture_replay_artifacts: self.allows_replay_artifacts() && observer_requires_artifacts,
         }
     }
 
     #[inline]
     pub(super) const fn maintains_live_side_effects(self) -> bool {
         self.mode.maintains_live_side_effects()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn replay_artifacts_require_both_import_intent_and_an_observer() {
+        let live = ImportPlan {
+            mode: ImportMode::Live { verify: false },
+            durability: ImportDurability::PerBlock,
+            persist_context: BlockPersistContext::live(),
+        };
+        assert!(live.persist_options(true).capture_replay_artifacts);
+        assert!(!live.persist_options(false).capture_replay_artifacts);
+
+        let trusted = ImportPlan {
+            mode: ImportMode::TrustedReplay { verify: false },
+            durability: ImportDurability::DeferredBatch,
+            persist_context: BlockPersistContext::trusted_replay(),
+        };
+        assert!(!trusted.persist_options(true).capture_replay_artifacts);
     }
 }

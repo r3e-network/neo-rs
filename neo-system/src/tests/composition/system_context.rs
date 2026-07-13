@@ -97,6 +97,41 @@ fn context_exposes_the_composed_native_provider() {
 }
 
 #[test]
+fn replay_artifact_policy_is_owned_by_composed_commit_hooks() {
+    let settings = Arc::new(ProtocolSettings::default());
+    let block = neo_blockchain::genesis_block(settings.as_ref()).expect("genesis block");
+
+    let observer_free_store = Arc::new(MemoryStore::new());
+    let observer_free_cache = StoreCache::new_from_store(observer_free_store, false);
+    let observer_free_snapshot = Arc::new(observer_free_cache.data_cache().clone());
+    let observer_free = NodeSystemContext::new(
+        Arc::clone(&settings),
+        observer_free_snapshot,
+        observer_free_cache,
+        Arc::new(StandardNativeProvider::new()),
+        Arc::new(NoopBlockCommitHooks),
+    );
+    assert!(
+        !observer_free
+            .requires_replay_artifacts(&block, neo_blockchain::BlockPersistContext::live())
+    );
+
+    let conservative_store = Arc::new(MemoryStore::new());
+    let conservative_cache = StoreCache::new_from_store(conservative_store, false);
+    let conservative_snapshot = Arc::new(conservative_cache.data_cache().clone());
+    let conservative = NodeSystemContext::new(
+        settings,
+        conservative_snapshot,
+        conservative_cache,
+        Arc::new(StandardNativeProvider::new()),
+        Arc::new(RecordingCommitHooks::default()),
+    );
+    assert!(
+        conservative.requires_replay_artifacts(&block, neo_blockchain::BlockPersistContext::live())
+    );
+}
+
+#[test]
 fn sync_batch_policy_is_owned_by_composed_commit_hooks() {
     let observer_free_store = Arc::new(MemoryStore::new());
     let observer_free_cache = StoreCache::new_from_store(observer_free_store, false);

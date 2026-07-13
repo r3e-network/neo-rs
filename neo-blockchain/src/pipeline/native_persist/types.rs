@@ -34,8 +34,9 @@ pub struct NativePersistOutcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativePersistOptions {
     /// Capture `ApplicationExecuted` records and cloned native notifications for
-    /// plugin/indexer replay. Disable only for trusted local replay whose
-    /// consumers intentionally skip those replay hooks.
+    /// indexer/finalized-projection replay. Disable for trusted local replay or
+    /// when the concrete application composition has no artifact consumer.
+    /// This does not skip protocol execution or durable state changes.
     pub capture_replay_artifacts: bool,
 }
 

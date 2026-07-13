@@ -97,6 +97,19 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
         None
     }
 
+    /// Returns whether application observers require copied execution artifacts
+    /// for this block.
+    ///
+    /// Consensus state transition and Ledger VM-state recording never depend on
+    /// these copies. The default remains `true` so custom contexts preserve
+    /// existing observer semantics unless they explicitly prove that no
+    /// pre-commit or finalized consumer needs `ApplicationExecuted` records.
+    /// Implementations must not sample mutable eligibility state that can
+    /// change before the corresponding committing hook runs.
+    fn requires_replay_artifacts(&self, _block: &Block, _context: BlockPersistContext) -> bool {
+        true
+    }
+
     /// Called after a block's native persistence pipeline has produced its
     /// `ApplicationExecuted` records but before the canonical store is
     /// committed. This mirrors the C# `ICommittingHandler` plugin hook and lets

@@ -356,8 +356,13 @@ trimmed block, reads its `NextConsensus`, and verifies the header witness
 through the explicit native-contract provider. `ImportMode::Sync` always uses
 that verified path. Trusted local package replay uses
 `ImportMode::TrustedReplay { verify: false }`, keeps decoder integrity checks,
-and alone suppresses replay artifacts and live side effects. Before mutation,
-`ImportPlan` resolves a range-aware `SyncBatchCommitPolicy`: eligible peer
+and always suppresses replay artifacts and live side effects. Live and verified
+sync imports now capture `ApplicationExecuted` copies only when the immutable
+import plan permits them and the concrete commit-hook composition reports a
+configured indexer or finalized projection consumer. StateService-only and
+observer-free compositions therefore preserve protocol execution and durable
+state without allocating observer payloads. Before mutation, `ImportPlan`
+resolves a range-aware `SyncBatchCommitPolicy`: eligible peer
 batches share one durable commit while retaining ordered hooks, mempool
 updates, import events, and one batch-end reverify; otherwise they use per-block
 durability. The plan freezes live or catch-up observer behavior for the range.
@@ -401,6 +406,15 @@ per-block changes during import and computes one queued MPT batch at the
 canonical transaction boundary. This measures the production atomicity cost
 directly; the earlier two-environment asynchronous figures are not a valid
 baseline for this path.
+
+The same fixture now supports `NEO_BENCH_IMPORT_MODE=live` and
+`NEO_BENCH_REPLAY_ARTIFACTS=1` for observer-artifact A/B checks. Short dense
+live runs show the artifact stage falling from roughly 7-10 us per transaction
+to zero when no consumer is composed. Their aggregate BPS samples overlap and
+MDBX live mode is dominated by per-block durability, so this evidence supports
+the allocation/ownership change but is not a claimed end-to-end throughput
+increase. Trusted replay was already artifact-free and is not a valid A/B mode
+for this optimization.
 
 ### Polkadot SDK innovations
 
@@ -478,7 +492,9 @@ acknowledgement before mempool maintenance, lightweight `Imported` publication,
 or another observer-visible block. Active near-tip projections force per-block
 durability, preventing a deferred batch from exposing one mutable tip snapshot
 as several historical heights. Catch-up and trusted replay intentionally skip
-these optional projections.
+these optional projections. Artifact capture is independently demand-driven:
+the import mode and composed hooks must both require it, so StateService-only
+nodes do not copy execution records that no projection will consume.
 
 This rich finalized stream is distinct from both the synchronous pre-commit
 durability hooks (StateService, persistent index append, static-archive staging)

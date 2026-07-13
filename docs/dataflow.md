@@ -112,9 +112,11 @@ boundary, seeds the import cursor from the canonical tip, and stops on
 downloader, contiguity, partial-import, or checkpoint errors. The `Bodies`
 checkpoint and header-sidecar pruning occur only after the fixed target is
 canonical. `BlockOrigin::Sync` maps to
-`ImportMode::Sync`: full verification and live artifacts are mandatory, while
-a range-aware `SyncBatchCommitPolicy` may collapse canonical writes to one
-durable commit. The resolved `ImportPlan` freezes observer behavior, publishes
+`ImportMode::Sync`: full verification is mandatory, while execution artifacts
+are materialized only when the frozen import policy and the concrete node
+composition both require observer delivery. A range-aware
+`SyncBatchCommitPolicy` may collapse canonical writes to one durable commit.
+The resolved `ImportPlan` freezes observer behavior, publishes
 ordered hooks/mempool updates/import events only after durability, removes
 stale headers before one batch-end reverify, and falls back to per-block
 durability when plugin staging is not batch-safe. Production local-ledger node
@@ -175,6 +177,7 @@ sequenceDiagram
     BC->>Store: load prev TrimmedBlock
     BC->>BC: verify consensus witness vs<br/>prev.NextConsensus (3-GAS cap)
     BC->>NP: stage_block_natives_with_resources(block, shared settings/resources)
+    Note over BC,NP: copy execution artifacts only when<br/>import policy AND composed observer demand are true
     NP->>AE: eligible OnPersist hooks (+ native init at activation)
     Note over NP: standard no-op hooks are statically skipped;<br/>hardfork/attribute gates remain block-aware
     loop each transaction
@@ -238,6 +241,16 @@ Positive-path pipeline tests force each dynamic hook to produce an observable
 error when its downstream state is invalid, preventing a future optimization
 from silently skipping required protocol work.
 
+`ApplicationExecuted` copies are an application-observer product, not an input
+to consensus state transition, Ledger VM-state recording, StateService, static
+archival, or canonical durability. `SystemContext::requires_replay_artifacts`
+delegates this decision to the concrete `BlockCommitHooks` composition. The
+default is conservative for external contexts; the built-in no-op composition
+and StateService-only daemon composition return false, while a contiguous live
+indexer or active ApplicationLogs/TokensTracker projection returns true. The
+import plan still has final authority: trusted replay never captures these
+records even if a hook requests them.
+
 When StateService participates in a deferred sync batch, block execution
 projects changes into a bounded worker queue. The worker flushes four roots
 when it catches the producer but may consume up to eight already-queued roots
@@ -258,7 +271,9 @@ The finalized stream emits committed outcomes only because a dBFT commit is
 final. Exceptional revert awareness remains explicit on the lifecycle stream.
 Catch-up and trusted replay intentionally skip optional finalized projections;
 when those projections are active near tip, batch policy forces one durable
-commit and one stable snapshot per block.
+commit and one stable snapshot per block. Observer-free live imports preserve
+the same execution and durable state while omitting transaction/result/
+notification snapshot copies.
 
 ## 3. Transaction lifecycle
 

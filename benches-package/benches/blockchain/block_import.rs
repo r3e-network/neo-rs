@@ -43,16 +43,67 @@ const INITIAL_GAS_BALANCE: i64 = 1_000_000_000_000_000_000;
 
 struct StateServiceHooks<S: Store> {
     handlers: StateServiceCommitHandlers<S>,
+    requires_replay_artifacts: bool,
 }
 
 impl<S: Store> StateServiceHooks<S> {
-    fn new(state_store: Arc<StateStore<S>>, max_apply_batch_blocks: usize) -> Self {
+    fn new(
+        state_store: Arc<StateStore<S>>,
+        max_apply_batch_blocks: usize,
+        requires_replay_artifacts: bool,
+    ) -> Self {
         Self {
             handlers: StateServiceCommitHandlers::new_async_with_limits(
                 state_store,
                 BLOCKS_PER_BATCH,
                 max_apply_batch_blocks,
             ),
+            requires_replay_artifacts,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BenchmarkImportMode {
+    TrustedReplay,
+    Live,
+}
+
+impl BenchmarkImportMode {
+    fn from_env() -> Self {
+        match std::env::var("NEO_BENCH_IMPORT_MODE").as_deref() {
+            Ok("live" | "LIVE") => Self::Live,
+            _ => Self::TrustedReplay,
+        }
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::TrustedReplay => "trusted",
+            Self::Live => "live",
+        }
+    }
+
+    fn import(
+        self,
+        runtime: &tokio::runtime::Runtime,
+        blockchain: &BlockchainHandle,
+        blocks: Vec<Block>,
+    ) -> (usize, Option<ImportBlocksStats>) {
+        match self {
+            Self::TrustedReplay => {
+                let reply = runtime
+                    .block_on(blockchain.import_blocks_bulk_detailed(blocks, false))
+                    .expect("import trusted benchmark batch");
+                assert!(reply.error.is_none(), "{:?}", reply.error);
+                (reply.imported, Some(reply.stats))
+            }
+            Self::Live => {
+                let imported = runtime
+                    .block_on(blockchain.import_blocks(blocks, false))
+                    .expect("import live benchmark batch");
+                (imported, None)
+            }
         }
     }
 }
@@ -85,6 +136,11 @@ fn benchmark_stage_metrics_enabled() -> bool {
         .is_ok_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
 }
 
+fn benchmark_replay_artifacts_required() -> bool {
+    std::env::var("NEO_BENCH_REPLAY_ARTIFACTS")
+        .is_ok_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+}
+
 impl<S: Store> fmt::Debug for StateServiceHooks<S> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -98,6 +154,10 @@ where
     C: TransactionalStore,
     S: Store,
 {
+    fn requires_replay_artifacts(&self, _block: &Block, _context: BlockPersistContext) -> bool {
+        self.requires_replay_artifacts
+    }
+
     fn block_committing(
         &self,
         block: &Block,
@@ -134,13 +194,15 @@ where
 
 struct CoordinatedStateServiceHooks<S: Store> {
     handlers: StateServiceCommitHandlers<S>,
+    requires_replay_artifacts: bool,
 }
 
 impl<S: Store> CoordinatedStateServiceHooks<S> {
-    fn new(state_store: Arc<StateStore<S>>) -> Self {
+    fn new(state_store: Arc<StateStore<S>>, requires_replay_artifacts: bool) -> Self {
         Self {
             handlers: StateServiceCommitHandlers::try_new_coordinated(state_store)
                 .expect("construct coordinated benchmark StateService"),
+            requires_replay_artifacts,
         }
     }
 }
@@ -157,6 +219,10 @@ impl<S> BlockCommitHooks<S> for CoordinatedStateServiceHooks<S>
 where
     S: CoordinatedTransactionalStore,
 {
+    fn requires_replay_artifacts(&self, _block: &Block, _context: BlockPersistContext) -> bool {
+        self.requires_replay_artifacts
+    }
+
     fn block_committing(
         &self,
         block: &Block,
@@ -419,6 +485,7 @@ fn prepare_canonical_import_fixture<S, H, G>(
     canonical_store: Arc<S>,
     hooks: Arc<H>,
     storage_guard: G,
+    import_mode: BenchmarkImportMode,
     prefill_blocks: usize,
     transactions_per_block: usize,
 ) -> CanonicalImportFixture<G>
@@ -461,11 +528,8 @@ where
     let mut cursor = ChainCursor::after_genesis(settings.as_ref());
 
     let warmup = cursor.gas_transfer_blocks(1, transactions_per_block, &sender, &transfer_script);
-    let warmup_reply = runtime
-        .block_on(blockchain.import_blocks_bulk_detailed(warmup, false))
-        .expect("import benchmark warmup block");
-    assert_eq!(warmup_reply.imported, 1);
-    assert!(warmup_reply.error.is_none(), "{:?}", warmup_reply.error);
+    let (warmup_imported, _) = import_mode.import(&runtime, &blockchain, warmup);
+    assert_eq!(warmup_imported, 1);
     assert_eq!(
         GasToken::balance_of(snapshot.as_ref(), &recipient).expect("read recipient GAS balance"),
         BigInt::from(TRANSFER_AMOUNT)
@@ -481,11 +545,8 @@ where
         let count = remaining_prefill.min(BLOCKS_PER_BATCH);
         let blocks =
             cursor.gas_transfer_blocks(count, transactions_per_block, &sender, &transfer_script);
-        let reply = runtime
-            .block_on(blockchain.import_blocks_bulk_detailed(blocks, false))
-            .expect("import benchmark prefill batch");
-        assert_eq!(reply.imported, count);
-        assert!(reply.error.is_none(), "{:?}", reply.error);
+        let (imported, _) = import_mode.import(&runtime, &blockchain, blocks);
+        assert_eq!(imported, count);
         remaining_prefill -= count;
     }
 
@@ -506,6 +567,7 @@ where
 fn benchmark_canonical_import<S, H, G, F>(
     bencher: &mut Bencher<'_>,
     backend: &str,
+    import_mode: BenchmarkImportMode,
     prefill_blocks: usize,
     transactions_per_block: usize,
     mut storage_factory: F,
@@ -522,30 +584,28 @@ fn benchmark_canonical_import<S, H, G, F>(
                 canonical_store,
                 hooks,
                 storage_guard,
+                import_mode,
                 prefill_blocks,
                 transactions_per_block,
             )
         },
         |mut fixture| {
             let blocks = std::mem::take(&mut fixture.blocks);
-            let reply = fixture
-                .runtime
-                .block_on(
-                    fixture
-                        .blockchain
-                        .import_blocks_bulk_detailed(blocks, false),
-                )
-                .expect("import transaction-bearing benchmark batch");
-            assert_eq!(reply.imported, BLOCKS_PER_BATCH);
-            assert!(reply.error.is_none(), "{:?}", reply.error);
-            assert_eq!(reply.stats.transaction_blocks, BLOCKS_PER_BATCH);
-            timings.record(reply.stats);
+            let (imported, stats) =
+                import_mode.import(&fixture.runtime, &fixture.blockchain, blocks);
+            assert_eq!(imported, BLOCKS_PER_BATCH);
+            if let Some(stats) = stats {
+                assert_eq!(stats.transaction_blocks, BLOCKS_PER_BATCH);
+                timings.record(stats);
+            }
             fixture
         },
         BatchSize::PerIteration,
     );
     if benchmark_stage_metrics_enabled() {
-        timings.print(backend);
+        if timings.blocks > 0 {
+            timings.print(backend);
+        }
         print_native_persist_metrics(backend);
         print_state_service_metrics(backend);
     }
@@ -557,11 +617,14 @@ fn bench_canonical_transaction_import(c: &mut Criterion) {
     let mpt_apply_batch_blocks = benchmark_mpt_apply_batch_blocks();
     let prefill_blocks = benchmark_prefill_blocks();
     let transactions_per_block = benchmark_transactions_per_block();
+    let import_mode = BenchmarkImportMode::from_env();
+    let replay_artifacts = benchmark_replay_artifacts_required();
 
     group.bench_with_input(
         BenchmarkId::new(
             format!(
-                "memory_blocks_mpt_{mpt_apply_batch_blocks}_prefill_{prefill_blocks}_txs_{transactions_per_block}"
+                "memory_{}_artifacts_{replay_artifacts}_blocks_mpt_{mpt_apply_batch_blocks}_prefill_{prefill_blocks}_txs_{transactions_per_block}",
+                import_mode.label(),
             ),
             BLOCKS_PER_BATCH,
         ),
@@ -570,6 +633,7 @@ fn bench_canonical_transaction_import(c: &mut Criterion) {
             benchmark_canonical_import(
                 bencher,
                 "memory",
+                import_mode,
                 prefill_blocks,
                 transactions_per_block,
                 || {
@@ -579,6 +643,7 @@ fn bench_canonical_transaction_import(c: &mut Criterion) {
                         Arc::new(StateServiceHooks::new(
                             state_store,
                             mpt_apply_batch_blocks,
+                            replay_artifacts,
                         )),
                         (),
                     )
@@ -590,7 +655,8 @@ fn bench_canonical_transaction_import(c: &mut Criterion) {
     group.bench_with_input(
         BenchmarkId::new(
             format!(
-                "mdbx_coordinated_blocks_prefill_{prefill_blocks}_txs_{transactions_per_block}"
+                "mdbx_coordinated_{}_artifacts_{replay_artifacts}_blocks_prefill_{prefill_blocks}_txs_{transactions_per_block}",
+                import_mode.label(),
             ),
             BLOCKS_PER_BATCH,
         ),
@@ -599,6 +665,7 @@ fn bench_canonical_transaction_import(c: &mut Criterion) {
             benchmark_canonical_import(
                 bencher,
                 "mdbx_coordinated",
+                import_mode,
                 prefill_blocks,
                 transactions_per_block,
                 || {
@@ -615,7 +682,10 @@ fn bench_canonical_transaction_import(c: &mut Criterion) {
                     );
                     (
                         canonical_store,
-                        Arc::new(CoordinatedStateServiceHooks::new(state_store)),
+                        Arc::new(CoordinatedStateServiceHooks::new(
+                            state_store,
+                            replay_artifacts,
+                        )),
                         canonical_tempdir,
                     )
                 },

@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 /// Validation and durability policy for a block-import request.
 ///
 /// The variants keep trusted local replay separate from peer sync. Both may
-/// share a batch durability boundary, but only trusted replay may skip
-/// replay-only execution artifacts or live mempool maintenance.
+/// share a batch durability boundary. Trusted replay always skips observer
+/// execution artifacts and live mempool maintenance; live and sync modes allow
+/// artifact capture when the concrete node composition has a consumer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ImportMode {
     /// Ordinary RPC, consensus, or explicit import with per-block durability.
@@ -43,9 +44,11 @@ impl ImportMode {
         matches!(self, Self::TrustedReplay { .. })
     }
 
-    /// Returns whether native execution must retain replay artifacts.
+    /// Returns whether native execution may retain observer replay artifacts.
+    ///
+    /// The composed system context makes the final per-block demand decision.
     #[must_use]
-    pub const fn captures_replay_artifacts(self) -> bool {
+    pub const fn allows_replay_artifacts(self) -> bool {
         !self.is_trusted_replay()
     }
 

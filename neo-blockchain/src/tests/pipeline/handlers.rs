@@ -477,6 +477,7 @@ fn fixture_with_mempool_result(
 struct StoreContext {
     snapshot: Arc<neo_storage::DataCache>,
     settings: Arc<neo_config::ProtocolSettings>,
+    requires_replay_artifacts: bool,
     state_service: Option<Arc<neo_state_service::commit_handlers::StateServiceCommitHandlers>>,
     committing_application_executed_lengths: Option<Arc<parking_lot::Mutex<Vec<usize>>>>,
     committed_heights: Option<Arc<parking_lot::Mutex<Vec<u32>>>>,
@@ -506,6 +507,13 @@ impl SystemContext for StoreContext {
     }
     fn native_contract_provider(&self) -> Option<NativeProviderArc> {
         Some(standard_native_provider())
+    }
+    fn requires_replay_artifacts(
+        &self,
+        _block: &Block,
+        _context: crate::BlockPersistContext,
+    ) -> bool {
+        self.requires_replay_artifacts
     }
     fn block_committing(
         &self,
@@ -571,6 +579,7 @@ fn store_fixture_with(
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
         settings: Arc::new(settings),
+        requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: None,
         committed_heights: None,
@@ -600,6 +609,7 @@ fn store_fixture_with_state_service() -> (
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
         settings: Arc::new(neo_config::ProtocolSettings::default()),
+        requires_replay_artifacts: false,
         state_service: Some(state_service),
         committing_application_executed_lengths: None,
         committed_heights: None,
@@ -619,11 +629,23 @@ fn store_fixture_recording_application_executed_lengths() -> (
     Arc<neo_storage::DataCache>,
     Arc<parking_lot::Mutex<Vec<usize>>>,
 ) {
+    store_fixture_recording_application_executed_lengths_with_policy(true)
+}
+
+fn store_fixture_recording_application_executed_lengths_with_policy(
+    requires_replay_artifacts: bool,
+) -> (
+    BlockchainService<StoreContext, TestMempool>,
+    BlockchainHandle,
+    Arc<neo_storage::DataCache>,
+    Arc<parking_lot::Mutex<Vec<usize>>>,
+) {
     let snapshot = Arc::new(neo_storage::DataCache::new(false));
     let lengths = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
         settings: Arc::new(neo_config::ProtocolSettings::default()),
+        requires_replay_artifacts,
         state_service: None,
         committing_application_executed_lengths: Some(Arc::clone(&lengths)),
         committed_heights: None,
@@ -648,6 +670,7 @@ fn store_fixture_counting_commits() -> (
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
         settings: Arc::new(neo_config::ProtocolSettings::default()),
+        requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: None,
         committed_heights: None,
@@ -672,6 +695,7 @@ fn store_fixture_recording_committed_heights() -> (
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
         settings: Arc::new(neo_config::ProtocolSettings::default()),
+        requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: None,
         committed_heights: Some(Arc::clone(&committed_heights)),
@@ -710,6 +734,7 @@ fn store_fixture_counting_snapshot_commits_and_committed_heights() -> (
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
         settings: Arc::new(neo_config::ProtocolSettings::default()),
+        requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: None,
         committed_heights: Some(Arc::clone(&committed_heights)),
@@ -745,6 +770,7 @@ fn store_fixture_counting_snapshot_and_commits_with(
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
         settings: Arc::new(settings),
+        requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: None,
         committed_heights: None,
@@ -978,6 +1004,7 @@ fn reverify_mempool_after_persist_skips_snapshot_when_no_unverified_transactions
     let system = Arc::new(StoreContext {
         snapshot,
         settings: Arc::new(neo_config::ProtocolSettings::default()),
+        requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: None,
         committed_heights: None,

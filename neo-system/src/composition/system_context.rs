@@ -86,6 +86,21 @@ pub trait BlockCommitHooks<S>: Send + Sync + fmt::Debug
 where
     S: TransactionalStore,
 {
+    /// Whether this application composition needs copied execution artifacts.
+    ///
+    /// This is a conservative capability query. Implementations must not base
+    /// it on mutable peer-tip or projection-checkpoint state that can change
+    /// before [`BlockCommitHooks::block_committing`] runs. Return `true` when a
+    /// configured observer could consume the records in this persistence
+    /// context; the later hook may still decide not to consume them.
+    ///
+    /// Returning `false` removes transaction/result/notification snapshot work
+    /// only; it does not skip execution, Ledger VM-state recording, StateService,
+    /// static archival, durability hooks, or finalized block publication.
+    fn requires_replay_artifacts(&self, _block: &Block, _context: BlockPersistContext) -> bool {
+        true
+    }
+
     /// Run pre-commit observers and return whether persistence may continue.
     fn block_committing(
         &self,
@@ -177,6 +192,10 @@ impl<S> BlockCommitHooks<S> for NoopBlockCommitHooks
 where
     S: TransactionalStore,
 {
+    fn requires_replay_artifacts(&self, _block: &Block, _context: BlockPersistContext) -> bool {
+        false
+    }
+
     fn sync_batch_commit_policy(
         &self,
         _start_height: u32,
@@ -307,6 +326,10 @@ where
 
     fn native_contract_provider(&self) -> Option<Arc<Self::NativeProvider>> {
         Some(Arc::clone(&self.native_contract_provider))
+    }
+
+    fn requires_replay_artifacts(&self, block: &Block, context: BlockPersistContext) -> bool {
+        self.hooks.requires_replay_artifacts(block, context)
     }
 
     fn block_committing(

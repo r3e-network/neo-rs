@@ -163,6 +163,14 @@ where
     T: Store + 'static,
     C: TransactionalStore + CoordinatedNodeStoreWith<S> + 'static,
 {
+    fn requires_replay_artifacts(&self, _block: &Block, context: BlockPersistContext) -> bool {
+        if context.skips_live_observers() {
+            return false;
+        }
+
+        self.finalized_projections.has_consumers() || self.indexer_service.is_some()
+    }
+
     fn block_committing(
         &self,
         block: &Block,

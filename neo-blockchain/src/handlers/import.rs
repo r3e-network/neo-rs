@@ -31,7 +31,6 @@ where
         let plan = ImportPlan::resolve(import.mode, &blocks, durable_height, self.system.as_ref());
         let verify = plan.verify();
         let trusted_replay = plan.is_trusted_replay();
-        let persist_options = plan.persist_options();
         let persist_context = plan.persist_context();
         let defer_store_commit = plan.defers_store_commit();
         let mut deferred_committed_blocks = Vec::new();
@@ -62,6 +61,11 @@ where
                 }
                 ImportDisposition::NextExpected => {}
             }
+            let observer_requires_artifacts = plan.allows_replay_artifacts()
+                && self
+                    .system
+                    .requires_replay_artifacts(block, persist_context);
+            let persist_options = plan.persist_options(observer_requires_artifacts);
 
             if defer_store_commit && !batch_persist_resources_loaded {
                 match self.batch_persist_resources(index) {

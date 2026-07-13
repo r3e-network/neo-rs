@@ -1458,6 +1458,36 @@ async fn explicit_bulk_import_skips_replay_artifacts_but_normal_import_keeps_the
 }
 
 #[tokio::test]
+async fn live_import_skips_replay_artifacts_when_composition_has_no_consumer() {
+    let (service, _handle, _snapshot, lengths) =
+        store_fixture_recording_application_executed_lengths_with_policy(false);
+    service.initialize().await.expect("initialize");
+    lengths.lock().clear();
+
+    let settings = neo_config::ProtocolSettings::default();
+    let genesis = crate::native_persist::genesis_block(&settings).expect("genesis");
+    let mut header = Header::new();
+    header.set_index(1);
+    header.set_prev_hash(genesis.hash());
+    header.set_timestamp(genesis.header.timestamp());
+    header.set_next_consensus(*genesis.header.next_consensus());
+
+    let imported = service
+        .handle_import(Import {
+            blocks: vec![Block::from_parts(header, vec![])],
+            mode: ImportMode::Live { verify: false },
+        })
+        .await;
+
+    assert_eq!(imported.imported, 1);
+    assert_eq!(
+        lengths.lock().as_slice(),
+        &[0],
+        "observer-free live import must not copy OnPersist/PostPersist replay records"
+    );
+}
+
+#[tokio::test]
 async fn bulk_import_flushes_store_once_per_accepted_batch() {
     let (normal_service, _normal_handle, _normal_snapshot, normal_commits) =
         store_fixture_counting_commits();
@@ -2302,6 +2332,7 @@ async fn inventory_batch_honors_per_block_observer_durability_policy() {
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
         settings: Arc::new(neo_config::ProtocolSettings::default()),
+        requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: Some(Arc::clone(&artifact_lengths)),
         committed_heights: None,
@@ -2450,6 +2481,7 @@ async fn bulk_import_skips_per_block_mempool_maintenance() {
     let system = Arc::new(StoreContext {
         snapshot,
         settings: Arc::new(settings.clone()),
+        requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: None,
         committed_heights: None,
@@ -2585,6 +2617,7 @@ async fn persisted_inventory_block_removes_cached_header_after_mempool_update() 
     let system = Arc::new(StoreContext {
         snapshot: Arc::clone(&snapshot),
         settings: Arc::new(settings.clone()),
+        requires_replay_artifacts: true,
         state_service: None,
         committing_application_executed_lengths: None,
         committed_heights: None,
