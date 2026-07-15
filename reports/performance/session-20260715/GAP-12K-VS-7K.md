@@ -77,3 +77,16 @@ Confirms gap is **not machine/harness/root** — same tmpfs dual-DB uncoord chai
 **Conclusion:** disabling the MPT worker does **not** recover `load_execute`
 (~750µs either way). Pure execute regression is in TX/VM path, not MPT cache
 thrashing. Empty improves without MPT (48k→83k); overall rises from that.
+
+## RESOLVED (same session)
+
+Ported `stash@{1}` neo-vm jump-table hot path onto main (`e8cc7239`).
+
+| Metric | Was | Now (mean 2-run) |
+|--------|----:|-----------------:|
+| Overall | ~7.5k | **11,534** |
+| Dense | ~740 | **1,522** |
+| load_execute_us | ~750 | **317** |
+| Root@300k | MATCH | MATCH |
+
+See `RECOVERED-STASH1-VM-WIP.md` and `main-recover-vm-ab.json`.
