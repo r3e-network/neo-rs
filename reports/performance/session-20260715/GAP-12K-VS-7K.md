@@ -35,3 +35,34 @@ machine, not dual-DB config, not root correctness.
 - post_execute host gate  
 - Warm contract/script cache across TXs (+~2% on 7.5k tree)
 - Lock-free call flags (restored)
+
+## 2026-07-15 evening update
+
+### MPT apply-batch=8 A/B — REJECTED
+- Candidate mean overall **4,167** (−44% vs ~7.5k), empty ~13k (−74%), dense/load_execute
+  unchanged (~740 / ~780µs). Root MATCH.
+- See `REJECTED-mpt-apply-batch8.md`. Kept `FAST_SYNC_MPT_APPLY_BATCH_BLOCKS=4096`.
+
+### Known-fast binary reconfirm (same harness)
+Binary: `data/neo-v3101-staged-replay/runs/mpt-prefetch-20260715-150850/bin/neo-node`
+(BuildID `00d56e15…`, mtime 15:09)
+
+| Metric | Fast reconfirm | Current ~7.5k tree |
+|--------|---------------:|-------------------:|
+| Overall | **11,154** | ~7,500 |
+| Dense 290–300k | **1,573** | ~740 |
+| TX blocks/s | **1,804** | ~860 |
+| Empty | **50,101** | ~50k |
+| load_execute_us | **318** | ~750 |
+| execute_us | **318** | ~750 |
+| engine_create_us | 15 | 15 |
+
+Confirms gap is **not machine/harness/root** — same tmpfs dual-DB uncoord chain.acc.
+
+### Source provenance notes
+- Fast binary has `NEO_MPT_PREFETCH_BATCH_KEYS` string; **not present** in current HEAD or stashes.
+- No git commit between morning and `f9960ebd` (17:28); 15:09 binary is **dirty-tree** WIP.
+- Since `c8bc5877`, committed `neo-vm` jump_table / evaluation_stack are unchanged;
+  only `script.rs`, execute/host/call-flags, engine reuse, and execution crates moved.
+- Recovering the exact dirty tree (or re-landing MPT prefetch + any uncommitted VM
+  hot-path WIP) is still the primary path to ~12k.
