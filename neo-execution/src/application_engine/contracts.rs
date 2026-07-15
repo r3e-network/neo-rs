@@ -33,9 +33,9 @@ where
             .map(|(start, end)| block_idx >= start && block_idx <= end)
             .unwrap_or(false)
     }
-    pub(super) fn fetch_contract(&mut self, hash: &UInt160) -> CoreResult<ContractState> {
+    pub(super) fn fetch_contract(&mut self, hash: &UInt160) -> CoreResult<Arc<ContractState>> {
         if let Some(contract) = self.contracts.get(hash) {
-            return Ok(contract.clone());
+            return Ok(Arc::clone(contract));
         }
 
         let block_idx = self.persisting_block().map(|b| b.index()).unwrap_or(0);
@@ -46,8 +46,7 @@ where
                 if diag {
                     tracing::warn!(target: "neo", block_index = block_idx, %hash, id = contract.id, "TRACE: fetch_contract found in snapshot");
                 }
-                self.contracts.insert(*hash, contract.clone());
-                return Ok(contract);
+                return Ok(self.cache_contract(*hash, contract));
             }
             Ok(None) => {
                 if diag {
@@ -68,8 +67,7 @@ where
                 if diag {
                     tracing::warn!(target: "neo", block_index = block_idx, %hash, id = contract.id, "TRACE: fetch_contract found as native");
                 }
-                self.contracts.insert(*hash, contract.clone());
-                return Ok(contract);
+                return Ok(self.cache_contract(*hash, contract));
             }
         }
 
@@ -113,7 +111,45 @@ where
     /// would re-fetch the OLD cached `ContractState` and execute the previous
     /// NEF/manifest, producing different `_initialize` static fields than C#.
     pub fn put_contract_cache(&mut self, hash: UInt160, contract: ContractState) {
-        self.contracts.insert(hash, contract);
+        self.cache_contract(hash, contract);
+    }
+
+    /// Evicts a destroyed contract from the transaction-local execution cache.
+    pub fn remove_contract_cache(&mut self, hash: &UInt160) {
+        self.contracts.remove(hash);
+        self.contract_scripts.remove(hash);
+    }
+
+    pub(super) fn cache_contract(
+        &mut self,
+        hash: UInt160,
+        contract: ContractState,
+    ) -> Arc<ContractState> {
+        let script = Script::new_relaxed(contract.nef.script.clone());
+        let contract = Arc::new(contract);
+        self.contract_scripts.insert(hash, script);
+        self.contracts.insert(hash, Arc::clone(&contract));
+        contract
+    }
+
+    pub(super) fn cache_or_reuse_contract(
+        &mut self,
+        contract: ContractState,
+    ) -> Arc<ContractState> {
+        if let Some(cached) = self.contracts.get(&contract.hash)
+            && cached.id == contract.id
+            && cached.update_counter == contract.update_counter
+        {
+            return Arc::clone(cached);
+        }
+        self.cache_contract(contract.hash, contract)
+    }
+
+    fn contract_script(&mut self, contract: &Arc<ContractState>) -> Script {
+        self.contract_scripts
+            .entry(contract.hash)
+            .or_insert_with(|| Script::new_relaxed(contract.nef.script.clone()))
+            .clone()
     }
 
     // Rationale: loading a contract context mirrors the C# VM call-frame
@@ -121,8 +157,8 @@ where
     #[allow(clippy::too_many_arguments)]
     pub(super) fn load_contract_context(
         &mut self,
-        contract: ContractState,
-        method: ContractMethodDescriptor,
+        contract: Arc<ContractState>,
+        method: &ContractMethodDescriptor,
         flags: CallFlags,
         argument_count: usize,
         previous_context: Option<ExecutionContext<B>>,
@@ -135,32 +171,31 @@ where
             ));
         }
 
-        let script_bytes = contract.nef.script.clone();
+        let script = self.contract_script(&contract);
         let rvcount = if has_return_value { 1 } else { 0 };
         let offset = method.offset as usize;
+        let method_name = method.name.clone();
+        let return_type = method.return_type;
+        let parameter_types = method
+            .parameters
+            .iter()
+            .map(|param| param.param_type)
+            .collect();
+        let contract_hash = contract.hash;
+        let context_contract = Arc::clone(&contract);
 
-        let contract_clone = contract.clone();
-        let method_clone = method.clone();
-        let prev_context_clone = previous_context.clone();
-        let prev_hash = previous_hash;
-
-        let context = self.load_script_with_state(script_bytes, rvcount, offset, move |state| {
+        let context = self.load_script_with_state(script, rvcount, offset, move |state| {
             state.call_flags = flags;
-            // UInt160 is Copy — read the hash before moving contract_clone below.
-            state.script_hash = Some(contract_clone.hash);
-            state.contract = Some(contract_clone);
-            state.method_name = Some(method_clone.name.clone());
+            state.script_hash = Some(contract_hash);
+            state.contract = Some(context_contract);
+            state.method_name = Some(method_name);
             state.argument_count = argument_count;
-            state.return_type = Some(method_clone.return_type);
-            state.parameter_types = method_clone
-                .parameters
-                .iter()
-                .map(|param| param.param_type)
-                .collect();
+            state.return_type = Some(return_type);
+            state.parameter_types = parameter_types;
             state.native_calling_script_hash = None;
             state.is_dynamic_call = false;
-            state.calling_context = prev_context_clone.clone();
-            state.calling_script_hash = prev_hash;
+            state.calling_context = previous_context;
+            state.calling_script_hash = previous_hash;
         })?;
 
         if let Some(init) = contract.manifest.abi.get_method_ref(
@@ -186,7 +221,7 @@ where
 
     pub(super) fn call_contract_internal(
         &mut self,
-        contract: &ContractState,
+        contract: Arc<ContractState>,
         method: &ContractMethodDescriptor,
         mut flags: CallFlags,
         has_return_value: bool,
@@ -241,6 +276,7 @@ where
                 self.lookup_contract_management_state(&previous_hash)
                     .ok()
                     .flatten()
+                    .map(Arc::new)
             };
 
             if let Some(executing_contract) = executing_contract {
@@ -275,11 +311,11 @@ where
         self.increment_invocation_counter(&contract.hash);
 
         let new_context = self.load_contract_context(
-            contract.clone(),
-            method.clone(),
+            contract,
+            method,
             flags,
             args.len(),
-            Some(previous_context.clone()),
+            Some(previous_context),
             Some(previous_hash),
             has_return_value,
         )?;
@@ -341,7 +377,6 @@ where
             .manifest
             .abi
             .get_method_ref(method, args.len())
-            .cloned()
             .ok_or_else(|| {
                 let available: Vec<String> = contract.manifest.abi.methods.iter()
                     .map(|m| format!("{}({})", m.name, m.parameters.len()))
@@ -362,8 +397,8 @@ where
         }
         let has_return_value = method_descriptor.return_type != ContractParameterType::Void;
         let context = self.call_contract_internal(
-            &contract,
-            &method_descriptor,
+            Arc::clone(&contract),
+            method_descriptor,
             call_flags,
             has_return_value,
             &args,
@@ -396,7 +431,6 @@ where
             .manifest
             .abi
             .get_method_ref(method, args.len())
-            .cloned()
             .ok_or_else(|| {
                 CoreError::invalid_operation(format!(
                     "Method '{}' with {} parameter(s) doesn't exist in the contract {:?}.",
@@ -408,8 +442,8 @@ where
 
         let has_return_value = method_descriptor.return_type != ContractParameterType::Void;
         let context = self.call_contract_internal(
-            &contract,
-            &method_descriptor,
+            Arc::clone(&contract),
+            method_descriptor,
             CallFlags::ALL,
             has_return_value,
             &args,
@@ -487,7 +521,6 @@ where
             .manifest
             .abi
             .get_method_ref(method, args.len())
-            .cloned()
             .ok_or_else(|| {
                 CoreError::invalid_operation(format!(
                     "Method '{}' with {} parameter(s) doesn't exist in the contract {:?}.",
@@ -498,8 +531,8 @@ where
             })?;
 
         let context = self.call_contract_internal(
-            &contract,
-            &method_descriptor,
+            Arc::clone(&contract),
+            method_descriptor,
             CallFlags::ALL,
             true,
             &args,
@@ -577,7 +610,6 @@ where
             .manifest
             .abi
             .get_method_ref(method, args.len())
-            .cloned()
             .ok_or_else(|| {
                 CoreError::invalid_operation(format!(
                     "Method '{}' with {} parameter(s) doesn't exist in the contract {:?}.",
@@ -588,8 +620,8 @@ where
             })?;
 
         let context = self.call_contract_internal(
-            &contract,
-            &method_descriptor,
+            Arc::clone(&contract),
+            method_descriptor,
             CallFlags::ALL,
             false,
             &args,

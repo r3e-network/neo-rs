@@ -135,6 +135,37 @@ fn overlay_item(trackable: &Trackable) -> Option<Option<StorageItem>> {
     }
 }
 
+fn collect_change_overlays(
+    state: &InnerState,
+    key_prefix: Option<&StorageKey>,
+    prefix_bytes: Option<&[u8]>,
+) -> BTreeMap<StorageKey, Option<StorageItem>> {
+    let mut overlays = BTreeMap::new();
+    let mut collect = |key: &StorageKey| {
+        let Some(trackable) = state.dictionary.get(key) else {
+            return;
+        };
+        if let Some(item) = overlay_item(trackable) {
+            overlays.insert(key.clone(), item);
+        }
+    };
+
+    if let Some(key_prefix) = key_prefix {
+        for key in state.change_set.range(key_prefix.clone()..) {
+            if !key_matches_prefix(key, prefix_bytes) {
+                break;
+            }
+            collect(key);
+        }
+    } else {
+        for key in &state.change_set {
+            collect(key);
+        }
+    }
+
+    overlays
+}
+
 impl<B: CacheRead> Clone for DataCache<B> {
     fn clone(&self) -> Self {
         Self {
@@ -225,13 +256,24 @@ impl<B: CacheRead> DataCache<B> {
 
     /// Creates a cloned overlay cache that uses this cache as the backing store.
     pub fn clone_cache(&self) -> Self {
+        self.clone_cache_with_config(self.config)
+    }
+
+    /// Creates a cloned overlay with an explicit [`DataCacheConfig`].
+    ///
+    /// Transaction and nested execution snapshots typically set
+    /// `track_reads_in_write_cache = false`: first-time gets stay parent-backed
+    /// without a child write-lock + clone, while puts/deletes still populate
+    /// the change set. That matches committed value semantics and is faster on
+    /// read-heavy contract paths where most keys are touched once.
+    pub fn clone_cache_with_config(&self, config: DataCacheConfig) -> Self {
         let parent = Arc::new(self.clone());
         Self {
             state: Arc::new(RwLock::new(InnerState::new())),
             read_only: false,
             backing: CacheBacking::Parent(parent),
             ref_count: Arc::new(AtomicUsize::new(1)),
-            config: self.config,
+            config,
             #[cfg(test)]
             merge_write_passes: Arc::new(AtomicUsize::new(0)),
             #[cfg(test)]
@@ -699,7 +741,7 @@ impl<B: CacheRead> DataCache<B> {
         }
 
         let mut state = self.state.write();
-        let keys: Vec<StorageKey> = state.change_set.drain().collect();
+        let keys = std::mem::take(&mut state.change_set);
         for key in keys {
             if let Some(trackable) = state.dictionary.get_mut(&key) {
                 match trackable.state {
@@ -767,9 +809,7 @@ impl<B: CacheRead> DataCache<B> {
         self.tracked_item_visit_calls
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let state = self.state.read();
-        let mut keys = state.change_set.iter().collect::<Vec<_>>();
-        keys.sort_unstable();
-        for key in keys {
+        for key in &state.change_set {
             if let Some(trackable) = state.dictionary.get(key) {
                 visit(key, trackable);
             }
@@ -819,19 +859,7 @@ impl<B: CacheRead> DataCache<B> {
 
         if let Some(backing_entries) = self.backing.find(key_prefix, direction) {
             let state = self.state.read();
-            let mut overlays = BTreeMap::new();
-            for key in &state.change_set {
-                if !key_matches_prefix(key, prefix_bytes.as_deref()) {
-                    continue;
-                }
-
-                let Some(trackable) = state.dictionary.get(key) else {
-                    continue;
-                };
-                if let Some(item) = overlay_item(trackable) {
-                    overlays.insert(key.clone(), item);
-                }
-            }
+            let overlays = collect_change_overlays(&state, key_prefix, prefix_bytes.as_deref());
             drop(state);
 
             if overlays.is_empty() {

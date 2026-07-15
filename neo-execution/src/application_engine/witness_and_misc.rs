@@ -669,12 +669,15 @@ where
     }
     pub(crate) fn refresh_context_tracking(&mut self) -> CoreResult<()> {
         if let Some(current_context) = self.vm_engine.engine().current_context() {
-            let fallback_hash = UInt160::from_bytes(&current_context.script_hash())
-                .map_err(|e| CoreError::invalid_operation(format!("Invalid script hash: {e}")))?;
             let state_arc = current_context.state();
             let (current_hash, call_flags, calling_script_hash, context_snapshot) = {
                 let state = state_arc.lock();
-                let current_hash = state.script_hash.unwrap_or(fallback_hash);
+                let current_hash = match state.script_hash {
+                    Some(script_hash) => script_hash,
+                    None => UInt160::from_bytes(&current_context.script_hash()).map_err(|e| {
+                        CoreError::invalid_operation(format!("Invalid script hash: {e}"))
+                    })?,
+                };
                 let calling_script_hash = state
                     .native_calling_script_hash
                     .or(state.calling_script_hash)
@@ -735,7 +738,7 @@ where
             if !self.contracts.contains_key(&hash) {
                 if let Some(state) = contract.contract_state(&self.protocol_settings, block_height)
                 {
-                    self.contracts.insert(hash, state);
+                    self.put_contract_cache(hash, state);
                 }
             }
 
@@ -821,12 +824,20 @@ where
                 &ExecutionEngineLimits::default(),
             );
         }
-        match item.as_bytes() {
-            Ok(bytes) => Ok(bytes),
-            Err(_) => neo_serialization::binary_serializer::BinarySerializer::serialize(
-                &item,
-                &ExecutionEngineLimits::default(),
-            ),
+        if matches!(
+            &item,
+            StackItem::Boolean(_)
+                | StackItem::Integer(_)
+                | StackItem::ByteString(_)
+                | StackItem::Buffer(_)
+        ) {
+            return item
+                .into_bytes()
+                .map_err(|error| CoreError::invalid_operation(error.to_string()));
         }
+        neo_serialization::binary_serializer::BinarySerializer::serialize(
+            &item,
+            &ExecutionEngineLimits::default(),
+        )
     }
 }

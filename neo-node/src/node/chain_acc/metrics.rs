@@ -2,6 +2,8 @@
 
 use std::time::Duration;
 
+use serde::Serialize;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) struct StateServiceMptImportMetrics {
     pub(super) sync_blocks_persisted: u64,
@@ -39,17 +41,99 @@ pub(super) struct StateServiceMptImportMetrics {
     pub(super) mutate_changes_avg_us: u64,
     pub(super) root_hash_avg_us: u64,
     pub(super) trie_commit_avg_us: u64,
+    pub(super) backing_sort_avg_us: u64,
     pub(super) backing_commit_avg_us: u64,
     pub(super) publish_generation_avg_us: u64,
     pub(super) overlay_entries_avg: u64,
     pub(super) batch_blocks_avg: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct StateServiceMptCumulativeMetrics {
+    apply: neo_state_service::StateRootApplyStats,
+    stages: Vec<neo_state_service::metrics::StateRootApplyStageStats>,
+    counts: Vec<neo_state_service::metrics::StateRootApplyCountStats>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub(in crate::node) struct StateServiceMptWindowMetrics {
+    pub(in crate::node) apply_attempts: u64,
+    pub(in crate::node) apply_failures: u64,
+    /// Sum of request queue-to-completion latency for this window.
+    pub(in crate::node) end_to_end_total_us: u64,
+    pub(in crate::node) avg_end_to_end_us: u64,
+    /// Sum of actual trie application time for this window.
+    pub(in crate::node) apply_total_us: u64,
+    pub(in crate::node) avg_apply_us: u64,
+    pub(in crate::node) project_total_us: u64,
+    pub(in crate::node) avg_project_us: u64,
+    pub(in crate::node) changes_total: u64,
+    pub(in crate::node) avg_changes: u64,
+    pub(in crate::node) stages: Vec<StateServiceMptStageWindowMetrics>,
+    pub(in crate::node) counts: Vec<StateServiceMptCountWindowMetrics>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub(in crate::node) struct StateServiceMptStageWindowMetrics {
+    pub(in crate::node) stage: &'static str,
+    pub(in crate::node) calls: u64,
+    pub(in crate::node) total_us: u64,
+    pub(in crate::node) avg_us: u64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub(in crate::node) struct StateServiceMptCountWindowMetrics {
+    pub(in crate::node) kind: &'static str,
+    pub(in crate::node) samples: u64,
+    pub(in crate::node) total: u64,
+    pub(in crate::node) avg: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct MdbxCommitCumulativeMetrics {
+    stats: neo_storage::mdbx::MdbxCommitStats,
+    stages: Vec<neo_storage::mdbx::MdbxCommitStageStats>,
+    counts: Vec<neo_storage::mdbx::MdbxCommitCountStats>,
+}
+
+/// Exact MDBX commit work observed during one import window.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub(in crate::node) struct MdbxCommitWindowMetrics {
+    pub(in crate::node) attempts: u64,
+    pub(in crate::node) failures: u64,
+    pub(in crate::node) committed_transactions: u64,
+    pub(in crate::node) stages: Vec<MdbxCommitStageWindowMetrics>,
+    pub(in crate::node) counts: Vec<MdbxCommitCountWindowMetrics>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub(in crate::node) struct MdbxCommitStageWindowMetrics {
+    pub(in crate::node) stage: &'static str,
+    pub(in crate::node) calls: u64,
+    pub(in crate::node) total_us: u64,
+    pub(in crate::node) avg_us: u64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub(in crate::node) struct MdbxCommitCountWindowMetrics {
+    pub(in crate::node) kind: &'static str,
+    pub(in crate::node) samples: u64,
+    pub(in crate::node) total: u64,
+    pub(in crate::node) avg: u64,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) struct NativePersistTxStageImportMetrics {
+    pub(super) hash_avg_us: u64,
+    pub(super) cache_prepare_avg_us: u64,
+    pub(super) container_prepare_avg_us: u64,
+    pub(super) engine_create_avg_us: u64,
     pub(super) load_execute_avg_us: u64,
     pub(super) load_script_avg_us: u64,
     pub(super) execute_avg_us: u64,
+    pub(super) application_executed_avg_us: u64,
+    pub(super) tx_cache_commit_avg_us: u64,
+    pub(super) ledger_vm_state_avg_us: u64,
 }
 
 impl NativePersistTxStageImportMetrics {
@@ -68,11 +152,246 @@ impl NativePersistTxStageImportMetrics {
                 .map_or(0, |stat| stat.avg_us)
         };
         Self {
+            hash_avg_us: avg("hash"),
+            cache_prepare_avg_us: avg("cache_prepare"),
+            container_prepare_avg_us: avg("container_prepare"),
+            engine_create_avg_us: avg("engine_create"),
             load_execute_avg_us: avg("load_execute"),
             load_script_avg_us: avg("load_script"),
             execute_avg_us: avg("execute"),
+            application_executed_avg_us: avg("application_executed"),
+            tx_cache_commit_avg_us: avg("tx_cache_commit"),
+            ledger_vm_state_avg_us: avg("ledger_vm_state"),
         }
     }
+}
+
+impl StateServiceMptCumulativeMetrics {
+    pub(super) fn current() -> Self {
+        Self::from_stats(
+            neo_state_service::StateRootApplyMetrics::state_root_apply_stats(),
+            neo_state_service::StateRootApplyMetrics::state_root_apply_stage_stats(),
+            neo_state_service::StateRootApplyMetrics::state_root_apply_count_stats(),
+        )
+    }
+
+    pub(super) fn from_stats(
+        apply: neo_state_service::StateRootApplyStats,
+        stages: Vec<neo_state_service::metrics::StateRootApplyStageStats>,
+        counts: Vec<neo_state_service::metrics::StateRootApplyCountStats>,
+    ) -> Self {
+        Self {
+            apply,
+            stages,
+            counts,
+        }
+    }
+
+    pub(super) fn window_since(&self, previous: &Self) -> StateServiceMptWindowMetrics {
+        let apply_attempts = self.apply.attempts.saturating_sub(previous.apply.attempts);
+        let apply_failures = self.apply.failures.saturating_sub(previous.apply.failures);
+        let end_to_end_total_us = self.apply.total_us.saturating_sub(previous.apply.total_us);
+        let apply_total_us = self
+            .apply
+            .apply_total_us
+            .saturating_sub(previous.apply.apply_total_us);
+        let project_total_us = self
+            .apply
+            .project_total_us
+            .saturating_sub(previous.apply.project_total_us);
+        let changes_total = self
+            .apply
+            .changes_total
+            .saturating_sub(previous.apply.changes_total);
+
+        StateServiceMptWindowMetrics {
+            apply_attempts,
+            apply_failures,
+            end_to_end_total_us,
+            avg_end_to_end_us: exact_average(end_to_end_total_us, apply_attempts),
+            apply_total_us,
+            avg_apply_us: exact_average(apply_total_us, apply_attempts),
+            project_total_us,
+            avg_project_us: exact_average(project_total_us, apply_attempts),
+            changes_total,
+            avg_changes: exact_average(changes_total, apply_attempts),
+            stages: self
+                .stages
+                .iter()
+                .map(|current| {
+                    let previous = previous
+                        .stages
+                        .iter()
+                        .find(|candidate| candidate.stage == current.stage);
+                    let calls = current
+                        .calls
+                        .saturating_sub(previous.map_or(0, |stat| stat.calls));
+                    let total_us = current
+                        .total_us
+                        .saturating_sub(previous.map_or(0, |stat| stat.total_us));
+                    StateServiceMptStageWindowMetrics {
+                        stage: current.stage,
+                        calls,
+                        total_us,
+                        avg_us: exact_average(total_us, calls),
+                    }
+                })
+                .collect(),
+            counts: self
+                .counts
+                .iter()
+                .map(|current| {
+                    let previous = previous
+                        .counts
+                        .iter()
+                        .find(|candidate| candidate.kind == current.kind);
+                    let samples = current
+                        .samples
+                        .saturating_sub(previous.map_or(0, |stat| stat.samples));
+                    let total = current
+                        .total
+                        .saturating_sub(previous.map_or(0, |stat| stat.total));
+                    StateServiceMptCountWindowMetrics {
+                        kind: current.kind,
+                        samples,
+                        total,
+                        avg: exact_average(total, samples),
+                    }
+                })
+                .collect(),
+        }
+    }
+}
+
+impl MdbxCommitCumulativeMetrics {
+    pub(super) fn current() -> Self {
+        let snapshot = neo_storage::mdbx::MdbxCommitMetrics::snapshot();
+        Self::from_stats(snapshot.stats, snapshot.stages, snapshot.counts)
+    }
+
+    pub(super) fn from_stats(
+        stats: neo_storage::mdbx::MdbxCommitStats,
+        stages: Vec<neo_storage::mdbx::MdbxCommitStageStats>,
+        counts: Vec<neo_storage::mdbx::MdbxCommitCountStats>,
+    ) -> Self {
+        Self {
+            stats,
+            stages,
+            counts,
+        }
+    }
+
+    pub(super) fn window_since(&self, previous: &Self) -> MdbxCommitWindowMetrics {
+        MdbxCommitWindowMetrics {
+            attempts: self.stats.attempts.saturating_sub(previous.stats.attempts),
+            failures: self.stats.failures.saturating_sub(previous.stats.failures),
+            committed_transactions: self
+                .stats
+                .committed_transactions
+                .saturating_sub(previous.stats.committed_transactions),
+            stages: self
+                .stages
+                .iter()
+                .map(|current| {
+                    let previous = previous
+                        .stages
+                        .iter()
+                        .find(|candidate| candidate.stage == current.stage);
+                    let calls = current
+                        .calls
+                        .saturating_sub(previous.map_or(0, |stat| stat.calls));
+                    let total_us = current
+                        .total_us
+                        .saturating_sub(previous.map_or(0, |stat| stat.total_us));
+                    MdbxCommitStageWindowMetrics {
+                        stage: current.stage,
+                        calls,
+                        total_us,
+                        avg_us: exact_average(total_us, calls),
+                    }
+                })
+                .collect(),
+            counts: self
+                .counts
+                .iter()
+                .map(|current| {
+                    let previous = previous
+                        .counts
+                        .iter()
+                        .find(|candidate| candidate.kind == current.kind);
+                    let samples = current
+                        .samples
+                        .saturating_sub(previous.map_or(0, |stat| stat.samples));
+                    let total = current
+                        .total
+                        .saturating_sub(previous.map_or(0, |stat| stat.total));
+                    MdbxCommitCountWindowMetrics {
+                        kind: current.kind,
+                        samples,
+                        total,
+                        avg: exact_average(total, samples),
+                    }
+                })
+                .collect(),
+        }
+    }
+}
+
+impl StateServiceMptWindowMetrics {
+    pub(super) fn stage_total_us(&self, stage: &str) -> u64 {
+        self.stages
+            .iter()
+            .find(|metric| metric.stage == stage)
+            .map_or(0, |metric| metric.total_us)
+    }
+
+    pub(super) fn stage_avg_us(&self, stage: &str) -> u64 {
+        self.stages
+            .iter()
+            .find(|metric| metric.stage == stage)
+            .map_or(0, |metric| metric.avg_us)
+    }
+
+    pub(super) fn count_total(&self, kind: &str) -> u64 {
+        self.counts
+            .iter()
+            .find(|metric| metric.kind == kind)
+            .map_or(0, |metric| metric.total)
+    }
+
+    pub(super) fn count_avg(&self, kind: &str) -> u64 {
+        self.counts
+            .iter()
+            .find(|metric| metric.kind == kind)
+            .map_or(0, |metric| metric.avg)
+    }
+}
+
+impl MdbxCommitWindowMetrics {
+    pub(super) fn stage_total_us(&self, stage: &str) -> u64 {
+        self.stages
+            .iter()
+            .find(|metric| metric.stage == stage)
+            .map_or(0, |metric| metric.total_us)
+    }
+
+    pub(super) fn stage_avg_us(&self, stage: &str) -> u64 {
+        self.stages
+            .iter()
+            .find(|metric| metric.stage == stage)
+            .map_or(0, |metric| metric.avg_us)
+    }
+
+    pub(super) fn count_total(&self, kind: &str) -> u64 {
+        self.counts
+            .iter()
+            .find(|metric| metric.kind == kind)
+            .map_or(0, |metric| metric.total)
+    }
+}
+
+fn exact_average(total: u64, samples: u64) -> u64 {
+    total.checked_div(samples).unwrap_or(0)
 }
 
 impl StateServiceMptImportMetrics {
@@ -144,6 +463,7 @@ impl StateServiceMptImportMetrics {
             mutate_changes_avg_us: apply_hot.mutate_changes_avg_us,
             root_hash_avg_us: apply_hot.root_hash_avg_us,
             trie_commit_avg_us: apply_hot.trie_commit_avg_us,
+            backing_sort_avg_us: apply_hot.backing_sort_avg_us,
             backing_commit_avg_us: apply_hot.backing_commit_avg_us,
             publish_generation_avg_us: apply_hot.publish_generation_avg_us,
             overlay_entries_avg: apply_hot.overlay_entries_avg,

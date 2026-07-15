@@ -33,7 +33,7 @@ use neo_primitives::constants::HASH_SIZE;
 use neo_vm::evaluation_stack::EvaluationStack;
 use neo_vm::interop_service::InteropHost;
 use neo_vm::script::Script;
-// InteropInterface trait removed - StackValue::Interop(u64) is used instead
+// Interop values are represented by local StackItem::InteropInterface handles.
 // Verifiable script containers are passed via the interop host registry, not inline in the VM stack
 use crate::contract_state::ContractState;
 use crate::diagnostic::{Diagnostic, NoDiagnostic};
@@ -106,6 +106,8 @@ where
     gas_consumed: i64,
     fee_amount: i64,
     fee_consumed: i64,
+    /// Whether execution contexts may carry a Policy fee whitelist marker.
+    fee_whitelist_enabled: bool,
     exec_fee_factor: u32,
     storage_price: u32,
     call_flags: CallFlags,
@@ -118,7 +120,8 @@ where
     native_registry: NativeRegistry<P>,
     native_contract_provider: Arc<P>,
     native_contract_cache: Arc<Mutex<NativeContractsCache>>,
-    contracts: HashMap<UInt160, ContractState>,
+    contracts: HashMap<UInt160, Arc<ContractState>>,
+    contract_scripts: HashMap<UInt160, Script>,
     storage_iterators: HashMap<u32, StorageIterator>,
     next_iterator_id: u32,
     current_script_hash: Option<UInt160>,

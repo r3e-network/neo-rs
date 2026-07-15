@@ -92,9 +92,11 @@ where
             ));
         }
 
-        if let Ok(state_arc) = self.current_execution_state() {
-            if state_arc.lock().whitelisted {
-                return Ok(());
+        if self.fee_whitelist_enabled {
+            if let Ok(state_arc) = self.current_execution_state() {
+                if state_arc.lock().whitelisted {
+                    return Ok(());
+                }
             }
         }
 
@@ -242,13 +244,17 @@ where
         self.calling_script_hash.unwrap_or_else(UInt160::zero)
     }
 
-    /// Calls a native contract method.
-    pub fn call_native_contract(
+    pub(crate) fn with_resolved_native_method<R>(
         &mut self,
         contract_hash: UInt160,
         method: &str,
-        args: &[Vec<u8>],
-    ) -> CoreResult<Vec<u8>> {
+        argument_count: usize,
+        invoke: impl FnOnce(
+            &P::Contract,
+            &crate::native_contract_cache::ResolvedNativeMethod,
+            &mut Self,
+        ) -> CoreResult<R>,
+    ) -> CoreResult<R> {
         self.refresh_context_tracking()?;
 
         // Resolve from the engine-local registry first, then the provider
@@ -272,7 +278,7 @@ where
             let mut cache = cache_arc.lock();
             cache.get_or_build::<P, _>(&native).get_method(
                 method,
-                args.len(),
+                argument_count,
                 &self.protocol_settings,
                 block_height,
             )?
@@ -281,7 +287,7 @@ where
             CoreError::invalid_operation(format!(
                 "Method '{}({})' not found in native contract {} at height {}",
                 method,
-                args.len(),
+                argument_count,
                 native.name(),
                 block_height
             ))
@@ -308,7 +314,7 @@ where
             .protocol_settings
             .is_hardfork_enabled(Hardfork::HfFaun, block_height)
             && self
-                .whitelisted_fee_for_policy(&contract_hash, method, args.len() as u32)?
+                .whitelisted_fee_for_policy(&contract_hash, method, argument_count as u32)?
                 .is_some()
         {
             is_whitelisted = true;
@@ -334,24 +340,39 @@ where
             }
         }
 
-        let result = native
-            .invoke_resolved(
-                self,
-                resolved_method.method_index(),
-                resolved_method.method(),
-                args,
-            )
-            .map_err(|err| {
-                CoreError::native_contract(format!(
-                    "{}({}) method `{}` failed: {}",
-                    native.name(),
-                    contract_hash,
-                    method,
-                    err
-                ))
-            })?;
+        let result = invoke(&native, &resolved_method, self).map_err(|err| {
+            CoreError::native_contract(format!(
+                "{}({}) method `{}` failed: {}",
+                native.name(),
+                contract_hash,
+                method,
+                err
+            ))
+        })?;
 
         Ok(result)
+    }
+
+    /// Calls a native contract through the byte-oriented compatibility API.
+    pub fn call_native_contract(
+        &mut self,
+        contract_hash: UInt160,
+        method: &str,
+        args: &[Vec<u8>],
+    ) -> CoreResult<Vec<u8>> {
+        self.with_resolved_native_method(
+            contract_hash,
+            method,
+            args.len(),
+            |native, resolved_method, engine| {
+                native.invoke_resolved(
+                    engine,
+                    resolved_method.method_index(),
+                    resolved_method.method(),
+                    args,
+                )
+            },
+        )
     }
 
     /// Runs `on_persist` for every active native contract.
@@ -392,7 +413,7 @@ where
         if profiling {
             let stats = native_on_persist_perf_stats();
             let blocks = stats.blocks.fetch_add(1, Ordering::Relaxed) + 1;
-            if blocks % 1000 == 0 {
+            if blocks.is_multiple_of(1000) {
                 let blocks_f = blocks as f64;
                 let mut top = {
                     let totals = stats.total_ns_by_contract.lock();

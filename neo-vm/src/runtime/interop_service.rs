@@ -80,6 +80,15 @@ impl<S> Clone for ResolvedInterop<S> {
 /// implementation, syscall security (permissions, container checks, policy rules)
 /// is enforced by the host (`ApplicationEngine` / native contract layer).
 pub trait InteropHost<S = ()> {
+    /// Returns whether this host needs post-instruction callbacks.
+    ///
+    /// The execution engine snapshots this capability when the host is
+    /// attached. Hosts whose setting can change must detach and reattach before
+    /// executing more instructions.
+    fn post_execute_instruction_enabled(&self) -> bool {
+        false
+    }
+
     /// Invokes a system call identified by its hash.
     ///
     /// # Arguments

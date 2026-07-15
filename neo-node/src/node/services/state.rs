@@ -11,6 +11,12 @@ use crate::node::inventory_relay::FAST_SYNC_BURST_CAPACITY;
 
 use super::store::{ServiceStore, open_service_store_with_storage_config};
 
+/// Large ordered MPT batches amortize one MDBX commit across the trusted
+/// chain.acc catch-up burst. The queue remains separately bounded, so this
+/// only changes how much already-projected work the single ordered writer
+/// consumes per durable transaction.
+const FAST_SYNC_MPT_APPLY_BATCH_BLOCKS: usize = FAST_SYNC_BURST_CAPACITY;
+
 pub(super) struct StateServiceRuntime {
     pub(super) state_store: Option<Arc<neo_state_service::StateStore<RuntimeStore>>>,
     pub(super) state_service:
@@ -39,9 +45,10 @@ pub(super) fn build_state_service_runtime(
         )),
         (Some(state_store), false) if use_async_state_pipeline => {
             let handlers =
-                neo_state_service::commit_handlers::StateServiceCommitHandlers::try_new_async_with_capacity(
+                neo_state_service::commit_handlers::StateServiceCommitHandlers::try_new_async_with_limits(
                     Arc::clone(state_store),
                     FAST_SYNC_BURST_CAPACITY,
+                    FAST_SYNC_MPT_APPLY_BATCH_BLOCKS,
                 )
                 .context("spawning StateService MPT worker")?;
             Some(Arc::new(handlers))
@@ -76,8 +83,9 @@ fn build_state_store(
     }
 
     let mut durable_store = None;
-    let coordinated =
-        storage_provider.eq_ignore_ascii_case("mdbx") && canonical_store.as_mdbx().is_some();
+    let coordinated = config.state_service.coordinated
+        && storage_provider.eq_ignore_ascii_case("mdbx")
+        && canonical_store.as_mdbx().is_some();
     let state_store = if coordinated {
         let backing = Arc::new(
             canonical_store
@@ -107,6 +115,10 @@ fn build_state_store(
                     )
                 })?,
         )
+    } else if !config.state_service.coordinated && storage_provider.eq_ignore_ascii_case("mdbx") {
+        return Err(anyhow::anyhow!(
+            "[state_service].path is required when coordinated=false with MDBX storage"
+        ));
     } else {
         let backing: ServiceStore = Arc::new(RuntimeStore::Memory(MemoryStore::new()));
         Arc::new(

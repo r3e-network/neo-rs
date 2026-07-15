@@ -33,7 +33,8 @@ mod report;
 pub(super) use crate::node::ledger_source::{LocalLedgerTip, local_ledger_tip};
 pub(super) use driver::import_chain_acc_report_with_expected_range;
 pub use driver::import_chain_acc_until_height;
-pub(super) use report::{ChainAccImportReport, ImportHotMetrics};
+pub(in crate::node) use metrics::{MdbxCommitWindowMetrics, StateServiceMptWindowMetrics};
+pub(in crate::node) use report::{ChainAccImportReport, ChainAccProfileWindow, ImportHotMetrics};
 
 /// The mixed-block batch size for trusted `chain.acc` Import commands.
 ///

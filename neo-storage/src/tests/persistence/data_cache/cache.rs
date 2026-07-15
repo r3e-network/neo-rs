@@ -102,6 +102,101 @@ fn find_without_prefix_uses_csharp_storage_byte_order() {
 }
 
 #[test]
+fn prefixed_find_merges_ordered_overlays_and_tombstones_in_both_directions() {
+    let prefix = StorageKey::new(-5, vec![0x21]);
+    let stored_a = StorageKey::new(-5, vec![0x21, 0x01]);
+    let stored_b = StorageKey::new(-5, vec![0x21, 0x02]);
+    let stored_c = StorageKey::new(-5, vec![0x21, 0x03]);
+    let added_d = StorageKey::new(-5, vec![0x21, 0x04]);
+    let backing = TestBacking {
+        entries: Arc::new(BTreeMap::from([
+            (stored_a.clone(), StorageItem::from_bytes(vec![0xA1])),
+            (stored_b.clone(), StorageItem::from_bytes(vec![0xB1])),
+            (stored_c.clone(), StorageItem::from_bytes(vec![0xC1])),
+            (
+                StorageKey::new(-5, vec![0x22, 0x01]),
+                StorageItem::from_bytes(vec![0xFF]),
+            ),
+        ])),
+    };
+    let cache = DataCache::with_backing(false, backing, DataCacheConfig::default());
+
+    cache.update(stored_b.clone(), StorageItem::from_bytes(vec![0xB2]));
+    cache.delete(&stored_c);
+    cache.add(added_d.clone(), StorageItem::from_bytes(vec![0xD1]));
+    for index in 0..512u16 {
+        cache.add(
+            StorageKey::new(7, index.to_be_bytes().to_vec()),
+            StorageItem::from_bytes(vec![0xEE]),
+        );
+    }
+
+    let forward = cache
+        .find(Some(&prefix), SeekDirection::Forward)
+        .map(|(key, item)| (key, item.value_bytes().into_owned()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        forward,
+        vec![
+            (stored_a.clone(), vec![0xA1]),
+            (stored_b.clone(), vec![0xB2]),
+            (added_d.clone(), vec![0xD1]),
+        ]
+    );
+
+    let backward = cache
+        .find(Some(&prefix), SeekDirection::Backward)
+        .map(|(key, item)| (key, item.value_bytes().into_owned()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        backward,
+        vec![
+            (added_d, vec![0xD1]),
+            (stored_b, vec![0xB2]),
+            (stored_a, vec![0xA1]),
+        ]
+    );
+}
+
+#[test]
+fn prefixed_find_preserves_parent_child_overlay_order_and_deletes() {
+    let prefix = StorageKey::new(-5, vec![0x21]);
+    let key_a = StorageKey::new(-5, vec![0x21, 0x01]);
+    let key_b = StorageKey::new(-5, vec![0x21, 0x02]);
+    let key_c = StorageKey::new(-5, vec![0x21, 0x03]);
+    let key_d = StorageKey::new(-5, vec![0x21, 0x04]);
+    let backing = TestBacking {
+        entries: Arc::new(BTreeMap::from([
+            (key_a.clone(), StorageItem::from_bytes(vec![0xA1])),
+            (key_b.clone(), StorageItem::from_bytes(vec![0xB1])),
+        ])),
+    };
+    let parent = DataCache::with_backing(false, backing, DataCacheConfig::default());
+    parent.delete(&key_a);
+    parent.update(key_b.clone(), StorageItem::from_bytes(vec![0xB2]));
+    parent.add(key_c.clone(), StorageItem::from_bytes(vec![0xC1]));
+
+    let child = parent.clone_cache();
+    child.delete(&key_b);
+    child.update(key_c.clone(), StorageItem::from_bytes(vec![0xC2]));
+    child.add(key_d.clone(), StorageItem::from_bytes(vec![0xD1]));
+
+    let expected = vec![(key_c.clone(), vec![0xC2]), (key_d.clone(), vec![0xD1])];
+    let child_entries = child
+        .find(Some(&prefix), SeekDirection::Forward)
+        .map(|(key, item)| (key, item.value_bytes().into_owned()))
+        .collect::<Vec<_>>();
+    assert_eq!(child_entries, expected);
+
+    child.commit();
+    let parent_entries = parent
+        .find(Some(&prefix), SeekDirection::Forward)
+        .map(|(key, item)| (key, item.value_bytes().into_owned()))
+        .collect::<Vec<_>>();
+    assert_eq!(parent_entries, expected);
+}
+
+#[test]
 fn try_add_rejects_live_cached_entry_like_csharp() {
     let cache = DataCache::new(false);
     let key = StorageKey::new(7, vec![0x01]);

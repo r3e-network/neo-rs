@@ -406,19 +406,7 @@ where
         self.vm_engine.engine().instructions_executed
     }
 
-    /// Enables opcode and evaluation-stack counters for this engine only.
-    ///
-    /// Profiling is observational and remains disabled unless a diagnostic
-    /// caller explicitly opts in before execution.
-    pub fn enable_vm_execution_profiling(&mut self) {
-        self.vm_engine.engine_mut().enable_execution_profiling();
-    }
 
-    /// Returns the current targeted VM profile, when enabled.
-    #[must_use]
-    pub fn vm_execution_profile(&self) -> Option<neo_vm::VmExecutionProfile> {
-        self.vm_engine.engine().execution_profile()
-    }
 
     /// Returns the fault exception message as a string slice, if any.
     pub fn fault_exception_string(&self) -> Option<&str> {
@@ -516,15 +504,17 @@ where
 
     /// Checks if the current execution context has the required call flags.
     pub fn has_call_flags(&self, required: CallFlags) -> bool {
-        // Prefer VM-synced flags (updated on context load/unload and every
-        // load_script_with_state) so the syscall hot path avoids locking
-        // ExecutionContextState on every System.* invocation.
-        self.vm_engine.engine().has_call_flags(required)
+        match self.current_execution_state() {
+            Ok(state_arc) => state_arc.lock().call_flags.contains(required),
+            Err(_) => false,
+        }
     }
 
     /// Returns the call flags of the current execution context.
     pub fn get_current_call_flags(&self) -> VmResult<CallFlags> {
-        Ok(self.vm_engine.engine().call_flags())
+        let state_arc = self.current_execution_state()?;
+        let call_flags = state_arc.lock().call_flags;
+        Ok(call_flags)
     }
 
     /// Returns the execution state of the current context.

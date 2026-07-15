@@ -5,10 +5,10 @@
 //! concrete host type. This module confines all unsafe pointer dereferences and
 //! documents the invariants required by the parent `ExecutionEngine` facade.
 
+use crate::Instruction;
 use crate::error::VmResult;
 use crate::execution_context::ExecutionContext;
 use crate::interop_service::InteropHost;
-use neo_vm_rs::Instruction;
 use std::ptr::NonNull;
 
 use super::ExecutionEngine;
@@ -79,6 +79,7 @@ impl<S> Clone for HostCallbacks<S> {
 pub(crate) struct HostPtr<S = ()>(
     NonNull<()>,
     HostCallbacks<S>,
+    bool,
     /// Marker to make `HostPtr` `!Send` and `!Sync` by default so that the
     /// manual `Send` impl below is the only path to thread-safety.
     std::marker::PhantomData<*const ()>,
@@ -113,10 +114,15 @@ impl<S> HostPtr<S> {
     // for the VM interop callback fast path.
     #[allow(unsafe_code)]
     pub(crate) unsafe fn new<H: InteropHost<S>>(ptr: *mut H) -> Self {
-        let ptr = NonNull::new(ptr.cast::<()>()).expect("interop host pointer must not be null");
+        let ptr = NonNull::new(ptr).expect("interop host pointer must not be null");
+        // SAFETY: the constructor contract guarantees a valid, exclusively
+        // accessible H pointer while the host binding exists.
+        let post_execute_instruction_enabled =
+            unsafe { ptr.as_ref() }.post_execute_instruction_enabled();
         Self(
-            ptr,
+            ptr.cast::<()>(),
             HostCallbacks::for_host::<H>(),
+            post_execute_instruction_enabled,
             std::marker::PhantomData,
         )
     }
@@ -126,6 +132,12 @@ impl<S> HostPtr<S> {
     #[inline]
     pub(crate) fn as_raw(&self) -> *mut () {
         self.0.as_ptr()
+    }
+
+    /// Returns whether the attached host requested post-instruction callbacks.
+    #[inline]
+    pub(crate) const fn post_execute_instruction_enabled(&self) -> bool {
+        self.2
     }
 
     /// Calls [`InteropHost::on_context_loaded`] on the wrapped host.

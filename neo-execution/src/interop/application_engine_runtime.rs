@@ -13,7 +13,7 @@ use neo_primitives::ContractParameterType;
 use neo_primitives::UInt160;
 use neo_primitives::constants::{ADDRESS_SIZE, HASH_SIZE};
 use neo_vm::StackItemType;
-use neo_vm::{StackItem, VmError, VmResult};
+use neo_vm::{Script, StackItem, VmError, VmResult};
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
 use std::convert::TryFrom;
@@ -93,7 +93,7 @@ where
 
         let effective_flags = call_flags & state_call_flags & CallFlags::READ_ONLY;
 
-        self.load_script_with_state(script, -1, 0, move |state| {
+        self.load_script_with_state(Script::new_relaxed(script), -1, 0, move |state| {
             state.calling_context = Some(calling_context);
             state.call_flags = effective_flags;
             state.is_dynamic_call = true;

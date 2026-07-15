@@ -34,7 +34,7 @@ pub struct ExecutionContextState<B = EmptyCacheBacking> {
     pub native_calling_script_hash: Option<UInt160>,
 
     /// The contract being executed
-    pub contract: Option<ContractState>,
+    pub contract: Option<Arc<ContractState>>,
 
     /// The call flags for this context
     pub call_flags: CallFlags,

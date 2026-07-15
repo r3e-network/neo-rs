@@ -117,9 +117,6 @@ impl<S> ExecutionEngine<S> {
 
         // Execute the instruction - direct array access for optimal dispatch
         let opcode = instruction.opcode();
-        if let Some(profile) = &mut self.execution_profile {
-            profile.record_opcode(opcode);
-        }
         let handler = self.jump_table.get_handler_by_u8(opcode.byte());
         let result = match handler {
             Some(h) => h(self, &instruction),

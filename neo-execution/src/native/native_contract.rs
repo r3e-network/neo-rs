@@ -22,8 +22,8 @@ use neo_manifest::{
     ContractParameterDefinition, NefFile,
 };
 use neo_payloads::Block;
-use neo_vm::OpCode;
 use neo_vm::script_builder::ScriptBuilder;
+use neo_vm::{OpCode, StackItem};
 use serde::{Deserialize, Serialize};
 
 use crate::application_engine::ApplicationEngine;
@@ -248,6 +248,27 @@ where
     {
         let _ = method_index;
         self.invoke(engine, &method.name, args)
+    }
+
+    /// Tries to invoke a resolved method without projecting VM values through
+    /// the legacy byte-oriented compatibility API.
+    ///
+    /// The outer [`Option`] reports whether this contract implements a typed
+    /// path for the resolved method. The inner result contains an optional VM
+    /// value (`None` for a void method). Unsupported methods fall back to
+    /// [`NativeContract::invoke_resolved`] at the ApplicationEngine boundary.
+    fn try_invoke_resolved_stack_items<D, B>(
+        &self,
+        _engine: &mut ApplicationEngine<P, D, B>,
+        _method_index: usize,
+        _method: &NativeMethod,
+        _args: &[StackItem],
+    ) -> Option<CoreResult<Option<StackItem>>>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
+        None
     }
 
     /// Called when the contract is initialized.

@@ -306,6 +306,18 @@ pub trait NativeContractProvider: Send + Sync + Sized + 'static {
         ))
     }
 
+    /// Returns whether ContractManagement still contains a deployed contract.
+    ///
+    /// Providers may override this with a raw storage existence check. The
+    /// default preserves behavior by resolving the complete contract state.
+    fn contract_exists<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        hash: &UInt160,
+    ) -> CoreResult<bool> {
+        Ok(self.contract_state(snapshot, hash)?.is_some())
+    }
+
     /// Returns Oracle request details for CheckWitness signer inheritance.
     fn oracle_request_details<B: CacheRead>(
         &self,

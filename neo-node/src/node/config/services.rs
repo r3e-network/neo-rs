@@ -5,7 +5,7 @@ use neo_primitives::UnhandledExceptionPolicy;
 use serde::Deserialize;
 
 /// `[state_service]`: state-root/MPT support used by Neo's StateService plugin.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub(in crate::node) struct StateServiceSection {
     /// Whether to start the state-service store and expose state RPC methods.
     #[serde(default, alias = "Enabled")]
@@ -17,6 +17,11 @@ pub(in crate::node) struct StateServiceSection {
     /// node is still far behind the peer-reported live tip.
     #[serde(default, alias = "TrackDuringCatchup")]
     pub(in crate::node) track_during_catchup: bool,
+    /// Whether persistent MDBX state bytes publish atomically with the Ledger.
+    /// Set false only when an auxiliary `path` is configured and replay
+    /// recovery is acceptable for the catch-up profile.
+    #[serde(default = "default_true", alias = "Coordinated")]
+    pub(in crate::node) coordinated: bool,
     /// Configured state-root store path.
     #[serde(default, alias = "Path")]
     pub(in crate::node) path: Option<PathBuf>,
@@ -26,6 +31,23 @@ pub(in crate::node) struct StateServiceSection {
     /// verifies and persists inbound signed roots (observer).
     #[serde(default, alias = "ValidatorKeyHex", alias = "PrivateKeyHex")]
     pub(in crate::node) validator_key_hex: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for StateServiceSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            full_state: false,
+            track_during_catchup: false,
+            coordinated: true,
+            path: None,
+            validator_key_hex: None,
+        }
+    }
 }
 
 /// `[indexer]`: read-side block/transaction/account indexing service.

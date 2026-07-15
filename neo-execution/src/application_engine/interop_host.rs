@@ -10,13 +10,14 @@ where
         self.diagnostic.enabled()
     }
 
+
     fn invoke_syscall(&mut self, engine: &mut ExecutionEngine<B>, hash: u32) -> VmResult<()> {
         if let Some(entry) = self.interop_handlers.get(&hash).copied() {
             // C# `ApplicationEngine.System_Contract_Call` equivalent: check that
             // the current execution context has the required call flags before
             // charging and dispatching through the canonical local VM host.
             if entry.required_call_flags != CallFlags::NONE
-                && !engine.has_call_flags(entry.required_call_flags)
+                && !self.has_call_flags(entry.required_call_flags)
             {
                 return Err(VmError::invalid_operation_msg(format!(
                     "Missing required call flags {:?} for syscall 0x{hash:08x}",

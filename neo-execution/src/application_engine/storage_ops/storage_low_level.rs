@@ -193,7 +193,7 @@ where
 
     pub(crate) fn load_script_with_state<F>(
         &mut self,
-        script_bytes: Vec<u8>,
+        script: Script,
         rvcount: i32,
         initial_position: usize,
         configure: F,
@@ -201,9 +201,6 @@ where
     where
         F: FnOnce(&mut ExecutionContextState<B>),
     {
-        let script = Script::from(script_bytes)
-            .map_err(|e| CoreError::invalid_operation(format!("Invalid script: {e}")))?;
-
         let (context, call_flags, invocation_counter_hash) = {
             let engine = self.vm_engine.engine_mut();
             let context = engine.create_context(script, rvcount, initial_position);

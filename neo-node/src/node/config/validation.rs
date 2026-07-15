@@ -95,9 +95,15 @@ fn validate_static_files_config(
 
 fn validate_service_store_paths(config: &NodeConfig, network: u32) -> anyhow::Result<()> {
     if config.state_service.enabled {
-        if let Some(path) = &config.state_service.path {
-            let path = network_scoped_path(path, network);
-            validate_non_empty_service_path(&path, "[state_service].path")?;
+        match (&config.state_service.path, config.state_service.coordinated) {
+            (Some(path), _) => {
+                let path = network_scoped_path(path, network);
+                validate_non_empty_service_path(&path, "[state_service].path")?;
+            }
+            (None, false) => anyhow::bail!(
+                "[state_service].path is required when [state_service].coordinated=false"
+            ),
+            (None, true) => {}
         }
     }
 
@@ -508,7 +514,10 @@ pub(in crate::node) fn validate_state_service_storage(
         return Ok(());
     }
     let chain_height = ledger_index;
-    if storage_provider.eq_ignore_ascii_case("mdbx") && canonical_store.as_mdbx().is_some() {
+    if config.state_service.coordinated
+        && storage_provider.eq_ignore_ascii_case("mdbx")
+        && canonical_store.as_mdbx().is_some()
+    {
         let state_store = canonical_store
             .open_coordinated_namespace(neo_state_service::MDBX_STATE_SERVICE_NAMESPACE)
             .context("opening coordinated StateService MDBX namespace for validation")?;
