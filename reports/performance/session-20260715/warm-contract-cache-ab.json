@@ -1,0 +1,32 @@
+{
+  "label": "warm contract+script cache across TXs in block",
+  "means": {
+    "overall_bps": 7632.105664547048,
+    "tx_bps": 918.3994520677455,
+    "dense_bps": 752.9640440085808,
+    "load_execute_us": 804.3333333333334
+  },
+  "runs": [
+    {
+      "overall_bps": 7595.872745566988,
+      "tx_bps": 913.9882918291265,
+      "dense_bps": 750.7371726093851,
+      "load_execute_us": 774
+    },
+    {
+      "overall_bps": 7642.4678943650415,
+      "tx_bps": 918.2626320684938,
+      "dense_bps": 751.4534784511595,
+      "load_execute_us": 895
+    },
+    {
+      "overall_bps": 7657.976353709115,
+      "tx_bps": 922.9474323056161,
+      "dense_bps": 756.7014809651974,
+      "load_execute_us": 744
+    }
+  ],
+  "vs_same_tree_control_overall_pct": 1.8904701227828322,
+  "vs_callflags_overall_pct": -37.87070362125222,
+  "vs_same_tree_load_ex_pct": 8.50308017446829
+}

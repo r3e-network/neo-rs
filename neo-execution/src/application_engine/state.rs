@@ -297,8 +297,10 @@ where
         self.notifications.clear();
         self.logs.clear();
         self.fault_exception = None;
-        self.contracts.clear();
-        self.contract_scripts.clear();
+        // Keep per-block contract and script instruction caches warm across
+        // multi-tx blocks. ContractManagement updates go through
+        // `put_contract_cache` / `remove_contract_cache` so cache identity
+        // (id + update_counter) stays correct without a full clear.
         self.storage_iterators.clear();
         self.next_iterator_id = 1;
         self.current_script_hash = None;
@@ -504,17 +506,15 @@ where
 
     /// Checks if the current execution context has the required call flags.
     pub fn has_call_flags(&self, required: CallFlags) -> bool {
-        match self.current_execution_state() {
-            Ok(state_arc) => state_arc.lock().call_flags.contains(required),
-            Err(_) => false,
-        }
+        // Prefer VM-synced flags (updated on context load/unload and every
+        // load_script_with_state) so the syscall hot path avoids locking
+        // ExecutionContextState on every System.* invocation.
+        self.vm_engine.engine().has_call_flags(required)
     }
 
     /// Returns the call flags of the current execution context.
     pub fn get_current_call_flags(&self) -> VmResult<CallFlags> {
-        let state_arc = self.current_execution_state()?;
-        let call_flags = state_arc.lock().call_flags;
-        Ok(call_flags)
+        Ok(self.vm_engine.engine().call_flags())
     }
 
     /// Returns the execution state of the current context.

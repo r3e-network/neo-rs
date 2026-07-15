@@ -1,0 +1,44 @@
+{
+  "label": "restore lock-free has_call_flags",
+  "prev_broken_tree": {
+    "overall": 7490.0,
+    "tx": 894.0,
+    "dense": 736.0,
+    "load_execute": 785
+  },
+  "callflags_retained_control": {
+    "overall": 12284.230690090431,
+    "tx": 1972.0228778782196,
+    "dense": 1734.7032435405026
+  },
+  "candidate_overall": [
+    7390.860388113283,
+    7544.46782593388,
+    7536.209516478905
+  ],
+  "candidate_tx": [
+    886.2180268771237,
+    903.1253063614239,
+    901.8591620443012
+  ],
+  "candidate_dense": [
+    730.6789951339399,
+    742.0561178802317,
+    742.5076738220065
+  ],
+  "load_execute_us": [
+    750,
+    733,
+    741
+  ],
+  "means": {
+    "overall": 7490.512576842023,
+    "tx": 897.0674984276162,
+    "dense": 738.4142622787261,
+    "load_execute": 741.3333333333334
+  },
+  "vs_broken_overall_pct": 0.006843482537022814,
+  "vs_callflags_overall_pct": -39.023348178534725,
+  "vs_callflags_tx_pct": -54.5102894854441,
+  "vs_callflags_dense_pct": -57.4328194157501
+}
