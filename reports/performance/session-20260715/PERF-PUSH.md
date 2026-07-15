@@ -22,3 +22,7 @@ Official root @300k matched every run.
 - Finalization ~3.6s / 10k-batch (async flush)
 
 Next candidates: engine reuse across txs, NeoToken PostPersist/candidate scan, trie finalization locality.
+
+## Coordinated production path (h811→821, 1 run after push)
+- Overall **2,140.5** blocks/s, empty **49,574** bps, TX **1,440.7** bps
+- Root `0xc94105f3…a3ba` official MATCH
