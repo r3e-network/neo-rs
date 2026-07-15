@@ -26,6 +26,7 @@ blake2 = { workspace = true }
 blake2b_simd = { workspace = true }
 blst = { workspace = true }
 murmur3 = { workspace = true }
+rustc-hash = { workspace = true }
 bitvec = { workspace = true }
 hmac = { workspace = true }
 num-bigint = { workspace = true }

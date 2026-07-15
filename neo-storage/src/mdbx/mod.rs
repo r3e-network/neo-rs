@@ -16,10 +16,17 @@
 //!   coordinated two-domain transactions.
 //! - `tests`: Module-local tests and regression coverage.
 
+mod metrics;
+mod prefix_occupancy;
 mod provider;
 mod snapshot;
 mod store;
 
+pub use metrics::{
+    MdbxCommitCountStats, MdbxCommitMetrics, MdbxCommitMetricsSnapshot, MdbxCommitStageStats,
+    MdbxCommitStats,
+};
+pub use prefix_occupancy::{PrefixOccupancyBuildReport, PrefixOccupancySpec};
 pub use provider::{MdbxStoreProvider, MdbxTuning};
 pub use snapshot::MdbxSnapshot;
 pub use store::MdbxStore;

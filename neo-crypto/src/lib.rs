@@ -45,7 +45,8 @@ pub use error::{CryptoError, CryptoResult};
 pub use hash::{Crypto, CtCompare, HashAlgorithm, Sha256Hasher};
 pub use merkle_tree::MerkleTree;
 pub use mpt_trie::{
-    Cache, MptCache, MptError, MptResult, MptStoreSnapshot, Node, NodeType, Trie, TrieEntry,
+    Cache, MptCache, MptError, MptResult, MptStoreLookup, MptStoreSnapshot, Node, NodeType, Trie,
+    TrieEntry,
 };
 pub use named_curve_hash::NamedCurveHash;
 pub use signature::{

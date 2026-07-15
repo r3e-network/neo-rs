@@ -1,4 +1,5 @@
 use super::*;
+use std::thread;
 
 // ============================================================================
 // UT_Node.cs Tests (20 tests)
@@ -13,6 +14,36 @@ fn test_hash_serialize() {
     let deserialized = deserialize_node(&data);
     assert_eq!(deserialized.node_type, NodeType::HashNode);
     assert_eq!(deserialized.hash(), node.hash());
+}
+
+#[test]
+fn cached_hash_is_consistent_across_concurrent_readers() {
+    let node = Arc::new(prepare_mpt_node3());
+    let expected = node.hash();
+
+    thread::scope(|scope| {
+        for _ in 0..8 {
+            let node = Arc::clone(&node);
+            scope.spawn(move || {
+                for _ in 0..1_000 {
+                    assert_eq!(node.try_hash().unwrap(), expected);
+                }
+            });
+        }
+    });
+}
+
+#[test]
+fn dirty_node_recomputes_cached_hash() {
+    let mut node = Node::new_leaf(vec![1, 2, 3]);
+    let original = node.try_hash().unwrap();
+
+    node.value.push(4);
+    node.set_dirty();
+    let updated = node.try_hash().unwrap();
+
+    assert_ne!(original, updated);
+    assert!(node.hash_is_cached());
 }
 
 #[test]
@@ -92,6 +123,29 @@ fn test_clone_branch() {
     assert_eq!(branch1.hash(), branch2.hash());
     assert_eq!(branch2.children[2].node_type, NodeType::HashNode);
     assert_eq!(branch2.children[2].hash(), branch1.children[2].hash());
+    assert!(
+        Arc::ptr_eq(&branch1.children[0], &branch2.children[0]),
+        "empty branch children are immutable and should retain C# CloneAsChild identity"
+    );
+    assert!(
+        !Arc::ptr_eq(&branch1.children[2], &branch2.children[2]),
+        "materialized children must become independent hash nodes"
+    );
+}
+
+#[test]
+fn cloned_shared_empty_child_uses_copy_on_write() {
+    let branch1 = Node::new_branch();
+    let mut branch2 = branch1.clone();
+
+    assert!(Arc::ptr_eq(&branch1.children[0], &branch2.children[0]));
+    *branch2
+        .get_child_mut(0)
+        .expect("branch clone retains child slot") = Node::new_leaf(vec![1, 2, 3]);
+
+    assert!(branch1.children[0].is_empty());
+    assert_eq!(branch2.children[0].node_type, NodeType::LeafNode);
+    assert!(!Arc::ptr_eq(&branch1.children[0], &branch2.children[0]));
 }
 
 #[test]
@@ -108,6 +162,17 @@ fn test_clone_extension() {
         next.hash(),
         ext1.next.as_ref().expect("source extension child").hash()
     );
+}
+
+#[test]
+fn clone_extension_shares_immutable_hash_child() {
+    let ext1 = Node::new_extension(vec![0x01], Node::new_hash(UInt256::zero())).unwrap();
+    let ext2 = ext1.clone();
+
+    assert!(Arc::ptr_eq(
+        ext1.next.as_ref().expect("source extension child"),
+        ext2.next.as_ref().expect("cloned extension child")
+    ));
 }
 
 #[test]
@@ -175,6 +240,27 @@ fn node_without_reference_serialization_allocates_exact_size() {
             node.node_type
         );
     }
+}
+
+#[test]
+fn negative_reference_rejects_serialization_like_csharp_var_int() {
+    let mut node = Node::new_leaf(b"overflowed-reference".to_vec());
+    node.reference = -1;
+
+    let mut writer = BinaryWriter::new();
+    let error = node
+        .serialize(&mut writer)
+        .expect_err("C# WriteVarInt rejects a negative reference");
+    assert!(
+        error
+            .to_string()
+            .contains("reference count cannot be negative")
+    );
+    assert_eq!(
+        node.byte_size(),
+        node.to_array_without_reference().unwrap().len() + 1,
+        "C# Node.Size still reports a one-byte var-int for a negative int"
+    );
 }
 
 #[test]

@@ -24,6 +24,7 @@ serde = { workspace = true }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
 lru = { workspace = true }
+rustc-hash = { workspace = true }
 
 [dev-dependencies]
 hex = { workspace = true }

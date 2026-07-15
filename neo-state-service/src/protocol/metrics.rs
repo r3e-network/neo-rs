@@ -9,7 +9,7 @@ pub struct StateRootIngestStats {
     pub rejected: u64,
 }
 
-/// Snapshot of local StateService MPT apply counters and EWMA timings.
+/// Snapshot of local StateService MPT apply counters, cumulative totals, and EWMA timings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StateRootApplyStats {
     /// Number of blocks for which local MPT apply was attempted.
@@ -26,6 +26,14 @@ pub struct StateRootApplyStats {
     pub avg_apply_us: u64,
     /// EWMA count of projected MPT changes per block.
     pub avg_changes: u64,
+    /// Cumulative end-to-end local MPT apply time, in microseconds.
+    pub total_us: u64,
+    /// Cumulative snapshot-to-MPT changeset projection time, in microseconds.
+    pub project_total_us: u64,
+    /// Cumulative trie/write application time, in microseconds.
+    pub apply_total_us: u64,
+    /// Cumulative projected MPT changes across all apply attempts.
+    pub changes_total: u64,
 }
 
 /// Fine-grained timing stage inside local StateService MPT application.
@@ -43,6 +51,8 @@ pub enum StateRootApplyStage {
     TrieCommit,
     /// Add the local state-root record and current-index record to the write batch.
     OverlayPrepare,
+    /// Order the prepared MPT overlay by raw MDBX key before cursor writes.
+    BackingSort,
     /// Persist the write batch to the optional backing store.
     BackingCommit,
     /// Publish the write batch into the live in-memory generation.
@@ -58,6 +68,7 @@ impl StateRootApplyStage {
             Self::RootHash => "root_hash",
             Self::TrieCommit => "trie_commit",
             Self::OverlayPrepare => "overlay_prepare",
+            Self::BackingSort => "backing_sort",
             Self::BackingCommit => "backing_commit",
             Self::PublishGeneration => "publish_generation",
         }
@@ -71,8 +82,9 @@ impl StateRootApplyStage {
             Self::RootHash => 3,
             Self::TrieCommit => 4,
             Self::OverlayPrepare => 5,
-            Self::BackingCommit => 6,
-            Self::PublishGeneration => 7,
+            Self::BackingSort => 6,
+            Self::BackingCommit => 7,
+            Self::PublishGeneration => 8,
         }
     }
 }
@@ -90,6 +102,30 @@ pub enum StateRootApplyCountKind {
     OverlayPuts,
     /// Write-batch entries that delete data.
     OverlayDeletes,
+    /// Nodes serialized and hashed through `MptCache::put_node_cached`.
+    PutNodeCachedCalls,
+    /// Serialized node payload bytes used as hash preimages.
+    SerializedPayloadBytes,
+    /// Actual node SHA-256 computations during mutation and root hashing.
+    HashComputations,
+    /// Maximum recursive mutation depth observed for one block.
+    MaxRecursionDepth,
+    /// Shared ancestors finalized repeatedly within one trie cache epoch.
+    RepeatedAncestorFinalizations,
+    /// Entries retained in the block-local write batch after a block commit.
+    OverlayWorkingSetEntries,
+    /// Finalized hashes already present in the current trie cache epoch.
+    FinalizationCacheHits,
+    /// Finalized hashes found in the mutable generation or write overlay.
+    FinalizationMemoryHits,
+    /// Finalized hashes absent from the mutable generation or write overlay.
+    FinalizationMemoryMisses,
+    /// Finalized hashes found in the frozen backing snapshot.
+    FinalizationBackingHits,
+    /// Finalized hashes absent from the frozen backing snapshot.
+    FinalizationBackingMisses,
+    /// Finalized hashes whose backing lookup returned an error.
+    FinalizationLookupErrors,
 }
 
 impl StateRootApplyCountKind {
@@ -100,6 +136,18 @@ impl StateRootApplyCountKind {
             Self::OverlayEntries => "overlay_entries",
             Self::OverlayPuts => "overlay_puts",
             Self::OverlayDeletes => "overlay_deletes",
+            Self::PutNodeCachedCalls => "put_node_cached_calls",
+            Self::SerializedPayloadBytes => "serialized_payload_bytes",
+            Self::HashComputations => "hash_computations",
+            Self::MaxRecursionDepth => "max_recursion_depth",
+            Self::RepeatedAncestorFinalizations => "repeated_ancestor_finalizations",
+            Self::OverlayWorkingSetEntries => "overlay_working_set_entries",
+            Self::FinalizationCacheHits => "finalization_cache_hits",
+            Self::FinalizationMemoryHits => "finalization_memory_hits",
+            Self::FinalizationMemoryMisses => "finalization_memory_misses",
+            Self::FinalizationBackingHits => "finalization_backing_hits",
+            Self::FinalizationBackingMisses => "finalization_backing_misses",
+            Self::FinalizationLookupErrors => "finalization_lookup_errors",
         }
     }
 
@@ -110,6 +158,18 @@ impl StateRootApplyCountKind {
             Self::OverlayEntries => 2,
             Self::OverlayPuts => 3,
             Self::OverlayDeletes => 4,
+            Self::PutNodeCachedCalls => 5,
+            Self::SerializedPayloadBytes => 6,
+            Self::HashComputations => 7,
+            Self::MaxRecursionDepth => 8,
+            Self::RepeatedAncestorFinalizations => 9,
+            Self::OverlayWorkingSetEntries => 10,
+            Self::FinalizationCacheHits => 11,
+            Self::FinalizationMemoryHits => 12,
+            Self::FinalizationMemoryMisses => 13,
+            Self::FinalizationBackingHits => 14,
+            Self::FinalizationBackingMisses => 15,
+            Self::FinalizationLookupErrors => 16,
         }
     }
 }
@@ -121,6 +181,8 @@ pub struct StateRootApplyStageStats {
     pub stage: &'static str,
     /// Total stage observations recorded since process start.
     pub calls: u64,
+    /// Cumulative stage duration recorded since process start, in microseconds.
+    pub total_us: u64,
     /// EWMA stage duration in microseconds.
     pub avg_us: u64,
 }
@@ -151,6 +213,8 @@ pub struct StateRootApplyHotStats {
     pub root_hash_avg_us: u64,
     /// EWMA trie-commit stage duration in microseconds.
     pub trie_commit_avg_us: u64,
+    /// EWMA prepared-overlay sort duration in microseconds.
+    pub backing_sort_avg_us: u64,
     /// EWMA backing-store commit stage duration in microseconds.
     pub backing_commit_avg_us: u64,
     /// EWMA generation-publish stage duration in microseconds.
@@ -164,14 +228,16 @@ pub struct StateRootApplyHotStats {
 #[derive(Debug)]
 struct TimingMetricSlot {
     calls: AtomicU64,
-    avg_us: AtomicU64,
+    total_us: AtomicU64,
+    avg_scaled_us: AtomicU64,
 }
 
 impl TimingMetricSlot {
     const fn new() -> Self {
         Self {
             calls: AtomicU64::new(0),
-            avg_us: AtomicU64::new(0),
+            total_us: AtomicU64::new(0),
+            avg_scaled_us: AtomicU64::new(0),
         }
     }
 }
@@ -180,7 +246,7 @@ impl TimingMetricSlot {
 struct CountMetricSlot {
     samples: AtomicU64,
     total: AtomicU64,
-    avg: AtomicU64,
+    avg_scaled: AtomicU64,
 }
 
 impl CountMetricSlot {
@@ -188,7 +254,7 @@ impl CountMetricSlot {
         Self {
             samples: AtomicU64::new(0),
             total: AtomicU64::new(0),
-            avg: AtomicU64::new(0),
+            avg_scaled: AtomicU64::new(0),
         }
     }
 }
@@ -198,21 +264,27 @@ static REJECTED: AtomicU64 = AtomicU64::new(0);
 static APPLY_ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 static APPLY_FAILURES: AtomicU64 = AtomicU64::new(0);
 static APPLY_HEIGHT: AtomicU64 = AtomicU64::new(0);
-static APPLY_AVG_TOTAL_US: AtomicU64 = AtomicU64::new(0);
-static APPLY_AVG_PROJECT_US: AtomicU64 = AtomicU64::new(0);
-static APPLY_AVG_APPLY_US: AtomicU64 = AtomicU64::new(0);
-static APPLY_AVG_CHANGES: AtomicU64 = AtomicU64::new(0);
-static APPLY_STAGE_ORDER: [StateRootApplyStage; 8] = [
+static APPLY_AVG_TOTAL_SCALED_US: AtomicU64 = AtomicU64::new(0);
+static APPLY_AVG_PROJECT_SCALED_US: AtomicU64 = AtomicU64::new(0);
+static APPLY_AVG_APPLY_SCALED_US: AtomicU64 = AtomicU64::new(0);
+static APPLY_AVG_CHANGES_SCALED: AtomicU64 = AtomicU64::new(0);
+static APPLY_TOTAL_US: AtomicU64 = AtomicU64::new(0);
+static APPLY_PROJECT_TOTAL_US: AtomicU64 = AtomicU64::new(0);
+static APPLY_APPLY_TOTAL_US: AtomicU64 = AtomicU64::new(0);
+static APPLY_CHANGES_TOTAL: AtomicU64 = AtomicU64::new(0);
+static APPLY_STAGE_ORDER: [StateRootApplyStage; 9] = [
     StateRootApplyStage::EnqueueBlocking,
     StateRootApplyStage::QueueWait,
     StateRootApplyStage::MutateChanges,
     StateRootApplyStage::RootHash,
     StateRootApplyStage::TrieCommit,
     StateRootApplyStage::OverlayPrepare,
+    StateRootApplyStage::BackingSort,
     StateRootApplyStage::BackingCommit,
     StateRootApplyStage::PublishGeneration,
 ];
-static APPLY_STAGES: [TimingMetricSlot; 8] = [
+static APPLY_STAGES: [TimingMetricSlot; 9] = [
+    TimingMetricSlot::new(),
     TimingMetricSlot::new(),
     TimingMetricSlot::new(),
     TimingMetricSlot::new(),
@@ -222,14 +294,38 @@ static APPLY_STAGES: [TimingMetricSlot; 8] = [
     TimingMetricSlot::new(),
     TimingMetricSlot::new(),
 ];
-static APPLY_COUNT_ORDER: [StateRootApplyCountKind; 5] = [
+static APPLY_COUNT_ORDER: [StateRootApplyCountKind; 17] = [
     StateRootApplyCountKind::BatchBlocks,
     StateRootApplyCountKind::Changes,
     StateRootApplyCountKind::OverlayEntries,
     StateRootApplyCountKind::OverlayPuts,
     StateRootApplyCountKind::OverlayDeletes,
+    StateRootApplyCountKind::PutNodeCachedCalls,
+    StateRootApplyCountKind::SerializedPayloadBytes,
+    StateRootApplyCountKind::HashComputations,
+    StateRootApplyCountKind::MaxRecursionDepth,
+    StateRootApplyCountKind::RepeatedAncestorFinalizations,
+    StateRootApplyCountKind::OverlayWorkingSetEntries,
+    StateRootApplyCountKind::FinalizationCacheHits,
+    StateRootApplyCountKind::FinalizationMemoryHits,
+    StateRootApplyCountKind::FinalizationMemoryMisses,
+    StateRootApplyCountKind::FinalizationBackingHits,
+    StateRootApplyCountKind::FinalizationBackingMisses,
+    StateRootApplyCountKind::FinalizationLookupErrors,
 ];
-static APPLY_COUNTS: [CountMetricSlot; 5] = [
+static APPLY_COUNTS: [CountMetricSlot; 17] = [
+    CountMetricSlot::new(),
+    CountMetricSlot::new(),
+    CountMetricSlot::new(),
+    CountMetricSlot::new(),
+    CountMetricSlot::new(),
+    CountMetricSlot::new(),
+    CountMetricSlot::new(),
+    CountMetricSlot::new(),
+    CountMetricSlot::new(),
+    CountMetricSlot::new(),
+    CountMetricSlot::new(),
+    CountMetricSlot::new(),
     CountMetricSlot::new(),
     CountMetricSlot::new(),
     CountMetricSlot::new(),
@@ -272,30 +368,37 @@ impl StateRootApplyMetrics {
         total_us: u64,
         success: bool,
     ) {
-        APPLY_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
+        let has_previous_sample = APPLY_ATTEMPTS.fetch_add(1, Ordering::Relaxed) > 0;
         if !success {
             APPLY_FAILURES.fetch_add(1, Ordering::Relaxed);
         }
         APPLY_HEIGHT.store(block_index as u64, Ordering::Relaxed);
-        ewma(&APPLY_AVG_TOTAL_US, total_us);
-        ewma(&APPLY_AVG_PROJECT_US, project_us);
-        ewma(&APPLY_AVG_APPLY_US, apply_us);
-        ewma(&APPLY_AVG_CHANGES, changes as u64);
+        APPLY_TOTAL_US.fetch_add(total_us, Ordering::Relaxed);
+        APPLY_PROJECT_TOTAL_US.fetch_add(project_us, Ordering::Relaxed);
+        APPLY_APPLY_TOTAL_US.fetch_add(apply_us, Ordering::Relaxed);
+        APPLY_CHANGES_TOTAL.fetch_add(changes as u64, Ordering::Relaxed);
+        ewma(&APPLY_AVG_TOTAL_SCALED_US, total_us, has_previous_sample);
+        ewma(
+            &APPLY_AVG_PROJECT_SCALED_US,
+            project_us,
+            has_previous_sample,
+        );
+        ewma(&APPLY_AVG_APPLY_SCALED_US, apply_us, has_previous_sample);
+        ewma(
+            &APPLY_AVG_CHANGES_SCALED,
+            changes as u64,
+            has_previous_sample,
+        );
     }
 
     /// Records one fine-grained local MPT apply stage.
     pub fn record_stage(stage: StateRootApplyStage, elapsed_us: u64) {
-        let slot = &APPLY_STAGES[stage.slot_index()];
-        slot.calls.fetch_add(1, Ordering::Relaxed);
-        ewma(&slot.avg_us, elapsed_us);
+        record_timing_slot(&APPLY_STAGES[stage.slot_index()], elapsed_us);
     }
 
     /// Records one local MPT apply item count.
     pub fn record_count(kind: StateRootApplyCountKind, count: u64) {
-        let slot = &APPLY_COUNTS[kind.slot_index()];
-        slot.samples.fetch_add(1, Ordering::Relaxed);
-        slot.total.fetch_add(count, Ordering::Relaxed);
-        ewma(&slot.avg, count);
+        record_count_slot(&APPLY_COUNTS[kind.slot_index()], count);
     }
 
     /// Returns the current local MPT apply counters and EWMA timings.
@@ -304,10 +407,14 @@ impl StateRootApplyMetrics {
             attempts: APPLY_ATTEMPTS.load(Ordering::Relaxed),
             failures: APPLY_FAILURES.load(Ordering::Relaxed),
             latest_height: APPLY_HEIGHT.load(Ordering::Relaxed),
-            avg_total_us: APPLY_AVG_TOTAL_US.load(Ordering::Relaxed),
-            avg_project_us: APPLY_AVG_PROJECT_US.load(Ordering::Relaxed),
-            avg_apply_us: APPLY_AVG_APPLY_US.load(Ordering::Relaxed),
-            avg_changes: APPLY_AVG_CHANGES.load(Ordering::Relaxed),
+            avg_total_us: ewma_value(&APPLY_AVG_TOTAL_SCALED_US),
+            avg_project_us: ewma_value(&APPLY_AVG_PROJECT_SCALED_US),
+            avg_apply_us: ewma_value(&APPLY_AVG_APPLY_SCALED_US),
+            avg_changes: ewma_value(&APPLY_AVG_CHANGES_SCALED),
+            total_us: APPLY_TOTAL_US.load(Ordering::Relaxed),
+            project_total_us: APPLY_PROJECT_TOTAL_US.load(Ordering::Relaxed),
+            apply_total_us: APPLY_APPLY_TOTAL_US.load(Ordering::Relaxed),
+            changes_total: APPLY_CHANGES_TOTAL.load(Ordering::Relaxed),
         }
     }
 
@@ -320,6 +427,7 @@ impl StateRootApplyMetrics {
             mutate_changes_avg_us: stage_avg(StateRootApplyStage::MutateChanges),
             root_hash_avg_us: stage_avg(StateRootApplyStage::RootHash),
             trie_commit_avg_us: stage_avg(StateRootApplyStage::TrieCommit),
+            backing_sort_avg_us: stage_avg(StateRootApplyStage::BackingSort),
             backing_commit_avg_us: stage_avg(StateRootApplyStage::BackingCommit),
             publish_generation_avg_us: stage_avg(StateRootApplyStage::PublishGeneration),
             overlay_entries_avg: count_avg(StateRootApplyCountKind::OverlayEntries),
@@ -336,7 +444,8 @@ impl StateRootApplyMetrics {
                 StateRootApplyStageStats {
                     stage: stage.label(),
                     calls: slot.calls.load(Ordering::Relaxed),
-                    avg_us: slot.avg_us.load(Ordering::Relaxed),
+                    total_us: slot.total_us.load(Ordering::Relaxed),
+                    avg_us: ewma_value(&slot.avg_scaled_us),
                 }
             })
             .collect()
@@ -352,7 +461,7 @@ impl StateRootApplyMetrics {
                     kind: kind.label(),
                     samples: slot.samples.load(Ordering::Relaxed),
                     total: slot.total.load(Ordering::Relaxed),
-                    avg: slot.avg.load(Ordering::Relaxed),
+                    avg: ewma_value(&slot.avg_scaled),
                 }
             })
             .collect()
@@ -360,22 +469,82 @@ impl StateRootApplyMetrics {
 }
 
 fn stage_avg(stage: StateRootApplyStage) -> u64 {
-    APPLY_STAGES[stage.slot_index()]
-        .avg_us
-        .load(Ordering::Relaxed)
+    ewma_value(&APPLY_STAGES[stage.slot_index()].avg_scaled_us)
 }
 
 fn count_avg(kind: StateRootApplyCountKind) -> u64 {
-    APPLY_COUNTS[kind.slot_index()].avg.load(Ordering::Relaxed)
+    ewma_value(&APPLY_COUNTS[kind.slot_index()].avg_scaled)
 }
 
-fn ewma(slot: &AtomicU64, sample: u64) {
-    let prev = slot.load(Ordering::Relaxed);
-    let updated = if prev == 0 {
-        sample
-    } else {
-        let diff = (sample as i64 - prev as i64) / 16;
-        (prev as i64 + diff).max(0) as u64
-    };
-    slot.store(updated, Ordering::Relaxed);
+// Retain fractional EWMA steps internally so small steady samples converge
+// instead of sticking up to 15 whole units away from the observed value.
+const EWMA_SCALE: u64 = 1 << 16;
+
+fn record_timing_slot(slot: &TimingMetricSlot, elapsed_us: u64) {
+    let has_previous_sample = slot.calls.fetch_add(1, Ordering::Relaxed) > 0;
+    slot.total_us.fetch_add(elapsed_us, Ordering::Relaxed);
+    ewma(&slot.avg_scaled_us, elapsed_us, has_previous_sample);
+}
+
+fn record_count_slot(slot: &CountMetricSlot, count: u64) {
+    let has_previous_sample = slot.samples.fetch_add(1, Ordering::Relaxed) > 0;
+    slot.total.fetch_add(count, Ordering::Relaxed);
+    ewma(&slot.avg_scaled, count, has_previous_sample);
+}
+
+fn ewma(slot: &AtomicU64, sample: u64, has_previous_sample: bool) {
+    let sample = sample.saturating_mul(EWMA_SCALE);
+    let _ = slot.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |prev| {
+        Some(if !has_previous_sample {
+            sample
+        } else if sample >= prev {
+            prev.saturating_add((sample - prev) / 16)
+        } else {
+            prev - (prev - sample) / 16
+        })
+    });
+}
+
+fn ewma_value(slot: &AtomicU64) -> u64 {
+    slot.load(Ordering::Relaxed).saturating_add(EWMA_SCALE / 2) / EWMA_SCALE
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fixed_point_ewma_converges_inside_the_former_integer_dead_band() {
+        let average = AtomicU64::new(0);
+        ewma(&average, 32, false);
+        for _ in 0..1_000 {
+            ewma(&average, 17, true);
+        }
+
+        assert_eq!(ewma_value(&average), 17);
+    }
+
+    #[test]
+    fn fixed_point_ewma_distinguishes_zero_from_an_uninitialized_slot() {
+        let average = AtomicU64::new(0);
+        ewma(&average, 0, false);
+        ewma(&average, 160, true);
+
+        assert_eq!(ewma_value(&average), 10);
+    }
+
+    #[test]
+    fn metric_slots_retain_exact_cumulative_totals() {
+        let timing = TimingMetricSlot::new();
+        record_timing_slot(&timing, 19);
+        record_timing_slot(&timing, 23);
+        assert_eq!(timing.calls.load(Ordering::Relaxed), 2);
+        assert_eq!(timing.total_us.load(Ordering::Relaxed), 42);
+
+        let count = CountMetricSlot::new();
+        record_count_slot(&count, 17);
+        record_count_slot(&count, 25);
+        assert_eq!(count.samples.load(Ordering::Relaxed), 2);
+        assert_eq!(count.total.load(Ordering::Relaxed), 42);
+    }
 }

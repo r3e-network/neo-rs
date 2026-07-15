@@ -2,7 +2,9 @@
 //! Covers all test cases from UT_Node.cs, UT_Trie.cs, and UT_Cache.cs
 
 use crate::mpt_trie::node::MAX_KEY_LENGTH;
-use crate::mpt_trie::{MptCache, MptResult, MptStoreSnapshot, Node, NodeType, Trie};
+use crate::mpt_trie::{
+    MptCache, MptMutationStats, MptResult, MptStoreSnapshot, Node, NodeType, Trie,
+};
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_primitives::UInt256;
 use parking_lot::Mutex;
@@ -95,6 +97,8 @@ fn prepare_mpt_node3() -> Node {
 mod cache;
 #[path = "mpt_trie/diagnostics.rs"]
 mod diagnostics;
+#[path = "mpt_trie/finalization.rs"]
+mod finalization;
 #[path = "mpt_trie/find_limited.rs"]
 mod find_limited;
 #[path = "mpt_trie/mainnet_vectors.rs"]

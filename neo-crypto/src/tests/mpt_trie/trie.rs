@@ -137,7 +137,7 @@ fn test_delete_same_value() {
 #[test]
 fn test_mutations_keep_root_hash_cached() {
     let store = Arc::new(MockStore::new());
-    let mut trie = Trie::new(store, None, false);
+    let mut trie = Trie::new_eager(store, None, false);
 
     trie.put(b"key1", b"value1").unwrap();
     trie.put(b"key2", b"value2").unwrap();
@@ -563,4 +563,43 @@ fn scratch_mutation_api_preserves_key_and_value_validation() {
         trie.put_with_scratch(b"key", &large_value, &mut path_scratch)
             .is_err()
     );
+}
+
+#[test]
+fn mutation_stats_measure_shared_ancestor_finalization_and_reset() {
+    let store = Arc::new(MockStore::new());
+    let mut trie = Trie::new_eager(store, None, false);
+
+    trie.put(&[0x12, 0x30], b"left").unwrap();
+    trie.put(&[0x12, 0x31], b"right").unwrap();
+    trie.put(&[0x12, 0x32], b"third").unwrap();
+    let _ = trie.try_root_hash().unwrap();
+
+    let stats = trie.mutation_stats();
+    assert!(stats.put_node_cached_calls > 0);
+    assert!(stats.serialized_payload_bytes >= stats.put_node_cached_calls);
+    assert!(stats.hash_computations >= stats.put_node_cached_calls);
+    assert!(stats.max_recursion_depth >= 2);
+    assert!(stats.repeated_ancestor_finalizations > 0);
+
+    assert_eq!(trie.take_mutation_stats(), stats);
+    assert_eq!(trie.mutation_stats(), MptMutationStats::default());
+}
+
+#[test]
+fn mutation_stats_start_a_new_repeat_epoch_after_commit() {
+    let store = Arc::new(MockStore::new());
+    let mut trie = Trie::new_eager(store, None, false);
+
+    trie.put(&[0x12, 0x30], b"first").unwrap();
+    trie.put(&[0x12, 0x31], b"second").unwrap();
+    trie.put(&[0x12, 0x32], b"third").unwrap();
+    assert!(trie.mutation_stats().repeated_ancestor_finalizations > 0);
+    trie.commit().unwrap();
+    let _ = trie.take_mutation_stats();
+
+    trie.put(&[0x22, 0x00], b"new-branch").unwrap();
+    let stats = trie.take_mutation_stats();
+    assert!(stats.put_node_cached_calls > 0);
+    assert_eq!(stats.repeated_ancestor_finalizations, 0);
 }

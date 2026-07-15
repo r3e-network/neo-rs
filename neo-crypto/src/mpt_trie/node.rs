@@ -5,9 +5,8 @@ use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::UINT256_SIZE;
 use neo_primitives::UInt256;
-use parking_lot::RwLock;
 use std::mem;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tracing::error;
 
 const MAX_STORAGE_KEY_SIZE: usize = 64;
@@ -33,8 +32,13 @@ pub struct Node {
     /// The type of this trie node (branch, extension, leaf, hash, or empty).
     pub node_type: NodeType,
     /// Reference count tracking how many parents point to this node.
-    pub reference: u32,
-    hash: RwLock<Option<UInt256>>,
+    ///
+    /// Neo's MPT implementation stores this as a C# `int`. Keeping the signed
+    /// domain is consensus-relevant at decode and overflow boundaries.
+    pub reference: i32,
+    hash: OnceLock<UInt256>,
+    accounted_hash: Option<UInt256>,
+    dirty: bool,
     /// Children for branch nodes - stored as Arc for structural sharing
     pub children: Vec<Arc<Self>>,
     /// Key for extension nodes
@@ -50,7 +54,9 @@ impl Default for Node {
         Self {
             node_type: NodeType::Empty,
             reference: 0,
-            hash: RwLock::new(None),
+            hash: OnceLock::new(),
+            accounted_hash: None,
+            dirty: false,
             children: Vec::new(),
             key: Vec::new(),
             next: None,
@@ -63,17 +69,14 @@ impl Clone for Node {
     /// Clone the node using the C# MPT representation: embedded branch,
     /// extension, and leaf children are replaced by hash-only child nodes.
     fn clone(&self) -> Self {
-        let cached_hash = *self.hash.read();
         match self.node_type {
             NodeType::BranchNode => Self {
                 node_type: self.node_type,
                 reference: self.reference,
-                hash: RwLock::new(None),
-                children: self
-                    .children
-                    .iter()
-                    .map(|child| Arc::new(child.clone_as_child()))
-                    .collect(),
+                hash: OnceLock::new(),
+                accounted_hash: self.accounted_hash,
+                dirty: self.dirty,
+                children: self.children.iter().map(Self::clone_arc_as_child).collect(),
                 key: Vec::new(),
                 next: None,
                 value: Vec::new(),
@@ -81,19 +84,20 @@ impl Clone for Node {
             NodeType::ExtensionNode => Self {
                 node_type: self.node_type,
                 reference: self.reference,
-                hash: RwLock::new(None),
+                hash: OnceLock::new(),
+                accounted_hash: self.accounted_hash,
+                dirty: self.dirty,
                 children: Vec::new(),
                 key: self.key.clone(),
-                next: self
-                    .next
-                    .as_ref()
-                    .map(|next| Arc::new(next.clone_as_child())),
+                next: self.next.as_ref().map(Self::clone_arc_as_child),
                 value: Vec::new(),
             },
             NodeType::LeafNode => Self {
                 node_type: self.node_type,
                 reference: self.reference,
-                hash: RwLock::new(None),
+                hash: OnceLock::new(),
+                accounted_hash: self.accounted_hash,
+                dirty: self.dirty,
                 children: Vec::new(),
                 key: Vec::new(),
                 next: None,
@@ -102,7 +106,9 @@ impl Clone for Node {
             NodeType::HashNode => Self {
                 node_type: self.node_type,
                 reference: self.reference,
-                hash: RwLock::new(cached_hash),
+                hash: self.cloned_hash_cache(),
+                accounted_hash: None,
+                dirty: false,
                 children: Vec::new(),
                 key: Vec::new(),
                 next: None,
@@ -111,7 +117,9 @@ impl Clone for Node {
             NodeType::Empty => Self {
                 node_type: self.node_type,
                 reference: self.reference,
-                hash: RwLock::new(None),
+                hash: OnceLock::new(),
+                accounted_hash: None,
+                dirty: false,
                 children: Vec::new(),
                 key: Vec::new(),
                 next: None,
@@ -134,7 +142,9 @@ impl Node {
         Self {
             node_type: NodeType::BranchNode,
             reference: 1,
-            hash: RwLock::new(None),
+            hash: OnceLock::new(),
+            accounted_hash: None,
+            dirty: true,
             children: (0..BRANCH_CHILD_COUNT)
                 .map(|_| Arc::new(Self::new()))
                 .collect(),
@@ -153,7 +163,9 @@ impl Node {
         Ok(Self {
             node_type: NodeType::ExtensionNode,
             reference: 1,
-            hash: RwLock::new(None),
+            hash: OnceLock::new(),
+            accounted_hash: None,
+            dirty: true,
             children: Vec::new(),
             key,
             next: Some(Arc::new(next)),
@@ -167,7 +179,9 @@ impl Node {
         Self {
             node_type: NodeType::LeafNode,
             reference: 1,
-            hash: RwLock::new(None),
+            hash: OnceLock::new(),
+            accounted_hash: None,
+            dirty: true,
             children: Vec::new(),
             key: Vec::new(),
             next: None,
@@ -177,11 +191,13 @@ impl Node {
 
     /// Creates a new hash-only node.
     #[must_use]
-    pub const fn new_hash(hash: UInt256) -> Self {
+    pub fn new_hash(hash: UInt256) -> Self {
         Self {
             node_type: NodeType::HashNode,
             reference: 0,
-            hash: RwLock::new(Some(hash)),
+            hash: OnceLock::from(hash),
+            accounted_hash: None,
+            dirty: false,
             children: Vec::new(),
             key: Vec::new(),
             next: None,
@@ -196,23 +212,41 @@ impl Node {
 
     /// Marks the node as dirty causing its cached hash to be recomputed next time.
     pub fn set_dirty(&mut self) {
-        *self.hash.write() = None;
+        self.hash = OnceLock::new();
+        self.accounted_hash = None;
+        self.dirty = true;
+    }
+
+    pub(crate) const fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    pub(crate) fn cached_hash(&self) -> Option<UInt256> {
+        self.hash.get().copied()
+    }
+
+    pub(crate) const fn accounted_hash(&self) -> Option<UInt256> {
+        self.accounted_hash
     }
 
     #[cfg(test)]
     pub(crate) fn hash_is_cached(&self) -> bool {
-        self.hash.read().is_some()
+        self.hash.get().is_some()
     }
 
-    pub(crate) fn clone_with_cached_hash(&self) -> Self {
-        let cached_hash = *self.hash.read();
-        let cloned = self.clone();
-        *cloned.hash.write() = cached_hash;
-        cloned
+    pub(crate) fn set_finalized_hash(&mut self, hash: UInt256) {
+        self.hash = OnceLock::from(hash);
+        self.accounted_hash = Some(hash);
+        self.dirty = false;
     }
 
-    pub(crate) fn set_cached_hash(&self, hash: UInt256) {
-        *self.hash.write() = Some(hash);
+    pub(crate) fn set_pending_hash(&mut self, hash: UInt256) {
+        self.hash = OnceLock::from(hash);
+    }
+
+    pub(crate) fn set_accounted_hash(&mut self, hash: UInt256) {
+        self.accounted_hash = Some(hash);
+        self.dirty = false;
     }
 
     /// Computes the node hash (Hash256 of the serialized payload without the reference).
@@ -228,14 +262,15 @@ impl Node {
 
     /// Attempts to compute the node hash, returning an error if serialization fails.
     pub fn try_hash(&self) -> MptResult<UInt256> {
-        if let Some(hash) = *self.hash.read() {
-            return Ok(hash);
+        if let Some(hash) = self.hash.get() {
+            return Ok(*hash);
         }
 
         let data = self.to_array_without_reference()?;
+        super::metrics::record_hash_computation();
         let hash_bytes = Crypto::hash256(&data);
         let hash = UInt256::from_bytes(&hash_bytes).map_err(MptError::from)?;
-        *self.hash.write() = Some(hash);
+        let _ = self.hash.set(hash);
         Ok(hash)
     }
 
@@ -245,15 +280,15 @@ impl Node {
         match self.node_type {
             NodeType::BranchNode => {
                 size += self.branch_size();
-                size += SerializeHelper::get_var_size(u64::from(self.reference));
+                size += Self::reference_var_size(self.reference);
             }
             NodeType::ExtensionNode => {
                 size += self.extension_size();
-                size += SerializeHelper::get_var_size(u64::from(self.reference));
+                size += Self::reference_var_size(self.reference);
             }
             NodeType::LeafNode => {
                 size += self.leaf_size();
-                size += SerializeHelper::get_var_size(u64::from(self.reference));
+                size += Self::reference_var_size(self.reference);
             }
             NodeType::HashNode => {
                 size += self.hash_size();
@@ -278,27 +313,46 @@ impl Node {
         Ok(writer.into_bytes())
     }
 
-    /// Serializes a previously computed no-reference payload with this node's
-    /// current reference count appended when the node kind stores references.
+    /// Serializes a previously computed no-reference payload with the supplied
+    /// reference count appended when the node kind stores references.
     ///
     /// The no-reference payload is also the hash preimage. MPT cache commit can
     /// reuse it after staging a dirty node instead of walking the same subtree
     /// again only to write identical node bytes.
-    pub(crate) fn array_from_payload_without_reference(
-        &self,
+    pub(crate) fn array_from_payload_parts(
+        node_type: NodeType,
+        reference: i32,
         payload_without_reference: &[u8],
     ) -> MptResult<Vec<u8>> {
-        let mut writer = BinaryWriter::with_capacity(self.byte_size());
+        let reference_size = match node_type {
+            NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => {
+                Self::reference_var_size(reference)
+            }
+            NodeType::HashNode | NodeType::Empty => 0,
+        };
+        let mut writer =
+            BinaryWriter::with_capacity(payload_without_reference.len() + reference_size);
         writer
             .write_bytes(payload_without_reference)
             .map_err(MptError::from)?;
-        match self.node_type {
-            NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => writer
-                .write_var_uint(u64::from(self.reference))
-                .map_err(MptError::from)?,
+        match node_type {
+            NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => {
+                let reference = u64::try_from(reference).map_err(|_| {
+                    MptError::invalid("MPT node reference count cannot be negative")
+                })?;
+                writer.write_var_uint(reference).map_err(MptError::from)?;
+            }
             NodeType::HashNode | NodeType::Empty => {}
         }
         Ok(writer.into_bytes())
+    }
+
+    fn reference_var_size(reference: i32) -> usize {
+        if reference < 0 {
+            1
+        } else {
+            SerializeHelper::get_var_size(reference as u64)
+        }
     }
 
     /// Serializes the node as a child according to the C# implementation rules.
@@ -325,6 +379,38 @@ impl Node {
             }
             NodeType::HashNode | NodeType::Empty => self.clone(),
         }
+    }
+
+    /// Takes a shallow snapshot for read-only traversal without replacing
+    /// materialized descendants with hash-only nodes.
+    pub(crate) fn clone_for_traversal(&self) -> Self {
+        Self {
+            node_type: self.node_type,
+            reference: self.reference,
+            hash: self.cloned_hash_cache(),
+            accounted_hash: self.accounted_hash,
+            dirty: self.dirty,
+            children: self.children.clone(),
+            key: self.key.clone(),
+            next: self.next.clone(),
+            value: self.value.clone(),
+        }
+    }
+
+    fn clone_arc_as_child(child: &Arc<Self>) -> Arc<Self> {
+        match child.node_type {
+            NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => {
+                Arc::new(Self::new_hash(child.hash()))
+            }
+            NodeType::HashNode | NodeType::Empty => Arc::clone(child),
+        }
+    }
+
+    fn cloned_hash_cache(&self) -> OnceLock<UInt256> {
+        self.hash
+            .get()
+            .copied()
+            .map_or_else(OnceLock::new, OnceLock::from)
     }
 
     /// Gets a mutable reference to a child node, cloning from Arc if necessary.
@@ -441,7 +527,7 @@ impl Node {
     }
 
     fn serialize_hash(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        let Some(hash) = *self.hash.read() else {
+        let Some(hash) = self.hash.get() else {
             return Err(IoError::invalid_data("hash node without cached hash"));
         };
         writer.write_bytes(&hash.to_array())
@@ -485,11 +571,13 @@ impl Node {
         match node_type {
             NodeType::BranchNode => {
                 let children = Self::deserialize_branch(reader, depth)?;
-                let reference = reader.read_var_uint()? as u32;
+                let reference = reader.read_var_uint()? as i32;
                 Ok(Self {
                     node_type,
                     reference,
-                    hash: RwLock::new(None),
+                    hash: OnceLock::new(),
+                    accounted_hash: None,
+                    dirty: false,
                     children,
                     key: Vec::new(),
                     next: None,
@@ -498,11 +586,13 @@ impl Node {
             }
             NodeType::ExtensionNode => {
                 let (key, next) = Self::deserialize_extension(reader, depth)?;
-                let reference = reader.read_var_uint()? as u32;
+                let reference = reader.read_var_uint()? as i32;
                 Ok(Self {
                     node_type,
                     reference,
-                    hash: RwLock::new(None),
+                    hash: OnceLock::new(),
+                    accounted_hash: None,
+                    dirty: false,
                     children: Vec::new(),
                     key,
                     next: Some(next),
@@ -511,11 +601,13 @@ impl Node {
             }
             NodeType::LeafNode => {
                 let value = Self::deserialize_leaf(reader)?;
-                let reference = reader.read_var_uint()? as u32;
+                let reference = reader.read_var_uint()? as i32;
                 Ok(Self {
                     node_type,
                     reference,
-                    hash: RwLock::new(None),
+                    hash: OnceLock::new(),
+                    accounted_hash: None,
+                    dirty: false,
                     children: Vec::new(),
                     key: Vec::new(),
                     next: None,
@@ -527,7 +619,9 @@ impl Node {
                 Ok(Self {
                     node_type,
                     reference: 0,
-                    hash: RwLock::new(Some(hash)),
+                    hash: OnceLock::from(hash),
+                    accounted_hash: None,
+                    dirty: false,
                     children: Vec::new(),
                     key: Vec::new(),
                     next: None,
@@ -548,7 +642,10 @@ impl Serializable for Node {
         self.serialize_without_reference(writer)?;
         match self.node_type {
             NodeType::BranchNode | NodeType::ExtensionNode | NodeType::LeafNode => {
-                writer.write_var_uint(u64::from(self.reference))?;
+                let reference = u64::try_from(self.reference).map_err(|_| {
+                    IoError::invalid_data("MPT node reference count cannot be negative")
+                })?;
+                writer.write_var_uint(reference)?;
             }
             NodeType::HashNode | NodeType::Empty => {}
         }

@@ -14,7 +14,7 @@ use crate::mpt_trie::node_type::NodeType;
 
 impl<S> Trie<S>
 where
-    S: MptStoreSnapshot,
+    S: MptStoreSnapshot + 'static,
 {
     /// Builds a Merkle proof for the supplied key.
     pub fn try_get_proof(&mut self, key: &[u8]) -> MptResult<Option<HashSet<Vec<u8>>>> {

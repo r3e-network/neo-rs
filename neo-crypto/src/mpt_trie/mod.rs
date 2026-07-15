@@ -26,6 +26,7 @@
 
 mod cache;
 mod error;
+mod metrics;
 mod node;
 mod node_type;
 mod trie;
@@ -34,7 +35,7 @@ mod trie;
 #[path = "../tests/mpt_trie.rs"]
 mod tests;
 
-pub use cache::{MptCache, MptStoreSnapshot};
+pub use cache::{MptCache, MptMutationStats, MptStoreLookup, MptStoreSnapshot};
 /// Type alias for [`MptCache`].
 pub type Cache<S> = MptCache<S>;
 pub use error::{MptError, MptResult};
