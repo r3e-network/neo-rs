@@ -20,11 +20,8 @@ where
     ///
     /// The three-way selection is consensus-critical because `NotGorgon` and
     /// `Default` differ in how `HASKEY`/`PICKITEM`/`SETITEM`/`REMOVE` handle
-    /// boundary conditions (the pre-/post-neo-vm#543 handlers). (`SHL`/`SHR` do
-    /// NOT differ across these tables — their zero-shift behavior is a flat
-    /// Neo.VM 3.9.0→3.10.0 change (still present in v3.10.1) handled in the
-    /// `shift` handler, not a hardfork
-    /// gate.)
+    /// boundary conditions (the pre-/post-neo-vm#543 handlers) and whether a
+    /// zero shift consumes and coerces its value operand (neo-vm#567).
     fn select_jump_table(protocol_settings: &ProtocolSettings, current_index: u32) -> JumpTable<B> {
         if protocol_settings.is_hardfork_enabled(Hardfork::HfGorgon, current_index) {
             JumpTable::default()
@@ -103,6 +100,8 @@ where
             snapshot_cache.as_ref(),
             native_contract_provider.as_ref(),
         );
+        let fee_whitelist_enabled =
+            protocol_settings.is_hardfork_enabled(Hardfork::HfFaun, current_index);
         let jump_table = Self::select_jump_table(protocol_settings.as_ref(), current_index);
         let mut engine = ExecutionEngine::new(Some(jump_table));
         engine.set_interop_service(neo_vm::InteropService::with_capacity(
@@ -122,6 +121,7 @@ where
             gas_consumed: 0,
             fee_amount: gas_limit.saturating_mul(FEE_FACTOR),
             fee_consumed: 0,
+            fee_whitelist_enabled,
             // Safe defaults; overwritten by refresh_policy_settings().
             exec_fee_factor: 30u32 * (FEE_FACTOR as u32),
             storage_price: 100_000u32,
@@ -139,6 +139,7 @@ where
             native_contract_provider,
             native_contract_cache: Arc::new(Mutex::new(NativeContractsCache::default())),
             contracts: HashMap::new(),
+            contract_scripts: HashMap::new(),
             storage_iterators: HashMap::new(),
             next_iterator_id: 1,
             current_script_hash: None,
@@ -198,6 +199,16 @@ where
             snapshot_cache.as_ref(),
             native_contract_provider.as_ref(),
         );
+        let fee_whitelist_enabled =
+            protocol_settings.is_hardfork_enabled(Hardfork::HfFaun, current_index);
+        let contract_scripts = contracts
+            .iter()
+            .map(|(hash, contract)| (*hash, Script::new_relaxed(contract.nef.script.clone())))
+            .collect();
+        let contracts = contracts
+            .into_iter()
+            .map(|(hash, contract)| (hash, Arc::new(contract)))
+            .collect();
         let jump_table = Self::select_jump_table(protocol_settings.as_ref(), current_index);
         let mut engine = ExecutionEngine::new(Some(jump_table));
         engine.set_interop_service(neo_vm::InteropService::with_capacity(
@@ -217,6 +228,7 @@ where
             gas_consumed: 0,
             fee_amount: gas_limit.saturating_mul(FEE_FACTOR),
             fee_consumed: 0,
+            fee_whitelist_enabled,
             // Safe defaults; overwritten by refresh_policy_settings().
             exec_fee_factor: 30u32 * (FEE_FACTOR as u32),
             storage_price: 100_000u32,
@@ -234,6 +246,7 @@ where
             native_contract_provider,
             native_contract_cache,
             contracts,
+            contract_scripts,
             storage_iterators: HashMap::new(),
             next_iterator_id: 1,
             current_script_hash: None,
@@ -260,6 +273,49 @@ where
         app.diagnostic.initialized();
 
         Ok(app)
+    }
+
+    /// Rebinds an existing engine for the next transaction in the same block.
+    ///
+    /// Keeps the jump table, interop registration, protocol settings, native
+    /// provider, and native contract cache. Resets VM session state and
+    /// per-transaction bookkeeping so multi-tx blocks avoid rebuilding the
+    /// expensive ApplicationEngine construction path for every transaction.
+    pub fn prepare_next_transaction(
+        &mut self,
+        script_container: Option<Arc<VerifiableContainer>>,
+        snapshot_cache: Arc<DataCache<B>>,
+        gas_limit: i64,
+    ) {
+        self.script_container = script_container;
+        self.snapshot_cache = Arc::clone(&snapshot_cache);
+        self.original_snapshot_cache = snapshot_cache;
+        self.fee_amount = gas_limit.saturating_mul(FEE_FACTOR);
+        self.fee_consumed = 0;
+        self.gas_consumed = 0;
+        self.call_flags = CallFlags::ALL;
+        self.notifications.clear();
+        self.logs.clear();
+        self.fault_exception = None;
+        self.contracts.clear();
+        self.contract_scripts.clear();
+        self.storage_iterators.clear();
+        self.next_iterator_id = 1;
+        self.current_script_hash = None;
+        self.calling_script_hash = None;
+        self.native_calling_override = None;
+        self.entry_script_hash = None;
+        self.invocation_counter.clear();
+        self.pending_native_calls.clear();
+        self.native_call_boundary_contexts.clear();
+        self.random_times = 0;
+        self.native_arg_null_mask = 0;
+        self.native_return_null = false;
+        self.nonce_data =
+            Self::initialize_nonce_data(self.script_container.as_ref(), self.persisting_block.as_deref());
+        // Policy fees are height/protocol-stable within a block; skip the
+        // Policy-contract re-read that new engine construction performs.
+        self.vm_engine.engine_mut().reset_execution_session();
     }
 
     /// Binds this engine as the VM interop host for one callback-capable operation.
@@ -343,6 +399,25 @@ where
     /// Returns the current VM execution state.
     pub fn state(&self) -> VMState {
         self.vm_engine.engine().state()
+    }
+
+    /// Returns the number of VM instructions executed by this engine.
+    pub fn instructions_executed(&self) -> u64 {
+        self.vm_engine.engine().instructions_executed
+    }
+
+    /// Enables opcode and evaluation-stack counters for this engine only.
+    ///
+    /// Profiling is observational and remains disabled unless a diagnostic
+    /// caller explicitly opts in before execution.
+    pub fn enable_vm_execution_profiling(&mut self) {
+        self.vm_engine.engine_mut().enable_execution_profiling();
+    }
+
+    /// Returns the current targeted VM profile, when enabled.
+    #[must_use]
+    pub fn vm_execution_profile(&self) -> Option<neo_vm::VmExecutionProfile> {
+        self.vm_engine.engine().execution_profile()
     }
 
     /// Returns the fault exception message as a string slice, if any.
@@ -660,7 +735,10 @@ where
 
     /// Returns a cloned snapshot of contract states known to this engine.
     pub fn contracts_snapshot(&self) -> HashMap<UInt160, ContractState> {
-        self.contracts.clone()
+        self.contracts
+            .iter()
+            .map(|(hash, contract)| (*hash, contract.as_ref().clone()))
+            .collect()
     }
 
     /// Returns a clone of the current snapshot cache.
@@ -669,7 +747,7 @@ where
     }
 
     pub(super) fn get_contract(&self, hash: &UInt160) -> Option<&ContractState> {
-        self.contracts.get(hash)
+        self.contracts.get(hash).map(AsRef::as_ref)
     }
 
     /// Extracts all storage changes from the execution as raw key-value pairs.
@@ -709,3 +787,7 @@ where
 #[cfg(test)]
 #[path = "../tests/application_engine/state.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/application_engine/csharp_differential.rs"]
+mod csharp_differential_tests;

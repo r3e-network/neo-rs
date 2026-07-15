@@ -46,6 +46,9 @@ where
     let vm_profile_filter = VmProfileFilter::from_env();
     let native_contract_provider = resources.provider();
     let mut reusable_tx_cache: Option<Arc<DataCache<B>>> = None;
+    let mut reusable_tx_engine: Option<
+        ApplicationEngine<P, NoDiagnostic, B>,
+    > = None;
 
     for (transaction_index, tx) in block.transactions.iter().enumerate() {
         let stage_start = std::time::Instant::now();
@@ -88,7 +91,16 @@ where
         );
 
         let stage_start = std::time::Instant::now();
-        let mut tx_engine =
+        // Multi-tx blocks reuse one ApplicationEngine so jump-table and interop
+        // registration are paid once; per-tx prepare resets session state only.
+        let mut tx_engine = if let Some(mut engine) = reusable_tx_engine.take() {
+            engine.prepare_next_transaction(
+                Some(container),
+                Arc::clone(tx_cache),
+                tx.system_fee(),
+            );
+            engine
+        } else {
             ApplicationEngine::new_with_preloaded_native_and_native_contract_provider(
                 TriggerType::Application,
                 Some(container),
@@ -100,7 +112,8 @@ where
                 Arc::clone(&native_contract_cache),
                 NoDiagnostic,
                 Arc::clone(&native_contract_provider),
-            )?;
+            )?
+        };
         let should_profile_vm = vm_profile_filter.matches(block_index, &tx_hash);
         if should_profile_vm {
             tx_engine.enable_vm_execution_profiling();
@@ -250,7 +263,8 @@ where
         {
             outcome.application_executed.push(executed);
         }
-        drop(tx_engine);
+        // Return the engine for the next transaction in this block.
+        reusable_tx_engine = Some(tx_engine);
 
         if vm_state == VMState::HALT {
             let stage_start = std::time::Instant::now();
