@@ -24,3 +24,6 @@ Within noise; dense/TX flat. **Not retained as a measured win** (WIP may still l
 
 ## Residual
 TX load_execute ~315–325 µs still dominates dense; finalization ~3.6–3.9 s.
+
+## DEFAULT_ASYNC_QUEUE_CAPACITY 256 → 512
+Overall **−0.5%**, dense **−1.3%**. queue_wait unchanged (~1.37s). **Rejected / reverted**.
