@@ -1,11 +1,15 @@
 #![allow(unsafe_code)]
 
+use super::metrics::{MdbxCommitCountKind, MdbxCommitRecorder, MdbxCommitStage, elapsed_us};
+use super::prefix_occupancy::{
+    PrefixOccupancyBuildReport, PrefixOccupancyBuilder, PrefixOccupancyIndex, PrefixOccupancySpec,
+};
 use super::snapshot::MdbxSnapshot;
 use crate::persistence::{
     read_only_store::RawReadOnlyStore,
     read_only_store::{ReadOnlyStore, ReadOnlyStoreGeneric},
     seek_direction::SeekDirection,
-    store::{MdbxEnvironmentInfo, RawOverlaySource, Store, StoreBackendKind},
+    store::{MdbxEnvironmentInfo, RawOverlaySink, RawOverlaySource, Store, StoreBackendKind},
     store_maintenance::StoreMaintenanceBatch,
     transactional_store::{CoordinatedTransactionalStore, TransactionalStore},
     write_store::WriteStore,
@@ -15,13 +19,30 @@ use libmdbx::{
     Cursor, Database, DatabaseOptions, Error as MdbxError, Mode, NoWriteMap, RO, RW,
     ReadWriteOptions, SyncMode, Table, TableFlags, Transaction, TransactionKind, WriteFlags,
 };
-use std::{collections::BTreeMap, fs, path::Path, sync::Arc};
-use tracing::{error, warn};
+use std::{borrow::Cow, collections::BTreeMap, fs, path::Path, sync::Arc, time::Instant};
+use tracing::{error, info, warn};
 
 type RawEntry = (Vec<u8>, Vec<u8>);
 
+struct BorrowedRawOverlay<'a>(Vec<(&'a [u8], Option<&'a [u8]>)>);
+
+impl RawOverlaySource for BorrowedRawOverlay<'_> {
+    fn visit_raw_overlay<S>(&mut self, sink: &mut S)
+    where
+        S: RawOverlaySink + ?Sized,
+    {
+        for (key, value) in &self.0 {
+            sink.visit(key, *value);
+        }
+    }
+}
+
 const MAINTENANCE_TABLE: &str = "neo_node_metadata";
+const ENVIRONMENT_ID_KEY: &[u8] = b"\0neo.storage.environment-id.v1";
+const PREFIX_OCCUPANCY_PATH_ENV: &str = "NEO_MDBX_PREFIX_INDEX_PATH";
 const MAX_TABLES: u64 = 8;
+const CURSOR_WRITE_EXACT_PREFIX: u64 = 64;
+const CURSOR_WRITE_SAMPLE_INTERVAL: u64 = 256;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 enum DataTable {
@@ -44,6 +65,8 @@ pub struct MdbxStore {
     db: Arc<Database<NoWriteMap>>,
     data_table: DataTable,
     read_only: bool,
+    environment_id: Option<[u8; 16]>,
+    prefix_occupancy: Option<Arc<PrefixOccupancyIndex>>,
 }
 
 impl std::fmt::Debug for MdbxStore {
@@ -51,6 +74,7 @@ impl std::fmt::Debug for MdbxStore {
         f.debug_struct("MdbxStore")
             .field("data_table", &self.data_table)
             .field("read_only", &self.read_only)
+            .field("prefix_occupancy", &self.prefix_occupancy)
             .finish_non_exhaustive()
     }
 }
@@ -99,19 +123,15 @@ impl MdbxStore {
             message: format!("failed to open MDBX store at {}: {err}", path.display()),
         })?;
 
-        if !read_only {
-            let tx = db.begin_rw_txn().map_err(mdbx_error)?;
-            tx.create_table(None, TableFlags::empty())
-                .map_err(mdbx_error)?;
-            tx.create_table(Some(MAINTENANCE_TABLE), TableFlags::empty())
-                .map_err(mdbx_error)?;
-            tx.commit().map_err(mdbx_commit_error)?;
-        }
+        let environment_id = initialize_environment(&db, read_only)?;
+        let prefix_occupancy = load_prefix_occupancy(None, environment_id);
 
         Ok(Self {
             db: Arc::new(db),
             data_table: DataTable::Canonical,
             read_only,
+            environment_id,
+            prefix_occupancy,
         })
     }
 
@@ -126,26 +146,81 @@ impl MdbxStore {
         let name = name.as_ref();
         validate_data_table_name(name)?;
 
-        if self.read_only {
-            let tx = self.db.begin_ro_txn().map_err(mdbx_error)?;
-            tx.open_table(Some(name)).map_err(mdbx_error)?;
-        } else {
-            let tx = self.db.begin_rw_txn().map_err(mdbx_error)?;
-            tx.create_table(Some(name), TableFlags::empty())
-                .map_err(mdbx_error)?;
-            tx.commit().map_err(mdbx_commit_error)?;
-        }
+        ensure_named_table(&self.db, name, self.read_only)?;
+        let prefix_occupancy = load_prefix_occupancy(Some(name), self.environment_id);
 
         Ok(Self {
             db: Arc::clone(&self.db),
             data_table: DataTable::Named(Arc::from(name)),
             read_only: self.read_only,
+            environment_id: self.environment_id,
+            prefix_occupancy,
         })
     }
 
     /// Returns the logical data-table name, or `None` for the canonical table.
     pub fn data_table_name(&self) -> Option<&str> {
         self.data_table.name()
+    }
+
+    pub(super) fn prefix_occupancy(&self) -> Option<Arc<PrefixOccupancyIndex>> {
+        self.prefix_occupancy.clone()
+    }
+
+    #[cfg(test)]
+    pub(super) fn install_prefix_occupancy_for_test(
+        &mut self,
+        spec: PrefixOccupancySpec,
+        keys: &[Vec<u8>],
+    ) -> StorageResult<()> {
+        let environment_id = self.environment_id.ok_or_else(|| {
+            StorageError::invalid_operation("test MDBX environment has no identity")
+        })?;
+        let transaction_id = self.read_txn()?.id();
+        let index = PrefixOccupancyIndex::from_keys(environment_id, transaction_id, spec, keys)?;
+        self.prefix_occupancy = Some(Arc::new(index));
+        Ok(())
+    }
+
+    /// Builds a transaction-bound prefix occupancy artifact by streaming keys
+    /// from this store view without reading values.
+    pub fn build_prefix_occupancy_index(
+        &self,
+        output: &Path,
+        key_prefix: &[u8],
+        key_length: usize,
+        prefix_bits: u8,
+    ) -> StorageResult<PrefixOccupancyBuildReport> {
+        let environment_id = self.environment_id.ok_or_else(|| {
+            StorageError::invalid_operation(
+                "prefix occupancy build requires a writable-opened environment identity",
+            )
+        })?;
+        let transaction = self.read_txn()?;
+        let snapshot_transaction_id = transaction.id();
+        let table = transaction
+            .open_table(self.data_table.name())
+            .map_err(mdbx_error)?;
+        let spec = PrefixOccupancySpec::new(
+            self.data_table.name().map(str::to_owned),
+            key_prefix.to_vec(),
+            key_length,
+            prefix_bits,
+        )?;
+        let mut builder =
+            PrefixOccupancyBuilder::new(environment_id, snapshot_transaction_id, spec)?;
+        let mut cursor = transaction.cursor(&table).map_err(mdbx_error)?;
+        let mut entry = cursor
+            .set_range::<Cow<'_, [u8]>, ()>(key_prefix)
+            .map_err(mdbx_error)?;
+        while let Some((key, ())) = entry {
+            if !key.starts_with(key_prefix) {
+                break;
+            }
+            builder.insert(&key);
+            entry = cursor.next::<Cow<'_, [u8]>, ()>().map_err(mdbx_error)?;
+        }
+        builder.write(output)
     }
 
     /// Returns whether both views participate in the same MDBX transaction domain.
@@ -157,6 +232,39 @@ impl MdbxStore {
         let tx = self.db.begin_ro_txn().map_err(mdbx_error)?;
         let table = tx.open_table(self.data_table.name()).map_err(mdbx_error)?;
         tx.get::<Vec<u8>>(&table, key).map_err(mdbx_error)
+    }
+
+    fn read_entries<K>(&self, keys: &[K]) -> StorageResult<Vec<Option<Vec<u8>>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let tx = self.db.begin_ro_txn().map_err(mdbx_error)?;
+        let table = tx.open_table(self.data_table.name()).map_err(mdbx_error)?;
+        Self::read_entries_with_cursor(&tx, &table, keys)
+    }
+
+    pub(super) fn read_entries_with_cursor<K>(
+        tx: &Transaction<'_, RO, NoWriteMap>,
+        table: &Table<'_>,
+        keys: &[K],
+    ) -> StorageResult<Vec<Option<Vec<u8>>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut cursor = tx.cursor(table).map_err(mdbx_error)?;
+        keys.iter()
+            .map(|key| {
+                let key = key.as_ref();
+                cursor.set::<Vec<u8>>(key).map_err(mdbx_error)
+            })
+            .collect()
     }
 
     fn collect_entries(
@@ -177,13 +285,13 @@ impl MdbxStore {
             // `Arc<Database<NoWriteMap>>`. That Arc keeps the database alive
             // for at least as long as the transaction field is dropped.
             let db: &'static Database<NoWriteMap> = &*db_ptr;
-            db.begin_ro_txn().map_err(mdbx_error)?
+            db.begin_ro_txn().map_err(mdbx_error)
         };
         unsafe {
             // Balance the temporary Arc clone created for the widened borrow.
             drop(Arc::from_raw(db_ptr));
         }
-        Ok(tx)
+        tx
     }
 
     /// Returns current MDBX environment information for diagnostics and tests.
@@ -196,28 +304,44 @@ impl MdbxStore {
     where
         I: IntoIterator<Item = (&'a [u8], Option<&'a [u8]>)>,
     {
+        let mut recorder = MdbxCommitRecorder::start();
+        let sort_started = Instant::now();
         let mut entries = overlay.into_iter().collect::<Vec<_>>();
         entries.sort_unstable_by_key(|(key, _)| *key);
+        recorder.record_stage(MdbxCommitStage::OverlaySort, elapsed_us(sort_started));
         if entries.is_empty() {
+            recorder.finish_success();
             return Ok(());
         }
 
-        let tx = self.db.begin_rw_txn().map_err(mdbx_error)?;
-        let table = tx
-            .create_table(self.data_table.name(), TableFlags::empty())
-            .map_err(mdbx_error)?;
-        for (key, value) in entries {
-            match value {
-                Some(value) => tx
-                    .put(&table, key, value, WriteFlags::UPSERT)
-                    .map_err(mdbx_error)?,
-                None => {
-                    tx.del(&table, key, None).map_err(mdbx_error)?;
-                }
+        let tx = timed_result(&mut recorder, MdbxCommitStage::TransactionOpen, || {
+            self.db.begin_rw_txn().map_err(mdbx_error)
+        })?;
+        let table = timed_result(&mut recorder, MdbxCommitStage::TableOpen, || {
+            tx.create_table(self.data_table.name(), TableFlags::empty())
+                .map_err(mdbx_error)
+        })?;
+        let transaction_id = tx.id();
+        recorder.add_count(MdbxCommitCountKind::Tables, 1);
+        let mut source = BorrowedRawOverlay(entries);
+        let has_entries = apply_overlay(
+            &tx,
+            &table,
+            &mut source,
+            &mut recorder,
+            self.prefix_occupancy.as_deref(),
+        )?;
+
+        if has_entries {
+            timed_result(&mut recorder, MdbxCommitStage::Commit, || {
+                tx.commit().map_err(mdbx_commit_error)
+            })?;
+            recorder.mark_committed();
+            if let Some(index) = self.prefix_occupancy.as_deref() {
+                index.advance_covered_transaction(transaction_id);
             }
         }
-
-        tx.commit().map_err(mdbx_commit_error)?;
+        recorder.finish_success();
         Ok(())
     }
 
@@ -247,17 +371,47 @@ impl MdbxStore {
             ));
         }
 
-        let tx = self.db.begin_rw_txn().map_err(mdbx_error)?;
-        let primary_table = tx
-            .create_table(self.data_table.name(), TableFlags::empty())
-            .map_err(mdbx_error)?;
-        apply_overlay(&tx, &primary_table, primary)?;
+        let mut recorder = MdbxCommitRecorder::start();
+        let tx = timed_result(&mut recorder, MdbxCommitStage::TransactionOpen, || {
+            self.db.begin_rw_txn().map_err(mdbx_error)
+        })?;
+        let primary_table = timed_result(&mut recorder, MdbxCommitStage::TableOpen, || {
+            tx.create_table(self.data_table.name(), TableFlags::empty())
+                .map_err(mdbx_error)
+        })?;
+        let transaction_id = tx.id();
+        recorder.add_count(MdbxCommitCountKind::Tables, 1);
+        apply_overlay(
+            &tx,
+            &primary_table,
+            primary,
+            &mut recorder,
+            self.prefix_occupancy.as_deref(),
+        )?;
 
-        let secondary_table = tx
-            .create_table(secondary_store.data_table.name(), TableFlags::empty())
-            .map_err(mdbx_error)?;
-        apply_overlay(&tx, &secondary_table, secondary)?;
-        tx.commit().map_err(mdbx_commit_error)?;
+        let secondary_table = timed_result(&mut recorder, MdbxCommitStage::TableOpen, || {
+            tx.create_table(secondary_store.data_table.name(), TableFlags::empty())
+                .map_err(mdbx_error)
+        })?;
+        recorder.add_count(MdbxCommitCountKind::Tables, 1);
+        apply_overlay(
+            &tx,
+            &secondary_table,
+            secondary,
+            &mut recorder,
+            secondary_store.prefix_occupancy.as_deref(),
+        )?;
+        timed_result(&mut recorder, MdbxCommitStage::Commit, || {
+            tx.commit().map_err(mdbx_commit_error)
+        })?;
+        recorder.mark_committed();
+        if let Some(index) = self.prefix_occupancy.as_deref() {
+            index.advance_covered_transaction(transaction_id);
+        }
+        if let Some(index) = secondary_store.prefix_occupancy.as_deref() {
+            index.advance_covered_transaction(transaction_id);
+        }
+        recorder.finish_success();
         Ok(())
     }
 
@@ -276,31 +430,154 @@ impl MdbxStore {
     where
         O: RawOverlaySource + ?Sized,
     {
-        let tx = self.db.begin_rw_txn().map_err(mdbx_error)?;
-        let table = tx
-            .create_table(self.data_table.name(), TableFlags::empty())
-            .map_err(mdbx_error)?;
-        let mut has_entries = false;
-        let mut apply_result = Ok(());
-        let mut sink = |key: &[u8], value: Option<&[u8]>| {
-            if apply_result.is_err() {
-                return;
-            }
-            has_entries = true;
-            apply_result = match value {
-                Some(value) => tx
-                    .put(&table, key, value, WriteFlags::UPSERT)
-                    .map_err(mdbx_error),
-                None => tx.del(&table, key, None).map(|_| ()).map_err(mdbx_error),
-            };
-        };
-        overlay.visit_raw_overlay(&mut sink);
-        apply_result?;
+        let mut recorder = MdbxCommitRecorder::start();
+        let tx = timed_result(&mut recorder, MdbxCommitStage::TransactionOpen, || {
+            self.db.begin_rw_txn().map_err(mdbx_error)
+        })?;
+        let table = timed_result(&mut recorder, MdbxCommitStage::TableOpen, || {
+            tx.create_table(self.data_table.name(), TableFlags::empty())
+                .map_err(mdbx_error)
+        })?;
+        let transaction_id = tx.id();
+        recorder.add_count(MdbxCommitCountKind::Tables, 1);
+        let has_entries = apply_overlay(
+            &tx,
+            &table,
+            overlay,
+            &mut recorder,
+            self.prefix_occupancy.as_deref(),
+        )?;
 
         if has_entries {
-            tx.commit().map_err(mdbx_commit_error)?;
+            timed_result(&mut recorder, MdbxCommitStage::Commit, || {
+                tx.commit().map_err(mdbx_commit_error)
+            })?;
+            recorder.mark_committed();
+            if let Some(index) = self.prefix_occupancy.as_deref() {
+                index.advance_covered_transaction(transaction_id);
+            }
         }
+        recorder.finish_success();
         Ok(())
+    }
+}
+
+fn initialize_environment(
+    db: &Database<NoWriteMap>,
+    read_only: bool,
+) -> StorageResult<Option<[u8; 16]>> {
+    if let Some(environment_id) = read_existing_environment_id(db)? {
+        return Ok(Some(environment_id));
+    }
+    if read_only {
+        return Ok(None);
+    }
+
+    let transaction = db.begin_rw_txn().map_err(mdbx_error)?;
+    transaction
+        .create_table(None, TableFlags::empty())
+        .map_err(mdbx_error)?;
+    let metadata = transaction
+        .create_table(Some(MAINTENANCE_TABLE), TableFlags::empty())
+        .map_err(mdbx_error)?;
+    let environment_id = match transaction
+        .get::<Vec<u8>>(&metadata, ENVIRONMENT_ID_KEY)
+        .map_err(mdbx_error)?
+    {
+        Some(bytes) => parse_environment_id(&bytes)?,
+        None => {
+            let environment_id = rand::random::<[u8; 16]>();
+            transaction
+                .put(
+                    &metadata,
+                    ENVIRONMENT_ID_KEY,
+                    environment_id,
+                    WriteFlags::UPSERT,
+                )
+                .map_err(mdbx_error)?;
+            environment_id
+        }
+    };
+    transaction.commit().map_err(mdbx_commit_error)?;
+    Ok(Some(environment_id))
+}
+
+fn read_existing_environment_id(db: &Database<NoWriteMap>) -> StorageResult<Option<[u8; 16]>> {
+    let transaction = db.begin_ro_txn().map_err(mdbx_error)?;
+    if let Err(error) = transaction.open_table(None) {
+        return match error {
+            MdbxError::NotFound => Ok(None),
+            error => Err(mdbx_error(error)),
+        };
+    }
+    let metadata = match transaction.open_table(Some(MAINTENANCE_TABLE)) {
+        Ok(metadata) => metadata,
+        Err(MdbxError::NotFound) => return Ok(None),
+        Err(error) => return Err(mdbx_error(error)),
+    };
+    transaction
+        .get::<Vec<u8>>(&metadata, ENVIRONMENT_ID_KEY)
+        .map_err(mdbx_error)?
+        .map(|bytes| parse_environment_id(&bytes))
+        .transpose()
+}
+
+fn parse_environment_id(bytes: &[u8]) -> StorageResult<[u8; 16]> {
+    bytes.try_into().map_err(|_| {
+        StorageError::backend("MDBX environment identity has an invalid persisted length")
+    })
+}
+
+fn ensure_named_table(db: &Database<NoWriteMap>, name: &str, read_only: bool) -> StorageResult<()> {
+    let exists = {
+        let transaction = db.begin_ro_txn().map_err(mdbx_error)?;
+        match transaction.open_table(Some(name)) {
+            Ok(_) => true,
+            Err(MdbxError::NotFound) => false,
+            Err(error) => return Err(mdbx_error(error)),
+        }
+    };
+    if exists {
+        return Ok(());
+    }
+    if read_only {
+        return Err(mdbx_error(MdbxError::NotFound));
+    }
+    let transaction = db.begin_rw_txn().map_err(mdbx_error)?;
+    transaction
+        .create_table(Some(name), TableFlags::empty())
+        .map_err(mdbx_error)?;
+    transaction.commit().map_err(mdbx_commit_error)?;
+    Ok(())
+}
+
+fn load_prefix_occupancy(
+    table_name: Option<&str>,
+    environment_id: Option<[u8; 16]>,
+) -> Option<Arc<PrefixOccupancyIndex>> {
+    let path = std::env::var_os(PREFIX_OCCUPANCY_PATH_ENV).map(std::path::PathBuf::from)?;
+    let environment_id = environment_id?;
+    match PrefixOccupancyIndex::load(&path, table_name, environment_id) {
+        Ok(Some(index)) => {
+            info!(
+                target: "neo",
+                path = %path.display(),
+                table = table_name.unwrap_or("<canonical>"),
+                "loaded MDBX prefix occupancy index"
+            );
+            Some(Arc::new(index))
+        }
+        Ok(None) => None,
+        Err(error) => {
+            warn!(
+                target: "neo",
+                path = %path.display(),
+                table = table_name.unwrap_or("<canonical>"),
+                error = %error,
+                "MDBX prefix occupancy index is unavailable; authoritative reads remain enabled"
+            );
+            None
+        }
     }
 }
 
@@ -404,13 +681,17 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MdbxStore {
     type FindIterator<'a> = std::vec::IntoIter<(Vec<u8>, Vec<u8>)>;
 
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
-        match self.read_entry(key) {
+        match self.try_get_result(key) {
             Ok(value) => value,
             Err(err) => {
                 error!(target: "neo", error = %err, "MDBX get failed - this is a critical error that may cause incorrect state");
                 None
             }
         }
+    }
+
+    fn try_get_result(&self, key: &Vec<u8>) -> StorageResult<Option<Vec<u8>>> {
+        self.read_entry(key)
     }
 
     fn find(
@@ -430,7 +711,7 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MdbxStore {
 
 impl RawReadOnlyStore for MdbxStore {
     fn try_get_bytes(&self, key: &[u8]) -> Option<Vec<u8>> {
-        match self.read_entry(key) {
+        match self.try_get_bytes_result(key) {
             Ok(value) => value,
             Err(err) => {
                 warn!(target: "neo", error = %err, "MDBX get failed");
@@ -438,13 +719,34 @@ impl RawReadOnlyStore for MdbxStore {
             }
         }
     }
+
+    fn try_get_bytes_result(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
+        self.read_entry(key)
+    }
+
+    fn try_get_many_bytes<K>(&self, keys: &[K]) -> StorageResult<Vec<Option<Vec<u8>>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        self.read_entries(keys)
+    }
 }
 
 impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for MdbxStore {
     type FindIterator<'a> = std::vec::IntoIter<(StorageKey, StorageItem)>;
 
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
-        self.try_get(&key.to_array()).map(StorageItem::from_bytes)
+        match self.try_get_result(key) {
+            Ok(value) => value,
+            Err(err) => {
+                error!(target: "neo", error = %err, "MDBX typed get failed - this is a critical error that may cause incorrect state");
+                None
+            }
+        }
+    }
+
+    fn try_get_result(&self, key: &StorageKey) -> StorageResult<Option<StorageItem>> {
+        Ok(self.read_entry(&key.to_array())?.map(StorageItem::from_bytes))
     }
 
     fn find(
@@ -549,6 +851,7 @@ impl TransactionalStore for MdbxStore {
         }
 
         let tx = self.db.begin_rw_txn().map_err(mdbx_error)?;
+        let transaction_id = tx.id();
         let data = tx
             .create_table(self.data_table.name(), TableFlags::empty())
             .map_err(mdbx_error)?;
@@ -557,9 +860,13 @@ impl TransactionalStore for MdbxStore {
             .map_err(mdbx_error)?;
         for (key, value) in batch.data_operations() {
             match value {
-                Some(value) => tx
-                    .put(&data, key, value, WriteFlags::UPSERT)
-                    .map_err(mdbx_error)?,
+                Some(value) => {
+                    if let Some(index) = self.prefix_occupancy.as_deref() {
+                        index.observe_put(key);
+                    }
+                    tx.put(&data, key, value, WriteFlags::UPSERT)
+                        .map_err(mdbx_error)?;
+                }
                 None => {
                     tx.del(&data, key, None).map_err(mdbx_error)?;
                 }
@@ -576,6 +883,9 @@ impl TransactionalStore for MdbxStore {
             }
         }
         tx.commit().map_err(mdbx_commit_error)?;
+        if let Some(index) = self.prefix_occupancy.as_deref() {
+            index.advance_covered_transaction(transaction_id);
+        }
         Ok(())
     }
 }
@@ -609,6 +919,8 @@ impl Clone for MdbxStore {
             db: Arc::clone(&self.db),
             data_table: self.data_table.clone(),
             read_only: self.read_only,
+            environment_id: self.environment_id,
+            prefix_occupancy: self.prefix_occupancy.clone(),
         }
     }
 }
@@ -636,27 +948,139 @@ fn apply_overlay<O>(
     tx: &Transaction<'_, RW, NoWriteMap>,
     table: &Table<'_>,
     overlay: &mut O,
+    recorder: &mut MdbxCommitRecorder,
+    prefix_occupancy: Option<&PrefixOccupancyIndex>,
 ) -> StorageResult<bool>
 where
     O: RawOverlaySource + ?Sized,
 {
+    let mut cursor = timed_result(recorder, MdbxCommitStage::CursorOpen, || {
+        tx.cursor(table).map_err(mdbx_error)
+    })?;
     let mut has_entries = false;
     let mut apply_result = Ok(());
-    let mut sink = |key: &[u8], value: Option<&[u8]>| {
-        if apply_result.is_err() {
-            return;
-        }
-        has_entries = true;
-        apply_result = match value {
-            Some(value) => tx
-                .put(table, key, value, WriteFlags::UPSERT)
-                .map_err(mdbx_error),
-            None => tx.del(table, key, None).map(|_| ()).map_err(mdbx_error),
+    let mut entries = 0u64;
+    let mut puts = 0u64;
+    let mut deletes = 0u64;
+    let mut key_bytes = 0u64;
+    let mut value_bytes = 0u64;
+    let mut cursor_write_exact_ns = 0u128;
+    let mut cursor_write_weighted_ns = 0u128;
+    let mut cursor_write_weighted_entries = 0u64;
+    let mut pending_cursor_write_sample_ns = None;
+    let mut next_sampled_entry = CURSOR_WRITE_EXACT_PREFIX + 1;
+    let visit_started = Instant::now();
+    {
+        let mut sink = |key: &[u8], value: Option<&[u8]>| {
+            if apply_result.is_err() {
+                return;
+            }
+            has_entries = true;
+            entries = entries.saturating_add(1);
+            key_bytes = key_bytes.saturating_add(key.len() as u64);
+            match value {
+                Some(value) => {
+                    puts = puts.saturating_add(1);
+                    value_bytes = value_bytes.saturating_add(value.len() as u64);
+                    if let Some(index) = prefix_occupancy {
+                        index.observe_put(key);
+                    }
+                }
+                None => deletes = deletes.saturating_add(1),
+            }
+            let exact_measurement = entries <= CURSOR_WRITE_EXACT_PREFIX;
+            let sampled_measurement = entries == next_sampled_entry;
+            if sampled_measurement {
+                next_sampled_entry =
+                    next_sampled_entry.saturating_add(CURSOR_WRITE_SAMPLE_INTERVAL);
+            }
+            let write_started = (exact_measurement || sampled_measurement).then(Instant::now);
+            apply_result = apply_overlay_entry(tx, table, &mut cursor, key, value);
+            if let Some(write_started) = write_started {
+                let elapsed_ns = write_started.elapsed().as_nanos();
+                if exact_measurement {
+                    cursor_write_exact_ns = cursor_write_exact_ns.saturating_add(elapsed_ns);
+                } else {
+                    if let Some(previous_sample_ns) =
+                        pending_cursor_write_sample_ns.replace(elapsed_ns)
+                    {
+                        cursor_write_weighted_ns = cursor_write_weighted_ns.saturating_add(
+                            previous_sample_ns
+                                .saturating_mul(u128::from(CURSOR_WRITE_SAMPLE_INTERVAL)),
+                        );
+                        cursor_write_weighted_entries = cursor_write_weighted_entries
+                            .saturating_add(CURSOR_WRITE_SAMPLE_INTERVAL);
+                    }
+                }
+            }
         };
-    };
-    overlay.visit_raw_overlay(&mut sink);
+        overlay.visit_raw_overlay(&mut sink);
+    }
+    let overlay_visit_us = elapsed_us(visit_started);
+    let cursor_write_us = estimate_cursor_write_us(
+        entries,
+        cursor_write_exact_ns,
+        cursor_write_weighted_ns,
+        cursor_write_weighted_entries,
+        pending_cursor_write_sample_ns,
+    )
+    .min(overlay_visit_us);
+    recorder.record_stage(MdbxCommitStage::OverlayVisit, overlay_visit_us);
+    recorder.record_stage(MdbxCommitStage::CursorWrite, cursor_write_us);
+    recorder.add_count(MdbxCommitCountKind::Entries, entries);
+    recorder.add_count(MdbxCommitCountKind::Puts, puts);
+    recorder.add_count(MdbxCommitCountKind::Deletes, deletes);
+    recorder.add_count(MdbxCommitCountKind::KeyBytes, key_bytes);
+    recorder.add_count(MdbxCommitCountKind::ValueBytes, value_bytes);
     apply_result?;
     Ok(has_entries)
+}
+
+pub(super) fn estimate_cursor_write_us(
+    entries: u64,
+    exact_ns: u128,
+    weighted_ns: u128,
+    weighted_entries: u64,
+    pending_sample_ns: Option<u128>,
+) -> u64 {
+    let sampled_entries = entries.saturating_sub(CURSOR_WRITE_EXACT_PREFIX);
+    let pending_entries = sampled_entries.saturating_sub(weighted_entries);
+    let estimated_sampled_ns = weighted_ns.saturating_add(
+        pending_sample_ns
+            .unwrap_or_default()
+            .saturating_mul(u128::from(pending_entries)),
+    );
+    exact_ns
+        .saturating_add(estimated_sampled_ns)
+        .checked_div(1_000)
+        .unwrap_or_default()
+        .min(u128::from(u64::MAX)) as u64
+}
+
+fn timed_result<T, E>(
+    recorder: &mut MdbxCommitRecorder,
+    stage: MdbxCommitStage,
+    action: impl FnOnce() -> Result<T, E>,
+) -> Result<T, E> {
+    let started = Instant::now();
+    let result = action();
+    recorder.record_stage(stage, elapsed_us(started));
+    result
+}
+
+fn apply_overlay_entry(
+    tx: &Transaction<'_, RW, NoWriteMap>,
+    table: &Table<'_>,
+    cursor: &mut Cursor<'_, RW>,
+    key: &[u8],
+    value: Option<&[u8]>,
+) -> StorageResult<()> {
+    match value {
+        Some(value) => cursor
+            .put(key, value, WriteFlags::UPSERT)
+            .map_err(mdbx_error),
+        None => tx.del(table, key, None).map(|_| ()).map_err(mdbx_error),
+    }
 }
 
 pub(crate) fn mdbx_error(err: MdbxError) -> StorageError {

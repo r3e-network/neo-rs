@@ -33,8 +33,62 @@ fn selects_n3_mainnet_full_package_from_manifest() {
     assert_eq!(package.network_key, "n3mainnet");
     assert_eq!(package.filename, "chain.0.acc.zip");
     assert_eq!(package.md5, "ABCDEF0123456789ABCDEF0123456789");
+    assert_eq!(package.sha256, None);
     assert_eq!(package.start, 0);
     assert_eq!(package.end, 10);
+}
+
+#[test]
+fn selects_package_with_optional_sha256_digest() {
+    let manifest: SyncManifest = serde_json::from_str(
+        r#"
+{
+  "n3mainnet": {
+    "full": {
+      "path": "https://packets.azureedge.net/neochain/n3mainnet/full/0-10/ABCDEF0123456789ABCDEF0123456789/chain.0.acc.zip",
+      "md5": "abcdef0123456789abcdef0123456789",
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "start": 0,
+      "end": 10
+    }
+  }
+}
+"#,
+    )
+    .expect("manifest");
+
+    let package = select_full_package(&manifest, MAINNET_MAGIC).expect("package");
+    assert_eq!(
+        package.sha256.as_deref(),
+        Some("0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF")
+    );
+}
+
+#[test]
+fn rejects_manifest_package_with_invalid_sha256_digest() {
+    let manifest: SyncManifest = serde_json::from_str(
+        r#"
+{
+  "n3mainnet": {
+    "full": {
+      "path": "https://packets.azureedge.net/neochain/n3mainnet/full/0-10/ABCDEF0123456789ABCDEF0123456789/chain.0.acc.zip",
+      "md5": "abcdef0123456789abcdef0123456789",
+      "sha256": "not-a-digest",
+      "start": 0,
+      "end": 10
+    }
+  }
+}
+"#,
+    )
+    .expect("manifest");
+
+    let err = select_full_package(&manifest, MAINNET_MAGIC)
+        .expect_err("invalid sha256 must fail closed");
+    assert!(
+        err.to_string().contains("sha256"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

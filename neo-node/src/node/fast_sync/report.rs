@@ -39,6 +39,7 @@ impl FastSyncReport {
                 network: package.network_key.to_string(),
                 url: package.url.clone(),
                 md5: package.md5.clone(),
+                sha256: package.sha256.clone(),
                 start_height: package.start,
                 end_height: package.end,
                 filename: package.filename.clone(),
@@ -71,6 +72,7 @@ impl FastSyncReport {
                 finalization_store_commit_seconds: import.finalization_store_commit_seconds,
                 unclassified_import_seconds: import.unclassified_import_seconds,
                 throughput_status: fast_sync_throughput_status(&import),
+                profile_windows: import.profile_windows.clone(),
             },
             hot_metrics: FastSyncHotMetricsReport {
                 state_service_mpt_apply_attempts: hot_metrics.state_service_mpt_apply_attempts,
@@ -115,6 +117,8 @@ pub(in crate::node) struct FastSyncPackageReport {
     pub(in crate::node) network: String,
     pub(in crate::node) url: String,
     pub(in crate::node) md5: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::node) sha256: Option<String>,
     pub(in crate::node) start_height: u32,
     pub(in crate::node) end_height: u32,
     pub(in crate::node) filename: String,
@@ -148,6 +152,7 @@ pub(in crate::node) struct FastSyncImportReport {
     pub(in crate::node) finalization_store_commit_seconds: f64,
     pub(in crate::node) unclassified_import_seconds: f64,
     pub(in crate::node) throughput_status: FastSyncThroughputStatus,
+    pub(in crate::node) profile_windows: Vec<super::super::chain_acc::ChainAccProfileWindow>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

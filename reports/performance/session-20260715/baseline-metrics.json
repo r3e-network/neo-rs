@@ -1,0 +1,21 @@
+{
+  "dense_batch_bps": 1599.7892698701482,
+  "average_bps": 11523.725532109822,
+  "tx_bps": 1835.9118466215127,
+  "empty_bps": 49793.83380406692,
+  "mpt_failures": 0,
+  "mpt_height": 300000,
+  "mpt_window_apply_us": 3731259,
+  "mpt_window_backing_commit_us": 1658141,
+  "mpt_window_mutate_us": 450627,
+  "cursor_write_us": 1105635,
+  "backing_misses": 808396,
+  "put_node_cached": 934236,
+  "backing_hits": 13496,
+  "hash_computations": 939133,
+  "complete_avg_bps": 11523.725532109822,
+  "elapsed": 17.355498397,
+  "finalization_s": 3.854497161,
+  "tx_blocks": 17855,
+  "empty_blocks": 182145
+}

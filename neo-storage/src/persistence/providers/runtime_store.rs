@@ -179,6 +179,13 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RuntimeSnapshot {
         }
     }
 
+    fn try_get_result(&self, key: &Vec<u8>) -> StorageResult<Option<Vec<u8>>> {
+        match &self.inner {
+            RuntimeSnapshotInner::Memory(snapshot) => snapshot.try_get_result(key),
+            RuntimeSnapshotInner::Mdbx(snapshot) => snapshot.try_get_result(key),
+        }
+    }
+
     fn find(
         &self,
         key_prefix: Option<&Vec<u8>>,
@@ -200,6 +207,23 @@ impl RawReadOnlyStore for RuntimeSnapshot {
         match &self.inner {
             RuntimeSnapshotInner::Memory(snapshot) => snapshot.try_get_bytes(key),
             RuntimeSnapshotInner::Mdbx(snapshot) => snapshot.try_get_bytes(key),
+        }
+    }
+
+    fn try_get_bytes_result(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
+        match &self.inner {
+            RuntimeSnapshotInner::Memory(snapshot) => snapshot.try_get_bytes_result(key),
+            RuntimeSnapshotInner::Mdbx(snapshot) => snapshot.try_get_bytes_result(key),
+        }
+    }
+
+    fn try_get_many_bytes<K>(&self, keys: &[K]) -> StorageResult<Vec<Option<Vec<u8>>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        match &self.inner {
+            RuntimeSnapshotInner::Memory(snapshot) => snapshot.try_get_many_bytes(keys),
+            RuntimeSnapshotInner::Mdbx(snapshot) => snapshot.try_get_many_bytes(keys),
         }
     }
 }
@@ -269,6 +293,13 @@ impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for RuntimeStore {
         }
     }
 
+    fn try_get_result(&self, key: &Vec<u8>) -> StorageResult<Option<Vec<u8>>> {
+        match self {
+            Self::Memory(store) => store.try_get_result(key),
+            Self::Mdbx(store) => store.try_get_result(key),
+        }
+    }
+
     fn find(
         &self,
         key_prefix: Option<&Vec<u8>>,
@@ -293,6 +324,13 @@ impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for RuntimeStore {
         }
     }
 
+    fn try_get_result(&self, key: &StorageKey) -> StorageResult<Option<StorageItem>> {
+        match self {
+            Self::Memory(store) => store.try_get_result(key),
+            Self::Mdbx(store) => store.try_get_result(key),
+        }
+    }
+
     fn find(
         &self,
         key_prefix: Option<&StorageKey>,
@@ -314,6 +352,23 @@ impl RawReadOnlyStore for RuntimeStore {
         match self {
             Self::Memory(store) => store.try_get_bytes(key),
             Self::Mdbx(store) => store.try_get_bytes(key),
+        }
+    }
+
+    fn try_get_bytes_result(&self, key: &[u8]) -> StorageResult<Option<Vec<u8>>> {
+        match self {
+            Self::Memory(store) => store.try_get_bytes_result(key),
+            Self::Mdbx(store) => store.try_get_bytes_result(key),
+        }
+    }
+
+    fn try_get_many_bytes<K>(&self, keys: &[K]) -> StorageResult<Vec<Option<Vec<u8>>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        match self {
+            Self::Memory(store) => store.try_get_many_bytes(keys),
+            Self::Mdbx(store) => store.try_get_many_bytes(keys),
         }
     }
 }

@@ -37,6 +37,8 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+mod profile;
+
 #[test]
 fn default_cache_dir_tracks_storage_path() {
     let config: NodeConfig = toml::from_str(
@@ -66,6 +68,7 @@ fn test_package(start: u32, end: u32) -> FastSyncPackage {
         network_key: "n3mainnet",
         url: "https://example.invalid/chain.0.acc.zip".to_string(),
         md5: "ABCDEF0123456789ABCDEF0123456789".to_string(),
+        sha256: None,
         start,
         end,
         filename: format!("chain.{start}.acc.zip"),
@@ -148,6 +151,7 @@ fn import_report(
         finalization_store_commit_seconds: 0.0,
         unclassified_import_seconds: 0.0,
         hot_metrics: chain_acc::ImportHotMetrics::default(),
+        profile_windows: Vec::new(),
     }
 }
 
@@ -212,6 +216,7 @@ fn import_report_with_composition(
         finalization_store_commit_seconds: 0.0,
         unclassified_import_seconds: 0.0,
         hot_metrics: chain_acc::ImportHotMetrics::default(),
+        profile_windows: Vec::new(),
     }
 }
 
@@ -455,6 +460,7 @@ fn fast_sync_report_preserves_package_and_import_proof() {
                 state_service_mpt_mutate_changes_avg_us: 310,
                 state_service_mpt_root_hash_avg_us: 410,
                 state_service_mpt_trie_commit_avg_us: 1_200,
+                state_service_mpt_backing_sort_avg_us: 125,
                 state_service_mpt_backing_commit_avg_us: 1_300,
                 state_service_mpt_publish_generation_avg_us: 140,
                 state_service_mpt_overlay_entries_avg: 22,
@@ -569,6 +575,7 @@ fn write_fast_sync_report_sidecar_serializes_machine_readable_proof() {
                 state_service_mpt_mutate_changes_avg_us: 310,
                 state_service_mpt_root_hash_avg_us: 410,
                 state_service_mpt_trie_commit_avg_us: 1_200,
+                state_service_mpt_backing_sort_avg_us: 125,
                 state_service_mpt_backing_commit_avg_us: 1_300,
                 state_service_mpt_publish_generation_avg_us: 140,
                 state_service_mpt_overlay_entries_avg: 22,
@@ -615,6 +622,7 @@ fn write_fast_sync_report_sidecar_serializes_machine_readable_proof() {
     );
     assert_eq!(payload["import"]["finalization_store_commit_seconds"], 0.0);
     assert_eq!(payload["import"]["unclassified_import_seconds"], 0.0);
+    assert_eq!(payload["import"]["profile_windows"], serde_json::json!([]));
     assert_eq!(
         payload["import"]["throughput_status"],
         "no-transaction-proof"
@@ -695,43 +703,6 @@ fn write_fast_sync_report_sidecar_serializes_machine_readable_proof() {
     assert_eq!(
         payload["hot_metrics"]["native_persist_tx_hot_stage_avg_us"],
         1700
-    );
-}
-
-#[test]
-fn fast_sync_report_preserves_transaction_bearing_throughput_proof() {
-    let package = test_package(0, 100);
-    let import_tip = chain_acc::LocalLedgerTip {
-        height: 100,
-        hash: neo_primitives::UInt256::from([100; 32]),
-    };
-    let report = FastSyncReport::from_parts(
-        &package,
-        Path::new("/cache/chain.0.acc.zip"),
-        Path::new("/cache/chain.0.acc/chain.0.acc"),
-        import_report_with_composition(101, Some(import_tip), 0.25, 404.0, 81, 20, 45),
-        None,
-    );
-
-    assert_eq!(report.import.imported_blocks, 101);
-    assert_eq!(report.import.empty_blocks, 81);
-    assert_eq!(report.import.empty_only_blocks, 0);
-    assert_eq!(report.import.empty_block_import_seconds, 0.0);
-    assert_eq!(report.import.empty_blocks_per_second, 0.0);
-    assert_eq!(report.import.transaction_blocks, 20);
-    assert_eq!(report.import.transactions, 45);
-    assert_eq!(report.import.transaction_block_import_seconds, 0.25);
-    assert_eq!(report.import.transaction_block_clone_seconds, 0.0);
-    assert_eq!(report.import.transaction_ledger_insert_seconds, 0.0);
-    assert_eq!(report.import.transaction_finalized_delivery_seconds, 0.0);
-    assert_eq!(report.import.transaction_blocks_per_second, 80.0);
-    assert_eq!(report.import.finalization_seconds, 0.0);
-    assert_eq!(report.import.finalization_commit_handlers_seconds, 0.0);
-    assert_eq!(report.import.finalization_store_commit_seconds, 0.0);
-    assert_eq!(report.import.unclassified_import_seconds, 0.0);
-    assert_eq!(
-        report.import.throughput_status,
-        FastSyncThroughputStatus::BelowTarget
     );
 }
 

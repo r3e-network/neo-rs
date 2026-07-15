@@ -1,0 +1,18 @@
+{
+  "control_dense": [
+    1602.7228350521918,
+    1630.3300907847063,
+    1621.198362570783
+  ],
+  "candidate_dense": [
+    1595.4379579885042,
+    1501.3395466394581,
+    1490.582242403828
+  ],
+  "control_dense_mean": 1618.0837628025604,
+  "candidate_dense_mean": 1529.1199156772634,
+  "control_avg_mean": 11766.279413339968,
+  "candidate_avg_mean": 11400.121771738615,
+  "dense_delta_pct": -5.498098996507417,
+  "all_roots_matched": true
+}

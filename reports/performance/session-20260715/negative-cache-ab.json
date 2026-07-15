@@ -1,0 +1,18 @@
+{
+  "control_dense_bps": 1599.7892698701482,
+  "control_avg_bps": 11523.725532109822,
+  "control_backing_misses": 808396,
+  "candidate_dense_bps": [
+    1452.7841364609972,
+    1627.6402452306897,
+    1637.1099343882502
+  ],
+  "candidate_dense_mean": 1572.5114386933124,
+  "candidate_avg_mean": 11463.107074961721,
+  "candidate_backing_misses": [
+    808175,
+    808430,
+    808430
+  ],
+  "dense_delta_pct": -1.7050890195713042
+}

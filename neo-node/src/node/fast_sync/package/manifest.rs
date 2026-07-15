@@ -30,6 +30,10 @@ struct NetworkPackages {
 struct PackageEntry {
     path: String,
     md5: String,
+    /// Optional SHA-256 hex digest. When supplied by a trust-hardened manifest
+    /// (or a future NGD field), download acceptance requires this match.
+    #[serde(default)]
+    sha256: Option<String>,
     start: u32,
     end: u32,
 }
@@ -109,6 +113,18 @@ fn select_full_package(manifest: &SyncManifest, network: u32) -> anyhow::Result<
     if entry.md5.trim().len() != 32 || !entry.md5.chars().all(|ch| ch.is_ascii_hexdigit()) {
         anyhow::bail!("manifest {network_key}.full.md5 is not a valid MD5 hex digest");
     }
+    let sha256 = match entry.sha256.as_deref() {
+        None | Some("") => None,
+        Some(raw) => {
+            let digest = raw.trim();
+            if digest.len() != 64 || !digest.chars().all(|ch| ch.is_ascii_hexdigit()) {
+                anyhow::bail!(
+                    "manifest {network_key}.full.sha256 is not a valid SHA-256 hex digest"
+                );
+            }
+            Some(digest.to_ascii_uppercase())
+        }
+    };
     if entry.start > entry.end {
         anyhow::bail!(
             "manifest {network_key}.full start height {} is greater than end height {}",
@@ -121,6 +137,7 @@ fn select_full_package(manifest: &SyncManifest, network: u32) -> anyhow::Result<
         network_key,
         url: entry.path.clone(),
         md5: entry.md5.to_ascii_uppercase(),
+        sha256,
         start: entry.start,
         end: entry.end,
         filename,

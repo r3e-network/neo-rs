@@ -1,4 +1,5 @@
 use super::*;
+use neo_crypto::mpt_trie::MptStoreLookup;
 use neo_storage::persistence::{
     RawReadOnlyStore, ReadOnlyStore, ReadOnlyStoreGeneric, SeekDirection, Store, StoreSnapshot,
     WriteStore,
@@ -119,6 +120,206 @@ impl Store for BorrowOnlyStore {
             value: Vec::new(),
         })
     }
+}
+
+/// Backing snapshot that records every durable point/batch read for negative-cache tests.
+#[derive(Debug, Default)]
+struct CountingMissSnapshot {
+    point_reads: AtomicUsize,
+    batch_reads: AtomicUsize,
+    batch_keys: AtomicUsize,
+}
+
+impl CountingMissSnapshot {
+    fn point_reads(&self) -> usize {
+        self.point_reads.load(Ordering::Relaxed)
+    }
+
+    fn batch_reads(&self) -> usize {
+        self.batch_reads.load(Ordering::Relaxed)
+    }
+
+    fn batch_keys(&self) -> usize {
+        self.batch_keys.load(Ordering::Relaxed)
+    }
+}
+
+impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for CountingMissSnapshot {
+    type FindIterator<'a> = std::vec::IntoIter<(Vec<u8>, Vec<u8>)>;
+
+    fn try_get(&self, _key: &Vec<u8>) -> Option<Vec<u8>> {
+        panic!("MPT backing reads must use try_get_bytes")
+    }
+
+    fn find(
+        &self,
+        _key_prefix: Option<&Vec<u8>>,
+        _direction: SeekDirection,
+    ) -> Self::FindIterator<'_> {
+        Vec::new().into_iter()
+    }
+}
+
+impl RawReadOnlyStore for CountingMissSnapshot {
+    fn try_get_bytes(&self, _key: &[u8]) -> Option<Vec<u8>> {
+        self.point_reads.fetch_add(1, Ordering::Relaxed);
+        None
+    }
+
+    fn try_get_many_bytes<K>(&self, keys: &[K]) -> neo_storage::StorageResult<Vec<Option<Vec<u8>>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        self.batch_reads.fetch_add(1, Ordering::Relaxed);
+        self.batch_keys
+            .fetch_add(keys.len(), Ordering::Relaxed);
+        Ok(keys.iter().map(|_| None).collect())
+    }
+}
+
+impl WriteStore<Vec<u8>, Vec<u8>> for CountingMissSnapshot {
+    fn delete(&mut self, _key: Vec<u8>) -> neo_storage::StorageResult<()> {
+        Ok(())
+    }
+
+    fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> neo_storage::StorageResult<()> {
+        Ok(())
+    }
+}
+
+impl StoreSnapshot for CountingMissSnapshot {
+    type Store = CountingMissStore;
+
+    fn store(&self) -> Arc<Self::Store> {
+        panic!("counting miss snapshot is never committed")
+    }
+
+    fn try_commit(&mut self) -> Result<(), neo_storage::StorageError> {
+        Ok(())
+    }
+}
+
+#[derive(Debug, Default)]
+struct CountingMissStore;
+
+impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for CountingMissStore {
+    type FindIterator<'a> = std::vec::IntoIter<(Vec<u8>, Vec<u8>)>;
+
+    fn try_get(&self, _key: &Vec<u8>) -> Option<Vec<u8>> {
+        None
+    }
+
+    fn find(
+        &self,
+        _key_prefix: Option<&Vec<u8>>,
+        _direction: SeekDirection,
+    ) -> Self::FindIterator<'_> {
+        Vec::new().into_iter()
+    }
+}
+
+impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for CountingMissStore {
+    type FindIterator<'a> = std::vec::IntoIter<(StorageKey, StorageItem)>;
+
+    fn try_get(&self, _key: &StorageKey) -> Option<StorageItem> {
+        None
+    }
+
+    fn find(
+        &self,
+        _key_prefix: Option<&StorageKey>,
+        _direction: SeekDirection,
+    ) -> Self::FindIterator<'_> {
+        Vec::new().into_iter()
+    }
+}
+
+impl RawReadOnlyStore for CountingMissStore {
+    fn try_get_bytes(&self, _key: &[u8]) -> Option<Vec<u8>> {
+        None
+    }
+}
+
+impl WriteStore<Vec<u8>, Vec<u8>> for CountingMissStore {
+    fn delete(&mut self, _key: Vec<u8>) -> neo_storage::StorageResult<()> {
+        Ok(())
+    }
+
+    fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> neo_storage::StorageResult<()> {
+        Ok(())
+    }
+}
+
+impl ReadOnlyStore for CountingMissStore {}
+
+impl Store for CountingMissStore {
+    type Snapshot = CountingMissSnapshot;
+
+    fn snapshot(&self) -> Arc<Self::Snapshot> {
+        Arc::new(CountingMissSnapshot::default())
+    }
+}
+
+/// Build a full-size MPT node key (prefix + 32-byte hash) used by the negative cache.
+fn mpt_node_key(tag: u8) -> Vec<u8> {
+    let mut key = vec![0xF0; 33];
+    key[1] = tag;
+    key
+}
+
+#[test]
+fn write_batch_negative_cache_skips_repeated_durable_misses() {
+    let backing = Arc::new(CountingMissSnapshot::default());
+    let batch = MptWriteBatch::<CountingMissStore>::new(
+        Arc::new(HashMap::new()),
+        Some(Arc::clone(&backing) as Arc<_>),
+        4,
+    );
+    let missing = mpt_node_key(0x11);
+    let other = mpt_node_key(0x22);
+
+    assert!(matches!(
+        batch
+            .try_get_node_with_source(&missing)
+            .expect("first miss"),
+        MptStoreLookup::Backing(None)
+    ));
+    assert_eq!(backing.point_reads(), 1);
+
+    // Second point lookup must hit the in-batch negative cache only.
+    assert!(matches!(
+        batch
+            .try_get_node_with_source(&missing)
+            .expect("cached miss"),
+        MptStoreLookup::InMemory(None)
+    ));
+    assert_eq!(backing.point_reads(), 1);
+
+    // Batch path must also avoid re-reading proven-absent keys while still
+    // querying unseen keys exactly once.
+    let lookups = batch
+        .try_get_nodes_with_source(&[missing.clone(), other.clone(), missing.clone()])
+        .expect("batch lookup");
+    assert!(matches!(&lookups[0], MptStoreLookup::InMemory(None)));
+    assert!(matches!(&lookups[1], MptStoreLookup::Backing(None)));
+    assert!(matches!(&lookups[2], MptStoreLookup::InMemory(None)));
+    assert_eq!(backing.batch_reads(), 1);
+    assert_eq!(
+        backing.batch_keys(),
+        1,
+        "only the unseen key should hit durable batch read"
+    );
+    assert_eq!(backing.point_reads(), 1);
+
+    // After the batch miss for `other`, a later point read is also cached.
+    assert!(matches!(
+        batch
+            .try_get_node_with_source(&other)
+            .expect("batch-cached miss"),
+        MptStoreLookup::InMemory(None)
+    ));
+    assert_eq!(backing.point_reads(), 1);
+    assert_eq!(backing.batch_reads(), 1);
 }
 
 struct RecordingRawOverlayStore {
@@ -402,6 +603,98 @@ fn backing_snapshot_mpt_reads_use_borrowed_key_lookup() {
         MptStoreSnapshot::try_get(&batch, &[0xCC]).expect("read from batch backing"),
         Some(vec![0xDD])
     );
+}
+
+#[test]
+fn write_batch_node_lookup_preserves_memory_and_backing_provenance() {
+    use neo_io::{BinaryWriter, Serializable};
+
+    fn encode(node: &Node) -> Vec<u8> {
+        let mut writer = BinaryWriter::new();
+        node.serialize(&mut writer).expect("serialize test node");
+        writer.into_bytes()
+    }
+
+    let base_key = vec![0xA1];
+    let overlay_key = vec![0xA2];
+    let backing_key = vec![0xB1];
+    let missing_key = vec![0xB2];
+    let base_node = Node::new_leaf(b"base".to_vec());
+    let overlay_node = Node::new_leaf(b"overlay".to_vec());
+    let backing_node = Node::new_leaf(b"backing".to_vec());
+    let backing = Arc::new(BorrowOnlySnapshot {
+        key: backing_key.clone(),
+        value: encode(&backing_node),
+    });
+    let batch = MptWriteBatch::<BorrowOnlyStore>::new(
+        Arc::new(HashMap::from([(
+            base_key.clone(),
+            Some(encode(&base_node)),
+        )])),
+        Some(backing),
+        2,
+    );
+
+    match batch
+        .try_get_node_with_source(&base_key)
+        .expect("base lookup")
+    {
+        MptStoreLookup::InMemory(Some(node)) => assert_eq!(node.value, b"base"),
+        lookup => panic!("unexpected base lookup: {lookup:?}"),
+    }
+    MptStoreSnapshot::put(&batch, overlay_key.clone(), encode(&overlay_node))
+        .expect("stage overlay node");
+    match batch
+        .try_get_node_with_source(&overlay_key)
+        .expect("overlay lookup")
+    {
+        MptStoreLookup::InMemory(Some(node)) => assert_eq!(node.value, b"overlay"),
+        lookup => panic!("unexpected overlay lookup: {lookup:?}"),
+    }
+    match batch
+        .try_get_node_with_source(&backing_key)
+        .expect("backing lookup")
+    {
+        MptStoreLookup::Backing(Some(node)) => assert_eq!(node.value, b"backing"),
+        lookup => panic!("unexpected backing lookup: {lookup:?}"),
+    }
+    assert!(matches!(
+        batch
+            .try_get_node_with_source(&missing_key)
+            .expect("backing miss"),
+        MptStoreLookup::Backing(None)
+    ));
+
+    let batch_keys = vec![
+        base_key.clone(),
+        overlay_key.clone(),
+        backing_key.clone(),
+        missing_key.clone(),
+    ];
+    let batch_lookups = batch
+        .try_get_nodes_with_source(&batch_keys)
+        .expect("mixed batch lookup");
+    assert!(matches!(
+        &batch_lookups[0],
+        MptStoreLookup::InMemory(Some(node)) if node.value == b"base"
+    ));
+    assert!(matches!(
+        &batch_lookups[1],
+        MptStoreLookup::InMemory(Some(node)) if node.value == b"overlay"
+    ));
+    assert!(matches!(
+        &batch_lookups[2],
+        MptStoreLookup::Backing(Some(node)) if node.value == b"backing"
+    ));
+    assert!(matches!(&batch_lookups[3], MptStoreLookup::Backing(None)));
+
+    MptStoreSnapshot::delete(&batch, backing_key.clone()).expect("stage backing tombstone");
+    assert!(matches!(
+        batch
+            .try_get_node_with_source(&backing_key)
+            .expect("overlay tombstone lookup"),
+        MptStoreLookup::InMemory(None)
+    ));
 }
 
 #[test]
@@ -751,6 +1044,48 @@ fn durable_backing_overlay_is_committed_in_key_order() {
         keys, sorted,
         "StateService MPT durable backing commits must visit raw keys in byte order"
     );
+}
+
+#[test]
+fn durable_full_state_repeated_leaf_payload_preserves_reference_count() {
+    use neo_io::{MemoryReader, Serializable, SerializableExtensions};
+
+    let backing = Arc::new(MemoryStore::new());
+    let store = MptStore::from_memory_store(Arc::clone(&backing), true).expect("mpt store");
+    let shared_value = b"shared-leaf";
+    let mut previous_root = None;
+
+    for (block_index, suffix) in [0xA0, 0xB0, 0xC0].into_iter().enumerate() {
+        previous_root = Some(
+            store
+                .apply_block_changes(
+                    block_index as u32,
+                    previous_root,
+                    &[put(5, &[suffix], shared_value)],
+                )
+                .expect("block applies"),
+        );
+    }
+
+    let mut expected_leaf = Node::new_leaf(shared_value.to_vec());
+    expected_leaf.reference = 3;
+    let leaf_hash = expected_leaf.try_hash().expect("leaf hash");
+    let mut node_key = Vec::with_capacity(1 + UINT256_SIZE);
+    node_key.push(NODE_PREFIX);
+    node_key.extend_from_slice(&leaf_hash.to_array());
+
+    let durable_bytes = backing
+        .try_get_bytes(&node_key)
+        .expect("shared leaf is durable");
+    assert_eq!(
+        durable_bytes,
+        expected_leaf.to_array().expect("serialize expected leaf"),
+        "durable node bytes must include every reference to the shared leaf"
+    );
+
+    let mut reader = MemoryReader::new(&durable_bytes);
+    let durable_leaf = Node::deserialize(&mut reader).expect("deserialize durable leaf");
+    assert_eq!(durable_leaf.reference, 3);
 }
 
 #[test]

@@ -11,13 +11,15 @@
 //!
 //! - Test modules and fixtures: grouped coverage for the surrounding domain.
 
+use super::store::estimate_cursor_write_us;
 use super::*;
+use crate::persistence::providers::RuntimeStore;
 use crate::persistence::{
     CoordinatedTransactionalStore, RawOverlaySink, RawOverlaySource, RawReadOnlyStore,
     ReadOnlyStoreGeneric, SeekDirection, Store, StoreCache, StoreMaintenanceBatch, StoreSnapshot,
     TransactionalStore, WriteStore, storage::StorageConfig,
 };
-use crate::{StorageItem, StorageKey};
+use crate::{StorageError, StorageItem, StorageKey};
 use std::fs;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -33,6 +35,20 @@ fn open_store(tmp: &TempDir, name: &str) -> MdbxStore {
 }
 
 struct TestOverlay(Vec<(Vec<u8>, Option<Vec<u8>>)>);
+
+#[test]
+fn cursor_write_sampling_scales_only_the_sampled_suffix() {
+    assert_eq!(estimate_cursor_write_us(0, 0, 0, 0, None), 0);
+    assert_eq!(estimate_cursor_write_us(64, 12_345_000, 0, 0, None), 12_345);
+    assert_eq!(
+        estimate_cursor_write_us(320, 1_000_000, 0, 0, Some(1_000)),
+        1_256
+    );
+    assert_eq!(
+        estimate_cursor_write_us(321, 1_000_000, 256_000, 256, Some(2_000)),
+        1_258
+    );
+}
 
 impl RawOverlaySource for TestOverlay {
     fn visit_raw_overlay<S>(&mut self, sink: &mut S)
@@ -164,6 +180,96 @@ fn coordinated_overlays_publish_both_tables_in_one_transaction() {
         transaction_before + 1,
         "both overlays must cross one MDBX transaction boundary"
     );
+}
+
+#[test]
+fn cursor_backed_raw_overlay_preserves_put_update_and_delete_semantics() {
+    let tmp = TempDir::new().expect("tempdir");
+    let mut store = open_store(&tmp, "cursor-overlay");
+    store
+        .put(b"update".to_vec(), b"old".to_vec())
+        .expect("seed updated row");
+    store
+        .put(b"delete".to_vec(), b"old".to_vec())
+        .expect("seed deleted row");
+
+    let mut overlay = TestOverlay(vec![
+        (b"delete".to_vec(), None),
+        (b"missing".to_vec(), None),
+        (b"insert".to_vec(), Some(b"new".to_vec())),
+        (b"update".to_vec(), Some(b"new".to_vec())),
+    ]);
+    assert!(
+        store
+            .try_commit_borrowed_raw_overlay(&mut overlay)
+            .expect("commit ordered cursor overlay")
+    );
+
+    assert_eq!(store.try_get_bytes(b"insert"), Some(b"new".to_vec()));
+    assert_eq!(store.try_get_bytes(b"update"), Some(b"new".to_vec()));
+    assert_eq!(store.try_get_bytes(b"delete"), None);
+    assert_eq!(store.try_get_bytes(b"missing"), None);
+}
+
+#[test]
+fn raw_overlay_commit_metrics_cover_phases_entries_and_bytes() {
+    let before = MdbxCommitMetrics::snapshot();
+    let tmp = TempDir::new().expect("tempdir");
+    let store = open_store(&tmp, "commit-metrics");
+    let mut overlay = TestOverlay(vec![
+        (b"alpha".to_vec(), Some(b"one".to_vec())),
+        (b"beta".to_vec(), Some(b"two".to_vec())),
+    ]);
+
+    store
+        .commit_canonical_overlay(&mut overlay)
+        .expect("instrumented raw overlay commit");
+
+    let after = MdbxCommitMetrics::snapshot();
+    assert!(after.stats.attempts > before.stats.attempts);
+    assert!(after.stats.committed_transactions > before.stats.committed_transactions);
+    assert!(after.stats.failures >= before.stats.failures);
+
+    let stage_delta = |name: &str| {
+        let before = before
+            .stages
+            .iter()
+            .find(|stat| stat.stage == name)
+            .map_or(0, |stat| stat.calls);
+        after
+            .stages
+            .iter()
+            .find(|stat| stat.stage == name)
+            .map_or(0, |stat| stat.calls.saturating_sub(before))
+    };
+    for stage in [
+        "total",
+        "transaction_open",
+        "table_open",
+        "cursor_open",
+        "overlay_visit",
+        "cursor_write",
+        "commit",
+    ] {
+        assert!(stage_delta(stage) >= 1, "missing stage metric {stage}");
+    }
+
+    let count_delta = |kind: &str| {
+        let before = before
+            .counts
+            .iter()
+            .find(|stat| stat.kind == kind)
+            .map_or(0, |stat| stat.total);
+        after
+            .counts
+            .iter()
+            .find(|stat| stat.kind == kind)
+            .map_or(0, |stat| stat.total.saturating_sub(before))
+    };
+    assert!(count_delta("entries") >= 2);
+    assert!(count_delta("puts") >= 2);
+    assert!(count_delta("key_bytes") >= 9);
+    assert!(count_delta("value_bytes") >= 6);
 }
 
 #[test]
@@ -376,6 +482,339 @@ fn snapshot_reads_ignore_pending_writes_until_reopened_after_commit() {
     assert_eq!(
         reopened.try_get_bytes(added_key.as_slice()),
         Some(vec![0xBB])
+    );
+}
+
+#[test]
+fn raw_batch_reads_preserve_input_order_duplicates_and_snapshot_isolation() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = open_store(&tmp, "raw-batch-read");
+    let mut store = root
+        .open_named_table("raw-batch-read-table")
+        .expect("open named batch-read table");
+    let alpha = b"alpha".to_vec();
+    let beta = b"beta".to_vec();
+    let future = b"future".to_vec();
+    let absent = b"absent".to_vec();
+
+    store
+        .put(alpha.clone(), b"alpha-old".to_vec())
+        .expect("seed alpha");
+    store
+        .put(beta.clone(), b"beta-old".to_vec())
+        .expect("seed beta");
+    let snapshot = store.snapshot();
+
+    store
+        .put(alpha.clone(), b"alpha-new".to_vec())
+        .expect("update alpha");
+    store.delete(beta.clone()).expect("delete beta");
+    store
+        .put(future.clone(), b"future-new".to_vec())
+        .expect("insert future");
+
+    let keys = [
+        beta.as_slice(),
+        future.as_slice(),
+        alpha.as_slice(),
+        beta.as_slice(),
+        absent.as_slice(),
+    ];
+    assert_eq!(
+        snapshot
+            .try_get_bytes_result(alpha.as_slice())
+            .expect("snapshot point read"),
+        Some(b"alpha-old".to_vec())
+    );
+    assert_eq!(
+        snapshot
+            .try_get_many_bytes(&keys)
+            .expect("snapshot batch read"),
+        vec![
+            Some(b"beta-old".to_vec()),
+            None,
+            Some(b"alpha-old".to_vec()),
+            Some(b"beta-old".to_vec()),
+            None,
+        ]
+    );
+    assert_eq!(
+        store
+            .try_get_many_bytes(&keys)
+            .expect("live store batch read"),
+        vec![
+            None,
+            Some(b"future-new".to_vec()),
+            Some(b"alpha-new".to_vec()),
+            None,
+            None,
+        ]
+    );
+
+    let after_batch_read = b"after-batch-read".to_vec();
+    store
+        .put(after_batch_read.clone(), b"visible".to_vec())
+        .expect("insert after batch read");
+    store
+        .delete(future.clone())
+        .expect("delete after batch read");
+    assert_eq!(
+        store
+            .try_get_many_bytes(&[after_batch_read.as_slice(), future.as_slice()])
+            .expect("subsequent batch read"),
+        vec![Some(b"visible".to_vec()), None]
+    );
+}
+
+#[test]
+fn parallel_raw_batch_reads_preserve_order_and_frozen_snapshot() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = open_store(&tmp, "parallel-raw-batch-read");
+    let mut store = root
+        .open_named_table("parallel-raw-batch-read-table")
+        .expect("open named batch-read table");
+    let mut seed = TestOverlay(
+        (0u32..20_000)
+            .map(|index| {
+                (
+                    index.to_be_bytes().to_vec(),
+                    Some(index.to_le_bytes().to_vec()),
+                )
+            })
+            .collect(),
+    );
+    assert!(
+        store
+            .try_commit_borrowed_raw_overlay(&mut seed)
+            .expect("seed parallel batch rows")
+    );
+    let snapshot = store.snapshot();
+
+    let mut keys = (0u32..20_000)
+        .rev()
+        .step_by(3)
+        .map(|index| index.to_be_bytes().to_vec())
+        .collect::<Vec<_>>();
+    keys.push(10_000u32.to_be_bytes().to_vec());
+    keys.push(u32::MAX.to_be_bytes().to_vec());
+
+    let expected = keys
+        .iter()
+        .map(|key| {
+            let index = u32::from_be_bytes(key.as_slice().try_into().unwrap());
+            (index != u32::MAX).then(|| index.to_le_bytes().to_vec())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        snapshot
+            .try_get_many_bytes_parallel_for_test(&keys, 4)
+            .expect("four-reader frozen batch read"),
+        expected
+    );
+
+    store
+        .put(10_000u32.to_be_bytes().to_vec(), b"newer".to_vec())
+        .expect("advance the live table after the snapshot");
+    assert_eq!(
+        snapshot
+            .try_get_many_bytes_with_parallelism(&keys, 4)
+            .expect("snapshot mismatch falls back to the frozen reader"),
+        expected
+    );
+}
+
+fn occupancy_test_key(bucket: u32, fill: u8) -> Vec<u8> {
+    let mut key = vec![0xf0];
+    key.extend_from_slice(&bucket.to_be_bytes());
+    key.resize(33, fill);
+    key
+}
+
+#[test]
+fn prefix_occupancy_preserves_hits_collisions_order_and_runtime_updates() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = open_store(&tmp, "prefix-occupancy");
+    let mut store = root
+        .open_named_table("prefix-occupancy-table")
+        .expect("open indexed table");
+    let present = occupancy_test_key(0x1200_0000, 1);
+    let colliding_absent = occupancy_test_key(0x12ff_ffff, 2);
+    let definite_absent = occupancy_test_key(0x3400_0000, 3);
+    let inserted = occupancy_test_key(0x5600_0000, 4);
+    let ineligible = b"ordinary-key".to_vec();
+    store
+        .put(present.clone(), b"present".to_vec())
+        .expect("seed indexed key");
+    store
+        .put(ineligible.clone(), b"ordinary".to_vec())
+        .expect("seed ineligible key");
+    let spec = PrefixOccupancySpec::new(
+        Some("prefix-occupancy-table".to_string()),
+        vec![0xf0],
+        33,
+        8,
+    )
+    .unwrap();
+    store
+        .install_prefix_occupancy_for_test(spec, std::slice::from_ref(&present))
+        .unwrap();
+
+    let snapshot = store.snapshot();
+    assert_eq!(
+        snapshot
+            .try_get_many_bytes(&[
+                definite_absent.as_slice(),
+                present.as_slice(),
+                colliding_absent.as_slice(),
+                ineligible.as_slice(),
+            ])
+            .unwrap(),
+        vec![
+            None,
+            Some(b"present".to_vec()),
+            None,
+            Some(b"ordinary".to_vec()),
+        ]
+    );
+
+    store
+        .put(inserted.clone(), b"inserted".to_vec())
+        .expect("commit a post-baseline key");
+    let snapshot = store.snapshot();
+    assert_eq!(
+        snapshot.try_get_many_bytes(&[inserted.as_slice()]).unwrap(),
+        vec![Some(b"inserted".to_vec())]
+    );
+
+    store.delete(present.clone()).expect("delete indexed key");
+    let snapshot = store.snapshot();
+    assert_eq!(
+        snapshot.try_get_many_bytes(&[present.as_slice()]).unwrap(),
+        vec![None]
+    );
+}
+
+#[test]
+fn stale_prefix_occupancy_falls_back_after_an_unobserved_writer() {
+    let tmp = TempDir::new().expect("tempdir");
+    let root = open_store(&tmp, "stale-prefix-occupancy");
+    let mut indexed = root
+        .open_named_table("stale-prefix-table")
+        .expect("open indexed table");
+    let baseline = occupancy_test_key(0x1200_0000, 1);
+    let later = occupancy_test_key(0x3400_0000, 2);
+    indexed
+        .put(baseline.clone(), b"baseline".to_vec())
+        .expect("seed baseline key");
+    let spec = PrefixOccupancySpec::new(Some("stale-prefix-table".to_string()), vec![0xf0], 33, 8)
+        .unwrap();
+    indexed
+        .install_prefix_occupancy_for_test(spec, &[baseline])
+        .unwrap();
+
+    let mut unobserved = root
+        .open_named_table("stale-prefix-table")
+        .expect("open view without the process-local index");
+    unobserved
+        .put(later.clone(), b"later".to_vec())
+        .expect("commit through unobserved writer");
+
+    let snapshot = indexed.snapshot();
+    assert_eq!(
+        snapshot.try_get_many_bytes(&[later.as_slice()]).unwrap(),
+        vec![Some(b"later".to_vec())],
+        "coverage mismatch must restore authoritative MDBX reads"
+    );
+}
+
+#[test]
+fn fallible_raw_reads_reject_an_invalid_snapshot_without_changing_legacy_reads() {
+    let tmp = TempDir::new().expect("tempdir");
+    let store = Arc::new(open_store(&tmp, "invalid-snapshot-read"));
+    let expected = StorageError::backend("injected snapshot initialization failure");
+    let mut snapshot =
+        MdbxSnapshot::with_initialization_error(Arc::clone(&store), expected.clone());
+
+    assert_eq!(snapshot.try_get_bytes(b"key"), None);
+    assert_eq!(snapshot.try_get_bytes_result(b"key"), Err(expected.clone()));
+    assert_eq!(
+        snapshot.try_get_many_bytes(&[b"key"]),
+        Err(expected.clone())
+    );
+    assert_eq!(snapshot.try_get_many_bytes::<&[u8]>(&[]), Ok(Vec::new()));
+
+    snapshot
+        .put(b"unsafe".to_vec(), b"value".to_vec())
+        .expect("stage write on invalid snapshot");
+    assert_eq!(snapshot.try_commit(), Err(expected));
+    assert_eq!(store.try_get_bytes(b"unsafe"), None);
+}
+
+#[test]
+fn fallible_typed_point_reads_reject_an_invalid_snapshot_without_changing_legacy_reads() {
+    let tmp = TempDir::new().expect("tempdir");
+    let store = Arc::new(open_store(&tmp, "invalid-snapshot-typed-read"));
+    let expected = StorageError::backend("injected snapshot initialization failure");
+    let snapshot = MdbxSnapshot::with_initialization_error(Arc::clone(&store), expected.clone());
+    let key = b"typed-key".to_vec();
+
+    // Legacy Option-based reads remain soft-fail for compatibility.
+    assert_eq!(snapshot.try_get(&key), None);
+    // Fallible API must surface the backend failure so canonical callers can abort.
+    assert_eq!(snapshot.try_get_result(&key), Err(expected));
+
+    let mut runtime = RuntimeStore::Mdbx(open_store(&tmp, "runtime-typed-fallible-live"));
+    let runtime_key = b"present".to_vec();
+    runtime
+        .put(runtime_key.clone(), b"value".to_vec())
+        .expect("seed runtime store");
+    assert_eq!(
+        runtime
+            .try_get_result(&runtime_key)
+            .expect("runtime fallible get"),
+        Some(b"value".to_vec())
+    );
+    assert_eq!(
+        runtime
+            .try_get_result(&b"missing".to_vec())
+            .expect("missing key is Ok(None)"),
+        None
+    );
+}
+
+#[test]
+fn runtime_raw_batch_reads_delegate_to_store_and_pinned_snapshot_backends() {
+    let tmp = TempDir::new().expect("tempdir");
+    let mut runtime = RuntimeStore::Mdbx(open_store(&tmp, "runtime-raw-batch-read"));
+    let key = b"key".to_vec();
+    let missing = b"missing".to_vec();
+
+    runtime
+        .put(key.clone(), b"old".to_vec())
+        .expect("seed runtime store");
+    let snapshot = runtime.snapshot();
+    runtime
+        .put(key.clone(), b"new".to_vec())
+        .expect("update runtime store");
+    let keys = [key.as_slice(), missing.as_slice(), key.as_slice()];
+
+    assert_eq!(
+        runtime
+            .try_get_bytes_result(key.as_slice())
+            .expect("runtime point read"),
+        Some(b"new".to_vec())
+    );
+    assert_eq!(
+        runtime
+            .try_get_many_bytes(&keys)
+            .expect("runtime store batch read"),
+        vec![Some(b"new".to_vec()), None, Some(b"new".to_vec())]
+    );
+    assert_eq!(
+        snapshot
+            .try_get_many_bytes(&keys)
+            .expect("runtime snapshot batch read"),
+        vec![Some(b"old".to_vec()), None, Some(b"old".to_vec())]
     );
 }
 

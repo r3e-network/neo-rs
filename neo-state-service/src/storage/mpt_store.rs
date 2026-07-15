@@ -55,7 +55,7 @@
 use crate::Keys;
 use crate::metrics::{StateRootApplyCountKind, StateRootApplyMetrics, StateRootApplyStage};
 use crate::state_root::{CURRENT_VERSION, StateRoot};
-use neo_crypto::mpt_trie::{MptError, MptResult, MptStoreSnapshot, Node, Trie};
+use neo_crypto::mpt_trie::{MptError, MptMutationStats, MptResult, MptStoreSnapshot, Node, Trie};
 use neo_io::SerializableExtensions;
 use neo_primitives::{UINT256_SIZE, UInt256};
 use neo_storage::StorageResult;
@@ -64,10 +64,18 @@ use neo_storage::persistence::{
     RawOverlaySink, RawOverlaySource, RawReadOnlyStore, Store, StoreSnapshot, WriteStore,
 };
 use parking_lot::{Mutex, RwLock};
+use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
+
+mod write_batch;
+use write_batch::MptWriteBatch;
+
+/// Transient MPT publications are keyed by prefixed SHA-256 node hashes plus a
+/// small fixed set of StateService metadata keys. They do not need SipHash's
+/// defense for attacker-selected hash-table keys and are sorted before commit.
+type MptOverlay = FxHashMap<Vec<u8>, Option<Vec<u8>>>;
 
 /// Size of the serialized unsigned `StateRoot` prefix:
 /// `version (1) + index (4, LE) + root_hash (32)`.
@@ -259,19 +267,14 @@ struct SortedOverlaySource<'a> {
 pub struct PreparedMptCommit {
     block_index: u32,
     root_hash: UInt256,
-    overlay: HashMap<Vec<u8>, Option<Vec<u8>>>,
+    overlay: MptOverlay,
     samples: usize,
     counts: OverlayCounts,
     visited: bool,
 }
 
 impl PreparedMptCommit {
-    fn new(
-        block_index: u32,
-        root_hash: UInt256,
-        overlay: HashMap<Vec<u8>, Option<Vec<u8>>>,
-        samples: usize,
-    ) -> Self {
+    fn new(block_index: u32, root_hash: UInt256, overlay: MptOverlay, samples: usize) -> Self {
         Self {
             block_index,
             root_hash,
@@ -310,8 +313,14 @@ impl RawOverlaySource for PreparedMptCommit {
     where
         S: RawOverlaySink + ?Sized,
     {
+        let sort_start = Instant::now();
         let mut entries = self.overlay.iter().collect::<Vec<_>>();
         entries.sort_unstable_by(|left, right| left.0.cmp(right.0));
+        MptStore::<MemoryStore>::record_stage_samples(
+            StateRootApplyStage::BackingSort,
+            elapsed_us(sort_start),
+            self.samples as u64,
+        );
         self.counts = OverlayCounts::default();
         self.visited = true;
         for (key, value) in entries {
@@ -409,92 +418,6 @@ where
     }
 }
 
-/// Private write-staging view used by [`MptStore::apply_block_changes`]:
-/// reads come from the frozen base generation (the writer is the only
-/// mutator, so base == live for its whole run), writes are buffered in
-/// an overlay (`None` = staged deletion) and published into the live
-/// map in a single atomic step after the trie commit succeeds.
-pub(crate) struct MptWriteBatch<S: Store = MemoryStore> {
-    /// Generation the block builds on.
-    base: Arc<HashMap<Vec<u8>, Option<Vec<u8>>>>,
-    /// Durable snapshot taken before this write batch starts.
-    backing_snapshot: Option<Arc<S::Snapshot>>,
-    /// Staged mutations: `Some(value)` = put, `None` = delete.
-    overlay: Mutex<HashMap<Vec<u8>, Option<Vec<u8>>>>,
-    /// Fast-path guard for reads before `Trie::commit` stages node writes.
-    overlay_has_entries: AtomicBool,
-}
-
-impl<S> MptWriteBatch<S>
-where
-    S: Store,
-{
-    fn new(
-        base: Arc<HashMap<Vec<u8>, Option<Vec<u8>>>>,
-        backing_snapshot: Option<Arc<S::Snapshot>>,
-        overlay_capacity: usize,
-    ) -> Self {
-        Self {
-            base,
-            backing_snapshot,
-            overlay: Mutex::new(HashMap::with_capacity(overlay_capacity)),
-            overlay_has_entries: AtomicBool::new(false),
-        }
-    }
-
-    fn overlay_contains_entries(&self) -> bool {
-        self.overlay_has_entries.load(Ordering::Acquire)
-    }
-
-    fn mark_overlay_non_empty(&self) {
-        self.overlay_has_entries.store(true, Ordering::Release);
-    }
-}
-
-impl<S> MptStoreSnapshot for MptWriteBatch<S>
-where
-    S: Store,
-{
-    fn try_get(&self, key: &[u8]) -> MptResult<Option<Vec<u8>>> {
-        if self.overlay_contains_entries() {
-            if let Some(staged) = self.overlay.lock().get(key) {
-                return Ok(staged.clone());
-            }
-        }
-        match self.base.get(key) {
-            Some(value) => Ok(value.clone()),
-            None => Ok(self
-                .backing_snapshot
-                .as_ref()
-                .and_then(|snapshot| snapshot.try_get_bytes(key))),
-        }
-    }
-
-    fn put(&self, key: Vec<u8>, value: Vec<u8>) -> MptResult<()> {
-        let mut overlay = self.overlay.lock();
-        self.mark_overlay_non_empty();
-        overlay.insert(key, Some(value));
-        Ok(())
-    }
-
-    fn delete(&self, key: Vec<u8>) -> MptResult<()> {
-        let mut overlay = self.overlay.lock();
-        self.mark_overlay_non_empty();
-        overlay.insert(key, None);
-        Ok(())
-    }
-
-    fn apply_overlay(&self, overlay: Vec<(Vec<u8>, Option<Vec<u8>>)>) -> MptResult<()> {
-        if overlay.is_empty() {
-            return Ok(());
-        }
-        let mut staged = self.overlay.lock();
-        self.mark_overlay_non_empty();
-        staged.extend(overlay);
-        Ok(())
-    }
-}
-
 /// Lazily opens the write trie only when a block has at least one effective
 /// StateService MPT mutation.
 pub(crate) struct LazyMptChangeSink<'a, S: Store = MemoryStore> {
@@ -563,6 +486,75 @@ impl<S> MptStore<S>
 where
     S: Store,
 {
+    fn record_mutation_stats(stats: MptMutationStats, overlay_working_set_entries: usize) {
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::PutNodeCachedCalls,
+            stats.put_node_cached_calls,
+        );
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::SerializedPayloadBytes,
+            stats.serialized_payload_bytes,
+        );
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::HashComputations,
+            stats.hash_computations,
+        );
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::MaxRecursionDepth,
+            stats.max_recursion_depth,
+        );
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::RepeatedAncestorFinalizations,
+            stats.repeated_ancestor_finalizations,
+        );
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::OverlayWorkingSetEntries,
+            overlay_working_set_entries as u64,
+        );
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::FinalizationCacheHits,
+            stats.finalization_cache_hits,
+        );
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::FinalizationMemoryHits,
+            stats.finalization_memory_hits,
+        );
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::FinalizationMemoryMisses,
+            stats.finalization_memory_misses,
+        );
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::FinalizationBackingHits,
+            stats.finalization_backing_hits,
+        );
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::FinalizationBackingMisses,
+            stats.finalization_backing_misses,
+        );
+        StateRootApplyMetrics::record_count(
+            StateRootApplyCountKind::FinalizationLookupErrors,
+            stats.finalization_lookup_errors,
+        );
+    }
+
+    fn record_empty_mutation_samples(samples: u64) {
+        for kind in [
+            StateRootApplyCountKind::PutNodeCachedCalls,
+            StateRootApplyCountKind::SerializedPayloadBytes,
+            StateRootApplyCountKind::HashComputations,
+            StateRootApplyCountKind::MaxRecursionDepth,
+            StateRootApplyCountKind::RepeatedAncestorFinalizations,
+            StateRootApplyCountKind::OverlayWorkingSetEntries,
+            StateRootApplyCountKind::FinalizationCacheHits,
+            StateRootApplyCountKind::FinalizationMemoryHits,
+            StateRootApplyCountKind::FinalizationMemoryMisses,
+            StateRootApplyCountKind::FinalizationBackingHits,
+            StateRootApplyCountKind::FinalizationBackingMisses,
+            StateRootApplyCountKind::FinalizationLookupErrors,
+        ] {
+            Self::record_count_samples(kind, 0, samples);
+        }
+    }
     /// Flushes the optional durable backend after all MPT writes before this
     /// call have completed.
     pub(crate) fn flush_backing(&self) -> MptResult<()> {
@@ -734,7 +726,7 @@ where
         )
     }
 
-    pub(crate) fn apply_block_changes_with_len<F>(
+    fn apply_block_changes_with_len<F>(
         &self,
         block_index: u32,
         root_before: Option<UInt256>,
@@ -783,6 +775,7 @@ where
         {
             StateRootApplyMetrics::record_count(StateRootApplyCountKind::Changes, 0);
             let overlay = Self::local_root_overlay(block_index, root_before);
+            Self::record_mutation_stats(MptMutationStats::default(), 0);
             return Ok(PreparedMptCommit::new(block_index, root_before, overlay, 1));
         }
 
@@ -809,9 +802,11 @@ where
         // C# reads `Trie.Root.Hash` (well-defined even for the empty
         // root, which hashes its single sentinel byte).
         let stage_start = Instant::now();
-        let new_root = trie.root().try_hash()?;
+        let new_root = trie.try_root_hash()?;
         StateRootApplyMetrics::record_stage(StateRootApplyStage::RootHash, elapsed_us(stage_start));
         if effective_change_count == 0 && root_before.is_some() {
+            let mutation_stats = trie.take_mutation_stats();
+            Self::record_mutation_stats(mutation_stats, batch.overlay.lock().len());
             drop(trie);
             drop(batch);
             let overlay = Self::local_root_overlay(block_index, new_root);
@@ -824,6 +819,8 @@ where
             StateRootApplyStage::TrieCommit,
             elapsed_us(stage_start),
         );
+        let mutation_stats = trie.take_mutation_stats();
+        Self::record_mutation_stats(mutation_stats, batch.overlay.lock().len());
         drop(trie);
 
         // The local (unwitnessed) state-root record and the current
@@ -880,6 +877,7 @@ where
 
         let Some(mut trie) = sink.trie.take() else {
             let stage_start = Instant::now();
+            let computed_empty_root = root_before.is_none();
             let new_root = match root_before {
                 Some(root_before) => root_before,
                 None => Node::new().try_hash()?,
@@ -891,6 +889,13 @@ where
 
             let mut overlay = Self::local_root_overlay(block_index, new_root);
             Self::ensure_empty_root_record(&mut overlay, new_root)?;
+            Self::record_mutation_stats(
+                MptMutationStats {
+                    hash_computations: u64::from(computed_empty_root),
+                    ..MptMutationStats::default()
+                },
+                0,
+            );
             return self.publish_overlay(block_index, new_root, overlay);
         };
         let Some(batch) = sink.batch.take() else {
@@ -900,7 +905,7 @@ where
         };
 
         let stage_start = Instant::now();
-        let new_root = trie.root().try_hash()?;
+        let new_root = trie.try_root_hash()?;
         StateRootApplyMetrics::record_stage(StateRootApplyStage::RootHash, elapsed_us(stage_start));
         if !(effective_change_count == 0 && root_before.is_some()) {
             let stage_start = Instant::now();
@@ -910,6 +915,8 @@ where
                 elapsed_us(stage_start),
             );
         }
+        let mutation_stats = trie.take_mutation_stats();
+        Self::record_mutation_stats(mutation_stats, batch.overlay.lock().len());
         drop(trie);
 
         let stage_start = Instant::now();
@@ -946,6 +953,7 @@ where
             Self::record_count_samples(StateRootApplyCountKind::Changes, 0, samples);
             Self::record_stage_samples(StateRootApplyStage::MutateChanges, 0, samples);
             Self::record_stage_samples(StateRootApplyStage::RootHash, 0, samples);
+            Self::record_empty_mutation_samples(samples);
 
             self.publish_empty_root_batch(blocks, root_before)?;
             return Ok(vec![root_before; blocks.len()]);
@@ -990,12 +998,16 @@ where
             self.backing_snapshot(),
             overlay_capacity,
         ));
-        let mut trie = Trie::new(Arc::clone(&batch), root_before, self.full_state);
+        let mut trie = Trie::new_batch(Arc::clone(&batch), root_before, self.full_state);
         let mut roots = Vec::with_capacity(blocks.len());
         let mut current_root = root_before;
         let mut path_scratch = Vec::new();
+        let final_checkpoint = blocks
+            .iter()
+            .rposition(|block| !block.changes.is_empty())
+            .or_else(|| root_before.is_none().then_some(0));
 
-        for block in blocks {
+        for (block_offset, block) in blocks.iter().enumerate() {
             let stage_start = Instant::now();
             let mut effective_change_count = 0usize;
             for change in block.changes {
@@ -1019,7 +1031,7 @@ where
             );
 
             let stage_start = Instant::now();
-            let new_root = trie.root().try_hash()?;
+            let new_root = trie.try_root_hash()?;
             StateRootApplyMetrics::record_stage(
                 StateRootApplyStage::RootHash,
                 elapsed_us(stage_start),
@@ -1027,12 +1039,18 @@ where
 
             if !(effective_change_count == 0 && current_root.is_some()) {
                 let stage_start = Instant::now();
-                trie.commit()?;
+                if Some(block_offset) == final_checkpoint {
+                    trie.commit()?;
+                } else {
+                    trie.checkpoint()?;
+                }
                 StateRootApplyMetrics::record_stage(
                     StateRootApplyStage::TrieCommit,
                     elapsed_us(stage_start),
                 );
             }
+            let mutation_stats = trie.take_mutation_stats();
+            Self::record_mutation_stats(mutation_stats, batch.overlay.lock().len());
 
             let stage_start = Instant::now();
             {
@@ -1129,7 +1147,7 @@ where
         &self,
         block_index: u32,
         new_root: UInt256,
-        overlay: HashMap<Vec<u8>, Option<Vec<u8>>>,
+        overlay: MptOverlay,
     ) -> MptResult<UInt256> {
         self.publish_prepared(PreparedMptCommit::new(block_index, new_root, overlay, 1))
     }
@@ -1189,7 +1207,7 @@ where
         &self,
         block_index: u32,
         new_root: UInt256,
-        overlay: HashMap<Vec<u8>, Option<Vec<u8>>>,
+        overlay: MptOverlay,
         samples: usize,
     ) -> MptResult<UInt256> {
         let sample_count = samples.max(1) as u64;
@@ -1209,7 +1227,7 @@ where
         &self,
         block_index: u32,
         new_root: UInt256,
-        overlay: HashMap<Vec<u8>, Option<Vec<u8>>>,
+        overlay: MptOverlay,
         backing_counts: OverlayCounts,
         samples: usize,
     ) -> MptResult<UInt256> {
@@ -1396,11 +1414,8 @@ where
         }
     }
 
-    fn local_root_overlay(
-        block_index: u32,
-        root_hash: UInt256,
-    ) -> HashMap<Vec<u8>, Option<Vec<u8>>> {
-        let mut overlay = HashMap::with_capacity(2);
+    fn local_root_overlay(block_index: u32, root_hash: UInt256) -> MptOverlay {
+        let mut overlay = MptOverlay::with_capacity_and_hasher(2, Default::default());
         Self::insert_local_root_records(&mut overlay, block_index, root_hash);
         StateRootApplyMetrics::record_stage(StateRootApplyStage::OverlayPrepare, 0);
         overlay
@@ -1410,11 +1425,7 @@ where
         self.backing.is_none()
     }
 
-    fn insert_local_root_records(
-        overlay: &mut HashMap<Vec<u8>, Option<Vec<u8>>>,
-        block_index: u32,
-        root_hash: UInt256,
-    ) {
+    fn insert_local_root_records(overlay: &mut MptOverlay, block_index: u32, root_hash: UInt256) {
         overlay.insert(
             Keys::state_root(block_index),
             Some(Self::encode_state_root_fields(block_index, root_hash)),
@@ -1425,10 +1436,7 @@ where
         );
     }
 
-    fn ensure_empty_root_record(
-        overlay: &mut HashMap<Vec<u8>, Option<Vec<u8>>>,
-        root_hash: UInt256,
-    ) -> MptResult<()> {
+    fn ensure_empty_root_record(overlay: &mut MptOverlay, root_hash: UInt256) -> MptResult<()> {
         let empty = Node::new();
         if root_hash != empty.try_hash()? {
             return Ok(());
@@ -1527,7 +1535,10 @@ where
             ));
         }
 
-        let mut overlay = HashMap::with_capacity((to_index - from_index + 1) as usize + 1);
+        let mut overlay = MptOverlay::with_capacity_and_hasher(
+            (to_index - from_index + 1) as usize + 1,
+            Default::default(),
+        );
         for index in from_index..=to_index {
             overlay.insert(Keys::state_root(index), None);
         }
@@ -1571,10 +1582,7 @@ where
         Ok(())
     }
 
-    fn commit_overlay_to_backing(
-        &self,
-        overlay: &HashMap<Vec<u8>, Option<Vec<u8>>>,
-    ) -> MptResult<OverlayCounts> {
+    fn commit_overlay_to_backing(&self, overlay: &MptOverlay) -> MptResult<OverlayCounts> {
         match self.backing.as_ref() {
             None => Ok(OverlayCounts::default()),
             Some(backing) => {
@@ -1762,3 +1770,7 @@ where
 #[cfg(test)]
 #[path = "../tests/storage/mpt_store.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/storage/mpt_store_transient_overlay.rs"]
+mod transient_overlay_tests;

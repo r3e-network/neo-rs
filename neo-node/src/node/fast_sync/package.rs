@@ -35,7 +35,12 @@ fn ensure_https_url(url: &url::Url, description: &str) -> anyhow::Result<()> {
 pub(super) struct FastSyncPackage {
     pub(super) network_key: &'static str,
     pub(super) url: String,
+    /// Integrity digest from the official NGD manifest (MD5). Not treated as
+    /// cryptographic authenticity by itself; see [`Self::sha256`].
     pub(super) md5: String,
+    /// Optional strong content hash. When present, package acceptance requires
+    /// a SHA-256 match before promotion into the cache (auth-grade check).
+    pub(super) sha256: Option<String>,
     pub(super) start: u32,
     pub(super) end: u32,
     pub(super) filename: String,
