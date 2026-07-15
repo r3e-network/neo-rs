@@ -1,0 +1,17 @@
+{
+  "height_300k_local": "0xf0e121ac28b2de37e7e0321b0e0ef926f8b1ff9e85ee6f03c0c6c242a5f31088",
+  "height_300k_official": "0xf0e121ac28b2de37e7e0321b0e0ef926f8b1ff9e85ee6f03c0c6c242a5f31088",
+  "height_300k_match": true,
+  "height_310k_local": "0xfc0a6627c290f63bf1ffe4e1813a0a4604c17813a7f08d1b6ef7fc13bf32c7d9",
+  "height_310k_official": "0xfc0a6627c290f63bf1ffe4e1813a0a4604c17813a7f08d1b6ef7fc13bf32c7d9",
+  "height_310k_match": true,
+  "imported": 210000,
+  "avg_bps": 9963.217373746716,
+  "elapsed": 21.077528686,
+  "mpt_failures_note": "see progress lines",
+  "official_sources": [
+    "http://seed1.neo.org:10332",
+    "http://seed2.neo.org:10332",
+    "https://mainnet1.neo.coz.io:443"
+  ]
+}

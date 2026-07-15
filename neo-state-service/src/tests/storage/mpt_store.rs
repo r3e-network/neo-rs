@@ -267,6 +267,169 @@ fn mpt_node_key(tag: u8) -> Vec<u8> {
     key
 }
 
+/// Backing snapshot whose fallible raw reads always fail.
+#[derive(Debug, Default)]
+struct FailingReadSnapshot {
+    point_reads: AtomicUsize,
+}
+
+impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingReadSnapshot {
+    type FindIterator<'a> = std::vec::IntoIter<(Vec<u8>, Vec<u8>)>;
+
+    fn try_get(&self, _key: &Vec<u8>) -> Option<Vec<u8>> {
+        None
+    }
+
+    fn find(
+        &self,
+        _key_prefix: Option<&Vec<u8>>,
+        _direction: SeekDirection,
+    ) -> Self::FindIterator<'_> {
+        Vec::new().into_iter()
+    }
+}
+
+impl RawReadOnlyStore for FailingReadSnapshot {
+    fn try_get_bytes(&self, _key: &[u8]) -> Option<Vec<u8>> {
+        // Soft-fail surface must not be the path taken by fail-closed readers.
+        None
+    }
+
+    fn try_get_bytes_result(&self, _key: &[u8]) -> neo_storage::StorageResult<Option<Vec<u8>>> {
+        self.point_reads.fetch_add(1, Ordering::Relaxed);
+        Err(neo_storage::StorageError::backend(
+            "injected MPT backing read failure",
+        ))
+    }
+}
+
+impl WriteStore<Vec<u8>, Vec<u8>> for FailingReadSnapshot {
+    fn delete(&mut self, _key: Vec<u8>) -> neo_storage::StorageResult<()> {
+        Ok(())
+    }
+
+    fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> neo_storage::StorageResult<()> {
+        Ok(())
+    }
+}
+
+impl StoreSnapshot for FailingReadSnapshot {
+    type Store = FailingReadStore;
+
+    fn store(&self) -> Arc<Self::Store> {
+        panic!("failing read snapshot is never committed")
+    }
+
+    fn try_commit(&mut self) -> Result<(), neo_storage::StorageError> {
+        Ok(())
+    }
+}
+
+#[derive(Debug, Default)]
+struct FailingReadStore;
+
+impl ReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for FailingReadStore {
+    type FindIterator<'a> = std::vec::IntoIter<(Vec<u8>, Vec<u8>)>;
+
+    fn try_get(&self, _key: &Vec<u8>) -> Option<Vec<u8>> {
+        None
+    }
+
+    fn find(
+        &self,
+        _key_prefix: Option<&Vec<u8>>,
+        _direction: SeekDirection,
+    ) -> Self::FindIterator<'_> {
+        Vec::new().into_iter()
+    }
+}
+
+impl ReadOnlyStoreGeneric<StorageKey, StorageItem> for FailingReadStore {
+    type FindIterator<'a> = std::vec::IntoIter<(StorageKey, StorageItem)>;
+
+    fn try_get(&self, _key: &StorageKey) -> Option<StorageItem> {
+        None
+    }
+
+    fn find(
+        &self,
+        _key_prefix: Option<&StorageKey>,
+        _direction: SeekDirection,
+    ) -> Self::FindIterator<'_> {
+        Vec::new().into_iter()
+    }
+}
+
+impl RawReadOnlyStore for FailingReadStore {
+    fn try_get_bytes(&self, _key: &[u8]) -> Option<Vec<u8>> {
+        None
+    }
+
+    fn try_get_bytes_result(&self, _key: &[u8]) -> neo_storage::StorageResult<Option<Vec<u8>>> {
+        Err(neo_storage::StorageError::backend(
+            "injected MPT store read failure",
+        ))
+    }
+}
+
+impl WriteStore<Vec<u8>, Vec<u8>> for FailingReadStore {
+    fn delete(&mut self, _key: Vec<u8>) -> neo_storage::StorageResult<()> {
+        Ok(())
+    }
+
+    fn put(&mut self, _key: Vec<u8>, _value: Vec<u8>) -> neo_storage::StorageResult<()> {
+        Ok(())
+    }
+}
+
+impl ReadOnlyStore for FailingReadStore {}
+
+impl Store for FailingReadStore {
+    type Snapshot = FailingReadSnapshot;
+
+    fn snapshot(&self) -> Arc<Self::Snapshot> {
+        Arc::new(FailingReadSnapshot::default())
+    }
+}
+
+#[test]
+fn mpt_read_snapshot_and_state_root_reads_fail_closed_on_backing_io_errors() {
+    use neo_crypto::mpt_trie::MptStoreSnapshot;
+
+    let failing = Arc::new(FailingReadSnapshot::default());
+    let snapshot = MptReadSnapshot::<FailingReadStore> {
+        map: Arc::new(HashMap::new()),
+        backing_snapshot: Some(Arc::clone(&failing) as Arc<_>),
+        full_state: true,
+    };
+
+    let err = MptStoreSnapshot::try_get(&snapshot, b"missing-key")
+        .expect_err("backing I/O failure must not look like a missing key");
+    assert!(
+        err.to_string().contains("injected MPT backing read failure"),
+        "unexpected error: {err}"
+    );
+    assert_eq!(failing.point_reads.load(Ordering::Relaxed), 1);
+
+    let root_err = snapshot
+        .try_get_state_root(7)
+        .expect_err("state-root lookup must surface backing I/O failures");
+    assert!(
+        root_err.to_string().contains("injected MPT backing read failure"),
+        "unexpected error: {root_err}"
+    );
+
+    let index_err = snapshot
+        .try_current_local_root_index()
+        .expect_err("current local root index must surface backing I/O failures");
+    assert!(
+        index_err
+            .to_string()
+            .contains("injected MPT backing read failure"),
+        "unexpected error: {index_err}"
+    );
+}
+
 #[test]
 fn write_batch_negative_cache_skips_repeated_durable_misses() {
     let backing = Arc::new(CountingMissSnapshot::default());

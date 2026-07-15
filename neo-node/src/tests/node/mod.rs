@@ -258,6 +258,7 @@ fn remote_ledger_mode_rejects_local_import_sources() {
         fast_sync_cache: None,
         fast_sync_reference_rpc: None,
         fast_sync_report: None,
+        fast_sync_expected_sha256: None,
         stop_at_height: None,
         remote_ledger_rpc: Some("https://rpc.example.invalid".to_string()),
     };
@@ -291,6 +292,7 @@ fn fast_sync_reference_rpc_is_allowed_without_remote_ledger_mode() {
         fast_sync_cache: None,
         fast_sync_reference_rpc: Some("https://rpc.example.invalid".to_string()),
         fast_sync_report: Some(PathBuf::from("fast-sync-report.json")),
+        fast_sync_expected_sha256: None,
         stop_at_height: None,
         remote_ledger_rpc: None,
     };
@@ -313,6 +315,7 @@ fn remote_ledger_preflight_skips_local_storage_validation() {
         fast_sync_cache: None,
         fast_sync_reference_rpc: None,
         fast_sync_report: None,
+        fast_sync_expected_sha256: None,
         stop_at_height: None,
         remote_ledger_rpc: Some("https://rpc.example.invalid".to_string()),
     };
@@ -338,6 +341,7 @@ fn local_preflight_still_validates_local_storage() {
         fast_sync_cache: None,
         fast_sync_reference_rpc: None,
         fast_sync_report: None,
+        fast_sync_expected_sha256: None,
         stop_at_height: None,
         remote_ledger_rpc: None,
     };

@@ -1,0 +1,19 @@
+{
+  "full_import_0_1000_wall": "0:00.15",
+  "full_import_0_1000_import": [
+    0.078246694,
+    12780.092664362279
+  ],
+  "checkpoint_restore_h1000_wall": "0:00.01",
+  "catchup_1000_2000_wall": "0:00.07",
+  "catchup_1000_2000_import": [
+    0.057229879,
+    17473.390080031448
+  ],
+  "full_import_0_2000_wall": "0:00.13",
+  "full_import_0_2000_import": [
+    0.094137097,
+    21245.609475295376
+  ],
+  "note": "Checkpoint restore models authenticated bootstrap install; catch-up is normal canonical import. Full archive is chain.acc from empty DB."
+}

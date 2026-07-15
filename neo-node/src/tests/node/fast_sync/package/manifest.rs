@@ -65,6 +65,29 @@ fn selects_package_with_optional_sha256_digest() {
 }
 
 #[test]
+fn operator_must_pin_sha256_when_manifest_omits_it() {
+    let mut package = select_full_package(&sample_manifest(), MAINNET_MAGIC).expect("package");
+    assert!(package.sha256.is_none());
+
+    let err = apply_expected_sha256_override(&mut package, None)
+        .expect_err("missing sha256 must refuse MD5-only authenticity");
+    assert!(
+        err.to_string().contains("SHA-256 authenticity"),
+        "unexpected error: {err}"
+    );
+
+    apply_expected_sha256_override(
+        &mut package,
+        Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+    )
+    .expect("operator pin supplies authenticity");
+    assert_eq!(
+        package.sha256.as_deref(),
+        Some("0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF")
+    );
+}
+
+#[test]
 fn rejects_manifest_package_with_invalid_sha256_digest() {
     let manifest: SyncManifest = serde_json::from_str(
         r#"

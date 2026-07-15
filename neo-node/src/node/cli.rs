@@ -51,13 +51,21 @@ pub struct NodeCli {
 
     /// Download and import the official NGD N3 fast-sync package before
     /// starting network sync. The package URL is resolved from the built-in
-    /// official manifest URL and cached locally after MD5 validation.
+    /// official manifest URL and cached only after SHA-256 authenticity
+    /// validation (MD5 alone is never sufficient).
     #[arg(long)]
     pub fast_sync: bool,
 
     /// Override the directory used to cache the official fast-sync package.
     #[arg(long, value_name = "PATH", requires = "fast_sync")]
     pub fast_sync_cache: Option<PathBuf>,
+
+    /// Required when the official manifest does not publish a SHA-256 digest.
+    /// Pins the expected package content hash used for authenticity before
+    /// cache promotion. MD5 from the manifest remains an integrity cross-check
+    /// only.
+    #[arg(long, value_name = "HEX", requires = "fast_sync")]
+    pub fast_sync_expected_sha256: Option<String>,
 
     /// Validate the imported fast-sync block tip against an upstream JSON-RPC
     /// endpoint before clearing the fast-sync import marker.

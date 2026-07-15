@@ -279,8 +279,13 @@ fn package_digest_validation_requires_sha256_when_present_and_fails_closed() {
         "unexpected error: {err}"
     );
 
-    // MD5-only packages remain valid for NGD compatibility.
+    // MD5-only packages must not promote: SHA-256 is mandatory authenticity.
     package.sha256 = None;
     package.md5 = md5;
-    validate_package_digests(&path, &package).expect("md5-only package still accepted");
+    let err = validate_package_digests(&path, &package)
+        .expect_err("MD5-only packages must fail closed before promotion");
+    assert!(
+        err.to_string().contains("missing a SHA-256"),
+        "unexpected error: {err}"
+    );
 }

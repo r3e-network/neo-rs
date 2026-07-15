@@ -22,7 +22,10 @@ use super::marker::{
     clear_fast_sync_import_marker, refuse_stale_fast_sync_import_marker,
     write_fast_sync_import_marker,
 };
-use super::package::{ensure_chain_acc_extracted, ensure_package_cached, fetch_latest_package};
+use super::package::{
+    apply_expected_sha256_override, ensure_chain_acc_extracted, ensure_package_cached,
+    fetch_latest_package,
+};
 use super::reference;
 use super::report::{FastSyncReferenceReport, FastSyncReport, log_fast_sync_throughput};
 
@@ -35,13 +38,15 @@ pub(in crate::node) async fn run_fast_sync_report<S>(
     network: u32,
     stop_at_height: Option<u32>,
     reference_rpc: Option<&str>,
+    expected_sha256: Option<&str>,
     state_store: Option<&Arc<StateStore<S>>>,
     state_service: Option<&Arc<StateServiceCommitHandlers<S>>>,
 ) -> anyhow::Result<FastSyncReport>
 where
     S: Store,
 {
-    let package = fetch_latest_package(network).await?;
+    let mut package = fetch_latest_package(network).await?;
+    apply_expected_sha256_override(&mut package, expected_sha256)?;
     validate_fast_sync_preflight(&storage, &package)?;
     let cache_dir = fast_sync_cache_dir(config, storage_override, cache_dir_override);
     let zip_path = ensure_package_cached(&package, &cache_dir).await?;

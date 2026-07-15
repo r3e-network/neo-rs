@@ -9,7 +9,7 @@ mod manifest;
 
 pub(super) use cache::ensure_package_cached;
 pub(super) use extract::ensure_chain_acc_extracted;
-pub(super) use manifest::fetch_latest_package;
+pub(super) use manifest::{apply_expected_sha256_override, fetch_latest_package};
 
 const FAST_SYNC_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const FAST_SYNC_READ_TIMEOUT: Duration = Duration::from_secs(60);

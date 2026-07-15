@@ -136,10 +136,10 @@ where
 
     fn latest(&self) -> StateProviderResult<Option<Self::Provider>> {
         let snapshot = self.store.snapshot();
-        let Some(block_index) = snapshot.current_local_root_index() else {
+        let Some(block_index) = snapshot.try_current_local_root_index()? else {
             return Ok(None);
         };
-        let Some(state_root) = snapshot.get_state_root(block_index) else {
+        let Some(state_root) = snapshot.try_get_state_root(block_index)? else {
             return Ok(None);
         };
         Self::provider(snapshot, *state_root.root_hash(), Some(block_index)).map(Some)
@@ -147,22 +147,22 @@ where
 
     fn latest_root(&self) -> StateProviderResult<Option<crate::StateRoot>> {
         let snapshot = self.store.snapshot();
-        let Some(block_index) = snapshot.current_local_root_index() else {
+        let Some(block_index) = snapshot.try_current_local_root_index()? else {
             return Ok(None);
         };
-        Ok(snapshot.get_state_root(block_index))
+        Ok(snapshot.try_get_state_root(block_index)?)
     }
 
     fn state_at(&self, height: u32) -> StateProviderResult<Option<Self::Provider>> {
         let snapshot = self.store.snapshot();
-        let Some(state_root) = snapshot.get_state_root(height) else {
+        let Some(state_root) = snapshot.try_get_state_root(height)? else {
             return Ok(None);
         };
         Self::provider(snapshot, *state_root.root_hash(), Some(height)).map(Some)
     }
 
     fn root_at(&self, height: u32) -> StateProviderResult<Option<crate::StateRoot>> {
-        Ok(self.store.snapshot().get_state_root(height))
+        Ok(self.store.snapshot().try_get_state_root(height)?)
     }
 
     fn state_by_root(&self, root_hash: UInt256) -> StateProviderResult<Self::Provider> {

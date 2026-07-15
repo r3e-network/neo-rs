@@ -34,7 +34,14 @@ use tracing::{debug, warn};
 
 const DEFAULT_ASYNC_QUEUE_CAPACITY: usize = 256;
 const DEFAULT_ASYNC_APPLY_BATCH_BLOCKS: usize = 8;
-const ASYNC_EAGER_APPLY_BATCH_BLOCKS: usize = 4;
+// Continuous catch-up should build a useful durable transaction before the
+// worker races ahead of its producer. An idle producer still flushes a partial
+// batch after ASYNC_BATCH_COALESCE_WAIT.
+const ASYNC_EAGER_APPLY_BATCH_BLOCKS: usize = 2048;
+// A block-only ceiling lets transaction-dense ranges create disproportionately
+// large MDBX transactions. Bound projected mutations as a second work unit;
+// one individually oversized block is still applied on its own.
+const ASYNC_MAX_APPLY_BATCH_CHANGES: usize = 8192;
 const ASYNC_BATCH_COALESCE_WAIT: Duration = Duration::from_millis(10);
 
 /// Handlers for wiring state-root MPT persistence into block persistence.
@@ -187,6 +194,20 @@ where
     /// transaction coordinator.
     pub fn is_coordinated(&self) -> bool {
         self.coordinated_requests.is_some()
+    }
+
+    /// Total projected storage changes queued for the next coordinated commit.
+    pub fn pending_coordinated_projected_changes(&self) -> usize {
+        self.coordinated_requests
+            .as_ref()
+            .map(|requests| {
+                requests
+                    .lock()
+                    .iter()
+                    .map(|request| request.changes.len())
+                    .sum()
+            })
+            .unwrap_or(0)
     }
 
     /// Returns the async MPT worker queue capacity when async mode is enabled.
@@ -708,7 +729,13 @@ fn worker_loop<S>(
         match command {
             AsyncCommand::Apply(request) => {
                 let mut batch = vec![request];
-                collect_apply_batch(&rx, &mut pending_command, &mut batch, max_batch_blocks);
+                collect_apply_batch(
+                    &rx,
+                    &mut pending_command,
+                    &mut batch,
+                    max_batch_blocks,
+                    ASYNC_MAX_APPLY_BATCH_CHANGES,
+                );
                 apply_request_batch(
                     &state_store,
                     batch,
@@ -746,12 +773,22 @@ fn collect_apply_batch(
     pending_command: &mut Option<AsyncCommand>,
     batch: &mut Vec<AsyncApplyRequest>,
     max_batch_blocks: usize,
+    max_batch_changes: usize,
 ) {
     let eager_batch_blocks = ASYNC_EAGER_APPLY_BATCH_BLOCKS.min(max_batch_blocks.max(1));
+    let max_batch_changes = max_batch_changes.max(1);
+    let mut batch_changes = batch.iter().fold(0usize, |total, request| {
+        total.saturating_add(request.changes.len())
+    });
     while batch.len() < max_batch_blocks.max(1) {
         match rx.try_recv() {
             Ok(AsyncCommand::Apply(next)) => {
-                batch.push(next);
+                if let Err(next) =
+                    try_push_apply_request(batch, &mut batch_changes, next, max_batch_changes)
+                {
+                    *pending_command = Some(AsyncCommand::Apply(next));
+                    return;
+                }
             }
             Ok(other) => {
                 *pending_command = Some(other);
@@ -763,7 +800,17 @@ fn collect_apply_batch(
                     return;
                 }
                 match rx.recv_timeout(ASYNC_BATCH_COALESCE_WAIT) {
-                    Ok(AsyncCommand::Apply(next)) => batch.push(next),
+                    Ok(AsyncCommand::Apply(next)) => {
+                        if let Err(next) = try_push_apply_request(
+                            batch,
+                            &mut batch_changes,
+                            next,
+                            max_batch_changes,
+                        ) {
+                            *pending_command = Some(AsyncCommand::Apply(next));
+                            return;
+                        }
+                    }
                     Ok(other) => {
                         *pending_command = Some(other);
                         return;
@@ -773,6 +820,21 @@ fn collect_apply_batch(
             }
         }
     }
+}
+
+fn try_push_apply_request(
+    batch: &mut Vec<AsyncApplyRequest>,
+    batch_changes: &mut usize,
+    request: AsyncApplyRequest,
+    max_batch_changes: usize,
+) -> Result<(), AsyncApplyRequest> {
+    let next_changes = request.changes.len();
+    if !batch.is_empty() && batch_changes.saturating_add(next_changes) > max_batch_changes.max(1) {
+        return Err(request);
+    }
+    *batch_changes = batch_changes.saturating_add(next_changes);
+    batch.push(request);
+    Ok(())
 }
 
 fn apply_request_batch<S>(

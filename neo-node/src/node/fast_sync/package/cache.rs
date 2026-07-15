@@ -429,15 +429,18 @@ fn package_is_valid(path: &Path, package: &FastSyncPackage) -> bool {
 
 /// Validates package bytes before cache promotion.
 ///
-/// Order is intentional:
-/// 1. When a SHA-256 digest is present, it is required (auth-grade content hash).
-/// 2. MD5 is always checked for NGD manifest compatibility / integrity.
-///
+/// SHA-256 is mandatory authenticity: MD5 alone is never sufficient. MD5 is
+/// still verified when present as an integrity cross-check for NGD packages.
 /// Either mismatch fails closed; callers must discard the partial download.
 fn validate_package_digests(path: &Path, package: &FastSyncPackage) -> anyhow::Result<()> {
-    if let Some(expected_sha256) = package.sha256.as_deref() {
-        validate_sha256(path, expected_sha256)?;
-    }
+    let expected_sha256 = package.sha256.as_deref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "fast-sync package is missing a SHA-256 authenticity digest; \
+             refuse to promote packages authenticated only by MD5. Provide \
+             --fast-sync-expected-sha256 or a manifest that publishes sha256"
+        )
+    })?;
+    validate_sha256(path, expected_sha256)?;
     validate_md5(path, &package.md5)
 }
 

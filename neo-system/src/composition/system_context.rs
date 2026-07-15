@@ -137,6 +137,20 @@ where
         Ok(())
     }
 
+    /// Projected StateService change budget for intermediate deferred commits.
+    ///
+    /// When set, the blockchain deferred-import loop intermediate-commits once
+    /// pending projected MPT changes reach this budget so coordinated MDBX
+    /// transactions stay work-bounded. Default disables intermediate flushes.
+    fn deferred_import_work_budget(&self) -> Option<usize> {
+        None
+    }
+
+    /// Pending projected StateService changes awaiting the next deferred commit.
+    fn pending_deferred_import_work(&self) -> usize {
+        0
+    }
+
     /// Fences pre-commit observer stores before canonical Ledger durability.
     fn fence_precommit_durability(&self) -> Result<(), String> {
         Ok(())
@@ -409,6 +423,14 @@ where
             self.mark_fatal_persistence_error(error);
         }
         result
+    }
+
+    fn deferred_import_work_budget(&self) -> Option<usize> {
+        self.hooks.deferred_import_work_budget()
+    }
+
+    fn pending_deferred_import_work(&self) -> usize {
+        self.hooks.pending_deferred_import_work()
     }
 
     fn allows_empty_block_fast_forward(&self) -> bool {

@@ -192,6 +192,24 @@ pub trait SystemContext: Send + Sync + std::fmt::Debug {
         Ok(())
     }
 
+    /// Optional projected StateService change budget for deferred imports.
+    ///
+    /// When `Some(n)`, the trusted-replay/deferred import loop intermediate-
+    /// commits Ledger and StateService together once pending projected MPT
+    /// changes reach `n`. This keeps coordinated MDBX transactions work-bounded
+    /// without weakening atomic Ledger+StateService publication. The default
+    /// disables intermediate flushes.
+    fn deferred_import_work_budget(&self) -> Option<usize> {
+        None
+    }
+
+    /// Number of projected StateService MPT changes queued for the next
+    /// deferred/coordinated commit. Used with
+    /// [`Self::deferred_import_work_budget`].
+    fn pending_deferred_import_work(&self) -> usize {
+        0
+    }
+
     /// Returns whether a trusted bulk-sync import may skip per-block committing
     /// hooks for a state-equivalent empty-block fast-forward run.
     ///

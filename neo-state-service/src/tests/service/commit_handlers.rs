@@ -63,6 +63,11 @@ fn coordinated_handlers_queue_blocks_until_external_commit() {
     assert!(!handlers.is_async());
     assert!(handlers.on_committing_deferred(0, &snapshot0));
     assert!(handlers.on_committing_deferred(1, &snapshot1));
+    assert!(
+        handlers.pending_coordinated_projected_changes()
+            >= snapshot0.pending_change_count() + snapshot1.pending_change_count(),
+        "queued projected change count must be visible for deferred work-budget flushes"
+    );
     assert_eq!(
         store.mpt().expect("MPT").current_local_root(),
         None,
@@ -165,6 +170,42 @@ fn async_committing_flush_applies_queued_mpt_roots_in_order() {
             .any(|stat| stat.kind == "batch_blocks" && stat.samples > 0 && stat.total >= 1),
         "async StateService MPT apply should expose worker batch size"
     );
+    let mutation_counts = crate::StateRootApplyMetrics::state_root_apply_count_stats();
+    for kind in [
+        "put_node_cached_calls",
+        "serialized_payload_bytes",
+        "hash_computations",
+        "max_recursion_depth",
+        "overlay_working_set_entries",
+    ] {
+        assert!(
+            mutation_counts
+                .iter()
+                .any(|stat| stat.kind == kind && stat.samples > 0 && stat.total > 0),
+            "StateService MPT apply should expose non-zero {kind}"
+        );
+    }
+    assert!(
+        mutation_counts
+            .iter()
+            .any(|stat| { stat.kind == "repeated_ancestor_finalizations" && stat.samples > 0 }),
+        "StateService MPT apply should sample repeated ancestor finalization"
+    );
+    for kind in [
+        "finalization_cache_hits",
+        "finalization_memory_hits",
+        "finalization_memory_misses",
+        "finalization_backing_hits",
+        "finalization_backing_misses",
+        "finalization_lookup_errors",
+    ] {
+        assert!(
+            mutation_counts
+                .iter()
+                .any(|stat| stat.kind == kind && stat.samples > 0),
+            "StateService MPT apply should sample {kind}"
+        );
+    }
 }
 
 #[test]
@@ -220,10 +261,10 @@ fn async_apply_limit_is_independent_from_queue_backpressure_capacity() {
 }
 
 #[test]
-fn async_worker_flushes_eager_batch_before_backlog_ceiling() {
+fn async_worker_coalesces_continuous_work_to_apply_ceiling() {
     let store = Arc::new(StateStore::with_mpt(false));
     let handlers = StateServiceCommitHandlers::new_async_with_limits(Arc::clone(&store), 16, 8);
-    let snapshots = (0u8..4)
+    let snapshots = (0u8..8)
         .map(|index| {
             let snapshot = DataCache::new(false);
             snapshot.add(
@@ -241,11 +282,93 @@ fn async_worker_flushes_eager_batch_before_backlog_ceiling() {
     assert!(handlers.flush());
 
     assert_eq!(handlers.async_apply_batch_limit(), Some(8));
-    assert_eq!(handlers.applied_batch_sizes(), vec![4]);
+    assert_eq!(handlers.applied_batch_sizes(), vec![8]);
     assert_eq!(
         store.mpt().expect("MPT backend").current_local_root_index(),
-        Some(3)
+        Some(7)
     );
+}
+
+#[test]
+fn async_worker_splits_batches_at_projected_change_limit() {
+    fn request(block_index: u32, change_count: usize) -> AsyncApplyRequest {
+        AsyncApplyRequest {
+            block_index,
+            changes: (0..change_count)
+                .map(|index| crate::mpt_store::MptChange::Put {
+                    key: vec![block_index as u8, index as u8],
+                    value: vec![index as u8],
+                })
+                .collect(),
+            project_us: 0,
+            queued_at: std::time::Instant::now(),
+            total_start: std::time::Instant::now(),
+        }
+    }
+
+    let (tx, rx) = std::sync::mpsc::sync_channel(3);
+    tx.send(AsyncCommand::Apply(request(0, 5))).unwrap();
+    tx.send(AsyncCommand::Apply(request(1, 4))).unwrap();
+    tx.send(AsyncCommand::Apply(request(2, 4))).unwrap();
+    drop(tx);
+
+    let AsyncCommand::Apply(first) = rx.recv().unwrap() else {
+        panic!("expected first apply request");
+    };
+    let mut first_batch = vec![first];
+    let mut pending = None;
+    collect_apply_batch(&rx, &mut pending, &mut first_batch, 4, 8);
+    assert_eq!(
+        first_batch
+            .iter()
+            .map(|request| request.block_index)
+            .collect::<Vec<_>>(),
+        vec![0]
+    );
+
+    let Some(AsyncCommand::Apply(second)) = pending.take() else {
+        panic!("change limit should defer the next apply request");
+    };
+    let mut second_batch = vec![second];
+    collect_apply_batch(&rx, &mut pending, &mut second_batch, 4, 8);
+    assert_eq!(
+        second_batch
+            .iter()
+            .map(|request| request.block_index)
+            .collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+    assert!(pending.is_none());
+}
+
+#[test]
+fn async_worker_accepts_one_oversized_projected_block() {
+    let mut batch = vec![AsyncApplyRequest {
+        block_index: 0,
+        changes: (0..9)
+            .map(|index| crate::mpt_store::MptChange::Put {
+                key: vec![index],
+                value: vec![index],
+            })
+            .collect(),
+        project_us: 0,
+        queued_at: std::time::Instant::now(),
+        total_start: std::time::Instant::now(),
+    }];
+    let mut batch_changes = 9;
+    let next = AsyncApplyRequest {
+        block_index: 1,
+        changes: Vec::new(),
+        project_us: 0,
+        queued_at: std::time::Instant::now(),
+        total_start: std::time::Instant::now(),
+    };
+
+    let deferred = try_push_apply_request(&mut batch, &mut batch_changes, next, 8)
+        .expect_err("an oversized block must form a batch by itself");
+    assert_eq!(batch.len(), 1);
+    assert_eq!(batch[0].changes.len(), 9);
+    assert_eq!(deferred.block_index, 1);
 }
 
 #[test]

@@ -359,16 +359,54 @@ where
         Trie::new(Arc::clone(self), root, self.full_state)
     }
 
+    /// Fallible state-root lookup as of this snapshot.
+    ///
+    /// Distinguishes a missing record (`Ok(None)`) from a durable backend
+    /// failure (`Err`), so callers can abort instead of treating I/O errors as
+    /// absent state.
+    pub fn try_get_state_root(&self, index: u32) -> MptResult<Option<StateRoot>> {
+        MptStore::<S>::read_state_root(&self.map, self.backing_snapshot.as_deref(), index)
+    }
+
     /// Returns the state-root record persisted for `index`, if any,
     /// as of this snapshot.
+    ///
+    /// Prefer [`Self::try_get_state_root`] on consensus-critical paths. This
+    /// compatibility wrapper logs backend failures and returns `None`.
     pub fn get_state_root(&self, index: u32) -> Option<StateRoot> {
-        MptStore::<S>::read_state_root(&self.map, self.backing_snapshot.as_deref(), index)
+        match self.try_get_state_root(index) {
+            Ok(root) => root,
+            Err(error) => {
+                tracing::error!(
+                    target: "neo.state_service",
+                    index,
+                    error = %error,
+                    "MPT state-root read failed; treating as absent for legacy Option API"
+                );
+                None
+            }
+        }
+    }
+
+    /// Fallible current local root index as of this snapshot.
+    pub fn try_current_local_root_index(&self) -> MptResult<Option<u32>> {
+        MptStore::<S>::read_current_local_root_index(&self.map, self.backing_snapshot.as_deref())
     }
 
     /// Returns the local root index current as of this snapshot (C#
     /// `StateSnapshot.CurrentLocalRootIndex`).
     pub fn current_local_root_index(&self) -> Option<u32> {
-        MptStore::<S>::read_current_local_root_index(&self.map, self.backing_snapshot.as_deref())
+        match self.try_current_local_root_index() {
+            Ok(index) => index,
+            Err(error) => {
+                tracing::error!(
+                    target: "neo.state_service",
+                    error = %error,
+                    "MPT current local root index read failed; treating as absent for legacy Option API"
+                );
+                None
+            }
+        }
     }
 
     /// Returns the local root hash current as of this snapshot (C#
@@ -398,10 +436,12 @@ where
     fn try_get(&self, key: &[u8]) -> MptResult<Option<Vec<u8>>> {
         match self.map.get(key) {
             Some(value) => Ok(value.clone()),
-            None => Ok(self
-                .backing_snapshot
-                .as_ref()
-                .and_then(|snapshot| snapshot.try_get_bytes(key))),
+            None => match self.backing_snapshot.as_ref() {
+                None => Ok(None),
+                Some(snapshot) => snapshot.try_get_bytes_result(key).map_err(|error| {
+                    MptError::storage(format!("MPT read-snapshot backing get failed: {error}"))
+                }),
+            },
         }
     }
 
@@ -600,10 +640,33 @@ where
 
     fn load_latest_local_root_from_backing(backing: &S) -> Option<(u32, UInt256)> {
         let snapshot = backing.snapshot();
-        let index = Self::read_current_local_root_index(&HashMap::new(), Some(snapshot.as_ref()))?;
-        let root =
-            *Self::read_state_root(&HashMap::new(), Some(snapshot.as_ref()), index)?.root_hash();
-        Some((index, root))
+        let index = match Self::read_current_local_root_index(
+            &HashMap::new(),
+            Some(snapshot.as_ref()),
+        ) {
+            Ok(index) => index?,
+            Err(error) => {
+                tracing::error!(
+                    target: "neo.state_service",
+                    error = %error,
+                    "failed to load current local root index from durable backing"
+                );
+                return None;
+            }
+        };
+        match Self::read_state_root(&HashMap::new(), Some(snapshot.as_ref()), index) {
+            Ok(Some(root)) => Some((index, *root.root_hash())),
+            Ok(None) => None,
+            Err(error) => {
+                tracing::error!(
+                    target: "neo.state_service",
+                    index,
+                    error = %error,
+                    "failed to load latest local root from durable backing"
+                );
+                None
+            }
+        }
     }
 
     /// Captures an immutable, point-in-time view of the store (the C#
@@ -1549,13 +1612,16 @@ where
                 Some(previous_index) => {
                     let map = Arc::clone(&self.kv.read());
                     let backing_snapshot = self.backing_snapshot();
-                    let previous_root =
-                        Self::read_state_root(&map, backing_snapshot.as_deref(), previous_index)
-                            .ok_or_else(|| {
-                                MptError::invalid(format!(
-                                    "cannot rewind StateService MPT local root to missing block {previous_index}"
-                                ))
-                            })?;
+                    let previous_root = Self::read_state_root(
+                        &map,
+                        backing_snapshot.as_deref(),
+                        previous_index,
+                    )?
+                    .ok_or_else(|| {
+                        MptError::invalid(format!(
+                            "cannot rewind StateService MPT local root to missing block {previous_index}"
+                        ))
+                    })?;
                     rewound_latest_root = Some((previous_index, *previous_root.root_hash()));
                     overlay.insert(
                         Keys::CURRENT_LOCAL_ROOT_INDEX.to_vec(),
@@ -1626,11 +1692,29 @@ where
         }
     }
 
-    /// Returns the state-root record persisted for `index`, if any.
-    pub fn get_state_root(&self, index: u32) -> Option<StateRoot> {
+    /// Fallible state-root lookup for the live store generation.
+    pub fn try_get_state_root(&self, index: u32) -> MptResult<Option<StateRoot>> {
         let map = Arc::clone(&self.kv.read());
         let backing_snapshot = self.backing_snapshot();
         Self::read_state_root(&map, backing_snapshot.as_deref(), index)
+    }
+
+    /// Returns the state-root record persisted for `index`, if any.
+    ///
+    /// Prefer [`Self::try_get_state_root`] when backend failures must abort.
+    pub fn get_state_root(&self, index: u32) -> Option<StateRoot> {
+        match self.try_get_state_root(index) {
+            Ok(root) => root,
+            Err(error) => {
+                tracing::error!(
+                    target: "neo.state_service",
+                    index,
+                    error = %error,
+                    "MPT state-root read failed; treating as absent for legacy Option API"
+                );
+                None
+            }
+        }
     }
 
     /// Returns the current local root index, if a block has been
@@ -1658,49 +1742,79 @@ where
 
     /// Decodes the state-root record for `index` out of a generation
     /// map (shared by the live accessors and [`MptReadSnapshot`]).
+    ///
+    /// Returns `Ok(None)` when the record is absent and `Err` when the durable
+    /// backing read fails.
     fn read_state_root<B>(
         map: &HashMap<Vec<u8>, Option<Vec<u8>>>,
         backing_snapshot: Option<&B>,
         index: u32,
-    ) -> Option<StateRoot>
+    ) -> MptResult<Option<StateRoot>>
     where
         B: RawReadOnlyStore + ?Sized,
     {
         let key = Keys::state_root(index);
         let bytes = match map.get(&key) {
             Some(Some(bytes)) => bytes.clone(),
-            Some(None) => return None,
-            None => backing_snapshot?.try_get_bytes(&key)?,
+            Some(None) => return Ok(None),
+            None => {
+                let Some(backing) = backing_snapshot else {
+                    return Ok(None);
+                };
+                match backing.try_get_bytes_result(&key).map_err(|error| {
+                    MptError::storage(format!("MPT state-root backing get failed: {error}"))
+                })? {
+                    Some(bytes) => bytes,
+                    None => return Ok(None),
+                }
+            }
         };
         match Self::decode_state_root(&bytes) {
-            Some(root) => Some(root),
+            Some(root) => Ok(Some(root)),
             None => {
                 tracing::warn!(
                     target: "neo.state_service",
                     index,
                     "malformed state-root record in MPT store"
                 );
-                None
+                Ok(None)
             }
         }
     }
 
     /// Reads the current local root index out of a generation map.
+    ///
+    /// Returns `Ok(None)` when no index is published and `Err` when the durable
+    /// backing read fails.
     fn read_current_local_root_index<B>(
         map: &HashMap<Vec<u8>, Option<Vec<u8>>>,
         backing_snapshot: Option<&B>,
-    ) -> Option<u32>
+    ) -> MptResult<Option<u32>>
     where
         B: RawReadOnlyStore + ?Sized,
     {
         let key = Keys::CURRENT_LOCAL_ROOT_INDEX.to_vec();
         let bytes = match map.get(&key) {
             Some(Some(bytes)) => bytes.clone(),
-            Some(None) => return None,
-            None => backing_snapshot?.try_get_bytes(&key)?,
+            Some(None) => return Ok(None),
+            None => {
+                let Some(backing) = backing_snapshot else {
+                    return Ok(None);
+                };
+                match backing.try_get_bytes_result(&key).map_err(|error| {
+                    MptError::storage(format!(
+                        "MPT current local root index backing get failed: {error}"
+                    ))
+                })? {
+                    Some(bytes) => bytes,
+                    None => return Ok(None),
+                }
+            }
         };
-        let arr: [u8; 4] = bytes.as_slice().try_into().ok()?;
-        Some(u32::from_le_bytes(arr))
+        let arr: [u8; 4] = bytes.as_slice().try_into().map_err(|_| {
+            MptError::invalid("current local root index record has invalid length")
+        })?;
+        Ok(Some(u32::from_le_bytes(arr)))
     }
 
     /// Serializes a state root in the C# `StateRoot` wire format:

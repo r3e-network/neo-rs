@@ -38,6 +38,8 @@ where
         let mut batch_persist_resources = None;
         let mut batch_persist_resources_loaded = false;
         let mut last_imported_height = None;
+        // Last height that was already intermediate-committed durably.
+        let mut durable_checkpoint_height = durable_height;
         let mut position = 0usize;
         while position < blocks.len() {
             let block = &blocks[position];
@@ -172,6 +174,58 @@ where
             last_imported_height = Some(index);
             if defer_store_commit {
                 deferred_committed_blocks.push(committed_block);
+                // Intermediate Ledger+StateService co-commit when the projected
+                // MPT change budget is reached (coordinated catch-up path).
+                if let Some(budget) = self.system.deferred_import_work_budget() {
+                    if !deferred_committed_blocks.is_empty()
+                        && self.system.pending_deferred_import_work() >= budget
+                    {
+                        let staged = deferred_committed_blocks.len();
+                        if let Err(error) = self.finalize_deferred_import(staged, &mut stats) {
+                            self.system.abort_store_commit();
+                            self.ledger.rewind_to(durable_checkpoint_height);
+                            return ImportBlocksReply::failed_with_stats(
+                                already_durable
+                                    + durable_checkpoint_height.saturating_sub(durable_height)
+                                        as usize,
+                                stats,
+                                error,
+                            );
+                        }
+                        for block in deferred_committed_blocks.drain(..) {
+                            let finalized_delivery_start =
+                                (!block.transactions.is_empty()).then(std::time::Instant::now);
+                            let finalized = BlockCommitArtifacts::without_replay_artifacts(None)
+                                .into_finalized(std::sync::Arc::clone(&block), persist_context);
+                            if let Err(error) = self.system.block_finalized(finalized).await {
+                                import_error = Some(format!(
+                                    "block {} committed durably but finalized delivery failed: {error}",
+                                    block.index()
+                                ));
+                                break;
+                            }
+                            if plan.maintains_live_side_effects() {
+                                self.mempool.block_persisted(block.as_ref());
+                                if let Ok(hash) = Self::try_block_hash(block.as_ref()) {
+                                    self.event_tx
+                                        .send(crate::RuntimeEvent::Imported {
+                                            hash,
+                                            height: block.index(),
+                                            timestamp: block.timestamp(),
+                                        })
+                                        .ok();
+                                }
+                            }
+                            if let Some(start) = finalized_delivery_start {
+                                stats.transaction_finalized_delivery_elapsed += start.elapsed();
+                            }
+                            durable_checkpoint_height = block.index();
+                        }
+                        if import_error.is_some() {
+                            break;
+                        }
+                    }
+                }
             }
             position += 1;
             if self.system.should_stop_blockchain_service() {
@@ -191,19 +245,25 @@ where
         if defer_store_commit {
             if self.system.should_stop_blockchain_service() {
                 self.system.abort_store_commit();
-                self.ledger.rewind_to(durable_height);
+                self.ledger.rewind_to(durable_checkpoint_height);
                 return ImportBlocksReply::failed_with_stats(
-                    already_durable,
+                    already_durable
+                        + durable_checkpoint_height.saturating_sub(durable_height) as usize,
                     stats,
                     import_error.unwrap_or_else(|| {
                         "deferred import aborted after a fatal persistence failure".to_string()
                     }),
                 );
             }
-            let newly_staged = imported.saturating_sub(already_durable);
+            let newly_staged = deferred_committed_blocks.len();
             if let Err(error) = self.finalize_deferred_import(newly_staged, &mut stats) {
-                self.ledger.rewind_to(durable_height);
-                return ImportBlocksReply::failed_with_stats(already_durable, stats, error);
+                self.ledger.rewind_to(durable_checkpoint_height);
+                return ImportBlocksReply::failed_with_stats(
+                    already_durable
+                        + durable_checkpoint_height.saturating_sub(durable_height) as usize,
+                    stats,
+                    error,
+                );
             }
             for block in deferred_committed_blocks {
                 let finalized_delivery_start =

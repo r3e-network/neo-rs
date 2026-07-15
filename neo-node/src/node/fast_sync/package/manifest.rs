@@ -113,18 +113,7 @@ fn select_full_package(manifest: &SyncManifest, network: u32) -> anyhow::Result<
     if entry.md5.trim().len() != 32 || !entry.md5.chars().all(|ch| ch.is_ascii_hexdigit()) {
         anyhow::bail!("manifest {network_key}.full.md5 is not a valid MD5 hex digest");
     }
-    let sha256 = match entry.sha256.as_deref() {
-        None | Some("") => None,
-        Some(raw) => {
-            let digest = raw.trim();
-            if digest.len() != 64 || !digest.chars().all(|ch| ch.is_ascii_hexdigit()) {
-                anyhow::bail!(
-                    "manifest {network_key}.full.sha256 is not a valid SHA-256 hex digest"
-                );
-            }
-            Some(digest.to_ascii_uppercase())
-        }
-    };
+    let sha256 = normalize_optional_sha256(entry.sha256.as_deref(), network_key)?;
     if entry.start > entry.end {
         anyhow::bail!(
             "manifest {network_key}.full start height {} is greater than end height {}",
@@ -142,6 +131,55 @@ fn select_full_package(manifest: &SyncManifest, network: u32) -> anyhow::Result<
         end: entry.end,
         filename,
     })
+}
+
+/// Parses an optional SHA-256 hex digest from a manifest field.
+fn normalize_optional_sha256(
+    raw: Option<&str>,
+    network_key: &str,
+) -> anyhow::Result<Option<String>> {
+    match raw {
+        None | Some("") => Ok(None),
+        Some(raw) => {
+            let digest = raw.trim();
+            if digest.len() != 64 || !digest.chars().all(|ch| ch.is_ascii_hexdigit()) {
+                anyhow::bail!(
+                    "manifest {network_key}.full.sha256 is not a valid SHA-256 hex digest"
+                );
+            }
+            Ok(Some(digest.to_ascii_uppercase()))
+        }
+    }
+}
+
+/// Applies an operator-pinned SHA-256 authenticity digest when the official
+/// manifest does not publish one. Existing manifest digests are never replaced.
+pub(in crate::node::fast_sync) fn apply_expected_sha256_override(
+    package: &mut FastSyncPackage,
+    expected_sha256: Option<&str>,
+) -> anyhow::Result<()> {
+    match (package.sha256.as_ref(), expected_sha256) {
+        (Some(_), Some(pinned)) => {
+            let pinned = normalize_optional_sha256(Some(pinned), package.network_key)?
+                .expect("pinned digest validated");
+            if package.sha256.as_deref() != Some(pinned.as_str()) {
+                anyhow::bail!(
+                    "fast-sync --fast-sync-expected-sha256 does not match the manifest sha256"
+                );
+            }
+            Ok(())
+        }
+        (Some(_), None) => Ok(()),
+        (None, Some(pinned)) => {
+            package.sha256 = normalize_optional_sha256(Some(pinned), package.network_key)?;
+            Ok(())
+        }
+        (None, None) => anyhow::bail!(
+            "fast-sync package has no SHA-256 authenticity digest in the manifest; \
+             pass --fast-sync-expected-sha256 <hex> to pin the trusted package content hash. \
+             MD5 alone is not accepted as authenticity"
+        ),
+    }
 }
 
 fn package_filename(url: &str) -> anyhow::Result<String> {

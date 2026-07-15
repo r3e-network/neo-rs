@@ -148,6 +148,7 @@ where
         ctx.network,
         ctx.cli.stop_at_height,
         ctx.cli.fast_sync_reference_rpc.as_deref(),
+        ctx.cli.fast_sync_expected_sha256.as_deref(),
         state_store.as_ref(),
         state_service.as_ref(),
     )

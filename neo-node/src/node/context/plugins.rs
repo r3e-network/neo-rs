@@ -248,6 +248,31 @@ where
         Ok(())
     }
 
+    fn deferred_import_work_budget(&self) -> Option<usize> {
+        // Coordinated mode co-commits Ledger and StateService. Bound the
+        // projected change set like the async worker work-cap so dense windows
+        // do not build one nonlinear MDBX transaction for a full 10k-block batch.
+        // Override with NEO_COORDINATED_IMPORT_CHANGE_BUDGET (0 disables).
+        const DEFAULT_COORDINATED_DEFERRED_IMPORT_CHANGE_BUDGET: usize = 8_192;
+        self.state_service.as_ref().and_then(|state_service| {
+            if !state_service.is_coordinated() {
+                return None;
+            }
+            let budget = std::env::var("NEO_COORDINATED_IMPORT_CHANGE_BUDGET")
+                .ok()
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(DEFAULT_COORDINATED_DEFERRED_IMPORT_CHANGE_BUDGET);
+            (budget > 0).then_some(budget)
+        })
+    }
+
+    fn pending_deferred_import_work(&self) -> usize {
+        self.state_service
+            .as_ref()
+            .map(|state_service| state_service.pending_coordinated_projected_changes())
+            .unwrap_or(0)
+    }
+
     fn fence_precommit_durability(&self) -> Result<(), String> {
         if let Some(state_service) = &self.state_service {
             if state_service.is_coordinated() {
