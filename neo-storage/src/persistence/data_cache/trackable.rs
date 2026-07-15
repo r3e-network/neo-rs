@@ -1,5 +1,6 @@
 use crate::types::{StorageItem, StorageKey, TrackState};
-use std::collections::{HashMap, HashSet};
+use rustc_hash::FxHashMap;
+use std::collections::BTreeSet;
 use std::fmt;
 use thiserror::Error;
 
@@ -84,15 +85,19 @@ impl<T: fmt::Debug> fmt::Debug for TrackableEntry<T> {
 
 /// Internal state protected by RwLock for thread-safe Copy-on-Write
 pub(crate) struct InnerState {
-    pub(crate) dictionary: HashMap<StorageKey, Trackable>,
-    pub(crate) change_set: HashSet<StorageKey>,
+    /// Hot lookup table for storage keys during TX/native execution.
+    ///
+    /// `FxHashMap` is faster than the std hasher for short contract-storage
+    /// keys on the import path (every `System.Storage.Get`/`Put` hits this map).
+    pub(crate) dictionary: FxHashMap<StorageKey, Trackable>,
+    pub(crate) change_set: BTreeSet<StorageKey>,
 }
 
 impl InnerState {
     pub(crate) fn new() -> Self {
         Self {
-            dictionary: HashMap::new(),
-            change_set: HashSet::new(),
+            dictionary: FxHashMap::default(),
+            change_set: BTreeSet::new(),
         }
     }
 }

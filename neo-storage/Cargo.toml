@@ -21,6 +21,7 @@ neo-io = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
+serde_json = { workspace = true }
 
 # Math
 num-bigint = { workspace = true }
@@ -32,22 +33,22 @@ thiserror = { workspace = true }
 parking_lot = { workspace = true }
 
 # Hash functions
+sha2 = { workspace = true }
 xxhash-rust = { workspace = true }
 rand = { workspace = true }
 
 # Collections
 hashbrown = { workspace = true }
+rustc-hash = { workspace = true }
 
 # Caching
 lru = { workspace = true }
-fastbloom = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
 libmdbx = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]
