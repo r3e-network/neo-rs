@@ -17,3 +17,9 @@ scripts; eager full-body parse dominates method-local execution.
 
 ## Decision
 **Rejected / reverted.**
+
+## Follow-up: TX-only eager (`new_relaxed_eager_from_slice` on load_script_bytes)
+
+Contract NEFs stayed lazy. 3-run vs engine-reuse control: overall **−0.04%**,
+TX **−0.19%**, dense **−0.67%** (noise). execute_us ~313–318 vs ~320 control.
+**Rejected / reverted** — not a clear win.
