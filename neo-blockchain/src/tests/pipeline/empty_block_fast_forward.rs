@@ -142,7 +142,7 @@ fn planner_accepts_maximum_empty_blocks_as_one_batch() {
 fn planner_batch_guard_matches_realistic_short_empty_runs() {
     assert_eq!(
         crate::empty_block_fast_forward::MAX_EMPTY_BLOCK_FAST_FORWARD_BLOCKS,
-        128,
+        1_024,
         "empty-block fast-forward should publish staged writes in short bounded bursts"
     );
 }

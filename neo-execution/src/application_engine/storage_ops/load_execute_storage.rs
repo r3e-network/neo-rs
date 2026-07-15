@@ -13,11 +13,24 @@ where
         call_flags: CallFlags,
         script_hash: Option<UInt160>,
     ) -> CoreResult<()> {
+        self.load_script_bytes(script.as_slice(), call_flags, script_hash)
+    }
+
+    /// Loads script bytes without an intermediate owned `Vec` allocation.
+    ///
+    /// Transaction import uses this with `tx.script()` to avoid cloning the
+    /// transaction body into a temporary buffer before `Script` wraps an `Arc`.
+    pub fn load_script_bytes(
+        &mut self,
+        script: &[u8],
+        call_flags: CallFlags,
+        script_hash: Option<UInt160>,
+    ) -> CoreResult<()> {
         // Match Neo N3/C# semantics: scripts loaded by the host return all
         // evaluation stack items (`rvcount = -1`) so that witness invocation
         // scripts can pass parameters to verification scripts and invocation
         // results are preserved on `ResultStack`.
-        self.load_script_with_state(script, -1, 0, move |state| {
+        self.load_script_with_state(Script::new_relaxed_from_slice(script), -1, 0, move |state| {
             state.call_flags = call_flags;
             if let Some(hash) = script_hash {
                 state.script_hash = Some(hash);
@@ -34,6 +47,7 @@ where
         call_flags: CallFlags,
     ) -> CoreResult<()> {
         let has_return_value = method.return_type != ContractParameterType::Void;
+        let contract = self.cache_or_reuse_contract(contract);
         let previous_context = self.vm_engine.engine().current_context().cloned();
         let previous_hash = if let Some(ref ctx) = previous_context {
             let state_arc = ctx.state();
@@ -52,7 +66,7 @@ where
         let param_count = method.parameters.len();
         self.load_contract_context(
             contract,
-            method,
+            &method,
             call_flags,
             param_count,
             previous_context,
@@ -82,6 +96,11 @@ where
         self.fault_exception = Some(format!("{exception:?}"));
     }
 
+    fn finalize_fault(&mut self) {
+        self.capture_fault_exception_from_vm();
+        self.notifications.clear();
+    }
+
     /// Executes the loaded scripts until the VM halts or faults, returning the resulting VM state.
     ///
     /// This mirrors the C# engine behaviour used by RPC invocation endpoints: callers can inspect
@@ -97,7 +116,7 @@ where
         let state = self.vm_engine.engine_mut().execute();
         self.detach_host(attached_here);
         if state == VMState::FAULT {
-            self.capture_fault_exception_from_vm();
+            self.finalize_fault();
         }
         state
     }
@@ -113,7 +132,7 @@ where
             let state = self.vm_engine.engine().state();
             if state == VMState::HALT || state == VMState::FAULT {
                 if state == VMState::FAULT {
-                    self.capture_fault_exception_from_vm();
+                    self.finalize_fault();
                 }
                 break state;
             }
@@ -128,7 +147,7 @@ where
                     StackItem::from_byte_string(message.into_bytes()),
                 ));
                 self.vm_engine.engine_mut().set_state(VMState::FAULT);
-                self.capture_fault_exception_from_vm();
+                self.finalize_fault();
                 break VMState::FAULT;
             }
         };
@@ -228,7 +247,24 @@ where
             .current_script_hash
             .ok_or_else(|| CoreError::invalid_operation("No current contract"))?;
 
-        // 2. Get contract state to get the ID (matches C# snapshot lookup)
+        // Contract contexts already carry the exact ContractState that was
+        // loaded for execution. Reuse its ID after a cheap existence check so
+        // repeated GetContext calls do not deserialize the manifest and NEF.
+        // The existence check is required because a contract can destroy
+        // itself and then attempt another syscall before its frame unloads.
+        if let Some(contract) = self.contracts.get(&contract_hash)
+            && self
+                .native_contract_provider()
+                .contract_exists(self.snapshot_cache.as_ref(), &contract_hash)?
+        {
+            return Ok(StorageContext {
+                id: contract.id,
+                is_read_only: false,
+            });
+        }
+
+        // Fall back to the provider for entry scripts and custom composition
+        // paths that did not load the contract through the engine cache.
         let contract = self
             .native_contract_provider()
             .contract_state(self.snapshot_cache.as_ref(), &contract_hash)?

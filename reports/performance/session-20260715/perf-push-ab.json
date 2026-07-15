@@ -1,0 +1,35 @@
+{
+  "control_dense_bps": 1603.91,
+  "control_overall_bps": 10039.81,
+  "control_tx_bps": 1666.03,
+  "control_empty_bps": 37936.41,
+  "candidate_dense": [
+    1585.7487674882275,
+    1628.0398432717561,
+    1608.4861358261014
+  ],
+  "candidate_overall": [
+    11639.670580040001,
+    11722.152148378664,
+    11614.412683584413
+  ],
+  "candidate_tx": [
+    1816.3359102273955,
+    1851.1832873990877,
+    1825.671337085959
+  ],
+  "candidate_empty": [
+    50245.76539133185,
+    49654.03370392262,
+    48708.623141774515
+  ],
+  "candidate_dense_mean": 1607.424915528695,
+  "candidate_overall_mean": 11658.74513733436,
+  "candidate_tx_mean": 1831.0635115708142,
+  "candidate_empty_mean": 49536.140745676326,
+  "dense_delta_pct": 0.21914668084213051,
+  "overall_delta_pct": 16.125157122837575,
+  "empty_delta_pct": 30.576775044545123,
+  "tx_delta_pct": 9.905794707827242,
+  "all_roots_matched": true
+}

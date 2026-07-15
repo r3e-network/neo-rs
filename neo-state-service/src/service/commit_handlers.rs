@@ -41,7 +41,12 @@ const ASYNC_EAGER_APPLY_BATCH_BLOCKS: usize = 2048;
 // A block-only ceiling lets transaction-dense ranges create disproportionately
 // large MDBX transactions. Bound projected mutations as a second work unit;
 // one individually oversized block is still applied on its own.
-const ASYNC_MAX_APPLY_BATCH_CHANGES: usize = 8192;
+/// Upper bound on projected storage changes drained into one async MPT apply.
+///
+/// Dense MainNet windows emit ~20k changes / 10k blocks. 12,288 keeps MDBX
+/// transactions work-bounded (the 8,192 cap proved better than uncapped) while
+/// reducing commit count versus 8,192 on the measured dense window.
+const ASYNC_MAX_APPLY_BATCH_CHANGES: usize = 12_288;
 const ASYNC_BATCH_COALESCE_WAIT: Duration = Duration::from_millis(10);
 
 /// Handlers for wiring state-root MPT persistence into block persistence.

@@ -12,14 +12,14 @@
 //!
 //! ## Strict vs Relaxed Mode
 //!
-//! - **Strict mode**: Validates all instructions on load (default)
-//! - **Relaxed mode**: Allows lazy validation (useful for testing)
+//! - **Strict mode**: Validates all instructions and control-flow operands on load
+//! - **Relaxed mode**: Decodes only instructions reached during execution
 //!
 //! ## Example
 //!
 //! ```rust,ignore
 //! use neo_core::neo_vm::Script;
-//! use neo_vm_rs::OpCode;
+//! use crate::OpCode;
 //!
 //! // Create a script from bytecode
 //! let bytecode = vec![OpCode::PUSH1.byte(), OpCode::RET.byte()];
@@ -34,8 +34,9 @@
 
 use crate::error::VmError;
 use crate::error::VmResult;
-use neo_vm_rs::{Instruction, parse_script_instructions};
-use neo_vm_rs::{instruction_jump_target, instruction_try_targets};
+use crate::{Instruction, parse_script_instructions};
+use crate::{instruction_jump_target, instruction_try_targets};
+use neo_crypto::Crypto;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
@@ -52,7 +53,7 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 enum InstructionCache {
     /// Pre-populated, immutable cache — no lock on the read path.
-    Eager(HashMap<usize, Arc<Instruction>>),
+    Eager(Arc<HashMap<usize, Arc<Instruction>>>),
     /// Lazily populated cache — `RwLock` for concurrent reads, rare writes.
     Lazy(Arc<RwLock<HashMap<usize, Arc<Instruction>>>>),
 }
@@ -69,12 +70,12 @@ enum InstructionCache {
 /// Scripts created with relaxed / no-validation constructors use a
 /// `RwLock<HashMap>` that lazily caches instructions on first access.
 ///
-/// The hash code is computed eagerly at construction time to avoid any
-/// synchronisation overhead on the `hash()` / `hash_code()` accessors.
+/// The hash code and protocol Hash160 are computed eagerly at construction
+/// time to avoid hashing immutable script bytes on hot access paths.
 #[derive(Debug, Clone)]
 pub struct Script {
     /// The script data
-    script: Vec<u8>,
+    script: Arc<[u8]>,
 
     /// Cached instructions — either eagerly populated (lock-free) or lazily
     /// populated behind a `RwLock`.
@@ -85,6 +86,9 @@ pub struct Script {
 
     /// Eagerly computed hash code (no lock needed for reads).
     hash_code: u64,
+
+    /// Eagerly computed protocol script hash (RIPEMD-160 of SHA-256).
+    script_hash: [u8; 20],
 }
 
 impl PartialEq for Script {
@@ -137,21 +141,22 @@ impl Script {
     /// Creates a new script with optional validation and strict mode.
     pub fn new(script: Vec<u8>, strict_mode: bool) -> VmResult<Self> {
         let hash_code = Self::compute_hash(&script);
+        let script_hash = Crypto::hash160(&script);
+        let script = Arc::<[u8]>::from(script);
         let mut s = Self {
             script,
             instructions: InstructionCache::Lazy(Arc::new(RwLock::new(HashMap::new()))),
             strict_mode: false, // Start with false to allow parsing
             hash_code,
+            script_hash,
         };
 
         if strict_mode {
             // Parse all instructions eagerly and promote to lock-free cache.
             let map = s.parse_all_instructions()?;
-            s.instructions = InstructionCache::Eager(map);
+            s.instructions = InstructionCache::Eager(Arc::new(map));
             s.strict_mode = true;
             s.validate_strict()?;
-        } else {
-            s.validate()?;
         }
 
         Ok(s)
@@ -160,32 +165,43 @@ impl Script {
     /// Creates a new script with default settings (non-strict mode).
     /// This provides backward compatibility for code expecting `Script::new(script)`.
     pub fn from(script: Vec<u8>) -> VmResult<Self> {
-        Self::new(script, false)
+        Ok(Self::new_relaxed(script))
     }
 
     /// Creates a new script without validation - backward compatibility with C# API
     /// This matches the C# Script(byte[] script) constructor exactly
     #[must_use]
     pub fn new_from_bytes(script: Vec<u8>) -> Self {
-        let hash_code = Self::compute_hash(&script);
-        Self {
-            script,
-            instructions: InstructionCache::Lazy(Arc::new(RwLock::new(HashMap::new()))),
-            strict_mode: false,
-            hash_code,
-        }
+        Self::new_relaxed(script)
     }
 
     /// Creates a new script without validation.
     #[must_use]
     pub fn new_relaxed(script: Vec<u8>) -> Self {
-        let hash_code = Self::compute_hash(&script);
+        Self::new_relaxed_from_arc(Arc::<[u8]>::from(script))
+    }
+
+    /// Creates a relaxed script from an already-shared bytecode buffer.
+    ///
+    /// Prefer this on transaction import when callers can avoid an intermediate
+    /// `Vec` allocation before wrapping bytes in `Arc`.
+    #[must_use]
+    pub fn new_relaxed_from_arc(script: Arc<[u8]>) -> Self {
+        let hash_code = Self::compute_hash(script.as_ref());
+        let script_hash = Crypto::hash160(script.as_ref());
         Self {
             script,
             instructions: InstructionCache::Lazy(Arc::new(RwLock::new(HashMap::new()))),
             strict_mode: false,
             hash_code,
+            script_hash,
         }
+    }
+
+    /// Creates a relaxed script by copying `script` once into shared storage.
+    #[must_use]
+    pub fn new_relaxed_from_slice(script: &[u8]) -> Self {
+        Self::new_relaxed_from_arc(Arc::<[u8]>::from(script))
     }
 
     /// Parses all instructions from the script into a `HashMap` keyed by byte
@@ -194,7 +210,7 @@ impl Script {
         let mut instructions = HashMap::new();
 
         for instruction in
-            parse_script_instructions(&self.script).map_err(VmError::invalid_script_msg)?
+            parse_script_instructions(self.script.as_ref()).map_err(VmError::invalid_script_msg)?
         {
             instructions.insert(instruction.pointer(), Arc::new(instruction));
         }
@@ -204,7 +220,7 @@ impl Script {
 
     /// Validates the script.
     pub fn validate(&self) -> VmResult<()> {
-        parse_script_instructions(&self.script)
+        parse_script_instructions(self.script.as_ref())
             .map(|_| ())
             .map_err(VmError::invalid_script_msg)
     }
@@ -220,7 +236,7 @@ impl Script {
             }
         }
 
-        neo_vm_rs::validate_script(&self.script, true)
+        crate::validate_script(self.script.as_ref(), true)
             .map(|_| ())
             .map_err(VmError::invalid_script_msg)
     }
@@ -261,7 +277,7 @@ impl Script {
                 }
 
                 // Cache miss - parse, wrap in Arc, and insert under write lock.
-                let instruction = Arc::new(Instruction::parse(&self.script, position)?);
+                let instruction = Arc::new(Instruction::parse(self.script.as_ref(), position)?);
 
                 {
                     let mut instructions = cache.write();
@@ -298,14 +314,14 @@ impl Script {
     /// Returns the script as a byte array.
     #[must_use]
     pub fn to_array(&self) -> Vec<u8> {
-        self.script.clone()
+        self.script.to_vec()
     }
 
     /// Returns the script as a byte slice.
     /// This matches the C# implementation's `ToArray()` behavior exactly.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
-        &self.script
+        self.script.as_ref()
     }
 
     /// Returns the length of the script.
@@ -376,6 +392,13 @@ impl Script {
         self.hash_code
     }
 
+    /// Returns the cached protocol script hash (RIPEMD-160 of SHA-256).
+    #[inline]
+    #[must_use]
+    pub const fn script_hash(&self) -> [u8; 20] {
+        self.script_hash
+    }
+
     /// Calculates the jump target for a jump instruction.
     ///
     /// # Arguments
@@ -430,7 +453,7 @@ impl Script {
 
 impl AsRef<[u8]> for Script {
     fn as_ref(&self) -> &[u8] {
-        &self.script
+        self.script.as_ref()
     }
 }
 
