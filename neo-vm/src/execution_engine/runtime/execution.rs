@@ -3,7 +3,15 @@
 //
 
 use super::{ExecutionEngine, StackItem, VMState, VmError, VmResult};
-use neo_vm_rs::Instruction;
+use crate::Instruction;
+use std::sync::{Arc, LazyLock};
+
+/// Shared implicit-RET instruction used when the IP reaches end-of-script.
+///
+/// C# substitutes `Instruction.RET` in that case; reusing one `Arc` avoids
+/// allocating a new instruction object on every function return / frame exit.
+static IMPLICIT_RET: LazyLock<Arc<Instruction>> =
+    LazyLock::new(|| Arc::new(Instruction::ret()));
 
 impl<S> ExecutionEngine<S> {
     /// Starts execution of the VM.
@@ -34,67 +42,6 @@ impl<S> ExecutionEngine<S> {
         }
 
         self.is_jumping = false;
-
-        // Get the current context
-        let context = self
-            .current_context()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-
-        if context.instruction_pointer() >= context.script().len() {
-            // Perform implicit RET when reaching end of script.
-            // Pop return values directly from the eval stack instead of
-            // peek+clone, since the context is about to be destroyed.
-            let rvcount = context.rvcount();
-            let eval_stack_len = context.evaluation_stack().len();
-
-            let count = if rvcount == -1 {
-                eval_stack_len
-            } else if rvcount > 0 {
-                (rvcount as usize).min(eval_stack_len)
-            } else {
-                0
-            };
-
-            // Pop items from the top of the eval stack (they come out in
-            // reverse order, so we reverse once to restore original order).
-            let mut items = Vec::with_capacity(count);
-            if count > 0 {
-                let ctx = self
-                    .current_context_mut()
-                    .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-                for _ in 0..count {
-                    items.push(ctx.pop()?);
-                }
-                items.reverse();
-            }
-
-            // Remove the current context
-            let context_index = self.invocation_stack.len() - 1;
-            self.remove_context(context_index)?;
-
-            // Route return items to caller or result stack
-            if !items.is_empty() {
-                if self.invocation_stack.is_empty() {
-                    for item in items {
-                        self.result_stack.push(item)?;
-                    }
-                } else {
-                    let caller = self
-                        .current_context_mut()
-                        .ok_or_else(|| VmError::invalid_operation_msg("No caller context"))?;
-                    for item in items {
-                        caller.push(item)?;
-                    }
-                }
-            }
-
-            // If no more contexts, halt
-            if self.invocation_stack.is_empty() {
-                self.set_state(VMState::HALT);
-            }
-
-            return Ok(());
-        }
 
         self.execute_next_internal()
     }
@@ -144,12 +91,20 @@ impl<S> ExecutionEngine<S> {
 
         let context_index = self.invocation_stack.len() - 1;
 
-        // Get the current instruction.
-        let instruction = self
-            .invocation_stack
-            .get_mut(context_index)
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
-            .current_instruction()?;
+        // C# substitutes Instruction.RET when CurrentInstruction is null at
+        // end-of-script. Route that implicit return through the same handler,
+        // hooks, limits, and RVCount validation as an explicit RET.
+        let (instruction, has_current_instruction) = {
+            let context = self
+                .invocation_stack
+                .get(context_index)
+                .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+            if context.instruction_pointer() >= context.script().len() {
+                (Arc::clone(&IMPLICIT_RET), false)
+            } else {
+                (context.current_instruction()?, true)
+            }
+        };
 
         // Cache instruction size before execution to avoid re-fetching in move_next.
         let instruction_size = instruction.size();
@@ -162,6 +117,9 @@ impl<S> ExecutionEngine<S> {
 
         // Execute the instruction - direct array access for optimal dispatch
         let opcode = instruction.opcode();
+        if let Some(profile) = &mut self.execution_profile {
+            profile.record_opcode(opcode);
+        }
         let handler = self.jump_table.get_handler_by_u8(opcode.byte());
         let result = match handler {
             Some(h) => h(self, &instruction),
@@ -186,7 +144,7 @@ impl<S> ExecutionEngine<S> {
 
         self.post_execute_instruction(&instruction)?;
 
-        if !self.is_jumping {
+        if !self.is_jumping && has_current_instruction {
             if let Some(context) = self.invocation_stack.get_mut(context_index) {
                 context.advance_ip(instruction_size);
             }
@@ -237,7 +195,9 @@ impl<S> ExecutionEngine<S> {
             )));
         }
 
-        if let Some(host) = self.interop_host {
+        if let Some(host) = self.interop_host
+            && host.post_execute_instruction_enabled()
+        {
             host.post_execute_instruction(self, instruction)?;
         }
 

@@ -6,13 +6,17 @@ where
     D: crate::diagnostic::Diagnostic + 'static,
     B: neo_storage::CacheRead,
 {
+    fn post_execute_instruction_enabled(&self) -> bool {
+        self.diagnostic.enabled()
+    }
+
     fn invoke_syscall(&mut self, engine: &mut ExecutionEngine<B>, hash: u32) -> VmResult<()> {
         if let Some(entry) = self.interop_handlers.get(&hash).copied() {
             // C# `ApplicationEngine.System_Contract_Call` equivalent: check that
             // the current execution context has the required call flags before
             // charging and dispatching through the canonical local VM host.
             if entry.required_call_flags != CallFlags::NONE
-                && !self.has_call_flags(entry.required_call_flags)
+                && !engine.has_call_flags(entry.required_call_flags)
             {
                 return Err(VmError::invalid_operation_msg(format!(
                     "Missing required call flags {:?} for syscall 0x{hash:08x}",
@@ -224,26 +228,20 @@ where
             .ok_or_else(|| VmError::invalid_operation_msg("No current execution context"))?;
 
         let state_arc = context.state();
-        // Clone only the (small) method-token vector instead of the whole
-        // ContractState, which carries the full NEF bytecode and manifest.
-        let tokens = {
+        let token_idx = token_id as usize;
+        let token = {
             let state = state_arc.lock();
             let contract = state.contract.as_ref().ok_or_else(|| {
                 VmError::invalid_operation_msg("No contract in current execution context")
             })?;
-            contract.nef.tokens.clone()
+            contract.nef.tokens.get(token_idx).cloned().ok_or_else(|| {
+                VmError::invalid_operation_msg(format!(
+                    "Token index {} out of range (max: {})",
+                    token_idx,
+                    contract.nef.tokens.len()
+                ))
+            })?
         };
-
-        // 3. Validate token index and get the method token
-        let token_idx = token_id as usize;
-        if token_idx >= tokens.len() {
-            return Err(VmError::invalid_operation_msg(format!(
-                "Token index {} out of range (max: {})",
-                token_idx,
-                tokens.len()
-            )));
-        }
-        let token = tokens[token_idx].clone();
 
         // 4. Validate stack has enough parameters
         let stack_count = context.evaluation_stack().len();
@@ -273,7 +271,6 @@ where
             .manifest
             .abi
             .get_method_ref(&token.method, token.parameters_count as usize)
-            .cloned()
             .ok_or_else(|| {
                 VmError::invalid_operation_msg(format!(
                     "Method '{}' with {} parameters not found in contract {}",
@@ -283,8 +280,8 @@ where
 
         // 8. Execute the cross-contract call
         self.call_contract_internal(
-            &target_contract,
-            &method,
+            Arc::clone(&target_contract),
+            method,
             token.call_flags,
             token.has_return_value,
             &args,
