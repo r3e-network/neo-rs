@@ -23,7 +23,9 @@
 //!   pointer state.
 //! - `execution_engine`: NeoVM execution engine loop and runtime state.
 //! - `jump_table`: Opcode dispatch tables and instruction implementations.
-//! - `stack_item`: NeoVM stack item representations and conversion helpers.
+//! - `stack_item`: NeoVM stack item representations and operations.
+
+extern crate alloc;
 
 // ============================================================================
 // Core VM Modules
@@ -32,6 +34,11 @@
 /// VM error types and result handling.
 mod types;
 pub use types::error;
+
+mod vm_types;
+
+mod execution_profile;
+pub use execution_profile::{OpcodeClass, StackOperationProfile, VmExecutionProfile};
 
 /// Script builder for programmatic VM script construction.
 pub mod script_builder;
@@ -69,10 +76,7 @@ pub use runtime::interoperable;
 /// [`InteropService`] manages native contract methods accessible via SYSCALL.
 pub use runtime::interop_service;
 
-/// Stateful opcode dispatch adapters.
-///
-/// The [`JumpTable`] handles neo-rs execution state and delegates shared opcode
-/// metadata and ABI-level behavior to `neo-vm-rs` wherever possible.
+/// Stateful opcode dispatch and Neo N3 instruction implementations.
 pub mod jump_table;
 
 /// Reference counting for garbage collection.
@@ -87,21 +91,17 @@ pub use types::rpc_json;
 /// Slot storage for locals, arguments, and static fields.
 pub use runtime::slot;
 
-/// Stateful, reference-counted host stack item used by the local execution
-/// engine. The pure value type lives upstream in the `neo_vm_rs` crate; this
-/// host type adds reference counting and interop-interface support.
+/// Stateful, reference-counted stack items used by the local execution engine.
 pub mod stack_item;
 
 // ============================================================================
 // Canonical VM primitives
 //
-// `neo-vm` is the workspace's only VM boundary. These primitives are re-exported
-// here while their pinned implementations are moved into this crate; consumers
-// must not couple themselves to a second execution crate.
+// `neo-vm` is the workspace's only VM boundary. Consumers must not couple
+// themselves to another interpreter or runtime value model.
 // ============================================================================
 
-pub use neo_vm_rs::semantics;
-pub use neo_vm_rs::{
+pub use vm_types::{
     DEFAULT_MAX_INVOCATION_DEPTH, DEFAULT_MAX_STACK_DEPTH, ExceptionHandlingContext,
     ExceptionHandlingState, ExecutionEngineLimits, FromOperand, Instruction, InstructionError,
     InstructionErrorKind, InstructionResult, MAX_ITEM_SIZE, MAX_SCRIPT_SIZE,
@@ -109,11 +109,9 @@ pub use neo_vm_rs::{
     NEOVM_STACK_ITEM_TYPE_BUFFER, NEOVM_STACK_ITEM_TYPE_BYTESTRING, NEOVM_STACK_ITEM_TYPE_INTEGER,
     NEOVM_STACK_ITEM_TYPE_INTEROP_INTERFACE, NEOVM_STACK_ITEM_TYPE_MAP,
     NEOVM_STACK_ITEM_TYPE_POINTER, NEOVM_STACK_ITEM_TYPE_STRUCT, OpCode, ScriptInstruction,
-    StackItemType, StackValue, ValidatedScript, ValidationResult, VmOrderedDictionary, VmState,
-    encode_integer, instruction_jump_target, instruction_try_targets, interop_hash,
-    next_stack_item_id, parse_script_instructions, stack_value_as_bool, stack_value_as_bytes,
-    stack_value_as_i64, stack_value_as_u8, stack_value_as_u32, validate_script,
-    validate_strict_script,
+    StackItemType, ValidatedScript, ValidationResult, VmOrderedDictionary, VmState, encode_integer,
+    instruction_jump_target, instruction_try_targets, interop_hash, next_stack_item_id,
+    parse_script_instructions, syscall_arg_count, validate_script, validate_strict_script,
 };
 
 // ============================================================================
@@ -135,23 +133,9 @@ pub use types::script::Script;
 /// Verification contract (script + parameter list + cached hash).
 pub use types::contract::Contract;
 
-/// Decode a VM stack value as a NeoVM integer.
-///
-/// This preserves the compatibility surface older workspace crates used from
-/// `neo-vm-rs` while keeping the 32-byte integer bound enforced by the local
-/// stateful `StackItem` conversion rules.
-pub fn stack_value_as_bigint(value: &neo_vm_rs::StackValue) -> Result<num_bigint::BigInt, VmError> {
-    match value {
-        neo_vm_rs::StackValue::Integer(value) => Ok(num_bigint::BigInt::from(*value)),
-        neo_vm_rs::StackValue::BigInteger(bytes) | neo_vm_rs::StackValue::ByteString(bytes) => {
-            stack_item::stack_item::decode_integer_bytes(bytes)
-        }
-        neo_vm_rs::StackValue::Boolean(value) => Ok(num_bigint::BigInt::from(u8::from(*value))),
-        _ => Err(VmError::invalid_type_simple(
-            "Stack value is not integer-compatible",
-        )),
-    }
-}
+#[cfg(test)]
+#[path = "tests/csharp_differential.rs"]
+mod csharp_differential_tests;
 
 // ============================================================================
 // I/O Abstraction

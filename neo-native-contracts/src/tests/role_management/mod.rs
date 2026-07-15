@@ -21,15 +21,11 @@ use neo_primitives::{CallFlags, ContractParameterType};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
-use neo_vm::StackValue;
 use neo_vm::{Interoperable, StackItem};
 
-/// Structural equality for StackValue that ignores the reference-identity ids
-/// on compound variants. Collection identity is not part of serialized
-/// stack data, so structural equality is the correct notion for round-trip / shape
-/// assertions.
-fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
-    a.structural_eq(b)
+/// Structural equality for StackItem compound values.
+fn stack_item_struct_eq(a: &neo_vm::StackItem, b: &neo_vm::StackItem) -> bool {
+    a.equals(b).unwrap_or(false)
 }
 
 fn sample_point() -> ECPoint {
@@ -135,15 +131,14 @@ fn encode_node_list_sorts_and_round_trips() {
     let encoded = node_list::encode_node_list(&input).unwrap();
     let mut expected = input.clone();
     expected.sort();
-    let expected_value = StackValue::Array(
-        neo_vm::next_stack_item_id(),
+    let expected_value = StackItem::from_array(
         expected
             .iter()
-            .map(|point| StackValue::ByteString(point.to_bytes()))
+            .map(|point| StackItem::ByteString(point.to_bytes()))
             .collect(),
     );
-    let expected_encoded = BinarySerializer::serialize_stack_value_default(&expected_value)
-        .expect("expected node-list StackValue serializes");
+    let expected_encoded = BinarySerializer::serialize_default(&expected_value)
+        .expect("expected node-list StackItem serializes");
     assert_eq!(encoded, expected_encoded);
     let decoded = node_list::decode_node_list(&encoded).unwrap();
     assert_eq!(decoded, expected);
@@ -158,27 +153,24 @@ fn node_list_interoperable_projection_matches_csharp_shape() {
     .unwrap();
     let nodes = vec![a.clone(), b.clone()];
     let state = NodeList::new(nodes.clone());
-    let expected_value = StackValue::Array(
-        neo_vm::next_stack_item_id(),
-        vec![
-            StackValue::ByteString(a.to_bytes()),
-            StackValue::ByteString(b.to_bytes()),
-        ],
-    );
+    let expected_value = StackItem::from_array(vec![
+        StackItem::ByteString(a.to_bytes()),
+        StackItem::ByteString(b.to_bytes()),
+    ]);
 
-    let trait_value = Interoperable::to_stack_value(&state).unwrap();
+    let trait_value = Interoperable::to_stack_item(&state).unwrap();
     assert!(
-        stack_value_struct_eq(&trait_value, &expected_value),
-        "structural StackValue mismatch: {trait_value:?} vs {expected_value:?}"
+        stack_item_struct_eq(&trait_value, &expected_value),
+        "structural StackItem mismatch: {trait_value:?} vs {expected_value:?}"
     );
 
     let mut parsed = NodeList::new(Vec::new());
-    Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
+    Interoperable::from_stack_item(&mut parsed, trait_value).unwrap();
     assert_eq!(parsed.into_nodes(), nodes);
 }
 
 #[test]
-fn node_list_storage_codecs_use_stack_value_projection() {
+fn node_list_storage_codecs_use_stack_item_projection() {
     fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
         let start_index = source.find(start).expect("start marker exists");
         let end_index = source[start_index..]
@@ -190,33 +182,29 @@ fn node_list_storage_codecs_use_stack_value_projection() {
 
     let source = include_str!("../../role_management/node_list.rs");
     let decoder = slice_between(source, "fn decode_node_list", "fn empty_node_list");
-    assert!(decoder.contains("decode_stack_value"));
-    assert!(decoder.contains("NodeList::from_stack_value"));
-    assert!(!decoder.contains("StackValue::Array"));
+    assert!(decoder.contains("decode_stack_item"));
+    assert!(decoder.contains("NodeList::from_stack_item"));
+    assert!(!decoder.contains("StackItem::Array"));
 
     let empty_encoder = slice_between(
         source,
         "fn empty_node_list",
-        "/// Builds the persisted `StackValue::Array`",
+        "/// Builds the persisted array representation",
     );
     assert!(empty_encoder.contains("NodeList::new"));
     assert!(empty_encoder.contains("encode_storage_struct"));
-    assert!(!empty_encoder.contains("StackValue::Array"));
+    assert!(!empty_encoder.contains("StackItem::Array"));
 
-    let projector = slice_between(source, "fn nodes_to_stack_value", "fn nodes_to_event_array");
+    let projector = slice_between(source, "fn nodes_to_stack_item", "fn nodes_to_event_array");
     assert!(projector.contains("NodeList::new"));
-    assert!(projector.contains("to_stack_value"));
-    assert!(!projector.contains("StackValue::Array"));
+    assert!(projector.contains("to_stack_item"));
+    assert!(!projector.contains("StackItem::Array"));
 }
 
 #[test]
 fn parse_nodes_arg_enforces_1_to_32() {
     // Empty array -> rejected.
-    let empty = BinarySerializer::serialize_stack_value_default(&StackValue::Array(
-        neo_vm::next_stack_item_id(),
-        Vec::new(),
-    ))
-    .unwrap();
+    let empty = BinarySerializer::serialize_default(&StackItem::from_array(Vec::new())).unwrap();
     assert!(node_list::parse_nodes_arg(&empty).is_err());
     // One valid node -> accepted.
     let one = node_list::encode_node_list(&[sample_point()]).unwrap();
@@ -260,11 +248,11 @@ fn designation_backward_seek_picks_most_recent() {
     );
 
     // Designate the Oracle role at index 10 (a 1-element node list).
-    let list = BinarySerializer::serialize_stack_value_default(&StackValue::Array(
-        neo_vm::next_stack_item_id(),
-        vec![StackValue::ByteString(point.to_bytes())],
-    ))
-    .unwrap();
+    let list =
+        BinarySerializer::serialize_default(&StackItem::from_array(vec![StackItem::ByteString(
+            point.to_bytes(),
+        )]))
+        .unwrap();
     cache.add(
         RoleManagement::designation_key(Role::Oracle.as_byte(), 10),
         StorageItem::from_bytes(list),

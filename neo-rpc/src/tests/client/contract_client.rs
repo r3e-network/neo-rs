@@ -1,4 +1,5 @@
 use super::*;
+use crate::client::models::RpcStackItem;
 use crate::client::test_helpers::{localhost_binding_permitted, rpc_response};
 use base64::{Engine as _, engine::general_purpose};
 use mockito::{Matcher, Server};
@@ -7,8 +8,8 @@ use neo_manifest::ContractManifest;
 use neo_native_contracts::GasToken;
 use neo_primitives::UInt160;
 use neo_serialization::json::{JArray, JObject, JToken};
+use neo_vm::OpCode;
 use neo_vm::script_builder::ScriptBuilder;
-use neo_vm::{OpCode, StackValue};
 use neo_wallets::KeyPair;
 use num_bigint::BigInt;
 use regex::escape;
@@ -159,8 +160,9 @@ async fn test_invoke_reads_integer_from_bytestring_stack_item() {
         .await
         .expect("invoke");
 
-    let value = crate::RpcUtility::stack_value_to_bigint(result.stack.first().expect("stack item"))
-        .expect("integer");
+    let value =
+        crate::RpcUtility::rpc_stack_item_to_bigint(result.stack.first().expect("stack item"))
+            .expect("integer");
     assert_eq!(value, BigInt::from(30_000_000_000_000i64));
 }
 
@@ -229,27 +231,27 @@ async fn test_invoke_parses_map_and_struct_stack_items() {
         .await
         .expect("invoke");
 
-    let StackValue::Map(_, map) = &result.stack[0] else {
+    let RpcStackItem::Map(map) = &result.stack[0] else {
         panic!("expected map");
     };
     assert_eq!(map.len(), 1);
     let (key, value) = map.first().expect("entry");
-    assert_eq!(key.as_bytes().expect("key bytes"), b"key");
+    assert_eq!(key, &RpcStackItem::ByteString(b"key".to_vec()));
     assert_eq!(
-        crate::RpcUtility::stack_value_to_bigint(value).expect("value int"),
+        crate::RpcUtility::rpc_stack_item_to_bigint(value).expect("value int"),
         BigInt::from(42)
     );
 
-    let StackValue::Struct(_, structure) = &result.stack[1] else {
+    let RpcStackItem::Struct(structure) = &result.stack[1] else {
         panic!("expected struct");
     };
     assert_eq!(structure.len(), 2);
     assert_eq!(
-        crate::RpcUtility::stack_value_to_bigint(&structure[0]).unwrap(),
+        crate::RpcUtility::rpc_stack_item_to_bigint(&structure[0]).unwrap(),
         BigInt::from(1)
     );
     assert_eq!(
-        crate::RpcUtility::stack_value_to_bigint(&structure[1]).unwrap(),
+        crate::RpcUtility::rpc_stack_item_to_bigint(&structure[1]).unwrap(),
         BigInt::from(2)
     );
 }

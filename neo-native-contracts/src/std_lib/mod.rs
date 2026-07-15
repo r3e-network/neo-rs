@@ -57,7 +57,25 @@ where
         true
     }
 
-    native_contract_dispatch!(metadata::std_lib_method_bindings, by_name_and_arity);
+    native_contract_dispatch!(
+        metadata::std_lib_method_bindings,
+        by_name_and_arity,
+        resolved_by_index = metadata::invoke_std_lib_method_by_index
+    );
+
+    fn try_invoke_resolved_stack_items<D, B>(
+        &self,
+        engine: &mut neo_execution::ApplicationEngine<P, D, B>,
+        method_index: usize,
+        _method: &neo_execution::NativeMethod,
+        args: &[neo_vm::StackItem],
+    ) -> Option<neo_error::CoreResult<Option<neo_vm::StackItem>>>
+    where
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
+        metadata::invoke_std_lib_stack_item_method_by_index(self, engine, method_index, args)
+    }
 }
 
 #[cfg(test)]

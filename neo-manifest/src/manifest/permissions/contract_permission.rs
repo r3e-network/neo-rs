@@ -10,7 +10,7 @@ use neo_primitives::UInt160;
 use neo_vm::Interoperable;
 use neo_vm::InteroperableError;
 // Removed neo_cryptography dependency - using external crypto crates directly
-use neo_vm::StackValue;
+use neo_vm::StackItem;
 use serde::{Deserialize, Serialize};
 
 /// Represents a permission that a contract requires.
@@ -145,42 +145,36 @@ impl ContractPermission {
         Ok(())
     }
 
-    /// Converts to a neo-vm stack value (matches C# `ContractPermission.ToStackItem` layout).
-    pub fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(
-            neo_vm::next_stack_item_id(),
-            vec![
-                self.contract.to_stack_value(),
-                self.methods.to_stack_value(),
-            ],
-        )
+    /// Converts to a neo-vm stack item (matches C# `ContractPermission.ToStackItem` layout).
+    pub fn to_stack_item(&self) -> StackItem {
+        StackItem::from_struct(vec![
+            self.contract.to_stack_item(),
+            self.methods.to_stack_item(),
+        ])
     }
 
-    /// Updates this permission from a neo-vm stack value.
-    pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
-        let StackValue::Struct(_, items) = stack_value else {
+    /// Updates this permission from a neo-vm stack item.
+    pub fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
+        let StackItem::Struct(structure) = stack_item else {
             return Err(CoreError::invalid_format(
-                "ContractPermission expects Struct stack value",
+                "ContractPermission expects Struct stack item",
             ));
         };
+        let items = structure.items();
 
         if items.len() < 2 {
             return Err(CoreError::invalid_format(format!(
-                "ContractPermission stack value must contain 2 elements, found {}",
+                "ContractPermission stack item must contain 2 elements, found {}",
                 items.len()
             )));
         }
 
-        self.contract =
-            ContractPermissionDescriptor::from_stack_value(items[0].clone()).map_err(|e| {
-                CoreError::invalid_format(format!(
-                    "Invalid contract descriptor in stack value: {}",
-                    e
-                ))
-            })?;
+        self.contract = ContractPermissionDescriptor::from_stack_item(&items[0]).map_err(|e| {
+            CoreError::invalid_format(format!("Invalid contract descriptor in stack item: {}", e))
+        })?;
 
-        self.methods = WildCardContainer::from_stack_value(items[1].clone()).map_err(|e| {
-            CoreError::invalid_format(format!("Invalid methods container in stack value: {}", e))
+        self.methods = WildCardContainer::from_stack_item(&items[1]).map_err(|e| {
+            CoreError::invalid_format(format!("Invalid methods container in stack item: {}", e))
         })?;
 
         Ok(())
@@ -188,13 +182,13 @@ impl ContractPermission {
 }
 
 impl Interoperable for ContractPermission {
-    fn from_stack_value(&mut self, value: StackValue) -> Result<(), InteroperableError> {
-        self.from_stack_value(value)
+    fn from_stack_item(&mut self, value: StackItem) -> Result<(), InteroperableError> {
+        self.from_stack_item(value)
             .map_err(|e| InteroperableError::InvalidData(e.to_string()))
     }
 
-    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
-        Ok(self.to_stack_value())
+    fn to_stack_item(&self) -> Result<StackItem, InteroperableError> {
+        Ok(self.to_stack_item())
     }
 }
 

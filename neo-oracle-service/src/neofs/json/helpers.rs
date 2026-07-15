@@ -46,7 +46,7 @@ pub(crate) fn normalize_neofs_hex_header(value: &str) -> String {
 }
 
 fn is_hex(value: &str) -> bool {
-    if value.is_empty() || value.len() % 2 != 0 {
+    if value.is_empty() || !value.len().is_multiple_of(2) {
         return false;
     }
     value.bytes().all(|b: u8| b.is_ascii_hexdigit())

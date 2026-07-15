@@ -21,15 +21,11 @@ use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
-use neo_vm::StackItem;
-use neo_vm::{ExecutionEngineLimits, StackValue, VmState as VMState};
+use neo_vm::{ExecutionEngineLimits, StackItem, VmState as VMState};
 
-/// Structural equality for StackValue that ignores the reference-identity ids
-/// on compound variants. Collection identity is not part of serialized
-/// stack data, so structural equality is the correct notion for round-trip / shape
-/// assertions.
-fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
-    a.structural_eq(b)
+/// Structural equality for StackItem compound values.
+fn stack_item_struct_eq(a: &neo_vm::StackItem, b: &neo_vm::StackItem) -> bool {
+    a.equals(b).unwrap_or(false)
 }
 
 #[test]
@@ -380,7 +376,7 @@ fn value_layouts_match_csharp_binary_serializer() {
 }
 
 #[test]
-fn ledger_public_return_encoders_use_stack_value_projection() {
+fn ledger_public_return_encoders_use_stack_item_projection() {
     use neo_payloads::{Header, TrimmedBlock};
 
     fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
@@ -402,7 +398,7 @@ fn ledger_public_return_encoders_use_stack_value_projection() {
     tx.set_witnesses(vec![neo_payloads::Witness::empty()]);
 
     let expected_tx = BinarySerializer::serialize(
-        &StackItem::try_from(tx.to_stack_value().unwrap()).unwrap(),
+        &tx.to_stack_item().unwrap(),
         &ExecutionEngineLimits::default(),
     )
     .unwrap();
@@ -414,7 +410,7 @@ fn ledger_public_return_encoders_use_stack_value_projection() {
     let legacy_signers = StackItem::from_array(
         tx.signers()
             .iter()
-            .map(|signer| StackItem::try_from(signer.to_stack_value()).unwrap())
+            .map(neo_payloads::Signer::to_stack_item)
             .collect::<Vec<_>>(),
     );
     let expected_signers =
@@ -434,11 +430,9 @@ fn ledger_public_return_encoders_use_stack_value_projection() {
             UInt256::from_bytes(&[0x22u8; 32]).unwrap(),
         ],
     );
-    let expected_block = BinarySerializer::serialize(
-        &StackItem::try_from(block.to_stack_value()).unwrap(),
-        &ExecutionEngineLimits::default(),
-    )
-    .unwrap();
+    let expected_block =
+        BinarySerializer::serialize(&block.to_stack_item(), &ExecutionEngineLimits::default())
+            .unwrap();
     assert_eq!(
         LedgerContract::trimmed_block_to_bytes(&block, "test").unwrap(),
         expected_block
@@ -446,16 +440,16 @@ fn ledger_public_return_encoders_use_stack_value_projection() {
 
     let source = include_str!("../../ledger_contract/wire.rs");
     let tx_helper = slice_between(source, "fn transaction_to_bytes", "fn signers_to_bytes");
-    assert!(tx_helper.contains("to_stack_value"));
-    assert!(tx_helper.contains("serialize_stack_value_default"));
-    assert!(!tx_helper.contains("to_stack_item"));
+    assert!(tx_helper.contains("to_stack_item"));
+    assert!(tx_helper.contains("serialize_default"));
+    assert!(!tx_helper.contains("StackItem::try_from"));
     assert!(!tx_helper.contains("BinarySerializer::serialize("));
 
     let signers_helper = slice_between(source, "fn signers_to_bytes", "fn trimmed_block_to_bytes");
-    assert!(signers_helper.contains("StackValue::Array"));
-    assert!(signers_helper.contains("to_stack_value"));
-    assert!(signers_helper.contains("serialize_stack_value_default"));
-    assert!(!signers_helper.contains("StackItem::from_array"));
+    assert!(signers_helper.contains("StackItem::from_array"));
+    assert!(signers_helper.contains("to_stack_item"));
+    assert!(signers_helper.contains("serialize_default"));
+    assert!(!signers_helper.contains("StackItem::try_from"));
     assert!(!signers_helper.contains("BinarySerializer::serialize("));
 
     let block_helper = slice_between(
@@ -463,22 +457,19 @@ fn ledger_public_return_encoders_use_stack_value_projection() {
         "fn trimmed_block_to_bytes",
         "pub(crate) fn deserialize_hash_index_state",
     );
-    assert!(block_helper.contains("to_stack_value"));
-    assert!(block_helper.contains("serialize_stack_value_default"));
-    assert!(!block_helper.contains("to_stack_item"));
+    assert!(block_helper.contains("to_stack_item"));
+    assert!(block_helper.contains("serialize_default"));
+    assert!(!block_helper.contains("StackItem::try_from"));
     assert!(!block_helper.contains("BinarySerializer::serialize("));
 }
 
 #[test]
 fn decode_transaction_state_rejects_malformed_full_record() {
-    let record = BinarySerializer::serialize_stack_value_default(&StackValue::Struct(
-        neo_vm::next_stack_item_id(),
-        vec![
-            StackValue::Integer(7),
-            StackValue::ByteString(vec![0xff]),
-            StackValue::Integer(VMState::HALT.to_byte() as i64),
-        ],
-    ))
+    let record = BinarySerializer::serialize_default(&StackItem::from_struct(vec![
+        StackItem::from_i64(7),
+        StackItem::ByteString(vec![0xff]),
+        StackItem::from_i64(VMState::HALT.to_byte() as i64),
+    ]))
     .unwrap();
 
     let error = LedgerContract::decode_transaction_state(&record).unwrap_err();
@@ -492,48 +483,39 @@ fn decode_transaction_state_rejects_malformed_full_record() {
 fn hash_index_state_interoperable_projection_matches_csharp_shape() {
     let hash = UInt256::from_bytes(&[0x77; 32]).unwrap();
     let state = HashIndexState::new(hash, 1234);
-    let expected_value = StackValue::Struct(
-        neo_vm::next_stack_item_id(),
-        vec![
-            StackValue::ByteString(hash.to_bytes()),
-            StackValue::Integer(1234),
-        ],
+    let expected_value = StackItem::from_struct(vec![
+        StackItem::ByteString(hash.to_bytes()),
+        StackItem::from_i64(1234),
+    ]);
+
+    let projected = state.to_stack_item();
+    assert!(
+        stack_item_struct_eq(&projected, &expected_value),
+        "structural StackItem mismatch: {projected:?} vs {expected_value:?}"
     );
 
-    let projected = state.to_stack_value();
+    let trait_value = Interoperable::to_stack_item(&state).unwrap();
     assert!(
-        stack_value_struct_eq(&projected, &expected_value),
-        "structural StackValue mismatch: {projected:?} vs {expected_value:?}"
-    );
-
-    let trait_value = Interoperable::to_stack_value(&state).unwrap();
-    assert!(
-        stack_value_struct_eq(&trait_value, &expected_value),
-        "structural StackValue mismatch: {trait_value:?} vs {expected_value:?}"
+        stack_item_struct_eq(&trait_value, &expected_value),
+        "structural StackItem mismatch: {trait_value:?} vs {expected_value:?}"
     );
 
     let mut parsed = HashIndexState::new(UInt256::default(), 0);
-    Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
+    Interoperable::from_stack_item(&mut parsed, trait_value).unwrap();
     assert_eq!(parsed, state);
 
+    assert!(HashIndexState::from_stack_item(&StackItem::from_array(Vec::new())).is_err());
     assert!(
-        HashIndexState::from_stack_value(StackValue::Array(neo_vm::next_stack_item_id(), vec![],))
-            .is_err()
-    );
-    assert!(
-        HashIndexState::from_stack_value(StackValue::Struct(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::ByteString(vec![0x77; 31]),
-                StackValue::Integer(1)
-            ]
-        ))
+        HashIndexState::from_stack_item(&StackItem::from_struct(vec![
+            StackItem::ByteString(vec![0x77; 31]),
+            StackItem::from_i64(1)
+        ]))
         .is_err()
     );
 }
 
 #[test]
-fn ledger_storage_codecs_use_stack_value_projection() {
+fn ledger_storage_codecs_use_stack_item_projection() {
     fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
         let start_index = source.find(start).expect("start marker exists");
         let end_index = source[start_index..]
@@ -551,7 +533,7 @@ fn ledger_storage_codecs_use_stack_value_projection() {
     );
     assert!(hash_serializer.contains("HashIndexState::new"));
     assert!(hash_serializer.contains("encode_storage_struct"));
-    assert!(!hash_serializer.contains("StackValue::Struct"));
+    assert!(!hash_serializer.contains("StackItem::Struct"));
     assert!(!hash_serializer.contains("StackItem::from_struct"));
     assert!(!hash_serializer.contains("BinarySerializer::serialize("));
 
@@ -560,8 +542,8 @@ fn ledger_storage_codecs_use_stack_value_projection() {
         "pub fn serialize_persisted_transaction_state",
         "pub fn serialize_conflict_stub",
     );
-    assert!(tx_serializer.contains("to_stack_value"));
-    assert!(tx_serializer.contains("serialize_stack_value_default"));
+    assert!(tx_serializer.contains("to_stack_item"));
+    assert!(tx_serializer.contains("serialize_default"));
     assert!(!tx_serializer.contains("StackItem::from_struct"));
     assert!(!tx_serializer.contains("BinarySerializer::serialize("));
 
@@ -570,8 +552,8 @@ fn ledger_storage_codecs_use_stack_value_projection() {
         "pub fn serialize_conflict_stub",
         "pub(crate) fn transaction_to_bytes",
     );
-    assert!(stub_serializer.contains("to_stack_value"));
-    assert!(stub_serializer.contains("serialize_stack_value_default"));
+    assert!(stub_serializer.contains("to_stack_item"));
+    assert!(stub_serializer.contains("serialize_default"));
     assert!(!stub_serializer.contains("StackItem::from_struct"));
     assert!(!stub_serializer.contains("BinarySerializer::serialize("));
 
@@ -580,15 +562,14 @@ fn ledger_storage_codecs_use_stack_value_projection() {
         "pub(crate) fn deserialize_hash_index_state",
         "fn decode_transaction_state",
     );
-    assert!(hash_deserializer.contains("decode_stack_value"));
-    assert!(hash_deserializer.contains("HashIndexState::from_stack_value"));
+    assert!(hash_deserializer.contains("decode_stack_item"));
+    assert!(hash_deserializer.contains("HashIndexState::from_stack_item"));
     assert!(!hash_deserializer.contains("bytes_to_hash256"));
-    assert!(!hash_deserializer.contains("stack_value_as_u32"));
     assert!(!hash_deserializer.contains("BinarySerializer::deserialize("));
 
     let tx_deserializer = slice_between(source, "fn decode_transaction_state", "\n}\n");
-    assert!(tx_deserializer.contains("decode_stack_value"));
-    assert!(tx_deserializer.contains("from_stack_value"));
+    assert!(tx_deserializer.contains("decode_stack_item"));
+    assert!(tx_deserializer.contains("from_stack_item"));
     assert!(!tx_deserializer.contains("Transaction::deserialize"));
     assert!(!tx_deserializer.contains("MemoryReader::new"));
     assert!(!tx_deserializer.contains("BinarySerializer::deserialize("));

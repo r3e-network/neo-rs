@@ -1,8 +1,9 @@
 //! Tests for `chain_acc::metrics` projection helpers.
 
 use super::metrics::{
-    ChainAccImportProgress, NativePersistTxStageImportMetrics, StateServiceMptImportMetrics,
-    SyncHotPathMetrics, should_log_import_progress,
+    ChainAccImportProgress, MdbxCommitCumulativeMetrics, NativePersistTxStageImportMetrics,
+    StateServiceMptCumulativeMetrics, StateServiceMptImportMetrics, SyncHotPathMetrics,
+    should_log_import_progress,
 };
 
 fn state_service_metrics_from_parts(
@@ -58,6 +59,7 @@ fn state_service_metrics_from_parts(
             mutate_changes_avg_us: stage_avg("mutate_changes"),
             root_hash_avg_us: stage_avg("root_hash"),
             trie_commit_avg_us: stage_avg("trie_commit"),
+            backing_sort_avg_us: stage_avg("backing_sort"),
             backing_commit_avg_us: stage_avg("backing_commit"),
             publish_generation_avg_us: stage_avg("publish_generation"),
             overlay_entries_avg: count_avg("overlay_entries"),
@@ -163,36 +165,46 @@ fn state_service_import_metrics_projects_hot_stage_fields() {
         avg_project_us: 700,
         avg_apply_us: 8_200,
         avg_changes: 17,
+        total_us: 108_000,
+        project_total_us: 8_400,
+        apply_total_us: 98_400,
+        changes_total: 204,
     };
     let stages = vec![
         neo_state_service::metrics::StateRootApplyStageStats {
             stage: "enqueue_blocking",
             calls: 12,
+            total_us: 9_600,
             avg_us: 800,
         },
         neo_state_service::metrics::StateRootApplyStageStats {
             stage: "queue_wait",
             calls: 12,
+            total_us: 22_800,
             avg_us: 1_900,
         },
         neo_state_service::metrics::StateRootApplyStageStats {
             stage: "mutate_changes",
             calls: 12,
+            total_us: 24_000,
             avg_us: 2_000,
         },
         neo_state_service::metrics::StateRootApplyStageStats {
             stage: "trie_commit",
             calls: 12,
+            total_us: 36_000,
             avg_us: 3_000,
         },
         neo_state_service::metrics::StateRootApplyStageStats {
             stage: "backing_commit",
             calls: 12,
+            total_us: 48_000,
             avg_us: 4_000,
         },
         neo_state_service::metrics::StateRootApplyStageStats {
             stage: "publish_generation",
             calls: 12,
+            total_us: 60_000,
             avg_us: 5_000,
         },
     ];
@@ -358,6 +370,10 @@ fn state_service_import_metrics_projects_direct_hot_snapshot_fields() {
         avg_project_us: 700,
         avg_apply_us: 8_200,
         avg_changes: 17,
+        total_us: 108_000,
+        project_total_us: 8_400,
+        apply_total_us: 98_400,
+        changes_total: 204,
     };
     let apply_hot = neo_state_service::metrics::StateRootApplyHotStats {
         enqueue_blocking_avg_us: 800,
@@ -365,6 +381,7 @@ fn state_service_import_metrics_projects_direct_hot_snapshot_fields() {
         mutate_changes_avg_us: 2_000,
         root_hash_avg_us: 2_500,
         trie_commit_avg_us: 3_000,
+        backing_sort_avg_us: 3_500,
         backing_commit_avg_us: 4_000,
         publish_generation_avg_us: 5_000,
         overlay_entries_avg: 20,
@@ -421,6 +438,7 @@ fn state_service_import_metrics_projects_direct_hot_snapshot_fields() {
     assert_eq!(metrics.mutate_changes_avg_us, 2_000);
     assert_eq!(metrics.root_hash_avg_us, 2_500);
     assert_eq!(metrics.trie_commit_avg_us, 3_000);
+    assert_eq!(metrics.backing_sort_avg_us, 3_500);
     assert_eq!(metrics.overlay_entries_avg, 20);
     assert_eq!(metrics.batch_blocks_avg, 5);
     assert_eq!(metrics.native_contract_hook_hot_contract, "GasToken");
@@ -434,4 +452,165 @@ fn state_service_import_metrics_projects_direct_hot_snapshot_fields() {
         metrics.neotoken_committee_candidate_hot_kind,
         "eligible_candidates"
     );
+}
+
+#[test]
+fn state_service_window_metrics_use_exact_cumulative_deltas() {
+    let before = StateServiceMptCumulativeMetrics::from_stats(
+        neo_state_service::StateRootApplyStats {
+            attempts: 100,
+            failures: 2,
+            latest_height: 99,
+            avg_total_us: 999,
+            avg_project_us: 999,
+            avg_apply_us: 999,
+            avg_changes: 999,
+            total_us: 10_000,
+            project_total_us: 1_000,
+            apply_total_us: 8_000,
+            changes_total: 200,
+        },
+        vec![neo_state_service::metrics::StateRootApplyStageStats {
+            stage: "backing_commit",
+            calls: 100,
+            total_us: 1_000,
+            avg_us: 999,
+        }],
+        vec![
+            neo_state_service::metrics::StateRootApplyCountStats {
+                kind: "batch_blocks",
+                samples: 10,
+                total: 1_000,
+                avg: 999,
+            },
+            neo_state_service::metrics::StateRootApplyCountStats {
+                kind: "changes",
+                samples: 100,
+                total: 200,
+                avg: 999,
+            },
+        ],
+    );
+    let after = StateServiceMptCumulativeMetrics::from_stats(
+        neo_state_service::StateRootApplyStats {
+            attempts: 110,
+            failures: 3,
+            latest_height: 109,
+            avg_total_us: 1,
+            avg_project_us: 1,
+            avg_apply_us: 1,
+            avg_changes: 1,
+            total_us: 20_000,
+            project_total_us: 2_000,
+            apply_total_us: 17_000,
+            changes_total: 370,
+        },
+        vec![neo_state_service::metrics::StateRootApplyStageStats {
+            stage: "backing_commit",
+            calls: 110,
+            total_us: 4_000,
+            avg_us: 1,
+        }],
+        vec![
+            neo_state_service::metrics::StateRootApplyCountStats {
+                kind: "batch_blocks",
+                samples: 11,
+                total: 11_000,
+                avg: 1,
+            },
+            neo_state_service::metrics::StateRootApplyCountStats {
+                kind: "changes",
+                samples: 110,
+                total: 370,
+                avg: 1,
+            },
+        ],
+    );
+
+    let window = after.window_since(&before);
+
+    assert_eq!(window.apply_attempts, 10);
+    assert_eq!(window.apply_failures, 1);
+    assert_eq!(
+        (window.end_to_end_total_us, window.avg_end_to_end_us),
+        (10_000, 1_000)
+    );
+    assert_eq!((window.apply_total_us, window.avg_apply_us), (9_000, 900));
+    assert_eq!(
+        (window.project_total_us, window.avg_project_us),
+        (1_000, 100)
+    );
+    assert_eq!((window.changes_total, window.avg_changes), (170, 17));
+    assert_eq!(window.stages[0].stage, "backing_commit");
+    assert_eq!(
+        (window.stages[0].calls, window.stages[0].total_us),
+        (10, 3_000)
+    );
+    assert_eq!(window.stages[0].avg_us, 300);
+    assert_eq!(window.counts[0].kind, "batch_blocks");
+    assert_eq!(
+        (window.counts[0].samples, window.counts[0].total),
+        (1, 10_000)
+    );
+    assert_eq!(window.counts[0].avg, 10_000);
+    assert_eq!(window.counts[1].avg, 17);
+    assert_eq!(window.stage_total_us("backing_commit"), 3_000);
+    assert_eq!(window.stage_avg_us("backing_commit"), 300);
+    assert_eq!(window.count_total("batch_blocks"), 10_000);
+    assert_eq!(window.count_avg("batch_blocks"), 10_000);
+    assert_eq!(window.stage_total_us("missing"), 0);
+    assert_eq!(window.count_total("missing"), 0);
+}
+
+#[test]
+fn mdbx_commit_window_metrics_use_exact_cumulative_deltas() {
+    let before = MdbxCommitCumulativeMetrics::from_stats(
+        neo_storage::mdbx::MdbxCommitStats {
+            attempts: 4,
+            failures: 1,
+            committed_transactions: 3,
+        },
+        vec![neo_storage::mdbx::MdbxCommitStageStats {
+            stage: "cursor_write",
+            calls: 6,
+            total_us: 2_000,
+            avg_us: 999,
+        }],
+        vec![neo_storage::mdbx::MdbxCommitCountStats {
+            kind: "value_bytes",
+            samples: 4,
+            total: 8_000,
+            avg: 999,
+        }],
+    );
+    let after = MdbxCommitCumulativeMetrics::from_stats(
+        neo_storage::mdbx::MdbxCommitStats {
+            attempts: 6,
+            failures: 1,
+            committed_transactions: 5,
+        },
+        vec![neo_storage::mdbx::MdbxCommitStageStats {
+            stage: "cursor_write",
+            calls: 10,
+            total_us: 5_000,
+            avg_us: 1,
+        }],
+        vec![neo_storage::mdbx::MdbxCommitCountStats {
+            kind: "value_bytes",
+            samples: 6,
+            total: 20_000,
+            avg: 1,
+        }],
+    );
+
+    let window = after.window_since(&before);
+
+    assert_eq!(window.attempts, 2);
+    assert_eq!(window.failures, 0);
+    assert_eq!(window.committed_transactions, 2);
+    assert_eq!(window.stage_total_us("cursor_write"), 3_000);
+    assert_eq!(window.stage_avg_us("cursor_write"), 750);
+    assert_eq!(window.count_total("value_bytes"), 12_000);
+    assert_eq!(window.stage_total_us("missing"), 0);
+    assert_eq!(window.count_total("missing"), 0);
 }

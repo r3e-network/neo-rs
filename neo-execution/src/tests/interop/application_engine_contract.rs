@@ -102,6 +102,38 @@ fn native_call_flags_are_typed_scoped_and_one_shot() {
 }
 
 #[test]
+fn native_byte_arguments_preserve_primitive_and_compound_encodings() {
+    let byte_string = vec![0x01, 0x80, 0xff];
+    assert_eq!(
+        ApplicationEngine::<NoNativeContractProvider>::stack_item_to_bytes(
+            StackItem::from_byte_string(byte_string.clone()),
+        )
+        .expect("ByteString conversion"),
+        byte_string
+    );
+    assert_eq!(
+        ApplicationEngine::<NoNativeContractProvider>::stack_item_to_bytes(StackItem::from_i64(
+            -129,
+        ))
+        .expect("Integer conversion"),
+        vec![0x7f, 0xff]
+    );
+
+    for item in [
+        StackItem::null(),
+        StackItem::from_array(vec![StackItem::from_i64(1)]),
+    ] {
+        let expected = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default())
+            .expect("reference serialization");
+        assert_eq!(
+            ApplicationEngine::<NoNativeContractProvider>::stack_item_to_bytes(item)
+                .expect("native argument conversion"),
+            expected
+        );
+    }
+}
+
+#[test]
 fn create_standard_account_rejects_invalid_ecpoint_before_dynamic_fee() {
     let mut engine = test_engine();
 
@@ -156,6 +188,17 @@ fn decode_native_result_any_empty_is_null() {
         .expect("decode")
         .expect("stack item");
     assert!(item.is_null());
+}
+
+#[test]
+fn decode_native_result_string_validates_utf8_without_changing_bytes() {
+    let utf8 = "Neo \u{7f51}\u{7edc}".as_bytes().to_vec();
+    let item = decode_native_result(ContractParameterType::String, utf8.clone())
+        .expect("decode")
+        .expect("stack item");
+    assert_eq!(item.as_bytes().expect("bytes"), utf8);
+
+    assert!(decode_native_result(ContractParameterType::String, vec![0xff]).is_err());
 }
 
 #[test]

@@ -7,8 +7,9 @@ use super::vm_state_utils::{
 };
 use neo_error::{CoreError, CoreResult};
 use neo_serialization::json::{JObject, JToken};
-use neo_vm::StackValue;
 use neo_vm::VmState;
+
+use super::RpcStackItem;
 
 /// RPC invoke result matching C# `RpcInvokeResult`
 #[derive(Debug, Clone)]
@@ -23,7 +24,7 @@ pub struct RpcInvokeResult {
     pub gas_consumed: i64,
 
     /// Stack items after execution
-    pub stack: Vec<StackValue>,
+    pub stack: Vec<RpcStackItem>,
 
     /// Transaction if available
     pub tx: Option<String>,

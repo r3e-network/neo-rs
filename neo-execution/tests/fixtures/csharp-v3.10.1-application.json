@@ -1,0 +1,128 @@
+{
+  "schema": 1,
+  "oracle": {
+    "repository": "https://github.com/neo-project/neo.git",
+    "commit": "d10e9ceecdabe3fcff719ee68ea5b76ba7e62c3d",
+    "version": "3.10.1",
+    "generator": "scripts/oracles/v3101/neo-application/Program.cs",
+    "dotnet_sdk": "10.0.100"
+  },
+  "cases": [
+    {
+      "id": "runtime_load_script_invalid_jump_pre_basilisk",
+      "operation": "runtime_load_script",
+      "hardforks": ["pre_basilisk"],
+      "input": { "script_hex": "227f" },
+      "observed": {
+        "outcome": "error",
+        "error_type": "BadScriptException",
+        "error_message": "ip: 0, opcode: JMP",
+        "invocation_stack_depth": 1
+      }
+    },
+    {
+      "id": "runtime_load_script_convert_any_pre_basilisk",
+      "operation": "runtime_load_script",
+      "hardforks": ["pre_basilisk"],
+      "input": { "script_hex": "db00" },
+      "observed": {
+        "outcome": "error",
+        "error_type": "BadScriptException",
+        "error_message": "ip: 0, opcode: CONVERT",
+        "invocation_stack_depth": 1
+      }
+    },
+    {
+      "id": "runtime_load_script_invalid_jump_post_basilisk",
+      "operation": "runtime_load_script",
+      "hardforks": ["basilisk_and_later"],
+      "input": { "script_hex": "227f" },
+      "observed": {
+        "outcome": "error",
+        "error_type": "BadScriptException",
+        "error_message": "ip: 0, opcode: JMP",
+        "invocation_stack_depth": 1
+      }
+    },
+    {
+      "id": "runtime_load_script_convert_any_post_basilisk",
+      "operation": "runtime_load_script",
+      "hardforks": ["basilisk_and_later"],
+      "input": { "script_hex": "db00" },
+      "observed": {
+        "outcome": "error",
+        "error_type": "BadScriptException",
+        "error_message": "ip: 0, opcode: CONVERT",
+        "invocation_stack_depth": 1
+      }
+    },
+    {
+      "id": "fault_clears_notifications",
+      "operation": "application_fault",
+      "hardforks": ["all"],
+      "input": { "script_hex": "38", "notification_name": "BeforeFault" },
+      "observed": {
+        "state": "FAULT",
+        "notifications_before": 1,
+        "notifications_after": 0,
+        "fault_type": "Exception",
+        "fault_message": "ABORT is executed."
+      }
+    },
+    {
+      "id": "script_builder_struct_uses_packstruct",
+      "operation": "script_builder",
+      "hardforks": ["all"],
+      "input": { "integers": [1, 2] },
+      "observed": { "script_hex": "121112bf", "last_opcode": "PACKSTRUCT" }
+    },
+    {
+      "id": "jump_table_before_echidna",
+      "operation": "jump_table",
+      "hardforks": ["pre_echidna"],
+      "observed": {
+        "handlers": {
+          "SUBSTR": "VulnerableSubStr",
+          "HASKEY": "HasKey_Before543",
+          "PICKITEM": "PickItem_Before543",
+          "SETITEM": "SetItem_Before543",
+          "REMOVE": "Remove_Before543",
+          "SHL": "VulnerableSHL",
+          "SHR": "VulnerableSHR"
+        }
+      }
+    },
+    {
+      "id": "jump_table_echidna_before_gorgon",
+      "operation": "jump_table",
+      "hardforks": ["echidna_to_gorgon"],
+      "observed": {
+        "handlers": {
+          "SUBSTR": "SubStr",
+          "HASKEY": "HasKey_Before543",
+          "PICKITEM": "PickItem_Before543",
+          "SETITEM": "SetItem_Before543",
+          "REMOVE": "Remove_Before543",
+          "SHL": "VulnerableSHL",
+          "SHR": "VulnerableSHR"
+        }
+      }
+    },
+    {
+      "id": "jump_table_gorgon_and_later",
+      "operation": "jump_table",
+      "hardforks": ["gorgon_and_later"],
+      "observed": {
+        "handlers": {
+          "SUBSTR": "SubStr",
+          "HASKEY": "HasKey",
+          "PICKITEM": "PickItem",
+          "SETITEM": "SetItem",
+          "REMOVE": "Remove",
+          "SHL": "Shl",
+          "SHR": "Shr"
+        }
+      }
+    }
+  ]
+}

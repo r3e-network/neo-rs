@@ -18,6 +18,39 @@ impl NativeContractProvider for CurrentIndexProvider {
     }
 }
 
+#[derive(Debug, Default)]
+struct DisabledPostDiagnostic {
+    post_calls: u64,
+}
+
+impl Diagnostic for DisabledPostDiagnostic {
+    fn enabled(&self) -> bool {
+        false
+    }
+
+    fn initialized(&mut self) {}
+
+    fn disposed(&mut self) {}
+
+    fn context_loaded<B: neo_storage::CacheRead>(
+        &mut self,
+        _context: &crate::ApplicationExecutionContext<B>,
+    ) {
+    }
+
+    fn context_unloaded<B: neo_storage::CacheRead>(
+        &mut self,
+        _context: &crate::ApplicationExecutionContext<B>,
+    ) {
+    }
+
+    fn pre_execute_instruction(&mut self, _instruction: &Instruction) {}
+
+    fn post_execute_instruction(&mut self, _instruction: &Instruction) {
+        self.post_calls += 1;
+    }
+}
+
 fn handler_id(table: &JumpTable, opcode: OpCode) -> usize {
     table
         .get(opcode)
@@ -48,9 +81,11 @@ fn negative_fee_faults_before_whitelist_like_csharp_v3101() {
         ProtocolSettings::default(),
         TEST_MODE_GAS,
         NoDiagnostic,
-        Arc::new(CurrentIndexProvider(0)),
+        Arc::new(CurrentIndexProvider(8_800_000)),
     )
     .expect("engine");
+
+    assert!(engine.fee_whitelist_enabled);
 
     engine
         .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
@@ -67,6 +102,90 @@ fn negative_fee_faults_before_whitelist_like_csharp_v3101() {
 
     assert!(error.to_string().contains("Negative gas fee"));
     assert_eq!(engine.fee_consumed_pico(), 0);
+}
+
+#[test]
+fn disabled_diagnostic_skips_only_optional_post_instruction_host_callbacks() {
+    let mut disabled = ApplicationEngine::<NoNativeContractProvider, DisabledPostDiagnostic>::new_with_shared_block_and_native_contract_provider(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::mainnet(),
+        TEST_MODE_GAS,
+        DisabledPostDiagnostic::default(),
+        Arc::new(NoNativeContractProvider),
+    )
+    .expect("disabled diagnostic engine");
+    disabled
+        .load_script(
+            vec![OpCode::NOP.byte(), OpCode::RET.byte()],
+            CallFlags::ALL,
+            None,
+        )
+        .expect("load disabled diagnostic script");
+    assert_eq!(disabled.execute_allow_fault(), VMState::HALT);
+    assert_eq!(disabled.instructions_executed(), 2);
+    assert_eq!(disabled.diagnostic.post_calls, 0);
+
+    let mut enabled = ApplicationEngine::<NoNativeContractProvider, crate::InstructionCounter>::new_with_shared_block_and_native_contract_provider(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::mainnet(),
+        TEST_MODE_GAS,
+        crate::InstructionCounter::new(),
+        Arc::new(NoNativeContractProvider),
+    )
+    .expect("enabled diagnostic engine");
+    enabled
+        .load_script(
+            vec![OpCode::NOP.byte(), OpCode::RET.byte()],
+            CallFlags::ALL,
+            None,
+        )
+        .expect("load enabled diagnostic script");
+    assert_eq!(enabled.execute_allow_fault(), VMState::HALT);
+    assert_eq!(enabled.diagnostic.executed_count, 2);
+}
+
+#[test]
+fn fee_whitelist_lookup_starts_at_mainnet_faun_height() {
+    for (height, whitelist_enabled, expected_fee) in
+        [(8_799_999, false, FEE_FACTOR), (8_800_000, true, 0)]
+    {
+        let mut engine = ApplicationEngine::<CurrentIndexProvider>::new_with_shared_block_and_native_contract_provider(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::mainnet(),
+            TEST_MODE_GAS,
+            NoDiagnostic,
+            Arc::new(CurrentIndexProvider(height)),
+        )
+        .expect("engine");
+
+        assert_eq!(engine.fee_whitelist_enabled, whitelist_enabled);
+        engine
+            .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
+            .expect("load entry script");
+        engine
+            .current_execution_state()
+            .expect("current execution state")
+            .lock()
+            .whitelisted = true;
+
+        engine
+            .add_fee_datoshi(1)
+            .expect("positive fee should be accepted");
+        assert_eq!(
+            engine.fee_consumed_pico(),
+            expected_fee,
+            "fee whitelist behavior at height {height}"
+        );
+    }
 }
 
 #[test]
@@ -92,7 +211,7 @@ fn gorgon_selects_default_jump_table_like_csharp_v3101() {
 fn echidna_without_gorgon_selects_not_gorgon_table_like_csharp_v3101() {
     // C# `ApplicationEngine.Create`: `HF_Echidna` enabled but `HF_Gorgon` not ->
     // `NotGorgonJumpTable` = default with HASKEY/PICKITEM/SETITEM/REMOVE reverted
-    // to their pre-neo-vm#543 handlers. SHL/SHR are unchanged from the default.
+    // to their pre-neo-vm#543 handlers and SHL/SHR reverted to pre-neo-vm#567.
     let mut settings = ProtocolSettings::default();
     settings.hardforks.clear();
     settings.hardforks.insert(Hardfork::HfEchidna, 0);
@@ -116,25 +235,51 @@ fn echidna_without_gorgon_selects_not_gorgon_table_like_csharp_v3101() {
         );
     }
 
-    // SHL/SHR match the default (no Gorgon split); the compound opcodes differ.
-    assert_eq!(
-        handler_id(&selected, OpCode::SHL),
-        handler_id(&default, OpCode::SHL)
-    );
-    assert_eq!(
-        handler_id(&selected, OpCode::SHR),
-        handler_id(&default, OpCode::SHR)
-    );
+    // All six pre-Gorgon handlers differ from the default.
     for opcode in [
         OpCode::HASKEY,
         OpCode::PICKITEM,
         OpCode::SETITEM,
         OpCode::REMOVE,
+        OpCode::SHL,
+        OpCode::SHR,
     ] {
         assert_ne!(
             handler_id(&selected, opcode),
             handler_id(&default, opcode),
             "{opcode:?} must revert to the pre-543 handler under Echidna-without-Gorgon"
+        );
+    }
+}
+
+#[test]
+fn before_echidna_selects_not_echidna_composed_from_not_gorgon() {
+    let mut settings = ProtocolSettings::default();
+    settings.hardforks.clear();
+    settings.hardforks.insert(Hardfork::HfEchidna, 10);
+    settings.hardforks.insert(Hardfork::HfGorgon, 20);
+    let selected = ApplicationEngine::<NoNativeContractProvider>::select_jump_table(&settings, 9);
+    let not_echidna = JumpTable::not_echidna();
+    let default = JumpTable::default();
+
+    for opcode in [
+        OpCode::SUBSTR,
+        OpCode::SHL,
+        OpCode::SHR,
+        OpCode::HASKEY,
+        OpCode::PICKITEM,
+        OpCode::SETITEM,
+        OpCode::REMOVE,
+    ] {
+        assert_eq!(
+            handler_id(&selected, opcode),
+            handler_id(&not_echidna, opcode),
+            "{opcode:?} should use the NotEchidna handler before Echidna"
+        );
+        assert_ne!(
+            handler_id(&selected, opcode),
+            handler_id(&default, opcode),
+            "{opcode:?} should not use the post-fork default before Echidna"
         );
     }
 }

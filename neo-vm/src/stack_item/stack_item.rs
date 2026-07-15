@@ -4,6 +4,9 @@
 //!
 //! This module provides the stack item implementations used in the Neo VM.
 
+use crate::ExecutionEngineLimits;
+use crate::StackItemType;
+use crate::VmOrderedDictionary;
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::reference_counter::ReferenceCounter;
@@ -13,9 +16,6 @@ use crate::stack_item::buffer::Buffer as BufferItem;
 use crate::stack_item::map::Map as MapItem;
 use crate::stack_item::pointer::Pointer as PointerItem;
 use crate::stack_item::struct_item::Struct as StructItem;
-use neo_vm_rs::ExecutionEngineLimits;
-use neo_vm_rs::StackItemType;
-use neo_vm_rs::{StackValue, VmOrderedDictionary};
 use num_bigint::BigInt;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -91,24 +91,6 @@ pub(crate) fn decode_integer_bytes(data: &[u8]) -> VmResult<BigInt> {
         return Err(VmError::invalid_type_simple("integer size exceeds maximum"));
     }
     Ok(BigInt::from_signed_bytes_le(data))
-}
-
-#[inline]
-fn stack_value_truthy(value: StackValue) -> bool {
-    neo_vm_rs::semantics::comparison::boolean_value(&value)
-}
-
-fn convert_stack_value_with_neo_vm_rs(
-    value: StackValue,
-    target_type: StackItemType,
-) -> VmResult<StackItem> {
-    let converted = neo_vm_rs::semantics::conversion::convert_value(value, target_type.to_byte())
-        .map_err(VmError::invalid_type_simple)?;
-    StackItem::try_from(converted)
-}
-
-fn shared_compound_id(id: usize) -> VmResult<u64> {
-    u64::try_from(id).map_err(|_| VmError::overflow("local compound id does not fit u64"))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -218,14 +200,14 @@ impl StackItem {
 
     /// Creates an array stack item.
     #[inline]
-    pub fn from_array<T: Into<Vec<Self>>>(value: T) -> Self {
-        Self::Array(ArrayItem::new_untracked(value.into()))
+    pub fn from_array(value: Vec<Self>) -> Self {
+        Self::Array(ArrayItem::new_untracked(value))
     }
 
     /// Creates a struct stack item.
     #[inline]
-    pub fn from_struct<T: Into<Vec<Self>>>(value: T) -> Self {
-        Self::Struct(StructItem::new_untracked(value.into()))
+    pub fn from_struct(value: Vec<Self>) -> Self {
+        Self::Struct(StructItem::new_untracked(value))
     }
 
     /// Creates a map stack item.
@@ -290,9 +272,9 @@ impl StackItem {
     #[inline]
     pub fn as_bool(&self) -> VmResult<bool> {
         match self {
-            Self::Null => Ok(stack_value_truthy(StackValue::Null)),
-            Self::Boolean(b) => Ok(stack_value_truthy(StackValue::Boolean(*b))),
-            Self::Integer(i) => Ok(stack_value_truthy(i.vm_integer_stack_value())),
+            Self::Null => Ok(false),
+            Self::Boolean(value) => Ok(*value),
+            Self::Integer(value) => Ok(!value.is_zero()),
             Self::ByteString(b) => {
                 if b.len() > VM_INTEGER_MAX_SIZE {
                     return Err(VmError::invalid_type_simple(
@@ -300,8 +282,7 @@ impl StackItem {
                     ));
                 }
                 // NeoVM truthiness: true iff any byte is non-zero (matches
-                // neo_vm_rs boolean_value / C# Unsafe.NotZero). Avoids cloning the
-                // Vec<u8> just to wrap it in StackValue::ByteString.
+                // C# Unsafe.NotZero) without cloning the byte string.
                 Ok(b.iter().any(|byte| *byte != 0))
             }
             Self::Buffer(_b) => Ok(true),
@@ -409,13 +390,13 @@ impl StackItem {
     #[inline]
     pub fn as_bytes(&self) -> VmResult<Vec<u8>> {
         match self {
-            Self::Null
-            | Self::Boolean(_)
-            | Self::Integer(_)
-            | Self::ByteString(_)
-            | Self::Buffer(_) => {
-                stack_value_byte_string_bytes(neo_vm_rs::StackValue::try_from(self.clone())?)
-            }
+            Self::Null => Ok(Vec::new()),
+            Self::Boolean(value) => Ok(vec![u8::from(*value)]),
+            Self::Integer(value) => Ok(value
+                .to_i64()
+                .map_or_else(|| value.to_signed_bytes_le(), crate::encode_integer)),
+            Self::ByteString(bytes) => Ok(bytes.clone()),
+            Self::Buffer(buffer) => Ok(buffer.data()),
             _ => Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
         }
     }
@@ -425,13 +406,13 @@ impl StackItem {
     #[inline]
     pub fn into_bytes(self) -> VmResult<Vec<u8>> {
         match self {
-            item @ (Self::Null
-            | Self::Boolean(_)
-            | Self::Integer(_)
-            | Self::ByteString(_)
-            | Self::Buffer(_)) => {
-                stack_value_byte_string_bytes(neo_vm_rs::StackValue::try_from(item)?)
-            }
+            Self::Null => Ok(Vec::new()),
+            Self::Boolean(value) => Ok(vec![u8::from(value)]),
+            Self::Integer(value) => Ok(value
+                .to_i64()
+                .map_or_else(|| value.to_signed_bytes_le(), crate::encode_integer)),
+            Self::ByteString(bytes) => Ok(bytes),
+            Self::Buffer(buffer) => Ok(buffer.data()),
             _ => Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
         }
     }
@@ -642,59 +623,33 @@ impl StackItem {
 
     /// Converts the stack item to the specified type.
     pub fn convert_to(&self, item_type: StackItemType) -> VmResult<Self> {
-        if self.stack_item_type() == item_type {
-            return Ok(self.clone());
+        // Neo.VM Null.ConvertTo preserves Null for every defined non-Any type.
+        // Handle it before the same-type fast path because Null's runtime type
+        // is Any, and converting Null to Any must fault.
+        if matches!(self, Self::Null) {
+            return if item_type == StackItemType::Any {
+                Err(VmError::invalid_type_simple(
+                    "Null cannot be converted to Any",
+                ))
+            } else {
+                Ok(Self::Null)
+            };
         }
 
-        match (self, item_type) {
-            (
-                Self::Null | Self::Integer(_) | Self::ByteString(_),
-                target_type @ StackItemType::Boolean,
-            ) => {
-                if let Self::ByteString(bytes) = self {
-                    if bytes.len() > VM_INTEGER_MAX_SIZE {
-                        return Err(VmError::invalid_type_simple(
-                            "Cannot convert ByteString to Boolean",
-                        ));
-                    }
-                }
-                return convert_stack_value_with_neo_vm_rs(
-                    StackValue::try_from(self.clone())?,
-                    target_type,
-                );
-            }
-            (
-                Self::Boolean(_) | Self::Integer(_) | Self::ByteString(_) | Self::Buffer(_),
-                target_type @ (StackItemType::ByteString | StackItemType::Buffer),
-            ) => {
-                return convert_stack_value_with_neo_vm_rs(
-                    StackValue::try_from(self.clone())?,
-                    target_type,
-                );
-            }
-            (Self::Null, StackItemType::ByteString) => {
-                return Ok(Self::ByteString(self.as_bytes()?));
-            }
-            (Self::Null, StackItemType::Buffer) => {
-                return Ok(Self::Buffer(BufferItem::new(self.as_bytes()?)));
-            }
-            _ => {}
+        if self.stack_item_type() == item_type {
+            return Ok(self.clone());
         }
 
         match item_type {
             StackItemType::Boolean => Ok(Self::Boolean(self.as_bool()?)),
             StackItemType::Integer => Ok(Self::Integer(VmInteger::from_bigint(self.as_int()?))),
+            StackItemType::ByteString => Ok(Self::ByteString(self.as_bytes()?)),
+            StackItemType::Buffer => Ok(Self::Buffer(BufferItem::new(self.as_bytes()?))),
             _ => Err(VmError::invalid_type_simple(format!(
                 "Cannot convert to {item_type:?}"
             ))),
         }
     }
-}
-
-fn stack_value_byte_string_bytes(value: neo_vm_rs::StackValue) -> VmResult<Vec<u8>> {
-    value
-        .to_byte_string_bytes()
-        .ok_or_else(|| VmError::invalid_type_simple("Cannot convert to ByteArray"))
 }
 
 // Implement PartialEq to allow stack items to be compared and used as keys in collections
@@ -705,61 +660,6 @@ impl PartialEq for StackItem {
 }
 
 impl Eq for StackItem {}
-
-impl TryFrom<StackItem> for neo_vm_rs::StackValue {
-    type Error = VmError;
-
-    fn try_from(value: StackItem) -> VmResult<Self> {
-        match value {
-            StackItem::Null => Ok(Self::Null),
-            StackItem::Boolean(value) => Ok(Self::Boolean(value)),
-            StackItem::Integer(value) => match value.to_i64() {
-                Some(value) => Ok(Self::Integer(value)),
-                None => Ok(Self::BigInteger(value.to_signed_bytes_le())),
-            },
-            StackItem::ByteString(bytes) => Ok(Self::ByteString(bytes)),
-            StackItem::Buffer(buffer) => Ok(Self::Buffer(
-                shared_compound_id(buffer.id())?,
-                buffer.data(),
-            )),
-            StackItem::Array(array) => {
-                let id = shared_compound_id(array.id())?;
-                let items = array
-                    .items()
-                    .into_iter()
-                    .map(Self::try_from)
-                    .collect::<VmResult<Vec<_>>>()?;
-                Ok(Self::Array(id, items))
-            }
-            StackItem::Struct(structure) => {
-                let id = shared_compound_id(structure.id())?;
-                let items = structure
-                    .items()
-                    .into_iter()
-                    .map(Self::try_from)
-                    .collect::<VmResult<Vec<_>>>()?;
-                Ok(Self::Struct(id, items))
-            }
-            StackItem::Map(map) => {
-                let id = shared_compound_id(map.id())?;
-                let entries = map
-                    .iter()
-                    .map(|(key, value)| Ok((Self::try_from(key)?, Self::try_from(value)?)))
-                    .collect::<VmResult<Vec<_>>>()?;
-                Ok(Self::Map(id, entries))
-            }
-            StackItem::Pointer(pointer) => {
-                let position = i64::try_from(pointer.position()).map_err(|_| {
-                    VmError::overflow("StackItem pointer position does not fit neo-vm-rs i64")
-                })?;
-                Ok(Self::Pointer(position))
-            }
-            StackItem::InteropInterface(_) => Err(VmError::invalid_operation_msg(
-                "Cannot convert InteropInterface into neo-vm-rs StackValue without a host handle",
-            )),
-        }
-    }
-}
 
 // Implement PartialOrd and Ord to allow stack items to be used as keys in BTreeMap
 // Production-ready implementation matching C# StackItem comparison exactly

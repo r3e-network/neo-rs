@@ -357,7 +357,9 @@ impl JsonSerializer {
                     )?;
                     entries.push((key_item, value_item));
                 }
-                Ok(StackItem::Map(MapItem::new_untracked(entries)))
+                MapItem::new(entries, None)
+                    .map(StackItem::Map)
+                    .map_err(|error| CoreError::other(error.to_string()))
             }
         }
     }

@@ -1,4 +1,4 @@
-//! Stack-value projections for NeoToken storage records.
+//! Stack-item projections for NeoToken storage records.
 
 use super::*;
 use neo_error::CoreError;
@@ -14,24 +14,22 @@ pub(in crate::neo_token) struct NeoAccountStateView {
 }
 
 impl NeoAccountStateView {
-    pub(in crate::neo_token) fn to_stack_value(&self) -> StackValue {
-        let mut items = match crate::AccountState::new(self.balance.clone()).to_stack_value() {
-            StackValue::Struct(_, items) => items,
+    pub(in crate::neo_token) fn to_stack_item(&self) -> StackItem {
+        let mut items = match crate::AccountState::new(self.balance.clone()).to_stack_item() {
+            StackItem::Struct(structure) => structure.items(),
             _ => unreachable!("AccountState always projects to Struct"),
         };
-        items.push(StackValue::Integer(i64::from(self.balance_height)));
+        items.push(StackItem::from_i64(i64::from(self.balance_height)));
         items.push(match &self.vote_to {
-            Some(pubkey) => StackValue::ByteString(pubkey.to_bytes()),
-            None => StackValue::Null,
+            Some(pubkey) => StackItem::from_byte_string(pubkey.to_bytes()),
+            None => StackItem::Null,
         });
-        items.push(StackValue::BigInteger(
-            self.last_gas_per_vote.to_signed_bytes_le(),
-        ));
-        StackValue::Struct(neo_vm::next_stack_item_id(), items)
+        items.push(StackItem::from_int(self.last_gas_per_vote.clone()));
+        StackItem::from_struct(items)
     }
 
-    pub(in crate::neo_token) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let decoder = crate::support::codec::StructDecoder::new(&stack_value, "neo account state")?;
+    pub(in crate::neo_token) fn from_stack_item(stack_item: &StackItem) -> CoreResult<Self> {
+        let decoder = crate::support::codec::StructDecoder::new(stack_item, "neo account state")?;
         if decoder.len() < 4 {
             return Err(CoreError::invalid_data(
                 "neo account state must have at least 4 fields",
@@ -55,7 +53,7 @@ impl NeoAccountStateView {
     }
 }
 
-neo_vm::impl_interoperable_via_stack_value!(NeoAccountStateView);
+neo_vm::impl_interoperable_via_stack_item!(NeoAccountStateView);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::neo_token) struct CandidateState {
@@ -68,18 +66,15 @@ impl CandidateState {
         Self { registered, votes }
     }
 
-    pub(in crate::neo_token) fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::Boolean(self.registered),
-                StackValue::BigInteger(self.votes.to_signed_bytes_le()),
-            ],
-        )
+    pub(in crate::neo_token) fn to_stack_item(&self) -> StackItem {
+        StackItem::from_struct(vec![
+            StackItem::from_bool(self.registered),
+            StackItem::from_int(self.votes.clone()),
+        ])
     }
 
-    pub(in crate::neo_token) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let decoder = crate::support::codec::StructDecoder::new(&stack_value, "candidate state")?;
+    pub(in crate::neo_token) fn from_stack_item(stack_item: &StackItem) -> CoreResult<Self> {
+        let decoder = crate::support::codec::StructDecoder::new(stack_item, "candidate state")?;
         if decoder.len() < 2 {
             return Err(CoreError::invalid_data(
                 "candidate state must have at least 2 fields",
@@ -91,7 +86,7 @@ impl CandidateState {
     }
 }
 
-neo_vm::impl_interoperable_via_stack_value!(CandidateState);
+neo_vm::impl_interoperable_via_stack_item!(CandidateState);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CachedCommittee {
@@ -107,37 +102,34 @@ impl CachedCommittee {
         self.members
     }
 
-    pub(crate) fn to_stack_value(&self) -> StackValue {
-        StackValue::Array(
-            neo_vm::next_stack_item_id(),
+    pub(crate) fn to_stack_item(&self) -> StackItem {
+        StackItem::from_array(
             self.members
                 .iter()
                 .map(|(point, votes)| {
-                    StackValue::Struct(
-                        neo_vm::next_stack_item_id(),
-                        vec![
-                            StackValue::ByteString(point.to_bytes()),
-                            StackValue::BigInteger(votes.to_signed_bytes_le()),
-                        ],
-                    )
+                    StackItem::from_struct(vec![
+                        StackItem::from_byte_string(point.to_bytes()),
+                        StackItem::from_int(votes.clone()),
+                    ])
                 })
                 .collect(),
         )
     }
 
-    pub(crate) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Array(_, array) = stack_value else {
+    pub(crate) fn from_stack_item(stack_item: &StackItem) -> CoreResult<Self> {
+        let StackItem::Array(array) = stack_item else {
             return Err(CoreError::invalid_data("committee cache is not an array"));
         };
+        let array = array.items();
         let mut members = Vec::with_capacity(array.len());
-        for element in array {
-            members.push(Self::member_from_stack_value(element)?);
+        for element in &array {
+            members.push(Self::member_from_stack_item(element)?);
         }
         Ok(Self { members })
     }
 
-    fn member_from_stack_value(stack_value: StackValue) -> CoreResult<(ECPoint, BigInt)> {
-        let decoder = crate::support::codec::StructDecoder::new(&stack_value, "committee element")?;
+    fn member_from_stack_item(stack_item: &StackItem) -> CoreResult<(ECPoint, BigInt)> {
+        let decoder = crate::support::codec::StructDecoder::new(stack_item, "committee element")?;
         if decoder.len() < 2 {
             return Err(CoreError::invalid_data(
                 "committee element must have at least 2 fields",
@@ -149,4 +141,4 @@ impl CachedCommittee {
     }
 }
 
-neo_vm::impl_interoperable_via_stack_value!(CachedCommittee);
+neo_vm::impl_interoperable_via_stack_item!(CachedCommittee);

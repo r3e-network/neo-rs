@@ -7,7 +7,7 @@ use super::{StdLib, args::MAX_INPUT_LENGTH};
 use crate::text::dotnet_text_segmentation::text_element_count;
 use neo_error::{CoreError, CoreResult};
 use neo_serialization::BinarySerializer;
-use neo_vm::StackValue;
+use neo_vm::StackItem;
 use num_bigint::BigInt;
 
 impl StdLib {
@@ -53,17 +53,14 @@ impl StdLib {
         } else {
             value.split(separator).collect()
         };
-        let items: Vec<StackValue> = parts
+        let items: Vec<StackItem> = parts
             .into_iter()
             .filter(|part| !remove_empty || !part.is_empty())
-            .map(|part| StackValue::ByteString(part.as_bytes().to_vec()))
+            .map(|part| StackItem::from_byte_string(part.as_bytes().to_vec()))
             .collect();
 
-        BinarySerializer::serialize_stack_value_default(&StackValue::Array(
-            neo_vm::next_stack_item_id(),
-            items,
-        ))
-        .map_err(|e| CoreError::invalid_operation(format!("StdLib::stringSplit: {e}")))
+        BinarySerializer::serialize_default(&StackItem::from_array(items))
+            .map_err(|e| CoreError::invalid_operation(format!("StdLib::stringSplit: {e}")))
     }
 
     /// C# `StdLib.StrLen(str)`: the number of text elements in the string, i.e.

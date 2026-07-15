@@ -281,6 +281,174 @@ fn wrong_overload_arity_is_none() {
     );
 }
 
+#[test]
+fn resolved_dispatch_indices_cover_all_std_lib_methods_without_gaps() {
+    use std::sync::Arc;
+
+    use neo_config::ProtocolSettings;
+    use neo_execution::native_contract_provider::NoNativeContractProvider;
+    use neo_execution::{ApplicationEngine, NativeContract, NoDiagnostic};
+    use neo_primitives::TriggerType;
+    use neo_storage::EmptyCacheBacking;
+    use neo_storage::persistence::DataCache;
+
+    let std_lib = StdLib::new();
+    let methods = std_lib.methods();
+    assert_eq!(methods.len(), metadata::STD_LIB_METHOD_COUNT);
+
+    for (index, method) in methods.iter().enumerate() {
+        assert!(
+            metadata::std_lib_method_handler::<
+                NoNativeContractProvider,
+                NoDiagnostic,
+                EmptyCacheBacking,
+            >(index)
+            .is_some(),
+            "missing resolved handler for StdLib method {index}: {}({})",
+            method.name,
+            method.parameters.len()
+        );
+    }
+
+    for index in [methods.len(), methods.len() + 1, usize::MAX] {
+        assert!(
+            metadata::std_lib_method_handler::<
+                NoNativeContractProvider,
+                NoDiagnostic,
+                EmptyCacheBacking,
+            >(index)
+            .is_none(),
+            "invalid StdLib method index {index} must not resolve"
+        );
+    }
+
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None::<neo_payloads::Block>,
+        ProtocolSettings::default(),
+        0,
+        NoDiagnostic,
+        Arc::new(crate::StandardNativeProvider::new()),
+    )
+    .expect("engine builds");
+    let error = <StdLib as NativeContract<crate::StandardNativeProvider>>::invoke_resolved(
+        &std_lib,
+        &mut engine,
+        methods.len(),
+        &methods[0],
+        &[],
+    )
+    .expect_err("out-of-range resolved method index must fail");
+    assert!(error.to_string().contains("is not implemented"), "{error}");
+}
+
+#[test]
+fn typed_resolved_dispatch_preserves_hot_std_lib_results() {
+    use std::sync::Arc;
+
+    use neo_config::ProtocolSettings;
+    use neo_execution::{ApplicationEngine, NativeContract, NoDiagnostic};
+    use neo_primitives::TriggerType;
+    use neo_storage::persistence::DataCache;
+    use neo_vm::StackItem;
+
+    let std_lib = StdLib::new();
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None::<neo_payloads::Block>,
+        ProtocolSettings::default(),
+        0,
+        NoDiagnostic,
+        Arc::new(crate::StandardNativeProvider::new()),
+    )
+    .expect("engine builds");
+
+    let resolve = |name: &str, arity: usize| {
+        std_lib
+            .methods()
+            .iter()
+            .enumerate()
+            .find(|(_, method)| method.name == name && method.parameters.len() == arity)
+            .expect("StdLib method exists")
+    };
+
+    let (itoa_index, itoa_method) = resolve("itoa", 1);
+    let itoa =
+        <StdLib as NativeContract<crate::StandardNativeProvider>>::try_invoke_resolved_stack_items(
+            &std_lib,
+            &mut engine,
+            itoa_index,
+            itoa_method,
+            &[StackItem::from_i64(-129)],
+        )
+        .expect("itoa has typed dispatch")
+        .expect("itoa succeeds")
+        .expect("itoa returns a value");
+    assert_eq!(itoa.as_bytes().expect("itoa bytes"), b"-129");
+
+    let original = StackItem::from_array(vec![StackItem::from_i64(7)]);
+    let expected = BinarySerializer::serialize(&original, engine.execution_limits())
+        .expect("reference serialization");
+    let (serialize_index, serialize_method) = resolve("serialize", 1);
+    let serialized =
+        <StdLib as NativeContract<crate::StandardNativeProvider>>::try_invoke_resolved_stack_items(
+            &std_lib,
+            &mut engine,
+            serialize_index,
+            serialize_method,
+            std::slice::from_ref(&original),
+        )
+        .expect("serialize has typed dispatch")
+        .expect("serialize succeeds")
+        .expect("serialize returns a value");
+    assert_eq!(serialized.as_bytes().expect("serialized bytes"), expected);
+
+    let (deserialize_index, deserialize_method) = resolve("deserialize", 1);
+    let deserialized =
+        <StdLib as NativeContract<crate::StandardNativeProvider>>::try_invoke_resolved_stack_items(
+            &std_lib,
+            &mut engine,
+            deserialize_index,
+            deserialize_method,
+            &[StackItem::from_byte_string(expected)],
+        )
+        .expect("deserialize has typed dispatch")
+        .expect("deserialize succeeds")
+        .expect("deserialize returns a value");
+    assert!(matches!(deserialized, StackItem::Array(_)));
+    let null_error =
+        <StdLib as NativeContract<crate::StandardNativeProvider>>::try_invoke_resolved_stack_items(
+            &std_lib,
+            &mut engine,
+            deserialize_index,
+            deserialize_method,
+            &[StackItem::null()],
+        )
+        .expect("deserialize has typed dispatch")
+        .expect_err("non-nullable byte array must reject Null");
+    assert!(
+        null_error.to_string().contains("cannot be null"),
+        "{null_error}"
+    );
+
+    let (base64_index, base64_method) = resolve("base64Encode", 1);
+    assert!(
+        <StdLib as NativeContract<crate::StandardNativeProvider>>::try_invoke_resolved_stack_items(
+            &std_lib,
+            &mut engine,
+            base64_index,
+            base64_method,
+            &[StackItem::from_byte_string(b"neo".to_vec())],
+        )
+        .is_none(),
+        "unsupported methods must retain the byte-dispatch fallback"
+    );
+}
+
 /// stringSplit via the dispatch seam: decodes the BinarySerialized Array
 /// return back into the substrings for comparison.
 fn split(args: &[&[u8]]) -> Vec<String> {
@@ -327,7 +495,7 @@ fn string_split_remove_empty_entries() {
 }
 
 #[test]
-fn string_split_return_encoder_uses_stack_value_projection() {
+fn string_split_return_encoder_uses_stack_item_projection() {
     let source = include_str!("../../std_lib/strings.rs");
     let start = source
         .find("fn string_split_impl")
@@ -338,9 +506,9 @@ fn string_split_return_encoder_uses_stack_value_projection() {
         .expect("next helper marker exists");
     let helper = &source[start..end];
 
-    assert!(helper.contains("StackValue::Array"));
-    assert!(helper.contains("serialize_stack_value_default"));
-    assert!(!helper.contains("StackItem::from_array"));
+    assert!(helper.contains("StackItem::from_array"));
+    assert!(helper.contains("serialize_default"));
+    assert!(!helper.contains("StackItem::try_from"));
     assert!(!helper.contains("BinarySerializer::serialize("));
 }
 

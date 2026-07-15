@@ -22,7 +22,7 @@ use crate::server::rpc_server::RpcServer;
 use neo_vm::OpCode;
 
 use super::helpers::internal_error;
-use super::invoke::contract_parameter_to_stack_value;
+use super::invoke::emit_contract_parameter;
 use super::request::InvokeContractVerifyRequest;
 use super::response::{
     final_rpc_vm_state_string, insert_stack, invoke_result_base_to_json, stack_item_to_json_limited,
@@ -149,10 +149,7 @@ fn build_verification_invocation_script(
 ) -> Result<Vec<u8>, RpcException> {
     let mut builder = neo_vm::script_builder::ScriptBuilder::new();
     for parameter in parameters.iter().rev() {
-        let item = contract_parameter_to_stack_value(parameter)?;
-        builder
-            .emit_push_stack_value(&item)
-            .map_err(|err| internal_error(err.to_string()))?;
+        emit_contract_parameter(&mut builder, parameter)?;
     }
     Ok(builder.to_array())
 }

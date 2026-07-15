@@ -6,7 +6,7 @@ use super::*;
 use neo_error::CoreError;
 use neo_primitives::SerializablePayload;
 use neo_vm::InteroperableError;
-use neo_vm::StackValue;
+use neo_vm::StackItem;
 
 impl SerializablePayload for Transaction {
     fn hash_data(&self) -> Vec<u8> {
@@ -43,8 +43,8 @@ impl Inventory for Transaction {
 }
 
 impl Transaction {
-    /// Converts the transaction to a neo-vm stack value (matches C# `Transaction.ToStackItem` layout).
-    pub fn to_stack_value(&self) -> Result<StackValue, CoreError> {
+    /// Converts the transaction to a neo-vm stack item (matches C# `Transaction.ToStackItem` layout).
+    pub fn to_stack_item(&self) -> Result<StackItem, CoreError> {
         let sender = self
             .sender()
             .ok_or_else(|| {
@@ -52,32 +52,28 @@ impl Transaction {
             })?
             .to_bytes();
 
-        Ok(StackValue::Array(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::ByteString(self.try_hash()?.to_bytes()),
-                StackValue::Integer(i64::from(self.version)),
-                StackValue::Integer(i64::from(self.nonce)),
-                StackValue::ByteString(sender),
-                StackValue::Integer(self.system_fee),
-                StackValue::Integer(self.network_fee),
-                StackValue::Integer(i64::from(self.valid_until_block)),
-                StackValue::ByteString(self.script.clone()),
-            ],
-        ))
+        Ok(StackItem::from_array(vec![
+            StackItem::from_byte_string(self.try_hash()?.to_bytes()),
+            StackItem::from_i64(i64::from(self.version)),
+            StackItem::from_i64(i64::from(self.nonce)),
+            StackItem::from_byte_string(sender),
+            StackItem::from_i64(self.system_fee),
+            StackItem::from_i64(self.network_fee),
+            StackItem::from_i64(i64::from(self.valid_until_block)),
+            StackItem::from_byte_string(self.script.clone()),
+        ]))
     }
 }
 
 impl Interoperable for Transaction {
-    fn from_stack_value(&mut self, _value: StackValue) -> Result<(), InteroperableError> {
+    fn from_stack_item(&mut self, _value: StackItem) -> Result<(), InteroperableError> {
         Err(InteroperableError::NotSupported(
-            "Transaction::from_stack_value is not supported".into(),
+            "Transaction::from_stack_item is not supported".into(),
         ))
     }
 
-    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
-        Transaction::to_stack_value(self)
-            .map_err(|e| InteroperableError::InvalidData(e.to_string()))
+    fn to_stack_item(&self) -> Result<StackItem, InteroperableError> {
+        Transaction::to_stack_item(self).map_err(|e| InteroperableError::InvalidData(e.to_string()))
     }
 }
 

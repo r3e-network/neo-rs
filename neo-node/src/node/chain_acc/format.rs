@@ -1,6 +1,6 @@
 //! `chain.acc` file-format parsing.
 
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{BufRead, Read, Seek, SeekFrom};
 
 use neo_io::{MemoryReader, Serializable};
 use neo_payloads::block::Block;
@@ -93,7 +93,7 @@ pub(super) fn skip_chain_acc_records<R>(
     records_to_skip: usize,
 ) -> anyhow::Result<()>
 where
-    R: Read + Seek,
+    R: BufRead + Seek,
 {
     for record in 0..records_to_skip {
         let size = read_i32_le(reader)?;
@@ -102,9 +102,27 @@ where
                 "invalid block size at chain.acc record {record}: {size}"
             ));
         }
-        reader
-            .seek(SeekFrom::Current(i64::from(size)))
+        consume_exact(reader, size as usize)
             .map_err(|err| anyhow::anyhow!("skipping chain.acc record {record}: {err}"))?;
+    }
+    Ok(())
+}
+
+fn consume_exact<R>(reader: &mut R, mut remaining: usize) -> std::io::Result<()>
+where
+    R: BufRead + ?Sized,
+{
+    while remaining > 0 {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                format!("payload is truncated with {remaining} bytes remaining"),
+            ));
+        }
+        let consumed = available.len().min(remaining);
+        reader.consume(consumed);
+        remaining -= consumed;
     }
     Ok(())
 }

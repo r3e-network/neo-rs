@@ -60,10 +60,10 @@ where
             .ok_or_else(|| CoreError::other("No script container"))?;
 
         if let Some(transaction) = container.as_transaction() {
-            let sv =
-                <neo_payloads::Transaction as neo_vm::Interoperable>::to_stack_value(transaction)
+            let item =
+                <neo_payloads::Transaction as neo_vm::Interoperable>::to_stack_item(transaction)
                     .map_err(|e| CoreError::other(e.to_string()))?;
-            self.push(StackItem::try_from(sv).map_err(|e| CoreError::other(e.to_string()))?)
+            self.push(item)
         } else {
             Err(CoreError::other(
                 "Script container does not implement Interoperable",
@@ -84,6 +84,11 @@ where
             )));
         }
 
+        // Neo v3.10.1 always constructs Runtime.LoadScript payloads in strict
+        // mode, independently of the relaxed mode used by deployed contracts.
+        let script = Script::new(script, true)
+            .map_err(|e| CoreError::invalid_operation(format!("Invalid script: {e}")))?;
+
         let calling_context = self
             .current_context()
             .cloned()
@@ -93,7 +98,7 @@ where
 
         let effective_flags = call_flags & state_call_flags & CallFlags::READ_ONLY;
 
-        self.load_script_with_state(Script::new_relaxed(script), -1, 0, move |state| {
+        self.load_script_with_state(script, -1, 0, move |state| {
             state.calling_context = Some(calling_context);
             state.call_flags = effective_flags;
             state.is_dynamic_call = true;
@@ -356,9 +361,8 @@ where
             .signers()
             .iter()
             .map(|s| {
-                let sv = <neo_payloads::Signer as neo_vm::Interoperable>::to_stack_value(s)
-                    .map_err(|e| CoreError::other(e.to_string()))?;
-                StackItem::try_from(sv).map_err(|e| CoreError::other(e.to_string()))
+                <neo_payloads::Signer as neo_vm::Interoperable>::to_stack_item(s)
+                    .map_err(|e| CoreError::other(e.to_string()))
             })
             .collect::<CoreResult<Vec<_>>>()?;
 

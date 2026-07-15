@@ -66,6 +66,7 @@ rand = { workspace = true }
 url = { workspace = true }
 num_cpus = { workspace = true }
 num-bigint = { workspace = true }
+num-traits = { workspace = true }
 mimalloc = { version = "0.1", default-features = false }
 
 # The node workspace crates. (neo-tokens-tracker was merged into neo-rpc; its

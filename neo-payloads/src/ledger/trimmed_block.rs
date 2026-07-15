@@ -10,8 +10,7 @@
 
 use neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use neo_primitives::UInt256;
-use neo_vm::StackValue;
-use neo_vm::{Interoperable, InteroperableError};
+use neo_vm::{Interoperable, InteroperableError, StackItem};
 
 use crate::block::Block;
 use crate::header::Header;
@@ -65,30 +64,25 @@ impl TrimmedBlock {
     /// so the full unsigned range is preserved (never truncated through `i64`),
     /// which is consensus-relevant — a nonce `>= 2^63` would otherwise serialize
     /// as a different integer.
-    pub fn to_stack_value(&self) -> StackValue {
-        let unsigned_integer = |value: u64| {
-            StackValue::BigInteger(num_bigint::BigInt::from(value).to_signed_bytes_le())
-        };
+    pub fn to_stack_item(&self) -> StackItem {
+        let unsigned_integer = |value: u64| StackItem::from_int(num_bigint::BigInt::from(value));
 
-        StackValue::Array(
-            neo_vm::next_stack_item_id(),
-            vec![
-                // Computed property: Header.Hash.ToArray().
-                StackValue::ByteString(self.header.hash().to_bytes()),
-                // BlockBase properties.
-                StackValue::Integer(i64::from(self.header.version())),
-                StackValue::ByteString(self.header.prev_hash().to_bytes()),
-                StackValue::ByteString(self.header.merkle_root().to_bytes()),
-                unsigned_integer(self.header.timestamp()),
-                unsigned_integer(self.header.nonce()),
-                StackValue::Integer(i64::from(self.header.index())),
-                StackValue::Integer(i64::from(self.header.primary_index())),
-                StackValue::ByteString(self.header.next_consensus().to_bytes()),
-                // Block property: Hashes.Length (C# `int`; always non-negative and
-                // bounded by MAX_TRANSACTION_HASHES).
-                StackValue::Integer(self.hashes.len() as i64),
-            ],
-        )
+        StackItem::from_array(vec![
+            // Computed property: Header.Hash.ToArray().
+            StackItem::from_byte_string(self.header.hash().to_bytes()),
+            // BlockBase properties.
+            StackItem::from_i64(i64::from(self.header.version())),
+            StackItem::from_byte_string(self.header.prev_hash().to_bytes()),
+            StackItem::from_byte_string(self.header.merkle_root().to_bytes()),
+            unsigned_integer(self.header.timestamp()),
+            unsigned_integer(self.header.nonce()),
+            StackItem::from_i64(i64::from(self.header.index())),
+            StackItem::from_i64(i64::from(self.header.primary_index())),
+            StackItem::from_byte_string(self.header.next_consensus().to_bytes()),
+            // Block property: Hashes.Length (C# `int`; always non-negative and
+            // bounded by MAX_TRANSACTION_HASHES).
+            StackItem::from_i64(self.hashes.len() as i64),
+        ])
     }
 }
 
@@ -123,14 +117,14 @@ impl Serializable for TrimmedBlock {
 }
 
 impl Interoperable for TrimmedBlock {
-    fn from_stack_value(&mut self, _value: StackValue) -> Result<(), InteroperableError> {
+    fn from_stack_item(&mut self, _value: StackItem) -> Result<(), InteroperableError> {
         Err(InteroperableError::NotSupported(
-            "TrimmedBlock::from_stack_value is not supported".into(),
+            "TrimmedBlock::from_stack_item is not supported".into(),
         ))
     }
 
-    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
-        Ok(self.to_stack_value())
+    fn to_stack_item(&self) -> Result<StackItem, InteroperableError> {
+        Ok(TrimmedBlock::to_stack_item(self))
     }
 }
 

@@ -386,7 +386,7 @@ async fn token_info_with_balance_fetches_balance() {
 }
 
 #[tokio::test]
-async fn balance_of_reads_integer_stack_value() {
+async fn balance_of_reads_integer_rpc_stack_item() {
     if !localhost_binding_permitted() {
         return;
     }
@@ -416,7 +416,7 @@ async fn balance_of_reads_integer_stack_value() {
 }
 
 #[tokio::test]
-async fn symbol_reads_string_stack_value() {
+async fn symbol_reads_string_rpc_stack_item() {
     if !localhost_binding_permitted() {
         return;
     }
@@ -445,7 +445,7 @@ async fn symbol_reads_string_stack_value() {
 }
 
 #[tokio::test]
-async fn decimals_reads_integer_stack_value() {
+async fn decimals_reads_integer_rpc_stack_item() {
     if !localhost_binding_permitted() {
         return;
     }
@@ -471,7 +471,7 @@ async fn decimals_reads_integer_stack_value() {
 }
 
 #[tokio::test]
-async fn total_supply_reads_integer_stack_value() {
+async fn total_supply_reads_integer_rpc_stack_item() {
     if !localhost_binding_permitted() {
         return;
     }

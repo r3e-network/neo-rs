@@ -1,11 +1,11 @@
 //! Slot operations for the Neo Virtual Machine.
 
+use crate::Instruction;
+use crate::OpCode;
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
 use crate::jump_table::{JumpTable, register_jump_handlers, require_context};
-use neo_vm_rs::Instruction;
-use neo_vm_rs::OpCode;
 
 /// Registers the slot operation handlers.
 pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
@@ -154,6 +154,10 @@ fn load_static_field_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmRe
 #[inline]
 fn store_static_field_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult<()> {
     let ctx = require_context(engine)?;
+    // C# ExecuteStoreToSlot validates the destination before engine.Pop().
+    // Loading the destination performs the same slot/index checks without
+    // mutating either the slot or evaluation stack.
+    let _ = ctx.load_static_field(index)?;
     let value = ctx.pop()?;
     ctx.store_static_field(index, value)
 }
@@ -194,6 +198,7 @@ fn load_local_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult<()
 #[inline]
 fn store_local_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult<()> {
     let ctx = require_context(engine)?;
+    let _ = ctx.load_local(index)?;
     let value = ctx.pop()?;
     ctx.store_local(index, value)
 }
@@ -228,6 +233,7 @@ fn load_argument_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult
 #[inline]
 fn store_argument_n<S>(engine: &mut ExecutionEngine<S>, index: usize) -> VmResult<()> {
     let ctx = require_context(engine)?;
+    let _ = ctx.load_argument(index)?;
     let value = ctx.pop()?;
     ctx.store_argument(index, value)
 }

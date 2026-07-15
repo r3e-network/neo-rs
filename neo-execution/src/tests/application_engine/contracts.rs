@@ -110,6 +110,33 @@ impl NativeContractProvider for EmptyProvider {
     }
 }
 
+struct CachedContractProvider {
+    contract: ContractState,
+    exists: bool,
+    full_lookups: Arc<PlMutex<usize>>,
+}
+
+impl NativeContractProvider for CachedContractProvider {
+    type Contract = NoNativeContract;
+
+    fn contract_state<B: neo_storage::CacheRead>(
+        &self,
+        _snapshot: &DataCache<B>,
+        hash: &UInt160,
+    ) -> CoreResult<Option<ContractState>> {
+        *self.full_lookups.lock() += 1;
+        Ok((self.exists && hash == &self.contract.hash).then(|| self.contract.clone()))
+    }
+
+    fn contract_exists<B: neo_storage::CacheRead>(
+        &self,
+        _snapshot: &DataCache<B>,
+        hash: &UInt160,
+    ) -> CoreResult<bool> {
+        Ok(self.exists && hash == &self.contract.hash)
+    }
+}
+
 #[derive(Clone)]
 struct MeteredNativeContract {
     hash: UInt160,
@@ -878,6 +905,142 @@ fn storage_context_uses_provider_captured_at_engine_creation() {
 }
 
 #[test]
+fn storage_context_reuses_loaded_contract_without_full_deserialization() {
+    let contract_hash =
+        UInt160::parse("0xa1b2c3d4e5f60718293a4b5c6d7e8f0102030417").expect("contract hash");
+    let contract = build_mock_contract(contract_hash);
+    let full_lookups = Arc::new(PlMutex::new(0));
+    let provider = Arc::new(CachedContractProvider {
+        contract: contract.clone(),
+        exists: true,
+        full_lookups: Arc::clone(&full_lookups),
+    });
+
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        NoDiagnostic,
+        provider,
+    )
+    .expect("engine");
+    engine.put_contract_cache(contract_hash, contract.clone());
+    engine
+        .load_script(
+            vec![OpCode::RET.byte()],
+            CallFlags::ALL,
+            Some(contract_hash),
+        )
+        .expect("load contract script");
+
+    let context = engine.get_storage_context().expect("storage context");
+    assert_eq!(context.id, contract.id);
+    assert_eq!(*full_lookups.lock(), 0);
+}
+
+#[test]
+fn storage_context_does_not_reuse_cache_after_contract_disappears() {
+    let contract_hash =
+        UInt160::parse("0xa1b2c3d4e5f60718293a4b5c6d7e8f0102030418").expect("contract hash");
+    let contract = build_mock_contract(contract_hash);
+    let full_lookups = Arc::new(PlMutex::new(0));
+    let provider = Arc::new(CachedContractProvider {
+        contract: contract.clone(),
+        exists: false,
+        full_lookups: Arc::clone(&full_lookups),
+    });
+
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        NoDiagnostic,
+        provider,
+    )
+    .expect("engine");
+    engine.put_contract_cache(contract_hash, contract);
+    engine
+        .load_script(
+            vec![OpCode::RET.byte()],
+            CallFlags::ALL,
+            Some(contract_hash),
+        )
+        .expect("load contract script");
+
+    let error = engine
+        .get_storage_context()
+        .expect_err("destroyed contract must not reuse its cached ID");
+    assert!(error.to_string().contains("Contract not found"));
+    assert_eq!(*full_lookups.lock(), 1);
+}
+
+#[test]
+fn contract_cache_reuses_shared_state_and_script_and_evicts_both() {
+    let contract_hash =
+        UInt160::parse("0xa1b2c3d4e5f60718293a4b5c6d7e8f0102030419").expect("contract hash");
+    let contract = build_mock_contract(contract_hash);
+    let method = contract
+        .manifest
+        .abi
+        .get_method_ref("balanceOf", 1)
+        .cloned()
+        .expect("balanceOf method");
+    let mut engine = ApplicationEngine::new_with_native_contract_provider(
+        TriggerType::Application,
+        None,
+        Arc::new(DataCache::new(false)),
+        None,
+        ProtocolSettings::default(),
+        TEST_MODE_GAS,
+        NoDiagnostic,
+        Arc::new(EmptyProvider),
+    )
+    .expect("engine");
+
+    engine.put_contract_cache(contract_hash, contract.clone());
+    let first = engine.fetch_contract(&contract_hash).expect("first lookup");
+    let second = engine
+        .fetch_contract(&contract_hash)
+        .expect("second lookup");
+    assert!(Arc::ptr_eq(&first, &second));
+
+    let cached_script_bytes = engine
+        .contract_scripts
+        .get(&contract_hash)
+        .expect("cached script")
+        .as_bytes()
+        .as_ptr();
+    engine
+        .load_contract_method(contract, method, CallFlags::ALL)
+        .expect("load cached contract method");
+    let context_script = engine
+        .vm_engine
+        .engine()
+        .current_context()
+        .expect("loaded context")
+        .script_arc();
+    assert_eq!(cached_script_bytes, context_script.as_bytes().as_ptr());
+    assert_ne!(
+        engine
+            .contract_scripts
+            .get(&contract_hash)
+            .expect("cached script"),
+        context_script.as_ref(),
+        "each contract load retains a distinct Script identity"
+    );
+
+    engine.remove_contract_cache(&contract_hash);
+    assert!(!engine.contracts.contains_key(&contract_hash));
+    assert!(!engine.contract_scripts.contains_key(&contract_hash));
+}
+
+#[test]
 fn oracle_response_witness_uses_provider_captured_at_engine_creation() {
     let original_tx_id = UInt256::from_bytes(&[0x42; 32]).expect("original tx hash");
     let provider = Arc::new(OracleLedgerProvider { original_tx_id });
@@ -1152,7 +1315,7 @@ fn call_contract_internal_checks_policy_before_return_type_mismatch() {
     .expect("engine");
 
     let result = engine.call_contract_internal(
-        &contract,
+        Arc::new(contract),
         &method,
         CallFlags::ALL,
         false,

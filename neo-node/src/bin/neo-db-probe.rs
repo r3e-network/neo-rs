@@ -23,7 +23,6 @@ use neo_manifest::CallFlags;
 use neo_native_contracts::{GasToken, LedgerContract, StandardNativeProvider};
 use neo_payloads::{Block, Transaction, TransactionState, VerifiableContainer};
 use neo_primitives::{TriggerType, UInt160, UInt256};
-use neo_serialization::BinarySerializer;
 use neo_state_service::{MDBX_STATE_SERVICE_NAMESPACE, MptStore};
 use neo_static_files::StaticFileProvider;
 use neo_storage::persistence::providers::RuntimeStore;
@@ -34,13 +33,14 @@ use neo_storage::persistence::{
     TransactionalStore, WriteStore,
 };
 use neo_storage::{CacheRead, DataCache, StorageKey};
-use neo_vm::stack_value_as_bigint;
-use neo_vm::{
-    ExecutionEngineLimits, Instruction, StackValue, VmState as VMState, stack_value_as_u32,
-};
+use neo_vm::{Instruction, StackItem, VmState as VMState};
 use num_bigint::BigInt;
 use parking_lot::Mutex;
 use serde_json::{Value, json};
+
+#[path = "neo_db_probe/stack_item_decode.rs"]
+mod stack_item_decode;
+use stack_item_decode::{deserialize_stack_item, stack_item_bytes, stack_item_u32};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -55,6 +55,13 @@ struct Cli {
         required_unless_present = "scrub_static_files"
     )]
     db: Option<PathBuf>,
+
+    /// Explicit auxiliary StateService MDBX directory for MPT probes.
+    ///
+    /// When omitted, MPT probes use the coordinated StateService namespace
+    /// inside `--db`, preserving the historical probe behaviour.
+    #[arg(long, value_name = "PATH")]
+    state_service_db: Option<PathBuf>,
 
     /// Directory containing `ledger.static` and its MDBX sidecar.
     #[arg(long, value_name = "DIR")]
@@ -99,6 +106,14 @@ struct Cli {
 
     #[arg(long, value_name = "HEIGHT")]
     mpt_dump_root: Option<u32>,
+
+    /// Build a transaction-bound StateService MPT prefix occupancy artifact.
+    #[arg(long, value_name = "PATH")]
+    build_mpt_prefix_index: Option<PathBuf>,
+
+    /// High-order hash bits represented by the MPT prefix occupancy bitmap.
+    #[arg(long, default_value_t = 30, requires = "build_mpt_prefix_index")]
+    mpt_prefix_index_bits: u8,
 
     #[arg(long, default_value_t = 200)]
     dump_limit: usize,
@@ -275,6 +290,18 @@ fn main() -> Result<()> {
         cli.static_files_dir.is_none() || cli.write_value_base64.is_none(),
         "--static-files-dir cannot be combined with --write-value-base64"
     );
+    if let Some(output) = cli.build_mpt_prefix_index.as_deref() {
+        ensure_mpt_prefix_index_args(&cli)?;
+        let result = build_mpt_prefix_index(
+            db,
+            cli.state_service_db.as_deref(),
+            output,
+            cli.mpt_prefix_index_bits,
+        )
+        .with_context(|| format!("build StateService MPT prefix index from {}", db.display()))?;
+        println!("{}", serde_json::to_string_pretty(&result)?);
+        return Ok(());
+    }
     if cli.mpt_state_height
         || cli.mpt_state_root.is_some()
         || cli.mpt_key_root.is_some()
@@ -284,6 +311,7 @@ fn main() -> Result<()> {
         ensure_mpt_probe_args(&cli)?;
         let output = probe_mpt_state(
             db,
+            cli.state_service_db.as_deref(),
             cli.mpt_state_height,
             cli.mpt_state_root,
             cli.mpt_key_root,
@@ -454,9 +482,38 @@ fn ensure_mpt_probe_args(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
+fn ensure_mpt_prefix_index_args(cli: &Cli) -> Result<()> {
+    ensure!(
+        cli.gas_address.is_none()
+            && cli.ledger_tx.is_none()
+            && cli.contract_state.is_none()
+            && cli.replay_tx.is_none()
+            && cli.replay_raw_tx_base64.is_none()
+            && cli.replay_block_base64.is_none()
+            && cli.static_files_dir.is_none()
+            && !cli.dump_contract_storage
+            && !cli.mpt_state_height
+            && cli.mpt_state_root.is_none()
+            && cli.mpt_key_root.is_none()
+            && cli.mpt_dump_contract_root.is_none()
+            && cli.mpt_dump_root.is_none()
+            && cli.contract_id.is_none()
+            && cli.key_base64.is_none()
+            && cli.key_hex.is_none()
+            && cli.write_value_base64.is_none(),
+        "--build-mpt-prefix-index cannot be combined with another probe mode"
+    );
+    ensure!(
+        (1..=31).contains(&cli.mpt_prefix_index_bits),
+        "--mpt-prefix-index-bits must be in 1..=31"
+    );
+    Ok(())
+}
+
 fn ensure_static_scrub_args(cli: &Cli) -> Result<()> {
     ensure!(
         cli.db.is_none()
+            && cli.state_service_db.is_none()
             && cli.gas_address.is_none()
             && cli.ledger_tx.is_none()
             && cli.contract_state.is_none()
@@ -469,6 +526,7 @@ fn ensure_static_scrub_args(cli: &Cli) -> Result<()> {
             && cli.mpt_key_root.is_none()
             && cli.mpt_dump_contract_root.is_none()
             && cli.mpt_dump_root.is_none()
+            && cli.build_mpt_prefix_index.is_none()
             && cli.contract_id.is_none()
             && cli.key_base64.is_none()
             && cli.key_hex.is_none()
@@ -479,6 +537,10 @@ fn ensure_static_scrub_args(cli: &Cli) -> Result<()> {
 }
 
 fn build_probe_request(cli: &Cli) -> Result<ProbeRequest> {
+    ensure!(
+        cli.state_service_db.is_none(),
+        "--state-service-db is supported only with MPT probe arguments"
+    );
     if let Some(address) = cli.gas_address.as_deref() {
         ensure!(
             cli.ledger_tx.is_none()
@@ -590,8 +652,47 @@ fn mpt_current_local_root_index_key() -> Vec<u8> {
     vec![0x02]
 }
 
+fn build_mpt_prefix_index(
+    db_path: &Path,
+    state_service_db_path: Option<&Path>,
+    output: &Path,
+    prefix_bits: u8,
+) -> Result<Value> {
+    let (store, namespace) = if let Some(state_service_db_path) = state_service_db_path {
+        (open_store(state_service_db_path, false)?, None)
+    } else {
+        let canonical_store = open_store(db_path, false)?;
+        (
+            Arc::new(
+                canonical_store
+                    .open_coordinated_namespace(MDBX_STATE_SERVICE_NAMESPACE)
+                    .context("open coordinated MDBX StateService namespace")?,
+            ),
+            Some(MDBX_STATE_SERVICE_NAMESPACE),
+        )
+    };
+    let mdbx = store
+        .as_mdbx()
+        .ok_or_else(|| anyhow!("MPT prefix index requires MDBX storage"))?;
+    let report = mdbx.build_prefix_occupancy_index(output, &[0xf0], 33, prefix_bits)?;
+    Ok(json!({
+        "db": db_path,
+        "state_service_db": state_service_db_path,
+        "namespace": namespace,
+        "path": report.path,
+        "snapshot_transaction_id": report.snapshot_transaction_id,
+        "indexed_keys": report.indexed_keys,
+        "set_bits": report.set_bits,
+        "bitmap_bytes": report.bitmap_bytes,
+        "key_prefix_hex": hex::encode(report.spec.key_prefix),
+        "key_length": report.spec.key_length,
+        "prefix_bits": report.spec.prefix_bits,
+    }))
+}
+
 fn probe_mpt_state(
     db_path: &Path,
+    state_service_db_path: Option<&Path>,
     include_height: bool,
     root_index: Option<u32>,
     key_root_index: Option<u32>,
@@ -603,19 +704,29 @@ fn probe_mpt_state(
     dump_limit: usize,
     decode: DecodeMode,
 ) -> Result<Value> {
-    let canonical_store = open_store(db_path, true)?;
-    let store = Arc::new(
-        canonical_store
-            .open_coordinated_namespace(MDBX_STATE_SERVICE_NAMESPACE)
-            .context("open coordinated MDBX StateService namespace")?,
-    );
+    let (store, namespace) = if let Some(state_service_db_path) = state_service_db_path {
+        (open_store(state_service_db_path, true)?, None)
+    } else {
+        let canonical_store = open_store(db_path, true)?;
+        (
+            Arc::new(
+                canonical_store
+                    .open_coordinated_namespace(MDBX_STATE_SERVICE_NAMESPACE)
+                    .context("open coordinated MDBX StateService namespace")?,
+            ),
+            Some(MDBX_STATE_SERVICE_NAMESPACE),
+        )
+    };
     let snapshot = store.snapshot();
     let mut output = json!({
         "db": db_path,
+        "state_service_db": state_service_db_path,
         "storage_provider": "mdbx",
         "mode": "state-service-mpt",
-        "namespace": MDBX_STATE_SERVICE_NAMESPACE,
     });
+    if let Some(namespace) = namespace {
+        output["namespace"] = json!(namespace);
+    }
 
     if include_height {
         let key = mpt_current_local_root_index_key();
@@ -1236,10 +1347,10 @@ fn decode_value(mode: DecodeMode, value: &[u8]) -> Result<Value> {
 }
 
 fn decode_transaction_state(bytes: &[u8]) -> Result<TransactionState> {
-    let value = deserialize_stack_value(bytes).context("deserialize TransactionState")?;
+    let value = deserialize_stack_item(bytes).context("deserialize TransactionState")?;
     let mut state = TransactionState::new(0, None, VMState::NONE);
     state
-        .from_stack_value(value)
+        .from_stack_item(value)
         .map_err(|err| anyhow!("decode TransactionState: {err}"))?;
     Ok(state)
 }
@@ -1254,17 +1365,17 @@ fn vm_state_name(state: VMState) -> &'static str {
 }
 
 fn decode_hash_index_state(bytes: &[u8]) -> Result<HashIndexState> {
-    let value = deserialize_stack_value(bytes).context("deserialize HashIndexState")?;
-    let StackValue::Struct(_, items) = value else {
+    let value = deserialize_stack_item(bytes).context("deserialize HashIndexState")?;
+    let StackItem::Struct(structure) = value else {
         bail!("expected HashIndexState struct");
     };
+    let items = structure.items();
     ensure!(
         items.len() >= 2,
         "HashIndexState struct is shorter than expected"
     );
 
-    let hash_bytes = items[0]
-        .to_byte_string_bytes()
+    let hash_bytes = stack_item_bytes(&items[0])
         .ok_or_else(|| anyhow!("HashIndexState hash is not byte-like"))?;
     ensure!(
         hash_bytes.len() == 32,
@@ -1272,7 +1383,7 @@ fn decode_hash_index_state(bytes: &[u8]) -> Result<HashIndexState> {
         hash_bytes.len()
     );
     let index =
-        stack_value_as_u32(&items[1]).ok_or_else(|| anyhow!("HashIndexState index is not u32"))?;
+        stack_item_u32(&items[1]).ok_or_else(|| anyhow!("HashIndexState index is not u32"))?;
 
     Ok(HashIndexState {
         hash_hex_le: hex::encode(hash_bytes),
@@ -1281,24 +1392,25 @@ fn decode_hash_index_state(bytes: &[u8]) -> Result<HashIndexState> {
 }
 
 fn decode_neo_account_state(bytes: &[u8]) -> Result<NeoAccountStateProbe> {
-    let value = deserialize_stack_value(bytes).context("deserialize NEO account state")?;
-    let StackValue::Struct(_, items) = value else {
+    let value = deserialize_stack_item(bytes).context("deserialize NEO account state")?;
+    let StackItem::Struct(structure) = value else {
         bail!("expected NEO account state struct");
     };
+    let items = structure.items();
     ensure!(
         items.len() >= 4,
         "NEO account state struct is shorter than expected"
     );
 
-    let balance =
-        stack_value_as_bigint(&items[0]).map_err(|err| anyhow!("decode NEO balance: {err}"))?;
-    let balance_height = stack_value_as_u32(&items[1])
+    let balance = items[0]
+        .as_int()
+        .map_err(|err| anyhow!("decode NEO balance: {err}"))?;
+    let balance_height = stack_item_u32(&items[1])
         .ok_or_else(|| anyhow!("NEO account balance_height is not u32"))?;
     let vote_to_hex = match &items[2] {
-        StackValue::Null => None,
+        StackItem::Null => None,
         item => {
-            let bytes = item
-                .to_byte_string_bytes()
+            let bytes = stack_item_bytes(item)
                 .ok_or_else(|| anyhow!("NEO account vote_to is not byte-like"))?;
             ensure!(
                 bytes.len() == 33,
@@ -1308,7 +1420,8 @@ fn decode_neo_account_state(bytes: &[u8]) -> Result<NeoAccountStateProbe> {
             Some(hex::encode(bytes))
         }
     };
-    let last_gas_per_vote = stack_value_as_bigint(&items[3])
+    let last_gas_per_vote = items[3]
+        .as_int()
         .map_err(|err| anyhow!("decode NEO last_gas_per_vote: {err}"))?;
 
     Ok(NeoAccountStateProbe {
@@ -1357,25 +1470,18 @@ fn decode_nep17_account_balance(bytes: &[u8]) -> Result<BigInt> {
     if bytes.is_empty() {
         return Ok(BigInt::from(0));
     }
-    let value = deserialize_stack_value(bytes).context("deserialize NEP-17 account state")?;
+    let value = deserialize_stack_item(bytes).context("deserialize NEP-17 account state")?;
 
-    let StackValue::Struct(_, items) = value else {
+    let StackItem::Struct(structure) = value else {
         bail!("expected NEP-17 account state struct");
     };
+    let items = structure.items();
     let balance = items
         .first()
         .ok_or_else(|| anyhow!("NEP-17 account state struct is empty"))?;
-    stack_value_as_bigint(balance).map_err(|err| anyhow!("decode NEP-17 balance: {err}"))
-}
-
-fn deserialize_stack_value(bytes: &[u8]) -> Result<StackValue> {
-    let limits = ExecutionEngineLimits::default();
-    BinarySerializer::deserialize_stack_value_with_limits(
-        bytes,
-        limits.max_item_size as usize,
-        limits.max_stack_size as usize,
-    )
-    .map_err(|err| anyhow!("{err}"))
+    balance
+        .as_int()
+        .map_err(|err| anyhow!("decode NEP-17 balance: {err}"))
 }
 
 fn decode_raw_bigint(bytes: &[u8]) -> BigInt {

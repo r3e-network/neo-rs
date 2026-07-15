@@ -44,10 +44,10 @@ fn neo_account_state_interoperable_projection_matches_csharp_shape() {
         StackItem::from_int(BigInt::from(-7)),
     ]);
 
-    let trait_value = Interoperable::to_stack_value(&state).unwrap();
+    let trait_value = Interoperable::to_stack_item(&state).unwrap();
     let expected_bytes =
         BinarySerializer::serialize(&expected, &ExecutionEngineLimits::default()).unwrap();
-    let trait_bytes = BinarySerializer::serialize_stack_value_default(&trait_value).unwrap();
+    let trait_bytes = BinarySerializer::serialize_default(&trait_value).unwrap();
     assert_eq!(trait_bytes, expected_bytes);
 
     let mut parsed = NeoAccountStateView {
@@ -56,7 +56,7 @@ fn neo_account_state_interoperable_projection_matches_csharp_shape() {
         vote_to: None,
         last_gas_per_vote: BigInt::from(0),
     };
-    Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
+    Interoperable::from_stack_item(&mut parsed, trait_value).unwrap();
     assert_eq!(parsed.balance, state.balance);
     assert_eq!(parsed.balance_height, state.balance_height);
     assert_eq!(parsed.vote_to, state.vote_to);
@@ -71,14 +71,14 @@ fn candidate_state_interoperable_projection_matches_csharp_shape() {
         StackItem::from_int(BigInt::from(123)),
     ]);
 
-    let trait_value = Interoperable::to_stack_value(&state).unwrap();
+    let trait_value = Interoperable::to_stack_item(&state).unwrap();
     let expected_bytes =
         BinarySerializer::serialize(&expected, &ExecutionEngineLimits::default()).unwrap();
-    let trait_bytes = BinarySerializer::serialize_stack_value_default(&trait_value).unwrap();
+    let trait_bytes = BinarySerializer::serialize_default(&trait_value).unwrap();
     assert_eq!(trait_bytes, expected_bytes);
 
     let mut parsed = CandidateState::new(false, BigInt::from(0));
-    Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
+    Interoperable::from_stack_item(&mut parsed, trait_value).unwrap();
     assert_eq!(parsed, state);
 }
 
@@ -145,14 +145,14 @@ fn cached_committee_interoperable_projection_matches_csharp_shape() {
         ]),
     ]);
 
-    let trait_value = Interoperable::to_stack_value(&state).unwrap();
+    let trait_value = Interoperable::to_stack_item(&state).unwrap();
     let expected_bytes =
         BinarySerializer::serialize(&expected, &ExecutionEngineLimits::default()).unwrap();
-    let trait_bytes = BinarySerializer::serialize_stack_value_default(&trait_value).unwrap();
+    let trait_bytes = BinarySerializer::serialize_default(&trait_value).unwrap();
     assert_eq!(trait_bytes, expected_bytes);
 
     let mut parsed = CachedCommittee::new(Vec::new());
-    Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
+    Interoperable::from_stack_item(&mut parsed, trait_value).unwrap();
     assert_eq!(parsed.into_members(), members);
 }
 
@@ -246,7 +246,7 @@ fn neo_storage_codecs_match_csharp_stackitem_bytes() {
 }
 
 #[test]
-fn neo_storage_codecs_use_stack_value_projection() {
+fn neo_storage_codecs_use_stack_item_projection() {
     fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
         let start_index = source.find(start).expect("start marker exists");
         let end_index = source[start_index..]
@@ -263,10 +263,9 @@ fn neo_storage_codecs_use_stack_value_projection() {
         "fn decode_neo_account_state",
         "fn encode_neo_account_state",
     );
-    assert!(account_decoder.contains("decode_stack_value"));
-    assert!(account_decoder.contains("NeoAccountStateView::from_stack_value"));
-    assert!(!account_decoder.contains("StackValue::Struct"));
-    assert!(!account_decoder.contains("stack_value_as_bigint"));
+    assert!(account_decoder.contains("decode_stack_item"));
+    assert!(account_decoder.contains("NeoAccountStateView::from_stack_item"));
+    assert!(!account_decoder.contains("StackItem::Struct"));
     assert!(!account_decoder.contains("BinarySerializer::deserialize("));
 
     let account_encoder = slice_between(
@@ -275,7 +274,7 @@ fn neo_storage_codecs_use_stack_value_projection() {
         "fn read_account_state",
     );
     assert!(account_encoder.contains("encode_storage_struct"));
-    assert!(!account_encoder.contains("StackValue::Struct"));
+    assert!(!account_encoder.contains("StackItem::Struct"));
     assert!(!account_encoder.contains("StackItem::from_struct"));
     assert!(!account_encoder.contains("BinarySerializer::serialize("));
 
@@ -284,11 +283,10 @@ fn neo_storage_codecs_use_stack_value_projection() {
         "fn read_committee_with_votes",
         "fn read_committee_points",
     );
-    assert!(committee_reader.contains("decode_stack_value"));
-    assert!(committee_reader.contains("CachedCommittee::from_stack_value"));
-    assert!(!committee_reader.contains("StackValue::Array"));
-    assert!(!committee_reader.contains("StackValue::Struct"));
-    assert!(!committee_reader.contains("stack_value_as_bigint"));
+    assert!(committee_reader.contains("decode_stack_item"));
+    assert!(committee_reader.contains("CachedCommittee::from_stack_item"));
+    assert!(!committee_reader.contains("StackItem::Array"));
+    assert!(!committee_reader.contains("StackItem::Struct"));
     assert!(!committee_reader.contains("BinarySerializer::deserialize("));
 
     let committee_encoder = slice_between(
@@ -298,8 +296,8 @@ fn neo_storage_codecs_use_stack_value_projection() {
     );
     assert!(committee_encoder.contains("CachedCommittee::new"));
     assert!(committee_encoder.contains("encode_storage_struct"));
-    assert!(!committee_encoder.contains("StackValue::Array"));
-    assert!(!committee_encoder.contains("StackValue::Struct"));
+    assert!(!committee_encoder.contains("StackItem::Array"));
+    assert!(!committee_encoder.contains("StackItem::Struct"));
     assert!(!committee_encoder.contains("StackItem::from_array"));
     assert!(!committee_encoder.contains("BinarySerializer::serialize("));
 
@@ -315,10 +313,9 @@ fn neo_storage_codecs_use_stack_value_projection() {
         "fn decode_candidate_state",
         "fn encode_candidate_state",
     );
-    assert!(candidate_decoder.contains("decode_stack_value"));
-    assert!(candidate_decoder.contains("CandidateState::from_stack_value"));
-    assert!(!candidate_decoder.contains("StackValue::Struct"));
-    assert!(!candidate_decoder.contains("stack_value_as_bigint"));
+    assert!(candidate_decoder.contains("decode_stack_item"));
+    assert!(candidate_decoder.contains("CandidateState::from_stack_item"));
+    assert!(!candidate_decoder.contains("StackItem::Struct"));
     assert!(!candidate_decoder.contains("BinarySerializer::deserialize("));
 
     let candidate_encoder = slice_between(
@@ -328,7 +325,7 @@ fn neo_storage_codecs_use_stack_value_projection() {
     );
     assert!(candidate_encoder.contains("CandidateState::new"));
     assert!(candidate_encoder.contains("encode_storage_struct"));
-    assert!(!candidate_encoder.contains("StackValue::Struct"));
+    assert!(!candidate_encoder.contains("StackItem::Struct"));
     assert!(!candidate_encoder.contains("StackItem::from_struct"));
     assert!(!candidate_encoder.contains("BinarySerializer::serialize("));
 

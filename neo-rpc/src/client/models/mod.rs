@@ -203,7 +203,7 @@ pub use rpc_raw_mem_pool::RpcRawMemPool;
 pub use rpc_request::RpcRequest;
 pub use rpc_response::{RpcResponse, RpcResponseError};
 pub use rpc_response_wrapper::RpcResponse as RpcResponseWrapper;
-pub use rpc_stack::RpcStack;
+pub use rpc_stack::{RpcStack, RpcStackItem};
 pub use rpc_state_root::RpcStateRoot;
 pub use rpc_transaction::RpcTransaction;
 pub use rpc_transfer_out::RpcTransferOut;

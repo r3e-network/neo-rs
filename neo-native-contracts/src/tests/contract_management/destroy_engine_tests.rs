@@ -109,6 +109,11 @@ fn destroy_removes_record_index_storage_and_blocks_hash() {
         persisting_block,
         ProtocolSettings::default(),
     );
+    engine.put_contract_cache(self_hash, user.clone());
+    assert_eq!(
+        engine.contract_display_name(&self_hash).as_deref(),
+        Some("SelfDestructFixture")
+    );
     engine
         .load_script(script, CallFlags::ALL, Some(self_hash))
         .expect("script loads");
@@ -132,6 +137,10 @@ fn destroy_removes_record_index_storage_and_blocks_hash() {
     assert!(
         snapshot.get(&user_row).is_none(),
         "contract storage deleted"
+    );
+    assert!(
+        engine.contract_display_name(&self_hash).is_none(),
+        "destroy evicts the transaction-local contract and script cache"
     );
     // The destroyed hash is locked via Policy's blocked-account entry,
     // pre-Faun with an EMPTY value (C# StorageItem([])).

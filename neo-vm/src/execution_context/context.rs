@@ -5,14 +5,14 @@
 //! This module provides the execution context implementation for the Neo VM.
 
 use super::shared_states::SharedStates;
+use crate::ExceptionHandlingContext;
+use crate::Instruction;
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::evaluation_stack::EvaluationStack;
+use crate::execution_profile::StackProfileHandle;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
-use neo_crypto::Crypto;
-use neo_vm_rs::ExceptionHandlingContext;
-use neo_vm_rs::Instruction;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -50,6 +50,23 @@ impl<S: Default> ExecutionContext<S> {
     #[must_use]
     pub fn new(script: Script, rvcount: i32, reference_counter: &ReferenceCounter) -> Self {
         Self::new_with_state_factory(script, rvcount, reference_counter, S::default)
+    }
+
+    /// Creates an execution context that retains an existing script allocation.
+    #[must_use]
+    pub fn new_from_script_arc(
+        script: Arc<Script>,
+        rvcount: i32,
+        reference_counter: &ReferenceCounter,
+    ) -> Self {
+        Self {
+            shared_states: SharedStates::new_from_script_arc(script, reference_counter.clone()),
+            instruction_pointer: 0,
+            rvcount,
+            local_variables: None,
+            arguments: None,
+            try_stack: None,
+        }
     }
 }
 
@@ -108,9 +125,10 @@ impl<S> ExecutionContext<S> {
 
     /// Returns the script hash for this context as a 20-byte array.
     /// This mirrors the C# `Script.ToScriptHash()` behaviour (Hash160).
+    #[inline]
     #[must_use]
     pub fn script_hash(&self) -> [u8; 20] {
-        Crypto::hash160(self.script().as_bytes())
+        self.script().script_hash()
     }
 
     /// Returns the current instruction pointer.
@@ -121,9 +139,19 @@ impl<S> ExecutionContext<S> {
     }
 
     /// Sets the instruction pointer.
+    ///
+    /// Neo.VM permits the position immediately after the script so the engine
+    /// can execute its synthetic `RET`, but rejects positions beyond it.
     #[inline]
-    pub fn set_instruction_pointer(&mut self, position: usize) {
+    pub fn set_instruction_pointer(&mut self, position: usize) -> VmResult<()> {
+        if position > self.script().len() {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Instruction pointer is out of script bounds: {position}/{}",
+                self.script().len()
+            )));
+        }
         self.instruction_pointer = position;
+        Ok(())
     }
 
     /// Returns the current instruction or None if at the end of the script.
@@ -176,6 +204,13 @@ impl<S> ExecutionContext<S> {
     /// This matches the C# implementation's `EvaluationStack` property.
     pub fn evaluation_stack_mut(&self) -> parking_lot::MutexGuard<'_, EvaluationStack> {
         self.shared_states.evaluation_stack_mut()
+    }
+
+    /// Attaches the shared evaluation stack to an explicitly enabled profiler.
+    pub(crate) fn set_stack_profile(&self, profile: StackProfileHandle) {
+        self.shared_states
+            .evaluation_stack_mut()
+            .set_profile(profile);
     }
 
     /// Returns true when static fields are initialized for this context.
@@ -351,8 +386,7 @@ impl<S> ExecutionContext<S> {
 
     /// Push an item onto the evaluation stack
     #[inline(always)]
-    pub fn push(&mut self, mut item: crate::stack_item::StackItem) -> VmResult<()> {
-        item.attach_reference_counter(self.reference_counter())?;
+    pub fn push(&mut self, item: crate::stack_item::StackItem) -> VmResult<()> {
         self.shared_states.evaluation_stack_mut().push(item)
     }
 
@@ -416,16 +450,17 @@ impl<S> ExecutionContext<S> {
     /// Clones the context for a CALL operation.
     /// Matches C# `ExecutionContext.Clone(position)`: shared script/evaluation stack/static fields
     /// and `rvcount = 0`.
-    #[must_use]
-    pub fn clone_with_position(&self, position: usize) -> Self {
-        Self {
+    pub fn clone_with_position(&self, position: usize) -> VmResult<Self> {
+        let mut context = Self {
             shared_states: self.shared_states.clone(),
-            instruction_pointer: position,
+            instruction_pointer: 0,
             rvcount: 0,
             local_variables: None,
             arguments: None,
             try_stack: None,
-        }
+        };
+        context.set_instruction_pointer(position)?;
+        Ok(context)
     }
 
     /// Initializes the slots for local variables and arguments.
@@ -537,7 +572,14 @@ impl<S> ExecutionContext<S> {
 
 impl<S> Clone for ExecutionContext<S> {
     fn clone(&self) -> Self {
-        self.clone_with_position(self.instruction_pointer)
+        Self {
+            shared_states: self.shared_states.clone(),
+            instruction_pointer: self.instruction_pointer,
+            rvcount: 0,
+            local_variables: None,
+            arguments: None,
+            try_stack: None,
+        }
     }
 }
 

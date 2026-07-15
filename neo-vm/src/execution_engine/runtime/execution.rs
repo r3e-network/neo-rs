@@ -4,14 +4,6 @@
 
 use super::{ExecutionEngine, StackItem, VMState, VmError, VmResult};
 use crate::Instruction;
-use std::sync::{Arc, LazyLock};
-
-/// Shared implicit-RET instruction used when the IP reaches end-of-script.
-///
-/// C# substitutes `Instruction.RET` in that case; reusing one `Arc` avoids
-/// allocating a new instruction object on every function return / frame exit.
-static IMPLICIT_RET: LazyLock<Arc<Instruction>> =
-    LazyLock::new(|| Arc::new(Instruction::ret()));
 
 impl<S> ExecutionEngine<S> {
     /// Starts execution of the VM.
@@ -100,7 +92,7 @@ impl<S> ExecutionEngine<S> {
                 .get(context_index)
                 .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
             if context.instruction_pointer() >= context.script().len() {
-                (Arc::clone(&IMPLICIT_RET), false)
+                (std::sync::Arc::new(Instruction::ret()), false)
             } else {
                 (context.current_instruction()?, true)
             }
@@ -117,6 +109,9 @@ impl<S> ExecutionEngine<S> {
 
         // Execute the instruction - direct array access for optimal dispatch
         let opcode = instruction.opcode();
+        if let Some(profile) = &mut self.execution_profile {
+            profile.record_opcode(opcode);
+        }
         let handler = self.jump_table.get_handler_by_u8(opcode.byte());
         let result = match handler {
             Some(h) => h(self, &instruction),

@@ -22,4 +22,4 @@ mod invocation_wallet;
 mod script;
 
 pub(super) use invocation::{invoke_function, invoke_script};
-pub(super) use script::contract_parameter_to_stack_value;
+pub(super) use script::emit_contract_parameter;

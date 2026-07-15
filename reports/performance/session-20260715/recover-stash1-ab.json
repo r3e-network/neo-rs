@@ -1,0 +1,27 @@
+{
+  "source": "stash@{1} on c9e9d37e (perf-continue-all-wip-before-mpt-ab)",
+  "runs": [
+    {
+      "overall": 10027.436210605432,
+      "dense": 1439.0424480540225,
+      "tx": 1651.328062490227,
+      "empty": 45054.69734128915,
+      "load_execute_us": 374,
+      "execute_us": 374
+    },
+    {
+      "overall": 10487.256646233132,
+      "dense": 1368.9628930296763,
+      "tx": 1657.299129016639,
+      "empty": 50136.369052085916,
+      "load_execute_us": 361,
+      "execute_us": 360
+    }
+  ],
+  "mean_overall": 10257.346428419281,
+  "mean_dense": 1404.0026705418495,
+  "mean_load_execute_us": 367.5,
+  "root_match": true,
+  "vs_current_7k_load_execute": "~2.0x faster execute",
+  "vs_known_fast_binary": "~85-90% of 11.2k / 318\u00b5s"
+}

@@ -10,8 +10,8 @@
 //! contract (in `neo-native-contracts`), so at first glance it looks like it
 //! belongs next to that contract. It cannot move there, however, because it is
 //! deeply coupled to the execution engine: it depends on [`crate::helper::Helper`],
-//! [`crate::interoperable::Interoperable`], and the VM stack-item types
-//! ([`neo_vm::StackItem`] / [`neo_vm::StackValue`]) for its (de)serialization
+//! [`crate::interoperable::Interoperable`], and the VM [`neo_vm::StackItem`]
+//! type for its (de)serialization
 //! to/from the on-chain `Struct` representation. `neo-native-contracts` depends
 //! on `neo-execution` (for the `NativeContract` trait and the engine), so
 //! moving `ContractState` the other way would create a dependency cycle.
@@ -27,7 +27,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_manifest::{ContractManifest, NefFile};
 use neo_primitives::UInt160;
-use neo_vm::{OpCode, StackValue};
+use neo_vm::{OpCode, StackItem};
 use num_traits::ToPrimitive;
 use serde_json::{Value, json};
 
@@ -50,13 +50,18 @@ pub struct ContractState {
     pub manifest: ContractManifest,
 }
 
-fn stack_value_to_bigint(value: &StackValue) -> Result<num_bigint::BigInt, CoreError> {
-    neo_vm::stack_value_as_bigint(value)
+fn stack_item_to_bigint(value: &StackItem) -> Result<num_bigint::BigInt, CoreError> {
+    value
+        .as_int()
         .map_err(|_| CoreError::invalid_format("ContractState field must be Integer-compatible"))
 }
 
-fn stack_value_to_bytes(value: &StackValue) -> Option<Vec<u8>> {
-    value.to_byte_string_bytes()
+fn stack_item_to_bytes(value: &StackItem) -> Option<Vec<u8>> {
+    match value {
+        StackItem::ByteString(bytes) => Some(bytes.clone()),
+        StackItem::Buffer(buffer) => Some(buffer.data()),
+        _ => None,
+    }
 }
 
 impl ContractState {
@@ -161,8 +166,8 @@ impl ContractState {
     /// `neo_io` field encoding (which remains available via [`Serializable`]
     /// for non-storage purposes).
     pub fn serialize_contract_record(&self) -> CoreResult<Vec<u8>> {
-        neo_serialization::BinarySerializer::serialize_stack_value(
-            &self.to_stack_value(),
+        neo_serialization::BinarySerializer::serialize(
+            &self.to_stack_item(),
             &neo_vm::ExecutionEngineLimits::default(),
         )
         .map_err(|e| CoreError::serialization(format!("ContractState record: {e}")))
@@ -176,81 +181,74 @@ impl ContractState {
     /// followed by `ContractState.FromStackItem`.
     pub fn deserialize_contract_record(bytes: &[u8]) -> CoreResult<Self> {
         let limits = neo_vm::ExecutionEngineLimits::default();
-        let value = neo_serialization::BinarySerializer::deserialize_stack_value_with_limits(
-            bytes,
-            limits.max_item_size as usize,
-            limits.max_stack_size as usize,
-        )
-        .map_err(|e| CoreError::deserialization(format!("ContractState record: {e}")))?;
+        let value = neo_serialization::BinarySerializer::deserialize(bytes, &limits, None)
+            .map_err(|e| CoreError::deserialization(format!("ContractState record: {e}")))?;
         let mut state = Self::default();
-        state.from_stack_value(value)?;
+        state.from_stack_item(value)?;
         Ok(state)
     }
 }
 
 impl Interoperable for ContractState {
-    fn from_stack_value(&mut self, value: StackValue) -> Result<(), neo_vm::InteroperableError> {
-        self.from_stack_value(value)
+    fn from_stack_item(&mut self, value: StackItem) -> Result<(), neo_vm::InteroperableError> {
+        ContractState::from_stack_item(self, value)
             .map_err(|e| neo_vm::InteroperableError::InvalidData(e.to_string()))
     }
 
-    fn to_stack_value(&self) -> Result<StackValue, neo_vm::InteroperableError> {
-        Ok(self.to_stack_value())
+    fn to_stack_item(&self) -> Result<StackItem, neo_vm::InteroperableError> {
+        Ok(ContractState::to_stack_item(self))
     }
 }
 
 impl ContractState {
-    /// Converts the contract state into the persisted VM stack-value shape.
-    pub fn to_stack_value(&self) -> StackValue {
-        StackValue::Array(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::Integer(self.id as i64),
-                StackValue::Integer(i64::from(self.update_counter)),
-                StackValue::ByteString(self.hash.to_bytes().to_vec()),
-                StackValue::ByteString(self.nef.to_bytes()),
-                self.manifest.to_stack_value(),
-            ],
-        )
+    /// Converts the contract state into the persisted VM stack-item shape.
+    pub fn to_stack_item(&self) -> StackItem {
+        StackItem::from_array(vec![
+            StackItem::from_i64(i64::from(self.id)),
+            StackItem::from_i64(i64::from(self.update_counter)),
+            StackItem::from_byte_string(self.hash.to_bytes()),
+            StackItem::from_byte_string(self.nef.to_bytes()),
+            self.manifest.to_stack_item(),
+        ])
     }
 
-    /// Updates this contract state from the persisted VM stack-value shape.
-    pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
-        let items = match stack_value {
-            StackValue::Array(_, items) => items,
+    /// Updates this contract state from the persisted VM stack-item shape.
+    pub fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
+        let items = match stack_item {
+            StackItem::Array(items) => items.items(),
             other => {
                 return Err(CoreError::invalid_format(format!(
-                    "ContractState expects Array stack value, found {:?}",
-                    other.compact_type_tag()
+                    "ContractState expects Array stack item, found {:?}",
+                    other.stack_item_type()
                 )));
             }
         };
 
         if items.len() < 5 {
             return Err(CoreError::invalid_format(format!(
-                "ContractState stack value must contain 5 elements, found {}",
+                "ContractState stack item must contain 5 elements, found {}",
                 items.len()
             )));
         }
 
-        let id = stack_value_to_bigint(&items[0])?
+        let id = stack_item_to_bigint(&items[0])?
             .to_i32()
             .ok_or_else(|| CoreError::invalid_format("ContractState id must fit Int32"))?;
-        let update_counter = stack_value_to_bigint(&items[1])?.to_u16().ok_or_else(|| {
+        let update_counter = stack_item_to_bigint(&items[1])?.to_u16().ok_or_else(|| {
             CoreError::invalid_format("ContractState update counter must fit UInt16")
         })?;
-        let hash_bytes = stack_value_to_bytes(&items[2])
+        let hash_bytes = stack_item_to_bytes(&items[2])
             .ok_or_else(|| CoreError::invalid_format("ContractState hash must be ByteString"))?;
         let hash = UInt160::from_bytes(&hash_bytes).map_err(|_| {
             CoreError::invalid_format("ContractState hash must be valid UInt160 bytes")
         })?;
-        let nef_bytes = stack_value_to_bytes(&items[3])
+        let nef_bytes = stack_item_to_bytes(&items[3])
             .ok_or_else(|| CoreError::invalid_format("ContractState NEF must be ByteString"))?;
         let nef = NefFile::parse(&nef_bytes)
             .map_err(|_| CoreError::invalid_format("ContractState NEF bytes failed to parse"))?;
 
         let mut manifest = ContractManifest::new(String::new());
-        manifest.from_stack_value(items[4].clone())?;
+        manifest.from_stack_item(items[4].clone())?;
 
         self.id = id;
         self.update_counter = update_counter;

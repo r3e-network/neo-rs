@@ -119,8 +119,9 @@ fn deploy_verify_contract(system: &Arc<crate::server::NodeContext>) -> UInt160 {
         BinarySerializer::deserialize(&contract_bytes, &ExecutionEngineLimits::default(), None)
             .expect("contract stack item");
     let mut contract = ContractState::default();
-    let sv = neo_vm::StackValue::try_from(item).expect("stack item to stack value");
-    let _ = contract.from_stack_value(sv);
+    contract
+        .from_stack_item(item)
+        .expect("decode deployed contract state");
 
     let tracked = engine.snapshot_cache().tracked_items();
     store_cache.apply_tracked_items(tracked);

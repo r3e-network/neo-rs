@@ -4,11 +4,11 @@
 //! computing their hashes, and dispatching execution either to built-in handlers
 //! or to the host environment (e.g. `ApplicationEngine`).
 
+use crate::Instruction;
 use crate::error::{VmError, VmResult};
 use crate::execution_context::ExecutionContext;
 use crate::execution_engine::ExecutionEngine;
 use neo_primitives::CallFlags;
-use neo_vm_rs::Instruction;
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
 use std::collections::hash_map::Entry;
@@ -86,7 +86,7 @@ pub trait InteropHost<S = ()> {
     /// attached. Hosts whose setting can change must detach and reattach before
     /// executing more instructions.
     fn post_execute_instruction_enabled(&self) -> bool {
-        false
+        true
     }
 
     /// Invokes a system call identified by its hash.
@@ -319,7 +319,7 @@ fn hash_syscall(api: &str) -> VmResult<u32> {
         )));
     }
 
-    Ok(neo_vm_rs::interop_hash(api))
+    Ok(crate::interop_hash(api))
 }
 
 #[cfg(test)]

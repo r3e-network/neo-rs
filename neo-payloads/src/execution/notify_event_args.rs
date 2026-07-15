@@ -7,7 +7,6 @@
 //! back-compat with code that still imports it from there.
 
 use neo_primitives::UInt160;
-use neo_vm::StackValue;
 use neo_vm::{Interoperable, InteroperableError, StackItem, VmError};
 use std::fmt;
 use std::sync::Arc;
@@ -82,62 +81,30 @@ impl NotifyEventArgs {
     }
 
     /// Builds the C# `NotifyEventArgs.ToStackItem` layout with a caller-prepared
-    /// state array in the lean neo-vm representation.
+    /// state array.
     ///
     /// The runtime owns hardfork-specific state-copying policy. This helper keeps
     /// the `[ScriptHash, EventName, State]` projection in one place.
-    pub fn to_stack_value_with_state_array(&self, state_array: StackValue) -> StackValue {
-        StackValue::Array(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::ByteString(self.script_hash.to_bytes()),
-                StackValue::ByteString(self.event_name.clone().into_bytes()),
-                state_array,
-            ],
-        )
-    }
-
-    /// Converts the notification to a neo-vm stack value using its current state array.
-    pub fn to_stack_value(&self) -> Result<StackValue, VmError> {
-        let state = self
-            .state
-            .iter()
-            .cloned()
-            .map(StackValue::try_from)
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(self.to_stack_value_with_state_array(StackValue::Array(
-            neo_vm::next_stack_item_id(),
-            state,
-        )))
+    pub fn to_stack_item_with_state_array(&self, state_array: StackItem) -> StackItem {
+        StackItem::from_array(vec![
+            StackItem::from_byte_string(self.script_hash.to_bytes()),
+            StackItem::from_byte_string(self.event_name.clone().into_bytes()),
+            state_array,
+        ])
     }
 
     /// Builds the C# `NotifyEventArgs.ToStackItem` layout with a caller-prepared
-    /// state array, adapting through the canonical [`StackValue`] projection.
+    /// state array.
     pub fn try_to_stack_item_with_state_array(
         &self,
         state_array: StackItem,
     ) -> Result<StackItem, VmError> {
-        let StackValue::Array(_, mut fields) =
-            self.to_stack_value_with_state_array(StackValue::Null)
-        else {
-            unreachable!("notification projection is always an array");
-        };
-        let script_hash = StackItem::try_from(fields.remove(0)).map_err(|error| {
-            VmError::invalid_operation_msg(format!(
-                "Failed to convert notification script hash StackValue to StackItem: {error}"
-            ))
-        })?;
-        let event_name = StackItem::try_from(fields.remove(0)).map_err(|error| {
-            VmError::invalid_operation_msg(format!(
-                "Failed to convert notification event name StackValue to StackItem: {error}"
-            ))
-        })?;
+        Ok(self.to_stack_item_with_state_array(state_array))
+    }
 
-        Ok(StackItem::from_array(vec![
-            script_hash,
-            event_name,
-            state_array,
-        ]))
+    /// Converts the notification using the retained immutable state array.
+    pub fn to_stack_item(&self) -> StackItem {
+        self.to_stack_item_with_state_array(self.state_array())
     }
 }
 
@@ -160,15 +127,14 @@ impl fmt::Debug for NotifyEventArgs {
 }
 
 impl Interoperable for NotifyEventArgs {
-    fn from_stack_value(&mut self, _value: StackValue) -> Result<(), InteroperableError> {
+    fn from_stack_item(&mut self, _value: StackItem) -> Result<(), InteroperableError> {
         Err(InteroperableError::NotSupported(
-            "NotifyEventArgs::from_stack_value is not supported".into(),
+            "NotifyEventArgs::from_stack_item is not supported".into(),
         ))
     }
 
-    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
-        self.to_stack_value()
-            .map_err(|e| InteroperableError::InvalidData(e.to_string()))
+    fn to_stack_item(&self) -> Result<StackItem, InteroperableError> {
+        Ok(NotifyEventArgs::to_stack_item(self))
     }
 }
 

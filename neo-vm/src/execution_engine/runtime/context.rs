@@ -3,6 +3,7 @@
 //
 
 use super::{ExecutionContext, ExecutionEngine, Script, VMState, VmError, VmResult};
+use std::sync::Arc;
 
 impl<S> ExecutionEngine<S> {
     /// Loads a context into the invocation stack.
@@ -12,6 +13,10 @@ impl<S> ExecutionEngine<S> {
                 "MaxInvocationStackSize exceed: {}",
                 self.invocation_stack.len()
             )));
+        }
+
+        if let Some(profile) = &self.execution_profile {
+            context.set_stack_profile(profile.stack_handle());
         }
 
         // Push the context onto the invocation stack
@@ -83,37 +88,35 @@ impl<S> ExecutionEngine<S> {
     }
 
     /// Creates a new context with an explicit typed state value.
-    #[must_use]
     pub fn create_context_with_state(
         &self,
         script: Script,
         rvcount: i32,
         initial_position: usize,
         state: S,
-    ) -> ExecutionContext<S> {
+    ) -> VmResult<ExecutionContext<S>> {
         let mut context =
             ExecutionContext::new_with_state(script, rvcount, &self.reference_counter, state);
-        context.set_instruction_pointer(initial_position);
-        context
+        context.set_instruction_pointer(initial_position)?;
+        Ok(context)
     }
 
     /// Creates a new context using a typed-state factory.
-    #[must_use]
     pub fn create_context_with_state_factory<F: FnOnce() -> S>(
         &self,
         script: Script,
         rvcount: i32,
         initial_position: usize,
         factory: F,
-    ) -> ExecutionContext<S> {
+    ) -> VmResult<ExecutionContext<S>> {
         let mut context = ExecutionContext::new_with_state_factory(
             script,
             rvcount,
             &self.reference_counter,
             factory,
         );
-        context.set_instruction_pointer(initial_position);
-        context
+        context.set_instruction_pointer(initial_position)?;
+        Ok(context)
     }
 
     /// Loads a script and creates a new context with an explicit typed state value.
@@ -124,7 +127,7 @@ impl<S> ExecutionEngine<S> {
         initial_position: usize,
         state: S,
     ) -> VmResult<&ExecutionContext<S>> {
-        let context = self.create_context_with_state(script, rvcount, initial_position, state);
+        let context = self.create_context_with_state(script, rvcount, initial_position, state)?;
         self.load_context(context)?;
 
         self.current_context()
@@ -143,7 +146,7 @@ impl<S> ExecutionEngine<S> {
         factory: F,
     ) -> VmResult<&ExecutionContext<S>> {
         let context =
-            self.create_context_with_state_factory(script, rvcount, initial_position, factory);
+            self.create_context_with_state_factory(script, rvcount, initial_position, factory)?;
         self.load_context(context)?;
 
         self.current_context()
@@ -156,16 +159,28 @@ impl<S> ExecutionEngine<S> {
 
 impl<S: Default> ExecutionEngine<S> {
     /// Creates a new context with the specified script.
-    #[must_use]
     pub fn create_context(
         &self,
         script: Script,
         rvcount: i32,
         initial_position: usize,
-    ) -> ExecutionContext<S> {
+    ) -> VmResult<ExecutionContext<S>> {
         let mut context = ExecutionContext::new(script, rvcount, &self.reference_counter);
-        context.set_instruction_pointer(initial_position);
-        context
+        context.set_instruction_pointer(initial_position)?;
+        Ok(context)
+    }
+
+    /// Creates a context that retains an existing script allocation.
+    pub fn create_context_from_script_arc(
+        &self,
+        script: Arc<Script>,
+        rvcount: i32,
+        initial_position: usize,
+    ) -> VmResult<ExecutionContext<S>> {
+        let mut context =
+            ExecutionContext::new_from_script_arc(script, rvcount, &self.reference_counter);
+        context.set_instruction_pointer(initial_position)?;
+        Ok(context)
     }
 
     /// Loads a script and creates a new context.
@@ -175,7 +190,7 @@ impl<S: Default> ExecutionEngine<S> {
         rvcount: i32,
         initial_position: usize,
     ) -> VmResult<&ExecutionContext<S>> {
-        let context = self.create_context(script, rvcount, initial_position);
+        let context = self.create_context(script, rvcount, initial_position)?;
         self.load_context(context)?;
 
         self.current_context()

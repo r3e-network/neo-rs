@@ -10,7 +10,6 @@ where
         self.diagnostic.enabled()
     }
 
-
     fn invoke_syscall(&mut self, engine: &mut ExecutionEngine<B>, hash: u32) -> VmResult<()> {
         if let Some(entry) = self.interop_handlers.get(&hash).copied() {
             // C# `ApplicationEngine.System_Contract_Call` equivalent: check that

@@ -69,8 +69,8 @@ impl NeoToken {
             }
         }
 
-        let decoded = crate::support::codec::decode_stack_value(&raw, "committee cache")?;
-        let members = CachedCommittee::from_stack_value(decoded)?.into_members();
+        let decoded = crate::support::codec::decode_stack_item(&raw, "committee cache")?;
+        let members = CachedCommittee::from_stack_item(&decoded)?.into_members();
 
         let mut cache = COMMITTEE_DESERIALIZE_CACHE
             .lock()
@@ -263,7 +263,7 @@ impl NeoToken {
         height: u32,
         committee_count: usize,
     ) -> bool {
-        height % (committee_count as u32) == 0
+        height.is_multiple_of(committee_count as u32)
     }
 
     /// C# `Contract.GetBFTAddress(pubkeys)`: the script hash of the

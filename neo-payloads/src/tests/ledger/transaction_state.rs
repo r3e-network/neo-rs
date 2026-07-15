@@ -5,14 +5,13 @@ use neo_primitives::UInt160;
 use neo_primitives::WitnessScope;
 use neo_serialization::BinarySerializer;
 use neo_vm::Interoperable;
-use neo_vm::{ExecutionEngineLimits, OpCode, StackValue, VmState as VMState};
+use neo_vm::{ExecutionEngineLimits, OpCode, StackItem, VmState as VMState};
 
-/// Structural equality for StackValue that ignores the reference-identity ids
-/// on compound variants. Collection identity is not part of serialized
-/// stack data, so structural equality is the correct notion for round-trip / shape
-/// assertions.
-fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
-    a.structural_eq(b)
+/// Structural equality for stack items. Collection identity is not part of
+/// serialized stack data, so structural equality is the correct notion for
+/// round-trip and shape assertions.
+fn stack_item_struct_eq(a: &StackItem, b: &StackItem) -> bool {
+    a.equals(b).unwrap_or(false)
 }
 
 fn sample_transaction(nonce: u32, network_fee: i64) -> Transaction {
@@ -26,45 +25,43 @@ fn sample_transaction(nonce: u32, network_fee: i64) -> Transaction {
 }
 
 fn stack_bytes(state: &TransactionState) -> Vec<u8> {
-    BinarySerializer::serialize_stack_value(&stack_value(state), &ExecutionEngineLimits::default())
+    BinarySerializer::serialize(&stack_item(state), &ExecutionEngineLimits::default())
         .expect("serialize stack item")
 }
 
-fn stack_value(state: &TransactionState) -> StackValue {
-    state.try_to_stack_value().unwrap()
+fn stack_item(state: &TransactionState) -> StackItem {
+    state.try_to_stack_item().unwrap()
 }
 
-fn decode_stack_value(bytes: &[u8]) -> StackValue {
-    BinarySerializer::deserialize_stack_value(bytes).expect("deserialize stack value")
+fn decode_stack_item(bytes: &[u8]) -> StackItem {
+    BinarySerializer::deserialize(bytes, &ExecutionEngineLimits::default(), None)
+        .expect("deserialize stack item")
 }
 
 #[test]
-fn transaction_state_projects_conflict_stub_to_neo_vm_rs_stack_value() {
+fn transaction_state_projects_conflict_stub_to_stack_item() {
     let state = TransactionState::new(7, None, VMState::NONE);
 
-    let left = stack_value(&state);
-    let right = StackValue::Struct(neo_vm::next_stack_item_id(), vec![StackValue::Integer(7)]);
+    let left = stack_item(&state);
+    let right = StackItem::from_struct(vec![StackItem::from_i64(7)]);
     assert!(
-        stack_value_struct_eq(&left, &right),
-        "structural StackValue mismatch: {left:?} vs {right:?}"
+        stack_item_struct_eq(&left, &right),
+        "structural StackItem mismatch: {left:?} vs {right:?}"
     );
 }
 
 #[test]
-fn transaction_state_reads_from_neo_vm_rs_stack_value() {
+fn transaction_state_reads_from_stack_item() {
     let tx = sample_transaction(99, 200);
     let tx_bytes = TransactionState::serialize_transaction(&tx).unwrap();
     let mut state = TransactionState::new(0, None, VMState::NONE);
 
     state
-        .from_stack_value(StackValue::Struct(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::Integer(11),
-                StackValue::ByteString(tx_bytes),
-                StackValue::Integer(VMState::HALT.to_byte() as i64),
-            ],
-        ))
+        .from_stack_item(StackItem::from_struct(vec![
+            StackItem::from_i64(11),
+            StackItem::from_byte_string(tx_bytes),
+            StackItem::from_i64(i64::from(VMState::HALT.to_byte())),
+        ]))
         .unwrap();
 
     assert_eq!(state.block_index, 11);
@@ -75,10 +72,10 @@ fn transaction_state_reads_from_neo_vm_rs_stack_value() {
 #[test]
 fn conflict_stub_roundtrip() {
     let state = TransactionState::new(7, None, VMState::NONE);
-    let value = stack_value(&state);
+    let value = stack_item(&state);
 
     let mut parsed = TransactionState::new(0, None, VMState::HALT);
-    parsed.from_stack_value(value).unwrap();
+    parsed.from_stack_item(value).unwrap();
 
     assert_eq!(parsed.block_index, 7);
     assert!(parsed.transaction.is_none());
@@ -91,10 +88,10 @@ fn full_roundtrip_preserves_transaction_and_state() {
     tx.set_script(vec![0x01, 0x02, 0x03]);
 
     let state = TransactionState::new(42, Some(tx.clone()), VMState::HALT);
-    let value = stack_value(&state);
+    let value = stack_item(&state);
 
     let mut parsed = TransactionState::new(0, None, VMState::NONE);
-    parsed.from_stack_value(value).unwrap();
+    parsed.from_stack_item(value).unwrap();
 
     assert_eq!(parsed.block_index, 42);
     assert_eq!(parsed.state, VMState::HALT);
@@ -108,7 +105,7 @@ fn binary_roundtrip_matches_csharp_transaction_state() {
     let bytes = stack_bytes(&state);
 
     let mut parsed = TransactionState::new(0, None, VMState::HALT);
-    parsed.from_stack_value(decode_stack_value(&bytes)).unwrap();
+    parsed.from_stack_item(decode_stack_item(&bytes)).unwrap();
 
     assert_eq!(parsed.block_index, 1);
     assert_eq!(
@@ -118,18 +115,18 @@ fn binary_roundtrip_matches_csharp_transaction_state() {
 }
 
 #[test]
-fn interoperable_projection_matches_stack_value_projection() {
+fn interoperable_projection_matches_stack_item_projection() {
     let state = TransactionState::new(12, Some(sample_transaction(7, 100)), VMState::HALT);
-    let expected = stack_value(&state);
+    let expected = stack_item(&state);
 
-    let interop = Interoperable::to_stack_value(&state).unwrap();
+    let interop = Interoperable::to_stack_item(&state).unwrap();
     assert!(
-        stack_value_struct_eq(&interop, &expected),
-        "structural StackValue mismatch: {interop:?} vs {expected:?}"
+        stack_item_struct_eq(&interop, &expected),
+        "structural StackItem mismatch: {interop:?} vs {expected:?}"
     );
 
     let mut parsed = TransactionState::new(0, None, VMState::NONE);
-    Interoperable::from_stack_value(&mut parsed, expected).unwrap();
+    Interoperable::from_stack_item(&mut parsed, expected).unwrap();
 
     assert_eq!(parsed.block_index, 12);
     assert_eq!(parsed.state, VMState::HALT);
@@ -142,10 +139,10 @@ fn interoperable_projection_matches_stack_value_projection() {
 #[test]
 fn interoperable_projection_accepts_conflict_stub() {
     let state = TransactionState::new(9, None, VMState::NONE);
-    let stack_value = Interoperable::to_stack_value(&state).unwrap();
+    let stack_item = Interoperable::to_stack_item(&state).unwrap();
 
     let mut parsed = TransactionState::new(0, Some(sample_transaction(1, 0)), VMState::HALT);
-    Interoperable::from_stack_value(&mut parsed, stack_value).unwrap();
+    Interoperable::from_stack_item(&mut parsed, stack_item).unwrap();
 
     assert_eq!(parsed.block_index, 9);
     assert!(parsed.transaction.is_none());
@@ -158,20 +155,20 @@ fn transaction_state_rejects_invalid_stack_shapes() {
 
     assert!(
         parsed
-            .from_stack_value(StackValue::Array(neo_vm::next_stack_item_id(), vec![],))
+            .from_stack_item(StackItem::from_array(vec![]))
             .is_err()
     );
     assert!(
         parsed
-            .from_stack_value(StackValue::Struct(neo_vm::next_stack_item_id(), vec![],))
+            .from_stack_item(StackItem::from_struct(vec![]))
             .is_err()
     );
     assert!(
         parsed
-            .from_stack_value(StackValue::Struct(
-                neo_vm::next_stack_item_id(),
-                vec![StackValue::Integer(7), StackValue::ByteString(vec![])]
-            ))
+            .from_stack_item(StackItem::from_struct(vec![
+                StackItem::from_i64(7),
+                StackItem::from_byte_string(vec![]),
+            ]))
             .is_err()
     );
 }
@@ -181,14 +178,11 @@ fn transaction_state_rejects_malformed_transaction_bytes() {
     let mut parsed = TransactionState::new(0, None, VMState::NONE);
 
     let error = parsed
-        .from_stack_value(StackValue::Struct(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::Integer(7),
-                StackValue::ByteString(vec![0xff]),
-                StackValue::Integer(VMState::HALT.to_byte() as i64),
-            ],
-        ))
+        .from_stack_item(StackItem::from_struct(vec![
+            StackItem::from_i64(7),
+            StackItem::from_byte_string(vec![0xff]),
+            StackItem::from_i64(i64::from(VMState::HALT.to_byte())),
+        ]))
         .unwrap_err();
 
     assert!(
@@ -213,10 +207,10 @@ fn transaction_state_clone_is_independent() {
 }
 
 #[test]
-fn transaction_state_from_stack_value_updates_fields() {
+fn transaction_state_from_stack_item_updates_fields() {
     let origin = TransactionState::new(1, Some(sample_transaction(1, 100)), VMState::NONE);
     let mut replica = TransactionState::new(0, None, VMState::HALT);
-    replica.from_stack_value(stack_value(&origin)).unwrap();
+    replica.from_stack_item(stack_item(&origin)).unwrap();
 
     assert_eq!(stack_bytes(&replica), stack_bytes(&origin));
     assert_eq!(
@@ -225,7 +219,7 @@ fn transaction_state_from_stack_value_updates_fields() {
     );
 
     let new_origin = TransactionState::new(2, Some(sample_transaction(99, 200)), VMState::NONE);
-    replica.from_stack_value(stack_value(&new_origin)).unwrap();
+    replica.from_stack_item(stack_item(&new_origin)).unwrap();
 
     assert_eq!(stack_bytes(&replica), stack_bytes(&new_origin));
     assert_eq!(replica.block_index, 2);
@@ -241,7 +235,7 @@ fn trimmed_transaction_state_roundtrip_via_binary_serializer() {
     let bytes = stack_bytes(&state);
 
     let mut parsed = TransactionState::new(0, Some(sample_transaction(1, 0)), VMState::HALT);
-    parsed.from_stack_value(decode_stack_value(&bytes)).unwrap();
+    parsed.from_stack_item(decode_stack_item(&bytes)).unwrap();
 
     assert_eq!(parsed.block_index, 7);
     assert!(parsed.transaction.is_none());

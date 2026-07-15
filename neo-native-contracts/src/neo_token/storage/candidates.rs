@@ -258,8 +258,8 @@ impl NeoToken {
         if let Some(decoded) = Self::decode_canonical_candidate_state(value)? {
             return Ok(decoded);
         }
-        let decoded = crate::support::codec::decode_stack_value(value, "candidate state")?;
-        let state = CandidateState::from_stack_value(decoded)?;
+        let decoded = crate::support::codec::decode_stack_item(value, "candidate state")?;
+        let state = CandidateState::from_stack_item(&decoded)?;
         Ok((state.registered, state.votes))
     }
 
@@ -453,22 +453,18 @@ impl NeoToken {
     pub(in crate::neo_token) fn candidates_to_array_bytes(
         candidates: &[(ECPoint, BigInt)],
     ) -> CoreResult<Vec<u8>> {
-        let array = StackValue::Array(
-            neo_vm::next_stack_item_id(),
+        let array = StackItem::from_array(
             candidates
                 .iter()
                 .map(|(pk, votes)| {
-                    StackValue::Struct(
-                        neo_vm::next_stack_item_id(),
-                        vec![
-                            StackValue::ByteString(pk.to_bytes()),
-                            StackValue::BigInteger(votes.to_signed_bytes_le()),
-                        ],
-                    )
+                    StackItem::from_struct(vec![
+                        StackItem::from_byte_string(pk.to_bytes()),
+                        StackItem::from_int(votes.clone()),
+                    ])
                 })
                 .collect::<Vec<_>>(),
         );
-        BinarySerializer::serialize_stack_value_default(&array)
+        BinarySerializer::serialize_default(&array)
             .map_err(|e| CoreError::invalid_operation(format!("getCandidates: {e}")))
     }
 }

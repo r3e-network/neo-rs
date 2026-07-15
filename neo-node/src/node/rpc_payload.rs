@@ -75,6 +75,6 @@ impl std::fmt::Display for RemotePayloadEncoding {
 fn looks_like_hex_payload(text: &str) -> bool {
     let hex_text = text.strip_prefix("0x").unwrap_or(text);
     !hex_text.is_empty()
-        && hex_text.len() % 2 == 0
+        && hex_text.len().is_multiple_of(2)
         && hex_text.bytes().all(|byte| byte.is_ascii_hexdigit())
 }

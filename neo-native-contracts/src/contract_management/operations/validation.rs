@@ -192,7 +192,7 @@ impl ContractManagement {
         limits: &ExecutionEngineLimits,
         hash: &UInt160,
     ) -> bool {
-        if BinarySerializer::serialize_stack_value(&manifest.to_stack_value(), limits).is_err() {
+        if BinarySerializer::serialize(&manifest.to_stack_item(), limits).is_err() {
             return false;
         }
         manifest

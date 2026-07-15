@@ -382,11 +382,16 @@ impl NeoToken {
         // decodes its span as a secp256r1 point, faulting on anything
         // that is not a valid public key (including Null).
         let data = args.get(2).map(Vec::as_slice).unwrap_or(&[]);
-        let item =
-            crate::support::codec::decode_stack_value(data, "NeoToken::onNEP17Payment data")?;
-        let pubkey_bytes = item.to_byte_string_bytes().ok_or_else(|| {
-            CoreError::invalid_operation("NeoToken::onNEP17Payment data: cannot convert to bytes")
-        })?;
+        let item = crate::support::codec::decode_stack_item(data, "NeoToken::onNEP17Payment data")?;
+        let pubkey_bytes = match item {
+            StackItem::ByteString(bytes) => bytes,
+            StackItem::Buffer(buffer) => buffer.data(),
+            _ => {
+                return Err(CoreError::invalid_operation(
+                    "NeoToken::onNEP17Payment data: cannot convert to bytes",
+                ));
+            }
+        };
         let pubkey = ECPoint::from_bytes(&pubkey_bytes).map_err(|e| {
             CoreError::invalid_operation(format!("NeoToken::onNEP17Payment: bad public key: {e}"))
         })?;

@@ -993,6 +993,11 @@ track_during_catchup = true
         Some(4096),
         "fast-sync validation should absorb one burst window of ordered StateService MPT work"
     );
+    assert_eq!(
+        state_service.async_apply_batch_limit(),
+        Some(4096),
+        "fast-sync validation should amortize one MDBX commit across the bounded state queue"
+    );
 }
 
 #[test]

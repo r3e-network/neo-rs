@@ -201,12 +201,27 @@ where
     where
         F: FnOnce(&mut ExecutionContextState<B>),
     {
+        self.load_script_arc_with_state(Arc::new(script), rvcount, initial_position, configure)
+    }
+
+    pub(crate) fn load_script_arc_with_state<F>(
+        &mut self,
+        script: Arc<Script>,
+        rvcount: i32,
+        initial_position: usize,
+        configure: F,
+    ) -> CoreResult<ExecutionContext<B>>
+    where
+        F: FnOnce(&mut ExecutionContextState<B>),
+    {
         let (context, call_flags, invocation_counter_hash) = {
             let engine = self.vm_engine.engine_mut();
-            let context = engine.create_context(script, rvcount, initial_position);
+            let context = engine
+                .create_context_from_script_arc(script, rvcount, initial_position)
+                .map_err(|e| {
+                    CoreError::invalid_operation(format!("Invalid script context: {e}"))
+                })?;
 
-            let script_hash = UInt160::from_bytes(&context.script_hash())
-                .map_err(|e| CoreError::invalid_operation(format!("Invalid script hash: {e}")))?;
             let state_arc = context.state();
             let (call_flags, invocation_counter_hash) = {
                 let mut state = state_arc.lock();
@@ -214,12 +229,17 @@ where
                 // the current snapshot cache and commits into its parent on unload.
                 state.snapshot_cache = Some(Arc::new(self.snapshot_cache.clone_cache()));
                 configure(&mut state);
-                if state.script_hash.is_none() {
-                    state.script_hash = Some(script_hash);
-                }
-                let invocation_counter_hash = state.script_hash.ok_or_else(|| {
-                    CoreError::invalid_operation("Execution context script hash was not set")
-                })?;
+                let invocation_counter_hash = match state.script_hash {
+                    Some(script_hash) => script_hash,
+                    None => {
+                        let script_hash =
+                            UInt160::from_bytes(&context.script_hash()).map_err(|e| {
+                                CoreError::invalid_operation(format!("Invalid script hash: {e}"))
+                            })?;
+                        state.script_hash = Some(script_hash);
+                        script_hash
+                    }
+                };
                 (state.call_flags, invocation_counter_hash)
             };
             (context, call_flags, invocation_counter_hash)

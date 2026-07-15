@@ -2,7 +2,7 @@ use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
 use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm::StackValue;
+use neo_vm::StackItem;
 
 use super::PolicyContract;
 use crate::policy_contract::PREFIX_WHITELISTED_FEE_CONTRACTS;
@@ -38,8 +38,8 @@ impl PolicyContract {
     pub(in crate::policy_contract) fn decode_whitelisted_contract(
         value: &[u8],
     ) -> CoreResult<WhitelistedContractView> {
-        let decoded = crate::support::codec::decode_stack_value(value, "whitelisted contract")?;
-        WhitelistedContractView::from_stack_value(decoded)
+        let decoded = crate::support::codec::decode_stack_item(value, "whitelisted contract")?;
+        WhitelistedContractView::from_stack_item(&decoded)
     }
 
     /// Encodes a `WhitelistedContract` (`Struct[ContractHash, Method, ArgCount,
@@ -119,9 +119,9 @@ pub(in crate::policy_contract) struct WhitelistedContractView {
 }
 
 impl WhitelistedContractView {
-    pub(super) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
+    pub(super) fn from_stack_item(stack_item: &StackItem) -> CoreResult<Self> {
         let decoder =
-            crate::support::codec::StructDecoder::new(&stack_value, "whitelisted contract")?;
+            crate::support::codec::StructDecoder::new(stack_item, "whitelisted contract")?;
         let contract_hash = decoder.hash160(0, "hash")?;
         let method = decoder.string(1, "method")?;
         let arg_count = decoder.i32(2, "argCount")?;
@@ -134,17 +134,14 @@ impl WhitelistedContractView {
         })
     }
 
-    pub(super) fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::ByteString(self.contract_hash.to_bytes()),
-                StackValue::ByteString(self.method.as_bytes().to_vec()),
-                StackValue::Integer(i64::from(self.arg_count)),
-                StackValue::Integer(self.fixed_fee),
-            ],
-        )
+    pub(super) fn to_stack_item(&self) -> StackItem {
+        StackItem::from_struct(vec![
+            StackItem::from_byte_string(self.contract_hash.to_bytes()),
+            StackItem::from_byte_string(self.method.as_bytes().to_vec()),
+            StackItem::from_i64(i64::from(self.arg_count)),
+            StackItem::from_i64(self.fixed_fee),
+        ])
     }
 }
 
-neo_vm::impl_interoperable_via_stack_value!(WhitelistedContractView);
+neo_vm::impl_interoperable_via_stack_item!(WhitelistedContractView);

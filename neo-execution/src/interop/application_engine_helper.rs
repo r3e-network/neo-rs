@@ -1,16 +1,14 @@
 //! ApplicationEngine.Helper - matches C# Neo.SmartContract.ApplicationEngine helper methods exactly
 
-use neo_config::hardfork::Hardfork;
-use neo_crypto::{Crypto, ECCurve, ECPoint};
-// Old wrapper types removed - StackValue compounds are flat Vecs now
 use crate::NotifyEventArgs;
 use crate::application_engine::{ApplicationEngine, MAX_NOTIFICATION_COUNT, MAX_NOTIFICATION_SIZE};
+use neo_config::hardfork::Hardfork;
+use neo_crypto::{Crypto, ECCurve, ECPoint};
 use neo_error::{CoreError, CoreResult};
 use neo_primitives::TriggerType;
 use neo_primitives::UInt160;
 use neo_serialization::BinarySerializer;
 use neo_vm::StackItem;
-use neo_vm::StackValue;
 use neo_vm::VmOrderedDictionary;
 use neo_vm::VmState as VMState;
 use neo_vm::stack_item::{Array as ArrayItem, Map as MapItem, Struct as StructItem};
@@ -222,8 +220,8 @@ where
     pub fn ensure_notification_size(&self, state: &[StackItem]) -> CoreResult<()> {
         detect_circular_reference(state)?;
         let limits = self.execution_limits();
-        let value = notification_state_to_stack_value(state)?;
-        let serialized = BinarySerializer::serialize_stack_value_with_limits(
+        let value = StackItem::from_array(state.to_vec());
+        let serialized = BinarySerializer::serialize_with_limits(
             &value,
             MAX_NOTIFICATION_SIZE,
             limits.max_stack_size as usize,
@@ -316,16 +314,6 @@ fn detect_circular_reference(state: &[StackItem]) -> CoreResult<()> {
         detect_stack_item_cycle(item, &mut visiting, &mut visited)?;
     }
     Ok(())
-}
-
-fn notification_state_to_stack_value(state: &[StackItem]) -> CoreResult<StackValue> {
-    state
-        .iter()
-        .cloned()
-        .map(StackValue::try_from)
-        .collect::<Result<Vec<_>, _>>()
-        .map(|items| StackValue::Array(neo_vm::next_stack_item_id(), items))
-        .map_err(|error| CoreError::other(error.to_string()))
 }
 
 fn detect_stack_item_cycle(

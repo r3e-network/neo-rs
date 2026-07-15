@@ -2,7 +2,7 @@
 
 use neo_error::{CoreError, CoreResult};
 use neo_serialization::{BinarySerializer, JsonSerializer};
-use neo_vm::ExecutionEngineLimits;
+use neo_vm::{ExecutionEngineLimits, StackItem};
 
 use super::StdLib;
 
@@ -21,6 +21,35 @@ pub(super) fn deserialize_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
             .map(|_| data.to_vec())
             .map_err(|e| CoreError::invalid_operation(format!("StdLib::deserialize: {e}")))
     })
+}
+
+pub(super) fn serialize_stack_item(
+    item: &StackItem,
+    limits: &ExecutionEngineLimits,
+) -> CoreResult<StackItem> {
+    BinarySerializer::serialize(item, limits)
+        .map(StackItem::from_byte_string)
+        .map_err(|e| CoreError::invalid_operation(format!("StdLib::serialize: {e}")))
+}
+
+pub(super) fn deserialize_stack_item(
+    item: &StackItem,
+    limits: &ExecutionEngineLimits,
+) -> CoreResult<StackItem> {
+    if matches!(item, StackItem::Null) {
+        return Err(CoreError::invalid_operation(
+            "StdLib::deserialize: data cannot be null".to_string(),
+        ));
+    }
+    if let Some(bytes) = item.as_bytes_ref() {
+        return BinarySerializer::deserialize(bytes, limits, None)
+            .map_err(|e| CoreError::invalid_operation(format!("StdLib::deserialize: {e}")));
+    }
+    let bytes = item
+        .as_bytes()
+        .map_err(|e| CoreError::invalid_operation(format!("StdLib::deserialize: {e}")))?;
+    BinarySerializer::deserialize(&bytes, limits, None)
+        .map_err(|e| CoreError::invalid_operation(format!("StdLib::deserialize: {e}")))
 }
 
 /// jsonSerialize(item) -> JSON bytes (System.Text.Json byte-exact).

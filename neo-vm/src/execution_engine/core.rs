@@ -39,6 +39,7 @@ impl<S: Default> ExecutionEngine<S> {
             reference_counter,
             uncaught_exception: None,
             instructions_executed: 0,
+            execution_profile: None,
             gas_consumed: 0,
             gas_limit: DEFAULT_GAS_LIMIT,
         }
@@ -61,6 +62,7 @@ impl<S> ExecutionEngine<S> {
         self.instructions_executed = 0;
         self.gas_consumed = 0;
         self.call_flags = CallFlags::ALL;
+        self.execution_profile = None;
         self.state = VMState::BREAK;
     }
 
@@ -115,6 +117,28 @@ impl<S> ExecutionEngine<S> {
     #[must_use]
     pub const fn reference_counter(&self) -> &ReferenceCounter {
         &self.reference_counter
+    }
+
+    /// Enables a fresh opcode and evaluation-stack profile for this engine.
+    ///
+    /// Existing contexts are attached as well, so callers may enable profiling
+    /// either immediately before loading a script or before resuming one.
+    pub fn enable_execution_profiling(&mut self) {
+        let profile = Box::new(crate::execution_profile::ExecutionProfileCollector::new());
+        let stack_profile = profile.stack_handle();
+        self.result_stack.set_profile(stack_profile.clone());
+        for context in &self.invocation_stack {
+            context.set_stack_profile(stack_profile.clone());
+        }
+        self.execution_profile = Some(profile);
+    }
+
+    /// Returns a point-in-time snapshot when profiling is enabled.
+    #[must_use]
+    pub fn execution_profile(&self) -> Option<crate::VmExecutionProfile> {
+        self.execution_profile
+            .as_ref()
+            .map(|profile| profile.snapshot())
     }
 
     /// Returns the execution limits configured for this engine.

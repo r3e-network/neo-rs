@@ -66,3 +66,14 @@ Confirms gap is **not machine/harness/root** — same tmpfs dual-DB uncoord chai
   only `script.rs`, execute/host/call-flags, engine reuse, and execution crates moved.
 - Recovering the exact dirty tree (or re-landing MPT prefetch + any uncommitted VM
   hot-path WIP) is still the primary path to ~12k.
+
+### Isolation: MPT worker vs load_execute (current tree, batch=4096)
+
+| Config | overall | dense | load_execute_us |
+|--------|--------:|------:|----------------:|
+| dual-DB MPT on | 7,379 | 721 | **748** |
+| state_service off | 8,441 | 751 | **744** |
+
+**Conclusion:** disabling the MPT worker does **not** recover `load_execute`
+(~750µs either way). Pure execute regression is in TX/VM path, not MPT cache
+thrashing. Empty improves without MPT (48k→83k); overall rises from that.

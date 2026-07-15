@@ -22,7 +22,7 @@ mod invocation;
 mod push;
 pub mod redeem_script;
 
-use neo_vm_rs::OpCode;
+use crate::OpCode;
 
 pub use error::{ScriptBuilderError, ScriptBuilderResult};
 pub use invocation::signature_from_invocation;

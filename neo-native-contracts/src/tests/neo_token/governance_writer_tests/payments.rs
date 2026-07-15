@@ -159,7 +159,7 @@ fn registration_payment_engine(
 }
 
 #[test]
-fn on_nep17_payment_data_parser_uses_stack_value_projection() {
+fn on_nep17_payment_data_parser_uses_stack_item_projection() {
     let source = include_str!("../../../neo_token/invoke.rs");
     let start = source
         .find("fn invoke_on_nep17_payment(")
@@ -172,8 +172,9 @@ fn on_nep17_payment_data_parser_uses_stack_value_projection() {
         .expect("next handler exists");
     let handler = &source[start..end];
 
-    assert!(handler.contains("decode_stack_value"));
-    assert!(handler.contains("to_byte_string_bytes"));
+    assert!(handler.contains("decode_stack_item"));
+    assert!(handler.contains("StackItem::ByteString"));
+    assert!(handler.contains("StackItem::Buffer"));
     assert!(!handler.contains("BinarySerializer::deserialize("));
 }
 

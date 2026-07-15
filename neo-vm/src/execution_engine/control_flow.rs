@@ -26,7 +26,7 @@ impl<S> ExecutionEngine<S> {
         let context = self
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-        context.set_instruction_pointer(position as usize);
+        context.set_instruction_pointer(position as usize)?;
         self.is_jumping = true;
         Ok(())
     }
@@ -67,13 +67,7 @@ impl<S> ExecutionEngine<S> {
         let context = self
             .current_context()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-        if position >= context.script().len() {
-            return Err(VmError::invalid_operation_msg(format!(
-                "Call target out of range: {position}"
-            )));
-        }
-
-        let new_context = context.clone_with_position(position);
+        let new_context = context.clone_with_position(position)?;
         self.load_context(new_context)?;
 
         Ok(())

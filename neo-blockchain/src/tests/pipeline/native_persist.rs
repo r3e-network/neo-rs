@@ -1,4 +1,7 @@
-use super::trace::TraceTxFilter;
+use super::trace::{
+    SlowTxFilter, TraceTxFilter, VmProfileFilter, format_vm_hottest_opcodes,
+    format_vm_opcode_classes, trace_tx_artifact,
+};
 use super::*;
 use neo_manifest::{ContractManifest, ContractMethodDescriptor, NefFile};
 use neo_payloads::Header;
@@ -12,6 +15,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[path = "native_persist/dynamic_hooks.rs"]
 mod dynamic_hooks;
+#[path = "native_persist/trace.rs"]
+mod trace_tests;
 
 /// NEO `Prefix_Committee` (C# NeoToken).
 const NEO_PREFIX_COMMITTEE: u8 = 14;
@@ -235,50 +240,6 @@ fn signed_test_tx(sender: UInt160, nonce: u32, script: Vec<u8>) -> neo_payloads:
     )]);
     tx.set_witnesses(vec![neo_payloads::Witness::empty()]);
     tx
-}
-
-#[test]
-fn trace_tx_filter_is_disabled_when_env_is_absent() {
-    let tx_hash = UInt256::from([0x11; 32]);
-
-    let filter = TraceTxFilter::from_raw(None);
-
-    assert!(!filter.matches(&tx_hash));
-}
-
-#[test]
-fn trace_tx_filter_matches_wildcards_and_listed_hashes() {
-    let tx_hash = UInt256::from([0x22; 32]);
-    let other_hash = UInt256::from([0x33; 32]);
-
-    let raw = format!(" {},not-a-match ", tx_hash);
-    let filter = TraceTxFilter::from_raw(Some(&raw));
-
-    assert!(filter.matches(&tx_hash));
-    assert!(!filter.matches(&other_hash));
-    assert!(TraceTxFilter::from_raw(Some(" all ")).matches(&other_hash));
-    assert!(TraceTxFilter::from_raw(Some("*")).matches(&other_hash));
-}
-
-#[test]
-fn trace_tx_filter_default_path_returns_before_hash_formatting() {
-    let source = include_str!("../../pipeline/native_persist/trace.rs");
-    let matcher = source
-        .split("fn matches(&self, tx_hash: &UInt256) -> bool")
-        .nth(1)
-        .and_then(|tail| tail.split("fn trace_tx_frames").next())
-        .expect("TraceTxFilter::matches source");
-    let empty_guard = matcher
-        .find("self.hashes.is_empty()")
-        .expect("default no-trace guard should avoid hash formatting");
-    let hash_format = matcher
-        .find("tx_hash.to_string()")
-        .expect("listed trace hashes still need string matching");
-
-    assert!(
-        empty_guard < hash_format,
-        "default no-trace path should return before formatting tx hash"
-    );
 }
 
 #[test]
@@ -692,11 +653,9 @@ fn persist_executes_transactions_and_records_vm_states() {
     assert_eq!(tx2_exec.vm_state, neo_vm::VmState::HALT);
     // PUSH1 leaves the integer 1 on the result stack.
     assert_eq!(tx2_exec.stack.len(), 1);
-    let actual = match &tx2_exec.stack[0] {
-        StackValue::Integer(value) => BigInt::from(*value),
-        StackValue::BigInteger(bytes) => BigInt::from_signed_bytes_le(bytes),
-        item => panic!("expected integer stack value, got {item:?}"),
-    };
+    let actual = tx2_exec.stack[0]
+        .as_int()
+        .expect("expected integer stack item");
     assert_eq!(actual, BigInt::from(1));
 
     // Ledger records carry the final VM states (C# mutates the
@@ -944,7 +903,7 @@ fn reusable_native_persist_resources_keep_provider_consistent_across_blocks() {
     assert_eq!(tx_exec.vm_state, neo_vm::VmState::HALT);
     assert_eq!(
         tx_exec.stack,
-        vec![StackValue::Integer(30)],
+        vec![StackItem::from_i64(30)],
         "Policy.getExecFeeFactor should resolve through the batch resource provider"
     );
 }

@@ -169,11 +169,11 @@ impl OracleContract {
         // MaxUserDataLength, engine.Limits.MaxStackSize) - re-encode
         // the marshaled item under the 512-byte cap.
         let limits = ExecutionEngineLimits::default();
-        let user_data_item = crate::support::codec::decode_stack_value(
+        let user_data_item = crate::support::codec::decode_stack_item(
             &user_data_bytes,
             "OracleContract::request userData",
         )?;
-        let user_data = BinarySerializer::serialize_stack_value_with_limits(
+        let user_data = BinarySerializer::serialize_with_limits(
             &user_data_item,
             MAX_USER_DATA_LENGTH,
             limits.max_stack_size as usize,

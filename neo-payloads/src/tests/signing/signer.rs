@@ -1,18 +1,17 @@
 use super::*;
 use neo_primitives::hex_util;
 use neo_vm::Interoperable;
-use neo_vm::StackValue;
+use neo_vm::StackItem;
 
-/// Structural equality for StackValue that ignores the reference-identity ids
-/// on compound variants. Collection identity is not part of serialized
-/// stack data, so structural equality is the correct notion for round-trip / shape
-/// assertions.
-fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
-    a.structural_eq(b)
+/// Structural equality for stack items. Collection identity is not part of
+/// serialized stack data, so structural equality is the correct notion for
+/// round-trip and shape assertions.
+fn stack_item_struct_eq(a: &StackItem, b: &StackItem) -> bool {
+    a.equals(b).unwrap_or(false)
 }
 
 #[test]
-fn signer_projects_to_neo_vm_rs_stack_value() {
+fn signer_projects_to_stack_item() {
     let account = UInt160::from_bytes(&[0x11; UINT160_SIZE]).unwrap();
     let allowed_contract = UInt160::from_bytes(&[0x22; UINT160_SIZE]).unwrap();
     let rule = WitnessRule::new(
@@ -24,36 +23,32 @@ fn signer_projects_to_neo_vm_rs_stack_value() {
     signer.allowed_contracts.push(allowed_contract);
     signer.rules.push(rule.clone());
 
-    let left = signer.to_stack_value();
-    let right = StackValue::Array(
-        neo_vm::next_stack_item_id(),
-        vec![
-            StackValue::ByteString(account.to_bytes()),
-            StackValue::Integer(i64::from(scopes.bits())),
-            StackValue::Array(
-                neo_vm::next_stack_item_id(),
-                vec![StackValue::ByteString(allowed_contract.to_bytes())],
-            ),
-            StackValue::Array(neo_vm::next_stack_item_id(), Vec::new()),
-            StackValue::Array(neo_vm::next_stack_item_id(), vec![rule.to_stack_value()]),
-        ],
-    );
+    let left = signer.to_stack_item();
+    let right = StackItem::from_array(vec![
+        StackItem::from_byte_string(account.to_bytes()),
+        StackItem::from_i64(i64::from(scopes.bits())),
+        StackItem::from_array(vec![StackItem::from_byte_string(
+            allowed_contract.to_bytes(),
+        )]),
+        StackItem::from_array(Vec::new()),
+        StackItem::from_array(vec![rule.to_stack_item()]),
+    ]);
     assert!(
-        stack_value_struct_eq(&left, &right),
-        "structural StackValue mismatch: {left:?} vs {right:?}"
+        stack_item_struct_eq(&left, &right),
+        "structural StackItem mismatch: {left:?} vs {right:?}"
     );
 }
 
 #[test]
-fn signer_interoperable_to_stack_value_matches_inherent() {
+fn signer_interoperable_to_stack_item_matches_inherent() {
     let account = UInt160::from_bytes(&[0x33; UINT160_SIZE]).unwrap();
     let signer = Signer::new(account, WitnessScope::CALLED_BY_ENTRY);
 
-    let expected = signer.to_stack_value();
-    let interop = Interoperable::to_stack_value(&signer).unwrap();
+    let expected = signer.to_stack_item();
+    let interop = Interoperable::to_stack_item(&signer).unwrap();
     assert!(
-        stack_value_struct_eq(&interop, &expected),
-        "structural StackValue mismatch: {interop:?} vs {expected:?}"
+        stack_item_struct_eq(&interop, &expected),
+        "structural StackItem mismatch: {interop:?} vs {expected:?}"
     );
 }
 

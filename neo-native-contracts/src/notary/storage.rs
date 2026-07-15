@@ -7,8 +7,9 @@ use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
 use neo_storage::persistence::DataCache;
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm::StackValue;
+use neo_vm::StackItem;
 use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 
 /// C# `Notary.Deposit`: `Struct[Amount, Till]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,25 +23,22 @@ impl DepositState {
         Self { amount, till }
     }
 
-    pub(in crate::notary) fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::BigInteger(self.amount.to_signed_bytes_le()),
-                StackValue::Integer(i64::from(self.till)),
-            ],
-        )
+    pub(in crate::notary) fn to_stack_item(&self) -> StackItem {
+        StackItem::from_struct(vec![
+            StackItem::from_int(self.amount.clone()),
+            StackItem::from_i64(i64::from(self.till)),
+        ])
     }
 
-    pub(in crate::notary) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let decoder = crate::support::codec::StructDecoder::new(&stack_value, "Notary deposit")?;
+    pub(in crate::notary) fn from_stack_item(stack_item: &StackItem) -> CoreResult<Self> {
+        let decoder = crate::support::codec::StructDecoder::new(stack_item, "Notary deposit")?;
         let amount = decoder.bigint(0, "Amount")?;
         let till = decoder.u32(1, "Till")?;
         Ok(Self { amount, till })
     }
 }
 
-neo_vm::impl_interoperable_via_stack_value!(DepositState);
+neo_vm::impl_interoperable_via_stack_item!(DepositState);
 
 impl Notary {
     /// Reads field `index` of the C# `Deposit` struct (`[Amount, Till]`) stored under
@@ -77,8 +75,8 @@ impl Notary {
     }
 
     pub(in crate::notary) fn decode_deposit(bytes: &[u8]) -> CoreResult<(BigInt, u32)> {
-        let state = crate::support::codec::decode_stack_value(bytes, "Notary deposit")?;
-        let deposit = DepositState::from_stack_value(state)
+        let state = crate::support::codec::decode_stack_item(bytes, "Notary deposit")?;
+        let deposit = DepositState::from_stack_item(&state)
             .map_err(|e| CoreError::invalid_data(format!("Notary deposit: {e}")))?;
         Ok((deposit.amount, deposit.till))
     }
@@ -165,31 +163,33 @@ impl Notary {
         from: &UInt160,
         data: &[u8],
     ) -> CoreResult<(UInt160, u32)> {
-        let item = crate::support::codec::decode_stack_value(data, "Notary::onNEP17Payment data")?;
-        let StackValue::Array(_, items) = item else {
+        let item = crate::support::codec::decode_stack_item(data, "Notary::onNEP17Payment data")?;
+        let StackItem::Array(array) = item else {
             return Err(CoreError::invalid_operation(
                 "Notary::onNEP17Payment data must be an array of 2 elements",
             ));
         };
+        let items = array.items();
         if items.len() != 2 {
             return Err(CoreError::invalid_operation(
                 "Notary::onNEP17Payment data must be an array of 2 elements",
             ));
         }
-        let to = if matches!(items[0], StackValue::Null) {
+        let to = if items[0].is_null() {
             *from
         } else {
-            let bytes = items[0].to_byte_string_bytes().ok_or_else(|| {
+            let bytes = items[0].as_bytes().map_err(|_| {
                 CoreError::invalid_operation("Notary::onNEP17Payment to: cannot convert to bytes")
             })?;
             crate::args::bytes_to_hash160(&bytes, "Notary::onNEP17Payment to: bad hash")?
         };
-        let till_value = items[1].to_i128().ok_or_else(|| {
-            CoreError::invalid_operation("Notary::onNEP17Payment till: cannot convert to integer")
-        })?;
-        let till = u32::try_from(till_value).map_err(|_| {
-            CoreError::invalid_operation("Notary::onNEP17Payment till out of uint range")
-        })?;
+        let till = items[1]
+            .as_int()
+            .ok()
+            .and_then(|value| value.to_u32())
+            .ok_or_else(|| {
+                CoreError::invalid_operation("Notary::onNEP17Payment till out of uint range")
+            })?;
         Ok((to, till))
     }
 

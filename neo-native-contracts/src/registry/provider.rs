@@ -223,6 +223,14 @@ impl NativeContractProvider for StandardNativeProvider {
         ContractManagement::get_contract_from_snapshot(snapshot, hash)
     }
 
+    fn contract_exists<B: CacheRead>(
+        &self,
+        snapshot: &DataCache<B>,
+        hash: &UInt160,
+    ) -> CoreResult<bool> {
+        Ok(ContractManagement::is_contract(snapshot, hash))
+    }
+
     fn oracle_request_details<B: CacheRead>(
         &self,
         snapshot: &DataCache<B>,

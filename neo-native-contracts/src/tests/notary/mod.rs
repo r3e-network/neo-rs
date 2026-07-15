@@ -18,16 +18,12 @@ use neo_primitives::{CallFlags, ContractParameterType, UInt160};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
-use neo_vm::{ExecutionEngineLimits, StackValue};
-use neo_vm::{Interoperable, StackItem};
+use neo_vm::{ExecutionEngineLimits, Interoperable, StackItem};
 use num_bigint::BigInt;
 
-/// Structural equality for StackValue that ignores the reference-identity ids
-/// on compound variants. Collection identity is not part of serialized
-/// stack data, so structural equality is the correct notion for round-trip / shape
-/// assertions.
-fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
-    a.structural_eq(b)
+/// Structural equality for StackItem compound values.
+fn stack_item_struct_eq(a: &neo_vm::StackItem, b: &neo_vm::StackItem) -> bool {
+    a.equals(b).unwrap_or(false)
 }
 
 #[test]
@@ -200,47 +196,34 @@ fn deposit_round_trips_and_lock_decision_matches_csharp() {
 #[test]
 fn deposit_state_interoperable_projection_matches_csharp_shape() {
     let state = DepositState::new(BigInt::from(1000), 42);
-    let expected_value = StackValue::Struct(
-        neo_vm::next_stack_item_id(),
-        vec![
-            StackValue::BigInteger(BigInt::from(1000).to_signed_bytes_le()),
-            StackValue::Integer(42),
-        ],
+    let expected_value =
+        StackItem::from_struct(vec![StackItem::from_int(1000), StackItem::from_i64(42)]);
+
+    let projected = state.to_stack_item();
+    assert!(
+        stack_item_struct_eq(&projected, &expected_value),
+        "structural StackItem mismatch: {projected:?} vs {expected_value:?}"
     );
 
-    let projected = state.to_stack_value();
+    let trait_value = Interoperable::to_stack_item(&state).unwrap();
     assert!(
-        stack_value_struct_eq(&projected, &expected_value),
-        "structural StackValue mismatch: {projected:?} vs {expected_value:?}"
-    );
-
-    let trait_value = Interoperable::to_stack_value(&state).unwrap();
-    assert!(
-        stack_value_struct_eq(&trait_value, &expected_value),
-        "structural StackValue mismatch: {trait_value:?} vs {expected_value:?}"
+        stack_item_struct_eq(&trait_value, &expected_value),
+        "structural StackItem mismatch: {trait_value:?} vs {expected_value:?}"
     );
 
     let mut parsed = DepositState::new(BigInt::from(0), 0);
-    Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
+    Interoperable::from_stack_item(&mut parsed, trait_value).unwrap();
     assert_eq!(parsed, state);
 
+    assert!(DepositState::from_stack_item(&StackItem::from_array(Vec::new())).is_err());
     assert!(
-        DepositState::from_stack_value(StackValue::Array(neo_vm::next_stack_item_id(), vec![],))
+        DepositState::from_stack_item(&StackItem::from_struct(vec![StackItem::from_int(1000)]))
             .is_err()
-    );
-    assert!(
-        DepositState::from_stack_value(StackValue::Struct(
-            neo_vm::next_stack_item_id(),
-            vec![StackValue::BigInteger(
-                BigInt::from(1000).to_signed_bytes_le(),
-            )],
-        ))
-        .is_err()
     );
 }
 
 #[test]
-fn deposit_storage_uses_stack_value_projection() {
+fn deposit_storage_uses_stack_item_projection() {
     fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
         let start_index = source.find(start).expect("start marker exists");
         let end_index = source[start_index..]
@@ -254,15 +237,13 @@ fn deposit_storage_uses_stack_value_projection() {
     let writer = slice_between(source, "fn write_deposit<", "fn lock_deposit_decision");
     assert!(writer.contains("encode_storage_struct"));
     assert!(writer.contains("DepositState::new"));
-    assert!(!writer.contains("StackValue::Struct"));
+    assert!(!writer.contains("StackItem::Struct"));
     assert!(!writer.contains("StackItem::from_struct"));
     assert!(!writer.contains("BinarySerializer::serialize("));
 
     let reader = slice_between(source, "fn decode_deposit(", "fn delete_deposit");
-    assert!(reader.contains("decode_stack_value"));
-    assert!(reader.contains("DepositState::from_stack_value"));
-    assert!(!reader.contains("stack_value_as_bigint"));
-    assert!(!reader.contains("stack_value_as_u32"));
+    assert!(reader.contains("decode_stack_item"));
+    assert!(reader.contains("DepositState::from_stack_item"));
     assert!(!reader.contains("BinarySerializer::deserialize("));
 }
 
@@ -332,8 +313,7 @@ fn parse_onnep17_data_handles_null_and_explicit_to() {
 
     // C# Notary.OnNEP17Payment (Notary.cs:146-152) only inspects the
     // incoming StackItem's array/null/bytes/integer shape. The Rust parser
-    // should use the shared StackValue projection rather than materializing
-    // neo_vm::StackItem for this non-VM-inspection path.
+    // should inspect the canonical StackItem directly.
     let source = include_str!("../../notary/storage.rs");
     let start = source
         .find("fn parse_onnep17_data")
@@ -343,11 +323,11 @@ fn parse_onnep17_data_handles_null_and_explicit_to() {
         .map(|offset| start + offset)
         .expect("next helper marker exists");
     let parser = &source[start..end];
-    assert!(parser.contains("decode_stack_value"));
-    assert!(parser.contains("StackValue::Array"));
-    assert!(parser.contains("StackValue::Null"));
+    assert!(parser.contains("decode_stack_item"));
+    assert!(parser.contains("StackItem::Array"));
+    assert!(parser.contains("is_null()"));
+    assert!(parser.contains("as_bytes()"));
     assert!(!parser.contains("BinarySerializer::deserialize("));
-    assert!(!parser.contains("StackItem::Array"));
 }
 
 #[test]

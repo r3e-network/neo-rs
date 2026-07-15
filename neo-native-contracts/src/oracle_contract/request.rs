@@ -2,7 +2,7 @@
 
 use neo_error::{CoreError, CoreResult};
 use neo_primitives::{UInt160, UInt256};
-use neo_vm::StackValue;
+use neo_vm::StackItem;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -52,37 +52,39 @@ impl OracleRequest {
     }
 
     /// Converts to the C# `OracleRequest.ToStackItem` layout.
-    pub fn to_stack_value(&self) -> StackValue {
+    pub fn to_stack_item(&self) -> StackItem {
         let filter_item = match &self.filter {
-            Some(filter) => StackValue::ByteString(filter.as_bytes().to_vec()),
-            None => StackValue::Null,
+            Some(filter) => StackItem::from_byte_string(filter.as_bytes().to_vec()),
+            None => StackItem::Null,
         };
-        StackValue::Array(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::ByteString(self.original_tx_id.to_bytes()),
-                StackValue::Integer(self.gas_for_response),
-                StackValue::ByteString(self.url.as_bytes().to_vec()),
-                filter_item,
-                StackValue::ByteString(self.callback_contract.to_bytes()),
-                StackValue::ByteString(self.callback_method.as_bytes().to_vec()),
-                StackValue::ByteString(self.user_data.clone()),
-            ],
-        )
+        StackItem::from_array(vec![
+            StackItem::from_byte_string(self.original_tx_id.to_bytes()),
+            StackItem::from_i64(self.gas_for_response),
+            StackItem::from_byte_string(self.url.as_bytes().to_vec()),
+            filter_item,
+            StackItem::from_byte_string(self.callback_contract.to_bytes()),
+            StackItem::from_byte_string(self.callback_method.as_bytes().to_vec()),
+            StackItem::from_byte_string(self.user_data.clone()),
+        ])
     }
 
-    /// Parses the C# `OracleRequest.FromStackItem` layout from a StackValue.
-    pub fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Array(_, items) = stack_value else {
+    /// Parses the C# `OracleRequest.FromStackItem` layout.
+    pub fn from_stack_item(stack_item: &StackItem) -> CoreResult<Self> {
+        let StackItem::Array(array) = stack_item else {
             return Err(CoreError::invalid_data("OracleRequest is not an array"));
         };
+        let items = array.items();
         if items.len() != 7 {
             return Err(CoreError::invalid_data("OracleRequest must have 7 fields"));
         }
         let field_bytes = |index: usize, name: &str| -> CoreResult<Vec<u8>> {
-            items[index]
-                .to_byte_string_bytes()
-                .ok_or_else(|| CoreError::invalid_data(format!("OracleRequest {name}: not bytes")))
+            match &items[index] {
+                StackItem::ByteString(bytes) => Ok(bytes.clone()),
+                StackItem::Buffer(buffer) => Ok(buffer.data()),
+                _ => Err(CoreError::invalid_data(format!(
+                    "OracleRequest {name}: not bytes"
+                ))),
+            }
         };
         let field_string = |index: usize, name: &str| -> CoreResult<String> {
             String::from_utf8(field_bytes(index, name)?)
@@ -90,12 +92,13 @@ impl OracleRequest {
         };
         let original_tx_id = UInt256::from_bytes(&field_bytes(0, "OriginalTxid")?)
             .map_err(|e| CoreError::invalid_data(format!("OracleRequest OriginalTxid: {e}")))?;
-        let gas_for_response = neo_vm::stack_value_as_bigint(&items[1])
+        let gas_for_response = items[1]
+            .as_int()
             .map_err(|e| CoreError::invalid_data(format!("OracleRequest GasForResponse: {e}")))?
             .to_i64()
             .ok_or_else(|| CoreError::invalid_data("OracleRequest GasForResponse out of range"))?;
         let url = field_string(2, "Url")?;
-        let filter = if matches!(items[3], StackValue::Null) {
+        let filter = if items[3].is_null() {
             None
         } else {
             Some(field_string(3, "Filter")?)
@@ -118,7 +121,7 @@ impl OracleRequest {
     }
 }
 
-neo_vm::impl_interoperable_via_stack_value!(OracleRequest);
+neo_vm::impl_interoperable_via_stack_item!(OracleRequest);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct OracleIdList {
@@ -134,23 +137,24 @@ impl OracleIdList {
         self.ids
     }
 
-    pub(super) fn to_stack_value(&self) -> StackValue {
-        StackValue::Array(
-            neo_vm::next_stack_item_id(),
+    pub(super) fn to_stack_item(&self) -> StackItem {
+        StackItem::from_array(
             self.ids
                 .iter()
-                .map(|id| StackValue::BigInteger(BigInt::from(*id).to_signed_bytes_le()))
+                .map(|id| StackItem::from_int(BigInt::from(*id)))
                 .collect(),
         )
     }
 
-    pub(super) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Array(_, items) = stack_value else {
+    pub(super) fn from_stack_item(stack_item: &StackItem) -> CoreResult<Self> {
+        let StackItem::Array(items) = stack_item else {
             return Err(CoreError::invalid_data("Oracle IdList is not an array"));
         };
+        let items = items.items();
         let mut ids = Vec::with_capacity(items.len());
         for entry in &items {
-            let id = neo_vm::stack_value_as_bigint(entry)
+            let id = entry
+                .as_int()
                 .map_err(|e| CoreError::invalid_data(format!("Oracle IdList entry: {e}")))?
                 .to_u64()
                 .ok_or_else(|| CoreError::invalid_data("Oracle IdList entry out of range"))?;
@@ -160,4 +164,4 @@ impl OracleIdList {
     }
 }
 
-neo_vm::impl_interoperable_via_stack_value!(OracleIdList);
+neo_vm::impl_interoperable_via_stack_item!(OracleIdList);

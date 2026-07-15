@@ -7,8 +7,8 @@ impl NeoToken {
     pub(in crate::neo_token) fn decode_neo_account_state(
         value: &[u8],
     ) -> CoreResult<NeoAccountStateView> {
-        let decoded = crate::support::codec::decode_stack_value(value, "neo account state")?;
-        NeoAccountStateView::from_stack_value(decoded)
+        let decoded = crate::support::codec::decode_stack_item(value, "neo account state")?;
+        NeoAccountStateView::from_stack_item(&decoded)
     }
 
     /// Encodes a `NeoAccountState` (`Struct[Balance, BalanceHeight, VoteTo,

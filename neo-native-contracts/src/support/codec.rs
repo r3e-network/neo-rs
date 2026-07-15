@@ -1,7 +1,7 @@
-//! Shared StackValue encode/decode helpers for native contracts.
+//! Shared StackItem encode/decode helpers for native contracts.
 //!
 //! Replaces the ~265 lines of duplicated `BinarySerializer::deserialize/
-//! serialize_stack_value_with_limits` + `ExecutionEngineLimits::default()`
+//! stack-item serialization + `ExecutionEngineLimits::default()`
 //! boilerplate found across the 11 native contracts. Every helper produces
 //! byte-identical output to the inlined code it replaces — only the error
 //! message wording may differ slightly.
@@ -17,11 +17,11 @@ use neo_error::{CoreError, CoreResult};
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::BinarySerializer;
 use neo_vm::Interoperable;
-use neo_vm::{ExecutionEngineLimits, StackValue};
+use neo_vm::{ExecutionEngineLimits, StackItem};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
-/// Deserialises a `BinarySerializer`-encoded `StackValue` from `bytes` using
+/// Deserialises a `BinarySerializer`-encoded `StackItem` from `bytes` using
 /// the default `ExecutionEngineLimits`, wrapping any decode error with the
 /// supplied `label` (e.g. `"Notary deposit"`, `"Oracle request"`).
 ///
@@ -29,21 +29,13 @@ use num_traits::ToPrimitive;
 ///
 /// ```ignore
 /// let limits = ExecutionEngineLimits::default();
-/// let state = BinarySerializer::deserialize_stack_value_with_limits(
-///     bytes,
-///     limits.max_item_size as usize,
-///     limits.max_stack_size as usize,
-/// )
+/// let state = BinarySerializer::deserialize(bytes, &limits, None)
 /// .map_err(|e| CoreError::deserialization(format!("LABEL: {e}")))?;
 /// ```
-pub(crate) fn decode_stack_value(bytes: &[u8], label: &str) -> CoreResult<StackValue> {
+pub(crate) fn decode_stack_item(bytes: &[u8], label: &str) -> CoreResult<StackItem> {
     let limits = ExecutionEngineLimits::default();
-    BinarySerializer::deserialize_stack_value_with_limits(
-        bytes,
-        limits.max_item_size as usize,
-        limits.max_stack_size as usize,
-    )
-    .map_err(|e| CoreError::deserialization(format!("{label}: {e}")))
+    BinarySerializer::deserialize(bytes, &limits, None)
+        .map_err(|e| CoreError::deserialization(format!("{label}: {e}")))
 }
 
 /// Serialises an `Interoperable` value to its `BinarySerializer` byte form,
@@ -52,46 +44,48 @@ pub(crate) fn decode_stack_value(bytes: &[u8], label: &str) -> CoreResult<StackV
 /// Replaces the repeated pattern (found in 12 sites):
 ///
 /// ```ignore
-/// let item = T::new(...).to_stack_value();
-/// let bytes = BinarySerializer::serialize_stack_value_default(&item)
+/// let item = T::new(...).to_stack_item();
+/// let bytes = BinarySerializer::serialize_default(&item)
 ///     .map_err(|e| CoreError::serialization(format!("LABEL: {e}")))?;
 /// ```
 ///
-/// The `Interoperable` trait's `to_stack_value` delegates to the type's
-/// inherent `to_stack_value` method (via `impl_interoperable_via_stack_value!`),
+/// The `Interoperable` trait's `to_stack_item` delegates to the type's
+/// inherent `to_stack_item` method (via `impl_interoperable_via_stack_item!`),
 /// so the produced bytes are identical to the inlined code.
 pub(crate) fn encode_storage_struct<T: Interoperable>(
     value: &T,
     label: &str,
 ) -> CoreResult<Vec<u8>> {
     let item = value
-        .to_stack_value()
+        .to_stack_item()
         .map_err(|e| CoreError::serialization(format!("{label}: {e}")))?;
-    BinarySerializer::serialize_stack_value_default(&item)
+    BinarySerializer::serialize_default(&item)
         .map_err(|e| CoreError::serialization(format!("{label}: {e}")))
 }
 
-/// Position-based decoder for `StackValue::Struct` items.
+/// Position-based decoder for `StackItem::Struct` items.
 ///
-/// Replaces the repeated `StackValue::Struct(items)` destructure +
-/// index-by-position decode pattern found in 8 `from_stack_value` impls
+/// Replaces repeated struct destructuring and positional field decoding.
 /// (`DepositState`, `NeoAccountStateView`, `CandidateState`, `CachedCommittee`,
 /// `WhitelistedContractView`, `HashIndexState`, `OracleRequest`, `AccountState`).
 ///
 /// Each accessor method takes a zero-based position `i` and a human-readable
 /// `field` name, producing a labelled `CoreError::invalid_data` on failure.
 pub(crate) struct StructDecoder<'a> {
-    items: &'a [StackValue],
+    items: Vec<StackItem>,
     label: &'a str,
 }
 
 impl<'a> StructDecoder<'a> {
-    /// Creates a decoder from a `StackValue` that must be a `Struct`.
-    pub fn new(value: &'a StackValue, label: &'a str) -> CoreResult<Self> {
-        let StackValue::Struct(_, items) = value else {
+    /// Creates a decoder from a `StackItem` that must be a `Struct`.
+    pub fn new(value: &StackItem, label: &'a str) -> CoreResult<Self> {
+        let StackItem::Struct(structure) = value else {
             return Err(CoreError::invalid_data(format!("{label} is not a struct")));
         };
-        Ok(Self { items, label })
+        Ok(Self {
+            items: structure.items(),
+            label,
+        })
     }
 
     /// Returns the number of fields in the struct.
@@ -107,11 +101,9 @@ impl<'a> StructDecoder<'a> {
         self.items.is_empty()
     }
 
-    /// Returns `true` if the field at position `i` is `StackValue::Null`.
+    /// Returns `true` if the field at position `i` is `StackItem::Null`.
     pub fn is_null(&self, i: usize) -> bool {
-        self.items
-            .get(i)
-            .is_some_and(|v| matches!(v, StackValue::Null))
+        self.items.get(i).is_some_and(StackItem::is_null)
     }
 
     /// Decodes the field at position `i` as a `BigInt`.
@@ -120,7 +112,7 @@ impl<'a> StructDecoder<'a> {
             .items
             .get(i)
             .ok_or_else(|| CoreError::invalid_data(format!("{} {} missing", self.label, field)))?;
-        neo_vm::stack_value_as_bigint(v)
+        v.as_int()
             .map_err(|e| CoreError::invalid_data(format!("{} {}: {e}", self.label, field)))
     }
 
@@ -154,7 +146,7 @@ impl<'a> StructDecoder<'a> {
             .items
             .get(i)
             .ok_or_else(|| CoreError::invalid_data(format!("{} {} missing", self.label, field)))?;
-        neo_vm::stack_value_as_bool(v).ok_or_else(|| {
+        v.as_bool().map_err(|_| {
             CoreError::invalid_data(format!(
                 "{} {}: expected boolean-compatible value",
                 self.label, field
@@ -169,12 +161,14 @@ impl<'a> StructDecoder<'a> {
             .items
             .get(i)
             .ok_or_else(|| CoreError::invalid_data(format!("{} {} missing", self.label, field)))?;
-        v.to_byte_string_bytes().ok_or_else(|| {
-            CoreError::invalid_data(format!(
+        match v {
+            StackItem::ByteString(bytes) => Ok(bytes.clone()),
+            StackItem::Buffer(buffer) => Ok(buffer.data()),
+            _ => Err(CoreError::invalid_data(format!(
                 "{} {}: expected byte-like value",
                 self.label, field
-            ))
-        })
+            ))),
+        }
     }
 
     /// Decodes the field at position `i` as a UTF-8 string.

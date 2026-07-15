@@ -6,7 +6,7 @@
 
 use crate::error::{VmError, VmResult};
 use crate::execution_engine::ExecutionEngine;
-use neo_vm_rs::{Instruction, OpCode};
+use crate::{Instruction, OpCode};
 
 /// A handler for a VM instruction.
 pub type InstructionHandler<S = ()> = fn(&mut ExecutionEngine<S>, &Instruction) -> VmResult<()>;

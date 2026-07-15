@@ -1,9 +1,9 @@
 use super::*;
 use neo_primitives::ContractParameterType;
-use neo_vm::StackValue;
+use neo_vm::StackItem;
 
-fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
-    a.structural_eq(b)
+fn stack_item_struct_eq(a: &neo_vm::StackItem, b: &neo_vm::StackItem) -> bool {
+    a.equals(b).unwrap_or(false)
 }
 
 fn method(name: &str) -> ContractMethodDescriptor {
@@ -22,62 +22,38 @@ fn event(name: &str) -> ContractEventDescriptor {
 }
 
 #[test]
-fn contract_abi_projects_to_neo_vm_rs_stack_value() {
+fn contract_abi_projects_to_neo_vm_stack_item() {
     let abi = ContractAbi::new(vec![method("main")], vec![event("Notify")]);
 
-    let left = abi.to_stack_value();
-    let right = StackValue::Struct(
-        neo_vm::next_stack_item_id(),
-        vec![
-            StackValue::Array(
-                neo_vm::next_stack_item_id(),
-                vec![StackValue::Struct(
-                    neo_vm::next_stack_item_id(),
-                    vec![
-                        StackValue::ByteString(b"main".to_vec()),
-                        StackValue::Array(neo_vm::next_stack_item_id(), Vec::new()),
-                        StackValue::Integer(ContractParameterType::Void as u8 as i64),
-                        StackValue::Integer(7),
-                        StackValue::Boolean(true),
-                    ],
-                )],
-            ),
-            StackValue::Array(
-                neo_vm::next_stack_item_id(),
-                vec![StackValue::Struct(
-                    neo_vm::next_stack_item_id(),
-                    vec![
-                        StackValue::ByteString(b"Notify".to_vec()),
-                        StackValue::Array(neo_vm::next_stack_item_id(), Vec::new()),
-                    ],
-                )],
-            ),
-        ],
-    );
+    let left = abi.to_stack_item();
+    let right = StackItem::from_struct(vec![
+        StackItem::from_array(vec![StackItem::from_struct(vec![
+            StackItem::ByteString(b"main".to_vec()),
+            StackItem::from_array(Vec::new()),
+            StackItem::from_i64(ContractParameterType::Void as u8 as i64),
+            StackItem::from_i64(7),
+            StackItem::Boolean(true),
+        ])]),
+        StackItem::from_array(vec![StackItem::from_struct(vec![
+            StackItem::ByteString(b"Notify".to_vec()),
+            StackItem::from_array(Vec::new()),
+        ])]),
+    ]);
     assert!(
-        stack_value_struct_eq(&left, &right),
-        "structural StackValue mismatch: {left:?} vs {right:?}"
+        stack_item_struct_eq(&left, &right),
+        "structural StackItem mismatch: {left:?} vs {right:?}"
     );
 }
 
 #[test]
-fn contract_abi_reads_from_neo_vm_rs_stack_value_and_clears_method_cache() {
+fn contract_abi_reads_from_neo_vm_stack_item_and_clears_method_cache() {
     let mut abi = ContractAbi::new(vec![method("old")], Vec::new());
     assert!(abi.get_method("old", 0).is_some());
 
-    abi.from_stack_value(StackValue::Struct(
-        neo_vm::next_stack_item_id(),
-        vec![
-            StackValue::Array(
-                neo_vm::next_stack_item_id(),
-                vec![method("new").to_stack_value()],
-            ),
-            StackValue::Array(
-                neo_vm::next_stack_item_id(),
-                vec![event("Updated").to_stack_value()],
-            ),
-        ],
-    ))
+    abi.from_stack_item(StackItem::from_struct(vec![
+        StackItem::from_array(vec![method("new").to_stack_item()]),
+        StackItem::from_array(vec![event("Updated").to_stack_item()]),
+    ]))
     .unwrap();
 
     assert!(abi.get_method("old", 0).is_none());
@@ -90,35 +66,17 @@ fn contract_abi_rejects_struct_sequences_like_csharp() {
     let mut abi = ContractAbi::default();
 
     assert!(
-        abi.from_stack_value(StackValue::Struct(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::Struct(
-                    neo_vm::next_stack_item_id(),
-                    vec![method("main").to_stack_value()]
-                ),
-                StackValue::Array(
-                    neo_vm::next_stack_item_id(),
-                    vec![event("Notify").to_stack_value()]
-                ),
-            ]
-        ))
+        abi.from_stack_item(StackItem::from_struct(vec![
+            StackItem::from_struct(vec![method("main").to_stack_item()]),
+            StackItem::from_array(vec![event("Notify").to_stack_item()]),
+        ]))
         .is_err()
     );
     assert!(
-        abi.from_stack_value(StackValue::Struct(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::Array(
-                    neo_vm::next_stack_item_id(),
-                    vec![method("main").to_stack_value()]
-                ),
-                StackValue::Struct(
-                    neo_vm::next_stack_item_id(),
-                    vec![event("Notify").to_stack_value()]
-                ),
-            ]
-        ))
+        abi.from_stack_item(StackItem::from_struct(vec![
+            StackItem::from_array(vec![method("main").to_stack_item()]),
+            StackItem::from_struct(vec![event("Notify").to_stack_item()]),
+        ]))
         .is_err()
     );
 }

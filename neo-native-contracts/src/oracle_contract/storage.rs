@@ -167,8 +167,8 @@ impl OracleContract {
     pub(in crate::oracle_contract) fn decode_oracle_request(
         bytes: &[u8],
     ) -> CoreResult<OracleRequest> {
-        let item = crate::support::codec::decode_stack_value(bytes, "OracleRequest")?;
-        OracleRequest::from_stack_value(item)
+        let item = crate::support::codec::decode_stack_item(bytes, "OracleRequest")?;
+        OracleRequest::from_stack_item(&item)
     }
 
     /// Encodes the per-url id-list (C# `IdList : InteroperableList<ulong>`): the
@@ -182,8 +182,8 @@ impl OracleContract {
 
     /// Decodes the per-url id-list (C# `IdList.FromStackItem`, `(ulong)item.GetInteger()`).
     pub(in crate::oracle_contract) fn decode_id_list(bytes: &[u8]) -> CoreResult<Vec<u64>> {
-        let item = crate::support::codec::decode_stack_value(bytes, "Oracle IdList")?;
-        Ok(OracleIdList::from_stack_value(item)?.into_ids())
+        let item = crate::support::codec::decode_stack_item(bytes, "Oracle IdList")?;
+        Ok(OracleIdList::from_stack_item(&item)?.into_ids())
     }
 
     /// Reads a pending request record (C# `GetRequest`): `None` when no request

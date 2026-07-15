@@ -2,11 +2,11 @@
 //!
 //! This module provides the Struct stack item implementation used in the Neo VM.
 
+use crate::StackItemType;
 use crate::error::{VmError, VmResult};
+use crate::next_stack_item_id;
 use crate::reference_counter::{CompoundId, ReferenceCounter};
 use crate::stack_item::StackItem;
-use neo_vm_rs::StackItemType;
-use neo_vm_rs::next_stack_item_id;
 use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -301,7 +301,7 @@ impl Struct {
     }
 
     /// Clones the struct respecting execution limits (mirrors C# Struct.Clone).
-    pub fn clone_with_limits(&self, limits: &neo_vm_rs::ExecutionEngineLimits) -> VmResult<Self> {
+    pub fn clone_with_limits(&self, limits: &crate::ExecutionEngineLimits) -> VmResult<Self> {
         let mut remaining = i64::from(limits.max_stack_size) - 1;
         let mut visited = HashSet::new();
         self.clone_with_remaining(&mut remaining, &mut visited)

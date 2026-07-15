@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use neo_vm_rs::ExecutionEngineLimits;
+use crate::ExecutionEngineLimits;
 
 use crate::error::{VmError, VmResult};
 

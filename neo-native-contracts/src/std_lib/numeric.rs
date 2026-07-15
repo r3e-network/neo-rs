@@ -41,9 +41,13 @@ impl StdLib {
     /// base throws `ArgumentOutOfRangeException`.
     pub(super) fn itoa_impl(args: &[Vec<u8>]) -> CoreResult<Vec<u8>> {
         let value = BigInt::from_signed_bytes_le(Self::arg_bytes(args, "itoa")?);
-        let text = match Self::optional_base(args, 1, "itoa")? {
+        Self::itoa_value(&value, Self::optional_base(args, 1, "itoa")?)
+    }
+
+    pub(super) fn itoa_value(value: &BigInt, base: i64) -> CoreResult<Vec<u8>> {
+        let text = match base {
             10 => value.to_str_radix(10),
-            16 => Self::dotnet_bigint_to_hex(&value),
+            16 => Self::dotnet_bigint_to_hex(value),
             other => {
                 return Err(CoreError::invalid_argument(format!(
                     "StdLib::itoa: invalid base: {other}"

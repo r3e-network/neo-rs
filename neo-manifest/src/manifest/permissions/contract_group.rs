@@ -11,9 +11,7 @@ use neo_primitives::hex_util;
 use neo_vm::Interoperable;
 use neo_vm::InteroperableError;
 use neo_vm::StackItem;
-use std::convert::TryFrom;
 // Removed neo_cryptography dependency - using external crypto crates directly
-use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 
 /// Represents a set of mutually trusted contracts.
@@ -95,34 +93,34 @@ impl ContractGroup {
         }
     }
 
-    /// Builds a contract group from a neo-vm stack value.
+    /// Builds a contract group from a neo-vm stack item.
     ///
     /// # Errors
     ///
-    /// Returns `Error` if the stack value is not a valid struct with two elements.
-    pub fn try_from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let items = match stack_value {
-            StackValue::Struct(_, items) => items,
+    /// Returns `Error` if the stack item is not a valid struct with two elements.
+    pub fn try_from_stack_item(stack_item: &StackItem) -> CoreResult<Self> {
+        let items = match stack_item {
+            StackItem::Struct(structure) => structure.items(),
             other => {
                 return Err(CoreError::invalid_data(format!(
-                    "ContractGroup expects struct stack value, found {:?}",
-                    other.compact_type_tag()
+                    "ContractGroup expects struct stack item, found {:?}",
+                    other.stack_item_type()
                 )));
             }
         };
 
         if items.len() < 2 {
             return Err(CoreError::invalid_data(
-                "ContractGroup stack value must contain two elements",
+                "ContractGroup stack item must contain two elements",
             ));
         }
 
-        let pub_key_bytes = items[0].to_byte_string_bytes().ok_or_else(|| {
-            CoreError::invalid_data("ContractGroup public key must be byte string")
-        })?;
-        let signature_bytes = items[1].to_byte_string_bytes().ok_or_else(|| {
-            CoreError::invalid_data("ContractGroup signature must be byte string")
-        })?;
+        let pub_key_bytes = items[0]
+            .as_bytes()
+            .map_err(|_| CoreError::invalid_data("ContractGroup public key must be byte string"))?;
+        let signature_bytes = items[1]
+            .as_bytes()
+            .map_err(|_| CoreError::invalid_data("ContractGroup signature must be byte string"))?;
 
         let pub_key = ECPoint::from_bytes(&pub_key_bytes)
             .map_err(|e| CoreError::invalid_data(format!("Failed to decode ECPoint: {}", e)))?;
@@ -133,33 +131,17 @@ impl ContractGroup {
         })
     }
 
-    /// Converts to a neo-vm stack value.
-    pub fn to_stack_value(&self) -> StackValue {
+    /// Converts to a neo-vm stack item.
+    pub fn to_stack_item(&self) -> StackItem {
         let pub_key_bytes = self.pub_key.encode_point(true).unwrap_or_else(|e| {
             tracing::error!("Failed to encode ECPoint: {}", e);
             self.pub_key.to_bytes()
         });
 
-        StackValue::Struct(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::ByteString(pub_key_bytes),
-                StackValue::ByteString(self.signature.clone()),
-            ],
-        )
-    }
-
-    /// Builds a contract group from a VM stack item.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error` if the stack item is not a valid struct with two elements.
-    pub fn try_from_stack_item_value(stack_item: &StackItem) -> CoreResult<Self> {
-        Self::try_from_stack_value(StackValue::try_from(stack_item.clone()).map_err(|error| {
-            CoreError::invalid_data(format!(
-                "Failed to convert ContractGroup StackItem to StackValue: {error}"
-            ))
-        })?)
+        StackItem::from_struct(vec![
+            StackItem::from_byte_string(pub_key_bytes),
+            StackItem::from_byte_string(self.signature.clone()),
+        ])
     }
 }
 
@@ -185,14 +167,14 @@ impl Serialize for ContractGroup {
 }
 
 impl Interoperable for ContractGroup {
-    fn from_stack_value(&mut self, value: StackValue) -> Result<(), InteroperableError> {
-        *self = Self::try_from_stack_value(value)
+    fn from_stack_item(&mut self, value: StackItem) -> Result<(), InteroperableError> {
+        *self = Self::try_from_stack_item(&value)
             .map_err(|e| InteroperableError::InvalidData(e.to_string()))?;
         Ok(())
     }
 
-    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
-        Ok(self.to_stack_value())
+    fn to_stack_item(&self) -> Result<StackItem, InteroperableError> {
+        Ok(self.to_stack_item())
     }
 }
 

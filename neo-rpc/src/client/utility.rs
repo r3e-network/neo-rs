@@ -54,11 +54,12 @@ use neo_native_contracts::{NativeRegistry, StandardNativeProvider};
 use neo_payloads::{Block, BlockHeader, Transaction, Witness};
 use neo_primitives::{UInt160, UInt256, strip_hex_prefix};
 use neo_serialization::json::{JObject, JToken};
-use neo_vm::StackValue;
 use neo_wallets::KeyPair;
 use neo_wallets::wallet_helper::WalletAddress as WalletHelper;
 use num_bigint::BigInt;
 use std::sync::OnceLock;
+
+use super::models::RpcStackItem;
 
 /// Utility functions for RPC client
 /// Matches C# Utility class
@@ -288,30 +289,30 @@ impl RpcUtility {
         tx_json::transaction_from_json(json, protocol_settings)
     }
 
-    /// Converts a `neo-serialization::json` representation of a stack item into `neo-vm`.
-    pub fn stack_item_from_json(json: &JObject) -> CoreResult<StackValue> {
+    /// Converts a JSON representation into an RPC stack item DTO.
+    pub fn stack_item_from_json(json: &JObject) -> CoreResult<RpcStackItem> {
         stack::stack_item_from_json(json).map_err(|e| CoreError::other(e.to_string()))
     }
 
-    /// Converts a `neo-vm` stack value into a `neo-serialization::json` representation.
-    pub fn stack_item_to_json(item: &StackValue) -> CoreResult<JObject> {
+    /// Converts an RPC stack item DTO into its JSON representation.
+    pub fn stack_item_to_json(item: &RpcStackItem) -> CoreResult<JObject> {
         stack::stack_item_to_json(item)
     }
 
-    /// Converts an RPC stack value using the same integer rules as local VM clients.
-    pub fn stack_value_to_bigint(value: &StackValue) -> CoreResult<BigInt> {
-        stack::stack_value_to_bigint(value)
+    /// Converts an RPC stack item using NeoVM integer rules.
+    pub fn rpc_stack_item_to_bigint(value: &RpcStackItem) -> CoreResult<BigInt> {
+        stack::rpc_stack_item_to_bigint(value)
     }
 
-    /// Converts an RPC stack value using NeoVM truthiness rules.
+    /// Converts an RPC stack item using NeoVM truthiness rules.
     #[must_use]
-    pub fn stack_value_to_bool(value: &StackValue) -> bool {
-        stack::stack_value_to_bool(value)
+    pub fn rpc_stack_item_to_bool(value: &RpcStackItem) -> bool {
+        stack::rpc_stack_item_to_bool(value)
     }
 
-    /// Converts an RPC stack value to a display/API string.
-    pub fn stack_value_to_string(value: &StackValue) -> CoreResult<String> {
-        stack::stack_value_to_string(value)
+    /// Converts an RPC stack item to a display/API string.
+    pub fn rpc_stack_item_to_string(value: &RpcStackItem) -> CoreResult<String> {
+        stack::rpc_stack_item_to_string(value)
     }
 
     /// Creates a witness from JSON (invocation/verification scripts encoded as base64).
@@ -348,11 +349,11 @@ pub fn transaction_from_json(
     RpcUtility::transaction_from_json(json, protocol_settings)
 }
 
-pub fn stack_item_from_json(json: &JObject) -> CoreResult<StackValue> {
+pub fn stack_item_from_json(json: &JObject) -> CoreResult<RpcStackItem> {
     RpcUtility::stack_item_from_json(json)
 }
 
-pub fn stack_item_to_json(item: &StackValue) -> CoreResult<JObject> {
+pub fn stack_item_to_json(item: &RpcStackItem) -> CoreResult<JObject> {
     RpcUtility::stack_item_to_json(item)
 }
 

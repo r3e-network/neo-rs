@@ -17,7 +17,7 @@
 //! - `contract_parameter_definition`: contract parameter descriptor records.
 //! - `contract_permission`: contract permission records.
 //! - `contract_permission_descriptor`: contract permission target descriptors.
-//! - `stack_value_helpers`: manifest stack-value conversion helpers.
+//! - `stack_item_helpers`: manifest stack-item projection helpers.
 //! - `wild_card_container`: wildcard container used by manifest permissions.
 
 #[path = "abi/contract_abi.rs"]
@@ -35,8 +35,8 @@ pub mod contract_parameter_definition;
 pub mod contract_permission;
 #[path = "permissions/contract_permission_descriptor.rs"]
 pub mod contract_permission_descriptor;
-#[path = "support/stack_value_helpers.rs"]
-pub(crate) mod stack_value_helpers;
+#[path = "support/stack_item_helpers.rs"]
+pub(crate) mod stack_item_helpers;
 #[path = "support/wild_card_container.rs"]
 pub mod wild_card_container;
 

@@ -7,10 +7,9 @@ use num_bigint::BigInt;
 #[path = "surface.rs"]
 mod surface;
 
-/// Structural equality for StackValue. Collection identity is not part of
-/// serialized stack data, so these tests compare value shape.
-fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
-    a.structural_eq(b)
+/// Structural equality for StackItem compound values.
+fn stack_item_struct_eq(a: &neo_vm::StackItem, b: &neo_vm::StackItem) -> bool {
+    a.equals(b).unwrap_or(false)
 }
 
 fn seed_current_block(cache: &DataCache, index: u32) {
@@ -565,11 +564,10 @@ fn whitelisted_contract_struct_round_trips() {
     assert_eq!(bytes, expected);
     let decoded = PolicyContract::decode_whitelisted_contract(&bytes).unwrap();
     assert_eq!(decoded, view);
-    let produced_sv = Interoperable::to_stack_value(&view).unwrap();
-    let expected_sv = StackValue::try_from(expected_item.clone()).unwrap();
+    let produced_item = Interoperable::to_stack_item(&view).unwrap();
     assert!(
-        stack_value_struct_eq(&produced_sv, &expected_sv),
-        "structural StackValue mismatch: {produced_sv:?} vs {expected_sv:?}"
+        stack_item_struct_eq(&produced_item, &expected_item),
+        "structural StackItem mismatch: {produced_item:?} vs {expected_item:?}"
     );
 
     let mut trait_decoded = WhitelistedContractView {
@@ -578,16 +576,12 @@ fn whitelisted_contract_struct_round_trips() {
         arg_count: 0,
         fixed_fee: 0,
     };
-    Interoperable::from_stack_value(
-        &mut trait_decoded,
-        StackValue::try_from(expected_item).unwrap(),
-    )
-    .unwrap();
+    Interoperable::from_stack_item(&mut trait_decoded, expected_item).unwrap();
     assert_eq!(trait_decoded, view);
 }
 
 #[test]
-fn whitelisted_contract_storage_uses_stack_value_projection() {
+fn whitelisted_contract_storage_uses_stack_item_projection() {
     fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
         let start_index = source.find(start).expect("start marker exists");
         let end_index = source[start_index..]
@@ -603,8 +597,8 @@ fn whitelisted_contract_storage_uses_stack_value_projection() {
         "fn decode_whitelisted_contract",
         "fn encode_whitelisted_contract",
     );
-    assert!(decoder.contains("decode_stack_value"));
-    assert!(decoder.contains("WhitelistedContractView::from_stack_value"));
+    assert!(decoder.contains("decode_stack_item"));
+    assert!(decoder.contains("WhitelistedContractView::from_stack_item"));
     assert!(!decoder.contains("BinarySerializer::deserialize("));
 
     let encoder = slice_between(
@@ -618,7 +612,7 @@ fn whitelisted_contract_storage_uses_stack_value_projection() {
 }
 
 #[test]
-fn committee_cache_reader_uses_stack_value_projection() {
+fn committee_cache_reader_uses_stack_item_projection() {
     let source = include_str!("../../policy_contract/storage/recovery.rs");
     let start = source
         .find("fn read_neo_committee_sorted")
@@ -629,10 +623,8 @@ fn committee_cache_reader_uses_stack_value_projection() {
         .expect("assert_almost_full_committee follows committee reader");
     let helper = &source[start..end];
 
-    assert!(helper.contains("decode_stack_value"));
-    assert!(helper.contains("CachedCommittee::from_stack_value"));
-    assert!(!helper.contains("StackValue::Array"));
-    assert!(!helper.contains("StackValue::Struct"));
+    assert!(helper.contains("decode_stack_item"));
+    assert!(helper.contains("CachedCommittee::from_stack_item"));
     assert!(!helper.contains("BinarySerializer::deserialize("));
     assert!(!helper.contains("StackItem::Array"));
     assert!(!helper.contains("StackItem::Struct"));

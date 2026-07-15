@@ -6,11 +6,10 @@ use neo_error::{CoreError, CoreResult};
 use neo_primitives::UInt160;
 use neo_primitives::hex_util;
 use neo_vm::StackItem;
-use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use neo_vm::impl_interoperable_via_stack_value;
+use neo_vm::impl_interoperable_via_stack_item;
 
 /// Describes what contract or group a permission applies to (matches C# ContractPermissionDescriptor)
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,12 +101,14 @@ impl ContractPermissionDescriptor {
     ///
     /// C# reference: `ContractPermissionDescriptor.ToStackItem()`
     /// Wildcard produces `Null` in BinarySerializer output (verified against mainnet state root).
-    pub fn to_stack_value(&self) -> StackValue {
+    pub fn to_stack_item(&self) -> StackItem {
         match self {
-            ContractPermissionDescriptor::Wildcard => StackValue::Null,
-            ContractPermissionDescriptor::Hash(hash) => StackValue::ByteString(hash.to_bytes()),
+            ContractPermissionDescriptor::Wildcard => StackItem::Null,
+            ContractPermissionDescriptor::Hash(hash) => {
+                StackItem::from_byte_string(hash.to_bytes())
+            }
             ContractPermissionDescriptor::Group(group) => {
-                StackValue::ByteString(group.encode_point(true).unwrap_or_else(|e| {
+                StackItem::from_byte_string(group.encode_point(true).unwrap_or_else(|e| {
                     tracing::error!("Failed to encode group key: {}", e);
                     group.to_bytes()
                 }))
@@ -115,33 +116,17 @@ impl ContractPermissionDescriptor {
         }
     }
 
-    /// Converts the descriptor to its stack item representation.
-    pub fn to_stack_item(&self) -> StackItem {
-        StackItem::try_from(self.to_stack_value()).unwrap_or(StackItem::Null)
-    }
-
-    /// Creates a descriptor from a neo-vm stack value encoded form.
-    pub fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        match stack_value {
-            StackValue::Null => Ok(Self::create_wildcard()),
-            StackValue::ByteString(bytes) | StackValue::Buffer(_, bytes) => {
-                Self::from_bytes(&bytes)
-            }
-            other => Err(CoreError::other(format!(
-                "Unsupported stack value type for ContractPermissionDescriptor: {:?}",
-                other
-            ))),
-        }
-    }
-
     /// Creates a descriptor from a stack item encoded form.
     pub fn from_stack_item(item: &StackItem) -> CoreResult<Self> {
-        Self::from_stack_value(StackValue::try_from(item.clone()).map_err(|_| {
-            CoreError::other(format!(
+        match item {
+            StackItem::Null => Ok(Self::create_wildcard()),
+            StackItem::ByteString(bytes) => Self::from_bytes(bytes),
+            StackItem::Buffer(buffer) => Self::from_bytes(&buffer.data()),
+            other => Err(CoreError::other(format!(
                 "Unsupported stack item type for ContractPermissionDescriptor: {:?}",
-                item.stack_item_type()
-            ))
-        })?)
+                other.stack_item_type()
+            ))),
+        }
     }
 
     /// Builds a descriptor from raw bytes.
@@ -196,7 +181,7 @@ impl<'de> Deserialize<'de> for ContractPermissionDescriptor {
     }
 }
 
-impl_interoperable_via_stack_value!(ContractPermissionDescriptor);
+impl_interoperable_via_stack_item!(ContractPermissionDescriptor);
 
 #[cfg(test)]
 #[path = "../../tests/manifest/contract_permission_descriptor.rs"]

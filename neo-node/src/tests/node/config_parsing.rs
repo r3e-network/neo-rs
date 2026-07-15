@@ -190,6 +190,7 @@ StorePath = "Indexer_{0}"
     );
     assert!(config.state_service.full_state);
     assert!(config.state_service.track_during_catchup);
+    assert!(config.state_service.coordinated);
     assert!(config.indexer.enabled);
     assert_eq!(
         config.indexer.store_path.as_deref(),
@@ -212,6 +213,25 @@ ReadOnly = true
     assert!(config.storage.backend.is_none());
     assert!(config.storage.data_directory().is_none());
     assert!(!config.storage.read_only);
+}
+
+#[test]
+fn state_service_can_select_an_auxiliary_noncoordinated_store() {
+    let config: NodeConfig = toml::from_str(
+        r#"
+[state_service]
+enabled = true
+coordinated = false
+path = "./data/state-service"
+"#,
+    )
+    .expect("parse noncoordinated state service config");
+
+    assert!(!config.state_service.coordinated);
+    assert_eq!(
+        config.state_service.path.as_deref(),
+        Some(std::path::Path::new("./data/state-service"))
+    );
 }
 
 #[test]

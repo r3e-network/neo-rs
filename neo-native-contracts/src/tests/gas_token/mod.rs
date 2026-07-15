@@ -236,7 +236,7 @@ fn gas_account_storage_round_trips() {
 }
 
 #[test]
-fn gas_account_storage_uses_stack_value_projection() {
+fn gas_account_storage_uses_stack_item_projection() {
     let source = include_str!("../../gas_token/storage.rs");
     let read_start = source
         .find("fn read_gas_account<")
@@ -255,17 +255,15 @@ fn gas_account_storage_uses_stack_value_projection() {
     // delegate (de)serialization to the shared crate::deserialize_account_state
     // / serialize_account_state helpers instead of inlining the plumbing.
     assert!(reader.contains("crate::deserialize_account_state"));
-    assert!(!reader.contains("StackValue::Struct"));
-    assert!(!reader.contains("stack_value_as_bigint"));
+    assert!(!reader.contains("StackItem::Struct"));
     assert!(!reader.contains("BinarySerializer::deserialize("));
-    assert!(!reader.contains("deserialize_stack_value_with_limits"));
 
     assert!(helper.contains("crate::AccountState::new"));
     assert!(helper.contains("crate::serialize_account_state"));
-    assert!(!helper.contains("StackValue::Struct"));
+    assert!(!helper.contains("StackItem::Struct"));
     assert!(!helper.contains("StackItem::from_struct"));
     assert!(!helper.contains("BinarySerializer::serialize("));
-    assert!(!helper.contains("serialize_stack_value_default"));
+    assert!(!helper.contains("serialize_default"));
 }
 
 #[test]

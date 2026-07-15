@@ -295,7 +295,7 @@ fn candidates_filters_registered_and_decodes_votes() {
 }
 
 #[test]
-fn neo_public_array_return_encoders_use_stack_value_projection() {
+fn neo_public_array_return_encoders_use_stack_item_projection() {
     fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
         let start_index = source.find(start).expect("start marker exists");
         let end_index = source[start_index..]
@@ -350,35 +350,33 @@ fn neo_public_array_return_encoders_use_stack_value_projection() {
         "fn candidates_to_array_bytes",
         "fn candidate_is_blocked",
     );
-    assert!(candidate_encoder.contains("StackValue::Array"));
-    assert!(candidate_encoder.contains("StackValue::Struct"));
-    assert!(candidate_encoder.contains("serialize_stack_value_default"));
-    assert!(!candidate_encoder.contains("StackItem::from_array"));
+    assert!(candidate_encoder.contains("StackItem::from_array"));
+    assert!(candidate_encoder.contains("StackItem::from_struct"));
+    assert!(candidate_encoder.contains("serialize_default"));
+    assert!(!candidate_encoder.contains("StackItem::try_from"));
     assert!(!candidate_encoder.contains("BinarySerializer::serialize("));
 
     let points_value_projector = slice_between(
         points_storage_source,
-        "fn points_to_stack_value",
+        "fn build_points_stack_item",
         "fn points_to_array_bytes",
     );
-    assert!(points_value_projector.contains("StackValue::Array"));
-    assert!(!points_value_projector.contains("StackItem::from_array"));
+    assert!(points_value_projector.contains("StackItem::from_array"));
 
     let points_bytes_encoder = slice_between(
         points_storage_source,
         "fn points_to_array_bytes",
         "fn points_to_stack_item",
     );
-    assert!(points_bytes_encoder.contains("points_to_stack_value"));
-    assert!(points_bytes_encoder.contains("serialize_stack_value_default"));
-    assert!(!points_bytes_encoder.contains("StackItem::from_array"));
+    assert!(points_bytes_encoder.contains("build_points_stack_item"));
+    assert!(points_bytes_encoder.contains("serialize_default"));
+    assert!(!points_bytes_encoder.contains("StackItem::try_from"));
     assert!(!points_bytes_encoder.contains("BinarySerializer::serialize("));
 
     let points_item_adapter =
         slice_between(points_storage_source, "fn points_to_stack_item", "\n}");
-    assert!(points_item_adapter.contains("points_to_stack_value"));
-    assert!(points_item_adapter.contains("StackItem::try_from"));
-    assert!(!points_item_adapter.contains("StackItem::from_array"));
+    assert!(points_item_adapter.contains("build_points_stack_item"));
+    assert!(!points_item_adapter.contains("StackItem::try_from"));
 
     let on_persist = slice_between(
         persist_source,

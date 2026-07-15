@@ -1,6 +1,6 @@
 //! Tests and fixtures for `chain.acc` file-format parsing.
 
-use super::format::{read_chain_acc_header, read_next_chain_acc_block};
+use super::format::{read_chain_acc_header, read_next_chain_acc_block, skip_chain_acc_records};
 use neo_io::{BinaryWriter, Serializable};
 use neo_payloads::block::Block;
 
@@ -138,5 +138,37 @@ fn read_chain_acc_header_rejects_leading_zero_garbage() {
     assert!(
         err.to_string().contains("valid first block"),
         "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn buffered_record_skip_positions_reader_at_the_next_record() {
+    let blocks = linked_empty_blocks(7, 3);
+    let bytes = encode_chain_acc(&blocks);
+    let mut reader = std::io::BufReader::with_capacity(64, std::io::Cursor::new(bytes));
+    let mut block_bytes = Vec::new();
+
+    let header = read_chain_acc_header(&mut reader).expect("read header");
+    skip_chain_acc_records(&mut reader, 2).expect("skip two records");
+    let third = read_next_chain_acc_block(&mut reader, 2, &mut block_bytes).expect("read third");
+
+    assert_eq!(header.count, 3);
+    assert_eq!(third.index(), 9);
+}
+
+#[test]
+fn buffered_record_skip_rejects_a_truncated_payload() {
+    let blocks = linked_empty_blocks(7, 2);
+    let mut bytes = encode_chain_acc(&blocks);
+    bytes.truncate(bytes.len() - 5);
+    let mut reader = std::io::BufReader::with_capacity(32, std::io::Cursor::new(bytes));
+
+    read_chain_acc_header(&mut reader).expect("read header from complete first record");
+    let error = skip_chain_acc_records(&mut reader, 2)
+        .expect_err("truncated second payload must not be skipped as valid");
+
+    assert!(
+        error.to_string().contains("truncated"),
+        "unexpected error: {error}"
     );
 }

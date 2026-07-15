@@ -182,7 +182,7 @@ fn storage_key_helpers_match_csharp_layout() {
 }
 
 #[test]
-fn clean_whitelist_storage_decode_uses_stack_value_projection() {
+fn clean_whitelist_storage_decode_uses_stack_item_projection() {
     let source = include_str!("../../contract_management/operations/storage.rs");
     let start = source
         .find("fn policy_clean_whitelist")
@@ -193,7 +193,7 @@ fn clean_whitelist_storage_decode_uses_stack_value_projection() {
         .expect("following helper exists");
     let helper = &source[start..end];
 
-    assert!(helper.contains("decode_stack_value"));
+    assert!(helper.contains("decode_stack_item"));
     assert!(helper.contains("StructDecoder"));
     assert!(!helper.contains("BinarySerializer::deserialize("));
     assert!(!helper.contains("StackItem::Struct"));
@@ -552,9 +552,8 @@ fn contract_state_marshals_to_five_element_array() {
     // getContract's hit path serializes the same 5-field Array
     // (id, updateCounter, hash, nef, manifest) as C# ContractState.ToStackItem.
     let state = ContractState::default();
-    let legacy_item = StackItem::try_from(state.to_stack_value()).unwrap();
-    let expected =
-        BinarySerializer::serialize(&legacy_item, &ExecutionEngineLimits::default()).unwrap();
+    let item = state.to_stack_item();
+    let expected = BinarySerializer::serialize(&item, &ExecutionEngineLimits::default()).unwrap();
     let bytes = ContractManagement::contract_state_to_bytes(&state, "test").unwrap();
     assert_eq!(bytes, expected);
     assert!(!bytes.is_empty());

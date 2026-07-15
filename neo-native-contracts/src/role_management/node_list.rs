@@ -1,15 +1,14 @@
-//! C# `RoleManagement.NodeList` stack-value and storage codecs.
+//! C# `RoleManagement.NodeList` stack-item and storage codecs.
 
 use neo_crypto::ECPoint;
 use neo_error::{CoreError, CoreResult};
 use neo_vm::StackItem;
-use neo_vm::StackValue;
 
 /// Decodes a serialized node-list (a `BinarySerializer` array of compressed
 /// EC-point byte strings) into `ECPoint`s.
 pub(super) fn decode_node_list(value: &[u8]) -> CoreResult<Vec<ECPoint>> {
-    let value = crate::support::codec::decode_stack_value(value, "RoleManagement node list")?;
-    Ok(NodeList::from_stack_value(value)?.into_nodes())
+    let value = crate::support::codec::decode_stack_item(value, "RoleManagement node list")?;
+    Ok(NodeList::from_stack_item(&value)?.into_nodes())
 }
 
 /// Serializes an empty node list (C# returns an empty `ECPoint[]`, not `null`,
@@ -21,17 +20,14 @@ pub(super) fn empty_node_list() -> CoreResult<Vec<u8>> {
     )
 }
 
-/// Builds the persisted `StackValue::Array` representation for C# `NodeList`.
-pub(super) fn nodes_to_stack_value(points: &[ECPoint]) -> StackValue {
-    NodeList::new(points.to_vec()).to_stack_value()
+/// Builds the persisted array representation for C# `NodeList`.
+pub(super) fn nodes_to_stack_item(points: &[ECPoint]) -> StackItem {
+    NodeList::new(points.to_vec()).to_stack_item()
 }
 
-/// Adapts the canonical node-list `StackValue` projection to the live VM
-/// notification boundary, preserving the caller-provided order.
+/// Builds the live VM notification array, preserving caller-provided order.
 pub(super) fn nodes_to_event_array(points: &[ECPoint]) -> CoreResult<StackItem> {
-    StackItem::try_from(nodes_to_stack_value(points)).map_err(|error| {
-        CoreError::invalid_operation(format!("RoleManagement event node list: {error}"))
-    })
+    Ok(nodes_to_stack_item(points))
 }
 
 /// Serializes a node list as C# `NodeList` stores it: a `BinarySerializer` array
@@ -71,25 +67,25 @@ impl NodeList {
         self.nodes
     }
 
-    pub(super) fn to_stack_value(&self) -> StackValue {
-        StackValue::Array(
-            neo_vm::next_stack_item_id(),
+    pub(super) fn to_stack_item(&self) -> StackItem {
+        StackItem::from_array(
             self.nodes
                 .iter()
-                .map(|point| StackValue::ByteString(point.to_bytes()))
+                .map(|point| StackItem::from_byte_string(point.to_bytes()))
                 .collect(),
         )
     }
 
-    pub(super) fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        let StackValue::Array(_, items) = stack_value else {
+    pub(super) fn from_stack_item(stack_item: &StackItem) -> CoreResult<Self> {
+        let StackItem::Array(items) = stack_item else {
             return Err(CoreError::invalid_data(
                 "RoleManagement node list is not an array",
             ));
         };
+        let items = items.items();
         let mut nodes = Vec::with_capacity(items.len());
         for entry in items {
-            let bytes = entry.to_byte_string_bytes().ok_or_else(|| {
+            let bytes = entry.as_bytes().map_err(|_| {
                 CoreError::invalid_data("RoleManagement node entry is not byte-like")
             })?;
             nodes.push(ECPoint::from_bytes(&bytes).map_err(|e| {
@@ -100,4 +96,4 @@ impl NodeList {
     }
 }
 
-neo_vm::impl_interoperable_via_stack_value!(NodeList);
+neo_vm::impl_interoperable_via_stack_item!(NodeList);

@@ -2,12 +2,12 @@
 // exception.rs - Exception handling (try, catch, finally, throw)
 //
 
-use super::{ExecutionEngine, StackItem, TryFrom, VMState, VmError, VmResult};
+use super::{ExecutionEngine, StackItem, TryFrom, VmError, VmResult};
 
 impl<S> ExecutionEngine<S> {
     /// Executes a try block
     pub fn execute_try(&mut self, catch_offset: i32, finally_offset: i32) -> VmResult<()> {
-        use neo_vm_rs::ExceptionHandlingContext;
+        use crate::ExceptionHandlingContext;
 
         if catch_offset == 0 && finally_offset == 0 {
             return Err(VmError::invalid_operation_msg(
@@ -55,7 +55,7 @@ impl<S> ExecutionEngine<S> {
 
     /// Executes an end try operation
     pub fn execute_end_try(&mut self, end_offset: i32) -> VmResult<()> {
-        use neo_vm_rs::ExceptionHandlingState;
+        use crate::ExceptionHandlingState;
 
         let context = self
             .current_context_mut()
@@ -96,7 +96,7 @@ impl<S> ExecutionEngine<S> {
             let finally_pointer = try_entry.finally_pointer();
             let finally_position = usize::try_from(finally_pointer)
                 .map_err(|_| VmError::InvalidJump(finally_pointer))?;
-            context.set_instruction_pointer(finally_position);
+            context.set_instruction_pointer(finally_position)?;
         } else {
             context.pop_try_context();
             let end_pointer = base_ip
@@ -104,7 +104,7 @@ impl<S> ExecutionEngine<S> {
                 .ok_or(VmError::InvalidJump(end_offset))?;
             let end_position =
                 usize::try_from(end_pointer).map_err(|_| VmError::InvalidJump(end_pointer))?;
-            context.set_instruction_pointer(end_position);
+            context.set_instruction_pointer(end_position)?;
         }
 
         self.is_jumping = true;
@@ -114,7 +114,7 @@ impl<S> ExecutionEngine<S> {
 
     /// Executes an end finally operation
     pub fn execute_end_finally(&mut self) -> VmResult<()> {
-        use neo_vm_rs::ExceptionHandlingState;
+        use crate::ExceptionHandlingState;
 
         let end_pointer = {
             let context = self
@@ -148,7 +148,7 @@ impl<S> ExecutionEngine<S> {
             let context = self
                 .current_context_mut()
                 .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-            context.set_instruction_pointer(end_position);
+            context.set_instruction_pointer(end_position)?;
             self.is_jumping = true;
         }
 
@@ -157,48 +157,23 @@ impl<S> ExecutionEngine<S> {
 
     /// Executes a throw operation
     pub fn execute_throw(&mut self, ex: Option<StackItem>) -> VmResult<()> {
-        use neo_vm_rs::ExceptionHandlingState;
+        use crate::ExceptionHandlingState;
 
         self.uncaught_exception = ex;
 
-        let mut idx = self.invocation_stack.len();
-        while idx > 0 {
-            idx -= 1;
-
-            while self.invocation_stack.len() > idx + 1 {
-                if let Some(mut ctx) = self.invocation_stack.pop() {
-                    self.unload_context(&mut ctx)?;
-                }
-            }
-
-            if self.invocation_stack.is_empty() {
-                break;
-            }
-
-            let Some(context) = self.invocation_stack.last() else {
-                break;
-            };
-
-            if !context.has_try_context() {
-                if let Some(mut ctx) = self.invocation_stack.pop() {
-                    self.unload_context(&mut ctx)?;
-                }
-                continue;
-            }
-
+        // C# scans the invocation stack first and only unloads the frames above
+        // a handler after finding one. If no handler exists, every frame stays
+        // loaded for fault diagnostics.
+        let mut handler_index = None;
+        for idx in (0..self.invocation_stack.len()).rev() {
             loop {
-                let (state, has_finally, catch_pointer, finally_pointer) = {
-                    let Some(context) = self.invocation_stack.last() else {
+                let (state, has_finally) = {
+                    let Some(context) = self.invocation_stack.get(idx) else {
                         break;
                     };
 
                     if let Some(try_context) = context.try_stack_last() {
-                        (
-                            try_context.state(),
-                            try_context.has_finally(),
-                            try_context.catch_pointer(),
-                            try_context.finally_pointer(),
-                        )
+                        (try_context.state(), try_context.has_finally())
                     } else {
                         break;
                     }
@@ -207,61 +182,70 @@ impl<S> ExecutionEngine<S> {
                 if state == ExceptionHandlingState::Finally
                     || (state == ExceptionHandlingState::Catch && !has_finally)
                 {
-                    if let Some(context) = self.invocation_stack.last_mut() {
+                    if let Some(context) = self.invocation_stack.get_mut(idx) {
                         context.pop_try_context();
                     }
                     continue;
                 }
-
-                if state == ExceptionHandlingState::Try && catch_pointer >= 0 {
-                    {
-                        let context = self
-                            .invocation_stack
-                            .last_mut()
-                            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-                        let try_context = context
-                            .try_stack_last_mut()
-                            .ok_or_else(|| VmError::invalid_operation_msg("No try context"))?;
-                        try_context.set_state(ExceptionHandlingState::Catch);
-                        if let Some(exception) = self.uncaught_exception.clone() {
-                            context.push(exception)?;
-                        }
-                        let catch_position = usize::try_from(catch_pointer)
-                            .map_err(|_| VmError::InvalidJump(catch_pointer))?;
-                        context.set_instruction_pointer(catch_position);
-                    }
-                    self.uncaught_exception = None;
-                    self.is_jumping = true;
-                    return Ok(());
-                }
-
-                {
-                    let context = self
-                        .invocation_stack
-                        .last_mut()
-                        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
-                    let try_context = context
-                        .try_stack_last_mut()
-                        .ok_or_else(|| VmError::invalid_operation_msg("No try context"))?;
-                    try_context.set_state(ExceptionHandlingState::Finally);
-                    let finally_position = usize::try_from(finally_pointer)
-                        .map_err(|_| VmError::InvalidJump(finally_pointer))?;
-                    context.set_instruction_pointer(finally_position);
-                }
-                self.is_jumping = true;
-                return Ok(());
+                handler_index = Some(idx);
+                break;
             }
 
-            if let Some(mut ctx) = self.invocation_stack.pop() {
-                self.unload_context(&mut ctx)?;
+            if handler_index.is_some() {
+                break;
             }
         }
 
-        if let Some(exception) = self.uncaught_exception.clone() {
-            self.set_state(VMState::FAULT);
-            Err(VmError::UnhandledException(exception))
+        let Some(handler_index) = handler_index else {
+            return Err(VmError::UnhandledException(
+                self.uncaught_exception.clone().unwrap_or(StackItem::Null),
+            ));
+        };
+
+        while self.invocation_stack.len() > handler_index + 1 {
+            if let Some(mut context) = self.invocation_stack.pop() {
+                self.unload_context(&mut context)?;
+            }
+        }
+
+        let context = self
+            .invocation_stack
+            .last_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+        let (state, catch_pointer, finally_pointer) = {
+            let try_context = context
+                .try_stack_last()
+                .ok_or_else(|| VmError::invalid_operation_msg("No try context"))?;
+            (
+                try_context.state(),
+                try_context.catch_pointer(),
+                try_context.finally_pointer(),
+            )
+        };
+
+        if state == ExceptionHandlingState::Try && catch_pointer >= 0 {
+            context
+                .try_stack_last_mut()
+                .ok_or_else(|| VmError::invalid_operation_msg("No try context"))?
+                .set_state(ExceptionHandlingState::Catch);
+            if let Some(exception) = self.uncaught_exception.clone() {
+                context.push(exception)?;
+            }
+            let catch_position =
+                usize::try_from(catch_pointer).map_err(|_| VmError::InvalidJump(catch_pointer))?;
+            context.set_instruction_pointer(catch_position)?;
+            self.uncaught_exception = None;
         } else {
-            Ok(())
+            context
+                .try_stack_last_mut()
+                .ok_or_else(|| VmError::invalid_operation_msg("No try context"))?
+                .set_state(ExceptionHandlingState::Finally);
+            let finally_position = usize::try_from(finally_pointer)
+                .map_err(|_| VmError::InvalidJump(finally_pointer))?;
+            context.set_instruction_pointer(finally_position)?;
         }
+
+        self.is_jumping = true;
+        Ok(())
     }
 }

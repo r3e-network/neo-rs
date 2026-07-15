@@ -1,9 +1,9 @@
 //! JSON-RPC envelope rendering for host VM stack items.
 
 use crate::StackItem;
+use crate::StackItemType;
 use crate::error::VmError;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
-use neo_vm_rs::StackItemType;
 use serde_json::{Map, Number as JsonNumber, Value};
 use std::collections::HashSet;
 

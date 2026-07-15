@@ -1,7 +1,6 @@
 //! StorageContext - matches C# Neo.SmartContract.StorageContext exactly
 
 use neo_error::{CoreError, CoreResult};
-use neo_vm::StackValue;
 use neo_vm::{Interoperable, InteroperableError, StackItem};
 use num_traits::ToPrimitive;
 
@@ -117,18 +116,15 @@ impl StorageContext {
 }
 
 impl Interoperable for StorageContext {
-    fn from_stack_value(&mut self, value: StackValue) -> Result<(), InteroperableError> {
-        let bytes = value.to_byte_string_bytes().ok_or_else(|| {
-            InteroperableError::InvalidType("StorageContext must be bytes".to_string())
-        })?;
-        let ctx = Self::from_bytes(&bytes).map_err(|error| {
+    fn from_stack_item(&mut self, value: StackItem) -> Result<(), InteroperableError> {
+        let ctx = Self::from_stack_item(&value).map_err(|error| {
             InteroperableError::InvalidData(format!("Invalid StorageContext: {error}"))
         })?;
         *self = ctx;
         Ok(())
     }
 
-    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
-        Ok(StackValue::ByteString(self.to_bytes().to_vec()))
+    fn to_stack_item(&self) -> Result<StackItem, InteroperableError> {
+        Ok(StorageContext::to_stack_item(self))
     }
 }

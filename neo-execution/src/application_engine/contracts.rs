@@ -208,7 +208,9 @@ where
                 ));
             }
 
-            let init_context = context.clone_with_position(init.offset as usize);
+            let init_context = context
+                .clone_with_position(init.offset as usize)
+                .map_err(|e| CoreError::invalid_operation(e.to_string()))?;
             let attached_here = self.attach_host();
             let load_result = self.vm_engine.engine_mut().load_context(init_context);
             self.detach_host(attached_here);

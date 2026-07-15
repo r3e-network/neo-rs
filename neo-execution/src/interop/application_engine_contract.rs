@@ -5,6 +5,7 @@ use crate::application_engine::ApplicationEngine;
 use crate::bls12381_interop::Bls12381Interop;
 use crate::env_flags::env_flag_enabled;
 use crate::iterators::IteratorInterop;
+use crate::native_contract::NativeContract;
 use crate::native_contract_provider::NativeContractProvider;
 use neo_crypto::bls12381_point::{G1_COMPRESSED_SIZE, G2_COMPRESSED_SIZE, GT_SIZE};
 use neo_error::{CoreError, CoreResult};
@@ -441,42 +442,33 @@ where
                     "call_native stack_item[{index}] vm_type={stack_type:?} as_bytes_len={bytes_len:?}"
                 );
             }
-            let bytes = match parameter_types.get(index) {
-                Some(ContractParameterType::Any) => {
-                    BinarySerializer::serialize(&item, app.execution_limits())?
-                }
-                Some(ContractParameterType::InteropInterface) => stack_item_to_interop_bytes(item)?,
-                _ => ApplicationEngine::<P, D>::stack_item_to_bytes(item)?,
-            };
-            if trace_native_call {
-                let preview_len = bytes.len().min(24);
-                eprintln!(
-                    "call_native arg[{index}] type={:?} len={} preview=0x{}",
-                    parameter_types.get(index),
-                    bytes.len(),
-                    hex_util::encode_hex(&bytes[..preview_len])
-                );
-            }
-            args.push(bytes);
+            args.push(item);
         }
 
         app.begin_native_call(null_mask);
-        let call_result = app.call_native_contract(script_hash, &method_name, &args);
+        let call_result = call_native_contract_stack_items(
+            app,
+            script_hash,
+            &method_name,
+            args,
+            trace_native_call,
+        );
         let force_null_return = app.finish_native_call();
-        let result_bytes = call_result?;
+        let result_item = call_result?;
 
         if trace_native_call {
             let tx_hash = current_transaction_hash(app)
                 .map(|hash| hash.to_string())
                 .unwrap_or_else(|| "none".to_string());
-            let preview_len = result_bytes.len().min(24);
             eprintln!(
-                "call_native result tx={} contract={} method={} len={} preview=0x{}",
+                "call_native result tx={} contract={} method={} item={}",
                 tx_hash,
                 script_hash,
                 method_name,
-                result_bytes.len(),
-                hex_util::encode_hex(&result_bytes[..preview_len])
+                result_item
+                    .as_ref()
+                    .map(trace_stack_item_summary)
+                    .unwrap_or_else(|| "Void".to_string())
             );
         }
 
@@ -495,8 +487,14 @@ where
                 engine
                     .push(StackItem::null())
                     .map_err(|e| CoreError::other(e.to_string()))?;
-            } else {
-                push_native_result(engine, ret_type, result_bytes)?;
+            } else if let Some(item) = result_item {
+                engine
+                    .push(item)
+                    .map_err(|e| CoreError::other(e.to_string()))?;
+            } else if ret_type != ContractParameterType::Void {
+                return Err(CoreError::other(format!(
+                    "Native contract method {method_name} did not return a value"
+                )));
             }
         }
 
@@ -509,17 +507,64 @@ where
     map_contract_result("System.Contract.CallNative", result)
 }
 
-fn push_native_result<B>(
-    engine: &mut ExecutionEngine<B>,
-    return_type: ContractParameterType,
-    result: Vec<u8>,
-) -> CoreResult<()> {
-    let Some(item) = decode_native_result(return_type, result)? else {
-        return Ok(());
-    };
-    engine
-        .push(item)
-        .map_err(|e| CoreError::other(e.to_string()))
+fn call_native_contract_stack_items<P, D, B>(
+    app: &mut ApplicationEngine<P, D, B>,
+    contract_hash: UInt160,
+    method_name: &str,
+    args: Vec<StackItem>,
+    trace_native_call: bool,
+) -> CoreResult<Option<StackItem>>
+where
+    P: NativeContractProvider + 'static,
+    D: crate::diagnostic::Diagnostic + 'static,
+    B: neo_storage::CacheRead,
+{
+    app.with_resolved_native_method(
+        contract_hash,
+        method_name,
+        args.len(),
+        move |native, resolved_method, engine| {
+            if let Some(result) = native.try_invoke_resolved_stack_items(
+                engine,
+                resolved_method.method_index(),
+                resolved_method.method(),
+                &args,
+            ) {
+                return result;
+            }
+
+            let mut encoded_args = Vec::with_capacity(args.len());
+            for (index, item) in args.into_iter().enumerate() {
+                let parameter_type = resolved_method.method().parameters.get(index);
+                let bytes = match parameter_type {
+                    Some(ContractParameterType::Any) => {
+                        BinarySerializer::serialize(&item, engine.execution_limits())?
+                    }
+                    Some(ContractParameterType::InteropInterface) => {
+                        stack_item_to_interop_bytes(item)?
+                    }
+                    _ => ApplicationEngine::<P, D>::stack_item_to_bytes(item)?,
+                };
+                if trace_native_call {
+                    let preview_len = bytes.len().min(24);
+                    eprintln!(
+                        "call_native arg[{index}] type={parameter_type:?} len={} preview=0x{}",
+                        bytes.len(),
+                        hex_util::encode_hex(&bytes[..preview_len])
+                    );
+                }
+                encoded_args.push(bytes);
+            }
+
+            let result = native.invoke_resolved(
+                engine,
+                resolved_method.method_index(),
+                resolved_method.method(),
+                &encoded_args,
+            )?;
+            decode_native_result(resolved_method.method().return_type, result)
+        },
+    )
 }
 
 fn decode_native_result(
@@ -537,7 +582,7 @@ fn decode_native_result(
             Ok(Some(StackItem::from_int(big)))
         }
         ContractParameterType::String => {
-            let string_bytes = String::from_utf8(result.clone())
+            let string_bytes = String::from_utf8(result)
                 .map_err(|_| CoreError::other("Invalid UTF-8 string returned by native contract"))?
                 .into_bytes();
             Ok(Some(StackItem::from_byte_string(string_bytes)))

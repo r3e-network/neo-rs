@@ -241,6 +241,25 @@ impl ContractParameter {
                             param.value = ContractParameterValue::Array(items?);
                         }
                     }
+                    ContractParameterType::Map => {
+                        let entries = value_json.as_array().ok_or_else(|| {
+                            CoreError::other("Map parameter value must be an array")
+                        })?;
+                        let mut map = Vec::with_capacity(entries.len());
+                        for entry in entries {
+                            let pair = entry.as_object().ok_or_else(|| {
+                                CoreError::other("Map parameter entry must be an object")
+                            })?;
+                            let key = pair.get("key").ok_or_else(|| {
+                                CoreError::other("Map parameter entry is missing key")
+                            })?;
+                            let value = pair.get("value").ok_or_else(|| {
+                                CoreError::other("Map parameter entry is missing value")
+                            })?;
+                            map.push((Self::from_json(key)?, Self::from_json(value)?));
+                        }
+                        param.value = ContractParameterValue::Map(map);
+                    }
                     _ => {
                         if let Some(s) = value_json.as_str() {
                             param.set_value(s)?;
@@ -251,5 +270,41 @@ impl ContractParameter {
         }
 
         Ok(param)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_json_preserves_ordered_map_entries() {
+        let json = serde_json::json!({
+            "type": "Map",
+            "value": [
+                {
+                    "key": { "type": "Integer", "value": "1" },
+                    "value": { "type": "String", "value": "first" }
+                },
+                {
+                    "key": { "type": "Integer", "value": "1" },
+                    "value": { "type": "String", "value": "second" }
+                }
+            ]
+        });
+
+        let parameter = ContractParameter::from_json(&json).expect("parse map parameter");
+        let ContractParameterValue::Map(entries) = parameter.value else {
+            panic!("expected map parameter");
+        };
+        assert_eq!(entries.len(), 2);
+        assert!(matches!(
+            &entries[0].1.value,
+            ContractParameterValue::String(value) if value == "first"
+        ));
+        assert!(matches!(
+            &entries[1].1.value,
+            ContractParameterValue::String(value) if value == "second"
+        ));
     }
 }

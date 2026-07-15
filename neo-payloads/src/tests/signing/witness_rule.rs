@@ -3,14 +3,13 @@ use super::*;
 use neo_primitives::ADDRESS_SIZE;
 use neo_primitives::UInt160;
 use neo_vm::Interoperable;
-use neo_vm::StackValue;
+use neo_vm::StackItem;
 
-/// Structural equality for StackValue that ignores the reference-identity ids
-/// on compound variants. Collection identity is not part of serialized
-/// stack data, so structural equality is the correct notion for round-trip / shape
-/// assertions.
-fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
-    a.structural_eq(b)
+/// Structural equality for stack items. Collection identity is not part of
+/// serialized stack data, so structural equality is the correct notion for
+/// round-trip and shape assertions.
+fn stack_item_struct_eq(a: &StackItem, b: &StackItem) -> bool {
+    a.equals(b).unwrap_or(false)
 }
 
 #[test]
@@ -183,7 +182,7 @@ fn group_condition_accepts_uncompressed_ecpoint_and_normalizes_to_compressed() {
 }
 
 #[test]
-fn witness_rule_projects_to_neo_vm_rs_stack_value() {
+fn witness_rule_projects_to_stack_item() {
     let hash = UInt160::from_bytes(&[0x11; ADDRESS_SIZE]).unwrap();
     let rule = WitnessRule::new(
         WitnessRuleAction::Allow,
@@ -195,50 +194,31 @@ fn witness_rule_projects_to_neo_vm_rs_stack_value() {
         },
     );
 
-    let left = rule.to_stack_value();
-    let right = neo_vm::StackValue::Array(
-        neo_vm::next_stack_item_id(),
-        vec![
-            neo_vm::StackValue::Integer(WitnessRuleAction::Allow.to_byte().into()),
-            neo_vm::StackValue::Array(
-                neo_vm::next_stack_item_id(),
-                vec![
-                    neo_vm::StackValue::Integer(WitnessConditionType::And.to_byte().into()),
-                    neo_vm::StackValue::Array(
-                        neo_vm::next_stack_item_id(),
-                        vec![
-                            neo_vm::StackValue::Array(
-                                neo_vm::next_stack_item_id(),
-                                vec![
-                                    neo_vm::StackValue::Integer(
-                                        WitnessConditionType::Boolean.to_byte().into(),
-                                    ),
-                                    neo_vm::StackValue::Boolean(true),
-                                ],
-                            ),
-                            neo_vm::StackValue::Array(
-                                neo_vm::next_stack_item_id(),
-                                vec![
-                                    neo_vm::StackValue::Integer(
-                                        WitnessConditionType::ScriptHash.to_byte().into(),
-                                    ),
-                                    neo_vm::StackValue::ByteString(hash.to_bytes()),
-                                ],
-                            ),
-                        ],
-                    ),
-                ],
-            ),
-        ],
-    );
+    let left = rule.to_stack_item();
+    let right = StackItem::from_array(vec![
+        StackItem::from_i64(i64::from(WitnessRuleAction::Allow.to_byte())),
+        StackItem::from_array(vec![
+            StackItem::from_i64(i64::from(WitnessConditionType::And.to_byte())),
+            StackItem::from_array(vec![
+                StackItem::from_array(vec![
+                    StackItem::from_i64(i64::from(WitnessConditionType::Boolean.to_byte())),
+                    StackItem::from_bool(true),
+                ]),
+                StackItem::from_array(vec![
+                    StackItem::from_i64(i64::from(WitnessConditionType::ScriptHash.to_byte())),
+                    StackItem::from_byte_string(hash.to_bytes()),
+                ]),
+            ]),
+        ]),
+    ]);
     assert!(
-        stack_value_struct_eq(&left, &right),
-        "structural StackValue mismatch: {left:?} vs {right:?}"
+        stack_item_struct_eq(&left, &right),
+        "structural StackItem mismatch: {left:?} vs {right:?}"
     );
 }
 
 #[test]
-fn witness_rule_interoperable_to_stack_value_matches_inherent() {
+fn witness_rule_interoperable_to_stack_item_matches_inherent() {
     let rule = WitnessRule::new(
         WitnessRuleAction::Deny,
         WitnessCondition::Not {
@@ -246,35 +226,35 @@ fn witness_rule_interoperable_to_stack_value_matches_inherent() {
         },
     );
 
-    let expected = rule.to_stack_value();
-    let interop = Interoperable::to_stack_value(&rule).unwrap();
+    let expected = rule.to_stack_item();
+    let interop = Interoperable::to_stack_item(&rule).unwrap();
     assert!(
-        stack_value_struct_eq(&interop, &expected),
-        "structural StackValue mismatch: {interop:?} vs {expected:?}"
+        stack_item_struct_eq(&interop, &expected),
+        "structural StackItem mismatch: {interop:?} vs {expected:?}"
     );
 }
 
 #[test]
-fn witness_condition_interoperable_to_stack_value_matches_inherent() {
+fn witness_condition_interoperable_to_stack_item_matches_inherent() {
     let condition = WitnessCondition::Boolean { value: true };
 
-    let expected = condition.to_stack_value();
-    let interop = Interoperable::to_stack_value(&condition).unwrap();
+    let expected = condition.to_stack_item();
+    let interop = Interoperable::to_stack_item(&condition).unwrap();
     assert!(
-        stack_value_struct_eq(&interop, &expected),
-        "structural StackValue mismatch: {interop:?} vs {expected:?}"
+        stack_item_struct_eq(&interop, &expected),
+        "structural StackItem mismatch: {interop:?} vs {expected:?}"
     );
 }
 
 #[test]
-fn witness_rule_from_stack_value_is_unsupported_like_csharp_v3101() {
+fn witness_rule_from_stack_item_is_unsupported_like_csharp_v3101() {
     let mut rule = WitnessRule::new(
         WitnessRuleAction::Allow,
         WitnessCondition::Boolean { value: true },
     );
 
     assert!(
-        Interoperable::from_stack_value(&mut rule, StackValue::Null).is_err(),
+        Interoperable::from_stack_item(&mut rule, StackItem::null()).is_err(),
         "C# WitnessRule.IInteroperable.FromStackItem throws NotSupportedException"
     );
 }

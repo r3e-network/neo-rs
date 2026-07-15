@@ -2,10 +2,10 @@ use super::*;
 use neo_primitives::UInt160;
 use num_bigint::BigInt;
 
-/// Structural equality for StackValue. Collection identity is not part of
+/// Structural equality for stack items. Collection identity is not part of
 /// serialized stack data, so these tests compare value shape.
-fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
-    a.structural_eq(b)
+fn stack_item_struct_eq(a: &StackItem, b: &StackItem) -> bool {
+    a.equals(b).unwrap_or(false)
 }
 
 /// Builds a header with distinctive, range-stressing field values. The nonce
@@ -69,65 +69,63 @@ fn deserialize_rejects_more_than_ushort_max_hashes() {
 }
 
 #[test]
-fn interoperable_to_stack_value_matches_inherent() {
+fn interoperable_to_stack_item_matches_inherent() {
     let header = sample_header();
     let hashes = sample_hashes();
     let block = TrimmedBlock::new(header, hashes);
 
-    let trait_value = Interoperable::to_stack_value(&block).unwrap();
-    let inherent_value = block.to_stack_value();
+    let trait_value = Interoperable::to_stack_item(&block).unwrap();
+    let inherent_value = block.to_stack_item();
     assert!(
-        stack_value_struct_eq(&trait_value, &inherent_value),
-        "structural StackValue mismatch: {trait_value:?} vs {inherent_value:?}"
+        stack_item_struct_eq(&trait_value, &inherent_value),
+        "structural StackItem mismatch: {trait_value:?} vs {inherent_value:?}"
     );
 }
 
 #[test]
-fn to_stack_value_matches_csharp_layout() {
+fn to_stack_item_matches_csharp_layout() {
     let header = sample_header();
     let hashes = sample_hashes();
     let block = TrimmedBlock::new(header, hashes);
 
-    let neo_vm::StackValue::Array(_, fields) = block.to_stack_value() else {
+    let StackItem::Array(fields) = block.to_stack_item() else {
         panic!("TrimmedBlock projects to an Array");
     };
+    let fields = fields.items();
     assert_eq!(fields.len(), 10, "C# ToStackItem produces a 10-field Array");
 
     assert_eq!(
         fields[0],
-        neo_vm::StackValue::ByteString(block.header.hash().to_bytes())
+        StackItem::from_byte_string(block.header.hash().to_bytes())
     );
-    assert_eq!(fields[1], neo_vm::StackValue::Integer(0));
+    assert_eq!(fields[1], StackItem::from_i64(0));
     assert_eq!(
         fields[2],
-        neo_vm::StackValue::ByteString(block.header.prev_hash().to_bytes())
+        StackItem::from_byte_string(block.header.prev_hash().to_bytes())
     );
     assert_eq!(
         fields[3],
-        neo_vm::StackValue::ByteString(block.header.merkle_root().to_bytes())
+        StackItem::from_byte_string(block.header.merkle_root().to_bytes())
     );
     assert_eq!(
         fields[4],
-        neo_vm::StackValue::BigInteger(BigInt::from(0x0123_4567_89AB_CDEFu64).to_signed_bytes_le())
+        StackItem::from_int(BigInt::from(0x0123_4567_89AB_CDEFu64))
     );
-    assert_eq!(
-        fields[5],
-        neo_vm::StackValue::BigInteger(BigInt::from(u64::MAX).to_signed_bytes_le())
-    );
-    assert_eq!(fields[6], neo_vm::StackValue::Integer(123_456));
-    assert_eq!(fields[7], neo_vm::StackValue::Integer(3));
+    assert_eq!(fields[5], StackItem::from_int(BigInt::from(u64::MAX)));
+    assert_eq!(fields[6], StackItem::from_i64(123_456));
+    assert_eq!(fields[7], StackItem::from_i64(3));
     assert_eq!(
         fields[8],
-        neo_vm::StackValue::ByteString(block.header.next_consensus().to_bytes())
+        StackItem::from_byte_string(block.header.next_consensus().to_bytes())
     );
-    assert_eq!(fields[9], neo_vm::StackValue::Integer(2));
+    assert_eq!(fields[9], StackItem::from_i64(2));
 }
 
 #[test]
-fn from_stack_value_is_unsupported() {
+fn from_stack_item_is_unsupported() {
     let mut block = TrimmedBlock::new(sample_header(), sample_hashes());
-    let probe = StackValue::Integer(0);
-    assert!(Interoperable::from_stack_value(&mut block, probe).is_err());
+    let probe = StackItem::from_i64(0);
+    assert!(Interoperable::from_stack_item(&mut block, probe).is_err());
 }
 
 #[test]

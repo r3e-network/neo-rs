@@ -25,6 +25,7 @@ use crate::error::VmError;
 use crate::error::VmResult;
 use crate::evaluation_stack::EvaluationStack;
 use crate::execution_context::ExecutionContext;
+use crate::execution_profile::ExecutionProfileCollector;
 use crate::interop_service::{InteropHost, InteropService};
 use crate::jump_table::JumpTable;
 use crate::reference_counter::ReferenceCounter;
@@ -41,7 +42,7 @@ const HASH_SIZE: usize = 32;
 /// Value is in fractional GAS units where 1 GAS = 100_000_000 (10^8)
 pub const DEFAULT_GAS_LIMIT: u64 = 20_0000_0000; // 20 GAS
 
-use neo_vm_rs::{ExecutionEngineLimits, VmState as VMState};
+use crate::{ExecutionEngineLimits, VmState as VMState};
 
 /// The execution engine for the Neo VM.
 pub struct ExecutionEngine<S = ()> {
@@ -84,6 +85,9 @@ pub struct ExecutionEngine<S = ()> {
 
     /// Number of instructions executed during this execution session.
     pub instructions_executed: u64,
+
+    /// Opt-in diagnostic counters; absent on the normal consensus hot path.
+    pub(crate) execution_profile: Option<Box<ExecutionProfileCollector>>,
 
     /// Total gas consumed during execution (in fractional GAS units, 1 GAS = 10^8)
     pub(crate) gas_consumed: u64,

@@ -1,13 +1,13 @@
 //! ContractEventDescriptor - matches C# Neo.SmartContract.Manifest.ContractEventDescriptor exactly
 
 use crate::manifest::ContractParameterDefinition;
-use crate::manifest::stack_value_helpers::{
-    decode_stack_value_objects, required_struct_fields, stack_value_to_utf8_string,
+use crate::manifest::stack_item_helpers::{
+    decode_stack_item_objects, required_struct_fields, stack_item_to_utf8_string,
 };
 use neo_error::{CoreError, CoreResult};
 use neo_vm::Interoperable;
 use neo_vm::InteroperableError;
-use neo_vm::StackValue;
+use neo_vm::StackItem;
 use serde::{Deserialize, Serialize};
 
 /// Represents an event in a smart contract ABI (matches C# ContractEventDescriptor)
@@ -78,32 +78,28 @@ impl ContractEventDescriptor {
         1 + self.name.len() + params_size
     }
 
-    /// Converts to a neo-vm stack value (matches C# `ContractEventDescriptor.ToStackItem` layout).
-    pub fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::ByteString(self.name.as_bytes().to_vec()),
-                StackValue::Array(
-                    neo_vm::next_stack_item_id(),
-                    self.parameters
-                        .iter()
-                        .map(ContractParameterDefinition::to_stack_value)
-                        .collect(),
-                ),
-            ],
-        )
+    /// Converts to a neo-vm stack item (matches C# `ContractEventDescriptor.ToStackItem` layout).
+    pub fn to_stack_item(&self) -> StackItem {
+        StackItem::from_struct(vec![
+            StackItem::from_byte_string(self.name.as_bytes().to_vec()),
+            StackItem::from_array(
+                self.parameters
+                    .iter()
+                    .map(ContractParameterDefinition::to_stack_item)
+                    .collect(),
+            ),
+        ])
     }
 
-    /// Updates this event descriptor from a neo-vm stack value.
-    pub fn from_stack_value(&mut self, stack_value: StackValue) -> Result<(), CoreError> {
-        let items = required_struct_fields(stack_value, "ContractEventDescriptor", 2)?;
+    /// Updates this event descriptor from a neo-vm stack item.
+    pub fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
+        let items = required_struct_fields(stack_item, "ContractEventDescriptor", 2)?;
 
-        self.name = stack_value_to_utf8_string(&items[0], "ContractEventDescriptor name")?;
+        self.name = stack_item_to_utf8_string(&items[0], "ContractEventDescriptor name")?;
 
-        self.parameters = decode_stack_value_objects(
+        self.parameters = decode_stack_item_objects(
             items[1].clone(),
-            ContractParameterDefinition::from_stack_value,
+            ContractParameterDefinition::from_stack_item,
         )?;
 
         Ok(())
@@ -111,13 +107,13 @@ impl ContractEventDescriptor {
 }
 
 impl Interoperable for ContractEventDescriptor {
-    fn from_stack_value(&mut self, value: StackValue) -> Result<(), InteroperableError> {
-        self.from_stack_value(value)
+    fn from_stack_item(&mut self, value: StackItem) -> Result<(), InteroperableError> {
+        self.from_stack_item(value)
             .map_err(|e| InteroperableError::InvalidData(e.to_string()))
     }
 
-    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
-        Ok(self.to_stack_value())
+    fn to_stack_item(&self) -> Result<StackItem, InteroperableError> {
+        Ok(self.to_stack_item())
     }
 }
 

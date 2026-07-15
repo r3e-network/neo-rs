@@ -95,7 +95,7 @@ impl Bip39 {
                 got: entropy.len() * 8,
             });
         }
-        if entropy.len() % 4 != 0 {
+        if !entropy.len().is_multiple_of(4) {
             return Err(Bip39Error::InvalidEntropyLength {
                 got: entropy.len() * 8,
             });
@@ -112,7 +112,7 @@ impl Bip39 {
     /// is automatically zeroed when dropped.
     pub fn mnemonic_to_entropy(mnemonic: &[&str]) -> Result<Zeroizing<Vec<u8>>, Bip39Error> {
         let word_count = mnemonic.len();
-        if !(12..=24).contains(&word_count) || word_count % 3 != 0 {
+        if !(12..=24).contains(&word_count) || !word_count.is_multiple_of(3) {
             return Err(Bip39Error::UnknownLanguage(format!(
                 "The number of words should be 12, 15, 18, 21 or 24 (got {word_count})."
             )));

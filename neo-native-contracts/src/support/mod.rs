@@ -11,7 +11,7 @@
 //! ## Contents
 //!
 //! - `args`: native interop argument parsing.
-//! - `codec`: shared StackValue encode/decode helpers.
+//! - `codec`: shared StackItem encode/decode helpers.
 //! - `committee`: committee calculation helpers.
 //! - `engine`: ApplicationEngine prelude helpers (persisting block).
 //! - `invoke`: native ABI method binding helpers.

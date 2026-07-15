@@ -65,7 +65,7 @@ where
         // Get the single stack item and convert to integer
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        Ok(RpcUtility::stack_value_to_bigint(stack_item)?)
+        Ok(RpcUtility::rpc_stack_item_to_bigint(stack_item)?)
     }
 
     /// Get symbol of NEP17 token
@@ -78,7 +78,7 @@ where
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        Ok(RpcUtility::stack_value_to_string(stack_item)?)
+        Ok(RpcUtility::rpc_stack_item_to_string(stack_item)?)
     }
 
     /// Get decimals of NEP17 token
@@ -91,7 +91,7 @@ where
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        let value = RpcUtility::stack_value_to_bigint(stack_item)?;
+        let value = RpcUtility::rpc_stack_item_to_bigint(stack_item)?;
         Ok(value.to_u8().ok_or("Invalid decimals value")?)
     }
 
@@ -105,7 +105,7 @@ where
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        Ok(RpcUtility::stack_value_to_bigint(stack_item)?)
+        Ok(RpcUtility::rpc_stack_item_to_bigint(stack_item)?)
     }
 
     /// Get token information in one rpc call
@@ -404,16 +404,16 @@ where
             name,
             symbol: stack
                 .first()
-                .and_then(|s| RpcUtility::stack_value_to_string(s).ok())
+                .and_then(|s| RpcUtility::rpc_stack_item_to_string(s).ok())
                 .unwrap_or_default(),
             decimals: stack
                 .get(1)
-                .and_then(|s| RpcUtility::stack_value_to_bigint(s).ok())
+                .and_then(|s| RpcUtility::rpc_stack_item_to_bigint(s).ok())
                 .and_then(|i| i.to_u8())
                 .unwrap_or(0),
             total_supply: stack
                 .get(2)
-                .and_then(|s| RpcUtility::stack_value_to_bigint(s).ok())
+                .and_then(|s| RpcUtility::rpc_stack_item_to_bigint(s).ok())
                 .unwrap_or_else(|| BigInt::from(0)),
             balance: None,
             last_updated_block: None,

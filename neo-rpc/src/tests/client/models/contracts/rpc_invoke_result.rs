@@ -2,7 +2,7 @@ use super::super::rpc_stack::RpcStack;
 use super::super::test_fixtures::rpc_case_result;
 use super::*;
 use neo_serialization::json::{JArray, JToken};
-use neo_vm::{StackValue, VmState, stack_value_as_bytes};
+use neo_vm::VmState;
 
 #[test]
 fn invoke_result_roundtrip() {
@@ -24,7 +24,7 @@ fn invoke_result_roundtrip() {
     assert_eq!(parsed.state, VmState::Halt);
     assert_eq!(parsed.gas_consumed, 1);
     assert_eq!(parsed.stack.len(), 1);
-    assert_eq!(parsed.stack[0], StackValue::Boolean(true));
+    assert_eq!(parsed.stack[0], RpcStackItem::Boolean(true));
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn invoke_result_parses_unknown_stack_item_type() {
 
     let parsed = RpcInvokeResult::from_json(&json).unwrap();
     assert_eq!(parsed.stack.len(), 1);
-    assert_eq!(stack_value_as_bytes(&parsed.stack[0]).unwrap(), b"hello");
+    assert_eq!(parsed.stack[0], RpcStackItem::ByteString(b"hello".to_vec()));
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn invoke_result_stack_array_keeps_lossy_parse_behavior() {
     json.insert("stack".to_string(), JToken::Array(stack_array));
 
     let parsed = RpcInvokeResult::from_json(&json).unwrap();
-    assert_eq!(parsed.stack, vec![StackValue::Boolean(true)]);
+    assert_eq!(parsed.stack, vec![RpcStackItem::Boolean(true)]);
 }
 
 #[test]
@@ -104,7 +104,7 @@ fn invoke_result_to_json_emits_stack_items() {
         script: "00".to_string(),
         state: VmState::Halt,
         gas_consumed: 1,
-        stack: vec![StackValue::Boolean(true)],
+        stack: vec![RpcStackItem::Boolean(true)],
         tx: None,
         exception: None,
         session: None,
@@ -124,15 +124,12 @@ fn invoke_result_to_json_emits_stack_items() {
 }
 
 #[test]
-fn invoke_result_to_json_handles_circular_stack() {
+fn invoke_result_to_json_emits_nested_stack_items() {
     let result = RpcInvokeResult {
         script: "00".to_string(),
         state: VmState::Halt,
         gas_consumed: 1,
-        stack: vec![StackValue::Array(
-            neo_vm::next_stack_item_id(),
-            vec![StackValue::Boolean(true)],
-        )],
+        stack: vec![RpcStackItem::Array(vec![RpcStackItem::Boolean(true)])],
         tx: None,
         exception: None,
         session: None,

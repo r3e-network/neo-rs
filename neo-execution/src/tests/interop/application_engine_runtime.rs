@@ -158,6 +158,82 @@ fn runtime_log_allows_dynamic_script_without_container_like_csharp() {
 }
 
 #[test]
+fn application_script_loading_is_relaxed_but_runtime_load_script_is_strict() {
+    // Neo v3.10.1 RuntimeLoadScript constructs `new Script(script, true)` while
+    // ordinary ApplicationEngine.LoadScript accepts the relaxed Script conversion.
+    let new_engine = || {
+        ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            NoDiagnostic,
+            Arc::new(NoNativeContractProvider),
+        )
+        .expect("application engine")
+    };
+
+    let mut relaxed = new_engine();
+    relaxed
+        .load_script(vec![OpCode::RET.byte(), 0xff], CallFlags::ALL, None)
+        .expect("unreachable malformed bytes are valid in relaxed mode");
+    assert_eq!(relaxed.execute_allow_fault(), VMState::HALT);
+
+    for invalid_script in [
+        vec![OpCode::JMP.byte(), 0x7f],
+        vec![OpCode::CONVERT.byte(), neo_vm::StackItemType::Any.to_byte()],
+    ] {
+        let mut strict = new_engine();
+        strict
+            .load_script(vec![OpCode::RET.byte()], CallFlags::ALL, None)
+            .expect("load calling context");
+        assert!(
+            strict
+                .runtime_load_script(invalid_script, CallFlags::READ_ONLY, Vec::new())
+                .is_err()
+        );
+        assert_eq!(
+            strict
+                .current_context()
+                .expect("calling context remains current")
+                .script()
+                .as_bytes(),
+            &[OpCode::RET.byte()]
+        );
+    }
+}
+
+#[test]
+fn fault_clears_notifications_before_artifacts_are_exposed() {
+    // Neo v3.10.1 ApplicationEngine.cs:567-571 sets notifications to null in OnFault.
+    let mut engine =
+        ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            NoDiagnostic,
+            Arc::new(NoNativeContractProvider),
+        )
+        .expect("application engine");
+    engine
+        .load_script(vec![OpCode::ABORT.byte()], CallFlags::ALL, None)
+        .expect("load faulting script");
+    engine
+        .send_notification(UInt160::zero(), "BeforeFault".to_string(), Vec::new())
+        .expect("emit notification before fault");
+    assert_eq!(engine.notifications().len(), 1);
+
+    assert_eq!(engine.execute_allow_fault(), VMState::FAULT);
+    assert!(engine.notifications().is_empty());
+    assert!(engine.fault_exception().is_some());
+}
+
+#[test]
 fn send_notification_enforces_echidna_cap_for_native_paths_like_csharp() {
     let mut settings = ProtocolSettings::default();
     settings.hardforks.clear();
@@ -279,7 +355,7 @@ fn get_notifications_deep_copies_domovoi_state_like_csharp() {
 }
 
 #[test]
-fn notification_size_check_uses_stack_value_serializer() {
+fn notification_size_check_serializes_stack_items_directly() {
     let source = include_str!("../../interop/application_engine_helper.rs");
     let start = source
         .find("pub fn ensure_notification_size")
@@ -290,10 +366,9 @@ fn notification_size_check_uses_stack_value_serializer() {
         .expect("send_notification follows size check");
     let helper = &source[start..end];
 
-    assert!(helper.contains("notification_state_to_stack_value"));
-    assert!(helper.contains("serialize_stack_value_with_limits"));
-    assert!(!helper.contains("StackItem::from_array(state.to_vec())"));
-    assert!(!helper.contains("BinarySerializer::serialize(&StackItem"));
+    assert!(helper.contains("StackItem::from_array(state.to_vec())"));
+    assert!(helper.contains("BinarySerializer::serialize_with_limits"));
+    assert!(helper.contains("limits.max_stack_size as usize"));
 }
 
 #[test]
@@ -608,23 +683,26 @@ fn canonical_execution_uses_local_vm() {
 }
 
 #[test]
-fn zero_shift_coerces_boolean_result_to_integer_like_neo_vm_v3101() {
-    // NeoVM v3.10.1 unconditionally integer-coerces SHL's value operand,
-    // including when the shift is zero. Preserving the Boolean here would
-    // change the consensus stack type.
+fn post_gorgon_zero_shift_coerces_boolean_result_to_integer_like_neo_vm_v3101() {
+    // The post-Gorgon default handler unconditionally integer-coerces SHL's
+    // value operand, including when the shift is zero.
     let script = vec![
         OpCode::PUSHT.byte(),
         OpCode::PUSH0.byte(),
         OpCode::SHL.byte(),
         OpCode::RET.byte(),
     ];
+    let mut settings = ProtocolSettings::default();
+    settings.hardforks.clear();
+    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    settings.hardforks.insert(Hardfork::HfGorgon, 0);
     let mut engine =
         ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
             TriggerType::Application,
             None,
             Arc::new(DataCache::new(false)),
             None,
-            ProtocolSettings::default(),
+            settings,
             TEST_MODE_GAS,
             NoDiagnostic,
             Arc::new(NoNativeContractProvider),
@@ -641,4 +719,38 @@ fn zero_shift_coerces_boolean_result_to_integer_like_neo_vm_v3101() {
         "zero-shift result must be an Integer, got {result:?}"
     );
     assert_eq!(result.as_int().expect("integer result"), BigInt::from(1));
+}
+
+#[test]
+fn pre_gorgon_zero_shift_preserves_boolean_like_csharp_v3101() {
+    let script = vec![
+        OpCode::PUSHT.byte(),
+        OpCode::PUSH0.byte(),
+        OpCode::SHL.byte(),
+        OpCode::RET.byte(),
+    ];
+    let mut settings = ProtocolSettings::default();
+    settings.hardforks.clear();
+    settings.hardforks.insert(Hardfork::HfEchidna, 0);
+    let mut engine =
+        ApplicationEngine::<NoNativeContractProvider>::new_with_native_contract_provider(
+            TriggerType::Application,
+            None,
+            Arc::new(DataCache::new(false)),
+            None,
+            settings,
+            TEST_MODE_GAS,
+            NoDiagnostic,
+            Arc::new(NoNativeContractProvider),
+        )
+        .expect("application engine");
+    engine
+        .load_script(script, CallFlags::NONE, None)
+        .expect("load script");
+
+    assert_eq!(engine.execute_allow_fault(), VMState::HALT);
+    assert!(matches!(
+        engine.result_stack().peek(0),
+        Ok(neo_vm::stack_item::StackItem::Boolean(true))
+    ));
 }

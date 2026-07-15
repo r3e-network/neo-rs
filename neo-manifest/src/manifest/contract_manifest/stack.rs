@@ -1,8 +1,7 @@
-//! VM stack-value projection for `ContractManifest`.
+//! VM stack-item projection for `ContractManifest`.
 
 use neo_error::CoreError;
-use neo_vm::StackValue;
-use neo_vm::{Interoperable, InteroperableError};
+use neo_vm::{Interoperable, InteroperableError, StackItem, VmOrderedDictionary};
 
 use crate::manifest::{
     ContractAbi, ContractGroup, ContractManifest, ContractPermission, ContractPermissionDescriptor,
@@ -10,44 +9,43 @@ use crate::manifest::{
 };
 
 impl Interoperable for ContractManifest {
-    fn from_stack_value(&mut self, value: StackValue) -> Result<(), InteroperableError> {
-        ContractManifest::from_stack_value(self, value)
+    fn from_stack_item(&mut self, value: StackItem) -> Result<(), InteroperableError> {
+        ContractManifest::from_stack_item(self, value)
             .map_err(|e| InteroperableError::InvalidData(e.to_string()))
     }
 
-    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
-        Ok(ContractManifest::to_stack_value(self))
+    fn to_stack_item(&self) -> Result<StackItem, InteroperableError> {
+        Ok(ContractManifest::to_stack_item(self))
     }
 }
 
 impl ContractManifest {
-    /// Converts the manifest to the VM stack-value shape used by native interop.
-    pub fn to_stack_value(&self) -> StackValue {
+    /// Converts the manifest to the VM stack-item shape used by native interop.
+    pub fn to_stack_item(&self) -> StackItem {
         let group_items = self
             .groups
             .iter()
-            .map(ContractGroup::to_stack_value)
+            .map(ContractGroup::to_stack_item)
             .collect::<Vec<_>>();
 
         let standards_items = self
             .supported_standards
             .iter()
-            .map(|standard| StackValue::ByteString(standard.as_bytes().to_vec()))
+            .map(|standard| StackItem::from_byte_string(standard.as_bytes().to_vec()))
             .collect::<Vec<_>>();
 
         let permission_items = self
             .permissions
             .iter()
-            .map(ContractPermission::to_stack_value)
+            .map(ContractPermission::to_stack_item)
             .collect::<Vec<_>>();
 
         let trusts_item = match &self.trusts {
-            WildCardContainer::Wildcard => StackValue::Null,
-            WildCardContainer::List(trusts) => StackValue::Array(
-                neo_vm::next_stack_item_id(),
+            WildCardContainer::Wildcard => StackItem::Null,
+            WildCardContainer::List(trusts) => StackItem::from_array(
                 trusts
                     .iter()
-                    .map(ContractPermissionDescriptor::to_stack_value)
+                    .map(ContractPermissionDescriptor::to_stack_item)
                     .collect(),
             ),
         };
@@ -59,51 +57,45 @@ impl ContractManifest {
             None => b"null".to_vec(),
         };
 
-        StackValue::Struct(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::ByteString(self.name.as_bytes().to_vec()),
-                StackValue::Array(neo_vm::next_stack_item_id(), group_items),
-                // C# ContractManifest.ToStackItem always emits an empty features map.
-                StackValue::Map(neo_vm::next_stack_item_id(), Vec::new()),
-                StackValue::Array(neo_vm::next_stack_item_id(), standards_items),
-                self.abi.to_stack_value(),
-                StackValue::Array(neo_vm::next_stack_item_id(), permission_items),
-                trusts_item,
-                StackValue::ByteString(extra_bytes),
-            ],
-        )
+        StackItem::from_struct(vec![
+            StackItem::from_byte_string(self.name.as_bytes().to_vec()),
+            StackItem::from_array(group_items),
+            // C# ContractManifest.ToStackItem always emits an empty features map.
+            StackItem::from_map(VmOrderedDictionary::new()),
+            StackItem::from_array(standards_items),
+            self.abi.to_stack_item(),
+            StackItem::from_array(permission_items),
+            trusts_item,
+            StackItem::from_byte_string(extra_bytes),
+        ])
     }
 
-    /// Populates the manifest from the VM stack-value shape used by native interop.
-    pub fn from_stack_value(
-        &mut self,
-        stack_value: StackValue,
-    ) -> std::result::Result<(), CoreError> {
-        let StackValue::Struct(_, items) = stack_value else {
+    /// Populates the manifest from the VM stack-item shape used by native interop.
+    pub fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), CoreError> {
+        let StackItem::Struct(structure) = stack_item else {
             return Err(CoreError::invalid_format(
-                "ContractManifest expects Struct stack value",
+                "ContractManifest expects Struct stack item",
             ));
         };
+        let items = structure.items();
 
         if items.len() < 8 {
             return Err(CoreError::invalid_format(format!(
-                "ContractManifest stack value must contain 8 elements, found {}",
+                "ContractManifest stack item must contain 8 elements, found {}",
                 items.len()
             )));
         }
 
-        let name_bytes = items[0]
-            .to_byte_string_bytes()
-            .ok_or_else(|| CoreError::invalid_format("ContractManifest name must be ByteString"))?;
+        let name_bytes = byte_like_data(&items[0], "ContractManifest name")?;
         self.name = String::from_utf8(name_bytes)
             .map_err(|_| CoreError::invalid_format("ContractManifest name must be valid UTF-8"))?;
 
         self.groups = match &items[1] {
-            StackValue::Array(_, groups) => {
+            StackItem::Array(groups) => {
+                let groups = groups.items();
                 let mut values = Vec::with_capacity(groups.len());
-                for item in groups {
-                    values.push(ContractGroup::try_from_stack_value(item.clone())?);
+                for item in &groups {
+                    values.push(ContractGroup::try_from_stack_item(item)?);
                 }
                 values
             }
@@ -114,7 +106,7 @@ impl ContractManifest {
             }
         };
 
-        if let StackValue::Map(_, features) = &items[2] {
+        if let StackItem::Map(features) = &items[2] {
             if !features.is_empty() {
                 return Err(CoreError::invalid_format(
                     "ContractManifest features map must be empty",
@@ -128,19 +120,16 @@ impl ContractManifest {
         self.features.clear();
 
         self.supported_standards = match &items[3] {
-            StackValue::Array(_, standards) => {
+            StackItem::Array(standards) => {
+                let standards = standards.items();
                 let mut values = Vec::with_capacity(standards.len());
-                for item in standards {
-                    if matches!(item, StackValue::Null) {
+                for item in &standards {
+                    if item.is_null() {
                         return Err(CoreError::invalid_format(
                             "ContractManifest supported standard must not be null",
                         ));
                     }
-                    let bytes = item.to_byte_string_bytes().ok_or_else(|| {
-                        CoreError::invalid_format(
-                            "ContractManifest supported standard must be ByteString",
-                        )
-                    })?;
+                    let bytes = byte_like_data(item, "ContractManifest supported standard")?;
                     let standard = String::from_utf8(bytes).map_err(|_| {
                         CoreError::invalid_format(
                             "ContractManifest supported standard must be valid UTF-8",
@@ -158,15 +147,15 @@ impl ContractManifest {
         };
 
         let mut abi = ContractAbi::default();
-        abi.from_stack_value(items[4].clone())?;
+        abi.from_stack_item(items[4].clone())?;
         self.abi = abi;
 
         self.permissions = match &items[5] {
-            StackValue::Array(_, permissions) => {
+            StackItem::Array(permissions) => {
                 let mut values = Vec::new();
-                for item in permissions {
+                for item in permissions.items() {
                     let mut permission = ContractPermission::default_wildcard();
-                    permission.from_stack_value(item.clone())?;
+                    permission.from_stack_item(item)?;
                     values.push(permission);
                 }
                 values
@@ -179,13 +168,12 @@ impl ContractManifest {
         };
 
         self.trusts = match &items[6] {
-            StackValue::Null => WildCardContainer::create_wildcard(),
-            StackValue::Array(_, trusts) => {
+            StackItem::Null => WildCardContainer::create_wildcard(),
+            StackItem::Array(trusts) => {
+                let trusts = trusts.items();
                 let mut values = Vec::with_capacity(trusts.len());
-                for item in trusts {
-                    values.push(ContractPermissionDescriptor::from_stack_value(
-                        item.clone(),
-                    )?);
+                for item in &trusts {
+                    values.push(ContractPermissionDescriptor::from_stack_item(item)?);
                 }
                 WildCardContainer::create(values)
             }
@@ -197,18 +185,27 @@ impl ContractManifest {
         };
 
         self.extra = match &items[7] {
-            StackValue::ByteString(bytes) | StackValue::Buffer(_, bytes) => {
-                parse_extra_bytes(bytes.as_slice())?
-            }
+            StackItem::ByteString(bytes) => parse_extra_bytes(bytes)?,
+            StackItem::Buffer(buffer) => parse_extra_bytes(&buffer.data())?,
             other => {
                 return Err(CoreError::invalid_format(format!(
                     "ContractManifest extra must be ByteString, found {:?}",
-                    other.compact_type_tag()
+                    other.stack_item_type()
                 )));
             }
         };
 
         Ok(())
+    }
+}
+
+fn byte_like_data(item: &StackItem, field: &str) -> Result<Vec<u8>, CoreError> {
+    match item {
+        StackItem::ByteString(bytes) => Ok(bytes.clone()),
+        StackItem::Buffer(buffer) => Ok(buffer.data()),
+        _ => Err(CoreError::invalid_format(format!(
+            "{field} must be ByteString"
+        ))),
     }
 }
 

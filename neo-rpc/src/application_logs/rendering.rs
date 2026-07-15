@@ -5,7 +5,7 @@ use neo_vm::VmState as VMState;
 use neo_vm::rpc_json::StackItemRpcJson;
 use serde_json::{Map, Value};
 
-use super::stack_json::stack_values_rpc_json_per_item;
+use super::stack_json::stack_items_rpc_json_per_item;
 
 pub(super) fn block_log_json(
     block_hash: &UInt256,
@@ -63,7 +63,7 @@ fn execution_to_json(
     );
 
     let mut exception = include_exception.then(|| exec.exception.clone()).flatten();
-    match stack_values_rpc_json_per_item(&exec.stack, max_stack_size) {
+    match stack_items_rpc_json_per_item(&exec.stack, max_stack_size) {
         Ok(stack) => {
             trigger.insert("stack".to_string(), Value::Array(stack));
         }

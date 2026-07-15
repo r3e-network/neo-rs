@@ -4,12 +4,12 @@
 //!
 //! This module provides the Map stack item implementation used in the Neo VM.
 
+use crate::StackItemType;
+use crate::VmOrderedDictionary;
 use crate::error::{VmError, VmResult};
+use crate::next_stack_item_id;
 use crate::reference_counter::{CompoundId, ReferenceCounter};
 use crate::stack_item::StackItem;
-use neo_vm_rs::StackItemType;
-use neo_vm_rs::VmOrderedDictionary;
-use neo_vm_rs::next_stack_item_id;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -40,6 +40,9 @@ impl Map {
         T: Into<VmOrderedDictionary<StackItem, StackItem>>,
     {
         let mut items = items.into();
+        for (key, _) in items.iter() {
+            Self::validate_key(key)?;
+        }
         if let Some(rc) = &reference_counter {
             for (_, value) in items.iter_mut() {
                 value.attach_reference_counter(rc)?;
@@ -122,7 +125,7 @@ impl Map {
 
     /// Gets the value for the specified key.
     pub fn get(&self, key: &StackItem) -> VmResult<StackItem> {
-        self.validate_key(key)?;
+        Self::validate_key(key)?;
         self.inner.lock().items.get(key).cloned().ok_or_else(|| {
             VmError::catchable_exception_msg(format!("Key {key:?} not found in Map."))
         })
@@ -130,7 +133,7 @@ impl Map {
 
     /// Sets the value for the specified key.
     pub fn set(&self, key: StackItem, mut value: StackItem) -> VmResult<()> {
-        self.validate_key(&key)?;
+        Self::validate_key(&key)?;
         let (rc_opt, referenced, old_value) = {
             let inner = self.inner.lock();
             Self::ensure_mutable(&inner)?;
@@ -163,7 +166,7 @@ impl Map {
 
     /// Removes the value for the specified key.
     pub fn remove(&self, key: &StackItem) -> VmResult<StackItem> {
-        self.validate_key(key)?;
+        Self::validate_key(key)?;
         let (value, rc_opt, referenced) = {
             let mut inner = self.inner.lock();
             Self::ensure_mutable(&inner)?;
@@ -201,7 +204,7 @@ impl Map {
 
     /// Returns true if the map contains the given key.
     pub fn contains_key(&self, key: &StackItem) -> VmResult<bool> {
-        self.validate_key(key)?;
+        Self::validate_key(key)?;
         Ok(self.inner.lock().items.contains_key(key))
     }
 
@@ -286,7 +289,16 @@ impl Map {
         }
     }
 
-    fn validate_key(&self, key: &StackItem) -> VmResult<()> {
+    fn validate_key(key: &StackItem) -> VmResult<()> {
+        if !matches!(
+            key,
+            StackItem::Boolean(_) | StackItem::Integer(_) | StackItem::ByteString(_)
+        ) {
+            return Err(VmError::invalid_type_simple(
+                "Only Boolean, Integer, and ByteString can be used as map keys",
+            ));
+        }
+
         // Fast path: avoid allocation for ByteString keys (the common case).
         let len = if let Some(slice) = key.as_bytes_ref() {
             slice.len()

@@ -95,6 +95,15 @@ fn deserialize_enforces_depth_and_item_limits() {
 }
 
 #[test]
+fn deserialize_enforces_neovm_map_key_size() {
+    let key64 = "a".repeat(64);
+    let key65 = "a".repeat(65);
+
+    assert!(de(&format!(r#"{{"{key64}":1}}"#)).is_ok());
+    assert!(de(&format!(r#"{{"{key65}":1}}"#)).is_err());
+}
+
+#[test]
 fn deserialize_large_integer_rounds_through_double_like_csharp() {
     // C# JsonSerializer.Deserialize reads every JNumber as a `double` (Neo.Json
     // JNumber.Value) before converting to BigInteger, so integer literals beyond

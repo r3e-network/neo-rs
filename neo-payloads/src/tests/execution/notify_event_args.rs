@@ -1,12 +1,11 @@
 use super::*;
 use neo_vm::Interoperable;
 
-/// Structural equality for StackValue that ignores the reference-identity ids
-/// on compound variants. Collection identity is not part of serialized
-/// stack data, so structural equality is the correct notion for round-trip / shape
-/// assertions.
-fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
-    a.structural_eq(b)
+/// Structural equality for stack items. Collection identity is not part of
+/// serialized stack data, so structural equality is the correct notion for
+/// round-trip and shape assertions.
+fn stack_item_struct_eq(a: &StackItem, b: &StackItem) -> bool {
+    a.equals(b).unwrap_or(false)
 }
 
 fn sample_notification() -> NotifyEventArgs {
@@ -19,51 +18,42 @@ fn sample_notification() -> NotifyEventArgs {
 }
 
 #[test]
-fn notify_event_projects_to_neo_vm_rs_stack_value() {
+fn notify_event_projects_to_stack_item() {
     let notification = sample_notification();
 
-    let left = notification.to_stack_value().expect("stack value");
-    let right = StackValue::Array(
-        neo_vm::next_stack_item_id(),
-        vec![
-            StackValue::ByteString(notification.script_hash.to_bytes()),
-            StackValue::ByteString(b"Transfer".to_vec()),
-            StackValue::Array(neo_vm::next_stack_item_id(), vec![StackValue::Integer(7)]),
-        ],
-    );
+    let left = notification.to_stack_item();
+    let right = StackItem::from_array(vec![
+        StackItem::from_byte_string(notification.script_hash.to_bytes()),
+        StackItem::from_byte_string(b"Transfer".to_vec()),
+        StackItem::from_array(vec![StackItem::from_i64(7)]),
+    ]);
     assert!(
-        stack_value_struct_eq(&left, &right),
-        "structural StackValue mismatch: {left:?} vs {right:?}"
+        stack_item_struct_eq(&left, &right),
+        "structural StackItem mismatch: {left:?} vs {right:?}"
     );
 }
 
 #[test]
-fn notify_event_prepared_state_projection_uses_stack_value_layout() {
+fn notify_event_prepared_state_projection_uses_stack_item_layout() {
     let notification = sample_notification();
-    let prepared_state = StackValue::Array(
-        neo_vm::next_stack_item_id(),
-        vec![StackValue::Boolean(true)],
-    );
+    let prepared_state = StackItem::from_array(vec![StackItem::from_bool(true)]);
 
-    let expected = StackValue::Array(
-        neo_vm::next_stack_item_id(),
-        vec![
-            StackValue::ByteString(notification.script_hash.to_bytes()),
-            StackValue::ByteString(b"Transfer".to_vec()),
-            prepared_state.clone(),
-        ],
-    );
+    let expected = StackItem::from_array(vec![
+        StackItem::from_byte_string(notification.script_hash.to_bytes()),
+        StackItem::from_byte_string(b"Transfer".to_vec()),
+        prepared_state.clone(),
+    ]);
 
-    let projected = notification.to_stack_value_with_state_array(prepared_state.clone());
+    let projected = notification.to_stack_item_with_state_array(prepared_state.clone());
     assert!(
-        stack_value_struct_eq(&projected, &expected),
-        "structural StackValue mismatch: {projected:?} vs {expected:?}"
+        stack_item_struct_eq(&projected, &expected),
+        "structural StackItem mismatch: {projected:?} vs {expected:?}"
     );
     assert_eq!(
         notification
-            .try_to_stack_item_with_state_array(StackItem::try_from(prepared_state).unwrap())
+            .try_to_stack_item_with_state_array(prepared_state)
             .unwrap(),
-        StackItem::try_from(expected).unwrap()
+        expected
     );
 }
 
@@ -91,14 +81,14 @@ fn notify_event_prepared_stack_item_state_preserves_readonly_flag() {
 }
 
 #[test]
-fn notify_event_interoperable_to_stack_value_matches_inherent() {
+fn notify_event_interoperable_to_stack_item_matches_inherent() {
     let notification = sample_notification();
-    let expected = notification.to_stack_value().unwrap();
+    let expected = notification.to_stack_item();
 
-    let interop = Interoperable::to_stack_value(&notification).unwrap();
+    let interop = Interoperable::to_stack_item(&notification).unwrap();
     assert!(
-        stack_value_struct_eq(&interop, &expected),
-        "structural StackValue mismatch: {interop:?} vs {expected:?}"
+        stack_item_struct_eq(&interop, &expected),
+        "structural StackItem mismatch: {interop:?} vs {expected:?}"
     );
 }
 

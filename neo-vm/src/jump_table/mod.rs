@@ -38,13 +38,11 @@ use crate::execution_engine::ExecutionEngine;
 #[cfg(test)]
 use crate::stack_item::StackItem;
 #[cfg(test)]
-use neo_vm_rs::{Instruction, OpCode};
+use crate::{Instruction, OpCode};
 #[cfg(test)]
 use num_bigint::BigInt;
 
-pub(crate) use shared::{
-    get_integer, numeric_operand, push_stack_value, require_context, semantics_error,
-};
+pub(crate) use shared::{get_integer, get_vm_integer, require_context};
 pub use table::{InstructionHandler, JumpTable};
 
 macro_rules! register_jump_handlers {

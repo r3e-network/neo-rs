@@ -31,7 +31,6 @@ use neo_primitives::UInt160;
 use neo_storage::persistence::{DataCache, SeekDirection};
 use neo_storage::{StorageItem, StorageKey};
 use neo_vm::StackItem;
-use neo_vm::StackValue;
 use num_bigint::BigInt;
 
 use crate::hashes::NEO_TOKEN_HASH;

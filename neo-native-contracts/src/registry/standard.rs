@@ -14,6 +14,7 @@ use neo_execution::{
 use neo_payloads::{Block, TransactionAttribute, TransactionState, TrimmedBlock};
 use neo_primitives::{UInt160, UInt256};
 use neo_storage::{CacheRead, DataCache};
+use neo_vm::StackItem;
 
 use super::provider::StandardNativeProvider;
 use crate::{
@@ -276,6 +277,28 @@ where
     {
         with_standard_contract!(self, contract => {
             <_ as NativeContract<P>>::invoke_resolved(contract, engine, method_index, method, args)
+        })
+    }
+
+    fn try_invoke_resolved_stack_items<D, B>(
+        &self,
+        engine: &mut ApplicationEngine<P, D, B>,
+        method_index: usize,
+        method: &NativeMethod,
+        args: &[StackItem],
+    ) -> Option<CoreResult<Option<StackItem>>>
+    where
+        D: Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    {
+        with_standard_contract!(self, contract => {
+            <_ as NativeContract<P>>::try_invoke_resolved_stack_items(
+                contract,
+                engine,
+                method_index,
+                method,
+                args,
+            )
         })
     }
 

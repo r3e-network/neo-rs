@@ -221,6 +221,7 @@ impl ContractManagement {
         // Delete the per-contract record and the id -> hash index entry.
         snapshot.delete(&Self::contract_storage_key(&hash));
         snapshot.delete(&Self::contract_id_storage_key(contract.id));
+        engine.remove_contract_cache(&hash);
         // Delete ALL of the contract's own storage (C# Find over
         // `StorageKey.CreateSearchPrefix(contract.Id, empty)`).
         let search_prefix = StorageKey::new(contract.id, Vec::new());

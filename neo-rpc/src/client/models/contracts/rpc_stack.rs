@@ -2,6 +2,52 @@
 
 use neo_error::{CoreError, CoreResult};
 use neo_serialization::json::{JObject, JToken};
+use num_bigint::BigInt;
+
+/// Immutable stack item received from or sent to a remote JSON-RPC node.
+///
+/// This is a transport DTO, not a NeoVM runtime value. In particular, pointer
+/// positions and interop interfaces are opaque remote data and cannot enter
+/// consensus execution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RpcStackItem {
+    /// NeoVM `Any` / null.
+    Null,
+    /// Boolean value.
+    Boolean(bool),
+    /// Arbitrary-precision NeoVM integer.
+    Integer(BigInt),
+    /// Immutable byte string.
+    ByteString(Vec<u8>),
+    /// Mutable-buffer wire value. Mutability is not modeled by this DTO.
+    Buffer(Vec<u8>),
+    /// Array value.
+    Array(Vec<Self>),
+    /// Struct value.
+    Struct(Vec<Self>),
+    /// Ordered map entries.
+    Map(Vec<(Self, Self)>),
+    /// Opaque instruction position in the remote VM.
+    Pointer(u32),
+    /// Opaque remote interop interface, including iterator metadata.
+    InteropInterface {
+        /// Interface name, such as `IIterator`.
+        interface: Option<String>,
+        /// Opaque RPC-side handle.
+        id: Option<String>,
+    },
+}
+
+impl RpcStackItem {
+    /// Returns the bytes carried by byte-like RPC values.
+    #[must_use]
+    pub fn as_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::ByteString(bytes) | Self::Buffer(bytes) => Some(bytes),
+            _ => None,
+        }
+    }
+}
 
 /// RPC stack item representation matching C# `RpcStack`
 #[derive(Debug, Clone)]

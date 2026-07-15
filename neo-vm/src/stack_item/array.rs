@@ -2,11 +2,11 @@
 //!
 //! This module provides the Array stack item implementation used in the Neo VM.
 
+use crate::StackItemType;
 use crate::error::{VmError, VmResult};
+use crate::next_stack_item_id;
 use crate::reference_counter::{CompoundId, ReferenceCounter};
 use crate::stack_item::StackItem;
-use neo_vm_rs::StackItemType;
-use neo_vm_rs::next_stack_item_id;
 use parking_lot::Mutex;
 use std::sync::Arc;
 

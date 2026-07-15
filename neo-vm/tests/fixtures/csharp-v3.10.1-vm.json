@@ -1,0 +1,292 @@
+{
+  "schema": 1,
+  "oracle": {
+    "repository": "https://github.com/neo-project/neo-vm.git",
+    "commit": "004cd6070a940405818d9357638277dd44407e2e",
+    "version": "3.10.1",
+    "generator": "scripts/oracles/v3101/neo-vm/Program.cs",
+    "dotnet_sdk": "10.0.100"
+  },
+  "cases": [
+    {
+      "id": "implicit_ret_exact",
+      "operation": "execute",
+      "hardforks": ["all"],
+      "input": { "script_hex": "11", "rvcount": 1, "strict": false },
+      "observed": {
+        "state": "HALT",
+        "invocation_stack_depth": 0,
+        "result_stack_depth": 1,
+        "result_stack": [{ "type": "Integer", "value": "1" }],
+        "fault_type": null,
+        "fault_message": null
+      }
+    },
+    {
+      "id": "implicit_ret_too_few",
+      "operation": "execute",
+      "hardforks": ["all"],
+      "input": { "script_hex": "", "rvcount": 1, "strict": false },
+      "observed": {
+        "state": "FAULT",
+        "invocation_stack_depth": 0,
+        "result_stack_depth": 0,
+        "result_stack": [],
+        "fault_type": "InvalidOperationException",
+        "fault_message": "Return value count mismatch: expected 1, but got 0 items on the evaluation stack"
+      }
+    },
+    {
+      "id": "implicit_ret_too_many",
+      "operation": "execute",
+      "hardforks": ["all"],
+      "input": { "script_hex": "11", "rvcount": 0, "strict": false },
+      "observed": {
+        "state": "FAULT",
+        "invocation_stack_depth": 0,
+        "result_stack_depth": 0,
+        "result_stack": [],
+        "fault_type": "InvalidOperationException",
+        "fault_message": "Return value count mismatch: expected 0, but got 1 items on the evaluation stack"
+      }
+    },
+    {
+      "id": "relaxed_unreachable_malformed",
+      "operation": "execute",
+      "hardforks": ["pre_basilisk_contract_loading"],
+      "input": { "script_hex": "40ff", "rvcount": -1, "strict": false },
+      "observed": {
+        "state": "HALT",
+        "invocation_stack_depth": 0,
+        "result_stack_depth": 0,
+        "result_stack": [],
+        "fault_type": null,
+        "fault_message": null
+      }
+    },
+    {
+      "id": "strict_unreachable_malformed",
+      "operation": "script_construct",
+      "hardforks": ["basilisk_and_later_contract_loading", "runtime_load_script_all_eras"],
+      "input": { "script_hex": "40ff", "strict": true },
+      "observed": {
+        "outcome": "error",
+        "error_type": "BadScriptException",
+        "error_message": "Exception of type 'Neo.VM.BadScriptException' was thrown."
+      }
+    },
+    {
+      "id": "strict_jump_to_end",
+      "operation": "script_construct",
+      "hardforks": ["all_strict_scripts"],
+      "input": { "script_hex": "2202", "strict": true },
+      "observed": {
+        "outcome": "error",
+        "error_type": "BadScriptException",
+        "error_message": "ip: 0, opcode: JMP"
+      }
+    },
+    {
+      "id": "strict_convert_any",
+      "operation": "script_construct",
+      "hardforks": ["all_strict_scripts"],
+      "input": { "script_hex": "db00", "strict": true },
+      "observed": {
+        "outcome": "error",
+        "error_type": "BadScriptException",
+        "error_message": "ip: 0, opcode: CONVERT"
+      }
+    },
+    {
+      "id": "context_at_script_end",
+      "operation": "load_script",
+      "hardforks": ["all"],
+      "input": { "script_hex": "40", "rvcount": 0, "initial_position": 1 },
+      "observed": { "outcome": "ok" }
+    },
+    {
+      "id": "context_beyond_script_end",
+      "operation": "load_script",
+      "hardforks": ["all"],
+      "input": { "script_hex": "40", "rvcount": 0, "initial_position": 2 },
+      "observed": {
+        "outcome": "error",
+        "error_type": "ArgumentOutOfRangeException",
+        "error_message": "Out of script bounds: 2/1 (Parameter 'value')"
+      }
+    },
+    {
+      "id": "call_to_script_end",
+      "operation": "execute_call",
+      "hardforks": ["all"],
+      "input": { "script_hex": "40", "target": 1 },
+      "observed": {
+        "state": "HALT",
+        "invocation_stack_depth": 0,
+        "result_stack_depth": 0,
+        "result_stack": [],
+        "fault_type": null,
+        "fault_message": null
+      }
+    },
+    {
+      "id": "jump_to_script_end",
+      "operation": "execute_jump",
+      "hardforks": ["all"],
+      "input": { "script_hex": "40", "target": 1 },
+      "observed": {
+        "outcome": "error",
+        "error_type": "ArgumentOutOfRangeException",
+        "error_message": "Specified argument was out of the range of valid values. (Parameter 'Jump out of range for position: 1')"
+      }
+    },
+    {
+      "id": "try_target_beyond_script_end",
+      "operation": "execute_throw",
+      "hardforks": ["all"],
+      "input": { "script_hex": "40", "catch_offset": 2, "finally_offset": 0 },
+      "observed": {
+        "outcome": "error",
+        "error_type": "ArgumentOutOfRangeException",
+        "error_message": "Out of script bounds: 2/1 (Parameter 'value')",
+        "invocation_stack_depth": 1
+      }
+    },
+    {
+      "id": "endtry_target_beyond_script_end",
+      "operation": "execute_endtry",
+      "hardforks": ["all"],
+      "input": { "script_hex": "40", "catch_offset": 1, "end_offset": 2 },
+      "observed": {
+        "outcome": "error",
+        "error_type": "ArgumentOutOfRangeException",
+        "error_message": "Out of script bounds: 2/1 (Parameter 'value')",
+        "invocation_stack_depth": 1
+      }
+    },
+    {
+      "id": "null_convert_map",
+      "operation": "convert_null",
+      "hardforks": ["all"],
+      "input": { "requested_type": "Map" },
+      "observed": { "requested_type": "Map", "result_type": "Any", "is_null": true }
+    },
+    {
+      "id": "null_convert_pointer",
+      "operation": "convert_null",
+      "hardforks": ["all"],
+      "input": { "requested_type": "Pointer" },
+      "observed": { "requested_type": "Pointer", "result_type": "Any", "is_null": true }
+    },
+    {
+      "id": "null_convert_interopinterface",
+      "operation": "convert_null",
+      "hardforks": ["all"],
+      "input": { "requested_type": "InteropInterface" },
+      "observed": { "requested_type": "InteropInterface", "result_type": "Any", "is_null": true }
+    },
+    {
+      "id": "invalid_slot_store_preserves_operand",
+      "operation": "execute",
+      "hardforks": ["all"],
+      "input": { "script_hex": "1170", "strict": false },
+      "observed": {
+        "state": "FAULT",
+        "invocation_stack_depth": 1,
+        "result_stack_depth": 0,
+        "result_stack": [],
+        "fault_type": "InvalidOperationException",
+        "fault_message": "Slot has not been initialized.",
+        "evaluation_stack_depth": 1
+      }
+    },
+    {
+      "id": "invalid_static_index_preserves_operand",
+      "operation": "execute",
+      "hardforks": ["all"],
+      "input": { "script_hex": "5601116701", "strict": false },
+      "observed": {
+        "state": "FAULT",
+        "invocation_stack_depth": 1,
+        "result_stack_depth": 0,
+        "result_stack": [],
+        "fault_type": "InvalidOperationException",
+        "fault_message": "Index out of range when storing to slot: 1, 1/[0, 1).",
+        "evaluation_stack_depth": 1
+      }
+    },
+    {
+      "id": "invalid_local_index_preserves_operand",
+      "operation": "execute",
+      "hardforks": ["all"],
+      "input": { "script_hex": "570100117701", "strict": false },
+      "observed": {
+        "state": "FAULT",
+        "invocation_stack_depth": 1,
+        "result_stack_depth": 0,
+        "result_stack": [],
+        "fault_type": "InvalidOperationException",
+        "fault_message": "Index out of range when storing to slot: 1, 1/[0, 1).",
+        "evaluation_stack_depth": 1
+      }
+    },
+    {
+      "id": "invalid_argument_index_preserves_operand",
+      "operation": "execute",
+      "hardforks": ["all"],
+      "input": { "script_hex": "11570001128701", "strict": false },
+      "observed": {
+        "state": "FAULT",
+        "invocation_stack_depth": 1,
+        "result_stack_depth": 0,
+        "result_stack": [],
+        "fault_type": "InvalidOperationException",
+        "fault_message": "Index out of range when storing to slot: 1, 1/[0, 1).",
+        "evaluation_stack_depth": 1
+      }
+    },
+    {
+      "id": "unhandled_throw_preserves_frames",
+      "operation": "execute",
+      "hardforks": ["all"],
+      "input": { "outer_script_hex": "40", "inner_script_hex": "113a" },
+      "observed": {
+        "state": "FAULT",
+        "invocation_stack_depth": 2,
+        "result_stack_depth": 0,
+        "result_stack": [],
+        "fault_type": "VMUnhandledException",
+        "fault_message": "An unhandled exception was thrown.",
+        "current_evaluation_stack_depth": 0
+      }
+    },
+    {
+      "id": "abortmsg_valid_utf8",
+      "operation": "execute",
+      "hardforks": ["all"],
+      "input": { "script_hex": "0c034e4540e0" },
+      "observed": {
+        "state": "FAULT",
+        "invocation_stack_depth": 1,
+        "result_stack_depth": 0,
+        "result_stack": [],
+        "fault_type": "Exception",
+        "fault_message": "ABORTMSG is executed. Reason: NEO"
+      }
+    },
+    {
+      "id": "abortmsg_invalid_utf8",
+      "operation": "execute",
+      "hardforks": ["all"],
+      "input": { "script_hex": "0c01ffe0" },
+      "observed": {
+        "state": "FAULT",
+        "invocation_stack_depth": 1,
+        "result_stack_depth": 0,
+        "result_stack": [],
+        "fault_type": "DecoderFallbackException",
+        "fault_message": "Unable to translate bytes [FF] at index 0 from specified code page to Unicode."
+      }
+    }
+  ]
+}

@@ -282,7 +282,7 @@ async fn get_candidates_reports_internal_error_on_invalid_state() {
         .first()
         .expect("candidate")
         .clone();
-    let bytes = serialize_test_stack_value(&StackValue::ByteString(vec![0x01]));
+    let bytes = serialize_test_stack_item(&StackItem::from_byte_string(vec![0x01]));
     let mut store = system.store_cache();
     store_candidate_state_raw(&mut store, &candidate, bytes);
 

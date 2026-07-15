@@ -54,7 +54,7 @@ fn hex_nibble(byte: u8) -> Option<u8> {
 
 fn parse_trace_key_hex(raw: &str) -> Option<Vec<u8>> {
     let trimmed = raw.trim().strip_prefix("0x").unwrap_or(raw.trim());
-    if trimmed.is_empty() || trimmed.len() % 2 != 0 {
+    if trimmed.is_empty() || !trimmed.len().is_multiple_of(2) {
         return None;
     }
     let mut bytes = Vec::with_capacity(trimmed.len() / 2);

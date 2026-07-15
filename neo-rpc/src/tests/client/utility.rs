@@ -184,7 +184,7 @@ fn stack_item_parses_boolean() {
     obj.insert("value".to_string(), JToken::Boolean(true));
 
     let item = RpcUtility::stack_item_from_json(&obj).expect("stack item");
-    assert!(matches!(item, StackValue::Boolean(true)));
+    assert!(matches!(item, RpcStackItem::Boolean(true)));
 }
 
 #[test]
@@ -194,10 +194,24 @@ fn stack_item_parses_interop_interface_without_value() {
         "type".to_string(),
         JToken::String("InteropInterface".to_string()),
     );
+    obj.insert(
+        "interface".to_string(),
+        JToken::String("IIterator".to_string()),
+    );
     obj.insert("id".to_string(), JToken::String("iter-1".to_string()));
 
     let item = RpcUtility::stack_item_from_json(&obj).expect("stack item");
-    assert!(matches!(item, StackValue::Interop(0)));
+    assert_eq!(
+        item,
+        RpcStackItem::InteropInterface {
+            interface: Some("IIterator".to_string()),
+            id: Some("iter-1".to_string()),
+        }
+    );
+    assert_eq!(
+        RpcUtility::stack_item_to_json(&item).unwrap().to_string(),
+        r#"{"type":"InteropInterface","interface":"IIterator","id":"iter-1"}"#
+    );
 }
 
 #[test]
@@ -209,13 +223,13 @@ fn stack_item_parses_bytestring_and_buffer() {
     bytestring.insert("type".to_string(), JToken::String("ByteString".to_string()));
     bytestring.insert("value".to_string(), JToken::String(encoded.clone()));
     let item = RpcUtility::stack_item_from_json(&bytestring).expect("bytestring");
-    assert_eq!(item.as_bytes().expect("bytestring bytes"), bytes);
+    assert_eq!(item, RpcStackItem::ByteString(bytes.clone()));
 
     let mut buffer = JObject::new();
     buffer.insert("type".to_string(), JToken::String("Buffer".to_string()));
     buffer.insert("value".to_string(), JToken::String(encoded));
     let item = RpcUtility::stack_item_from_json(&buffer).expect("buffer");
-    assert_eq!(item.as_bytes().expect("buffer bytes"), bytes);
+    assert_eq!(item, RpcStackItem::Buffer(bytes));
 }
 
 #[test]
@@ -225,12 +239,68 @@ fn stack_item_parses_pointer_and_any() {
     pointer.insert("value".to_string(), JToken::String("7".to_string()));
 
     let item = RpcUtility::stack_item_from_json(&pointer).expect("pointer");
-    assert!(matches!(item, StackValue::Pointer(7)));
+    assert!(matches!(item, RpcStackItem::Pointer(7)));
 
     let mut any = JObject::new();
     any.insert("type".to_string(), JToken::String("Any".to_string()));
     let item = RpcUtility::stack_item_from_json(&any).expect("any");
-    assert!(matches!(item, StackValue::Null));
+    assert!(matches!(item, RpcStackItem::Null));
+}
+
+#[test]
+fn stack_item_preserves_arbitrary_precision_integer() {
+    let value = "1234567890123456789012345678901234567890";
+    let mut integer = JObject::new();
+    integer.insert("type".to_string(), JToken::String("Integer".to_string()));
+    integer.insert("value".to_string(), JToken::String(value.to_string()));
+
+    let item = RpcUtility::stack_item_from_json(&integer).expect("integer");
+    assert_eq!(
+        item,
+        RpcStackItem::Integer(value.parse().expect("valid BigInt"))
+    );
+    assert_eq!(
+        RpcUtility::stack_item_to_json(&item).unwrap().to_string(),
+        format!(r#"{{"type":"Integer","value":"{value}"}}"#)
+    );
+}
+
+#[test]
+fn rpc_stack_item_conversion_matches_neovm_rules() {
+    assert_eq!(
+        RpcUtility::rpc_stack_item_to_bigint(&RpcStackItem::Boolean(true)).unwrap(),
+        1.into()
+    );
+    assert_eq!(
+        RpcUtility::rpc_stack_item_to_bigint(&RpcStackItem::ByteString(vec![0xff])).unwrap(),
+        (-1).into()
+    );
+
+    assert!(!RpcUtility::rpc_stack_item_to_bool(&RpcStackItem::Null));
+    assert!(!RpcUtility::rpc_stack_item_to_bool(
+        &RpcStackItem::ByteString(vec![0])
+    ));
+    assert!(RpcUtility::rpc_stack_item_to_bool(
+        &RpcStackItem::ByteString(vec![1])
+    ));
+    assert!(RpcUtility::rpc_stack_item_to_bool(&RpcStackItem::Buffer(
+        Vec::new()
+    )));
+    assert!(RpcUtility::rpc_stack_item_to_bool(&RpcStackItem::Array(
+        Vec::new()
+    )));
+    assert!(RpcUtility::rpc_stack_item_to_bool(&RpcStackItem::Pointer(
+        0
+    )));
+
+    assert_eq!(
+        RpcUtility::rpc_stack_item_to_string(&RpcStackItem::Integer((-42).into())).unwrap(),
+        "-42"
+    );
+    assert_eq!(
+        RpcUtility::rpc_stack_item_to_string(&RpcStackItem::Boolean(false)).unwrap(),
+        "false"
+    );
 }
 
 #[test]
@@ -239,7 +309,7 @@ fn stack_item_parses_any_with_value() {
     any.insert("type".to_string(), JToken::String("Any".to_string()));
     any.insert("value".to_string(), JToken::String("data".to_string()));
     let item = RpcUtility::stack_item_from_json(&any).expect("any");
-    assert_eq!(item.as_bytes().expect("bytes"), b"data");
+    assert_eq!(item, RpcStackItem::ByteString(b"data".to_vec()));
 }
 
 #[test]
@@ -249,12 +319,12 @@ fn stack_item_fallbacks_for_unknown_type() {
     unknown.insert("value".to_string(), JToken::String("hello".to_string()));
 
     let item = RpcUtility::stack_item_from_json(&unknown).expect("fallback");
-    assert_eq!(item.as_bytes().expect("bytes"), b"hello");
+    assert_eq!(item, RpcStackItem::ByteString(b"hello".to_vec()));
 
     let mut empty = JObject::new();
     empty.insert("type".to_string(), JToken::String("Unknown".to_string()));
     let item = RpcUtility::stack_item_from_json(&empty).expect("fallback null");
-    assert!(matches!(item, StackValue::Null));
+    assert!(matches!(item, RpcStackItem::Null));
 }
 
 #[test]
@@ -538,7 +608,7 @@ fn stack_item_parses_array_and_struct() {
     array_obj.insert("value".to_string(), JToken::Array(array.clone()));
 
     let item_array = RpcUtility::stack_item_from_json(&array_obj).unwrap();
-    let StackValue::Array(_, array_items) = item_array else {
+    let RpcStackItem::Array(array_items) = item_array else {
         panic!("expected array");
     };
     assert_eq!(array_items.len(), 1);
@@ -547,7 +617,7 @@ fn stack_item_parses_array_and_struct() {
     struct_obj.insert("type".to_string(), JToken::String("Struct".to_string()));
     struct_obj.insert("value".to_string(), JToken::Array(array));
     let item_struct = RpcUtility::stack_item_from_json(&struct_obj).unwrap();
-    let StackValue::Struct(_, struct_items) = item_struct else {
+    let RpcStackItem::Struct(struct_items) = item_struct else {
         panic!("expected struct");
     };
     assert_eq!(struct_items.len(), 1);
@@ -576,7 +646,7 @@ fn stack_item_parses_map() {
     map_obj.insert("value".to_string(), JToken::Array(map_array));
 
     let item_map = RpcUtility::stack_item_from_json(&map_obj).unwrap();
-    let StackValue::Map(_, map) = item_map else {
+    let RpcStackItem::Map(map) = item_map else {
         panic!("expected map");
     };
     assert_eq!(map.len(), 1);
@@ -584,19 +654,16 @@ fn stack_item_parses_map() {
 
 #[test]
 fn stack_item_to_json_emits_array_and_map_shapes() {
-    let array = StackValue::Array(neo_vm::next_stack_item_id(), vec![StackValue::Integer(5)]);
+    let array = RpcStackItem::Array(vec![RpcStackItem::Integer(5.into())]);
     assert_eq!(
         RpcUtility::stack_item_to_json(&array).unwrap().to_string(),
         r#"{"type":"Array","value":[{"type":"Integer","value":"5"}]}"#
     );
 
-    let map = StackValue::Map(
-        neo_vm::next_stack_item_id(),
-        vec![(
-            StackValue::ByteString(b"k".to_vec()),
-            StackValue::Boolean(true),
-        )],
-    );
+    let map = RpcStackItem::Map(vec![(
+        RpcStackItem::ByteString(b"k".to_vec()),
+        RpcStackItem::Boolean(true),
+    )]);
     let expected_map = concat!(
         r#"{"type":"Map","value":[{"key":{"type":"ByteString","value":"aw=="},"#,
         r#""value":{"type":"Boolean","value":true}}]}"#,
@@ -605,6 +672,43 @@ fn stack_item_to_json_emits_array_and_map_shapes() {
         RpcUtility::stack_item_to_json(&map).unwrap().to_string(),
         expected_map
     );
+}
+
+#[test]
+fn rpc_stack_compounds_use_ordered_structural_value_semantics() {
+    let first = RpcStackItem::Map(vec![
+        (
+            RpcStackItem::ByteString(b"first".to_vec()),
+            RpcStackItem::Integer(1.into()),
+        ),
+        (
+            RpcStackItem::ByteString(b"second".to_vec()),
+            RpcStackItem::Integer(2.into()),
+        ),
+    ]);
+    let same = RpcStackItem::Map(vec![
+        (
+            RpcStackItem::ByteString(b"first".to_vec()),
+            RpcStackItem::Integer(1.into()),
+        ),
+        (
+            RpcStackItem::ByteString(b"second".to_vec()),
+            RpcStackItem::Integer(2.into()),
+        ),
+    ]);
+    let reversed = RpcStackItem::Map(vec![
+        (
+            RpcStackItem::ByteString(b"second".to_vec()),
+            RpcStackItem::Integer(2.into()),
+        ),
+        (
+            RpcStackItem::ByteString(b"first".to_vec()),
+            RpcStackItem::Integer(1.into()),
+        ),
+    ]);
+
+    assert_eq!(first, same);
+    assert_ne!(first, reversed);
 }
 
 #[test]

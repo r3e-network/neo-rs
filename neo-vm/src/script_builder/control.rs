@@ -1,6 +1,6 @@
 //! Control-flow and syscall emission helpers for [`ScriptBuilder`].
 
-use neo_vm_rs::OpCode;
+use crate::OpCode;
 
 use super::{ScriptBuilder, ScriptBuilderError, ScriptBuilderResult};
 
@@ -14,7 +14,7 @@ impl ScriptBuilder {
             )));
         }
 
-        let is_short = opcode_value % 2 == 0;
+        let is_short = opcode_value.is_multiple_of(2);
         if is_short && (offset < i32::from(i8::MIN) || offset > i32::from(i8::MAX)) {
             opcode = OpCode::try_from(opcode_value + 1)
                 .map_err(|_| ScriptBuilderError::invalid_operation("Invalid long jump opcode"))?;
@@ -47,7 +47,7 @@ impl ScriptBuilder {
             )));
         }
 
-        Ok(self.emit_syscall_hash(neo_vm_rs::interop_hash(api)))
+        Ok(self.emit_syscall_hash(crate::interop_hash(api)))
     }
 
     /// Emits a syscall using a precomputed hash.

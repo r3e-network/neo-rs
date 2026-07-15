@@ -3,7 +3,7 @@
 //! These helpers encode and decode the canonical single-signature invocation
 //! shape used by Neo witnesses: `PUSHDATA1 0x40 <64-byte signature>`.
 
-use neo_vm_rs::OpCode;
+use crate::OpCode;
 
 use super::ScriptBuilder;
 

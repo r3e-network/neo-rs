@@ -4,7 +4,7 @@
 //! instructions. Core byte emission and control-flow instructions stay in the
 //! parent module.
 
-use neo_vm_rs::{OpCode, StackValue};
+use crate::{OpCode, StackItem};
 use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
 
@@ -44,7 +44,7 @@ impl ScriptBuilder {
         }
 
         let negative = value < 0;
-        let bytes = neo_vm_rs::encode_integer(value);
+        let bytes = crate::encode_integer(value);
         let (opcode, target_len) = match bytes.len() {
             1 => (OpCode::PUSHINT8, 1usize),
             2 => (OpCode::PUSHINT16, 2usize),
@@ -101,7 +101,7 @@ impl ScriptBuilder {
 
         let bytes = value
             .to_i64()
-            .map_or_else(|| value.to_signed_bytes_le(), neo_vm_rs::encode_integer);
+            .map_or_else(|| value.to_signed_bytes_le(), crate::encode_integer);
         let negative = matches!(value.sign(), Sign::Minus);
         let target_len = if bytes.len() <= 1 {
             1
@@ -140,46 +140,55 @@ impl ScriptBuilder {
         Ok(self)
     }
 
-    /// Emits a push operation for a `neo-vm-rs` stack value.
-    pub fn emit_push_stack_value(&mut self, item: &StackValue) -> ScriptBuilderResult<&mut Self> {
+    /// Emits a push operation for a local NeoVM stack item.
+    pub fn emit_push_stack_item(&mut self, item: &StackItem) -> ScriptBuilderResult<&mut Self> {
         match item {
-            StackValue::Null => {
+            StackItem::Null => {
                 self.emit_opcode(OpCode::PUSHNULL);
             }
-            StackValue::Boolean(value) => {
+            StackItem::Boolean(value) => {
                 self.emit_push_bool(*value);
             }
-            StackValue::Integer(value) => {
-                self.emit_push_int(*value);
+            StackItem::Integer(value) => {
+                self.emit_push_bigint(value.to_bigint())?;
             }
-            StackValue::BigInteger(bytes) => {
-                self.emit_push_bigint(BigInt::from_signed_bytes_le(bytes))?;
-            }
-            StackValue::ByteString(bytes) | StackValue::Buffer(_, bytes) => {
+            StackItem::ByteString(bytes) => {
                 self.emit_push(bytes);
             }
-            StackValue::Array(_, items) | StackValue::Struct(_, items) => {
+            StackItem::Buffer(buffer) => {
+                self.emit_push(&buffer.data());
+            }
+            StackItem::Array(array) => {
+                let items = array.items();
                 for item in items.iter().rev() {
-                    self.emit_push_stack_value(item)?;
+                    self.emit_push_stack_item(item)?;
                 }
                 self.emit_push_int(items.len() as i64);
                 self.emit_pack();
             }
-            StackValue::Map(_, entries) => {
+            StackItem::Struct(structure) => {
+                let items = structure.items();
+                for item in items.iter().rev() {
+                    self.emit_push_stack_item(item)?;
+                }
+                self.emit_push_int(items.len() as i64);
+                self.emit_opcode(OpCode::PACKSTRUCT);
+            }
+            StackItem::Map(map) => {
                 self.emit_opcode(OpCode::NEWMAP);
-                for (key, value) in entries {
+                for (key, value) in map.iter() {
                     self.emit_opcode(OpCode::DUP);
-                    self.emit_push_stack_value(key)?;
-                    self.emit_push_stack_value(value)?;
+                    self.emit_push_stack_item(&key)?;
+                    self.emit_push_stack_item(&value)?;
                     self.emit_opcode(OpCode::SETITEM);
                 }
             }
-            StackValue::Pointer(_) => {
+            StackItem::Pointer(_) => {
                 return Err(ScriptBuilderError::invalid_operation(
                     "Cannot serialize Pointer to script",
                 ));
             }
-            StackValue::Interop(_) | StackValue::Iterator(_) => {
+            StackItem::InteropInterface(_) => {
                 return Err(ScriptBuilderError::invalid_operation(
                     "Cannot serialize InteropInterface to script",
                 ));
@@ -198,4 +207,29 @@ fn pad_signed(bytes: &[u8], target_len: usize, negative: bool) -> Vec<u8> {
         padded.push(fill);
     }
     padded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pushing_struct_emits_packstruct_while_array_emits_pack() {
+        // Neo v3.10.1 SmartContract/Helper.cs EmitPush(StackItem) preserves the
+        // compound kind by selecting PACKSTRUCT for Struct and PACK for Array.
+        let mut structure = ScriptBuilder::new();
+        structure
+            .emit_push_stack_item(&StackItem::from_struct(vec![StackItem::from_i64(1)]))
+            .unwrap();
+        assert_eq!(
+            structure.to_array().last(),
+            Some(&OpCode::PACKSTRUCT.byte())
+        );
+
+        let mut array = ScriptBuilder::new();
+        array
+            .emit_push_stack_item(&StackItem::from_array(vec![StackItem::from_i64(1)]))
+            .unwrap();
+        assert_eq!(array.to_array().last(), Some(&OpCode::PACK.byte()));
+    }
 }

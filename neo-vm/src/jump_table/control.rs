@@ -1,11 +1,11 @@
 //! `JumpTable` Control operations implementation matching C# Neo.VM.JumpTable.Control
 
+use crate::Instruction;
+use crate::OpCode;
+use crate::VmState as VMState;
 use crate::error::{VmError, VmResult};
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{JumpTable, get_integer, register_jump_handlers};
-use neo_vm_rs::Instruction;
-use neo_vm_rs::OpCode;
-use neo_vm_rs::VmState as VMState;
+use crate::jump_table::{JumpTable, get_vm_integer, register_jump_handlers};
 
 /// Register all control handlers
 pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
@@ -120,12 +120,12 @@ pub fn jmpifnot_l<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction)
 ///
 /// C# reads both operands via `StackItem.GetInteger()`, which faults on a
 /// `Buffer` (not a `PrimitiveType`, no `GetInteger` override) — so the JMP*
-/// comparison family uses `get_integer`, NOT `into_int` (the latter coerces a
+/// comparison family uses `get_vm_integer`, NOT `into_int` (the latter coerces a
 /// <=32-byte Buffer to an integer, diverging from C#). All JMP comparisons below
 /// follow the same rule.
 pub fn jmpeq<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
-    let x2 = get_integer(engine.pop()?)?;
-    let x1 = get_integer(engine.pop()?)?;
+    let x2 = get_vm_integer(engine.pop()?)?;
+    let x1 = get_vm_integer(engine.pop()?)?;
     if x1 == x2 {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -135,8 +135,8 @@ pub fn jmpeq<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> V
 
 /// `JMPEQ_L` - Jump if equal (32-bit)
 pub fn jmpeq_l<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
-    let x2 = get_integer(engine.pop()?)?;
-    let x1 = get_integer(engine.pop()?)?;
+    let x2 = get_vm_integer(engine.pop()?)?;
+    let x1 = get_vm_integer(engine.pop()?)?;
     if x1 == x2 {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -146,8 +146,8 @@ pub fn jmpeq_l<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) ->
 
 /// JMPNE - Jump if not equal
 pub fn jmpne<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
-    let x2 = get_integer(engine.pop()?)?;
-    let x1 = get_integer(engine.pop()?)?;
+    let x2 = get_vm_integer(engine.pop()?)?;
+    let x1 = get_vm_integer(engine.pop()?)?;
     if x1 != x2 {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -157,8 +157,8 @@ pub fn jmpne<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> V
 
 /// `JMPNE_L` - Jump if not equal (32-bit)
 pub fn jmpne_l<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
-    let x2 = get_integer(engine.pop()?)?;
-    let x1 = get_integer(engine.pop()?)?;
+    let x2 = get_vm_integer(engine.pop()?)?;
+    let x1 = get_vm_integer(engine.pop()?)?;
     if x1 != x2 {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -170,8 +170,8 @@ pub fn jmpne_l<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) ->
 pub fn jmpgt<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = get_integer(a)?;
-    let b_int = get_integer(b)?;
+    let a_int = get_vm_integer(a)?;
+    let b_int = get_vm_integer(b)?;
     if a_int > b_int {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -183,8 +183,8 @@ pub fn jmpgt<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> V
 pub fn jmpgt_l<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = get_integer(a)?;
-    let b_int = get_integer(b)?;
+    let a_int = get_vm_integer(a)?;
+    let b_int = get_vm_integer(b)?;
     if a_int > b_int {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -196,8 +196,8 @@ pub fn jmpgt_l<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) ->
 pub fn jmpge<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = get_integer(a)?;
-    let b_int = get_integer(b)?;
+    let a_int = get_vm_integer(a)?;
+    let b_int = get_vm_integer(b)?;
     if a_int >= b_int {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -209,8 +209,8 @@ pub fn jmpge<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> V
 pub fn jmpge_l<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = get_integer(a)?;
-    let b_int = get_integer(b)?;
+    let a_int = get_vm_integer(a)?;
+    let b_int = get_vm_integer(b)?;
     if a_int >= b_int {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -222,8 +222,8 @@ pub fn jmpge_l<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) ->
 pub fn jmplt<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = get_integer(a)?;
-    let b_int = get_integer(b)?;
+    let a_int = get_vm_integer(a)?;
+    let b_int = get_vm_integer(b)?;
     if a_int < b_int {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -235,8 +235,8 @@ pub fn jmplt<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> V
 pub fn jmplt_l<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = get_integer(a)?;
-    let b_int = get_integer(b)?;
+    let a_int = get_vm_integer(a)?;
+    let b_int = get_vm_integer(b)?;
     if a_int < b_int {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -248,8 +248,8 @@ pub fn jmplt_l<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) ->
 pub fn jmple<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = get_integer(a)?;
-    let b_int = get_integer(b)?;
+    let a_int = get_vm_integer(a)?;
+    let b_int = get_vm_integer(b)?;
     if a_int <= b_int {
         let offset = i32::from(instruction.token_i8());
         engine.execute_jump_offset(offset)?;
@@ -261,8 +261,8 @@ pub fn jmple<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> V
 pub fn jmple_l<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {
     let b = engine.pop()?;
     let a = engine.pop()?;
-    let a_int = get_integer(a)?;
-    let b_int = get_integer(b)?;
+    let a_int = get_vm_integer(a)?;
+    let b_int = get_vm_integer(b)?;
     if a_int <= b_int {
         let offset = instruction.token_i32();
         engine.execute_jump_offset(offset)?;
@@ -331,7 +331,8 @@ pub fn abort<S>(_engine: &mut ExecutionEngine<S>, _instruction: &Instruction) ->
 pub fn abortmsg<S>(engine: &mut ExecutionEngine<S>, _instruction: &Instruction) -> VmResult<()> {
     let msg_item = engine.pop()?;
     let msg_bytes = msg_item.into_bytes()?;
-    let msg = String::from_utf8_lossy(&msg_bytes).into_owned();
+    let msg = String::from_utf8(msg_bytes)
+        .map_err(|_| VmError::invalid_type_simple("ABORTMSG message is not valid UTF-8"))?;
     Err(VmError::AbortMsg(msg))
 }
 
@@ -474,9 +475,9 @@ pub fn syscall<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) ->
 /// Compatibility module exposing the exception-handling ops with explicit names,
 /// matching the helper layout used in the C# test suite.
 pub mod exception_handling {
+    use crate::Instruction;
     use crate::error::VmResult;
     use crate::execution_engine::ExecutionEngine;
-    use neo_vm_rs::Instruction;
 
     /// Executes the TRY opcode for exception handling.
     pub fn try_op<S>(engine: &mut ExecutionEngine<S>, instruction: &Instruction) -> VmResult<()> {

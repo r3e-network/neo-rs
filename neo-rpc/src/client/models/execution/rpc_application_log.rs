@@ -13,8 +13,9 @@ use neo_error::{CoreError, CoreResult};
 use neo_primitives::TriggerType;
 use neo_primitives::{UInt160, UInt256};
 use neo_serialization::json::{JObject, JToken};
-use neo_vm::StackValue;
 use neo_vm::VmState;
+
+use super::RpcStackItem;
 /// Application log information matching C# `RpcApplicationLog`
 #[derive(Debug, Clone)]
 pub struct RpcApplicationLog {
@@ -91,7 +92,7 @@ pub struct Execution {
     pub exception_message: Option<String>,
 
     /// Stack items
-    pub stack: Vec<StackValue>,
+    pub stack: Vec<RpcStackItem>,
 
     /// Notifications
     pub notifications: Vec<RpcNotifyEventArgs>,
@@ -162,7 +163,7 @@ pub struct RpcNotifyEventArgs {
     pub event_name: String,
 
     /// Event state/data
-    pub state: StackValue,
+    pub state: RpcStackItem,
 }
 
 impl RpcNotifyEventArgs {

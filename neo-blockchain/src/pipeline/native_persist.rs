@@ -90,8 +90,6 @@ pub use types::{
 
 #[cfg(test)]
 use neo_vm::StackItem;
-#[cfg(test)]
-use neo_vm::StackValue;
 
 /// Runs the C# `Blockchain.Persist` sequence for `block` against
 /// `snapshot`: native `OnPersist` (with activation-block

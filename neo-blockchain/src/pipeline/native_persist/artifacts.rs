@@ -9,7 +9,6 @@ use neo_execution::native_contract_provider::NativeContractProvider;
 use neo_payloads::{ApplicationExecuted, Transaction};
 use neo_primitives::UInt160;
 use neo_vm::StackItem;
-use neo_vm::StackValue;
 use neo_vm::VmState as VMState;
 
 /// A notification emitted by a native persistence engine, captured for the
@@ -44,62 +43,11 @@ where
         vm_state,
         engine.fault_exception().map(str::to_owned),
         engine.fee_consumed(),
-        engine
-            .result_stack()
-            .iter()
-            .map(stack_value_snapshot)
-            .collect(),
+        engine.result_stack().to_vec(),
     );
     executed.notifications = engine.notifications().to_vec();
     executed.logs = engine.logs().to_vec();
     executed
-}
-
-pub(crate) fn stack_value_snapshot(item: &StackItem) -> StackValue {
-    match item {
-        StackItem::Null => StackValue::Null,
-        StackItem::Boolean(value) => StackValue::Boolean(*value),
-        StackItem::Integer(value) => match value.to_i64() {
-            Some(value) => StackValue::Integer(value),
-            None => StackValue::BigInteger(value.to_signed_bytes_le()),
-        },
-        StackItem::ByteString(bytes) => StackValue::ByteString(bytes.clone()),
-        StackItem::Buffer(buffer) => StackValue::Buffer(buffer.id() as u64, buffer.data()),
-        StackItem::Array(array) => StackValue::Array(
-            array.id() as u64,
-            array
-                .iter()
-                .map(|item| stack_value_snapshot(&item))
-                .collect(),
-        ),
-        StackItem::Struct(structure) => StackValue::Struct(
-            structure.id() as u64,
-            structure
-                .iter()
-                .map(|item| stack_value_snapshot(&item))
-                .collect(),
-        ),
-        StackItem::Map(map) => StackValue::Map(
-            map.id() as u64,
-            map.iter()
-                .map(|(key, value)| (stack_value_snapshot(&key), stack_value_snapshot(&value)))
-                .collect(),
-        ),
-        StackItem::Pointer(pointer) => {
-            // pointer.position() returns usize. On 64-bit platforms (MSRV 1.85),
-            // usize fits in i64. Use an explicit cast with a debug assertion.
-            let pos = pointer.position();
-            debug_assert!(
-                pos <= i64::MAX as usize,
-                "pointer position {pos} exceeds i64::MAX"
-            );
-            // Rationale: Neo VM pointer positions are serialized as signed C#
-            // integers; the debug assertion above preserves the cast invariant.
-            #[allow(clippy::cast_possible_wrap)]
-            StackValue::Pointer(pos as i64)
-        }
-        StackItem::InteropInterface(_) => StackValue::Interop(0),
-    }
 }
 
 /// Copies the engine's emitted notifications into the outcome shape.

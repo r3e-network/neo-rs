@@ -233,11 +233,41 @@ fn renders_node_metrics_payload() {
     assert!(text.contains("neo_state_service_mpt_apply_avg_changes"));
     assert!(text.contains("neo_state_service_mpt_apply_stage_calls_total"));
     assert!(text.contains("neo_state_service_mpt_apply_stage_avg_us{stage=\"queue_wait\"}"));
+    assert!(
+        text.contains("neo_state_service_mpt_apply_stage_duration_us_total{stage=\"queue_wait\"}")
+    );
     assert!(text.contains("neo_state_service_mpt_apply_stage_avg_us{stage=\"enqueue_blocking\"}"));
     assert!(text.contains("neo_state_service_mpt_apply_stage_avg_us{stage=\"trie_commit\"}"));
+    assert!(text.contains("neo_state_service_mpt_apply_stage_avg_us{stage=\"backing_sort\"}"));
     assert!(text.contains("neo_state_service_mpt_apply_items_total"));
     assert!(text.contains("neo_state_service_mpt_apply_avg_items{kind=\"overlay_entries\"}"));
     assert!(text.contains("neo_state_service_mpt_apply_avg_items{kind=\"batch_blocks\"}"));
+    for kind in [
+        "put_node_cached_calls",
+        "serialized_payload_bytes",
+        "hash_computations",
+        "max_recursion_depth",
+        "repeated_ancestor_finalizations",
+        "overlay_working_set_entries",
+        "finalization_cache_hits",
+        "finalization_memory_hits",
+        "finalization_memory_misses",
+        "finalization_backing_hits",
+        "finalization_backing_misses",
+        "finalization_lookup_errors",
+    ] {
+        assert!(
+            text.contains(&format!(
+                "neo_state_service_mpt_apply_avg_items{{kind=\"{kind}\"}}"
+            )),
+            "missing MPT mutation metric kind {kind}"
+        );
+    }
+    assert!(text.contains("neo_storage_mdbx_commit_attempts_total"));
+    assert!(
+        text.contains("neo_storage_mdbx_commit_stage_duration_us_total{stage=\"cursor_write\"}")
+    );
+    assert!(text.contains("neo_storage_mdbx_commit_volume_total{kind=\"value_bytes\"}"));
 }
 
 #[test]

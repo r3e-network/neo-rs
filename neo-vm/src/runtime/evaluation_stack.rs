@@ -3,6 +3,7 @@
 //! This module represents a stack used by the Neo VM for executing scripts.
 
 use crate::error::{VmError, VmResult};
+use crate::execution_profile::StackProfileHandle;
 use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::StackItem;
 
@@ -15,6 +16,9 @@ pub struct EvaluationStack {
 
     /// Reference counter responsible for tracking stack references.
     reference_counter: ReferenceCounter,
+
+    /// Present only for explicitly profiled engines.
+    profile: Option<StackProfileHandle>,
 }
 
 impl EvaluationStack {
@@ -25,7 +29,14 @@ impl EvaluationStack {
         Self {
             stack: Vec::with_capacity(32), // Pre-allocate for typical stack usage
             reference_counter,
+            profile: None,
         }
+    }
+
+    /// Attaches this stack to an explicitly enabled execution profile.
+    pub(crate) fn set_profile(&mut self, profile: StackProfileHandle) {
+        profile.observe_depth(self.stack.len());
+        self.profile = Some(profile);
     }
 
     /// Returns the reference counter for this evaluation stack.
@@ -55,13 +66,20 @@ impl EvaluationStack {
         item.attach_reference_counter(&self.reference_counter)?;
         self.reference_counter.add_stack_reference(&item, 1);
         self.stack.push(item);
+        if let Some(profile) = &self.profile {
+            profile.record_push(self.stack.len());
+        }
         Ok(())
     }
 
     /// Removes and returns the item at the top of the stack.
     #[inline(always)]
     pub fn pop(&mut self) -> VmResult<StackItem> {
-        self.remove_internal(0)
+        let item = self.remove_internal(0)?;
+        if let Some(profile) = &self.profile {
+            profile.record_pop();
+        }
+        Ok(item)
     }
 
     /// Returns the item at the specified index counting from the top of the
@@ -74,6 +92,9 @@ impl EvaluationStack {
         // Fast path: bounds check and index calculation
         if index_from_top >= self.stack.len() {
             return Err(VmError::stack_underflow_msg(0, 0));
+        }
+        if let Some(profile) = &self.profile {
+            profile.record_peek();
         }
         // SAFETY: We just verified the index is within bounds
         unsafe {
@@ -93,6 +114,9 @@ impl EvaluationStack {
         if index_from_top >= self.stack.len() {
             return Err(VmError::stack_underflow_msg(0, 0));
         }
+        if let Some(profile) = &self.profile {
+            profile.record_mutable_peek();
+        }
         let idx = self.stack.len() - index_from_top - 1;
         // SAFETY: We just verified the index is within bounds
         unsafe { Ok(self.stack.get_unchecked_mut(idx)) }
@@ -110,6 +134,9 @@ impl EvaluationStack {
         self.reference_counter.add_stack_reference(&item, 1);
         let insert_pos = self.stack.len().saturating_sub(index_from_top);
         self.stack.insert(insert_pos, item);
+        if let Some(profile) = &self.profile {
+            profile.record_insert(self.stack.len());
+        }
         Ok(())
     }
 
@@ -117,6 +144,9 @@ impl EvaluationStack {
     pub fn swap(&mut self, index_a: usize, index_b: usize) -> VmResult<()> {
         if index_a >= self.stack.len() || index_b >= self.stack.len() {
             return Err(VmError::stack_underflow_msg(0, 0));
+        }
+        if let Some(profile) = &self.profile {
+            profile.record_swap();
         }
         if index_a == index_b {
             return Ok(());
@@ -131,13 +161,20 @@ impl EvaluationStack {
     /// Removes and returns the item at the specified index counting from the
     /// top of the stack (0-based).
     pub fn remove(&mut self, index_from_top: usize) -> VmResult<StackItem> {
-        self.remove_internal(index_from_top)
+        let item = self.remove_internal(index_from_top)?;
+        if let Some(profile) = &self.profile {
+            profile.record_remove();
+        }
+        Ok(item)
     }
 
     /// Reverses the order of the `count` items at the top of the stack.
     pub fn reverse(&mut self, count: usize) -> VmResult<()> {
         if count > self.stack.len() {
             return Err(VmError::invalid_operation_msg("Reverse count out of range"));
+        }
+        if let Some(profile) = &self.profile {
+            profile.record_reverse();
         }
         if count <= 1 {
             return Ok(());
@@ -156,6 +193,9 @@ impl EvaluationStack {
             return Err(VmError::invalid_operation_msg("Copy count out of range"));
         }
         if count == 0 {
+            if let Some(profile) = &self.profile {
+                profile.record_copy(0);
+            }
             return Ok(());
         }
 
@@ -165,6 +205,9 @@ impl EvaluationStack {
         }
         for item in &self.stack[start..] {
             target.push(item.clone())?;
+        }
+        if let Some(profile) = &self.profile {
+            profile.record_copy(count);
         }
         Ok(())
     }
@@ -177,6 +220,9 @@ impl EvaluationStack {
             return Err(VmError::invalid_operation_msg("Move count out of range"));
         }
         if count == 0 {
+            if let Some(profile) = &self.profile {
+                profile.record_move(0);
+            }
             return Ok(());
         }
 
@@ -193,11 +239,17 @@ impl EvaluationStack {
         for item in moved.drain(..) {
             target.push(item)?;
         }
+        if let Some(profile) = &self.profile {
+            profile.record_move(count);
+        }
         Ok(())
     }
 
     /// Clears the stack, removing all elements and releasing their references.
     pub fn clear(&mut self) {
+        if let Some(profile) = &self.profile {
+            profile.record_clear(self.stack.len());
+        }
         for item in &self.stack {
             self.reference_counter.remove_stack_reference(item);
         }

@@ -1,14 +1,12 @@
 //! Bitwise operations for the Neo Virtual Machine.
 
-use crate::error::{VmError, VmResult};
+use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
-use crate::jump_table::{
-    JumpTable, numeric_operand, push_stack_value, register_jump_handlers, require_context,
-    semantics_error,
-};
+use crate::jump_table::shared::push_integer;
+use crate::jump_table::{JumpTable, get_integer, register_jump_handlers, require_context};
 use crate::stack_item::StackItem;
-use neo_vm_rs::semantics::arithmetic;
-use neo_vm_rs::{Instruction, OpCode, StackValue};
+use crate::{Instruction, OpCode};
+use num_bigint::BigInt;
 
 /// Registers the bitwise operation handlers.
 pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
@@ -25,55 +23,61 @@ pub fn register_handlers<S>(jump_table: &mut JumpTable<S>) {
 
 fn invert<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     let ctx = require_context(engine)?;
-    let value = numeric_operand(ctx.pop()?)?;
-    let result = arithmetic::invert_value(value).map_err(semantics_error)?;
-    push_stack_value(ctx, result)
+    let value = get_integer(ctx.pop()?)?;
+    push_integer(ctx, !value, "integer overflow for INVERT")
 }
 
-fn binary_bitwise<S>(
+fn binary_bitwise<S, F>(
     engine: &mut ExecutionEngine<S>,
-    op: fn(StackValue, StackValue) -> Result<StackValue, String>,
-) -> VmResult<()> {
+    overflow_message: &'static str,
+    op: F,
+) -> VmResult<()>
+where
+    F: FnOnce(BigInt, BigInt) -> BigInt,
+{
     let ctx = require_context(engine)?;
-    let right = numeric_operand(ctx.pop()?)?;
-    let left = numeric_operand(ctx.pop()?)?;
-    let result = op(left, right).map_err(semantics_error)?;
-    push_stack_value(ctx, result)
+    let right = get_integer(ctx.pop()?)?;
+    let left = get_integer(ctx.pop()?)?;
+    push_integer(ctx, op(left, right), overflow_message)
 }
 
 fn and<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
-    binary_bitwise(engine, arithmetic::bitwise_and_values)
+    binary_bitwise(engine, "integer overflow for AND", |left, right| {
+        left & right
+    })
 }
 
 fn or<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
-    binary_bitwise(engine, arithmetic::bitwise_or_values)
+    binary_bitwise(engine, "integer overflow for OR", |left, right| {
+        left | right
+    })
 }
 
 fn xor<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
-    binary_bitwise(engine, arithmetic::bitwise_xor_values)
+    binary_bitwise(engine, "integer overflow for XOR", |left, right| {
+        left ^ right
+    })
 }
 
 fn equal<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     let (left, right) = {
         let ctx = require_context(engine)?;
-        if ctx.evaluation_stack().len() < 2 {
-            return Err(VmError::insufficient_stack_items(
-                2,
-                ctx.evaluation_stack().len(),
-            ));
-        }
-        (ctx.pop()?, ctx.pop()?)
+        let right = ctx.pop()?;
+        let left = ctx.pop()?;
+        (left, right)
     };
-    let result = right.equals_with_limits(&left, engine.limits())?;
+    let result = left.equals_with_limits(&right, engine.limits())?;
     require_context(engine)?.push(StackItem::from_bool(result))
 }
 
 fn not_equal<S>(engine: &mut ExecutionEngine<S>, _: &Instruction) -> VmResult<()> {
     let (left, right) = {
         let ctx = require_context(engine)?;
-        (ctx.pop()?, ctx.pop()?)
+        let right = ctx.pop()?;
+        let left = ctx.pop()?;
+        (left, right)
     };
-    let result = !right.equals_with_limits(&left, engine.limits())?;
+    let result = !left.equals_with_limits(&right, engine.limits())?;
     require_context(engine)?.push(StackItem::from_bool(result))
 }
 

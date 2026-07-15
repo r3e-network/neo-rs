@@ -123,7 +123,7 @@ impl ContractManagement {
     }
 
     /// Marshals a `ContractState` to the Array return bytes (C# `ToStackItem` +
-    /// `BinarySerializer`) via the canonical `StackValue` projection — shared by
+    /// `BinarySerializer`) via the canonical `StackItem` projection — shared by
     /// `getContract` / `getContractById`. A miss is the caller's responsibility
     /// (an empty payload encodes the C# `null`).
     pub(in crate::contract_management) fn contract_state_to_bytes(
@@ -180,7 +180,7 @@ impl ContractManagement {
             .collect();
         for (key, item) in entries {
             snapshot.delete(&key);
-            let decoded = crate::support::codec::decode_stack_value(
+            let decoded = crate::support::codec::decode_stack_item(
                 &item.value_bytes(),
                 "ContractManagement::destroy: whitelist entry",
             )?;

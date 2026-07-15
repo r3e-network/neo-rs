@@ -5,13 +5,13 @@
 //! the NotGorgon / NotEchidna tables, cast the index to a 32-bit `int` first, so
 //! an index outside `i32` range faults uncatchably before normal bounds checks.
 
+use crate::Instruction;
 use crate::error::{VmError, VmResult};
 use crate::execution_engine::ExecutionEngine;
 use crate::stack_item::StackItem;
-use neo_vm_rs::Instruction;
 use num_traits::ToPrimitive;
 
-use super::pick_byte_sequence_item;
+use super::{pick_byte_sequence_item, primitive_memory, require_primitive_key};
 use crate::jump_table::require_context;
 
 /// C# `(int)key.GetInteger()`: a 32-bit index whose overflow is an uncatchable fault.
@@ -41,6 +41,7 @@ pub(crate) fn remove_before543<S>(
 ) -> VmResult<()> {
     let context = require_context(engine)?;
     let key = context.pop()?;
+    require_primitive_key(&key)?;
     let collection = context.pop()?;
     match collection {
         StackItem::Array(array) => {
@@ -64,7 +65,9 @@ pub(crate) fn remove_before543<S>(
             let _ = structure.remove(index as usize)?;
         }
         StackItem::Map(map) => {
-            let _ = map.remove(&key)?;
+            if map.contains_key(&key)? {
+                let _ = map.remove(&key)?;
+            }
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -83,6 +86,7 @@ pub(crate) fn has_key_before543<S>(
 ) -> VmResult<()> {
     let context = require_context(engine)?;
     let key = context.pop()?;
+    require_primitive_key(&key)?;
     let collection = context.pop()?;
 
     let negative = |index: i32| {
@@ -139,6 +143,7 @@ pub(crate) fn pick_item_before543<S>(
 ) -> VmResult<()> {
     let context = require_context(engine)?;
     let key = context.pop()?;
+    require_primitive_key(&key)?;
     let collection = context.pop()?;
 
     let result = match collection {
@@ -155,23 +160,16 @@ pub(crate) fn pick_item_before543<S>(
         StackItem::Map(map) => map.get(&key)?,
         StackItem::ByteString(bytes) => {
             let idx = before543_checked_index("PrimitiveType", &key, bytes.len())?;
-            pick_byte_sequence_item(neo_vm_rs::StackValue::ByteString(bytes.clone()), idx)?
+            pick_byte_sequence_item(&bytes, idx)?
         }
         item @ (StackItem::Integer(_) | StackItem::Boolean(_)) => {
-            let index = before543_index(&key)?;
-            if index < 0 {
-                return Err(VmError::catchable_exception_msg(format!(
-                    "The index of PrimitiveType is out of range, {index}/[0, ?)."
-                )));
-            }
-            pick_byte_sequence_item(neo_vm_rs::StackValue::try_from(item)?, index as usize)?
+            let bytes = primitive_memory(&item)?;
+            let idx = before543_checked_index("PrimitiveType", &key, bytes.len())?;
+            pick_byte_sequence_item(&bytes, idx)?
         }
         StackItem::Buffer(buffer) => {
             let idx = before543_checked_index("Buffer", &key, buffer.len())?;
-            pick_byte_sequence_item(
-                neo_vm_rs::StackValue::Buffer(buffer.id() as u64, buffer.data()),
-                idx,
-            )?
+            StackItem::from_i64(i64::from(buffer.get(idx)?))
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -189,14 +187,15 @@ pub(crate) fn set_item_before543<S>(
     engine: &mut ExecutionEngine<S>,
     instruction: &Instruction,
 ) -> VmResult<()> {
+    let limits = *engine.limits();
     let context = require_context(engine)?;
     let mut value = context.pop()?;
-    let key = context.pop()?;
-    let collection = context.pop()?;
-
     if matches!(value, StackItem::Struct(_)) {
-        value = value.deep_clone();
+        value = value.deep_copy(&limits)?;
     }
+    let key = context.pop()?;
+    require_primitive_key(&key)?;
+    let collection = context.pop()?;
 
     match collection {
         StackItem::Array(array) => {
@@ -221,7 +220,15 @@ pub(crate) fn set_item_before543<S>(
         }
         StackItem::Buffer(buffer) => {
             let idx = before543_checked_index("Buffer", &key, buffer.len())?;
-            let byte = value.as_integer().map_err(|_| {
+            let byte = if matches!(
+                value,
+                StackItem::Integer(_) | StackItem::Boolean(_) | StackItem::ByteString(_)
+            ) {
+                value.as_integer()
+            } else {
+                Err(VmError::invalid_type_simple("Expected PrimitiveType"))
+            }
+            .map_err(|_| {
                 VmError::invalid_operation_msg(format!(
                     "Only primitive type values can be set in Buffer in {:?}.",
                     instruction.opcode()

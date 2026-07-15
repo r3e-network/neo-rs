@@ -7,7 +7,7 @@
 //! / `Neo.SmartContract.Helper`.
 //!
 //! This module is layered on `neo-crypto` (ECPoint), [`ScriptBuilder`] and
-//! `neo-vm-rs` (OpCode / interop hashing), and sits *below* neo-core so the
+//! `neo-vm` (OpCode / interop hashing), and sits *below* neo-core so the
 //! chain types (Witness/Signer) and wallet layers can build and recognize
 //! verification scripts without depending on the smart-contract engine.
 //!
@@ -16,9 +16,9 @@
 //! v3.10.1 (including the ascending public-key sort in multi-sig scripts, which
 //! matches C# `ECPoint.CompareTo`).
 
+use crate::OpCode;
 use neo_crypto::{ECCurve, ECPoint};
 use neo_primitives::UInt160;
-use neo_vm_rs::OpCode;
 
 use super::ScriptBuilder;
 
@@ -303,9 +303,9 @@ fn read_multisig_count(script: &[u8], offset: usize) -> Option<(usize, usize)> {
     }
 }
 
-/// Computes a syscall hash via neo-vm-rs interop hashing.
+/// Computes a syscall hash via neo-vm interop hashing.
 fn syscall_hash(name: &str) -> [u8; 4] {
-    neo_vm_rs::interop_hash(name).to_le_bytes()
+    crate::interop_hash(name).to_le_bytes()
 }
 
 #[cfg(test)]

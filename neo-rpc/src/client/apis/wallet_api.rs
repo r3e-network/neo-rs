@@ -67,7 +67,7 @@ where
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        let balance = RpcUtility::stack_value_to_bigint(stack_item)?;
+        let balance = RpcUtility::rpc_stack_item_to_bigint(stack_item)?;
         let gas_factor = gas_factor();
 
         Ok(balance.to_f64().unwrap_or(0.0) / gas_factor as f64)

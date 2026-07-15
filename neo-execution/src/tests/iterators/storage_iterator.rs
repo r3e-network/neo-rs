@@ -72,7 +72,7 @@ fn pick_field_out_of_range_faults_like_csharp_array_indexer() {
 }
 
 #[test]
-fn value_uses_stack_value_projection_until_vm_return() {
+fn value_uses_stack_items_directly() {
     let source = include_str!("../../iterators/storage_iterator.rs");
     let start = source.find("fn value(&self)").expect("value method exists");
     let end = source[start..]
@@ -81,11 +81,10 @@ fn value_uses_stack_value_projection_until_vm_return() {
         .expect("dispose method follows value");
     let value_method = &source[start..end];
 
-    assert!(value_method.contains("deserialize_stack_value_with_limits"));
-    assert!(value_method.contains("StackValue::Array"));
-    assert!(value_method.contains("StackValue::Struct"));
-    assert!(value_method.contains("stack_value_to_stack_item("));
-    assert!(source.contains("StackItem::try_from(value)"));
-    assert!(!value_method.contains("BinarySerializer::deserialize("));
-    assert!(!value_method.contains("StackItem::from_struct"));
+    assert!(value_method.contains("BinarySerializer::deserialize(&raw_value, &limits, None)"));
+    assert!(value_method.contains("StackItem::Array"));
+    assert!(value_method.contains("StackItem::Struct"));
+    assert!(value_method.contains("Ok(value_item)"));
+    assert!(value_method.contains("StackItem::from_byte_string"));
+    assert!(value_method.contains("StackItem::from_struct"));
 }

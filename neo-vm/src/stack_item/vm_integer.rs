@@ -7,7 +7,6 @@
 //!
 //! Provides the `VmInteger` enum that avoids heap allocation for values fitting in `i64`.
 
-use neo_vm_rs::StackValue;
 use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 
@@ -104,15 +103,6 @@ impl VmInteger {
             Self::Small(v) if *v < 0 => num_bigint::Sign::Minus,
             Self::Small(_) => num_bigint::Sign::NoSign,
             Self::Large(v) => v.sign(),
-        }
-    }
-
-    /// Converts the integer to the compact `neo-vm-rs` stack-value form.
-    #[inline]
-    pub fn vm_integer_stack_value(&self) -> StackValue {
-        match self.to_i64() {
-            Some(value) => StackValue::Integer(value),
-            None => StackValue::BigInteger(self.to_signed_bytes_le()),
         }
     }
 }

@@ -39,7 +39,7 @@ where
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        let value = RpcUtility::stack_value_to_bigint(stack_item)?;
+        let value = RpcUtility::rpc_stack_item_to_bigint(stack_item)?;
         Ok(value.to_u32().ok_or("Invalid fee factor value")?)
     }
 
@@ -53,7 +53,7 @@ where
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        let value = RpcUtility::stack_value_to_bigint(stack_item)?;
+        let value = RpcUtility::rpc_stack_item_to_bigint(stack_item)?;
         Ok(value.to_u32().ok_or("Invalid storage price value")?)
     }
 
@@ -67,7 +67,7 @@ where
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        let value = RpcUtility::stack_value_to_bigint(stack_item)?;
+        let value = RpcUtility::rpc_stack_item_to_bigint(stack_item)?;
         Ok(value.to_i64().ok_or("Invalid fee per byte value")?)
     }
 
@@ -85,7 +85,7 @@ where
 
         let stack_item = result.stack.first().ok_or("No result returned")?;
 
-        Ok(RpcUtility::stack_value_to_bool(stack_item))
+        Ok(RpcUtility::rpc_stack_item_to_bool(stack_item))
     }
 }
 

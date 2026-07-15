@@ -238,4 +238,57 @@ macro_rules! native_contract_dispatch {
                 })
         }
     };
+
+    (
+        $module:ident :: $bindings:ident,
+        by_name_and_arity,
+        resolved_by_index = $resolver_module:ident :: $resolver:ident
+    ) => {
+        fn invoke<D, B>(
+            &self,
+            engine: &mut neo_execution::ApplicationEngine<P, D, B>,
+            method: &str,
+            args: &[Vec<u8>],
+        ) -> neo_error::CoreResult<Vec<u8>>
+        where
+            D: neo_execution::Diagnostic + 'static,
+            B: neo_storage::CacheRead,
+        {
+            let bindings = $module::$bindings::<P, D, B>();
+            crate::support::invoke::dispatch_by_name_and_arity(
+                self, &bindings, engine, method, args,
+            )
+            .unwrap_or_else(|| {
+                Err(neo_error::CoreError::invalid_operation(format!(
+                    "{} method '{}({})' is not implemented",
+                    <Self as neo_execution::NativeContract<P>>::name(self),
+                    method,
+                    args.len()
+                )))
+            })
+        }
+
+        fn invoke_resolved<D, B>(
+            &self,
+            engine: &mut neo_execution::ApplicationEngine<P, D, B>,
+            method_index: usize,
+            method: &neo_execution::NativeMethod,
+            args: &[Vec<u8>],
+        ) -> neo_error::CoreResult<Vec<u8>>
+        where
+            D: neo_execution::Diagnostic + 'static,
+            B: neo_storage::CacheRead,
+        {
+            $resolver_module::$resolver::<P, D, B>(self, engine, method_index, args).unwrap_or_else(
+                || {
+                    Err(neo_error::CoreError::invalid_operation(format!(
+                        "{} method '{}({})' is not implemented",
+                        <Self as neo_execution::NativeContract<P>>::name(self),
+                        method.name,
+                        args.len()
+                    )))
+                },
+            )
+        }
+    };
 }

@@ -9,7 +9,7 @@ use neo_storage::persistence::{
     write_store::WriteStore,
 };
 use neo_storage::{StorageItem, StorageKey};
-use neo_vm::{StackValue, VmState as VMState};
+use neo_vm::{StackItem, VmState as VMState};
 
 #[derive(Clone, Debug)]
 struct FailingStore;
@@ -135,7 +135,7 @@ fn settings(exception_policy: UnhandledExceptionPolicy) -> ApplicationLogsSettin
 }
 
 #[test]
-fn application_executed_stack_renders_from_stack_value_without_legacy_stack_item() {
+fn application_executed_stack_renders_from_local_stack_item() {
     let service = ApplicationLogsService::new(
         settings(UnhandledExceptionPolicy::Ignore),
         Arc::new(FailingStore),
@@ -146,13 +146,10 @@ fn application_executed_stack_renders_from_stack_value_without_legacy_stack_item
         VMState::HALT,
         None,
         0,
-        vec![StackValue::Struct(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::Integer(1),
-                StackValue::ByteString(b"neo".to_vec()),
-            ],
-        )],
+        vec![StackItem::from_struct(vec![
+            StackItem::from_i64(1),
+            StackItem::from_byte_string(b"neo".to_vec()),
+        ])],
     );
 
     let json = service.transaction_log_json(&UInt256::zero(), &exec);
@@ -169,7 +166,7 @@ fn application_executed_stack_renders_from_stack_value_without_legacy_stack_item
 }
 
 #[test]
-fn application_executed_stack_value_renderer_preserves_csharp_max_size_error() {
+fn application_executed_stack_renderer_preserves_csharp_max_size_error() {
     let mut settings = settings(UnhandledExceptionPolicy::Ignore);
     settings.max_stack_size = 4;
     let service = ApplicationLogsService::new(settings, Arc::new(FailingStore));
@@ -179,7 +176,7 @@ fn application_executed_stack_value_renderer_preserves_csharp_max_size_error() {
         VMState::HALT,
         None,
         0,
-        vec![StackValue::ByteString(vec![0xaa; 16])],
+        vec![StackItem::from_byte_string(vec![0xaa; 16])],
     );
 
     let json = service.transaction_log_json(&UInt256::zero(), &exec);

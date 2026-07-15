@@ -19,8 +19,7 @@ use neo_config::Hardfork;
 use neo_primitives::{CallFlags, ContractParameterType, TransactionAttributeType};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageKey;
-use neo_vm::StackItem;
-use neo_vm::{ExecutionEngineLimits, StackValue};
+use neo_vm::{ExecutionEngineLimits, StackItem};
 use num_traits::ToPrimitive;
 
 #[cfg(test)]

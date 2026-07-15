@@ -7,7 +7,7 @@ use neo_io::serializable::helper::SerializeHelper;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use neo_primitives::hex_util;
 use neo_primitives::{UINT160_SIZE, UInt160, WitnessScope};
-use neo_vm::StackValue;
+use neo_vm::StackItem;
 use neo_vm::{Interoperable, InteroperableError};
 use serde::{Deserialize, Serialize};
 // Hash and Hasher now provided by impl_hash_for_fields macro
@@ -244,13 +244,13 @@ impl Signer {
         Ok(signer)
     }
 
-    /// Converts the signer to a neo-vm stack value (matches C# `Signer.ToStackItem` layout).
-    pub fn to_stack_value(&self) -> StackValue {
+    /// Converts the signer to a neo-vm stack item (matches C# `Signer.ToStackItem` layout).
+    pub fn to_stack_item(&self) -> StackItem {
         let allowed_contracts = if self.scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
             self.allowed_contracts
                 .iter()
                 .copied()
-                .map(|hash| StackValue::ByteString(hash.to_bytes()))
+                .map(|hash| StackItem::from_byte_string(hash.to_bytes()))
                 .collect::<Vec<_>>()
         } else {
             Vec::new()
@@ -259,7 +259,7 @@ impl Signer {
         let allowed_groups = if self.scopes.contains(WitnessScope::CUSTOM_GROUPS) {
             self.allowed_groups
                 .iter()
-                .map(|group| StackValue::ByteString(group.to_bytes()))
+                .map(|group| StackItem::from_byte_string(group.to_bytes()))
                 .collect::<Vec<_>>()
         } else {
             Vec::new()
@@ -268,22 +268,19 @@ impl Signer {
         let rules = if self.scopes.contains(WitnessScope::WITNESS_RULES) {
             self.rules
                 .iter()
-                .map(WitnessRule::to_stack_value)
+                .map(WitnessRule::to_stack_item)
                 .collect::<Vec<_>>()
         } else {
             Vec::new()
         };
 
-        StackValue::Array(
-            neo_vm::next_stack_item_id(),
-            vec![
-                StackValue::ByteString(self.account.to_bytes()),
-                StackValue::Integer(i64::from(self.scopes.bits())),
-                StackValue::Array(neo_vm::next_stack_item_id(), allowed_contracts),
-                StackValue::Array(neo_vm::next_stack_item_id(), allowed_groups),
-                StackValue::Array(neo_vm::next_stack_item_id(), rules),
-            ],
-        )
+        StackItem::from_array(vec![
+            StackItem::from_byte_string(self.account.to_bytes()),
+            StackItem::from_i64(i64::from(self.scopes.bits())),
+            StackItem::from_array(allowed_contracts),
+            StackItem::from_array(allowed_groups),
+            StackItem::from_array(rules),
+        ])
     }
 }
 
@@ -409,14 +406,14 @@ impl Serializable for Signer {
 }
 
 impl Interoperable for Signer {
-    fn from_stack_value(&mut self, _value: StackValue) -> Result<(), InteroperableError> {
+    fn from_stack_item(&mut self, _value: StackItem) -> Result<(), InteroperableError> {
         Err(InteroperableError::NotSupported(
-            "Signer::from_stack_value is not supported".into(),
+            "Signer::from_stack_item is not supported".into(),
         ))
     }
 
-    fn to_stack_value(&self) -> Result<StackValue, InteroperableError> {
-        Ok(self.to_stack_value())
+    fn to_stack_item(&self) -> Result<StackItem, InteroperableError> {
+        Ok(Signer::to_stack_item(self))
     }
 }
 

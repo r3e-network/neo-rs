@@ -1,9 +1,9 @@
+use crate::client::models::RpcStackItem;
 use base64::{Engine as _, engine::general_purpose};
 use neo_error::{CoreError, CoreResult};
 use neo_serialization::json::{JObject, JToken};
-use neo_vm::StackValue;
 use num_bigint::BigInt;
-use num_traits::ToPrimitive;
+use num_traits::Zero;
 use thiserror::Error;
 
 use super::parsing::{
@@ -61,8 +61,8 @@ impl From<CoreError> for StackParseError {
     }
 }
 
-/// Converts a `neo-serialization::json` representation of an RPC stack item into `neo-vm`.
-pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, StackParseError> {
+/// Converts a JSON-RPC stack item into an immutable transport DTO.
+pub fn stack_item_from_json(json: &JObject) -> Result<RpcStackItem, StackParseError> {
     let item_type = json
         .get("type")
         .and_then(neo_serialization::json::JToken::as_string)
@@ -81,7 +81,7 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, StackParseErro
                         "Boolean stack item missing 'value' field".to_string(),
                     )
                 })?;
-            Ok(StackValue::Boolean(value))
+            Ok(RpcStackItem::Boolean(value))
         }
         "Integer" => {
             let value_token = json.get("value").ok_or_else(|| {
@@ -97,18 +97,12 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, StackParseErro
             let integer = BigInt::parse_bytes(text.as_bytes(), 10).ok_or_else(|| {
                 StackParseError::InvalidValue(format!("Invalid integer stack item value: {text}"))
             })?;
-            Ok(integer_stack_value(integer))
+            Ok(RpcStackItem::Integer(integer))
         }
-        "ByteString" => parse_base64_stack_value(json, "ByteString", StackValue::ByteString),
-        "Buffer" => parse_base64_stack_value(json, "Buffer", |bytes| {
-            StackValue::Buffer(neo_vm::next_stack_item_id(), bytes)
-        }),
-        "Array" => parse_stack_sequence(json, "Array", |items| {
-            StackValue::Array(neo_vm::next_stack_item_id(), items)
-        }),
-        "Struct" => parse_stack_sequence(json, "Struct", |items| {
-            StackValue::Struct(neo_vm::next_stack_item_id(), items)
-        }),
+        "ByteString" => parse_base64_stack_item(json, "ByteString", RpcStackItem::ByteString),
+        "Buffer" => parse_base64_stack_item(json, "Buffer", RpcStackItem::Buffer),
+        "Array" => parse_stack_sequence(json, "Array", RpcStackItem::Array),
+        "Struct" => parse_stack_sequence(json, "Struct", RpcStackItem::Struct),
         "Map" => {
             let values = json
                 .get("value")
@@ -139,56 +133,61 @@ pub fn stack_item_from_json(json: &JObject) -> Result<StackValue, StackParseErro
                     stack_item_from_json(value_obj)?,
                 ));
             }
-            Ok(StackValue::Map(neo_vm::next_stack_item_id(), entries))
+            Ok(RpcStackItem::Map(entries))
         }
         "Pointer" => {
             let index_token = json
                 .get("value")
                 .ok_or("Pointer stack item missing 'value' field")?;
-            Ok(StackValue::Pointer(i64::from(
+            Ok(RpcStackItem::Pointer(
                 parse_u32_token(index_token, "value").map_err(StackParseError::from)?,
-            )))
+            ))
         }
-        "InteropInterface" => Ok(StackValue::Interop(0)),
+        "InteropInterface" => Ok(RpcStackItem::InteropInterface {
+            interface: optional_text_field(json, "interface"),
+            id: optional_text_field(json, "id"),
+        }),
         _other => Ok(fallback_text_or_null(json)),
     }
 }
 
-/// Converts an RPC stack value into its `neo-serialization::json` representation.
-pub fn stack_item_to_json(item: &StackValue) -> CoreResult<JObject> {
+/// Converts an RPC stack item DTO into its JSON representation.
+pub fn stack_item_to_json(item: &RpcStackItem) -> CoreResult<JObject> {
     let mut json = JObject::new();
     json.insert(
         "type".to_string(),
-        JToken::String(stack_value_type_name(item).to_string()),
+        JToken::String(rpc_stack_item_type_name(item).to_string()),
     );
 
     match item {
-        StackValue::Null | StackValue::Interop(_) | StackValue::Iterator(_) => {}
-        StackValue::Boolean(value) => {
+        RpcStackItem::Null => {}
+        RpcStackItem::InteropInterface { interface, id } => {
+            if let Some(interface) = interface {
+                json.insert("interface".to_string(), JToken::String(interface.clone()));
+            }
+            if let Some(id) = id {
+                json.insert("id".to_string(), JToken::String(id.clone()));
+            }
+        }
+        RpcStackItem::Boolean(value) => {
             json.insert("value".to_string(), JToken::Boolean(*value));
         }
-        StackValue::Integer(value) => {
+        RpcStackItem::Integer(value) => {
             json.insert("value".to_string(), JToken::String(value.to_string()));
         }
-        StackValue::BigInteger(bytes) => {
-            json.insert(
-                "value".to_string(),
-                JToken::String(BigInt::from_signed_bytes_le(bytes).to_string()),
-            );
-        }
-        StackValue::ByteString(bytes) => {
+        RpcStackItem::ByteString(bytes) => {
             insert_base64_value(&mut json, bytes);
         }
-        StackValue::Buffer(_, bytes) => {
+        RpcStackItem::Buffer(bytes) => {
             insert_base64_value(&mut json, bytes);
         }
-        StackValue::Pointer(index) => {
-            json.insert("value".to_string(), JToken::Number(*index as f64));
+        RpcStackItem::Pointer(index) => {
+            json.insert("value".to_string(), JToken::Number(f64::from(*index)));
         }
-        StackValue::Array(_, items) | StackValue::Struct(_, items) => {
+        RpcStackItem::Array(items) | RpcStackItem::Struct(items) => {
             json.insert("value".to_string(), stack_items_to_json(items)?);
         }
-        StackValue::Map(_, entries) => {
+        RpcStackItem::Map(entries) => {
             json.insert(
                 "value".to_string(),
                 fallible_object_array(entries, |entry| {
@@ -208,32 +207,41 @@ pub fn stack_item_to_json(item: &StackValue) -> CoreResult<JObject> {
     Ok(json)
 }
 
-pub fn stack_items_to_json(items: &[StackValue]) -> CoreResult<JToken> {
+pub fn stack_items_to_json(items: &[RpcStackItem]) -> CoreResult<JToken> {
     fallible_object_array(items, stack_item_to_json)
 }
 
-pub fn stack_items_from_json_field(json: &JObject, field: &str) -> Vec<StackValue> {
+pub fn stack_items_from_json_field(json: &JObject, field: &str) -> Vec<RpcStackItem> {
     parse_object_array_lossy(json, field, stack_item_from_json)
 }
 
-fn fallback_text_or_null(json: &JObject) -> StackValue {
+fn fallback_text_or_null(json: &JObject) -> RpcStackItem {
     let value = json.get("value");
     let text = value
         .and_then(|token| token.as_string())
         .or_else(|| value.map(std::string::ToString::to_string));
 
     if let Some(text) = text {
-        StackValue::ByteString(text.into_bytes())
+        RpcStackItem::ByteString(text.into_bytes())
     } else {
-        StackValue::Null
+        RpcStackItem::Null
     }
 }
 
-fn parse_base64_stack_value(
+fn optional_text_field(json: &JObject, field: &str) -> Option<String> {
+    json.get(field)
+        .and_then(|token| token.as_string())
+        .or_else(|| {
+            json.get(field)
+                .and_then(|token| (!matches!(token, JToken::Null)).then(|| token.to_string()))
+        })
+}
+
+fn parse_base64_stack_item(
     json: &JObject,
     type_name: &str,
-    make_value: impl FnOnce(Vec<u8>) -> StackValue,
-) -> Result<StackValue, StackParseError> {
+    make_value: impl FnOnce(Vec<u8>) -> RpcStackItem,
+) -> Result<RpcStackItem, StackParseError> {
     let value_token = json.get("value").ok_or_else(|| {
         StackParseError::MissingField(format!("{type_name} stack item missing 'value' field"))
     })?;
@@ -244,8 +252,8 @@ fn parse_base64_stack_value(
 fn parse_stack_sequence(
     json: &JObject,
     type_name: &str,
-    make_value: impl FnOnce(Vec<StackValue>) -> StackValue,
-) -> Result<StackValue, StackParseError> {
+    make_value: impl FnOnce(Vec<RpcStackItem>) -> RpcStackItem,
+) -> Result<RpcStackItem, StackParseError> {
     let values = json
         .get("value")
         .and_then(|token| token.as_array())
@@ -272,61 +280,61 @@ fn insert_base64_value(json: &mut JObject, bytes: &[u8]) {
     );
 }
 
-pub fn stack_value_to_bigint(value: &StackValue) -> CoreResult<BigInt> {
+pub fn rpc_stack_item_to_bigint(value: &RpcStackItem) -> CoreResult<BigInt> {
     match value {
-        StackValue::Boolean(value) => Ok(BigInt::from(if *value { 1 } else { 0 })),
-        StackValue::Integer(value) => Ok(BigInt::from(*value)),
-        StackValue::BigInteger(bytes)
-        | StackValue::ByteString(bytes)
-        | StackValue::Buffer(_, bytes) => Ok(BigInt::from_signed_bytes_le(bytes)),
-        StackValue::Null => Err(CoreError::other("Cannot convert Null to Integer")),
-        StackValue::Array(..)
-        | StackValue::Struct(..)
-        | StackValue::Map(..)
-        | StackValue::Interop(_)
-        | StackValue::Iterator(_)
-        | StackValue::Pointer(_) => Err(CoreError::other("Cannot convert to Integer")),
+        RpcStackItem::Boolean(value) => Ok(BigInt::from(if *value { 1 } else { 0 })),
+        RpcStackItem::Integer(value) => Ok(value.clone()),
+        RpcStackItem::ByteString(bytes) | RpcStackItem::Buffer(bytes) => {
+            Ok(BigInt::from_signed_bytes_le(bytes))
+        }
+        RpcStackItem::Null => Err(CoreError::other("Cannot convert Null to Integer")),
+        RpcStackItem::Array(..)
+        | RpcStackItem::Struct(..)
+        | RpcStackItem::Map(..)
+        | RpcStackItem::InteropInterface { .. }
+        | RpcStackItem::Pointer(_) => Err(CoreError::other("Cannot convert to Integer")),
     }
 }
 
-pub fn stack_value_to_bool(value: &StackValue) -> bool {
-    value.to_bool()
+pub fn rpc_stack_item_to_bool(value: &RpcStackItem) -> bool {
+    match value {
+        RpcStackItem::Null => false,
+        RpcStackItem::Boolean(value) => *value,
+        RpcStackItem::Integer(value) => !value.is_zero(),
+        RpcStackItem::ByteString(bytes) => bytes.iter().any(|byte| *byte != 0),
+        RpcStackItem::Buffer(_)
+        | RpcStackItem::Array(_)
+        | RpcStackItem::Struct(_)
+        | RpcStackItem::Map(_)
+        | RpcStackItem::Pointer(_)
+        | RpcStackItem::InteropInterface { .. } => true,
+    }
 }
 
-pub fn stack_value_to_string(value: &StackValue) -> CoreResult<String> {
+pub fn rpc_stack_item_to_string(value: &RpcStackItem) -> CoreResult<String> {
     match value {
-        StackValue::ByteString(bytes) | StackValue::Buffer(_, bytes) => {
+        RpcStackItem::ByteString(bytes) | RpcStackItem::Buffer(bytes) => {
             String::from_utf8(bytes.clone()).map_err(|err| CoreError::other(err.to_string()))
         }
-        StackValue::Integer(_) | StackValue::BigInteger(_) => {
-            Ok(stack_value_to_bigint(value)?.to_string())
-        }
-        StackValue::Boolean(value) => Ok(value.to_string()),
+        RpcStackItem::Integer(value) => Ok(value.to_string()),
+        RpcStackItem::Boolean(value) => Ok(value.to_string()),
         _ => Err(CoreError::other(
             "Unsupported stack item for string conversion",
         )),
     }
 }
 
-fn integer_stack_value(integer: BigInt) -> StackValue {
-    if let Some(value) = integer.to_i64() {
-        StackValue::Integer(value)
-    } else {
-        StackValue::BigInteger(integer.to_signed_bytes_le())
-    }
-}
-
-fn stack_value_type_name(item: &StackValue) -> &'static str {
+fn rpc_stack_item_type_name(item: &RpcStackItem) -> &'static str {
     match item {
-        StackValue::Null => "Any",
-        StackValue::Boolean(_) => "Boolean",
-        StackValue::Integer(_) | StackValue::BigInteger(_) => "Integer",
-        StackValue::ByteString(_) => "ByteString",
-        StackValue::Buffer(..) => "Buffer",
-        StackValue::Array(..) => "Array",
-        StackValue::Struct(..) => "Struct",
-        StackValue::Map(..) => "Map",
-        StackValue::Interop(_) | StackValue::Iterator(_) => "InteropInterface",
-        StackValue::Pointer(_) => "Pointer",
+        RpcStackItem::Null => "Any",
+        RpcStackItem::Boolean(_) => "Boolean",
+        RpcStackItem::Integer(_) => "Integer",
+        RpcStackItem::ByteString(_) => "ByteString",
+        RpcStackItem::Buffer(..) => "Buffer",
+        RpcStackItem::Array(..) => "Array",
+        RpcStackItem::Struct(..) => "Struct",
+        RpcStackItem::Map(..) => "Map",
+        RpcStackItem::InteropInterface { .. } => "InteropInterface",
+        RpcStackItem::Pointer(_) => "Pointer",
     }
 }

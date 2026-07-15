@@ -309,19 +309,19 @@ pub enum VmError {
     MaxTryNestingDepthExceeded,
 
     /// Abort operation - ABORT opcode was executed
-    #[error("ABORT is executed")]
+    #[error("ABORT is executed.")]
     Abort,
 
     /// Abort operation with message - ABORTMSG opcode was executed
-    #[error("ABORT is executed: {0}")]
+    #[error("ABORTMSG is executed. Reason: {0}")]
     AbortMsg(String),
 
     /// Assert failed - ASSERT opcode was executed with false condition
-    #[error("ASSERT is executed with false result")]
+    #[error("ASSERT is executed with false result.")]
     AssertFailed,
 
     /// Assert failed with message - ASSERTMSG opcode was executed with false condition
-    #[error("ASSERT is executed with false result: {0}")]
+    #[error("ASSERTMSG is executed with false result. Reason: {0}")]
     AssertFailedMsg(String),
 
     /// Implementation provided I/O error (for testing)
@@ -678,13 +678,11 @@ impl From<neo_io::IoError> for VmError {
     }
 }
 
-impl From<neo_vm_rs::InstructionError> for VmError {
-    fn from(error: neo_vm_rs::InstructionError) -> Self {
+impl From<crate::InstructionError> for VmError {
+    fn from(error: crate::InstructionError) -> Self {
         match error.kind() {
-            neo_vm_rs::InstructionErrorKind::Parse => Self::parse(error.to_string()),
-            neo_vm_rs::InstructionErrorKind::Operand => {
-                Self::invalid_operand_msg(error.to_string())
-            }
+            crate::InstructionErrorKind::Parse => Self::parse(error.to_string()),
+            crate::InstructionErrorKind::Operand => Self::invalid_operand_msg(error.to_string()),
         }
     }
 }

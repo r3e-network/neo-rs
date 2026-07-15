@@ -7,7 +7,6 @@
 
 use neo_execution::{NativeEvent, NativeMethod};
 use neo_vm::StackItem;
-use neo_vm::StackValue;
 use num_bigint::BigInt;
 
 /// The `Transfer` event declared on the C# `FungibleToken` base constructor
@@ -214,32 +213,29 @@ impl AccountState {
         Self { balance }
     }
 
-    pub(crate) fn to_stack_value(&self) -> StackValue {
-        StackValue::Struct(
-            neo_vm::next_stack_item_id(),
-            vec![StackValue::BigInteger(self.balance.to_signed_bytes_le())],
-        )
+    pub(crate) fn to_stack_item(&self) -> StackItem {
+        StackItem::from_struct(vec![StackItem::from_int(self.balance.clone())])
     }
 
-    pub(crate) fn from_stack_value(stack_value: StackValue) -> neo_error::CoreResult<Self> {
+    pub(crate) fn from_stack_item(stack_item: &StackItem) -> neo_error::CoreResult<Self> {
         let decoder =
-            crate::support::codec::StructDecoder::new(&stack_value, "NEP-17 account state")?;
+            crate::support::codec::StructDecoder::new(stack_item, "NEP-17 account state")?;
         let balance = decoder.bigint(0, "balance")?;
         Ok(Self { balance })
     }
 }
 
-neo_vm::impl_interoperable_via_stack_value!(AccountState);
+neo_vm::impl_interoperable_via_stack_item!(AccountState);
 
 /// Deserializes a stored NEP-17 account-state struct (`Struct[Balance]`) from
 /// its on-chain byte representation. Shared by [`read_nep17_balance`] and the
 /// per-token account readers (`GasToken::read_gas_account`,
 /// `NeoToken::read_account_state`) to avoid duplicating the
-/// `decode_stack_value` + `AccountState::from_stack_value` plumbing in every
+/// `decode_stack_item` + `AccountState::from_stack_item` plumbing in every
 /// caller.
 pub(crate) fn deserialize_account_state(bytes: &[u8]) -> neo_error::CoreResult<AccountState> {
-    let decoded = crate::support::codec::decode_stack_value(bytes, "NEP-17 account state")?;
-    AccountState::from_stack_value(decoded)
+    let decoded = crate::support::codec::decode_stack_item(bytes, "NEP-17 account state")?;
+    AccountState::from_stack_item(&decoded)
 }
 
 /// Serializes a NEP-17 account-state struct to its on-chain byte form.

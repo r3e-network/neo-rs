@@ -1,4 +1,5 @@
 use super::*;
+use neo_serialization::BinarySerializer;
 
 #[test]
 fn gas_account_key_from_address_matches_mainnet_sender_key() {
@@ -54,6 +55,7 @@ fn mdbx_mpt_probe_reads_the_canonical_state_service_namespace() {
 
     let output = probe_mpt_state(
         temp.path(),
+        None,
         true,
         None,
         None,
@@ -69,6 +71,51 @@ fn mdbx_mpt_probe_reads_the_canonical_state_service_namespace() {
 
     assert_eq!(output["namespace"], MDBX_STATE_SERVICE_NAMESPACE);
     assert_eq!(output["height"]["decoded"]["current_local_root_index"], 42);
+}
+
+#[test]
+fn mdbx_mpt_probe_reads_an_explicit_auxiliary_state_service_store() {
+    let temp = tempfile::tempdir().expect("temporary MDBX directory");
+    let canonical_path = temp.path().join("canonical");
+    let auxiliary_path = temp.path().join("state-service");
+    drop(open_store(&canonical_path, false).expect("open canonical MDBX store"));
+    {
+        let state_service = open_store(&auxiliary_path, false).expect("open auxiliary store");
+        let mut snapshot = state_service.snapshot();
+        let writer = Arc::get_mut(&mut snapshot).expect("exclusive auxiliary snapshot");
+        writer
+            .put_sync(
+                mpt_current_local_root_index_key(),
+                99u32.to_le_bytes().to_vec(),
+            )
+            .expect("write auxiliary StateService height");
+        writer
+            .try_commit()
+            .expect("commit auxiliary StateService height");
+    }
+
+    let output = probe_mpt_state(
+        &canonical_path,
+        Some(&auxiliary_path),
+        true,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        1,
+        DecodeMode::Hex,
+    )
+    .expect("probe auxiliary StateService store");
+
+    assert_eq!(
+        output["state_service_db"],
+        auxiliary_path.to_string_lossy().as_ref()
+    );
+    assert!(output.get("namespace").is_none());
+    assert_eq!(output["height"]["decoded"]["current_local_root_index"], 99);
 }
 
 #[test]
@@ -108,16 +155,13 @@ fn decode_nep17_account_state_balance() {
 #[test]
 fn decode_neo_account_state_reads_reward_markers() {
     let vote_to = [0x02u8; 33];
-    let value = StackValue::Struct(
-        neo_vm::next_stack_item_id(),
-        vec![
-            StackValue::Integer(100),
-            StackValue::Integer(151_116),
-            StackValue::ByteString(vote_to.to_vec()),
-            StackValue::BigInteger(BigInt::from(123456789u64).to_signed_bytes_le()),
-        ],
-    );
-    let bytes = BinarySerializer::serialize_stack_value_default(&value).expect("serialize");
+    let value = StackItem::from_struct(vec![
+        StackItem::from_i64(100),
+        StackItem::from_i64(151_116),
+        StackItem::from_byte_string(vote_to.to_vec()),
+        StackItem::from_int(123456789u64),
+    ]);
+    let bytes = BinarySerializer::serialize_default(&value).expect("serialize");
 
     let state = decode_neo_account_state(&bytes).expect("decode NEO account state");
 
@@ -549,6 +593,25 @@ fn cli_accepts_mpt_state_probe_without_contract_key() {
 
     assert!(cli.mpt_state_height);
     assert_eq!(cli.mpt_state_root, Some(474_701));
+}
+
+#[test]
+fn cli_accepts_explicit_auxiliary_state_service_db_for_mpt_probe() {
+    let cli = Cli::try_parse_from([
+        "neo-db-probe",
+        "--db",
+        "data/mainnet",
+        "--state-service-db",
+        "data/state-service",
+        "--mpt-state-height",
+    ])
+    .expect("parse auxiliary MPT probe");
+
+    assert_eq!(
+        cli.state_service_db.as_deref(),
+        Some(std::path::Path::new("data/state-service"))
+    );
+    ensure_mpt_probe_args(&cli).expect("valid auxiliary MPT probe");
 }
 
 #[test]

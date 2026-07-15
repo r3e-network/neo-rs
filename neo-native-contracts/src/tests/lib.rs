@@ -8,54 +8,40 @@ use neo_primitives::{ContractParameterType, UInt160};
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
 use neo_vm::Interoperable;
-use neo_vm::StackValue;
+use neo_vm::StackItem;
 use num_bigint::BigInt;
 
 #[path = "style/mod.rs"]
 mod style;
 
-/// Structural equality for StackValue that ignores the reference-identity ids
-/// on compound variants. Collection identity is not part of serialized
-/// stack data, so structural equality is the correct notion for round-trip / shape
-/// assertions.
-fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
-    a.structural_eq(b)
+/// Structural equality for StackItem compound values.
+fn stack_item_struct_eq(a: &neo_vm::StackItem, b: &neo_vm::StackItem) -> bool {
+    a.equals(b).unwrap_or(false)
 }
 
 #[test]
 fn account_state_interoperable_projection_matches_csharp_shape() {
     let state = AccountState::new(BigInt::from(12345));
-    let expected_value = StackValue::Struct(
-        neo_vm::next_stack_item_id(),
-        vec![StackValue::BigInteger(
-            BigInt::from(12345).to_signed_bytes_le(),
-        )],
+    let expected_value = StackItem::from_struct(vec![StackItem::from_int(12345)]);
+
+    let projected = state.to_stack_item();
+    assert!(
+        stack_item_struct_eq(&projected, &expected_value),
+        "structural StackItem mismatch: {projected:?} vs {expected_value:?}"
     );
 
-    let projected = state.to_stack_value();
+    let trait_value = Interoperable::to_stack_item(&state).unwrap();
     assert!(
-        stack_value_struct_eq(&projected, &expected_value),
-        "structural StackValue mismatch: {projected:?} vs {expected_value:?}"
-    );
-
-    let trait_value = Interoperable::to_stack_value(&state).unwrap();
-    assert!(
-        stack_value_struct_eq(&trait_value, &expected_value),
-        "structural StackValue mismatch: {trait_value:?} vs {expected_value:?}"
+        stack_item_struct_eq(&trait_value, &expected_value),
+        "structural StackItem mismatch: {trait_value:?} vs {expected_value:?}"
     );
 
     let mut parsed = AccountState::new(BigInt::from(0));
-    Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
+    Interoperable::from_stack_item(&mut parsed, trait_value).unwrap();
     assert_eq!(parsed, state);
 
-    assert!(
-        AccountState::from_stack_value(StackValue::Array(neo_vm::next_stack_item_id(), vec![],))
-            .is_err()
-    );
-    assert!(
-        AccountState::from_stack_value(StackValue::Struct(neo_vm::next_stack_item_id(), vec![],))
-            .is_err()
-    );
+    assert!(AccountState::from_stack_item(&StackItem::from_array(Vec::new())).is_err());
+    assert!(AccountState::from_stack_item(&StackItem::from_struct(Vec::new())).is_err());
 }
 
 #[test]
@@ -99,7 +85,7 @@ fn nep17_key_helpers_use_shared_storage_key_builders() {
 }
 
 #[test]
-fn nep17_balance_reader_uses_stack_value_projection() {
+fn nep17_balance_reader_uses_stack_item_projection() {
     let source = include_str!("../support/token/nep.rs");
     let start = source
         .find("pub(crate) fn read_nep17_balance(")
@@ -116,8 +102,7 @@ fn nep17_balance_reader_uses_stack_value_projection() {
     // the reader stays a thin wrapper: key build + get + shared helper.
     assert!(helper.contains("deserialize_account_state"));
     assert!(helper.contains("nep17_account_key"));
-    assert!(!helper.contains("StackValue::Struct"));
-    assert!(!helper.contains("stack_value_as_bigint"));
+    assert!(!helper.contains("StackItem::Struct"));
     assert!(!helper.contains("BinarySerializer::deserialize("));
     assert!(!helper.contains("neo_vm::StackItem::Struct"));
 }

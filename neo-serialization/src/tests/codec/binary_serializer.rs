@@ -2,27 +2,6 @@ use super::*;
 use neo_vm::ExecutionEngineLimits;
 use neo_vm::stack_item::Map as MapItem;
 
-/// Structural equality for StackValue that ignores the reference-identity ids
-/// on compound variants. Collection identity is not part of serialized
-/// stack data, so structural equality is the correct notion for round-trip / shape
-/// assertions.
-fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
-    use neo_vm::StackValue::*;
-    match (a, b) {
-        (Buffer(_, x), Buffer(_, y)) => x == y,
-        (Array(_, x), Array(_, y)) | (Struct(_, x), Struct(_, y)) => {
-            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| stack_value_struct_eq(p, q))
-        }
-        (Map(_, x), Map(_, y)) => {
-            x.len() == y.len()
-                && x.iter().zip(y).all(|((k1, v1), (k2, v2))| {
-                    stack_value_struct_eq(k1, k2) && stack_value_struct_eq(v1, v2)
-                })
-        }
-        _ => a == b,
-    }
-}
-
 #[test]
 fn deserialize_preserves_map_entry_order_for_roundtrip_bytes() {
     let limits = ExecutionEngineLimits::default();
@@ -57,6 +36,36 @@ fn deserialize_preserves_map_entry_order_for_roundtrip_bytes() {
 }
 
 #[test]
+fn deserialize_rejects_invalid_map_keys_like_csharp() {
+    let limits = ExecutionEngineLimits::default();
+    let invalid_keys = [
+        StackItem::Null,
+        StackItem::from_buffer(vec![1]),
+        StackItem::from_array(Vec::new()),
+        StackItem::from_byte_string(vec![0x41; 65]),
+    ];
+
+    for key in invalid_keys {
+        let encoded = BinarySerializer::serialize(
+            &StackItem::from_map(vec![(key, StackItem::Null)]),
+            &limits,
+        )
+        .expect("unchecked host map can be encoded for the malformed-input fixture");
+        assert!(
+            BinarySerializer::deserialize(&encoded, &limits, None).is_err(),
+            "Neo rejects non-primitive and oversized map keys during reconstruction"
+        );
+    }
+
+    let boundary = StackItem::from_map(vec![(
+        StackItem::from_byte_string(vec![0x41; 64]),
+        StackItem::Null,
+    )]);
+    let encoded = BinarySerializer::serialize(&boundary, &limits).expect("serialize boundary map");
+    assert!(BinarySerializer::deserialize(&encoded, &limits, None).is_ok());
+}
+
+#[test]
 fn serialize_zero_integer_uses_empty_payload() {
     let limits = ExecutionEngineLimits::default();
     let serialized = BinarySerializer::serialize(&StackItem::from_int(0), &limits).unwrap();
@@ -64,7 +73,7 @@ fn serialize_zero_integer_uses_empty_payload() {
 }
 
 #[test]
-fn deserialize_stack_value_reads_storage_payload_without_local_stack_item() {
+fn deserialize_default_reads_local_stack_item_shape() {
     let limits = ExecutionEngineLimits::default();
     let item = StackItem::from_struct(vec![
         StackItem::from_int(42i64),
@@ -73,117 +82,36 @@ fn deserialize_stack_value_reads_storage_payload_without_local_stack_item() {
     ]);
     let serialized = BinarySerializer::serialize(&item, &limits).expect("serialize");
 
-    let value = BinarySerializer::deserialize_stack_value(&serialized).expect("deserialize");
-
-    let expected = StackValue::Struct(
-        neo_vm::next_stack_item_id(),
-        vec![
-            StackValue::BigInteger(vec![42]),
-            StackValue::ByteString(vec![1, 2, 3]),
-            StackValue::Boolean(true),
-        ],
-    );
-    assert!(
-        stack_value_struct_eq(&value, &expected),
-        "structural StackValue mismatch: {value:?} vs {expected:?}"
-    );
+    let value = BinarySerializer::deserialize_default(&serialized).expect("deserialize");
+    let StackItem::Struct(structure) = value else {
+        panic!("expected struct");
+    };
+    let fields = structure.items();
+    assert_eq!(fields[0].as_int().unwrap(), BigInt::from(42));
+    assert_eq!(fields[1].as_bytes().unwrap(), vec![1, 2, 3]);
+    assert!(fields[2].as_bool().unwrap());
 }
 
 #[test]
-fn deserialize_stack_value_enforces_item_limits() {
+fn deserialize_with_limits_enforces_item_limits() {
     let payload = vec![neo_vm::NEOVM_STACK_ITEM_TYPE_ARRAY, 3, 0, 0, 0];
+    let mut reader = MemoryReader::new(&payload);
 
-    let err = BinarySerializer::deserialize_stack_value_with_limits(&payload, u16::MAX as usize, 3)
+    let err = BinarySerializer::deserialize_with_limits(&mut reader, u16::MAX as u32, 3, None)
         .expect_err("limit error");
 
     assert_eq!(err.to_string(), "Too many items");
 }
 
 #[test]
-fn serialize_stack_value_with_limits_matches_stack_item_and_enforces_size() {
-    let value = StackValue::Array(
-        neo_vm::next_stack_item_id(),
-        vec![
-            StackValue::ByteString(vec![1, 2, 3]),
-            StackValue::BigInteger(BigInt::from(42).to_signed_bytes_le()),
-        ],
-    );
-    let legacy = StackItem::from_array(vec![
+fn serialize_with_limits_enforces_size() {
+    let value = StackItem::from_array(vec![
         StackItem::from_byte_string(vec![1, 2, 3]),
         StackItem::from_int(42),
     ]);
-    let expected = BinarySerializer::serialize_with_limits(&legacy, u16::MAX as usize, 16).unwrap();
-
-    assert_eq!(
-        BinarySerializer::serialize_stack_value_with_limits(&value, u16::MAX as usize, 16).unwrap(),
-        expected
-    );
-    let err = BinarySerializer::serialize_stack_value_with_limits(&value, 2, 16)
-        .expect_err("serialized byte limit");
+    let err =
+        BinarySerializer::serialize_with_limits(&value, 2, 16).expect_err("serialized byte limit");
     assert_eq!(err.to_string(), "Serialized data exceeds limit");
-}
-
-#[test]
-fn serialize_stack_value_with_limits_preserves_stack_item_parity_without_runtime_handles() {
-    let value = StackValue::Map(
-        neo_vm::next_stack_item_id(),
-        vec![(
-            StackValue::ByteString(b"k".to_vec()),
-            StackValue::Struct(
-                neo_vm::next_stack_item_id(),
-                vec![
-                    StackValue::Integer(-1),
-                    StackValue::BigInteger(vec![0x00]),
-                    StackValue::Array(
-                        neo_vm::next_stack_item_id(),
-                        vec![StackValue::Boolean(true), StackValue::Null],
-                    ),
-                ],
-            ),
-        )],
-    );
-    let legacy = StackItem::from_map({
-        let mut map = neo_vm::VmOrderedDictionary::new();
-        map.insert(
-            StackItem::from_byte_string(b"k".to_vec()),
-            StackItem::from_struct(vec![
-                StackItem::from_int(-1),
-                StackItem::from_int(0),
-                StackItem::from_array(vec![StackItem::from_bool(true), StackItem::null()]),
-            ]),
-        );
-        map
-    });
-    let expected = BinarySerializer::serialize_with_limits(&legacy, u16::MAX as usize, 16).unwrap();
-
-    assert_eq!(
-        BinarySerializer::serialize_stack_value_with_limits(&value, u16::MAX as usize, 16).unwrap(),
-        expected
-    );
-
-    let err = BinarySerializer::serialize_stack_value_with_limits(
-        &StackValue::Interop(7),
-        u16::MAX as usize,
-        16,
-    )
-    .expect_err("runtime handles are not serializable");
-    assert!(err.to_string().contains("Unsupported stack value type"));
-}
-
-#[test]
-fn serialize_stack_value_with_limits_is_direct_stack_value_serializer() {
-    let source = include_str!("../../codec/binary_serializer.rs");
-    let start = source
-        .find("pub fn serialize_stack_value_with_limits(")
-        .expect("stack value serializer exists");
-    let end = source[start..]
-        .find("/// Serialize a stack item using explicit limits.")
-        .map(|offset| start + offset)
-        .expect("stack item serializer follows stack value serializer");
-    let helper = &source[start..end];
-
-    assert!(!helper.contains("StackItem::try_from"));
-    assert!(!helper.contains("serialize_with_limits(&item"));
 }
 
 #[test]

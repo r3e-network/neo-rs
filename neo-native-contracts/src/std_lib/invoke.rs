@@ -8,9 +8,70 @@ use super::{StdLib, encoding, serialization};
 use neo_config::Hardfork;
 use neo_error::{CoreError, CoreResult};
 use neo_execution::ApplicationEngine;
+use neo_vm::StackItem;
 use num_bigint::BigInt;
 
 impl StdLib {
+    pub(super) fn invoke_serialize_stack_item<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        &self,
+        engine: &mut ApplicationEngine<P, D, B>,
+        args: &[StackItem],
+    ) -> CoreResult<Option<StackItem>> {
+        let item = args.first().ok_or_else(|| {
+            CoreError::invalid_operation("StdLib::serialize requires one argument".to_string())
+        })?;
+        serialization::serialize_stack_item(item, engine.execution_limits()).map(Some)
+    }
+
+    pub(super) fn invoke_deserialize_stack_item<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        &self,
+        engine: &mut ApplicationEngine<P, D, B>,
+        args: &[StackItem],
+    ) -> CoreResult<Option<StackItem>> {
+        let item = args.first().ok_or_else(|| {
+            CoreError::invalid_operation("StdLib::deserialize requires one argument".to_string())
+        })?;
+        serialization::deserialize_stack_item(item, engine.execution_limits()).map(Some)
+    }
+
+    pub(super) fn invoke_itoa_stack_item<
+        P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
+        D: neo_execution::Diagnostic + 'static,
+        B: neo_storage::CacheRead,
+    >(
+        &self,
+        _engine: &mut ApplicationEngine<P, D, B>,
+        args: &[StackItem],
+    ) -> CoreResult<Option<StackItem>> {
+        let value = args
+            .first()
+            .ok_or_else(|| {
+                CoreError::invalid_operation("StdLib::itoa requires one argument".to_string())
+            })?
+            .as_int()
+            .map_err(|e| CoreError::invalid_operation(format!("StdLib::itoa: {e}")))?;
+        let base = match args.get(1) {
+            None => 10,
+            Some(item) => {
+                let value = item
+                    .as_int()
+                    .map_err(|e| CoreError::invalid_operation(format!("StdLib::itoa: {e}")))?;
+                i64::from(Self::dotnet_int_cast(&value))
+            }
+        };
+        Self::itoa_value(&value, base)
+            .map(StackItem::from_byte_string)
+            .map(Some)
+    }
+
     pub(super) fn invoke_base64_encode<
         P: neo_execution::native_contract_provider::NativeContractProvider + 'static,
         D: neo_execution::Diagnostic + 'static,

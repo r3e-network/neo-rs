@@ -2,13 +2,13 @@
 //!
 //! This module provides the stack operation handlers for the Neo VM.
 
+use crate::Instruction;
+use crate::OpCode;
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
 use crate::jump_table::{JumpTable, register_jump_handlers, require_context};
 use crate::stack_item::StackItem;
-use neo_vm_rs::Instruction;
-use neo_vm_rs::OpCode;
 use num_bigint::Sign;
 use num_traits::ToPrimitive;
 

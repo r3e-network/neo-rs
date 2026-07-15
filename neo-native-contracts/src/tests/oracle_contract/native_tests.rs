@@ -5,16 +5,12 @@ use neo_primitives::{CallFlags, ContractParameterType, UInt160, UInt256};
 use neo_serialization::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::persistence::DataCache;
-use neo_vm::{ExecutionEngineLimits, StackValue};
-use neo_vm::{Interoperable, StackItem};
+use neo_vm::{ExecutionEngineLimits, Interoperable, StackItem};
 use num_bigint::BigInt;
 
-/// Structural equality for StackValue that ignores the reference-identity ids
-/// on compound variants. Collection identity is not part of serialized
-/// stack data, so structural equality is the correct notion for round-trip / shape
-/// assertions.
-fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
-    a.structural_eq(b)
+/// Structural equality for StackItem compound values.
+fn stack_item_struct_eq(a: &neo_vm::StackItem, b: &neo_vm::StackItem) -> bool {
+    a.equals(b).unwrap_or(false)
 }
 // ===== from oracle_native_tests.rs =====
 #[test]
@@ -164,19 +160,14 @@ fn request_record_layout_matches_csharp_to_stack_item() {
     let expected =
         BinarySerializer::serialize(&expected_item, &ExecutionEngineLimits::default()).unwrap();
     assert_eq!(bytes, expected);
-    let produced_sv = Interoperable::to_stack_value(&request).unwrap();
-    let expected_sv = StackValue::try_from(expected_item.clone()).unwrap();
+    let produced_item = Interoperable::to_stack_item(&request).unwrap();
     assert!(
-        stack_value_struct_eq(&produced_sv, &expected_sv),
-        "structural StackValue mismatch: {produced_sv:?} vs {expected_sv:?}"
+        stack_item_struct_eq(&produced_item, &expected_item),
+        "structural StackItem mismatch: {produced_item:?} vs {expected_item:?}"
     );
 
     let mut trait_decoded = OracleRequest::default();
-    Interoperable::from_stack_value(
-        &mut trait_decoded,
-        StackValue::try_from(expected_item).unwrap(),
-    )
-    .unwrap();
+    Interoperable::from_stack_item(&mut trait_decoded, expected_item).unwrap();
     assert_eq!(trait_decoded, request);
 
     let item =
@@ -215,7 +206,7 @@ fn request_record_layout_matches_csharp_to_stack_item() {
 }
 
 #[test]
-fn oracle_storage_codecs_use_stack_value_projection() {
+fn oracle_storage_codecs_use_stack_item_projection() {
     fn slice_between<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
         let start_index = source.find(start).expect("start marker exists");
         let end_index = source[start_index..]
@@ -240,22 +231,21 @@ fn oracle_storage_codecs_use_stack_value_projection() {
         "fn decode_oracle_request",
         "fn encode_id_list",
     );
-    assert!(request_decoder.contains("decode_stack_value"));
-    assert!(request_decoder.contains("OracleRequest::from_stack_value"));
+    assert!(request_decoder.contains("decode_stack_item"));
+    assert!(request_decoder.contains("OracleRequest::from_stack_item"));
     assert!(!request_decoder.contains("BinarySerializer::deserialize("));
 
     let id_list_encoder = slice_between(storage_source, "fn encode_id_list", "fn decode_id_list");
     assert!(id_list_encoder.contains("OracleIdList::new"));
     assert!(id_list_encoder.contains("encode_storage_struct"));
-    assert!(!id_list_encoder.contains("StackValue::Array"));
+    assert!(!id_list_encoder.contains("StackItem::Array"));
     assert!(!id_list_encoder.contains("StackItem::from_array"));
     assert!(!id_list_encoder.contains("BinarySerializer::serialize("));
 
     let id_list_decoder = slice_between(storage_source, "fn decode_id_list", "fn read_request");
-    assert!(id_list_decoder.contains("decode_stack_value"));
-    assert!(id_list_decoder.contains("OracleIdList::from_stack_value"));
-    assert!(!id_list_decoder.contains("StackValue::Array"));
-    assert!(!id_list_decoder.contains("stack_value_as_bigint"));
+    assert!(id_list_decoder.contains("decode_stack_item"));
+    assert!(id_list_decoder.contains("OracleIdList::from_stack_item"));
+    assert!(!id_list_decoder.contains("StackItem::Array"));
     assert!(!id_list_decoder.contains("BinarySerializer::deserialize("));
 
     let source = include_str!("../../oracle_contract/invoke.rs");
@@ -269,10 +259,9 @@ fn oracle_storage_codecs_use_stack_value_projection() {
         "// C#: UserData = BinarySerializer.Serialize(userData,",
         "let request = OracleRequest",
     );
-    assert!(request_user_data.contains("decode_stack_value"));
-    assert!(request_user_data.contains("serialize_stack_value_with_limits"));
+    assert!(request_user_data.contains("decode_stack_item"));
+    assert!(request_user_data.contains("BinarySerializer::serialize_with_limits("));
     assert!(!request_user_data.contains("BinarySerializer::deserialize("));
-    assert!(!request_user_data.contains("BinarySerializer::serialize_with_limits("));
 }
 
 #[test]
@@ -345,21 +334,20 @@ fn id_list_round_trips_and_key_uses_url_hash160() {
 fn oracle_id_list_interoperable_projection_matches_csharp_shape() {
     let ids = vec![0u64, 7, u64::MAX];
     let state = OracleIdList::new(ids.clone());
-    let expected_value = StackValue::Array(
-        neo_vm::next_stack_item_id(),
+    let expected_value = StackItem::from_array(
         ids.iter()
-            .map(|id| StackValue::BigInteger(BigInt::from(*id).to_signed_bytes_le()))
+            .map(|id| StackItem::from_int(*id))
             .collect::<Vec<_>>(),
     );
 
-    let trait_value = Interoperable::to_stack_value(&state).unwrap();
+    let trait_value = Interoperable::to_stack_item(&state).unwrap();
     assert!(
-        stack_value_struct_eq(&trait_value, &expected_value),
-        "structural StackValue mismatch: {trait_value:?} vs {expected_value:?}"
+        stack_item_struct_eq(&trait_value, &expected_value),
+        "structural StackItem mismatch: {trait_value:?} vs {expected_value:?}"
     );
 
     let mut parsed = OracleIdList::new(Vec::new());
-    Interoperable::from_stack_value(&mut parsed, trait_value).unwrap();
+    Interoperable::from_stack_item(&mut parsed, trait_value).unwrap();
     assert_eq!(parsed.into_ids(), ids);
 }
 

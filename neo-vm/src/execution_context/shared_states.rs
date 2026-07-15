@@ -67,6 +67,18 @@ impl<S: Default> SharedStates<S> {
     pub fn new(script: Script, reference_counter: ReferenceCounter) -> Self {
         Self::new_with_state_factory(script, reference_counter, S::default)
     }
+
+    /// Creates shared states that retain an existing script allocation.
+    #[must_use]
+    pub fn new_from_script_arc(script: Arc<Script>, reference_counter: ReferenceCounter) -> Self {
+        Self {
+            script,
+            evaluation_stack: Arc::new(Mutex::new(EvaluationStack::new(reference_counter.clone()))),
+            static_fields: Arc::new(Mutex::new(None)),
+            reference_counter,
+            state: Arc::new(Mutex::new(S::default())),
+        }
+    }
 }
 
 impl<S> SharedStates<S> {

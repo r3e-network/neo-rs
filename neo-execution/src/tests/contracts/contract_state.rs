@@ -1,26 +1,21 @@
 use super::*;
 use neo_manifest::ContractManifest;
 use neo_vm::StackItem;
-use neo_vm::StackValue;
 
-/// Structural equality for StackValue that ignores the reference-identity ids
-/// on compound variants. Collection identity is not part of serialized
-/// stack data, so structural equality is the correct notion for round-trip / shape
-/// assertions.
-fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
-    a.structural_eq(b)
+fn stack_item_struct_eq(left: &StackItem, right: &StackItem) -> bool {
+    left.equals(right).unwrap_or(false)
 }
 
-fn array(items: Vec<StackValue>) -> StackValue {
-    StackValue::Array(neo_vm::next_stack_item_id(), items)
+fn array(items: Vec<StackItem>) -> StackItem {
+    StackItem::from_array(items)
 }
 
-fn structure(items: Vec<StackValue>) -> StackValue {
-    StackValue::Struct(neo_vm::next_stack_item_id(), items)
+fn structure(items: Vec<StackItem>) -> StackItem {
+    StackItem::from_struct(items)
 }
 
-fn map(items: Vec<(StackValue, StackValue)>) -> StackValue {
-    StackValue::Map(neo_vm::next_stack_item_id(), items)
+fn map(items: Vec<(StackItem, StackItem)>) -> StackItem {
+    StackItem::from_map(items)
 }
 
 #[test]
@@ -45,43 +40,43 @@ fn contract_state_roundtrip_matches_signed_id() {
 }
 
 #[test]
-fn contract_state_projects_to_stack_value() {
+fn contract_state_projects_to_stack_item() {
     let hash = UInt160::from_bytes(&[1u8; 20]).expect("hash");
     let nef = NefFile::new("compiler".to_string(), vec![1, 2, 3]);
     let manifest = ContractManifest::new("test".to_string());
     let mut state = ContractState::new(-7, hash, nef.clone(), manifest.clone());
     state.update_counter = 9;
 
-    let left = state.to_stack_value();
+    let left = state.to_stack_item();
     let right = array(vec![
-        StackValue::Integer(-7),
-        StackValue::Integer(9),
-        StackValue::ByteString(hash.to_bytes()),
-        StackValue::ByteString(nef.to_bytes()),
-        manifest.to_stack_value(),
+        StackItem::from_i64(-7),
+        StackItem::from_i64(9),
+        StackItem::from_byte_string(hash.to_bytes()),
+        StackItem::from_byte_string(nef.to_bytes()),
+        manifest.to_stack_item(),
     ]);
     assert!(
-        stack_value_struct_eq(&left, &right),
-        "structural StackValue mismatch: {left:?} vs {right:?}"
+        stack_item_struct_eq(&left, &right),
+        "structural StackItem mismatch: {left:?} vs {right:?}"
     );
 }
 
 #[test]
-fn contract_state_reads_stack_value() {
+fn contract_state_reads_stack_item() {
     let hash = UInt160::from_bytes(&[2u8; 20]).expect("hash");
     let nef = NefFile::new("compiler".to_string(), vec![4, 5, 6]);
     let manifest = ContractManifest::new("parsed".to_string());
 
     let mut state = ContractState::default();
     state
-        .from_stack_value(array(vec![
-            StackValue::Integer(11),
-            StackValue::Integer(3),
-            StackValue::ByteString(hash.to_bytes()),
-            StackValue::ByteString(nef.to_bytes()),
-            manifest.to_stack_value(),
+        .from_stack_item(array(vec![
+            StackItem::from_i64(11),
+            StackItem::from_i64(3),
+            StackItem::from_byte_string(hash.to_bytes()),
+            StackItem::from_byte_string(nef.to_bytes()),
+            manifest.to_stack_item(),
         ]))
-        .expect("contract state from stack value");
+        .expect("contract state from stack item");
 
     assert_eq!(state.id, 11);
     assert_eq!(state.update_counter, 3);
@@ -96,59 +91,59 @@ fn contract_state_rejects_invalid_integer_fields() {
     let nef = NefFile::new("compiler".to_string(), vec![1, 2, 3]);
     let manifest = ContractManifest::new("integer-bounds".to_string());
 
-    let stack_value = |id, update_counter| {
+    let stack_item = |id, update_counter| {
         array(vec![
             id,
             update_counter,
-            StackValue::ByteString(hash.to_bytes()),
-            StackValue::ByteString(nef.to_bytes()),
-            manifest.to_stack_value(),
+            StackItem::from_byte_string(hash.to_bytes()),
+            StackItem::from_byte_string(nef.to_bytes()),
+            manifest.to_stack_item(),
         ])
     };
 
-    let oversized_id = StackValue::BigInteger(vec![0x01; 33]);
+    let oversized_id = StackItem::from_int(num_bigint::BigInt::from_signed_bytes_le(&[0x01; 33]));
     assert!(
         ContractState::default()
-            .from_stack_value(stack_value(oversized_id, StackValue::Integer(0)))
+            .from_stack_item(stack_item(oversized_id, StackItem::from_i64(0)))
             .is_err()
     );
 
-    let overflowing_id = num_bigint::BigInt::from(i64::from(i32::MAX) + 1).to_signed_bytes_le();
+    let overflowing_id = num_bigint::BigInt::from(i64::from(i32::MAX) + 1);
     assert!(
         ContractState::default()
-            .from_stack_value(stack_value(
-                StackValue::BigInteger(overflowing_id),
-                StackValue::Integer(0)
+            .from_stack_item(stack_item(
+                StackItem::from_int(overflowing_id),
+                StackItem::from_i64(0)
             ))
             .is_err()
     );
 
     assert!(
         ContractState::default()
-            .from_stack_value(stack_value(StackValue::Integer(0), StackValue::Integer(-1)))
+            .from_stack_item(stack_item(StackItem::from_i64(0), StackItem::from_i64(-1)))
             .is_err()
     );
 
     assert!(
         ContractState::default()
-            .from_stack_value(stack_value(
-                StackValue::Integer(0),
-                StackValue::Integer(i64::from(u16::MAX) + 1)
+            .from_stack_item(stack_item(
+                StackItem::from_i64(0),
+                StackItem::from_i64(i64::from(u16::MAX) + 1)
             ))
             .is_err()
     );
 }
 
 #[test]
-fn contract_state_stack_item_projection_matches_stack_value_projection() {
+fn contract_state_trait_projection_matches_inherent_projection() {
     let hash = UInt160::from_bytes(&[3u8; 20]).expect("hash");
     let nef = NefFile::new("compiler".to_string(), vec![7, 8, 9]);
     let manifest = ContractManifest::new("adapter".to_string());
     let state = ContractState::new(4, hash, nef, manifest);
-    let expected = StackItem::try_from(state.to_stack_value()).unwrap();
+    let expected = state.to_stack_item();
 
-    let trait_sv = <ContractState as neo_vm::Interoperable>::to_stack_value(&state).unwrap();
-    assert_eq!(StackItem::try_from(trait_sv).unwrap(), expected);
+    let projected = <ContractState as neo_vm::Interoperable>::to_stack_item(&state).unwrap();
+    assert!(stack_item_struct_eq(&projected, &expected));
 }
 
 #[test]
@@ -171,28 +166,28 @@ fn contract_record_pins_the_interoperable_stack_item_encoding() {
     // over a HAND-BUILT stack tree assembled per the C# composition rules
     // (ContractState.ToStackItem + ContractManifest.ToStackItem).
     let expected_value = array(vec![
-        StackValue::Integer(7),
-        StackValue::Integer(9),
-        StackValue::ByteString(hash.to_bytes()),
-        StackValue::ByteString(nef.to_bytes()),
+        StackItem::from_i64(7),
+        StackItem::from_i64(9),
+        StackItem::from_byte_string(hash.to_bytes()),
+        StackItem::from_byte_string(nef.to_bytes()),
         structure(vec![
-            StackValue::ByteString(b"Fixture".to_vec()),
+            StackItem::from_byte_string(b"Fixture".to_vec()),
             array(Vec::new()), // groups
             map(Vec::new()),   // features (always empty)
-            array(vec![StackValue::ByteString(b"NEP-17".to_vec())]),
+            array(vec![StackItem::from_byte_string(b"NEP-17".to_vec())]),
             structure(vec![
                 array(Vec::new()), // abi.methods
                 array(Vec::new()), // abi.events
             ]),
             // permissions: the default wildcard permission is
             // Struct[Null(contract), Null(methods)].
-            array(vec![structure(vec![StackValue::Null, StackValue::Null])]),
-            StackValue::Null,                         // trusts wildcard
-            StackValue::ByteString(b"null".to_vec()), // extra absent
+            array(vec![structure(vec![StackItem::Null, StackItem::Null])]),
+            StackItem::Null,                               // trusts wildcard
+            StackItem::from_byte_string(b"null".to_vec()), // extra absent
         ]),
     ]);
     let expected = neo_serialization::BinarySerializer::serialize(
-        &StackItem::try_from(expected_value).expect("expected stack item"),
+        &expected_value,
         &neo_vm::ExecutionEngineLimits::default(),
     )
     .expect("expected bytes");
@@ -316,21 +311,21 @@ fn contract_record_rejects_top_level_struct_like_csharp() {
     let nef = NefFile::new("compiler".to_string(), vec![0x40]);
     let manifest = ContractManifest::new("StructRoot".to_string());
     let malformed = structure(vec![
-        StackValue::Integer(7),
-        StackValue::Integer(0),
-        StackValue::ByteString(hash.to_bytes()),
-        StackValue::ByteString(nef.to_bytes()),
-        manifest.to_stack_value(),
+        StackItem::from_i64(7),
+        StackItem::from_i64(0),
+        StackItem::from_byte_string(hash.to_bytes()),
+        StackItem::from_byte_string(nef.to_bytes()),
+        manifest.to_stack_item(),
     ]);
 
     assert!(
         ContractState::default()
-            .from_stack_value(malformed.clone())
+            .from_stack_item(malformed.clone())
             .is_err()
     );
 
     let record = neo_serialization::BinarySerializer::serialize(
-        &StackItem::try_from(malformed).expect("malformed stack item"),
+        &malformed,
         &neo_vm::ExecutionEngineLimits::default(),
     )
     .expect("malformed record bytes");

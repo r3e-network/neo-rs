@@ -1,8 +1,8 @@
 use super::*;
 use neo_primitives::hex_util;
 
-fn stack_value_struct_eq(a: &neo_vm::StackValue, b: &neo_vm::StackValue) -> bool {
-    a.structural_eq(b)
+fn stack_item_struct_eq(a: &neo_vm::StackItem, b: &neo_vm::StackItem) -> bool {
+    a.equals(b).unwrap_or(false)
 }
 
 fn sample_group() -> ContractGroup {
@@ -15,36 +15,30 @@ fn sample_group() -> ContractGroup {
 }
 
 #[test]
-fn contract_group_projects_to_neo_vm_rs_stack_value() {
+fn contract_group_projects_to_neo_vm_stack_item() {
     let group = sample_group();
     let pub_key_bytes = group.pub_key.encode_point(true).expect("compressed key");
 
-    let left = group.to_stack_value();
-    let right = StackValue::Struct(
-        neo_vm::next_stack_item_id(),
-        vec![
-            StackValue::ByteString(pub_key_bytes),
-            StackValue::ByteString(vec![0xAB; 64]),
-        ],
-    );
+    let left = group.to_stack_item();
+    let right = StackItem::from_struct(vec![
+        StackItem::ByteString(pub_key_bytes),
+        StackItem::ByteString(vec![0xAB; 64]),
+    ]);
     assert!(
-        stack_value_struct_eq(&left, &right),
-        "structural StackValue mismatch: {left:?} vs {right:?}"
+        stack_item_struct_eq(&left, &right),
+        "structural StackItem mismatch: {left:?} vs {right:?}"
     );
 }
 
 #[test]
-fn contract_group_reads_from_neo_vm_rs_stack_value() {
+fn contract_group_reads_from_neo_vm_stack_item() {
     let group = sample_group();
     let pub_key_bytes = group.pub_key.encode_point(true).expect("compressed key");
 
-    let decoded = ContractGroup::try_from_stack_value(StackValue::Struct(
-        neo_vm::next_stack_item_id(),
-        vec![
-            StackValue::ByteString(pub_key_bytes),
-            StackValue::ByteString(vec![0xCD; 64]),
-        ],
-    ))
+    let decoded = ContractGroup::try_from_stack_item(&StackItem::from_struct(vec![
+        StackItem::ByteString(pub_key_bytes),
+        StackItem::ByteString(vec![0xCD; 64]),
+    ]))
     .unwrap();
 
     assert_eq!(decoded.pub_key, group.pub_key);

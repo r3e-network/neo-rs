@@ -33,6 +33,8 @@ use neo_primitives::{UInt160, WitnessScope};
 use neo_storage::persistence::providers::memory_store::MemoryStore;
 use std::sync::Arc;
 
+mod profile;
+
 fn signed_test_transaction(nonce: u32) -> Transaction {
     let mut tx = Transaction::new();
     tx.set_nonce(nonce);
@@ -87,7 +89,7 @@ async fn import_chain_acc_from_reader<R>(
     storage: Option<Arc<MemoryStore>>,
 ) -> anyhow::Result<u64>
 where
-    R: std::io::Read + std::io::Seek,
+    R: std::io::BufRead + std::io::Seek,
 {
     Ok(
         import_chain_acc_from_reader_report(handle, reader, path, verify, expected_range, storage)
@@ -105,7 +107,7 @@ async fn import_chain_acc_from_reader_report<R>(
     storage: Option<Arc<MemoryStore>>,
 ) -> anyhow::Result<ChainAccImportReport>
 where
-    R: std::io::Read + std::io::Seek,
+    R: std::io::BufRead + std::io::Seek,
 {
     import_chain_acc_report_from_reader_until_height(
         handle,
@@ -790,73 +792,6 @@ async fn import_chain_acc_report_tracks_final_average_bps() {
     assert!(
         report.average_blocks_per_second > 0.0,
         "importing blocks should report a positive final BPS, got {report:?}"
-    );
-}
-
-#[tokio::test]
-async fn import_chain_acc_report_tracks_empty_and_transaction_bearing_blocks() {
-    let (handle, mut commands, _events) = BlockchainHandle::channel(1, 1);
-    let genesis = empty_block(0);
-    let block1 =
-        non_empty_block_with_prev_hash(1, genesis.hash(), vec![signed_test_transaction(1)]);
-    let block2 = empty_block_with_prev_hash(2, block1.hash());
-    let blocks = vec![genesis, block1, block2];
-    let bytes = encode_chain_acc(&blocks);
-    let mut cursor = std::io::Cursor::new(bytes);
-    let service = tokio::spawn(async move {
-        let Some(BlockchainCommand::ImportBlocks { import, reply }) = commands.recv().await else {
-            panic!("expected import blocks command");
-        };
-        assert_eq!(import.blocks.len(), 3);
-        reply
-            .send(ImportBlocksReply::ok_with_stats(
-                import.blocks.len(),
-                neo_blockchain::ImportBlocksStats {
-                    empty_blocks: 2,
-                    empty_elapsed: std::time::Duration::from_millis(2),
-                    transaction_blocks: 1,
-                    transaction_elapsed: std::time::Duration::from_millis(1),
-                    transaction_block_clone_elapsed: std::time::Duration::from_millis(3),
-                    transaction_ledger_insert_elapsed: std::time::Duration::from_millis(4),
-                    transaction_finalized_delivery_elapsed: std::time::Duration::from_millis(5),
-                    finalization_elapsed: std::time::Duration::from_millis(1),
-                    finalization_commit_handlers_elapsed: std::time::Duration::from_micros(600),
-                    finalization_store_commit_elapsed: std::time::Duration::from_micros(400),
-                },
-            ))
-            .expect("reply import");
-    });
-
-    let report = import_chain_acc_from_reader_report(
-        &handle,
-        &mut cursor,
-        None,
-        false,
-        Some(ChainAccExpectedRange {
-            start_height: 0,
-            end_height: 2,
-        }),
-        None,
-    )
-    .await
-    .expect("import report");
-
-    service.await.expect("service task");
-    assert_eq!(report.imported, 3);
-    assert_eq!(report.empty_blocks, 2);
-    assert_eq!(report.empty_only_blocks, 0);
-    assert!(report.empty_blocks_per_second > 0.0);
-    assert_eq!(report.transaction_blocks, 1);
-    assert_eq!(report.transactions, 1);
-    assert_eq!(report.transaction_block_clone_seconds, 0.003);
-    assert_eq!(report.transaction_ledger_insert_seconds, 0.004);
-    assert_eq!(report.transaction_finalized_delivery_seconds, 0.005);
-    assert_eq!(report.finalization_seconds, 0.001);
-    assert_eq!(report.finalization_commit_handlers_seconds, 0.0006);
-    assert_eq!(report.finalization_store_commit_seconds, 0.0004);
-    assert!(
-        report.transaction_blocks_per_second > 0.0,
-        "transaction-bearing BPS must be reported independently from empty-block throughput"
     );
 }
 

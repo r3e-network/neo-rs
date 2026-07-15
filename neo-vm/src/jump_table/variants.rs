@@ -3,7 +3,7 @@
 //! The fixed dispatch table lives in `table`; this module wires opcode-family
 //! registration and hardfork-specific table variants selected by the execution engine.
 
-use neo_vm_rs::OpCode;
+use crate::OpCode;
 
 use super::operations::{bitwisee, numeric, splice, types};
 use super::{JumpTable, compound, control, push, slot, stack};
@@ -26,31 +26,26 @@ impl<S> JumpTable<S> {
     /// The pre-`HF_Gorgon` compound-opcode table. C#
     /// `ApplicationEngine.ComposeNotGorgonJumpTable` = the default table with
     /// `HASKEY`/`PICKITEM`/`SETITEM`/`REMOVE` reverted to their pre-neo-vm#543
-    /// handlers. `ApplicationEngine.Create` selects this table when `HF_Echidna`
-    /// is active but `HF_Gorgon` is not — which is the v3.10.1 mainnet/testnet
-    /// case, since `HF_Gorgon` is unscheduled there.
-    ///
-    /// SHL/SHR are NOT overridden here: they carry no `HF_Gorgon` split, so the
-    /// default handler applies. (Their behavior IS a flat Neo.VM 3.9.0→3.10.0
-    /// change — v3.10.1 always pops + integer-coerces the value even on a zero
-    /// shift — but that is a VM-version change, not a hardfork gate; see the
-    /// `shift` handler in `numeric.rs`.)
+    /// handlers and `SHL`/`SHR` reverted to the zero-shift behavior from before
+    /// neo-vm#567. `ApplicationEngine.Create` selects this table when
+    /// `HF_Echidna` is active but `HF_Gorgon` is not.
     pub fn not_gorgon() -> Self {
         let mut table = Self::new();
         table.set(OpCode::HASKEY, compound::has_key_before543::<S>);
         table.set(OpCode::PICKITEM, compound::pick_item_before543::<S>);
         table.set(OpCode::SETITEM, compound::set_item_before543::<S>);
         table.set(OpCode::REMOVE, compound::remove_before543::<S>);
+        table.set(OpCode::SHL, numeric::vulnerable_shl::<S>);
+        table.set(OpCode::SHR, numeric::vulnerable_shr::<S>);
         table
     }
 
-    /// The pre-`HF_Echidna` jump table. C# v3.10.1 overrides only SUBSTR with
-    /// `ApplicationEngine.VulnerableSubStr`; the memory-unsafe distinction is
-    /// not reproducible here and is consensus-equivalent for valid results and
-    /// faulting cases, so this table intentionally keeps every handler at the
-    /// default implementation.
+    /// The pre-`HF_Echidna` jump table. C# composes this from `NotGorgon` and
+    /// additionally installs `ApplicationEngine.VulnerableSubStr`.
     pub fn not_echidna() -> Self {
-        Self::default()
+        let mut table = Self::not_gorgon();
+        table.set(OpCode::SUBSTR, splice::vulnerable_substr::<S>);
+        table
     }
 
     /// Registers the default handlers for all opcodes.

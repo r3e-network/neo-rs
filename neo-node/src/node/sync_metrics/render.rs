@@ -1,7 +1,7 @@
 //! Prometheus text rendering for node sync metrics.
 
 use super::families::{
-    append_native_contract_hooks, append_native_persist_tx_stages,
+    append_mdbx_commit_metrics, append_native_contract_hooks, append_native_persist_tx_stages,
     append_neo_token_candidate_counts, append_neo_token_committee_compute_stages,
     append_neo_token_onpersist_stages, append_state_root_apply_metrics,
 };
@@ -132,6 +132,7 @@ pub fn render_prometheus() -> String {
     );
 
     append_state_root_apply_metrics(&mut output);
+    append_mdbx_commit_metrics(&mut output);
     append_native_contract_hooks(&mut output);
     append_native_persist_tx_stages(&mut output);
     append_neo_token_onpersist_stages(&mut output);

@@ -6,8 +6,7 @@ use neo_primitives::FindOptions;
 use neo_serialization::binary_serializer::BinarySerializer;
 use neo_storage::StorageItem;
 use neo_storage::StorageKey;
-use neo_vm::StackItem;
-use neo_vm::{ExecutionEngineLimits, StackValue};
+use neo_vm::{ExecutionEngineLimits, StackItem};
 
 /// Storage iterator for iterating over storage items (matches C# StorageIterator)
 #[derive(Debug)]
@@ -20,10 +19,6 @@ pub struct StorageIterator {
     prefix_length: usize,
     /// Find options
     options: FindOptions,
-}
-
-fn stack_value_to_stack_item(value: StackValue) -> CoreResult<StackItem> {
-    StackItem::try_from(value).map_err(|error| CoreError::other(error.to_string()))
 }
 
 impl StorageIterator {
@@ -97,22 +92,18 @@ impl Iter for StorageIterator {
         let raw_value = value.value_bytes();
         let limits = ExecutionEngineLimits::default();
         let mut value_item = if self.options.contains(FindOptions::DeserializeValues) {
-            BinarySerializer::deserialize_stack_value_with_limits(
-                &raw_value,
-                limits.max_item_size as usize,
-                limits.max_stack_size as usize,
-            )?
+            BinarySerializer::deserialize(&raw_value, &limits, None)?
         } else {
-            StackValue::ByteString(raw_value.to_vec())
+            StackItem::from_byte_string(raw_value.to_vec())
         };
 
         // Pick field if requested
         if self.options.contains(FindOptions::PickField0) {
             value_item = match value_item {
-                StackValue::Array(_, array) | StackValue::Struct(_, array) => array
-                    .first()
-                    .cloned()
+                StackItem::Array(array) => array
+                    .get(0)
                     .ok_or_else(|| CoreError::invalid_operation("PickField0 requires field 0"))?,
+                StackItem::Struct(structure) => structure.get(0).map_err(CoreError::from)?,
                 _ => {
                     return Err(CoreError::invalid_operation(
                         "PickField0 requires an array value",
@@ -121,10 +112,10 @@ impl Iter for StorageIterator {
             };
         } else if self.options.contains(FindOptions::PickField1) {
             value_item = match value_item {
-                StackValue::Array(_, array) | StackValue::Struct(_, array) => array
+                StackItem::Array(array) => array
                     .get(1)
-                    .cloned()
                     .ok_or_else(|| CoreError::invalid_operation("PickField1 requires field 1"))?,
+                StackItem::Struct(structure) => structure.get(1).map_err(CoreError::from)?,
                 _ => {
                     return Err(CoreError::invalid_operation(
                         "PickField1 requires an array value",
@@ -135,15 +126,15 @@ impl Iter for StorageIterator {
 
         // Return based on options
         if self.options.contains(FindOptions::KeysOnly) {
-            stack_value_to_stack_item(StackValue::ByteString(key_bytes))
+            Ok(StackItem::from_byte_string(key_bytes))
         } else if self.options.contains(FindOptions::ValuesOnly) {
-            stack_value_to_stack_item(value_item)
+            Ok(value_item)
         } else {
             // Return struct with key and value
-            stack_value_to_stack_item(StackValue::Struct(
-                neo_vm::next_stack_item_id(),
-                vec![StackValue::ByteString(key_bytes), value_item],
-            ))
+            Ok(StackItem::from_struct(vec![
+                StackItem::from_byte_string(key_bytes),
+                value_item,
+            ]))
         }
     }
 

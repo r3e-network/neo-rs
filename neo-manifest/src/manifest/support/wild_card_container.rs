@@ -2,13 +2,12 @@
 
 use neo_error::{CoreError, CoreResult};
 use neo_vm::StackItem;
-use neo_vm::StackValue;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use crate::manifest::stack_value_helpers::stack_value_to_utf8_string;
+use crate::manifest::stack_item_helpers::stack_item_to_utf8_string;
 
-use neo_vm::impl_interoperable_via_stack_value;
+use neo_vm::impl_interoperable_via_stack_item;
 
 /// A list that supports wildcard (matches C# WildcardContainer\<T>)
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -111,78 +110,43 @@ impl<T: fmt::Display> fmt::Display for WildCardContainer<T> {
 }
 
 impl WildCardContainer<String> {
-    fn strings_from_stack_values(items: Vec<StackValue>) -> CoreResult<Vec<String>> {
+    fn strings_from_stack_items(items: Vec<StackItem>) -> CoreResult<Vec<String>> {
         let mut values = Vec::with_capacity(items.len());
         for element in items {
-            let value = stack_value_to_utf8_string(&element, "Wildcard string element")?;
+            let value = stack_item_to_utf8_string(&element, "Wildcard string element")?;
             values.push(value);
         }
         Ok(values)
     }
 
-    /// Converts from a neo-vm stack value.
-    pub fn from_stack_value(stack_value: StackValue) -> CoreResult<Self> {
-        match stack_value {
-            StackValue::Null => Ok(Self::create_wildcard()),
-            StackValue::Array(_, items) => {
-                Ok(Self::create(Self::strings_from_stack_values(items)?))
+    /// Converts from a neo-vm stack item.
+    pub fn from_stack_item(stack_item: &StackItem) -> CoreResult<Self> {
+        match stack_item {
+            StackItem::Null => Ok(Self::create_wildcard()),
+            StackItem::Array(array) => {
+                Ok(Self::create(Self::strings_from_stack_items(array.items())?))
             }
             _ => Err(CoreError::other(
-                "Unsupported stack value for wildcard container",
+                "Unsupported stack item for wildcard container",
             )),
         }
     }
 
-    /// Converts from a VM stack item.
-    pub fn from_stack_item(item: &StackItem) -> CoreResult<Self> {
-        Self::from_stack_value(
-            StackValue::try_from(item.clone())
-                .map_err(|_| CoreError::other("Unsupported stack item for wildcard container"))?,
-        )
-    }
-
-    /// Converts the container to a neo-vm stack value.
-    pub fn to_stack_value(&self) -> StackValue {
+    /// Converts the container to a neo-vm stack item.
+    pub fn to_stack_item(&self) -> StackItem {
         match self {
-            Self::Wildcard => StackValue::Null,
-            Self::List(values) => StackValue::Array(
-                neo_vm::next_stack_item_id(),
+            Self::Wildcard => StackItem::Null,
+            Self::List(values) => StackItem::from_array(
                 values
                     .iter()
-                    .map(|value| StackValue::ByteString(value.as_bytes().to_vec()))
+                    .map(|value| StackItem::from_byte_string(value.as_bytes().to_vec()))
                     .collect(),
             ),
         }
     }
-
-    /// Converts the container to a VM stack item.
-    pub fn try_to_stack_item(&self) -> CoreResult<StackItem> {
-        StackItem::try_from(self.to_stack_value()).map_err(|error| {
-            CoreError::invalid_data(format!(
-                "wildcard container StackValue projection failed: {error}"
-            ))
-        })
-    }
-
-    /// Converts the container to a VM stack item.
-    ///
-    /// Prefer [`Self::try_to_stack_item`] in code that can propagate errors.
-    pub fn to_stack_item(&self) -> StackItem {
-        match self.try_to_stack_item() {
-            Ok(item) => item,
-            Err(error) => {
-                tracing::warn!(
-                    target: "neo.manifest",
-                    %error,
-                    "wildcard container StackValue projection failed"
-                );
-                StackItem::Null
-            }
-        }
-    }
 }
 
-impl_interoperable_via_stack_value!(WildCardContainer<String>);
+impl_interoperable_via_stack_item!(WildCardContainer<String>);
 
 fn serialize_wildcard<S>(serializer: S) -> Result<S::Ok, S::Error>
 where

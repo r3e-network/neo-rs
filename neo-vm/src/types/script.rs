@@ -38,7 +38,7 @@ use crate::{Instruction, parse_script_instructions};
 use crate::{instruction_jump_target, instruction_try_targets};
 use neo_crypto::Crypto;
 use parking_lot::RwLock;
-use rustc_hash::FxHashMap;
+use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::ptr;
@@ -47,18 +47,15 @@ use std::sync::Arc;
 /// Instruction storage strategy.
 ///
 /// - **Eager**: All instructions are pre-parsed at construction time and stored
-///   in an immutable map. Lookups require no locking.
+///   in an immutable `HashMap`. Lookups require no locking.
 /// - **Lazy**: Instructions are parsed on first access and cached behind a
 ///   `RwLock` (only used for relaxed-mode scripts that skip up-front parsing).
-///
-/// Both modes use `FxHashMap` for instruction-offset keys (`usize`); the default
-/// std hasher is slower on this dense decode path.
 #[derive(Debug, Clone)]
 enum InstructionCache {
     /// Pre-populated, immutable cache — no lock on the read path.
-    Eager(Arc<FxHashMap<usize, Arc<Instruction>>>),
+    Eager(Arc<HashMap<usize, Arc<Instruction>>>),
     /// Lazily populated cache — `RwLock` for concurrent reads, rare writes.
-    Lazy(Arc<RwLock<FxHashMap<usize, Arc<Instruction>>>>),
+    Lazy(Arc<RwLock<HashMap<usize, Arc<Instruction>>>>),
 }
 
 /// Represents a script in the Neo VM.
@@ -148,7 +145,7 @@ impl Script {
         let script = Arc::<[u8]>::from(script);
         let mut s = Self {
             script,
-            instructions: InstructionCache::Lazy(Arc::new(RwLock::new(FxHashMap::default()))),
+            instructions: InstructionCache::Lazy(Arc::new(RwLock::new(HashMap::new()))),
             strict_mode: false, // Start with false to allow parsing
             hash_code,
             script_hash,
@@ -194,7 +191,7 @@ impl Script {
         let script_hash = Crypto::hash160(script.as_ref());
         Self {
             script,
-            instructions: InstructionCache::Lazy(Arc::new(RwLock::new(FxHashMap::default()))),
+            instructions: InstructionCache::Lazy(Arc::new(RwLock::new(HashMap::new()))),
             strict_mode: false,
             hash_code,
             script_hash,
@@ -207,10 +204,10 @@ impl Script {
         Self::new_relaxed_from_arc(Arc::<[u8]>::from(script))
     }
 
-    /// Parses all instructions from the script into a map keyed by byte offset.
-    /// Used during construction to build the eager (lock-free) cache.
-    fn parse_all_instructions(&self) -> VmResult<FxHashMap<usize, Arc<Instruction>>> {
-        let mut instructions = FxHashMap::default();
+    /// Parses all instructions from the script into a `HashMap` keyed by byte
+    /// offset. Used during construction to build the eager (lock-free) cache.
+    fn parse_all_instructions(&self) -> VmResult<HashMap<usize, Arc<Instruction>>> {
+        let mut instructions = HashMap::new();
 
         for instruction in
             parse_script_instructions(self.script.as_ref()).map_err(VmError::invalid_script_msg)?
